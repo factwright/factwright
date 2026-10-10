@@ -7,3 +7,4 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - Project skeleton: workspace layout, tooling, CI and project docs.
 - `@factwright/core`: job tracker statuses, matching keys for company and role names, date checks and pay parsing.
+- Secret scanning in CI: TruffleHog checks every push and pull request for leaked keys, and can scan the whole history on demand.
