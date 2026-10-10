@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in Factwright isn't working right.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please leave out personal details from your resume, fact bank or job hunt. Made-up examples work just as well.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: input
+    id: version
+    attributes:
+      label: Factwright version
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Other
