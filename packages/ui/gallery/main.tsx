@@ -1,4 +1,4 @@
-import { FIT_TIERS, JOB_STATUSES } from '@factwright/core';
+import { FIT_TIERS, JOB_STATUSES, type JobStatus } from '@factwright/core';
 import { BookOpen, Briefcase, FileText, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import { type ReactNode, StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -8,15 +8,19 @@ import {
   FitBadge,
   IconButton,
   LIGHT,
+  Markdown,
+  MoodBadge,
   NavItem,
   Notice,
   type Palette,
   RUN_STATES,
   RunStatus,
+  ScoreBar,
   SearchField,
   SegmentedControl,
   Stat,
   StatusPill,
+  StatusSelect,
   ThemeStyle,
 } from '../src/index.ts';
 import styles from './gallery.module.css';
@@ -42,6 +46,24 @@ const VIEWS = [
 ] as const;
 
 type View = (typeof VIEWS)[number]['value'];
+
+const SAMPLE_DOCUMENT = `# Staff Engineer, Developer Tools
+
+Acme Robotics builds the tools **every** engineer uses. See [the team page](https://acme.example/team).
+
+## What you'll do
+- Own the build and CI system
+  - Cut build times
+  - Keep it reliable
+- Mentor engineers on the platform team
+
+> Remote in the US, with a trip to Denver each quarter.
+
+| Part | Points |
+|---|---|
+| Work | 33 of 40 |
+| Stack | 14 of 20 |
+`;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -72,6 +94,7 @@ function TypeSample({
 /** Every component, in whichever theme the column around it sets. */
 function Showcase({ name, palette }: { name: string; palette: Palette }) {
   const [view, setView] = useState<View>('active');
+  const [status, setStatus] = useState<JobStatus>('applied');
   return (
     <>
       <Section title="Colors">
@@ -159,6 +182,12 @@ function Showcase({ name, palette }: { name: string; palette: Palette }) {
         </div>
       </Section>
 
+      <Section title="Status menu">
+        <div className={styles.row}>
+          <StatusSelect status={status} label={`Status, ${name}`} onChange={setStatus} />
+        </div>
+      </Section>
+
       <Section title="Fit">
         <div className={styles.row}>
           {FIT_TIERS.map((tier) => (
@@ -166,6 +195,28 @@ function Showcase({ name, palette }: { name: string; palette: Palette }) {
           ))}
           <FitBadge />
         </div>
+      </Section>
+
+      <Section title="Why it scored">
+        <ScoreBar label="Work" points={33} max={40}>
+          Build and CI tooling for hundreds of engineers
+        </ScoreBar>
+        <ScoreBar label="Stack" points={14} max={20}>
+          Go and TypeScript match; Rust would be new
+        </ScoreBar>
+      </Section>
+
+      <Section title="What people say">
+        <div className={styles.row}>
+          <MoodBadge mood="loved" />
+          <MoodBadge mood="mixed" />
+          <MoodBadge mood="disliked" />
+          <MoodBadge mood="thin" />
+        </div>
+      </Section>
+
+      <Section title="Documents">
+        <Markdown text={SAMPLE_DOCUMENT} />
       </Section>
 
       <Section title="Claude’s status">

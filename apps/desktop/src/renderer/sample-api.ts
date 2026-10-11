@@ -1,4 +1,6 @@
-import type { ClaudeStatus, FactwrightApi, RunSignal } from '../shared/api.ts';
+import { localDate } from '@factwright/core';
+import type { ClaudeStatus, FactwrightApi, JobList, RunSignal } from '../shared/api.ts';
+import { sampleDocs, sampleJobs } from './jobs/sample-jobs.ts';
 
 const READY: ClaudeStatus = { state: 'ready', version: '2.1.296', plan: 'max' };
 
@@ -43,8 +45,9 @@ function sampleRun(dark: boolean) {
 
 /**
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
- * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. Starting Claude
- * plays a short made-up run, so every state of the panel can be seen.
+ * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?jobs picks
+ * the jobs: none, failed or loading. Starting Claude plays a short made-up run, so every state
+ * of the panel can be seen, and status changes stick until the page reloads.
  */
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
@@ -59,6 +62,12 @@ export function sampleApi(): FactwrightApi {
   };
   let waitingForAnswer = false;
   let run = sampleRun(false);
+  const jobsMode = query.get('jobs');
+  let list: JobList = {
+    jobs: jobsMode === 'none' ? [] : sampleJobs(),
+    readAt: new Date().toISOString(),
+  };
+  const jobListeners = new Set<(list: JobList) => void>();
 
   return {
     platform: query.get('platform') ?? 'darwin',
@@ -97,16 +106,52 @@ export function sampleApi(): FactwrightApi {
       signalListeners.add(listener);
       return () => signalListeners.delete(listener);
     },
-    listJobs: async () => ({ jobs: [], readAt: null }),
-    jobDocs: async () => null,
-    updateJob: unsaved,
+    listJobs: () =>
+      jobsMode === 'loading'
+        ? new Promise(() => {})
+        : jobsMode === 'failed'
+          ? Promise.reject(new Error('Sample failure'))
+          : Promise.resolve(list),
+    jobDocs: async (jobId) => {
+      const job = list.jobs.find((each) => each.id === jobId);
+      return job ? sampleDocs(job) : null;
+    },
+    updateJob: async (jobId, changes) => {
+      const { status } = changes;
+      if (status === undefined) return unsaved();
+      const today = localDate();
+      list = {
+        ...list,
+        jobs: list.jobs.map((job) =>
+          job.id === jobId
+            ? {
+                ...job,
+                status,
+                statusOn: status ? today : null,
+                statusLog: status
+                  ? [
+                      ...job.statusLog,
+                      { id: `${jobId}-${job.statusLog.length}`, status, at: today },
+                    ]
+                  : job.statusLog,
+              }
+            : job,
+        ),
+      };
+      for (const listener of jobListeners) listener(list);
+      return { ok: true };
+    },
     addJob: unsaved,
     addCall: unsaved,
     updateCall: unsaved,
     deleteCall: unsaved,
     redateStatusChange: unsaved,
     undoStatusChange: unsaved,
-    onJobsChanged: () => () => {},
+    onJobsChanged: (listener) => {
+      jobListeners.add(listener);
+      return () => jobListeners.delete(listener);
+    },
+    openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
   };
 }
 

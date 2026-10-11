@@ -17,3 +17,10 @@ export function localDate(date: Date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/** Whole days from one YYYY-MM-DD date to another: 1 from "2026-10-09" to "2026-10-10". */
+export function daysBetween(from: string, to: string): number {
+  const day = (date: string) =>
+    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+  return Math.round((day(to) - day(from)) / 86_400_000);
+}

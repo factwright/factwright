@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstDate, isIsoDate, localDate } from './dates.ts';
+import { daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 
 describe('isIsoDate', () => {
   it.each(['2026-10-10', '2024-02-29'])('accepts %s', (value) => {
@@ -27,5 +27,13 @@ describe('firstDate', () => {
 describe('localDate', () => {
   it('writes the local calendar date', () => {
     expect(localDate(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
+});
+
+describe('daysBetween', () => {
+  it('counts whole days, across months and clock changes', () => {
+    expect(daysBetween('2026-10-09', '2026-10-10')).toBe(1);
+    expect(daysBetween('2026-10-30', '2026-11-02')).toBe(3);
+    expect(daysBetween('2026-10-10', '2026-10-03')).toBe(-7);
   });
 });

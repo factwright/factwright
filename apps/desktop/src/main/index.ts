@@ -59,14 +59,20 @@ function start(): void {
     });
     // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
     const tracker = new Tracker(join(dataDir, 'tracker.db'));
+    const workspace = workspaceDir(dataDir);
     const jobs = new JobsService({
-      workspace: workspaceDir(dataDir),
+      workspace,
       tracker,
       onChange: (list) => window.webContents.send('jobs:changed', list),
     });
     jobs.read();
     jobs.watch();
-    registerIpc((url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`), claude, jobs);
+    registerIpc({
+      isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
+      claude,
+      jobs,
+      workspace,
+    });
 
     // A run belongs to its window, so closing the window or quitting stops it.
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());

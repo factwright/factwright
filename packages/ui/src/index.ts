@@ -3,10 +3,13 @@ export { EmptyState, type EmptyStateProps } from './components/EmptyState.tsx';
 export { FIT_TIER_DISPLAY, FitBadge, type FitBadgeProps } from './components/FitBadge.tsx';
 export { IconButton, type IconButtonProps } from './components/IconButton.tsx';
 export { Logo } from './components/Logo.tsx';
+export { Markdown, MarkdownLine, type MarkdownProps } from './components/Markdown.tsx';
+export { MOOD_DISPLAY, MoodBadge } from './components/MoodBadge.tsx';
 export { NavItem, type NavItemProps } from './components/NavItem.tsx';
 export { Notice, type NoticeProps } from './components/Notice.tsx';
 export { Pill, type PillProps } from './components/Pill.tsx';
 export { RUN_STATES, type RunState, RunStatus } from './components/RunStatus.tsx';
+export { ScoreBar, type ScoreBarProps } from './components/ScoreBar.tsx';
 export { SearchField, type SearchFieldProps } from './components/SearchField.tsx';
 export {
   SegmentedControl,
@@ -15,6 +18,7 @@ export {
 } from './components/SegmentedControl.tsx';
 export { Stat, type StatProps } from './components/Stat.tsx';
 export { JOB_STATUS_DISPLAY, StatusPill } from './components/StatusPill.tsx';
+export { StatusSelect, type StatusSelectProps } from './components/StatusSelect.tsx';
 export { VisuallyHidden } from './components/VisuallyHidden.tsx';
 export { CONTROL_CONTRAST, contrastRatio, TEXT_CONTRAST } from './contrast.ts';
 export { ThemeStyle } from './ThemeStyle.tsx';

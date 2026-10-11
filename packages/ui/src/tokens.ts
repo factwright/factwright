@@ -94,6 +94,7 @@ export const TONES = [
   'purple',
   'green',
   'amber',
+  'red',
 ] as const;
 
 export type Tone = (typeof TONES)[number];
@@ -112,6 +113,7 @@ export const TONE_COLORS: Readonly<Record<Tone, { light: ToneColors; dark: ToneC
   purple: { light: { fg: '#8A2E9E', bg: '#F5E9F8' }, dark: { fg: '#E8A4F5', bg: '#35203A' } },
   green: { light: { fg: '#1C7442', bg: '#E5F3EA' }, dark: { fg: '#7EDBA3', bg: '#16301F' } },
   amber: { light: { fg: '#8A5300', bg: '#FBF0DC' }, dark: { fg: '#F0BE6A', bg: '#33270F' } },
+  red: { light: { fg: '#B42318', bg: '#FDECEA' }, dark: { fg: '#F97066', bg: '#3A1D1A' } },
 };
 
 /**

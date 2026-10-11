@@ -1,4 +1,5 @@
-import { type IpcMainEvent, type IpcMainInvokeEvent, ipcMain } from 'electron';
+import { statSync } from 'node:fs';
+import { type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
 import type { EditResult } from '../shared/api.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
@@ -10,7 +11,7 @@ import {
   parseNewJob,
 } from './jobs/input.ts';
 import type { JobsService } from './jobs/service.ts';
-import { parseTerminalSize } from './policy.ts';
+import { openableFile, parseTerminalSize } from './policy.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
@@ -21,12 +22,24 @@ const REFUSED: EditResult = { ok: false, message: 'That change couldn’t be sav
 const isId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 300;
 
+export interface IpcDeps {
+  /** Whether a page is the app's own, the only page whose requests are answered. */
+  isAppPage: (url: string) => boolean;
+  claude: ClaudeSession;
+  jobs: JobsService;
+  workspace: string;
+}
+
+const isFile = (path: string) => {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
+
 /** Answers the window's requests, after checking each one came from the app's own page. */
-export function registerIpc(
-  isAppPage: (url: string) => boolean,
-  session: ClaudeSession,
-  jobs: JobsService,
-): void {
+export function registerIpc({ isAppPage, claude: session, jobs, workspace }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
 
@@ -95,4 +108,13 @@ export function registerIpc(
   answer('history:undo', (changeId) =>
     isId(changeId) ? jobs.undoStatusChange(changeId) : REFUSED,
   );
+
+  answer('files:open', async (path): Promise<EditResult> => {
+    const file = typeof path === 'string' ? openableFile(workspace, path) : null;
+    if (!file || !isFile(file)) {
+      return { ok: false, message: 'That file isn’t in your workspace anymore.' };
+    }
+    const failed = await shell.openPath(file);
+    return failed ? { ok: false, message: 'Your computer couldn’t open that file.' } : { ok: true };
+  });
 }

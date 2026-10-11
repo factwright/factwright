@@ -1,9 +1,9 @@
 import { Search } from 'lucide-react';
-import type { InputHTMLAttributes } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { cx } from '../cx.ts';
 import styles from './SearchField.module.css';
 
-export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+export interface SearchFieldProps extends Omit<ComponentPropsWithRef<'input'>, 'type'> {
   /** What the field searches. It's read aloud, and shown until the user types. */
   label: string;
   /** A keyboard shortcut that jumps to the field, shown at its end, such as "⌘K". */

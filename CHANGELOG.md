@@ -17,4 +17,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `@factwright/ui`: the terminal's colors, checked against WCAG AA in the roles Claude Code gives them, and a Starting state for Claude's status.
 - The plugin folder has its manifest, so Claude Code loads it.
 - `@factwright/core`: reading the workspace into jobs, ported from the original dashboard. It reads the fit check log, each job's folder, job searches, salary and employer checks, and drafted messages, and joins them into one job each. It also reads a fit check's score breakdown and what people say about the company.
+- The jobs screen, as the approved mockup shows it: the numbers that matter, views, search, and each job's next step, with a panel for everything on file for a job. You can change a job's status there, read its documents, and open its resumes.
+- `@factwright/core`: where each job stands, what needs your attention, the stats and views, and the apply steps from `apply.md`.
+- `@factwright/ui`: the status menu, score bars, the "what people say" badge, a red tint, and a safe Markdown view for documents.
+- Email links, such as how to apply by email, open your mail app.
 - The desktop app reads your jobs from the workspace, and reads them again when something changes. Your tracker keeps statuses with their dates, applied dates, next steps, notes and calls, in a small database beside the workspace. Logging a call moves a job forward, and you can undo a mis-click.
