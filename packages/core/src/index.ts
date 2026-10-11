@@ -23,6 +23,19 @@ export {
   type JobPay,
   type KnownJob,
 } from './jobs.ts';
+export {
+  JOURNEY_STAGE_LABELS,
+  JOURNEY_STAGES,
+  type Journey,
+  type JourneyOutcome,
+  type JourneyStage,
+  type JourneySummary,
+  journeyCsv,
+  journeyFlowChart,
+  journeyOf,
+  journeySummary,
+  journeys,
+} from './journey.ts';
 export { companyKey, roleKey, slug } from './keys.ts';
 export { hostOf, isJobLink, type Link, linksFrom, normalizeUrl } from './links.ts';
 export {

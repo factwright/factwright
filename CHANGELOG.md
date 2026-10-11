@@ -17,6 +17,10 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `@factwright/ui`: the terminal's colors, checked against WCAG AA in the roles Claude Code gives them, and a Starting state for Claude's status.
 - The plugin folder has its manifest, so Claude Code loads it.
 - `@factwright/core`: reading the workspace into jobs, ported from the original dashboard. It reads the fit check log, each job's folder, job searches, salary and employer checks, and drafted messages, and joins them into one job each. It also reads a fit check's score breakdown and what people say about the company.
+- Tracking in the job panel: a next step with a date, logging calls and interviews (which move a job forward), notes that save as you type, history with dates you can fix and an Undo, and archiving.
+- Adding a job by hand, filters (fit, source, minimum pay, has a resume, archived), and Your journey: how far your jobs got and how they ended, with a flow chart for sankeymatic.com and a spreadsheet to save.
+- `@factwright/ui`: form fields, menus, checkboxes, filter chips and dialogs.
+- `@factwright/core`: each job's journey, its flow chart and its spreadsheet. Spreadsheet cells that start like a formula are kept as text.
 - The jobs screen, as the approved mockup shows it: the numbers that matter, views, search, and each job's next step, with a panel for everything on file for a job. You can change a job's status there, read its documents, and open its resumes.
 - `@factwright/core`: where each job stands, what needs your attention, the stats and views, and the apply steps from `apply.md`.
 - `@factwright/ui`: the status menu, score bars, the "what people say" badge, a red tint, and a safe Markdown view for documents.

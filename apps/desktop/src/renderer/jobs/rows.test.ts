@@ -1,12 +1,20 @@
 import { localDate } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import { fileSize, payLabel, shortDate } from './format.ts';
-import { jobRows, startingView, viewCounts, visibleRows } from './rows.ts';
+import {
+  filterCount,
+  jobRows,
+  NO_FILTERS,
+  sources,
+  startingView,
+  viewCounts,
+  visibleRows,
+} from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
 
 const TODAY = localDate();
 const rows = jobRows(sampleJobs(), TODAY);
-const ALL = { view: 'all', query: '', needsYou: false } as const;
+const ALL = { view: 'all', query: '', needsYou: false, ...NO_FILTERS } as const;
 const companies = (list: readonly { job: { company: string } }[]) =>
   list.map((row) => row.job.company);
 
@@ -42,12 +50,43 @@ describe('visibleRows', () => {
     expect(needed.every((row) => row.progress.attention)).toBe(true);
   });
 
-  it('leaves archived jobs out', () => {
+  it('leaves archived jobs out, unless the filters show them', () => {
     const archived = jobRows(
       sampleJobs().map((job) => ({ ...job, archived: true })),
       TODAY,
     );
     expect(visibleRows(archived, ALL)).toEqual([]);
+    expect(visibleRows(archived, { ...ALL, showArchived: true })).toHaveLength(12);
+  });
+
+  it('filters by fit, source, pay and resumes', () => {
+    expect(companies(visibleRows(rows, { ...ALL, tiers: ['strong'] }))).toEqual([
+      'Fernway',
+      'Northwind Labs',
+      'Tidewater Analytics',
+    ]);
+    expect(companies(visibleRows(rows, { ...ALL, tiers: ['none'] }))).toEqual([
+      'Bluewave Staffing',
+      'Sable Systems',
+    ]);
+    // The top of the range counts: Lumen's $160k–$190k pays at least $190k.
+    expect(companies(visibleRows(rows, { ...ALL, minPay: 190_000 }))).toEqual([
+      'Acme Robotics',
+      'Fernway',
+      'Copperleaf Energy',
+      'Northwind Labs',
+      'Lumen Health',
+    ]);
+    expect(visibleRows(rows, { ...ALL, hasResume: true })).toHaveLength(5);
+    expect(visibleRows(rows, { ...ALL, source: 'Added by hand' })).toEqual([]);
+  });
+});
+
+describe('filterCount and sources', () => {
+  it('counts the filters that are on, and lists where jobs came from', () => {
+    expect(filterCount(ALL)).toBe(0);
+    expect(filterCount({ ...ALL, tiers: ['strong', 'good'], minPay: 150_000 })).toBe(3);
+    expect(sources(rows)).toEqual(['HN October 2026']);
   });
 });
 

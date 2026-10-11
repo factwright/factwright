@@ -1,0 +1,24 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font: inherit;
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip:hover:not(.on) {
+  background: var(--fw-hover);
+}
+
+/* On, it takes its tone's tint, with a border that matches so the size doesn't change. */
+.on {
+  border-color: transparent;
+}

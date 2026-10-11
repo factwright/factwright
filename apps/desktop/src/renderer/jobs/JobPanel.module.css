@@ -348,46 +348,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.dialog {
-  width: min(720px, calc(100vw - 64px));
-  max-height: calc(100vh - 96px);
-  padding: 0;
-  border: 1px solid var(--fw-border);
-  border-radius: var(--fw-radius-xl);
-  background: var(--fw-surface);
-  color: var(--fw-text);
-  box-shadow: 0 24px 64px rgb(0 0 0 / 0.25);
-}
-
-.dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.dialog::backdrop {
-  background: rgb(0 0 0 / 0.35);
-}
-
-.dialogHead {
-  display: flex;
-  align-items: center;
-  gap: var(--fw-space-3);
-  padding: 14px var(--fw-space-4) 14px var(--fw-space-6);
-  border-bottom: 1px solid var(--fw-border);
-}
-
-.dialogTitle {
-  flex: 1 1 auto;
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.dialogBody {
-  overflow: auto;
-  padding: var(--fw-space-5) var(--fw-space-6) var(--fw-space-6);
-}
-
 /* Lists from a write-up, such as why the job fits. */
 .items {
   margin: var(--fw-space-1) 0 0;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { LIMITS } from '../../shared/limits.ts';
 import {
-  LIMITS,
   parseCallChanges,
   parseDate,
   parseJobChanges,

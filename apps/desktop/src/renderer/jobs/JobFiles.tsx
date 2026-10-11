@@ -1,7 +1,7 @@
 import type { Job, JobDocKind, JobDocs } from '@factwright/core';
-import { Button, IconButton, Markdown } from '@factwright/ui';
-import { FileText, X } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { Button, Dialog, Markdown } from '@factwright/ui';
+import { FileText } from 'lucide-react';
+import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { fileSize, shortDate } from './format.ts';
 import styles from './JobPanel.module.css';
@@ -16,50 +16,6 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
   { kind: 'unmask', name: 'Employer check', about: 'Who’s really hiring' },
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
-
-/** A document, shown in a window over the app, with formatting. */
-function DocumentDialog({
-  title,
-  text,
-  onClose,
-}: {
-  title: string;
-  text: string;
-  onClose: () => void;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
-  return (
-    <dialog
-      ref={dialog}
-      className={styles.dialog}
-      aria-labelledby={titleId}
-      onClose={onClose}
-      // Escape closes the document only, not the job's details behind it.
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') event.stopPropagation();
-      }}
-    >
-      <div className={styles.dialogHead}>
-        <h2 id={titleId} className={styles.dialogTitle}>
-          {title}
-        </h2>
-        <IconButton
-          label="Close"
-          variant="quiet"
-          icon={<X size={16} aria-hidden="true" />}
-          onClick={() => dialog.current?.close()}
-        />
-      </div>
-      <div className={styles.dialogBody}>
-        <Markdown text={text} />
-      </div>
-    </dialog>
-  );
-}
 
 /** A job's resumes, which open in the user's own app, and its documents, which open here. */
 export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
@@ -138,7 +94,11 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
           {problem}
         </p>
       )}
-      {open && <DocumentDialog title={open.title} text={open.text} onClose={() => setOpen(null)} />}
+      {open && (
+        <Dialog title={open.title} size="lg" onClose={() => setOpen(null)}>
+          <Markdown text={open.text} />
+        </Dialog>
+      )}
     </section>
   );
 }

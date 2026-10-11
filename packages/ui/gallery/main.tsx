@@ -4,9 +4,15 @@ import { type ReactNode, StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Button,
+  Checkbox,
+  Chip,
   DARK,
+  Dialog,
+  DialogActions,
+  Field,
   FitBadge,
   IconButton,
+  Input,
   LIGHT,
   Markdown,
   MoodBadge,
@@ -18,9 +24,11 @@ import {
   ScoreBar,
   SearchField,
   SegmentedControl,
+  Select,
   Stat,
   StatusPill,
   StatusSelect,
+  TextArea,
   ThemeStyle,
 } from '../src/index.ts';
 import styles from './gallery.module.css';
@@ -95,6 +103,8 @@ function TypeSample({
 function Showcase({ name, palette }: { name: string; palette: Palette }) {
   const [view, setView] = useState<View>('active');
   const [status, setStatus] = useState<JobStatus>('applied');
+  const [strong, setStrong] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
   return (
     <>
       <Section title="Colors">
@@ -186,6 +196,51 @@ function Showcase({ name, palette }: { name: string; palette: Palette }) {
         <div className={styles.row}>
           <StatusSelect status={status} label={`Status, ${name}`} onChange={setStatus} />
         </div>
+      </Section>
+
+      <Section title="Forms">
+        <div className={styles.form}>
+          <Field label="Next step" hint="With a date, it shows in Needs you when it’s due.">
+            {(control) => <Input {...control} defaultValue="Prepare questions about the team" />}
+          </Field>
+          <Field label="Date">
+            {(control) => <Input {...control} type="date" defaultValue="2026-10-12" />}
+          </Field>
+          <Field label="Kind">
+            {(control) => (
+              <Select {...control} defaultValue="technical">
+                <option value="screen">Recruiter screen</option>
+                <option value="technical">Technical interview</option>
+              </Select>
+            )}
+          </Field>
+          <Field label="Your notes">
+            {(control) => <TextArea {...control} defaultValue="Dana is the recruiter." />}
+          </Field>
+          <Checkbox label="Show archived jobs" />
+        </div>
+        <div className={styles.row}>
+          <Chip pressed={strong} tone="green" onClick={() => setStrong(!strong)}>
+            Strong
+          </Chip>
+          <Chip pressed={false}>Long shot</Chip>
+          <Button onClick={() => setDialogOpen(true)}>Open a dialog</Button>
+        </div>
+        {dialogOpen && (
+          <Dialog
+            title="Add a job"
+            description="For a job you found yourself. Your Claude can check it later."
+            onClose={() => setDialogOpen(false)}
+          >
+            <Field label="Company">
+              {(control) => <Input {...control} defaultValue="Fernway" />}
+            </Field>
+            <DialogActions>
+              <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button variant="primary">Add job</Button>
+            </DialogActions>
+          </Dialog>
+        )}
       </Section>
 
       <Section title="Fit">

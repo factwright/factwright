@@ -1,9 +1,18 @@
 import { type JobView, jobStats } from '@factwright/core';
-import { Button, EmptyState, SegmentedControl, Stat } from '@factwright/ui';
-import { Briefcase, SearchX } from 'lucide-react';
+import { Button, Checkbox, EmptyState, SegmentedControl, Stat } from '@factwright/ui';
+import { Activity, Briefcase, SearchX } from 'lucide-react';
+import { FiltersPanel } from './FiltersPanel.tsx';
 import { JobList } from './JobList.tsx';
 import styles from './JobsPage.module.css';
-import { type JobRow, type ListFilter, viewCounts, visibleRows } from './rows.ts';
+import {
+  filterCount,
+  type JobRow,
+  type ListFilter,
+  NO_FILTERS,
+  sources,
+  viewCounts,
+  visibleRows,
+} from './rows.ts';
 import type { JobsState } from './useJobs.ts';
 
 const VIEW_LABELS: Readonly<Record<JobView, string>> = {
@@ -27,6 +36,7 @@ export interface JobsPageProps {
   onRetry: () => void;
   canStartClaude: boolean;
   onStartClaude: () => void;
+  onOpenJourney: () => void;
 }
 
 /** The jobs page: the numbers that matter, the views, and the list of jobs. */
@@ -62,11 +72,21 @@ export function JobsPage(props: JobsPageProps) {
   const counts = viewCounts(rows, filter);
   const shown = visibleRows(rows, filter);
   const heardBack = stats.applied ? `${Math.round((100 * stats.heardBack) / stats.applied)}%` : '—';
+  const narrowed = Boolean(filter.query || filter.needsYou || filterCount(filter));
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>Jobs</h1>
-      {open.length > 0 && <p className={styles.summary}>{plural(open.length, 'job')}</p>}
+      <div className={styles.head}>
+        <div>
+          <h1 className={styles.title}>Jobs</h1>
+          {open.length > 0 && <p className={styles.summary}>{plural(open.length, 'job')}</p>}
+        </div>
+        {rows.length > 0 && (
+          <Button icon={<Activity size={16} aria-hidden="true" />} onClick={props.onOpenJourney}>
+            Your journey
+          </Button>
+        )}
+      </div>
 
       {open.length === 0 ? (
         <EmptyState
@@ -134,14 +154,13 @@ export function JobsPage(props: JobsPageProps) {
               value={filter.view}
               onChange={(view) => onFilter({ ...filter, view })}
             />
-            <label className={styles.needsYou}>
-              <input
-                type="checkbox"
-                checked={filter.needsYou}
-                onChange={(event) => onFilter({ ...filter, needsYou: event.target.checked })}
-              />
-              Needs you
-            </label>
+            <Checkbox
+              className={styles.needsYou}
+              label="Needs you"
+              checked={filter.needsYou}
+              onChange={(event) => onFilter({ ...filter, needsYou: event.target.checked })}
+            />
+            <FiltersPanel filter={filter} onFilter={onFilter} sources={sources(rows)} />
           </div>
 
           {shown.length > 0 ? (
@@ -152,15 +171,19 @@ export function JobsPage(props: JobsPageProps) {
                 title={filter.query ? `No jobs match “${filter.query}”` : 'Nothing here right now'}
                 icon={<SearchX size={20} aria-hidden="true" />}
                 action={
-                  filter.query || filter.needsYou ? (
-                    <Button onClick={() => onFilter({ ...filter, query: '', needsYou: false })}>
+                  narrowed ? (
+                    <Button
+                      onClick={() =>
+                        onFilter({ ...filter, ...NO_FILTERS, query: '', needsYou: false })
+                      }
+                    >
                       Show all in {VIEW_LABELS[filter.view]}
                     </Button>
                   ) : undefined
                 }
               >
-                {filter.query || filter.needsYou
-                  ? 'Try another view, or clear the search.'
+                {narrowed
+                  ? 'Try another view, or clear the search and filters.'
                   : 'Jobs move here as they change. Try another view.'}
               </EmptyState>
             </div>

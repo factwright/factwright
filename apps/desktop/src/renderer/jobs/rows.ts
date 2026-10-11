@@ -1,5 +1,6 @@
 import {
   type Attention,
+  type FitTier,
   isInView,
   JOB_VIEWS,
   type Job,
@@ -19,11 +20,46 @@ export interface JobRow {
   searchText: string;
 }
 
-/** What narrows the list: the view, the search box, and "Needs you". */
+/** A fit level to filter by: one of the tiers, or "none" for jobs that aren't scored yet. */
+export type TierFilter = FitTier | 'none';
+
+/** What narrows the list: the view, the search box, "Needs you", and the filters. */
 export interface ListFilter {
   view: JobView;
   query: string;
   needsYou: boolean;
+  /** The fit levels to show. None picked shows every level. */
+  tiers: TierFilter[];
+  /** Where the jobs turned up first, such as "HN October 2026". */
+  source: string | null;
+  /** The least yearly pay to show, in dollars. */
+  minPay: number | null;
+  hasResume: boolean;
+  showArchived: boolean;
+}
+
+/** The filters, all off. */
+export const NO_FILTERS: Omit<ListFilter, 'view' | 'query' | 'needsYou'> = {
+  tiers: [],
+  source: null,
+  minPay: null,
+  hasResume: false,
+  showArchived: false,
+};
+
+/** How many filters are on, for the Filters button. */
+export function filterCount(filter: ListFilter): number {
+  return (
+    filter.tiers.length +
+    [filter.source, filter.minPay, filter.hasResume, filter.showArchived].filter(Boolean).length
+  );
+}
+
+/** Every place jobs turned up first, for the filters. */
+export function sources(rows: readonly JobRow[]): string[] {
+  return [...new Set(rows.map((row) => row.job.source).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
 export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
@@ -51,15 +87,18 @@ export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
   });
 }
 
-/** The rows that match the search box and "Needs you", whatever the view. Archived jobs stay out. */
-function matching(rows: readonly JobRow[], { query, needsYou }: ListFilter): JobRow[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return rows.filter(
-    (row) =>
-      !row.job.archived &&
-      (!needsYou || row.progress.attention !== null) &&
-      words.every((word) => row.searchText.includes(word)),
-  );
+/** The rows that match the search box, "Needs you" and the filters, whatever the view. */
+function matching(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
+  const words = filter.query.toLowerCase().split(/\s+/).filter(Boolean);
+  return rows.filter(({ job, progress, searchText }) => {
+    if (job.archived && !filter.showArchived) return false;
+    if (filter.needsYou && progress.attention === null) return false;
+    if (filter.tiers.length > 0 && !filter.tiers.includes(progress.tier ?? 'none')) return false;
+    if (filter.source && job.source !== filter.source) return false;
+    if (filter.minPay && (job.pay?.max ?? 0) < filter.minPay) return false;
+    if (filter.hasResume && job.files.length === 0) return false;
+    return words.every((word) => searchText.includes(word));
+  });
 }
 
 /** The rows to show, most recent activity first. */

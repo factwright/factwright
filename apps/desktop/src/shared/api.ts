@@ -72,6 +72,9 @@ export interface CallChanges {
 /** Whether an edit was saved, and if not, why, in words the user can act on. */
 export type EditResult = { ok: true } | { ok: false; message: string };
 
+/** Whether a file was saved, or the user canceled, or why it couldn't be. */
+export type SaveFileResult = { ok: true; saved: boolean } | { ok: false; message: string };
+
 /** Whether a job was added, and its ID if so. */
 export type AddJobResult = { ok: true; jobId: string } | { ok: false; message: string };
 
@@ -106,4 +109,8 @@ export interface FactwrightApi {
   onJobsChanged(listener: (list: JobList) => void): () => void;
   /** Opens a resume from the workspace in the user's own app for it. */
   openFile(path: string): Promise<EditResult>;
+  /** Copies text to the clipboard, such as the journey as a flow chart. */
+  copyText(text: string): Promise<EditResult>;
+  /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */
+  saveFile(name: string, text: string): Promise<SaveFileResult>;
 }

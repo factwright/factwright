@@ -1,8 +1,8 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { cx } from '../cx.ts';
 import styles from './Button.module.css';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   /** Primary is for the one main action in a view. Quiet is for small, secondary actions. */
   variant?: 'primary' | 'secondary' | 'quiet';
   size?: 'md' | 'sm';

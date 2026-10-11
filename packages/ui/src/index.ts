@@ -1,6 +1,18 @@
 export { Button, type ButtonProps } from './components/Button.tsx';
+export { Chip, type ChipProps } from './components/Chip.tsx';
+export { Dialog, DialogActions, type DialogProps } from './components/Dialog.tsx';
 export { EmptyState, type EmptyStateProps } from './components/EmptyState.tsx';
 export { FIT_TIER_DISPLAY, FitBadge, type FitBadgeProps } from './components/FitBadge.tsx';
+export {
+  Checkbox,
+  type CheckboxProps,
+  Field,
+  type FieldControl,
+  type FieldProps,
+  Input,
+  Select,
+  TextArea,
+} from './components/Form.tsx';
 export { IconButton, type IconButtonProps } from './components/IconButton.tsx';
 export { Logo } from './components/Logo.tsx';
 export { Markdown, MarkdownLine, type MarkdownProps } from './components/Markdown.tsx';

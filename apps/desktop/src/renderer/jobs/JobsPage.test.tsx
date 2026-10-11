@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobsPage, type JobsPageProps } from './JobsPage.tsx';
-import { jobRows } from './rows.ts';
+import { jobRows, NO_FILTERS } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
 
 afterEach(cleanup);
@@ -18,13 +18,14 @@ function page(overrides: Partial<JobsPageProps> = {}) {
     jobs: { state: 'ready', list: { jobs, readAt: null } },
     rows: jobRows(jobs, TODAY),
     today: TODAY,
-    filter: { view: 'active', query: '', needsYou: false },
+    filter: { view: 'active', query: '', needsYou: false, ...NO_FILTERS },
     onFilter: vi.fn(),
     selectedId: null,
     onSelect: vi.fn(),
     onRetry: vi.fn(),
     canStartClaude: true,
     onStartClaude: vi.fn(),
+    onOpenJourney: vi.fn(),
     ...overrides,
   };
   render(<JobsPage {...props} />);
@@ -56,9 +57,9 @@ describe('JobsPage', () => {
       'northwind-labs--senior-software-engineer-platform',
     );
     await userEvent.click(screen.getByRole('radio', { name: 'Closed 3' }));
-    expect(props.onFilter).toHaveBeenCalledWith({ view: 'closed', query: '', needsYou: false });
+    expect(props.onFilter).toHaveBeenCalledWith(expect.objectContaining({ view: 'closed' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Needs you' }));
-    expect(props.onFilter).toHaveBeenCalledWith({ view: 'active', query: '', needsYou: true });
+    expect(props.onFilter).toHaveBeenCalledWith(expect.objectContaining({ needsYou: true }));
   });
 
   it('moves between jobs with the arrow keys', async () => {
@@ -72,10 +73,17 @@ describe('JobsPage', () => {
   });
 
   it('says when nothing matches, with a way back', async () => {
-    const props = page({ filter: { view: 'active', query: 'zebra', needsYou: false } });
+    const props = page({
+      filter: { view: 'active', query: 'zebra', needsYou: false, ...NO_FILTERS },
+    });
     expect(screen.getByText('No jobs match “zebra”')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Show all in Active' }));
-    expect(props.onFilter).toHaveBeenCalledWith({ view: 'active', query: '', needsYou: false });
+    expect(props.onFilter).toHaveBeenCalledWith({
+      view: 'active',
+      query: '',
+      needsYou: false,
+      ...NO_FILTERS,
+    });
   });
 
   it('offers to start Claude before there are any jobs', async () => {
