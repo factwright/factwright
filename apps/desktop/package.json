@@ -1,0 +1,17 @@
+{
+  "name": "@factwright/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Factwright app for Mac and Windows.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
