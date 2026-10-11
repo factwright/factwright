@@ -9,6 +9,7 @@ import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
 import type { RunServer } from './run-server.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
+import { RunSignals } from './signals.ts';
 import { claudeStatus, nodeStatusDeps } from './status.ts';
 
 /** What a run needs from the app: where things live, and where its output and signals go. */
@@ -84,9 +85,10 @@ export class ClaudeSession {
       return { ok: false, reason: 'failed', message: String(error) };
     }
 
+    const signals = new RunSignals(this.deps.onSignal);
     const run: Run = {
       terminal,
-      stopListening: this.deps.server.listen(token, this.deps.onSignal),
+      stopListening: this.deps.server.listen(token, (event) => signals.hear(event)),
       stopping: false,
     };
     this.run = run;

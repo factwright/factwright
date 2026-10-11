@@ -24,6 +24,18 @@ describe('sessionSettings', () => {
     ]);
   });
 
+  it('hears when Claude starts, uses tools, needs the user, and stops', () => {
+    expect(Object.keys(settings.hooks)).toEqual([
+      'UserPromptSubmit',
+      'PreToolUse',
+      'PostToolUse',
+      'PostToolUseFailure',
+      'PermissionRequest',
+      'Notification',
+      'Stop',
+    ]);
+  });
+
   it('sends every hook to the app, with the token read from the environment', () => {
     for (const groups of Object.values(settings.hooks)) {
       for (const group of groups) {
