@@ -4,7 +4,7 @@ import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 
-/** The most a fetched page may weigh, so a huge or endless answer can't fill memory. */
+/** The most a fetched page may weigh, unless the caller allows more, so a huge or endless answer can't fill memory. */
 const MAX_BYTES = 5_000_000;
 /** How long a fetch may take, redirects and all, unless the caller gives less time. */
 const TIME_LIMIT_MS = 20_000;
@@ -101,6 +101,7 @@ function get(
   url: URL,
   json: boolean,
   deadline: number,
+  maxBytes: number,
 ): Promise<{ status: number; location?: string; body: string }> {
   return new Promise((resolve, reject) => {
     const outgoing = request(
@@ -127,7 +128,7 @@ function get(
         const stream = decoded(response);
         stream.on('data', (chunk: Buffer) => {
           size += chunk.length;
-          if (size > MAX_BYTES) fail(new FetchRefused('That page is too big.'));
+          if (size > maxBytes) fail(new FetchRefused('That page is too big.'));
           else chunks.push(chunk);
         });
         stream.on('end', () => {
@@ -155,19 +156,20 @@ function get(
 
 /**
  * Fetches a public https page or API, following up to five redirects and checking each one,
- * within a time limit. JSON answers come back parsed.
+ * within a time and size limit. JSON answers come back parsed.
  */
 export async function fetchPublic(
   address: string,
   json: boolean,
   limitMs = TIME_LIMIT_MS,
+  maxBytes = MAX_BYTES,
 ): Promise<unknown> {
   const deadline = Date.now() + Math.min(limitMs, TIME_LIMIT_MS);
   let url = new URL(address);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const problem = linkProblem(url);
     if (problem) throw new FetchRefused(problem);
-    const answer = await get(url, json, deadline);
+    const answer = await get(url, json, deadline, maxBytes);
     if (answer.location !== undefined) {
       if (!answer.location) throw new Error(`${url.hostname} sent a redirect without an address`);
       url = new URL(answer.location, url);

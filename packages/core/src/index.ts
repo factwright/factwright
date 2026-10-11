@@ -1,4 +1,15 @@
 export { type ApplySteps, readApplySteps } from './apply-steps.ts';
+export {
+  type BoardJob,
+  type BoardSource,
+  boardJobLine,
+  boardMarkdown,
+  boardPostingId,
+  boardRequest,
+  boardSource,
+  boardSystem,
+  readBoard,
+} from './boards.ts';
 export { daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
 export {
@@ -14,6 +25,16 @@ export {
   type ScorePartKey,
   type Sentiment,
 } from './fit-report.ts';
+export {
+  HN_THREADS_URL,
+  type HnPost,
+  type HnThread,
+  hiringThread,
+  hnItemUrl,
+  hnThreadLink,
+  hnThreadMarkdown,
+  readHnThread,
+} from './hn.ts';
 export {
   type CollectedJob,
   collectJobs,

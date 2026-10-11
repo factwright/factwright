@@ -5,6 +5,7 @@ import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import type { McpTool } from './mcp.ts';
 import { readPage, type SavePostingDeps, savePosting } from './posting.ts';
 import { buildResume } from './resume.ts';
+import { hnJobs, jobBoard } from './search.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
@@ -14,12 +15,24 @@ export interface ToolDeps {
   fetch?: SavePostingDeps['fetch'];
 }
 
+const SEARCH_FOLDER = {
+  type: 'string',
+  description: 'The job search’s folder name under searches/, such as 2026-11-hn-whos-hiring.',
+};
+
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading web pages, saving postings word for word, and building resumes. Use them to read the tracker and the web, and to make resume files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading web pages, saving postings word for word, reading whole job boards and Hacker News’s hiring thread, and building resumes. Use them to read the tracker and the web, and to make resume files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = ['find_job', 'job_details', 'build_resume'];
+
+/**
+ * The tools that reach only fixed public job APIs: the applicant systems' boards and Hacker
+ * News's. They send nothing but a board's name or a month, never a link a posting gave, so
+ * Claude may call them without asking too.
+ */
+export const PUBLIC_API_TOOLS = ['job_board', 'hn_jobs'];
 
 /** Tools that only read, and don't reach past this computer. */
 const READS = { readOnlyHint: true, openWorldHint: false };
@@ -177,6 +190,56 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
       run: async (input) =>
         savePosting(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
+          workspace: deps.workspace,
+          ...(deps.fetch && { fetch: deps.fetch }),
+          ...(deps.now && { now: deps.now }),
+        }),
+    },
+    {
+      name: 'job_board',
+      description:
+        'Reads every open job on a company’s board on Greenhouse, Lever, Ashby or Gem, and saves them word for word as one file in a job search’s folder. Lists each job with where, pay, when it was posted, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Use it to see all a company is hiring for, and to check that a job is still open.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description:
+              'A link to the company’s board or one of its postings, such as https://jobs.ashbyhq.com/acme.',
+          },
+          folder: SEARCH_FOLDER,
+        },
+        required: ['url', 'folder'],
+        additionalProperties: false,
+      },
+      // It reads a public API and saves what it read, replacing the last copy.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      run: async (input) =>
+        jobBoard(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
+          workspace: deps.workspace,
+          ...(deps.fetch && { fetch: deps.fetch }),
+          ...(deps.now && { now: deps.now }),
+        }),
+    },
+    {
+      name: 'hn_jobs',
+      description:
+        'Reads every job post in Hacker News’s monthly “Ask HN: Who is hiring?” thread and saves them word for word as hn-thread.md in a job search’s folder. Lists each post’s first line (by the thread’s rules: company, role and place), its HN id, and the line it starts on in the file. Without a month, it reads the newest thread. Saving again brings in posts added since.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          month: {
+            type: 'string',
+            description: 'The thread’s month as YYYY-MM, such as 2026-11. Without it, the newest.',
+          },
+          folder: SEARCH_FOLDER,
+        },
+        required: ['folder'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      run: async (input) =>
+        hnJobs(textInput(input, 'month', false), textInput(input, 'folder', true) ?? '', {
           workspace: deps.workspace,
           ...(deps.fetch && { fetch: deps.fetch }),
           ...(deps.now && { now: deps.now }),

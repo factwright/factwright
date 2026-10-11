@@ -39,10 +39,12 @@ Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools
 - **read_page:** a public web page as plain text, such as a posting, a careers page or a team page. Postings on Greenhouse, Lever, Ashby and Gem are read from the applicant system's API. It answers with at most 40,000 characters, since Claude Code moves longer answers somewhere Claude can't read.
 - **save_posting:** saves a posting word for word in the job's folder, the same way. A posting already saved there is kept.
 - **build_resume:** builds a job's resume from its `resume.json` with the [resume engine](../../packages/engine), as a PDF, a Word file or both. It checks the resume against your rules and confidential terms, and says how many pages it runs to, how full the last one is, and which lines run short. Once you've applied to a job, it keeps the files you sent.
+- **job_board:** every open job on a company's board on Greenhouse, Lever, Ashby or Gem, saved word for word as one file in a job search's folder, with a list for Claude: where each job is, its pay, when it was posted, and its link. Given a link to one posting, it says whether that posting is still open. Only the board's name goes to the applicant system's API.
+- **hn_jobs:** every job post in Hacker News's monthly "Who is hiring?" thread, saved word for word as `hn-thread.md` in a job search's folder, with each post's first line for Claude. A long thread comes with where each run of 50 posts sits in the file, so Claude can split the reading between helpers.
 
-Reading and saving only fetch public https sites, never this computer or your home network, and give up on pages that are too big or too slow.
+Reading and saving only fetch public https sites, never this computer or your home network, and give up on pages that are too big or too slow. A whole board can run to 25 MB, since big companies' boards carry every posting in full; a page stops at 5 MB.
 
-The tools that stay on this computer run without asking, as do web searches and Factwright's skills. Claude Code asks you before each page read_page or save_posting fetches, since they reach the internet: a job post could otherwise steer Claude into sending your details to a site in a link.
+The tools that stay on this computer run without asking, as do web searches and Factwright's skills. So do job_board and hn_jobs: they reach only the applicant systems' and Hacker News's public APIs, and send them nothing but a board's name or a month. Claude Code asks you before each page read_page or save_posting fetches, since they reach any site: a job post could otherwise steer Claude into sending your details to a site in a link.
 
 ## Printing resumes
 The main process prints resumes in one hidden window ([`src/main/resume`](src/main/resume)), with Chromium's own layout, so the PDF matches what was measured:
@@ -59,6 +61,7 @@ Each job keeps its ID in the tracker, so your notes stay with it as new work com
 
 The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved mockup:
 - **The list:** the numbers that matter (in play, applied, heard back, needs you), the views (active, to review, applied, closed), search across companies, roles and notes, and each job's next step. Rows reflow to fit the window instead of scrolling sideways.
+- **Find jobs:** starts a job search in Claude's panel, the same safe way as the Run buttons: the app types `/factwright:job-search` itself, and Claude asks you where to look, with the newest HN "Who is hiring?" thread first. The jobs that fit land under To review.
 - **The job panel:** everything on file for the picked job:
   - its status, which you can change
   - the next step, with a date that puts it in "Needs you" when it's due
@@ -88,4 +91,4 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
 
-**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools and skills, shows your jobs with their Run buttons, and keeps your tracker. Job searches come next.
+**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools and skills, shows your jobs with their Run buttons, runs job searches, and keeps your tracker. Pasting an application's questions before a run comes next.

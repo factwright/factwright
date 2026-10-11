@@ -41,12 +41,18 @@ function sampleRun(dark: boolean) {
       `${color(main, ' three questions to ask them.')}\r\n\r\n${color(secondary, '❯')} `,
     ],
     /** A Run button's command, typed into the run, and a short made-up result. */
-    task: (task: RunTask) => [
-      `${color(main, `/factwright:${task.skill} job ${task.jobId}`)}\r\n\r\n`,
-      `${color('34', '✻')} ${color(secondary, 'Reading everything on file for the job…')}\r\n`,
-    ],
-    taskDone: [
-      `\r\n${color(main, '⏺ Done. The job’s panel shows what changed.')}\r\n\r\n${color(secondary, '❯')} `,
+    task: (task: RunTask) =>
+      'jobId' in task
+        ? [
+            `${color(main, `/factwright:${task.skill} job ${task.jobId}`)}\r\n\r\n`,
+            `${color('34', '✻')} ${color(secondary, 'Reading everything on file for the job…')}\r\n`,
+          ]
+        : [
+            `${color(main, `/factwright:${task.skill}`)}\r\n\r\n`,
+            `${color('34', '✻')} ${color(secondary, 'Reading the newest “Who is hiring?” thread…')}\r\n`,
+          ],
+    taskDone: (task: RunTask) => [
+      `\r\n${color(main, `⏺ Done. ${'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under To review.'}`)}\r\n\r\n${color(secondary, '❯')} `,
     ],
   };
 }
@@ -74,7 +80,7 @@ export function sampleApi(): FactwrightApi {
     signal('working');
     print(run.task(task));
     setTimeout(() => {
-      print(run.taskDone);
+      print(run.taskDone(task));
       signal('done');
     }, 1600);
   };

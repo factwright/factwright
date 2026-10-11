@@ -1,5 +1,5 @@
 import type { Job, JobStatus } from '@factwright/core';
-import type { RunSkill, RunTask } from '../../shared/runs.ts';
+import { type RunSkill, type RunTask, taskJob } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
 import styles from './RunActions.module.css';
 
@@ -43,7 +43,7 @@ export interface RunControls {
 }
 
 /** While Claude is busy, other runs wait. */
-const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
+export const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
 
 type Tone = 'run' | 'ok' | 'quiet';
 
@@ -73,7 +73,7 @@ export function RunActions({
       </h3>
       <div className={styles.actions}>
         {RUN_ACTIONS.map(({ skill, label, why }) => {
-          const mine = run.task?.skill === skill && run.task.jobId === job.id;
+          const mine = run.task?.skill === skill && taskJob(run.task) === job.id;
           const running = mine && busy;
           const done = mine && run.phase === 'done';
           const [state, tone] = stateOf(job, skill, running, done);
