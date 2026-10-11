@@ -1,4 +1,5 @@
 export { isIsoDate } from './dates.ts';
+export { FIT_TIERS, type FitTier } from './fit.ts';
 export { companyKey, roleKey, slug } from './keys.ts';
 export { type PayRange, parsePay } from './pay.ts';
 export {

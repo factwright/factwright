@@ -1,0 +1,51 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--fw-radius-full);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gray {
+  background: var(--fw-tone-gray-bg);
+  color: var(--fw-tone-gray-fg);
+}
+
+.slate {
+  background: var(--fw-tone-slate-bg);
+  color: var(--fw-tone-slate-fg);
+}
+
+.violet {
+  background: var(--fw-tone-violet-bg);
+  color: var(--fw-tone-violet-fg);
+}
+
+.blue {
+  background: var(--fw-tone-blue-bg);
+  color: var(--fw-tone-blue-fg);
+}
+
+.teal {
+  background: var(--fw-tone-teal-bg);
+  color: var(--fw-tone-teal-fg);
+}
+
+.purple {
+  background: var(--fw-tone-purple-bg);
+  color: var(--fw-tone-purple-fg);
+}
+
+.green {
+  background: var(--fw-tone-green-bg);
+  color: var(--fw-tone-green-fg);
+}
+
+.amber {
+  background: var(--fw-tone-amber-bg);
+  color: var(--fw-tone-amber-fg);
+}
