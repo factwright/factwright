@@ -1,0 +1,207 @@
+.hint {
+  margin: 6px 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.boxTitle {
+  display: block;
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--fw-space-3);
+}
+
+/* Next step: a calm box near the top, since it decides what shows in "Needs you". */
+.nextStep {
+  margin-top: var(--fw-space-4);
+  padding: 12px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bar);
+}
+
+/* The date sits beside the step, or under it when the panel is narrow. */
+.nextRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+}
+
+.nextRow > :first-child {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.nextDate {
+  flex: 0 0 140px;
+  width: 140px;
+}
+
+.calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call {
+  padding: 10px 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+/* The call and when it is, with its delete button at the right. */
+.callHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+}
+
+.callTitle {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.callKind {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.callWhen {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.callControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.small select {
+  height: 30px;
+  font-size: var(--fw-text-sm);
+}
+
+/* Set widths, so "Scheduled" and "Moved forward" never get cut off. */
+.stateSelect {
+  flex: 0 0 112px;
+}
+
+.outcomeSelect {
+  flex: 1 1 140px;
+  max-width: 180px;
+}
+
+.delete {
+  flex: 0 0 auto;
+  margin: -2px -6px 0 0;
+}
+
+.callNotes {
+  margin: var(--fw-space-2) 0 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+/* The form to log a call, opened in place under the calls. */
+.logForm {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--fw-accent);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.wide {
+  grid-column: span 2;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-3);
+}
+
+.saveState {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.notes {
+  margin-top: var(--fw-space-2);
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.history li {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  min-height: 30px;
+}
+
+.when {
+  flex: 0 0 120px;
+  color: var(--fw-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.when .whenInput {
+  width: 120px;
+  height: 28px;
+  padding: 0 6px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+}
+
+.what {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.archive {
+  margin-top: 26px;
+  padding-top: var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+}
+
+.archiveRow {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+}
+
+.archiveRow .hint {
+  margin: 0;
+}

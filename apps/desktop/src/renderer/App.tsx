@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import styles from './App.module.css';
 import { ClaudePanel } from './ClaudePanel.tsx';
+import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
-import { jobRows, type ListFilter, startingView } from './jobs/rows.ts';
+import { JourneyDialog } from './jobs/JourneyDialog.tsx';
+import { jobRows, type ListFilter, NO_FILTERS, startingView } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
@@ -24,8 +26,14 @@ export function App({ api }: { api: FactwrightApi }) {
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
     [jobs, today],
   );
-  const [filter, setFilter] = useState<ListFilter>({ view: 'active', query: '', needsYou: false });
+  const [filter, setFilter] = useState<ListFilter>({
+    view: 'active',
+    query: '',
+    needsYou: false,
+    ...NO_FILTERS,
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<'add-job' | 'journey' | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
 
@@ -61,6 +69,7 @@ export function App({ api }: { api: FactwrightApi }) {
         query={filter.query}
         onQuery={(query) => setFilter((current) => ({ ...current, query }))}
         searchRef={search}
+        onAddJob={() => setDialog('add-job')}
       />
       <div className={styles.body}>
         <Sidebar
@@ -81,6 +90,7 @@ export function App({ api }: { api: FactwrightApi }) {
               onRetry={reload}
               canStartClaude={ready && !isRunning(run.phase)}
               onStartClaude={run.requestStart}
+              onOpenJourney={() => setDialog('journey')}
             />
             {openJobs > 0 && (
               <JobPanel
@@ -94,6 +104,25 @@ export function App({ api }: { api: FactwrightApi }) {
           <ClaudePanel api={api} run={run} plan={plan} />
         </div>
       </div>
+      {dialog === 'add-job' && (
+        <AddJobDialog
+          api={api}
+          onAdded={(jobId, status) => {
+            // Show the new job in the list as well as the panel.
+            setFilter({
+              ...NO_FILTERS,
+              view: status === 'new' ? 'review' : 'active',
+              query: '',
+              needsYou: false,
+            });
+            setSelectedId(jobId);
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'journey' && (
+        <JourneyDialog rows={rows} api={api} today={today} onClose={() => setDialog(null)} />
+      )}
     </div>
   );
 }

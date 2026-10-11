@@ -42,3 +42,8 @@
   max-width: 520px;
   -webkit-app-region: no-drag;
 }
+
+.add {
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}

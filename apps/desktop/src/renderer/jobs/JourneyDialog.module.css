@@ -1,0 +1,78 @@
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+  font-size: var(--fw-text-md);
+}
+
+.label {
+  flex: 0 0 104px;
+}
+
+.count {
+  flex: 0 0 32px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.track {
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--fw-sunken);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+}
+
+.heading {
+  margin: 22px 0 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.endings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin-top: 22px;
+  padding-top: var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+}
+
+.hint,
+.problem {
+  margin: 10px 0 0;
+  font-size: var(--fw-text-sm);
+}
+
+.hint {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}

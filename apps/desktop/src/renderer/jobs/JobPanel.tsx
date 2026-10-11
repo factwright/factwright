@@ -1,29 +1,19 @@
-import {
-  CALL_KIND_LABELS,
-  CALL_OUTCOME_LABELS,
-  CALL_STATE_LABELS,
-  type Call,
-  callWhen,
-  type Job,
-  type JobStatus,
-  readApplySteps,
-} from '@factwright/core';
-import {
-  FitBadge,
-  IconButton,
-  JOB_STATUS_DISPLAY,
-  Markdown,
-  MarkdownLine,
-  Notice,
-  StatusSelect,
-} from '@factwright/ui';
+import { type JobStatus, readApplySteps } from '@factwright/core';
+import { FitBadge, IconButton, Markdown, MarkdownLine, Notice, StatusSelect } from '@factwright/ui';
 import { ArrowUpRight, X } from 'lucide-react';
 import { type KeyboardEvent, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { payLabel, shortDate } from './format.ts';
+import { payLabel } from './format.ts';
 import { FilesSection } from './JobFiles.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
+import {
+  ArchiveFooter,
+  CallsSection,
+  HistorySection,
+  NextStep,
+  NotesSection,
+} from './JobTracking.tsx';
 import type { JobRow } from './rows.ts';
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: styles.info } as const;
@@ -64,66 +54,6 @@ function ApplySection({ markdown }: { markdown: string }) {
         {steps && <Markdown text={steps} />}
       </Notice>
     </div>
-  );
-}
-
-function callSummary(call: Call, today: string): string {
-  const outcome = call.outcome ? ` · ${CALL_OUTCOME_LABELS[call.outcome]}` : '';
-  return `${callWhen(call, today)} · ${CALL_STATE_LABELS[call.state]}${outcome}`;
-}
-
-function CallsSection({ job, today }: { job: Job; today: string }) {
-  return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>Calls and interviews</h3>
-      {job.calls.length === 0 ? (
-        <p className={styles.quiet}>None logged yet.</p>
-      ) : (
-        <ul className={styles.calls}>
-          {job.calls.map((call) => (
-            <li key={call.id}>
-              <span className={styles.callKind}>{CALL_KIND_LABELS[call.kind]}</span>
-              <span className={styles.meta}>{callSummary(call, today)}</span>
-              {call.notes && <p className={styles.callNotes}>{call.notes}</p>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/** Everything that happened with the job, newest first. */
-function HistorySection({ job, today }: { job: Job; today: string }) {
-  const entries = [
-    ...job.events.map((event) => ({ id: event.id, date: event.date, text: event.title })),
-    ...job.statusLog.map((change) => ({
-      id: change.id,
-      date: change.at,
-      text: `Marked ${JOB_STATUS_DISPLAY[change.status].label}`,
-    })),
-    // Calls still to come are under "Calls and interviews", not history yet.
-    ...job.calls
-      .filter((call) => call.onDate <= today)
-      .map((call) => ({
-        id: call.id,
-        date: call.onDate,
-        text: `${CALL_KIND_LABELS[call.kind]}: ${CALL_STATE_LABELS[call.state].toLowerCase()}`,
-      })),
-  ].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-  if (entries.length === 0) return null;
-  return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>History</h3>
-      <ol className={styles.history}>
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <span className={styles.when}>{entry.date ? shortDate(entry.date, today) : ''}</span>
-            <span>{entry.text}</span>
-          </li>
-        ))}
-      </ol>
-    </section>
   );
 }
 
@@ -202,19 +132,22 @@ export function JobPanel({ row, api, today, onClose }: JobPanelProps) {
         <p className={`${styles.next} ${NEXT_TONE[attention.level]}`}>{next.text}</p>
       )}
 
+      <NextStep key={`next-${job.id}`} job={job} api={api} />
       {job.apply && <ApplySection markdown={job.apply} />}
       <ScoreSection job={job} today={today} />
       <SentimentSection job={job} today={today} />
-      <FilesSection key={job.id} job={job} api={api} today={today} />
+      <CallsSection
+        key={`calls-${job.id}`}
+        job={job}
+        status={progress.status}
+        api={api}
+        today={today}
+      />
+      <NotesSection key={`notes-${job.id}`} job={job} api={api} />
+      <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} />
       <SearchSection job={job} today={today} />
-      {job.notes && (
-        <section className={styles.section}>
-          <h3 className={styles.heading}>Your notes</h3>
-          <p className={styles.notes}>{job.notes}</p>
-        </section>
-      )}
-      <CallsSection job={job} today={today} />
-      <HistorySection job={job} today={today} />
+      <HistorySection job={job} api={api} today={today} />
+      <ArchiveFooter job={job} api={api} />
     </aside>
   );
 }

@@ -94,7 +94,8 @@ function resume(company: string, modified: string) {
   };
 }
 
-function job(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'role'>): Job {
+/** A made-up job, with anything not given left empty. */
+export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'role'>): Job {
   return {
     companyKey: base.id.split('--')[0] ?? base.id,
     link: `https://jobs.example/${base.id}`,
@@ -142,7 +143,7 @@ const changes = (id: string, steps: [JobStatus, number][]) =>
 /** Made-up jobs for the sample screens, with every state the list and the panel can show. */
 export function sampleJobs(): Job[] {
   return [
-    job({
+    sampleJob({
       id: 'northwind-labs--senior-software-engineer-platform',
       company: 'Northwind Labs',
       role: 'Senior Software Engineer, Platform',
@@ -208,7 +209,7 @@ export function sampleJobs(): Job[] {
       ],
       lastActivity: day(-2),
     }),
-    job({
+    sampleJob({
       id: 'acme-robotics--staff-engineer-developer-tools',
       company: 'Acme Robotics',
       role: 'Staff Engineer, Developer Tools',
@@ -243,7 +244,7 @@ export function sampleJobs(): Job[] {
       lastActivity: day(-1),
       events: [{ id: 'acme-fit', tool: 'fit-check', date: day(-1), title: 'Fit check: Good 78' }],
     }),
-    job({
+    sampleJob({
       id: 'tidewater-analytics--senior-backend-engineer',
       company: 'Tidewater Analytics',
       role: 'Senior Backend Engineer',
@@ -261,7 +262,7 @@ export function sampleJobs(): Job[] {
       files: [resume('Tidewater Analytics', day(-12))],
       docKinds: ['posting', 'job'],
     }),
-    job({
+    sampleJob({
       id: 'lumen-health--senior-full-stack-engineer',
       company: 'Lumen Health',
       role: 'Senior Full-Stack Engineer',
@@ -280,7 +281,7 @@ export function sampleJobs(): Job[] {
       files: [resume('Lumen Health', day(-4))],
       docKinds: ['posting', 'answers'],
     }),
-    job({
+    sampleJob({
       id: 'brightpath-learning--software-engineer-iii',
       company: 'Brightpath Learning',
       role: 'Software Engineer III',
@@ -292,7 +293,7 @@ export function sampleJobs(): Job[] {
       lastActivity: day(-1),
       docKinds: ['posting'],
     }),
-    job({
+    sampleJob({
       id: 'harbor-and-pine--senior-engineer-payments',
       company: 'Harbor & Pine',
       role: 'Senior Engineer, Payments',
@@ -307,7 +308,7 @@ export function sampleJobs(): Job[] {
       files: [resume('Harbor & Pine', day(-13))],
       notes: 'Referred by a former teammate. Ask about the new payments team.',
     }),
-    job({
+    sampleJob({
       id: 'fernway--engineering-lead',
       company: 'Fernway',
       role: 'Engineering Lead, Integrations',
@@ -325,7 +326,7 @@ export function sampleJobs(): Job[] {
         ['offer', -1],
       ]),
     }),
-    job({
+    sampleJob({
       id: 'copperleaf-energy--principal-engineer',
       company: 'Copperleaf Energy',
       role: 'Principal Engineer',
@@ -347,14 +348,14 @@ export function sampleJobs(): Job[] {
       lastActivity: day(-2),
       docKinds: ['posting'],
     }),
-    job({
+    sampleJob({
       id: 'bluewave-staffing--senior-engineer',
       company: 'Bluewave Staffing',
       role: 'Senior Engineer (client: fintech)',
       firstSeen: day(-1),
       lastActivity: day(-1),
     }),
-    job({
+    sampleJob({
       id: 'meridian-freight--staff-engineer',
       company: 'Meridian Freight',
       role: 'Staff Engineer',
@@ -368,7 +369,7 @@ export function sampleJobs(): Job[] {
         ['rejected', -9],
       ]),
     }),
-    job({
+    sampleJob({
       id: 'sable-systems--platform-engineer',
       company: 'Sable Systems',
       role: 'Platform Engineer',
@@ -381,7 +382,7 @@ export function sampleJobs(): Job[] {
         ['ghosted', -5],
       ]),
     }),
-    job({
+    sampleJob({
       id: 'orchard-health--backend-engineer',
       company: 'Orchard Health',
       role: 'Backend Engineer',

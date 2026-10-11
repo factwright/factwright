@@ -1,6 +1,17 @@
 import { statSync } from 'node:fs';
-import { type IpcMainEvent, type IpcMainInvokeEvent, ipcMain, shell } from 'electron';
-import type { EditResult } from '../shared/api.ts';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+  ipcMain,
+  shell,
+} from 'electron';
+import type { EditResult, SaveFileResult } from '../shared/api.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
 import {
@@ -11,10 +22,16 @@ import {
   parseNewJob,
 } from './jobs/input.ts';
 import type { JobsService } from './jobs/service.ts';
-import { openableFile, parseTerminalSize } from './policy.ts';
+import { openableFile, parseTerminalSize, saveableFileName } from './policy.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
+
+/** The most text the window may copy or save at once, such as a long journey spreadsheet. */
+const MAX_TEXT_LENGTH = 5_000_000;
+
+const isText = (value: unknown): value is string =>
+  typeof value === 'string' && value.length <= MAX_TEXT_LENGTH;
 
 /** The answer to an edit the window sent in a shape the app doesn't take. */
 const REFUSED: EditResult = { ok: false, message: 'That change couldn’t be saved.' };
@@ -117,4 +134,32 @@ export function registerIpc({ isAppPage, claude: session, jobs, workspace }: Ipc
     const failed = await shell.openPath(file);
     return failed ? { ok: false, message: 'Your computer couldn’t open that file.' } : { ok: true };
   });
+
+  answer('clipboard:write', (text): EditResult => {
+    if (!isText(text)) return REFUSED;
+    clipboard.writeText(text);
+    return { ok: true };
+  });
+
+  // The user picks where the file goes, in the system's own save dialog.
+  ipcMain.handle(
+    'files:save',
+    async (event, name: unknown, text: unknown): Promise<SaveFileResult> => {
+      if (!fromApp(event)) throw new Error('Refused a request from a page outside the app.');
+      const fileName = saveableFileName(name);
+      if (!fileName || !isText(text)) return { ok: false, message: 'That file couldn’t be saved.' };
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const options = { defaultPath: join(app.getPath('downloads'), fileName) };
+      const choice = window
+        ? await dialog.showSaveDialog(window, options)
+        : await dialog.showSaveDialog(options);
+      if (choice.canceled || !choice.filePath) return { ok: true, saved: false };
+      try {
+        await writeFile(choice.filePath, text);
+        return { ok: true, saved: true };
+      } catch {
+        return { ok: false, message: 'That folder can’t be written to. Pick another one.' };
+      }
+    },
+  );
 }

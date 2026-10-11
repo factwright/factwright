@@ -1,0 +1,64 @@
+.box {
+  position: relative;
+}
+
+/* On, the button wears the accent, so it's clear the list is filtered. */
+.box .active,
+.box .active:hover:not(:disabled) {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 340px;
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: 14px;
+  background: var(--fw-surface);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.16);
+}
+
+.tiers {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--fw-space-2);
+}
+
+.pay {
+  width: 110px;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--fw-space-3);
+  border-top: 1px solid var(--fw-border);
+}

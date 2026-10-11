@@ -46,6 +46,15 @@ export function isSafeExternalUrl(url: string): boolean {
 }
 
 /**
+ * A name the window may suggest for a file it saves, such as "job-search-journey.csv": letters,
+ * digits, spaces and ".-_()", ending in .csv or .txt, with no folders. Anything else is null.
+ */
+export function saveableFileName(name: unknown): string | null {
+  if (typeof name !== 'string' || name.length > 100) return null;
+  return /^[\w][\w .()-]*\.(csv|txt)$/i.test(name) ? name : null;
+}
+
+/**
  * A resume the window may open in the user's own app for it: a PDF or Word file inside the
  * workspace. Anything else, or a path that leads outside, is null.
  */

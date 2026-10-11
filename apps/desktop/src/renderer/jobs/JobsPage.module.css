@@ -5,6 +5,13 @@
   padding: var(--fw-space-6) 28px;
 }
 
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--fw-space-4);
+}
+
 .title {
   margin: 0;
   font-size: var(--fw-text-xl);
@@ -24,8 +31,7 @@
   margin-top: var(--fw-space-5);
 }
 
-.title + *,
-.summary + * {
+.head + * {
   margin-top: 18px;
 }
 
@@ -44,19 +50,7 @@
 }
 
 .needsYou {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   margin-left: auto;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.needsYou input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--fw-accent);
 }
 
 .noMatch {

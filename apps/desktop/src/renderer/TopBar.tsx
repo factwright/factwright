@@ -1,4 +1,5 @@
-import { Logo, SearchField } from '@factwright/ui';
+import { Button, Logo, SearchField } from '@factwright/ui';
+import { Plus } from 'lucide-react';
 import type { Ref } from 'react';
 import styles from './TopBar.module.css';
 
@@ -7,10 +8,11 @@ export interface TopBarProps {
   query: string;
   onQuery: (query: string) => void;
   searchRef: Ref<HTMLInputElement>;
+  onAddJob: () => void;
 }
 
 /** The bar across the top of the window, with search. It also holds the system's window buttons. */
-export function TopBar({ platform, query, onQuery, searchRef }: TopBarProps) {
+export function TopBar({ platform, query, onQuery, searchRef, onAddJob }: TopBarProps) {
   const mac = platform === 'darwin';
   return (
     <header className={`${styles.bar} ${mac ? styles.mac : styles.overlay}`}>
@@ -29,6 +31,14 @@ export function TopBar({ platform, query, onQuery, searchRef }: TopBarProps) {
           if (event.key === 'Escape') onQuery('');
         }}
       />
+      <Button
+        className={styles.add}
+        variant="primary"
+        icon={<Plus size={16} aria-hidden="true" />}
+        onClick={onAddJob}
+      >
+        Add job
+      </Button>
     </header>
   );
 }

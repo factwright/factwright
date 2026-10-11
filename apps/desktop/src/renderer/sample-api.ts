@@ -1,6 +1,5 @@
-import { localDate } from '@factwright/core';
-import type { ClaudeStatus, FactwrightApi, JobList, RunSignal } from '../shared/api.ts';
-import { sampleDocs, sampleJobs } from './jobs/sample-jobs.ts';
+import type { ClaudeStatus, FactwrightApi, RunSignal } from '../shared/api.ts';
+import { sampleTracker } from './jobs/sample-tracker.ts';
 
 const READY: ClaudeStatus = { state: 'ready', version: '2.1.296', plan: 'max' };
 
@@ -62,13 +61,6 @@ export function sampleApi(): FactwrightApi {
   };
   let waitingForAnswer = false;
   let run = sampleRun(false);
-  const jobsMode = query.get('jobs');
-  let list: JobList = {
-    jobs: jobsMode === 'none' ? [] : sampleJobs(),
-    readAt: new Date().toISOString(),
-  };
-  const jobListeners = new Set<(list: JobList) => void>();
-
   return {
     platform: query.get('platform') ?? 'darwin',
     claudeStatus: () =>
@@ -106,56 +98,6 @@ export function sampleApi(): FactwrightApi {
       signalListeners.add(listener);
       return () => signalListeners.delete(listener);
     },
-    listJobs: () =>
-      jobsMode === 'loading'
-        ? new Promise(() => {})
-        : jobsMode === 'failed'
-          ? Promise.reject(new Error('Sample failure'))
-          : Promise.resolve(list),
-    jobDocs: async (jobId) => {
-      const job = list.jobs.find((each) => each.id === jobId);
-      return job ? sampleDocs(job) : null;
-    },
-    updateJob: async (jobId, changes) => {
-      const { status } = changes;
-      if (status === undefined) return unsaved();
-      const today = localDate();
-      list = {
-        ...list,
-        jobs: list.jobs.map((job) =>
-          job.id === jobId
-            ? {
-                ...job,
-                status,
-                statusOn: status ? today : null,
-                statusLog: status
-                  ? [
-                      ...job.statusLog,
-                      { id: `${jobId}-${job.statusLog.length}`, status, at: today },
-                    ]
-                  : job.statusLog,
-              }
-            : job,
-        ),
-      };
-      for (const listener of jobListeners) listener(list);
-      return { ok: true };
-    },
-    addJob: unsaved,
-    addCall: unsaved,
-    updateCall: unsaved,
-    deleteCall: unsaved,
-    redateStatusChange: unsaved,
-    undoStatusChange: unsaved,
-    onJobsChanged: (listener) => {
-      jobListeners.add(listener);
-      return () => jobListeners.delete(listener);
-    },
-    openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
+    ...sampleTracker(query.get('jobs')),
   };
-}
-
-/** Edits in the sample screens go nowhere. */
-async function unsaved() {
-  return { ok: false as const, message: 'The sample screens don’t save changes.' };
 }

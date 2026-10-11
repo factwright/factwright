@@ -3,8 +3,10 @@ import { render } from '@testing-library/react';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
 import { Button } from './components/Button.tsx';
+import { Chip } from './components/Chip.tsx';
 import { EmptyState } from './components/EmptyState.tsx';
 import { FitBadge } from './components/FitBadge.tsx';
+import { Checkbox, Field, Input, Select, TextArea } from './components/Form.tsx';
 import { IconButton } from './components/IconButton.tsx';
 import { Logo } from './components/Logo.tsx';
 import { Markdown } from './components/Markdown.tsx';
@@ -54,6 +56,22 @@ describe('accessibility', () => {
         <Stat label="Needs you" value={2} detail="1 follow-up" tone="need" />
         <Notice title="How to apply">Apply on their careers page.</Notice>
         <StatusSelect status="applied" label="Status for Acme Robotics" onChange={() => {}} />
+        <Field label="Next step" hint="With a date, it shows in Needs you when it’s due.">
+          {(control) => <Input {...control} defaultValue="Email Sam" />}
+        </Field>
+        <Field label="Kind">
+          {(control) => (
+            <Select {...control} defaultValue="screen">
+              <option value="screen">Recruiter screen</option>
+            </Select>
+          )}
+        </Field>
+        <Field label="Notes">{(control) => <TextArea {...control} />}</Field>
+        <Checkbox label="Show archived jobs" />
+        <Chip pressed tone="green">
+          Strong
+        </Chip>
+        <Chip pressed={false}>Skip</Chip>
         <MoodBadge mood="mixed" />
         <ScoreBar label="Work" points={33} max={40}>
           Build tooling at scale

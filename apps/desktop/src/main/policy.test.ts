@@ -6,6 +6,7 @@ import {
   openableFile,
   parseTerminalSize,
   resolveInside,
+  saveableFileName,
 } from './policy.ts';
 
 describe('parseTerminalSize', () => {
@@ -92,5 +93,24 @@ describe('openableFile', () => {
     `${sep}etc${sep}passwd.pdf`,
   ])('refuses %s', (path) => {
     expect(openableFile(workspace, path)).toBeNull();
+  });
+});
+
+describe('saveableFileName', () => {
+  it.each(['job-search-journey-2026-10-11.csv', 'Journey (October).txt'])('accepts %s', (name) => {
+    expect(saveableFileName(name)).toBe(name);
+  });
+
+  it.each([
+    '../journey.csv',
+    'folder/journey.csv',
+    'folder\\journey.csv',
+    '.hidden.csv',
+    'journey.exe',
+    'journey.csv.command',
+    `${'a'.repeat(100)}.csv`,
+    42,
+  ])('refuses %j', (name) => {
+    expect(saveableFileName(name)).toBeNull();
   });
 });
