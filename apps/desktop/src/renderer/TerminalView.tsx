@@ -13,14 +13,19 @@ import styles from './ClaudePanel.module.css';
 export function TerminalView({
   api,
   onSize,
+  onTyped,
 }: {
   api: FactwrightApi;
   onSize: (size: TerminalSize) => void;
+  /** Hears what the user types, after it's sent to Claude Code. */
+  onTyped?: (data: string) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const latestOnSize = useRef(onSize);
+  const latestOnTyped = useRef(onTyped);
   useEffect(() => {
     latestOnSize.current = onSize;
+    latestOnTyped.current = onTyped;
   });
 
   useEffect(() => {
@@ -53,7 +58,10 @@ export function TerminalView({
     };
     dark.addEventListener('change', followTheme);
 
-    const typing = terminal.onData((data) => api.writeToClaude(data));
+    const typing = terminal.onData((data) => {
+      api.writeToClaude(data);
+      latestOnTyped.current?.(data);
+    });
     const stopOutput = api.onClaudeOutput((data) => terminal.write(data));
     const stopSignals = api.onClaudeSignal((signal) => {
       if (signal === 'needs-answer') terminal.focus();

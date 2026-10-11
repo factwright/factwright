@@ -15,6 +15,10 @@ export interface ClaudeRun {
   runId: number;
   /** The skill and job the panel's latest run was started for, if a Run button started it. */
   task: RunTask | null;
+  /** Claude Code is asking whether to trust the workspace, and the user hasn't answered yet. */
+  trustAsked: boolean;
+  /** The user typed into the run, which answers a question on screen, such as about trust. */
+  typed: (data: string) => void;
   /**
    * Starts Claude, maybe with a skill to run on a job. Claude that's open and done takes the task
    * as its next message; otherwise a new run starts once the terminal knows its size.
@@ -42,6 +46,7 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
   const [problem, setProblem] = useState<string>();
   const [runId, setRunId] = useState(0);
   const [task, setTask] = useState<RunTask | null>(null);
+  const [trustAsked, setTrustAsked] = useState(false);
   // A run waiting for the terminal's size, with its task. Cleared the moment it launches, so it
   // launches once.
   const pending = useRef<{ task: RunTask | undefined } | null>(null);
@@ -50,14 +55,27 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
     () =>
       api.onClaudeSignal((signal) => {
         setPhase(signal);
+        // Any signal means Claude Code is past the question about trust.
+        setTrustAsked(false);
         // The panel comes back whenever Claude needs the user.
         if (signal === 'needs-answer') setOpen(true);
       }),
     [api],
   );
 
+  // Claude Code waits on the user to trust the workspace, so the panel comes back for it too.
+  useEffect(
+    () =>
+      api.onClaudeTrust(() => {
+        setTrustAsked(true);
+        setOpen(true);
+      }),
+    [api],
+  );
+
   const startNew = useCallback((next?: RunTask) => {
     pending.current = { task: next };
+    setTrustAsked(false);
     setPhase('starting');
     setRunId((id) => id + 1);
   }, []);
@@ -120,6 +138,12 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
       setOpen(false);
       setPhase('idle');
       setProblem(undefined);
+      setTrustAsked(false);
+    }, []),
+    trustAsked,
+    // Enter picks an answer, so the question about trust is behind the user.
+    typed: useCallback((data: string) => {
+      if (data.includes('\r')) setTrustAsked(false);
     }, []),
   };
 }

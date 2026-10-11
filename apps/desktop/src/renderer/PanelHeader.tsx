@@ -4,8 +4,7 @@ import type { RunPhase } from './useClaudeRun.ts';
 
 const HINTS: Readonly<Record<RunPhase, string>> = {
   idle: '',
-  starting:
-    'If Claude Code asks whether to trust this folder, choose Yes. Then type what you’d like.',
+  starting: 'Claude Code is starting. Then type what you’d like.',
   working: 'Keep working. You’ll hear when Claude needs you.',
   'needs-answer': 'Claude has a question. Answer it in the panel below.',
   done: 'Claude is done. Type to keep going, or close the panel.',

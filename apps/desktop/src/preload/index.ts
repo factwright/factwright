@@ -15,6 +15,7 @@ const api: FactwrightApi = {
   resizeClaude: (size) => ipcRenderer.send('claude:resize', size),
   onClaudeOutput: (listener) => subscribe('claude:output', listener),
   onClaudeSignal: (listener) => subscribe('claude:signal', listener),
+  onClaudeTrust: (listener) => subscribe('claude:trust', listener),
   listJobs: () => ipcRenderer.invoke('jobs:list'),
   jobDocs: (jobId) => ipcRenderer.invoke('jobs:docs', jobId),
   updateJob: (jobId, changes) => ipcRenderer.invoke('jobs:update', jobId, changes),

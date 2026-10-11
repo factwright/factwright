@@ -32,6 +32,12 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
 
+The first run asks a question of its own: Claude Code wants to know whether to trust the workspace, and says it will be able to "execute files". When the app sees that question on screen:
+- The run reads "Needs your answer", and the panel comes back.
+- A note above the terminal says how to answer: use the arrow keys to pick "Yes, I trust this folder", then press Enter.
+- The note also explains that the warning doesn't apply: Claude Code has no shell here, so it can't run programs.
+- The panel grows to fit the note rather than shrinking the terminal, because Claude Code can drop a line of its screen when it redraws for a resize.
+
 ## The setup check
 Claude Code updates itself, so a new version could change something Factwright relies on. Once for each version, the app checks its setup ([`src/main/claude/self-test.ts`](src/main/claude/self-test.ts)). It starts your Claude Code hidden, with exactly what a run gets but no prompt, so it uses none of your plan. Then:
 1. It waits for Claude Code to reach Factwright's tools.

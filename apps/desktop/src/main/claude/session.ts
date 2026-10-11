@@ -8,6 +8,7 @@ import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
 import type { RunServer } from './run-server.ts';
+import { TrustWatch } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
 import { RunSignals } from './signals.ts';
 import { claudeStatus, nodeStatusDeps } from './status.ts';
@@ -92,6 +93,8 @@ export interface SessionDeps {
   dark: () => boolean;
   onOutput: (data: string) => void;
   onSignal: (signal: RunSignal) => void;
+  /** Claude Code is asking whether to trust the workspace, which it does once. */
+  onTrust: () => void;
 }
 
 interface Run {
@@ -138,8 +141,12 @@ export class ClaudeSession {
     if (!launch) return { ok: false, reason: 'not-ready' };
 
     const signals = new RunSignals(this.deps.onSignal);
+    const trust = new TrustWatch();
     // Listening first, so no hook can arrive before the run is ready for it.
-    const stopListening = this.deps.server.listen(launch.token, (event) => signals.hear(event));
+    const stopListening = this.deps.server.listen(launch.token, (event) => {
+      trust.pastIt();
+      signals.hear(event);
+    });
     let terminal: IPty;
     try {
       terminal = spawn(launch.file, launch.args, {
@@ -156,14 +163,17 @@ export class ClaudeSession {
 
     const run: Run = { terminal, stopListening, stopping: false };
     this.run = run;
-    terminal.onData(this.deps.onOutput);
+    terminal.onData((data) => {
+      this.deps.onOutput(data);
+      if (trust.saw(data)) this.deps.onTrust();
+    });
     terminal.onExit(({ exitCode }) => {
       run.stopListening();
       this.run = undefined;
       this.deps.onSignal(run.stopping || exitCode === 0 ? 'stopped' : 'failed');
     });
-    // Claude Code may first ask whether to trust the workspace, so the run stays "starting"
-    // until a hook says otherwise.
+    // Claude Code may first ask whether to trust the workspace, which the window explains, so
+    // the run stays "starting" until a hook says otherwise.
     return { ok: true };
   }
 
