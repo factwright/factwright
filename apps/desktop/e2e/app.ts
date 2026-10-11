@@ -13,7 +13,8 @@ export interface Opened {
 
 /**
  * Opens the built app on a data folder, with the stand-in Claude Code first on PATH, so no run
- * reaches the user's own Claude Code or their plan.
+ * reaches the user's own Claude Code or their plan. When the app doesn't reach its jobs screen,
+ * the error says how far it got, with what it printed.
  */
 export async function openApp(dataDir: string, env: Record<string, string> = {}): Promise<Opened> {
   const app = await _electron.launch({
@@ -26,10 +27,31 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
       FACTWRIGHT_SETUP_WAIT_MS: '500',
       ...env,
     },
+    timeout: 30_000,
   });
-  const window = await app.firstWindow();
-  await window.getByRole('heading', { name: 'Jobs' }).waitFor();
-  return { app, window };
+  const printed: string[] = [];
+  app.process().stdout?.on('data', (data) => printed.push(String(data)));
+  app.process().stderr?.on('data', (data) => printed.push(String(data)));
+  let step = 'waiting for its window';
+  try {
+    const window = await app.firstWindow({ timeout: 20_000 });
+    step = 'waiting for its jobs screen';
+    await window.getByRole('heading', { name: 'Jobs' }).waitFor({ timeout: 20_000 });
+    return { app, window };
+  } catch (error) {
+    const shown = await app
+      .windows()[0]
+      ?.evaluate<string>('document.body.innerText.slice(0, 1500)')
+      .catch(() => null);
+    await app.close().catch(() => {});
+    throw new Error(
+      [
+        `The app stopped ${step}: ${error instanceof Error ? error.message : String(error)}`,
+        `It showed: ${shown ?? '(no window)'}`,
+        `It printed:\n${printed.join('') || '(nothing)'}`,
+      ].join('\n'),
+    );
+  }
 }
 
 /** What Claude's panel shows in its terminal, as text. */

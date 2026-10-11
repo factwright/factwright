@@ -32,5 +32,8 @@ jobs:
       - name: Download Electron
         run: node apps/desktop/node_modules/electron/install.js
       - run: pnpm --filter @factwright/desktop build
-      # A stand-in Claude Code, claude.cmd, answers the app's runs.
+      # A stand-in Claude Code, claude.cmd, answers the app's runs. The launch log shows how far
+      # the app got if it doesn't open.
       - run: pnpm --filter @factwright/desktop e2e
+        env:
+          DEBUG: pw:browser
