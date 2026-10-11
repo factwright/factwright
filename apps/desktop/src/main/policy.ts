@@ -1,5 +1,6 @@
 import { join, normalize, resolve, sep } from 'node:path';
 import type { TerminalSize } from '../shared/api.ts';
+import { RUN_SKILLS, type RunSkill, type RunTask } from '../shared/runs.ts';
 
 /** A panel size from the window, if it's whole numbers in a sensible range. */
 export function parseTerminalSize(value: unknown): TerminalSize | null {
@@ -76,4 +77,24 @@ export function resolveInside(root: string, urlPath: string): string | null {
   const base = normalize(root);
   const file = normalize(join(base, decoded === '/' ? 'index.html' : decoded));
   return file.startsWith(base + sep) ? file : null;
+}
+
+/** A job's ID, as the app makes them: "acme-robotics--staff-engineer", maybe with "-2". */
+const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
+
+/** A skill to run on a job, in the shape the app takes, or null for anything else. */
+export function parseRunTask(value: unknown): RunTask | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { skill, jobId } = value as Record<string, unknown>;
+  if (typeof skill !== 'string' || !(RUN_SKILLS as readonly string[]).includes(skill)) return null;
+  if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
+  return { skill: skill as RunSkill, jobId };
+}
+
+/**
+ * What the app types to start a skill on a job. It names the job only by its ID, so text from a
+ * posting, such as a company's name, never reaches Claude as if the user had typed it.
+ */
+export function runPrompt(task: RunTask): string {
+  return `/factwright:${task.skill} job ${task.jobId}`;
 }

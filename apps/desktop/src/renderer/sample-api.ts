@@ -1,4 +1,5 @@
 import type { ClaudeStatus, FactwrightApi, RunSignal } from '../shared/api.ts';
+import type { RunTask } from '../shared/runs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 
 const READY: ClaudeStatus = { state: 'ready', version: '2.1.296', plan: 'max' };
@@ -39,6 +40,14 @@ function sampleRun(dark: boolean) {
       `\r\n${color(main, '⏺ Your prep sheet is ready: likely questions, your best stories, and')}`,
       `${color(main, ' three questions to ask them.')}\r\n\r\n${color(secondary, '❯')} `,
     ],
+    /** A Run button's command, typed into the run, and a short made-up result. */
+    task: (task: RunTask) => [
+      `${color(main, `/factwright:${task.skill} job ${task.jobId}`)}\r\n\r\n`,
+      `${color('34', '✻')} ${color(secondary, 'Reading everything on file for the job…')}\r\n`,
+    ],
+    taskDone: [
+      `\r\n${color(main, '⏺ Done. The job’s panel shows what changed.')}\r\n\r\n${color(secondary, '❯')} `,
+    ],
   };
 }
 
@@ -61,12 +70,24 @@ export function sampleApi(): FactwrightApi {
   };
   let waitingForAnswer = false;
   let run = sampleRun(false);
+  const playTask = (task: RunTask) => {
+    signal('working');
+    print(run.task(task));
+    setTimeout(() => {
+      print(run.taskDone);
+      signal('done');
+    }, 1600);
+  };
   return {
     platform: query.get('platform') ?? 'darwin',
     claudeStatus: () =>
       claude === 'checking' ? new Promise(() => {}) : Promise.resolve(SAMPLES[claude] ?? READY),
-    startClaude: async () => {
+    startClaude: async (_size, task) => {
       run = sampleRun(window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (task) {
+        setTimeout(() => playTask(task), 300);
+        return { ok: true };
+      }
       setTimeout(() => {
         signal('working');
         print(run.opening);
@@ -76,6 +97,10 @@ export function sampleApi(): FactwrightApi {
         waitingForAnswer = true;
         signal('needs-answer');
       }, 1800);
+      return { ok: true };
+    },
+    runTask: async (task) => {
+      playTask(task);
       return { ok: true };
     },
     stopClaude: () => signal('stopped'),

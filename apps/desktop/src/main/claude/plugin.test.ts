@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
+import { RUN_SKILLS } from '../../shared/runs.ts';
 import { factwrightTools } from '../tools/index.ts';
 import { sessionSettings } from './settings.ts';
 
@@ -85,6 +86,13 @@ describe('the plugin’s skills', () => {
       /model: "opus"/,
     ]) {
       expect(text).not.toMatch(leftover);
+    }
+  });
+
+  it('include every skill the job panel runs, each taking a job by its ID', () => {
+    for (const skill of RUN_SKILLS) {
+      const found = skills.find(({ folder }) => folder === skill);
+      expect(found?.text).toContain('`job <id>`');
     }
   });
 

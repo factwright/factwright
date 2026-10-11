@@ -88,6 +88,7 @@ function textPairs(p: Palette): [string, string, string][] {
     ['need on bg', p.need, p.bg],
     ['ok on okSoft', p.ok, p.okSoft],
     ['ok on surface', p.ok, p.surface],
+    ['ok on accentSoft', p.ok, p.accentSoft],
     ['bad on badSoft', p.bad, p.badSoft],
     ['bad on surface', p.bad, p.surface],
     ['text on badSoft', p.text, p.badSoft],

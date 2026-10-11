@@ -14,6 +14,7 @@ import {
   NextStep,
   NotesSection,
 } from './JobTracking.tsx';
+import { RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: styles.info } as const;
@@ -62,10 +63,12 @@ export interface JobPanelProps {
   api: FactwrightApi;
   today: string;
   onClose: () => void;
+  /** Claude's panel, so the job's Run buttons can start skills. */
+  run?: RunControls;
 }
 
 /** Everything on file for the job picked in the list. */
-export function JobPanel({ row, api, today, onClose }: JobPanelProps) {
+export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   if (!row) {
     return (
@@ -134,6 +137,7 @@ export function JobPanel({ row, api, today, onClose }: JobPanelProps) {
 
       <NextStep key={`next-${job.id}`} job={job} api={api} />
       {job.apply && <ApplySection markdown={job.apply} />}
+      {run && <RunActions job={job} status={progress.status} run={run} />}
       <ScoreSection job={job} today={today} />
       <SentimentSection job={job} today={today} />
       <CallsSection

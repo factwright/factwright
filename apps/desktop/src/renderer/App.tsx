@@ -6,6 +6,7 @@ import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
+import { RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import { jobRows, type ListFilter, NO_FILTERS, startingView } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
@@ -61,6 +62,15 @@ export function App({ api }: { api: FactwrightApi }) {
   const plan = ready ? planName(status.plan) : undefined;
   const openJobs = rows.filter((row) => !row.job.archived).length;
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
+  const runControls = useMemo<RunControls>(
+    () => ({ phase: run.phase, task: run.task, start: run.requestStart, show: run.show }),
+    [run.phase, run.task, run.requestStart, run.show],
+  );
+  // The run's name in Claude's panel, such as "Fit check · Acme", when a Run button started it.
+  const task = run.task;
+  const runJob = task && rows.find((row) => row.job.id === task.jobId)?.job;
+  const runLabel = task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+  const runTitle = runJob && runLabel ? `${runLabel} · ${runJob.company}` : undefined;
 
   return (
     <div className={styles.app}>
@@ -89,7 +99,7 @@ export function App({ api }: { api: FactwrightApi }) {
               onSelect={setSelectedId}
               onRetry={reload}
               canStartClaude={ready && !isRunning(run.phase)}
-              onStartClaude={run.requestStart}
+              onStartClaude={() => run.requestStart()}
               onOpenJourney={() => setDialog('journey')}
             />
             {openJobs > 0 && (
@@ -98,10 +108,11 @@ export function App({ api }: { api: FactwrightApi }) {
                 api={api}
                 today={today}
                 onClose={() => setSelectedId(null)}
+                {...(ready && { run: runControls })}
               />
             )}
           </div>
-          <ClaudePanel api={api} run={run} plan={plan} />
+          <ClaudePanel api={api} run={run} plan={plan} title={runTitle} />
         </div>
       </div>
       {dialog === 'add-job' && (

@@ -1,4 +1,5 @@
 import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
+import type { RunTask } from './runs.ts';
 
 /** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
 export type ClaudeStatus =
@@ -17,10 +18,10 @@ export interface TerminalSize {
   rows: number;
 }
 
-/** Whether a run started, and if not, why. */
+/** Whether a run started, or took a task, and if not, why. */
 export type StartResult =
   | { ok: true }
-  | { ok: false; reason: 'not-ready' | 'busy' | 'failed'; message?: string };
+  | { ok: false; reason: 'not-ready' | 'busy' | 'failed' | 'not-running'; message?: string };
 
 /** Every job, as the app last read them from the workspace and the tracker. */
 export interface JobList {
@@ -84,7 +85,9 @@ export interface FactwrightApi {
   platform: string;
   claudeStatus(): Promise<ClaudeStatus>;
   /** Starts the user's Claude Code in the panel. Only one run happens at a time. */
-  startClaude(size: TerminalSize): Promise<StartResult>;
+  startClaude(size: TerminalSize, task?: RunTask): Promise<StartResult>;
+  /** Gives the run that's open a skill to run on a job, as if the user typed it. */
+  runTask(task: RunTask): Promise<StartResult>;
   stopClaude(): void;
   /** Sends what the user types in the panel to Claude Code. */
   writeToClaude(data: string): void;

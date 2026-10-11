@@ -95,7 +95,7 @@ export function JobsPage(props: JobsPageProps) {
           action={
             <Button
               variant="primary"
-              onClick={props.onStartClaude}
+              onClick={() => props.onStartClaude()}
               disabled={!props.canStartClaude}
             >
               Start Claude
