@@ -1,0 +1,29 @@
+.bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 var(--fw-space-5);
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-bar);
+  user-select: none;
+  /* The bar moves the window, as a title bar would. */
+  -webkit-app-region: drag;
+}
+
+/* The Mac's close, minimize and zoom buttons sit at the left of the bar. */
+.mac {
+  padding-left: 84px;
+}
+
+/* Windows draws its buttons over the right of the bar. */
+.overlay {
+  padding-right: 150px;
+}
+
+.name {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}

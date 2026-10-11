@@ -1,6 +1,8 @@
 export { Button, type ButtonProps } from './components/Button.tsx';
+export { EmptyState, type EmptyStateProps } from './components/EmptyState.tsx';
 export { FIT_TIER_DISPLAY, FitBadge, type FitBadgeProps } from './components/FitBadge.tsx';
 export { IconButton, type IconButtonProps } from './components/IconButton.tsx';
+export { Logo } from './components/Logo.tsx';
 export { NavItem, type NavItemProps } from './components/NavItem.tsx';
 export { Notice, type NoticeProps } from './components/Notice.tsx';
 export { Pill, type PillProps } from './components/Pill.tsx';

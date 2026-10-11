@@ -3,8 +3,10 @@ import { render } from '@testing-library/react';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
 import { Button } from './components/Button.tsx';
+import { EmptyState } from './components/EmptyState.tsx';
 import { FitBadge } from './components/FitBadge.tsx';
 import { IconButton } from './components/IconButton.tsx';
+import { Logo } from './components/Logo.tsx';
 import { NavItem } from './components/NavItem.tsx';
 import { Notice } from './components/Notice.tsx';
 import { RUN_STATES, RunStatus } from './components/RunStatus.tsx';
@@ -48,6 +50,10 @@ describe('accessibility', () => {
         <Stat label="Needs you" value={2} detail="1 follow-up" tone="need" />
         <Notice title="How to apply">Apply on their careers page.</Notice>
         <VisuallyHidden>Only for screen readers</VisuallyHidden>
+        <Logo />
+        <EmptyState title="No jobs yet" icon={<svg aria-hidden="true" />}>
+          Jobs you find show up here.
+        </EmptyState>
       </main>,
     );
     // jsdom can't lay out a page, so contrast is checked from the tokens in contrast.test.ts.
