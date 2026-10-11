@@ -15,13 +15,15 @@ describe('sessionSettings', () => {
     expect(settings.disableClaudeAiConnectors).toBe(true);
   });
 
-  it('allows searches, its skills and the tools that stay on this computer, but not fetching', () => {
+  it('allows searches, its skills, the tools that stay on this computer and the job APIs, but not fetching pages', () => {
     expect(settings.permissions.allow).toEqual([
       'WebSearch',
       'Skill(factwright *)',
       'mcp__factwright__find_job',
       'mcp__factwright__job_details',
       'mcp__factwright__build_resume',
+      'mcp__factwright__job_board',
+      'mcp__factwright__hn_jobs',
     ]);
   });
 

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
-import { RUN_SKILLS } from '../../shared/runs.ts';
+import { RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
 import { factwrightTools } from '../tools/index.ts';
 import { sessionSettings } from './settings.ts';
 
@@ -43,6 +43,7 @@ describe('the plugin’s skills', () => {
       'fit-check',
       'focused-resume',
       'interview-prep',
+      'job-search',
       'salary-check',
       'unmask-job',
       'who-to-message',
@@ -94,6 +95,11 @@ describe('the plugin’s skills', () => {
       const found = skills.find(({ folder }) => folder === skill);
       expect(found?.text).toContain('`job <id>`');
     }
+  });
+
+  it('include the job search the jobs page runs, which asks for a source when it has none', () => {
+    const found = skills.find(({ folder }) => folder === SEARCH_SKILL);
+    expect(found?.text).toMatch(/If there's none, ask .*AskUserQuestion/);
   });
 
   it('run without asking, under the plugin’s own name', () => {

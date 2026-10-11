@@ -76,10 +76,11 @@ export function registerIpc({ isAppPage, claude: session, jobs, workspace }: Ipc
 
   answer('claude:status', () => claudeStatus(nodeStatusDeps()));
 
-  /** A task the window asked for, if it names a skill and a job the app knows. */
+  /** A task the window asked for, if it's a job search, or names a skill and a job the app knows. */
   const knownTask = (value: unknown) => {
     const task = parseRunTask(value);
-    return task && jobs.list().jobs.some((job) => job.id === task.jobId) ? task : null;
+    if (!task || !('jobId' in task)) return task;
+    return jobs.list().jobs.some((job) => job.id === task.jobId) ? task : null;
   };
 
   answer('claude:start', (size, task) => {

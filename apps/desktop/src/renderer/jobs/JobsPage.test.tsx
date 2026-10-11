@@ -25,6 +25,8 @@ function page(overrides: Partial<JobsPageProps> = {}) {
     onRetry: vi.fn(),
     canStartClaude: true,
     onStartClaude: vi.fn(),
+    canFindJobs: true,
+    onFindJobs: vi.fn(),
     onOpenJourney: vi.fn(),
     ...overrides,
   };
@@ -92,6 +94,21 @@ describe('JobsPage', () => {
     expect(screen.queryByText('0 jobs')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Start Claude' }));
     expect(props.onStartClaude).toHaveBeenCalled();
+  });
+
+  it('starts a job search when Claude can take one', async () => {
+    const props = page();
+    await userEvent.click(screen.getByRole('button', { name: 'Find jobs' }));
+    expect(props.onFindJobs).toHaveBeenCalledOnce();
+    cleanup();
+    page({
+      canFindJobs: false,
+      jobs: { state: 'ready', list: { jobs: [], readAt: null } },
+      rows: [],
+    });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Find jobs' }).disabled).toBe(
+      true,
+    );
   });
 
   it('shows loading, and a way to try again when loading fails', async () => {

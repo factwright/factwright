@@ -12,6 +12,13 @@
   gap: var(--fw-space-4);
 }
 
+.headActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+}
+
 .title {
   margin: 0;
   font-size: var(--fw-text-xl);

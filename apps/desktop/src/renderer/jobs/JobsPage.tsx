@@ -1,6 +1,6 @@
 import { type JobView, jobStats } from '@factwright/core';
 import { Button, Checkbox, EmptyState, SegmentedControl, Stat } from '@factwright/ui';
-import { Activity, Briefcase, SearchX } from 'lucide-react';
+import { Activity, Briefcase, Search, SearchX } from 'lucide-react';
 import { FiltersPanel } from './FiltersPanel.tsx';
 import { JobList } from './JobList.tsx';
 import styles from './JobsPage.module.css';
@@ -36,6 +36,9 @@ export interface JobsPageProps {
   onRetry: () => void;
   canStartClaude: boolean;
   onStartClaude: () => void;
+  /** Whether Claude can take a job search now: signed in, and not busy. */
+  canFindJobs: boolean;
+  onFindJobs: () => void;
   onOpenJourney: () => void;
 }
 
@@ -81,11 +84,20 @@ export function JobsPage(props: JobsPageProps) {
           <h1 className={styles.title}>Jobs</h1>
           {open.length > 0 && <p className={styles.summary}>{plural(open.length, 'job')}</p>}
         </div>
-        {rows.length > 0 && (
-          <Button icon={<Activity size={16} aria-hidden="true" />} onClick={props.onOpenJourney}>
-            Your journey
+        <div className={styles.headActions}>
+          <Button
+            icon={<Search size={16} aria-hidden="true" />}
+            onClick={props.onFindJobs}
+            disabled={!props.canFindJobs}
+          >
+            Find jobs
           </Button>
-        )}
+          {rows.length > 0 && (
+            <Button icon={<Activity size={16} aria-hidden="true" />} onClick={props.onOpenJourney}>
+              Your journey
+            </Button>
+          )}
+        </div>
       </div>
 
       {open.length === 0 ? (

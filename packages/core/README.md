@@ -12,6 +12,8 @@ Shared logic for the desktop app, the web view and the sync server. It runs anyw
 | `journey` | How far each job got and how it ended, as a flow chart for sankeymatic.com or a spreadsheet |
 | `apply-steps` | Special steps for applying, from a job's `apply.md` |
 | `posting` | Reads a job posting as plain text, from an applicant system's API (Greenhouse, Lever, Ashby, Gem) or a web page |
+| `boards` | Reads every open job on a company's board from its applicant system's API, finds which posting a link is to, and writes the board as one Markdown file |
+| `hn` | Finds Hacker News's monthly "Who is hiring?" thread, reads its job posts as plain text with full links, and writes them as one Markdown file |
 | `keys` | Matching keys, so "Acme, Inc." and "The Acme Company" count as one company |
 | `links` | Tidies links for matching, and tells a job's own link from a careers page |
 | `markdown` | Reads the tables, sections and lists the skills write |

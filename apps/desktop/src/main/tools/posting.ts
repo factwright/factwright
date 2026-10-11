@@ -21,8 +21,11 @@ const MAX_PAGE_TEXT = 40_000;
 export const FOLDER_NAME = /^[\w][\w.-]{0,119}$/;
 
 export interface FetchDeps {
-  /** Fetches a public page or API within a time limit, in milliseconds. Tests pass their own. */
-  fetch?: (url: string, json: boolean, limitMs: number) => Promise<unknown>;
+  /**
+   * Fetches a public page or API within a time limit, in milliseconds, and a size limit, in
+   * bytes, when it's given. Tests pass their own.
+   */
+  fetch?: (url: string, json: boolean, limitMs: number, maxBytes?: number) => Promise<unknown>;
   now?: () => Date;
 }
 
@@ -30,21 +33,23 @@ export interface SavePostingDeps extends FetchDeps {
   workspace: string;
 }
 
-type Fetch = (url: string, json: boolean) => Promise<unknown>;
+type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
 
 /** A fetch that gives up once the tool's time is spent, however many requests it took. */
-function fetchInTime(deps: FetchDeps): Fetch {
+export function fetchInTime(deps: FetchDeps): Fetch {
   const clock = deps.now ?? (() => new Date());
   const giveUpAt = clock().getTime() + TIME_LIMIT_MS;
   const fetch = deps.fetch ?? fetchPublic;
-  return async (address, json) => {
+  return async (address, json, maxBytes) => {
     const left = giveUpAt - clock().getTime();
     if (left <= 0) throw new Error('the site took too long to answer');
-    return fetch(address, json, left);
+    return maxBytes === undefined
+      ? fetch(address, json, left)
+      : fetch(address, json, left, maxBytes);
   };
 }
 
-const reasonOf = (error: unknown) =>
+export const reasonOf = (error: unknown) =>
   error instanceof Error ? error.message : 'the page didn’t load';
 
 async function exists(path: string): Promise<boolean> {

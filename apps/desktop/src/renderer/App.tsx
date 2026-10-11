@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import { SEARCH_SKILL, taskJob } from '../shared/runs.ts';
 import styles from './App.module.css';
 import { ClaudePanel } from './ClaudePanel.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
-import { RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
+import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import { jobRows, type ListFilter, NO_FILTERS, startingView } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
@@ -68,9 +69,14 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   // The run's name in Claude's panel, such as "Fit check · Acme", when a Run button started it.
   const task = run.task;
-  const runJob = task && rows.find((row) => row.job.id === task.jobId)?.job;
+  const runJob = rows.find((row) => row.job.id === taskJob(task))?.job;
   const runLabel = task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
-  const runTitle = runJob && runLabel ? `${runLabel} · ${runJob.company}` : undefined;
+  const runTitle =
+    task?.skill === SEARCH_SKILL
+      ? 'Job search'
+      : runJob && runLabel
+        ? `${runLabel} · ${runJob.company}`
+        : undefined;
 
   return (
     <div className={styles.app}>
@@ -100,6 +106,8 @@ export function App({ api }: { api: FactwrightApi }) {
               onRetry={reload}
               canStartClaude={ready && !isRunning(run.phase)}
               onStartClaude={() => run.requestStart()}
+              canFindJobs={ready && !BUSY.includes(run.phase)}
+              onFindJobs={() => run.requestStart({ skill: SEARCH_SKILL })}
               onOpenJourney={() => setDialog('journey')}
             />
             {openJobs > 0 && (
