@@ -16,8 +16,9 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - Claude runs without a shell: no Bash, no PowerShell.
 - Its file access stays inside your workspace folder. Your tracker (statuses, notes and calls) sits outside it.
 - Its only extra tools are the ones Factwright provides, each doing one narrow job. They answer only the run Factwright started, and refuse anything a web page sends.
-- The tools that only read what's on file run without asking. Saving a posting reaches the internet, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link.
-- Saving a posting only fetches public https sites: never this computer, your home network, or a link with a sign-in in it. Each page is capped in size and time.
+- The tools that only read what's on file run without asking, as do web searches, whose words go to the search service, never to a site a posting names. Reading a page or saving a posting reaches that site, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link.
+- Claude's own tool for fetching pages is off. Factwright's tools only fetch public https sites: never this computer, your home network, or a link with a sign-in in it. Each page is capped in size and time.
+- Claude Code asks you before it writes a file, unless you tell it not to for the rest of a run.
 
 ## Your data in the cloud
 ### End-to-end encryption

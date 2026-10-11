@@ -33,7 +33,7 @@ More in [architecture](docs/architecture.md) and [security](docs/security.md).
 | [`packages/core`](packages/core) | Shared logic: tracker rules and pay parsing today, sync and encryption later |
 | [`packages/ui`](packages/ui) | The design system and shared screens |
 | [`packages/engine`](packages/engine) | Turns resume data into PDF and Word files |
-| [`plugin`](plugin) | The skills and tools Factwright gives Claude Code |
+| [`plugin`](plugin) | The skills Factwright gives Claude Code, such as the fit check and interview prep |
 | [`docs`](docs) | Architecture, security and the roadmap |
 
 ## Development

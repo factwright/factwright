@@ -63,7 +63,7 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
     const addresses = found as LookupAddress[];
     const first = addresses[0];
     if (!first || addresses.some(({ address }) => isPrivateAddress(address))) {
-      callback(new FetchRefused('That site is on a private network, so it can’t be saved.'), '', 4);
+      callback(new FetchRefused('That site is on a private network, which is off limits.'), '', 4);
       return;
     }
     if (options.all) callback(null, addresses);
@@ -73,12 +73,12 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
 
 /** Why a link can't be fetched, or null when it can. The address itself is checked on connecting. */
 export function linkProblem(url: URL): string | null {
-  if (url.protocol !== 'https:') return 'Only https links can be saved.';
-  if (url.username || url.password) return 'Links with a sign-in in them can’t be saved.';
+  if (url.protocol !== 'https:') return 'Only https links work.';
+  if (url.username || url.password) return 'Links with a sign-in in them are off limits.';
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (isIP(host)) return 'Links to a bare network address can’t be saved. Use the site’s name.';
+  if (isIP(host)) return 'Links to a bare network address are off limits. Use the site’s name.';
   if (!host.includes('.') || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) {
-    return 'Links to this computer or a home network can’t be saved.';
+    return 'Links to this computer or a home network are off limits.';
   }
   return null;
 }
@@ -127,7 +127,7 @@ function get(
         const stream = decoded(response);
         stream.on('data', (chunk: Buffer) => {
           size += chunk.length;
-          if (size > MAX_BYTES) fail(new FetchRefused('That page is too big to save.'));
+          if (size > MAX_BYTES) fail(new FetchRefused('That page is too big.'));
           else chunks.push(chunk);
         });
         stream.on('end', () => {
