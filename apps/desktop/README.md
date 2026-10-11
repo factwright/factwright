@@ -113,5 +113,6 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - A stand-in for Claude Code ([`e2e/fake-claude`](e2e/fake-claude)) comes first on PATH. It answers the version and sign-in checks, and in a run reaches Factwright's tools and sends its hooks as Claude Code does. It never reaches Anthropic, so the tests use no plan.
   - `FACTWRIGHT_SETUP_WAIT_MS` shortens the setup check's wait, so the tests see it finish.
   - CI runs the tests on every change, on Linux, with a virtual display.
+  - A [Windows workflow](../../.github/workflows/windows.yml) runs the unit and end-to-end tests on Windows: weekly, by hand, and when its file changes. It doesn't run on every change, because Windows minutes cost twice as much on GitHub's free plan. Its stand-in is `claude.cmd`.
 
 **Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools and skills, shows your jobs with their Run buttons, runs job searches, and keeps your tracker. Pasting an application's questions before a run comes next.

@@ -41,3 +41,4 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The first run's trust question, explained: when Claude Code asks whether to trust the workspace, the run reads "Needs your answer", and a note says how to answer. It also explains that the warning about running files doesn't apply, since Claude Code has no shell here.
 - Resume previews: each resume PDF in a job's panel has Preview, which shows its pages in the app, drawn by pdf.js, with a way to open it in your PDF app.
 - End-to-end tests: Playwright drives the built app through its main flows on a made-up job hunt. A stand-in for Claude Code answers the app's checks and runs, through the same hooks and tools, and never reaches Anthropic. They run in CI on every change.
+- Windows checks: a weekly workflow runs the unit and end-to-end tests on Windows, ahead of the first run on a Windows PC.
