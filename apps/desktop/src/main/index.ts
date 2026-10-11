@@ -10,6 +10,7 @@ import { workspaceDir } from './jobs/workspace.ts';
 import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
+import { ElectronResumePrinter } from './resume/printer.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { factwrightTools } from './tools/index.ts';
 import { createMainWindow } from './window.ts';
@@ -53,8 +54,9 @@ function start(): void {
       onChange: (list) => window.webContents.send('jobs:changed', list),
     });
     jobs.read();
+    const printer = new ElectronResumePrinter();
     const server = new RunServer({
-      tools: factwrightTools({ jobs, workspace }),
+      tools: factwrightTools({ jobs, workspace, printer }),
       version: app.getVersion(),
     });
     await server.start();
@@ -85,6 +87,7 @@ function start(): void {
     app.on('before-quit', () => {
       claude.stop();
       server.stop();
+      printer.close();
       jobs.stop();
     });
     app.on('quit', () => tracker.close());

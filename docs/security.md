@@ -19,6 +19,7 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - The tools that only read what's on file run without asking, as do web searches, whose words go to the search service, never to a site a posting names. Reading a page or saving a posting reaches that site, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link.
 - Claude's own tool for fetching pages is off. Factwright's tools only fetch public https sites: never this computer, your home network, or a link with a sign-in in it. Each page is capped in size and time.
 - Claude Code asks you before it writes a file, unless you tell it not to for the rest of a run.
+- Building a resume runs without asking, since it stays on this computer: Factwright prints it in a hidden window that loads nothing else. Once you've applied to a job, the files you sent stay as they are.
 
 ## Your data in the cloud
 ### End-to-end encryption

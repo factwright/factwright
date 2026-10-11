@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document,
   LevelFormat,
+  Packer,
   Paragraph,
   ShadingType,
   Table,
@@ -403,4 +404,9 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
       },
     ],
   });
+}
+
+/** The resume as a Word file's bytes, ready to save. */
+export function docxFile(resume: Resume, layout: Layout): Promise<ArrayBuffer> {
+  return Packer.toArrayBuffer(resumeDocument(resume, layout));
 }

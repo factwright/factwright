@@ -9,6 +9,7 @@ export default defineConfig({
     sourcemap: true,
     rolldownOptions: { output: { format: 'es', entryFileNames: 'index.js' } },
   },
-  // The workspace packages are TypeScript source, so they're bundled in rather than imported.
-  ssr: { noExternal: [/^@factwright\//] },
+  // Everything is bundled in, the workspace's TypeScript included, except Electron itself and
+  // node-pty, whose native code is loaded at run time.
+  ssr: { noExternal: true, external: ['electron', 'node-pty'] },
 });

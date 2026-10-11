@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@factwright/core": "workspace:*",
+    "@factwright/engine": "workspace:*",
     "@factwright/ui": "workspace:*",
     "@testing-library/dom": "catalog:",
     "@testing-library/react": "catalog:",

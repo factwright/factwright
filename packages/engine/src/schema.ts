@@ -148,6 +148,9 @@ const CHECKS: Record<string, Check> = {
   extra_sections: list(shape({ heading: text(true), items: list(text(true), true) })),
 };
 
+/** The fields a resume can have at its top level, such as output_name. */
+export const RESUME_FIELDS = Object.keys(CHECKS);
+
 /**
  * Checks resume data before it's built, so a mistake reads as a plain problem rather than a
  * failed build: "resume.experience[1].title is missing."

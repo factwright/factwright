@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
-import { factwrightTools, LOCAL_READ_TOOLS } from './index.ts';
+import type { ResumePrinter } from '../resume/printer.ts';
+import { factwrightTools, LOCAL_TOOLS } from './index.ts';
 import type { McpTool } from './mcp.ts';
 import { FetchRefused } from './safe-fetch.ts';
 
@@ -17,6 +18,7 @@ let tracker: Tracker;
 let jobs: JobsService;
 let fetch: Mock<(url: string, json: boolean, limitMs: number) => Promise<unknown>>;
 let tools: McpTool[];
+let printer: { print: Mock<ResumePrinter['print']>; measure: Mock<ResumePrinter['measure']> };
 
 const tool = (name: string) => {
   const found = tools.find((each) => each.name === name);
@@ -40,7 +42,14 @@ beforeEach(() => {
   jobs = new JobsService({ workspace: root, tracker, onChange: () => {}, now: NOW });
   jobs.read();
   fetch = vi.fn();
-  tools = factwrightTools({ jobs, workspace: root, now: NOW, fetch });
+  printer = {
+    print: vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.7 made up'), pages: 2, lastFill: 84 })),
+    measure: vi.fn(async () => [
+      { lines: 1, last: 70, text: 'Staff Platform Engineer' },
+      { lines: 2, last: 9, text: 'Cut deploy time by ~40% across twelve' },
+    ]),
+  };
+  tools = factwrightTools({ jobs, workspace: root, now: NOW, fetch, printer });
 });
 
 afterEach(() => {
@@ -48,11 +57,9 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-it('marks the tools that only read what’s on file, which Claude may call without asking', () => {
-  const local = tools.filter(
-    ({ annotations }) => annotations?.readOnlyHint && annotations.openWorldHint === false,
-  );
-  expect(local.map((each) => each.name)).toEqual(LOCAL_READ_TOOLS);
+it('marks the tools that stay on this computer, which Claude may call without asking', () => {
+  const local = tools.filter(({ annotations }) => annotations?.openWorldHint === false);
+  expect(local.map((each) => each.name)).toEqual(LOCAL_TOOLS);
 });
 
 describe('find_job', () => {
@@ -232,7 +239,7 @@ describe('save_posting', () => {
       clock += 30_000;
       return now;
     };
-    tools = factwrightTools({ jobs, workspace: root, now: tick, fetch });
+    tools = factwrightTools({ jobs, workspace: root, now: tick, fetch, printer });
     fetch.mockResolvedValue({ jobs: [] });
     const url = 'https://jobs.ashbyhq.com/acme/0b7a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d';
     expect(await tool('save_posting').run({ url, folder: FOLDER })).toMatch(
@@ -253,5 +260,106 @@ describe('save_posting', () => {
       if (folder === '') await expect(answer).rejects.toThrow('Give the folder.');
       else expect(await answer).toContain('isn’t a job folder name');
     }
+  });
+});
+
+describe('build_resume', () => {
+  const folder = (file: string) => join(root, 'applications', FOLDER, file);
+  const resume = {
+    layout: 'timeline',
+    output_name: 'AlexRiveraResume10112026_Acme',
+    name: 'Alex Rivera',
+    headline: 'Staff Engineer',
+    summary: 'Builds platforms.',
+    experience: [{ title: 'Staff Engineer', company: 'Tidewater', start: '2022', end: 'Present' }],
+    skills: [{ category: 'Languages', items: ['TypeScript'] }],
+  };
+  const writeResume = (value: unknown) =>
+    writeFileSync(folder('resume.json'), typeof value === 'string' ? value : JSON.stringify(value));
+
+  it('builds the PDF and says how it fits', async () => {
+    writeResume(resume);
+    const answer = await tool('build_resume').run({ folder: FOLDER });
+    expect(answer).toBe(
+      [
+        `Built applications/${FOLDER}/AlexRiveraResume10112026_Acme.pdf in the timeline layout: 2 pages, the last one 84% full.`,
+        'Lines that run short:',
+        '! 2L   9% | Cut deploy time by ~40% across twelve',
+        '',
+        '1 runt line(s) marked "!": the last line is under 30% full. Trim or extend those.',
+        'Checks: clean.',
+        'Read the PDF to check the page breaks and anything that looks off.',
+      ].join('\n'),
+    );
+    expect(readFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'utf8')).toBe(
+      '%PDF-1.7 made up',
+    );
+    expect(printer.print.mock.calls[0]?.[0]).toContain('<div class="name">Alex Rivera</div>');
+  });
+
+  it('builds a Word file too, in the format asked for', async () => {
+    writeResume({ ...resume, layout: 'modern' });
+    const answer = await tool('build_resume').run({ folder: FOLDER, format: 'both' });
+    expect(answer).toContain('in the modern layout');
+    expect(answer).toContain(`Built applications/${FOLDER}/AlexRiveraResume10112026_Acme.docx.`);
+    expect(
+      readFileSync(folder('AlexRiveraResume10112026_Acme.docx')).subarray(0, 2).toString(),
+    ).toBe('PK');
+    printer.print.mockClear();
+    const word = await tool('build_resume').run({ folder: FOLDER, format: 'docx' });
+    expect(printer.print).not.toHaveBeenCalled();
+    expect(word).toContain('build both: you can read the PDF, but not the Word file.');
+  });
+
+  it('checks the user’s rules, confidential terms and pages', async () => {
+    mkdirSync(join(root, 'guide'));
+    writeFileSync(
+      join(root, 'guide', 'lint.json'),
+      JSON.stringify({ maxPages: 1, banned: [{ pattern: 'platforms', why: 'say systems' }] }),
+    );
+    writeFileSync(join(root, 'guide', 'confidential-terms.txt'), '# customers\ntidewater\n');
+    writeResume(resume);
+    const answer = await tool('build_resume').run({ folder: FOLDER });
+    expect(answer).toContain(
+      [
+        'Problems to fix, then build again:',
+        '- "platforms" isn\'t allowed: say systems.',
+        '- A confidential term matching "tidewater" is in the resume.',
+        '- The PDF runs to 2 pages; the most is 1.',
+      ].join('\n'),
+    );
+  });
+
+  it('says what’s wrong with resume.json, the folder or the format', async () => {
+    expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
+      `There’s no applications/${FOLDER}/resume.json yet. Write the resume there first.`,
+    );
+    writeResume('{ not json');
+    expect(await tool('build_resume').run({ folder: FOLDER })).toMatch(
+      /^applications\/.+\/resume\.json isn’t valid JSON: /,
+    );
+    writeResume({ ...resume, headline: undefined });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
+      'Not built. Fix resume.json first:\n- resume.headline is missing.',
+    );
+    expect(await tool('build_resume').run({ folder: '../escape' })).toContain(
+      'isn’t a job folder name',
+    );
+    expect(await tool('build_resume').run({ folder: FOLDER, format: 'rtf' })).toBe(
+      'The format should be pdf, docx, both.',
+    );
+    expect(printer.print).not.toHaveBeenCalled();
+  });
+
+  it('keeps the files that went out with an application', async () => {
+    writeResume(resume);
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'applied', statusOn: '2026-10-09' });
+    writeFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'as sent');
+    expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
+      'Not built: AlexRiveraResume10112026_Acme.pdf went out with the application, so it stays as sent. Give resume.json a new output_name to build another.',
+    );
+    expect(readFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'utf8')).toBe('as sent');
+    writeResume({ ...resume, output_name: 'AlexRiveraResume10112026_Acme_v2' });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('_v2.pdf');
   });
 });

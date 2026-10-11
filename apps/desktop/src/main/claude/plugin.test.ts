@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
 import { factwrightTools } from '../tools/index.ts';
 import { sessionSettings } from './settings.ts';
@@ -29,7 +30,9 @@ const skills = readdirSync(skillsDir, { withFileTypes: true })
 
 const plugin = JSON.parse(readFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'));
 // Tool names only: the tools need no app, so these stubs never run.
-const toolNames = factwrightTools({ jobs: {} as never, workspace: '' }).map((tool) => tool.name);
+const toolNames = factwrightTools({ jobs: {} as never, workspace: '', printer: {} as never }).map(
+  (tool) => tool.name,
+);
 
 describe('the plugin’s skills', () => {
   it('are there', () => {
@@ -37,6 +40,7 @@ describe('the plugin’s skills', () => {
       'add-facts',
       'answer-questions',
       'fit-check',
+      'focused-resume',
       'interview-prep',
       'salary-check',
       'unmask-job',
@@ -52,9 +56,9 @@ describe('the plugin’s skills', () => {
     expect(fields['argument-hint']).toMatch(/^\[.+\]$/);
   });
 
-  it.each(skills)('$folder only names tools and skills that exist', ({ text }) => {
+  it.each(skills)('$folder only names tools, resume fields and skills that exist', ({ text }) => {
     for (const [, name] of text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) {
-      expect(toolNames).toContain(name);
+      expect([...toolNames, ...RESUME_FIELDS]).toContain(name);
     }
     for (const [, name] of text.matchAll(/\/factwright:([a-z-]+)/g)) {
       expect(skills.map((skill) => skill.folder)).toContain(name);
@@ -64,10 +68,10 @@ describe('the plugin’s skills', () => {
   it('use every one of Factwright’s tools between them', () => {
     const named = new Set(
       skills.flatMap(({ text }) =>
-        [...text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map(([, name]) => name),
+        [...text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map(([, name]) => name ?? ''),
       ),
     );
-    expect([...named].sort()).toEqual([...toolNames].sort());
+    expect(toolNames.filter((name) => named.has(name))).toEqual(toolNames);
   });
 
   it.each(skills)('$folder has nothing left from the old repo', ({ text }) => {
