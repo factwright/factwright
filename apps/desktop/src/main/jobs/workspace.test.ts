@@ -60,6 +60,16 @@ describe('watchWorkspace', () => {
   it('calls back once things go quiet after a change', async () => {
     const changed = vi.fn();
     const stop = watchWorkspace(root, changed, 50);
+    // macOS starts watching a moment after watch() returns, so touch a file until it's listening.
+    await vi.waitFor(
+      () => {
+        writeFileSync(join(root, 'warm-up.md'), 'Warming up');
+        expect(changed).toHaveBeenCalled();
+      },
+      { timeout: 3000, interval: 200 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    changed.mockClear();
     writeFileSync(join(root, 'applications', 'acme', 'posting.md'), 'The posting');
     writeFileSync(join(root, 'applications', 'acme', 'fit-check.md'), 'The fit check');
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1), { timeout: 2000 });

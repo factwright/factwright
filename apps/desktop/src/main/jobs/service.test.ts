@@ -127,7 +127,14 @@ describe('JobsService', () => {
   it('reads again when the workspace changes', async () => {
     jobs.read();
     jobs.watch();
-    write('applications/tidewater/job.md', '# Tidewater Analytics: Senior Backend Engineer');
-    await vi.waitFor(() => expect(changes.at(-1)?.jobs).toHaveLength(2), { timeout: 3000 });
+    // macOS starts watching a moment after watch() returns, so write until it's listening. Each
+    // try waits out the watcher's quiet time.
+    await vi.waitFor(
+      () => {
+        write('applications/tidewater/job.md', '# Tidewater Analytics: Senior Backend Engineer');
+        expect(changes.at(-1)?.jobs).toHaveLength(2);
+      },
+      { timeout: 5000, interval: 500 },
+    );
   });
 });

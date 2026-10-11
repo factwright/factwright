@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HOOK_TOKEN_VARIABLE, sessionSettings } from './settings.ts';
+import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
 
 const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
 
@@ -15,6 +15,13 @@ describe('sessionSettings', () => {
     expect(settings.disableClaudeAiConnectors).toBe(true);
   });
 
+  it('allows the tools that only read without asking, but not the one that fetches links', () => {
+    expect(settings.permissions.allow).toEqual([
+      'mcp__factwright__find_job',
+      'mcp__factwright__job_details',
+    ]);
+  });
+
   it('sends every hook to the app, with the token read from the environment', () => {
     for (const groups of Object.values(settings.hooks)) {
       for (const group of groups) {
@@ -23,8 +30,8 @@ describe('sessionSettings', () => {
             type: 'http',
             url: 'http://127.0.0.1:4000/hook',
             timeout: 5,
-            headers: { Authorization: `Bearer $${HOOK_TOKEN_VARIABLE}` },
-            allowedEnvVars: [HOOK_TOKEN_VARIABLE],
+            headers: { Authorization: `Bearer $${RUN_TOKEN_VARIABLE}` },
+            allowedEnvVars: [RUN_TOKEN_VARIABLE],
           },
         ]);
       }
@@ -35,5 +42,21 @@ describe('sessionSettings', () => {
     expect(settings.hooks.PreToolUse).toEqual([
       expect.objectContaining({ matcher: 'AskUserQuestion' }),
     ]);
+  });
+});
+
+describe('toolsConfig', () => {
+  it("gives the run Factwright's tools, with the token read from the environment", () => {
+    expect(toolsConfig('http://127.0.0.1:4000/mcp')).toEqual({
+      mcpServers: {
+        factwright: {
+          type: 'http',
+          url: 'http://127.0.0.1:4000/mcp',
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: Claude Code fills this in, not JavaScript.
+          headers: { Authorization: 'Bearer ${FACTWRIGHT_RUN_TOKEN}' },
+          alwaysLoad: true,
+        },
+      },
+    });
   });
 });

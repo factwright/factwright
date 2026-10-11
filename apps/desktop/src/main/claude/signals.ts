@@ -1,6 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { RunSignal } from '../../shared/api.ts';
 
 /** What a hook event from Claude Code means for the panel, or null when it changes nothing. */
@@ -33,64 +30,8 @@ export function bearerToken(header: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-const MAX_BODY_BYTES = 1_000_000;
-
-/**
- * Listens on this computer for Claude Code's hooks and turns them into signals for the panel.
- * Each run gets its own token, and requests without a live run's token are refused.
- */
-export class SignalServer {
-  private readonly listeners = new Map<string, (signal: RunSignal) => void>();
-  private server: Server | undefined;
-  /** Where Claude Code sends its hooks. Set once the server is listening. */
-  url = '';
-
-  async start(): Promise<void> {
-    const server = createServer((request, response) => this.handle(request, response));
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    this.server = server;
-    this.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/hook`;
-  }
-
-  stop(): void {
-    this.server?.close();
-  }
-
-  listen(token: string, listener: (signal: RunSignal) => void): () => void {
-    this.listeners.set(token, listener);
-    return () => this.listeners.delete(token);
-  }
-
-  private handle(request: IncomingMessage, response: ServerResponse): void {
-    const listener = this.listenerFor(bearerToken(request.headers.authorization));
-    if (request.method !== 'POST' || request.url !== '/hook' || !listener) {
-      response.writeHead(404).end();
-      return;
-    }
-    let body = '';
-    request.setEncoding('utf8');
-    request.on('data', (chunk: string) => {
-      body += chunk;
-      if (body.length > MAX_BODY_BYTES) request.destroy();
-    });
-    request.on('end', () => {
-      // An empty answer lets Claude Code carry on as it would have.
-      response.writeHead(204).end();
-      const signal = signalFor(parseJson(body));
-      if (signal) listener(signal);
-    });
-  }
-
-  private listenerFor(token: string | null): ((signal: RunSignal) => void) | undefined {
-    if (!token) return undefined;
-    for (const [known, listener] of this.listeners) {
-      if (timingSafeEqual(Buffer.from(known), Buffer.from(token))) return listener;
-    }
-    return undefined;
-  }
-}
-
-function parseJson(text: string): unknown {
+/** JSON text as a value, or null when it isn't JSON. */
+export function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {

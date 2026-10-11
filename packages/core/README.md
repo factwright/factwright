@@ -8,6 +8,10 @@ Shared logic for the desktop app, the web view and the sync server. It runs anyw
 | `jobs` | Folds those records into one job each, matching them by the job's own link or by role, and keeps known jobs' IDs |
 | `fit-report` | Reads a fit check's write-up: the score's parts with their evidence, and what people say about the company |
 | `tracker` | Job statuses, calls, the status a job shows, and how far along each status is |
+| `progress` | Where each job stands: what needs your attention, its next step, the stats and the views |
+| `journey` | How far each job got and how it ended, as a flow chart for sankeymatic.com or a spreadsheet |
+| `apply-steps` | Special steps for applying, from a job's `apply.md` |
+| `posting` | Reads a job posting as plain text, from an applicant system's API (Greenhouse, Lever, Ashby, Gem) or a web page |
 | `keys` | Matching keys, so "Acme, Inc." and "The Acme Company" count as one company |
 | `links` | Tidies links for matching, and tells a job's own link from a careers page |
 | `markdown` | Reads the tables, sections and lists the skills write |

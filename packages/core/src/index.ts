@@ -47,6 +47,17 @@ export {
 } from './markdown.ts';
 export { type PayRange, parsePay } from './pay.ts';
 export {
+  decodeEntities,
+  htmlToText,
+  jobPostingData,
+  type Posting,
+  type PostingRequest,
+  type PostingSource,
+  postingRequests,
+  postingSource,
+  readPosting,
+} from './posting.ts';
+export {
   type Attention,
   type AttentionLevel,
   CALL_KIND_LABELS,

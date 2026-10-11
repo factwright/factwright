@@ -10,7 +10,7 @@ It will:
 ## How it's put together
 | Folder | What's there |
 |---|---|
-| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), and your jobs ([`src/main/jobs`](src/main/jobs)) |
+| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), Claude's tools ([`src/main/tools`](src/main/tools)), and your jobs ([`src/main/jobs`](src/main/jobs)) |
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
@@ -25,12 +25,20 @@ The window is locked down:
 ## Claude's panel
 Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.js), in the workspace folder inside the app's data folder. Each run is locked down too:
 - **No shell:** Claude Code starts in restricted mode, so it can't run commands.
-- **Only Factwright's extras:** it loads only Factwright's plugin, MCP servers and settings.
+- **Only Factwright's extras:** it loads only Factwright's plugin, tools and settings.
 - **No outside reach:** your claude.ai connectors are off, and there's no browser automation.
-- **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file.
+- **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file. The same server answers Claude's calls to Factwright's tools.
 - **Matching colors:** Claude Code uses its ANSI theme, so the panel's colors come from the design system.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
+
+## Claude's tools
+Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools)), in place of a shell. The server that hears the run's hooks answers them, only for that run's token, and refuses anything a web page sends.
+- **find_job:** whether you've seen a job before: its fit check, job search, folder and status. The skills call it before starting on a job.
+- **job_details:** everything on file for a job, including your notes, calls and history. This is how Claude reads your tracker, without reaching its database.
+- **save_posting:** saves a posting word for word in the job's folder, from the applicant system's API (Greenhouse, Lever, Ashby or Gem) or the page itself. A posting already saved there is kept. It only fetches public https sites, never this computer or your home network, and gives up on pages that are too big or too slow.
+
+The two that only read run without asking. Claude Code asks you before each save_posting, since it reaches the internet: a job post could otherwise steer Claude into sending your details to a site in a link.
 
 ## Your jobs
 Your jobs come from two places, joined into one list:
@@ -69,4 +77,4 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
 
-**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel, shows your jobs, and keeps your tracker. Factwright's tools and the Run buttons come next.
+**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools, shows your jobs, and keeps your tracker. The skills and the Run buttons come next.

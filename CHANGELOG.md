@@ -26,3 +26,5 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `@factwright/ui`: the status menu, score bars, the "what people say" badge, a red tint, and a safe Markdown view for documents.
 - Email links, such as how to apply by email, open your mail app.
 - The desktop app reads your jobs from the workspace, and reads them again when something changes. Your tracker keeps statuses with their dates, applied dates, next steps, notes and calls, in a small database beside the workspace. Logging a call moves a job forward, and you can undo a mis-click.
+- Factwright's tools for Claude, over MCP: `find_job` (whether you've seen a job before), `job_details` (everything on file, including your notes and calls) and `save_posting` (a posting saved word for word from Greenhouse, Lever, Ashby, Gem or the page). Each run gets them from a server on this computer that answers only that run. The two that read run without asking; Claude Code asks you before each posting it fetches, and fetching reaches only public https sites.
+- `@factwright/core`: reading a job posting as plain text, from an applicant system's API or a web page.
