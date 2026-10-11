@@ -7,4 +7,4 @@ It will:
 - give Claude the tools it needs over MCP, from saving postings to rendering resumes
 - keep your workspace and tracker on your computer, and sync them encrypted
 
-**Status:** not started. It comes in phase 3 of the [roadmap](../../docs/roadmap.md).
+**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). So far, [`src/main/claude`](src/main/claude) finds the user's Claude Code, checks its version and sign-in, and builds its locked-down launch command. The window, the terminal panel and the screens come next.
