@@ -1,4 +1,16 @@
 import { join, normalize, sep } from 'node:path';
+import type { TerminalSize } from '../shared/api.ts';
+
+/** A panel size from the window, if it's whole numbers in a sensible range. */
+export function parseTerminalSize(value: unknown): TerminalSize | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { cols, rows } = value as Record<string, unknown>;
+  const fits = (n: unknown, max: number) =>
+    Number.isInteger(n) && (n as number) >= 2 && (n as number) <= max;
+  return fits(cols, 1000) && fits(rows, 500)
+    ? { cols: cols as number, rows: rows as number }
+    : null;
+}
 
 /**
  * What the window may load: only the app's own scripts, styles and images, and no outside

@@ -17,11 +17,13 @@
   background: currentColor;
 }
 
+.starting,
 .working {
   background: var(--fw-accent-soft);
   color: var(--fw-accent-text);
 }
 
+.starting .dot,
 .working .dot {
   background: var(--fw-accent);
   animation: pulse 1.6s ease-in-out infinite;

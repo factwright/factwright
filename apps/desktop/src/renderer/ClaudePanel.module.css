@@ -1,0 +1,79 @@
+.panel {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+/* Tucked away, the run keeps going and its terminal keeps everything it printed. */
+.hidden {
+  display: none;
+}
+
+/* One line, whatever the width: the hint shortens first, so the buttons never move. */
+.header,
+.slim {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 9px var(--fw-space-4);
+  border-bottom: 1px solid var(--fw-border);
+  white-space: nowrap;
+  container-type: inline-size;
+}
+
+.slim {
+  border-top: 1px solid var(--fw-border);
+  border-bottom: 0;
+  background: var(--fw-surface);
+}
+
+.title {
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+}
+
+.hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+/* In a narrow panel, the hint matters more. The sidebar still says whose Claude it is. */
+@container (max-width: 760px) {
+  .plan {
+    display: none;
+  }
+}
+
+.planDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fw-ok);
+}
+
+.show {
+  margin-left: auto;
+}
+
+.terminal {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--fw-space-2) var(--fw-space-3);
+  background: var(--fw-term);
+}

@@ -1,6 +1,29 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { contentSecurityPolicy, isSafeExternalUrl, resolveInside } from './policy.ts';
+import {
+  contentSecurityPolicy,
+  isSafeExternalUrl,
+  parseTerminalSize,
+  resolveInside,
+} from './policy.ts';
+
+describe('parseTerminalSize', () => {
+  it('accepts whole numbers in range', () => {
+    expect(parseTerminalSize({ cols: 120, rows: 30 })).toEqual({ cols: 120, rows: 30 });
+  });
+
+  it.each([
+    null,
+    'big',
+    { cols: 120 },
+    { cols: 1.5, rows: 30 },
+    { cols: 0, rows: 30 },
+    { cols: 120, rows: 9999 },
+    { cols: '120', rows: '30' },
+  ])('refuses %o', (value) => {
+    expect(parseTerminalSize(value)).toBeNull();
+  });
+});
 
 describe('contentSecurityPolicy', () => {
   it('allows only the app itself', () => {
