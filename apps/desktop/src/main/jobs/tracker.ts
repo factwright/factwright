@@ -89,6 +89,8 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL
   );
   CREATE INDEX calls_job ON calls(job_id);`,
+  // The questions the user pasted from a job's application form, as a JSON list.
+  `ALTER TABLE jobs ADD COLUMN questions TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -117,6 +119,16 @@ function linksOf(json: unknown): Link[] {
   }
 }
 
+/** A JSON list of texts, or none when it isn't one. */
+function textsOf(json: unknown): string[] {
+  try {
+    const parsed: unknown = JSON.parse(required(json) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 function trackedRow(row: Row): TrackedRow {
   return {
     id: required(row.id),
@@ -133,6 +145,7 @@ function trackedRow(row: Row): TrackedRow {
     nextAction: text(row.next_action),
     nextOn: text(row.next_on),
     notes: text(row.notes),
+    questions: textsOf(row.questions),
     archived: row.archived === 1,
   };
 }
@@ -320,6 +333,7 @@ export class Tracker {
     if (changes.nextAction !== undefined) set('next_action', changes.nextAction);
     if (changes.nextOn !== undefined) set('next_on', changes.nextOn);
     if (changes.notes !== undefined) set('notes', changes.notes);
+    if (changes.questions !== undefined) set('questions', JSON.stringify(changes.questions));
     if (changes.archived !== undefined) set('archived', changes.archived ? 1 : 0);
 
     const status = changes.status;

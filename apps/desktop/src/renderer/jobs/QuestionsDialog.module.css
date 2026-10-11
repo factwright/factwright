@@ -1,0 +1,56 @@
+.form {
+  display: grid;
+  gap: var(--fw-space-3);
+}
+
+.list {
+  display: grid;
+  gap: var(--fw-space-2);
+  max-height: min(52vh, 480px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+}
+
+.number {
+  min-width: 2ch;
+  padding-top: 7px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Each box grows with its question, up to a point, then scrolls. */
+.box {
+  flex: 1;
+  min-height: 0;
+  max-height: 12lh;
+  field-sizing: content;
+  resize: none;
+}
+
+.add {
+  justify-self: start;
+}
+
+.hint,
+.problem {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.hint {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}

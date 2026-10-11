@@ -121,6 +121,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     nextAction: null,
     nextOn: null,
     notes: null,
+    questions: [],
     archived: false,
     manual: false,
     calls: [],

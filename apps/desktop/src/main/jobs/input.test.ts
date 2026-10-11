@@ -31,12 +31,23 @@ describe('parseJobChanges', () => {
     expect(parseJobChanges({})).toEqual({});
   });
 
+  it('takes the application’s questions as a list, trimmed, without empty ones', () => {
+    expect(parseJobChanges({ questions: ['  Why us?  ', '', '   ', 'Notice period?'] })).toEqual({
+      questions: ['Why us?', 'Notice period?'],
+    });
+    expect(parseJobChanges({ questions: [] })).toEqual({ questions: [] });
+  });
+
   it.each([
     { status: 'hired' },
     { statusOn: null },
     { statusOn: '2026-02-30' },
     { appliedOn: 'yesterday' },
     { notes: 'x'.repeat(LIMITS.notes + 1) },
+    { questions: 'Why us?' },
+    { questions: [42] },
+    { questions: ['x'.repeat(LIMITS.question + 1)] },
+    { questions: Array.from({ length: LIMITS.questions + 1 }, () => 'Why?') },
     { nextAction: 42 },
     { archived: 'yes' },
     'not an object',

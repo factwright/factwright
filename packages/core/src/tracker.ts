@@ -88,6 +88,8 @@ export interface TrackerFields {
   nextAction: string | null;
   nextOn: string | null;
   notes: string | null;
+  /** Questions from the job's application form, which the user pasted for Claude to answer. */
+  questions: string[];
   archived: boolean;
 }
 

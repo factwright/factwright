@@ -1,6 +1,9 @@
 import type { Job, JobStatus } from '@factwright/core';
+import { useState } from 'react';
+import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunSkill, type RunTask, taskJob } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
+import { QuestionsDialog } from './QuestionsDialog.tsx';
 import styles from './RunActions.module.css';
 
 /** What each skill does for a job, as its panel offers it, in the approved order. */
@@ -51,21 +54,30 @@ function stateOf(job: Job, skill: RunSkill, running: boolean, done: boolean): [s
   if (running) return ['Running', 'run'];
   if (done) return ['Done', 'ok'];
   if (skill === 'fit-check' && job.fit) return ['Ran', 'quiet'];
+  if (skill === 'answer-questions' && job.docKinds.includes('answers')) return ['Ran', 'quiet'];
   if (skill === 'focused-resume' && job.files.length > 0) return ['Ready', 'ok'];
   return ['Run', 'run'];
 }
 
-/** The skills Claude can run on this job, with where each stands, and the one to do next. */
+/**
+ * The skills Claude can run on this job, with where each stands, and the one to do next. The
+ * application's questions get pasted in first.
+ */
 export function RunActions({
   job,
   status,
   run,
+  api,
 }: {
   job: Job;
   status: JobStatus;
   run: RunControls;
+  api: FactwrightApi;
 }) {
   const busy = BUSY.includes(run.phase);
+  const [asking, setAsking] = useState(false);
+  const begin = (skill: RunSkill) =>
+    skill === 'answer-questions' ? setAsking(true) : run.start({ skill, jobId: job.id });
   return (
     <section className={styles.section} aria-labelledby={`run-heading-${job.id}`}>
       <h3 id={`run-heading-${job.id}`} className={styles.heading}>
@@ -88,7 +100,7 @@ export function RunActions({
               type="button"
               className={`${styles.action} ${suggested ? styles.suggested : ''}`}
               disabled={busy && !running}
-              onClick={() => (running ? run.show() : run.start({ skill, jobId: job.id }))}
+              onClick={() => (running ? run.show() : begin(skill))}
             >
               <span className={styles.text}>
                 <span className={styles.label}>{label}</span>
@@ -99,6 +111,14 @@ export function RunActions({
           );
         })}
       </div>
+      {asking && (
+        <QuestionsDialog
+          job={job}
+          api={api}
+          onAnswer={() => run.start({ skill: 'answer-questions', jobId: job.id })}
+          onClose={() => setAsking(false)}
+        />
+      )}
     </section>
   );
 }

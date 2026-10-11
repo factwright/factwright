@@ -137,7 +137,7 @@ export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
 
       <NextStep key={`next-${job.id}`} job={job} api={api} />
       {job.apply && <ApplySection markdown={job.apply} />}
-      {run && <RunActions job={job} status={progress.status} run={run} />}
+      {run && <RunActions job={job} status={progress.status} run={run} api={api} />}
       <ScoreSection job={job} today={today} />
       <SentimentSection job={job} today={today} />
       <CallsSection

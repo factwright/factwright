@@ -38,9 +38,13 @@ const ADDED_BY_HAND = 'Added by hand';
 
 /** Whether the user has tracked anything about a job, so it stays listed after its files go. */
 function isTracked(row: TrackedRow, calls: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, notes } = row;
+  const { manual, archived, status, appliedOn, nextAction, nextOn, notes, questions } = row;
   return (
-    manual || archived || calls > 0 || [status, appliedOn, nextAction, nextOn, notes].some(Boolean)
+    manual ||
+    archived ||
+    calls > 0 ||
+    questions.length > 0 ||
+    [status, appliedOn, nextAction, nextOn, notes].some(Boolean)
   );
 }
 
@@ -65,6 +69,7 @@ function assemble(
     nextAction: row.nextAction,
     nextOn: row.nextOn,
     notes: row.notes,
+    questions: row.questions,
     archived: row.archived,
     manual: row.manual,
     calls,
