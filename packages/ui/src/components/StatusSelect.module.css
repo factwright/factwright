@@ -1,0 +1,36 @@
+.status {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--fw-radius-full);
+}
+
+.select {
+  height: 30px;
+  padding: 0 28px 0 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fw-text-sm);
+  font-weight: 650;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select:disabled {
+  cursor: default;
+}
+
+.chevron {
+  position: absolute;
+  right: 11px;
+  pointer-events: none;
+}
+
+/* The menu itself uses the system's colors, so its options stay readable in both themes. */
+.select option {
+  background: var(--fw-surface);
+  color: var(--fw-text);
+}

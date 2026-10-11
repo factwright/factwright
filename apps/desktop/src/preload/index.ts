@@ -21,6 +21,7 @@ const api: FactwrightApi = {
   redateStatusChange: (changeId, at) => ipcRenderer.invoke('history:redate', changeId, at),
   undoStatusChange: (changeId) => ipcRenderer.invoke('history:undo', changeId),
   onJobsChanged: (listener) => subscribe('jobs:changed', listener),
+  openFile: (path) => ipcRenderer.invoke('files:open', path),
 };
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {

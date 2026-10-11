@@ -17,3 +17,12 @@
   min-width: 0;
   min-height: 0;
 }
+
+/* The jobs and the picked job's details, side by side or with the details over the list. */
+.work {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  container: work / inline-size;
+}

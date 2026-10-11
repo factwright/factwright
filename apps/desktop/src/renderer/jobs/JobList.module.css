@@ -1,0 +1,173 @@
+.table {
+  margin-top: 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  container: list / inline-size;
+}
+
+/* Wide: one line per job, with every column. */
+.head,
+.row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2.4fr) 118px 128px 116px minmax(130px, 1.4fr);
+  grid-template-areas: "job status fit pay next";
+  gap: 2px var(--fw-space-3);
+  align-items: center;
+  padding: 0 var(--fw-space-4);
+}
+
+.job {
+  grid-area: job;
+}
+
+.status {
+  grid-area: status;
+}
+
+.fit {
+  grid-area: fit;
+}
+
+.pay {
+  grid-area: pay;
+}
+
+.next {
+  grid-area: next;
+}
+
+/* Narrower: the next step goes under the role. */
+@container list (max-width: 760px) {
+  .head,
+  .row {
+    grid-template-columns: minmax(170px, 1fr) 118px 128px 116px;
+    grid-template-areas:
+      "job status fit pay"
+      "next status fit pay";
+  }
+
+  .head .next {
+    display: none;
+  }
+}
+
+/* Narrowest: the pay goes there too. */
+@container list (max-width: 580px) {
+  .head,
+  .row {
+    grid-template-columns: minmax(150px, 1fr) 118px 128px;
+    grid-template-areas:
+      "job status fit"
+      "pay status fit"
+      "next status fit";
+  }
+
+  .head .pay {
+    display: none;
+  }
+
+  .row .pay {
+    color: var(--fw-muted);
+  }
+}
+
+.head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--fw-border);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rows li + li {
+  border-top: 1px solid var(--fw-border);
+}
+
+.row {
+  width: 100%;
+  min-height: 58px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border: 0;
+  background: var(--fw-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--fw-hover);
+}
+
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
+.selected,
+.selected:hover {
+  background: var(--fw-accent-soft);
+}
+
+.rows li:last-child .row {
+  border-radius: 0 0 var(--fw-radius-lg) var(--fw-radius-lg);
+}
+
+.row .job {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.company,
+.role,
+.row .next {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company {
+  font-weight: 600;
+}
+
+.role {
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+.row .status,
+.row .fit {
+  display: flex;
+  min-width: 0;
+}
+
+.row .pay {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row .next {
+  min-width: 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+.row .urgent {
+  color: var(--fw-bad);
+  font-weight: 600;
+}
+
+.row .action {
+  color: var(--fw-need);
+  font-weight: 600;
+}

@@ -2,7 +2,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--fw-space-4);
   height: 52px;
   padding: 0 var(--fw-space-5);
   border-bottom: 1px solid var(--fw-border);
@@ -26,4 +26,19 @@
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
+}
+
+.brand {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 132px;
+}
+
+/* The search box takes clicks and typing, so it doesn't move the window. */
+.search {
+  flex: 1 1 280px;
+  max-width: 520px;
+  -webkit-app-region: no-drag;
 }

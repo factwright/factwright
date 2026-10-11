@@ -1,4 +1,4 @@
-import { join, normalize, sep } from 'node:path';
+import { join, normalize, resolve, sep } from 'node:path';
 import type { TerminalSize } from '../shared/api.ts';
 
 /** A panel size from the window, if it's whole numbers in a sensible range. */
@@ -34,13 +34,26 @@ export function contentSecurityPolicy(devUrl?: string): string {
   ].join('; ');
 }
 
-/** Only https links leave the app, and they open in the user's own browser. */
+/** Only https and email links leave the app, opening in the user's own browser or mail app. */
 export function isSafeExternalUrl(url: string): boolean {
   try {
-    return new URL(url).protocol === 'https:';
+    const { protocol } = new URL(url);
+    // Email links open the user's mail app with a draft, which they still send themselves.
+    return protocol === 'https:' || protocol === 'mailto:';
   } catch {
     return false;
   }
+}
+
+/**
+ * A resume the window may open in the user's own app for it: a PDF or Word file inside the
+ * workspace. Anything else, or a path that leads outside, is null.
+ */
+export function openableFile(workspace: string, path: string): string | null {
+  if (!/\.(pdf|docx)$/i.test(path)) return null;
+  const base = resolve(workspace);
+  const file = resolve(base, path);
+  return file.startsWith(base + sep) ? file : null;
 }
 
 /** The file a URL path names inside `root`, or null if it would reach outside it. */

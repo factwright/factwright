@@ -1,0 +1,36 @@
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+  font-size: 13px;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.points {
+  color: var(--fw-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.track {
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: var(--fw-sunken);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--fw-accent);
+}
+
+.why {
+  margin-top: var(--fw-space-1);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}

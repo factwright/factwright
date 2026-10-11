@@ -39,12 +39,25 @@ Your jobs come from two places, joined into one list:
 
 Each job keeps its ID in the tracker, so your notes stay with it as new work comes in. A job you've tracked stays listed even if its files go away.
 
+The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved mockup:
+- **The list:** the numbers that matter (in play, applied, heard back, needs you), the views (active, to review, applied, closed), search across companies, roles and notes, and each job's next step. Rows reflow to fit the window instead of scrolling sideways.
+- **The job panel:** everything on file for the picked job:
+  - its status, which you can change
+  - how to apply, when there are special steps
+  - why it scored what it did, part by part, with the evidence
+  - what people say about the company
+  - its resumes and documents, calls, and history
+
+  Beside the list when there's room, and over it when the window is narrow.
+- **Opening files:** documents open formatted, in the app. Resumes open in your own PDF or Word app, and only PDF and Word files inside the workspace can open that way.
+
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`).
+  - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state, and status changes stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
 
-**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel, and the app reads your jobs and keeps your tracker. The job list screens and Factwright's tools come next.
+**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel, and shows your jobs from the workspace and the tracker. Logging calls and notes, and Factwright's tools, come next.

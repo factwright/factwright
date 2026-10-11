@@ -1,0 +1,401 @@
+/* Beside the list when there's room for both. */
+.panel {
+  flex: 0 0 clamp(340px, 32%, 420px);
+  min-width: 0;
+  overflow: auto;
+  padding: var(--fw-space-6);
+  border-left: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+}
+
+.placeholder {
+  max-width: 220px;
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-md);
+  text-align: center;
+}
+
+/* Over the list when the window is narrow, and only once a job is picked. */
+@container work (max-width: 980px) {
+  .panel {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 2;
+    width: min(440px, 100%);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 0.14);
+  }
+
+  .empty {
+    display: none;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.company {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.role {
+  margin: 2px 0 0;
+  font-size: var(--fw-text-lg);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.where {
+  margin: 6px 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fw-accent-text);
+  font-weight: 550;
+}
+
+.close {
+  flex: 0 0 auto;
+  margin: -6px -8px 0 0;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+  margin-top: 14px;
+}
+
+.problem {
+  margin: var(--fw-space-2) 0 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}
+
+.next {
+  margin: var(--fw-space-3) 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.urgent {
+  background: var(--fw-bad-soft);
+  color: var(--fw-bad);
+}
+
+.action {
+  background: var(--fw-need-soft);
+  color: var(--fw-need);
+}
+
+.info {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.apply {
+  margin-top: var(--fw-space-4);
+}
+
+.applyAlert {
+  margin: 0 0 var(--fw-space-2);
+  font-weight: 600;
+}
+
+.facts {
+  display: grid;
+  gap: var(--fw-space-1);
+  margin: 0 0 var(--fw-space-2);
+  font-size: 13px;
+}
+
+.facts > div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--fw-space-2);
+}
+
+.facts dt {
+  color: var(--fw-muted);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.section {
+  margin-top: 22px;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px var(--fw-space-3);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.subheading {
+  margin: var(--fw-space-3) 0 var(--fw-space-1);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.meta {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.quiet {
+  margin: var(--fw-space-1) 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+.failed {
+  margin: var(--fw-space-2) 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--fw-bad-soft);
+  font-size: 13px;
+}
+
+.parts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fw-text);
+}
+
+.evidence li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.evidence svg,
+.noMark {
+  flex: 0 0 14px;
+  margin-top: 3px;
+}
+
+.proven {
+  color: var(--fw-ok);
+}
+
+.partly {
+  color: var(--fw-need);
+}
+
+.missing {
+  color: var(--fw-bad);
+}
+
+.more {
+  margin-top: var(--fw-space-3);
+  font-size: 13px;
+}
+
+.more summary {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.moreGroup:first-of-type .subheading {
+  margin-top: var(--fw-space-2);
+}
+
+.mood {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: var(--fw-space-2) 0 0;
+  font-size: 13px;
+}
+
+.files,
+.calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+.fileIcon {
+  flex: 0 0 auto;
+  color: var(--fw-muted);
+}
+
+.fileText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fileName {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileMeta {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.notes {
+  margin: var(--fw-space-1) 0 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.calls li {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+.callKind {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.callNotes {
+  margin: 4px 0 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.history li {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: var(--fw-space-2);
+}
+
+.when {
+  color: var(--fw-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dialog {
+  width: min(720px, calc(100vw - 64px));
+  max-height: calc(100vh - 96px);
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-xl);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.25);
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.dialogHead {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 14px var(--fw-space-4) 14px var(--fw-space-6);
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.dialogTitle {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dialogBody {
+  overflow: auto;
+  padding: var(--fw-space-5) var(--fw-space-6) var(--fw-space-6);
+}
+
+/* Lists from a write-up, such as why the job fits. */
+.items {
+  margin: var(--fw-space-1) 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.items li + li,
+.items ul {
+  margin-top: 3px;
+}

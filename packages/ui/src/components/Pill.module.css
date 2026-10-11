@@ -49,3 +49,8 @@
   background: var(--fw-tone-amber-bg);
   color: var(--fw-tone-amber-fg);
 }
+
+.red {
+  background: var(--fw-tone-red-bg);
+  color: var(--fw-tone-red-fg);
+}

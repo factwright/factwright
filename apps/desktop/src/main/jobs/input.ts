@@ -1,7 +1,7 @@
 import { CALL_KINDS, CALL_OUTCOMES, CALL_STATES, isIsoDate, JOB_STATUSES } from '@factwright/core';
 import type { CallChanges, JobChanges, NewCall, NewJob } from '../../shared/api.ts';
 
-/** The longest text each field takes. The window's inputs stop at these too. */
+/** The longest text each field takes. */
 export const LIMITS = {
   company: 200,
   role: 300,

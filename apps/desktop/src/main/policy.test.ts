@@ -1,8 +1,9 @@
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   contentSecurityPolicy,
   isSafeExternalUrl,
+  openableFile,
   parseTerminalSize,
   resolveInside,
 } from './policy.ts';
@@ -42,8 +43,9 @@ describe('contentSecurityPolicy', () => {
 });
 
 describe('isSafeExternalUrl', () => {
-  it('lets https links out', () => {
+  it('lets https and email links out', () => {
     expect(isSafeExternalUrl('https://code.claude.com/docs/en/setup')).toBe(true);
+    expect(isSafeExternalUrl('mailto:jobs@acme.example?subject=Staff%20Engineer')).toBe(true);
   });
 
   it.each(['http://example.com', 'file:///etc/passwd', 'javascript:alert(1)', 'not a url'])(
@@ -68,4 +70,27 @@ describe('resolveInside', () => {
       expect(resolveInside(root, path)).toBeNull();
     },
   );
+});
+
+describe('openableFile', () => {
+  const workspace = join(sep, 'data', 'workspace');
+
+  it('opens resumes inside the workspace', () => {
+    expect(openableFile(workspace, 'applications/acme/resume.pdf')).toBe(
+      join(workspace, 'applications', 'acme', 'resume.pdf'),
+    );
+    expect(openableFile(workspace, 'applications/acme/Resume.DOCX')).toBe(
+      join(workspace, 'applications', 'acme', 'Resume.DOCX'),
+    );
+  });
+
+  it.each([
+    'applications/acme/job.md',
+    'applications/acme/run.command',
+    '../outside.pdf',
+    'applications/../../outside.pdf',
+    `${sep}etc${sep}passwd.pdf`,
+  ])('refuses %s', (path) => {
+    expect(openableFile(workspace, path)).toBeNull();
+  });
 });

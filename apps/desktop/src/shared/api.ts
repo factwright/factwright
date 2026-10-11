@@ -104,4 +104,6 @@ export interface FactwrightApi {
   undoStatusChange(changeId: string): Promise<EditResult>;
   /** Listens for any change to the jobs. Returns a function that stops listening. */
   onJobsChanged(listener: (list: JobList) => void): () => void;
+  /** Opens a resume from the workspace in the user's own app for it. */
+  openFile(path: string): Promise<EditResult>;
 }
