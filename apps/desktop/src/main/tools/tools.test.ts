@@ -294,7 +294,12 @@ describe('build_resume', () => {
     expect(readFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'utf8')).toBe(
       '%PDF-1.7 made up',
     );
-    expect(printer.print.mock.calls[0]?.[0]).toContain('<div class="name">Alex Rivera</div>');
+    const printed = printer.print.mock.calls[0]?.[0] ?? '';
+    expect(printed).toContain('<div class="name">Alex Rivera</div>');
+    // The timeline layout carries Segoe UI's and Bahnschrift's stand-ins.
+    expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
+    expect(printed).toContain('@font-face{font-family:"Barlow";font-weight:700;');
+    expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
   });
 
   it('builds a Word file too, in the format asked for', async () => {

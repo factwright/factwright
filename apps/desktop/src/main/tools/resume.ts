@@ -16,6 +16,7 @@ import {
   readResume,
   renderHtml,
 } from '@factwright/engine';
+import { RESUME_FONTS } from '../resume/fonts.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import { FOLDER_NAME } from './posting.ts';
 
@@ -129,7 +130,7 @@ export async function buildResume(
   const maxPages = rules.maxPages ?? DEFAULT_MAX_PAGES;
   const report: string[] = [];
 
-  const html = renderHtml(resume, layout);
+  const html = renderHtml(resume, layout, RESUME_FONTS);
   if (files.some((file) => file.endsWith('.pdf'))) {
     const printed = await deps.printer.print(html);
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);

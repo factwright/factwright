@@ -8,6 +8,7 @@ export {
   measurableHtml,
   RUNT_PERCENT,
 } from './fit.ts';
+export { FONT_FILES, type FontFile, type FontUrls, fontFaceCss } from './fonts.ts';
 export { DEFAULT_SYSTEMS_HEADING, escapeHtml, renderHtml } from './html.ts';
 export { DEFAULT_MAX_PAGES, type LintConfig, lintResume, readConfidentialTerms } from './lint.ts';
 export {

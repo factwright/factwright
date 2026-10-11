@@ -51,4 +51,6 @@ Pull requests aren't open yet, but bug reports and ideas are welcome as issues. 
 ## License
 [AGPL-3.0](LICENSE). Copyright © 2026 Neatifai LLC.
 
+The resume fonts in [`packages/engine/fonts`](packages/engine/fonts) are under the SIL Open Font License 1.1, by their own authors.
+
 Factwright isn't affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
