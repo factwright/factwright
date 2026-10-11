@@ -1,0 +1,32 @@
+.stat {
+  padding: var(--fw-space-3) var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.label {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.value {
+  margin: 2px 0 0;
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.need {
+  color: var(--fw-need);
+}
+
+.detail {
+  margin: 2px 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}

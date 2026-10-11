@@ -1,0 +1,54 @@
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: var(--fw-radius-full);
+  font-size: var(--fw-text-sm);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.working {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.working .dot {
+  background: var(--fw-accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.needs-answer {
+  background: var(--fw-need-soft);
+  color: var(--fw-need);
+}
+
+.done {
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+}
+
+.stopped {
+  background: var(--fw-tone-gray-bg);
+  color: var(--fw-tone-gray-fg);
+}
+
+.failed {
+  background: var(--fw-bad-soft);
+  color: var(--fw-bad);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

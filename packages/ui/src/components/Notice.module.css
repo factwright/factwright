@@ -1,0 +1,32 @@
+.notice {
+  padding: var(--fw-space-3) 14px;
+  border-radius: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.body {
+  margin-top: var(--fw-space-1);
+  color: var(--fw-text);
+  font-size: var(--fw-text-md);
+}
+
+.need {
+  background: var(--fw-need-soft);
+}
+
+.need .title {
+  color: var(--fw-need);
+}
+
+.info {
+  background: var(--fw-accent-soft);
+}
+
+.info .title {
+  color: var(--fw-accent-text);
+}
