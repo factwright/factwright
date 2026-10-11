@@ -51,4 +51,48 @@ describe('ClaudeCard', () => {
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations.map((violation) => violation.id)).toEqual([]);
   });
+
+  it('says when Factwright’s setup failed with the Claude Code installed now, and checks again', () => {
+    const ready = { state: 'ready', version: '2.1.300', plan: 'max' } as const;
+    const failed = {
+      version: '2.1.300',
+      result: 'failed',
+      problem: 'Claude Code closed before it reached Factwright’s tools.',
+      at: '2026-10-11T18:00:00.000Z',
+    } as const;
+    const onCheckSetup = vi.fn();
+    const { rerender } = render(
+      <ClaudeCard status={ready} onRecheck={vi.fn()} setup={failed} onCheckSetup={onCheckSetup} />,
+    );
+    expect(screen.getByText('Setup check failed')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Claude Code closed before it reached Factwright’s tools. Factwright may need an update to work with Claude Code 2.1.300.',
+      ),
+    ).toBeTruthy();
+    screen.getByRole('button', { name: 'Check again' }).click();
+    expect(onCheckSetup).toHaveBeenCalledOnce();
+    rerender(
+      <ClaudeCard
+        status={ready}
+        onRecheck={vi.fn()}
+        setup={failed}
+        checkingSetup
+        onCheckSetup={onCheckSetup}
+      />,
+    );
+    expect((screen.getByRole('button', { name: 'Checking…' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    // A check of an older version, or one still waiting on the user, says nothing.
+    for (const setup of [
+      { ...failed, version: '2.1.299' },
+      { ...failed, result: 'untrusted' as const, problem: undefined },
+    ]) {
+      rerender(
+        <ClaudeCard status={ready} onRecheck={vi.fn()} setup={setup} onCheckSetup={onCheckSetup} />,
+      );
+      expect(screen.getByText('Signed in · Max plan')).toBeTruthy();
+    }
+  });
 });

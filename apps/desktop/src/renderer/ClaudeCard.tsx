@@ -1,5 +1,6 @@
 import { Button } from '@factwright/ui';
 import type { ReactNode } from 'react';
+import type { SetupCheck } from '../shared/api.ts';
 import styles from './ClaudeCard.module.css';
 import { planName } from './plan.ts';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
@@ -10,20 +11,30 @@ interface CardView {
   tone: 'ok' | 'need' | 'bad' | 'checking';
   line: string;
   help?: ReactNode;
-  recheck: boolean;
+  /** What Check again checks: Claude Code itself, or Factwright's setup with it. */
+  recheck: 'status' | 'setup' | null;
 }
 
 /** How each status reads, in plain words, with the fix when there is one. */
-function describe(status: ClaudeStatusView): CardView {
-  if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: false };
+function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView {
+  if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: null };
   switch (status.state) {
     case 'ready': {
       const plan = planName(status.plan);
+      // Only a check of the version installed now counts. An older one ran before an update.
+      if (setup?.result === 'failed' && setup.version === status.version) {
+        return {
+          tone: 'bad',
+          line: 'Setup check failed',
+          help: `${setup.problem ?? ''} Factwright may need an update to work with Claude Code ${status.version}.`.trim(),
+          recheck: 'setup',
+        };
+      }
       return {
         tone: 'ok',
         line: plan ? `Signed in · ${plan}` : 'Signed in',
         help: 'Factwright never sees your login.',
-        recheck: false,
+        recheck: null,
       };
     }
     case 'signed-out':
@@ -35,7 +46,7 @@ function describe(status: ClaudeStatusView): CardView {
             In Terminal, run <code>claude auth login</code>, then come back.
           </>
         ),
-        recheck: true,
+        recheck: 'status',
       };
     case 'too-old':
       return {
@@ -47,7 +58,7 @@ function describe(status: ClaudeStatusView): CardView {
             <code>claude update</code>.
           </>
         ),
-        recheck: true,
+        recheck: 'status',
       };
     case 'missing':
       return {
@@ -61,27 +72,36 @@ function describe(status: ClaudeStatusView): CardView {
             </a>
           </>
         ),
-        recheck: true,
+        recheck: 'status',
       };
     case 'unknown':
       return {
         tone: 'bad',
         line: 'Couldn’t check Claude Code',
         help: 'Make sure it opens in Terminal, then check again.',
-        recheck: true,
+        recheck: 'status',
       };
   }
 }
 
-/** The user's own Claude Code: whether it's ready, and what to do when it isn't. */
+/**
+ * The user's own Claude Code: whether it's ready, and what to do when it isn't, including when
+ * Factwright's setup stops working with a new version of it.
+ */
 export function ClaudeCard({
   status,
   onRecheck,
+  setup = null,
+  checkingSetup = false,
+  onCheckSetup,
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
+  setup?: SetupCheck | null;
+  checkingSetup?: boolean;
+  onCheckSetup?: () => void;
 }) {
-  const view = describe(status);
+  const view = describe(status, setup);
   return (
     <section className={styles.card} aria-labelledby="claude-card-title">
       <h2 id="claude-card-title" className={styles.title}>
@@ -93,8 +113,13 @@ export function ClaudeCard({
       </p>
       {view.help && <p className={styles.help}>{view.help}</p>}
       {view.recheck && (
-        <Button className={styles.recheck} size="sm" onClick={onRecheck}>
-          Check again
+        <Button
+          className={styles.recheck}
+          size="sm"
+          disabled={view.recheck === 'setup' && checkingSetup}
+          onClick={view.recheck === 'setup' ? onCheckSetup : onRecheck}
+        >
+          {view.recheck === 'setup' && checkingSetup ? 'Checking…' : 'Check again'}
         </Button>
       )}
     </section>

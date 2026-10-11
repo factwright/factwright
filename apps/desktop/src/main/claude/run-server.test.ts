@@ -31,6 +31,18 @@ describe('RunServer', () => {
     await vi.waitFor(() => expect(listener).toHaveBeenCalledWith({ hook_event_name: 'Stop' }));
   });
 
+  it("tells a run's tools listener which methods it calls, one at a time or in a batch", async () => {
+    await server.start();
+    const tools = vi.fn();
+    server.listen(TOKEN, () => {}, tools);
+    await post(server.toolsUrl, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    await post(server.toolsUrl, [
+      { jsonrpc: '2.0', id: 2, method: 'ping' },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+    ]);
+    expect(tools.mock.calls).toEqual([['tools/list'], ['ping'], ['notifications/initialized']]);
+  });
+
   it("answers a run's tool calls over MCP", async () => {
     await server.start();
     server.listen(TOKEN, () => {});

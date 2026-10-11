@@ -17,10 +17,12 @@ import { Sidebar } from './Sidebar.tsx';
 import { TopBar } from './TopBar.tsx';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
+import { useSetupCheck } from './useSetupCheck.ts';
 
 /** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 export function App({ api }: { api: FactwrightApi }) {
   const { status, recheck } = useClaudeStatus(api);
+  const setup = useSetupCheck(api);
   const run = useClaudeRun(api);
   const { jobs, reload } = useJobs(api);
   const today = useToday();
@@ -91,6 +93,7 @@ export function App({ api }: { api: FactwrightApi }) {
         <Sidebar
           claude={status}
           onRecheckClaude={recheck}
+          setup={setup}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
         />
         <div className={styles.content}>

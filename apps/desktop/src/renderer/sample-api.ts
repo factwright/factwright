@@ -1,8 +1,20 @@
-import type { ClaudeStatus, FactwrightApi, RunSignal } from '../shared/api.ts';
+import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 
 const READY: ClaudeStatus = { state: 'ready', version: '2.1.296', plan: 'max' };
+
+/** Setup checks for ?setup=: the one a new version of Claude Code could fail, or a pass. */
+const SETUP_CHECKS: Readonly<Record<string, SetupCheck>> = {
+  failed: {
+    version: READY.version,
+    result: 'failed',
+    problem:
+      'Claude Code closed before it reached Factwright’s tools. It last showed: “error: unknown option ‘--restricted’”.',
+    at: '2026-10-11T18:00:00.000Z',
+  },
+  passed: { version: READY.version, result: 'passed', at: '2026-10-11T18:00:00.000Z' },
+};
 
 const SAMPLES: Readonly<Record<string, ClaudeStatus>> = {
   ready: READY,
@@ -88,6 +100,11 @@ export function sampleApi(): FactwrightApi {
     platform: query.get('platform') ?? 'darwin',
     claudeStatus: () =>
       claude === 'checking' ? new Promise(() => {}) : Promise.resolve(SAMPLES[claude] ?? READY),
+    setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
+    // Checking again takes a moment, then passes, as it would once Factwright is updated.
+    checkSetup: () =>
+      new Promise((resolve) => setTimeout(() => resolve(SETUP_CHECKS.passed ?? null), 1200)),
+    onSetupCheck: () => () => {},
     startClaude: async (_size, task) => {
       run = sampleRun(window.matchMedia('(prefers-color-scheme: dark)').matches);
       if (task) {

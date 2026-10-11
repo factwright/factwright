@@ -2,7 +2,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, nativeTheme, session } from 'electron';
 import { RunServer } from './claude/run-server.ts';
-import { ClaudeSession } from './claude/session.ts';
+import { checkSetup, SetupChecker } from './claude/self-test.ts';
+import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
 import { registerIpc } from './ipc.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
@@ -74,9 +75,31 @@ function start(): void {
         notifyIfAway(window, signal);
       },
     });
+    // Claude Code updates itself, so each new version gets a check, hidden, that uses no plan.
+    const setup = new SetupChecker({
+      file: join(dataDir, 'setup-check.json'),
+      check: (signal) =>
+        checkSetup({
+          launch: () =>
+            prepareLaunch({
+              dataDir,
+              pluginDir: pluginDir(),
+              server,
+              dark: nativeTheme.shouldUseDarkColors,
+              name: 'self-test',
+            }),
+          start: startHidden,
+          server,
+          signal,
+        }),
+      onChange: (check) => window.webContents.send('setup:checked', check),
+      busy: () => claude.busy(),
+    });
+    await setup.load();
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
       claude,
+      setup,
       jobs,
       workspace,
     });
@@ -86,6 +109,7 @@ function start(): void {
     stopWithWindow(window);
     app.on('before-quit', () => {
       claude.stop();
+      setup.stop();
       server.stop();
       printer.close();
       jobs.stop();
