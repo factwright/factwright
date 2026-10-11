@@ -123,9 +123,11 @@ export async function checkSetup(deps: CheckDeps): Promise<SetupFinding | null> 
       return;
     }
     child.onData((data) => {
-      screen = (screen + data).slice(-8000);
+      // Checked before trimming, so a big chunk can't push the question out unseen.
+      const seen = screen + data;
+      screen = seen.slice(-8000);
       // Until the user trusts the workspace once, in a run, Claude Code waits on this question.
-      if (!connected && TRUST_QUESTION.test(plain(screen))) finish({ result: 'untrusted' });
+      if (!connected && TRUST_QUESTION.test(plain(seen))) finish({ result: 'untrusted' });
     });
     child.onExit(() => {
       // A hook that's on its way gets a moment to land.
@@ -161,17 +163,32 @@ export interface SetupCheckerDeps {
   file: string;
   check: (signal: AbortSignal) => Promise<SetupFinding | null>;
   onChange: (check: SetupCheck) => void;
+  /** Whether the user's own run is going. Checks wait for it, so they never slow it down. */
+  busy?: () => boolean;
+  /** How long a check waits for the app to settle, and between tries while a run is going. */
+  waitMs?: number;
   now?: () => Date;
+}
+
+interface Running {
+  promise: Promise<SetupCheck | null>;
+  /** Stops this check, such as when the user starts a run. */
+  controller: AbortController;
+  /** Started by the app, rather than by the user's Check again. */
+  automatic: boolean;
 }
 
 /**
  * Checks Factwright's setup once for each version of Claude Code, which updates itself, and
- * once a launch until a check passes. Keeps the latest check between launches.
+ * once a launch until a check passes. Keeps the latest check between launches. The app's own
+ * checks wait for it to settle and for the user's run to end, and step aside when one starts,
+ * so they never slow the user down.
  */
 export class SetupChecker {
   private readonly deps: SetupCheckerDeps;
   private latest: SetupCheck | null = null;
-  private running: Promise<SetupCheck | null> | null = null;
+  private running: Running | null = null;
+  private planned: ReturnType<typeof setTimeout> | undefined;
   private readonly stopper = new AbortController();
   /** The versions checked since the app opened. */
   private readonly checked = new Set<string>();
@@ -195,35 +212,67 @@ export class SetupChecker {
   }
 
   /**
-   * Checks this version of Claude Code, unless a check of it passed, or already ran since the app
-   * opened. So a check that didn't pass runs once a launch, not each time the window comes back.
+   * Plans a check of this version of Claude Code, unless a check of it passed, or already ran
+   * since the app opened. So a check that didn't pass runs once a launch, not each time the
+   * window comes back.
    */
-  async checkIfNeeded(version: string): Promise<SetupCheck | null> {
+  checkIfNeeded(version: string): void {
+    if (this.stopper.signal.aborted || this.planned || this.running) return;
     const known = this.latest?.version === version;
-    if (known && (this.latest?.result === 'passed' || this.checked.has(version))) {
-      return this.latest;
-    }
-    return this.check(version);
+    if (known && (this.latest?.result === 'passed' || this.checked.has(version))) return;
+    this.plan(version);
   }
 
-  /** Checks now, or joins the check that's already running. */
+  /** Checks now, as the user asked, or joins the check that's already running. */
   check(version: string): Promise<SetupCheck | null> {
-    this.checked.add(version);
-    this.running ??= this.run(version).finally(() => {
-      this.running = null;
-    });
-    return this.running;
+    clearTimeout(this.planned);
+    this.planned = undefined;
+    return this.running?.promise ?? this.run(version, false);
   }
 
-  /** Stops a check that's running, which then records nothing. */
+  /** The user is starting a run, so the app's own check steps aside, to try again later. */
+  yieldToRun(): void {
+    if (this.running?.automatic) this.running.controller.abort();
+  }
+
+  /** Stops a check that's running or planned, which then records nothing. */
   stop(): void {
+    clearTimeout(this.planned);
+    this.planned = undefined;
     this.stopper.abort();
   }
 
-  private async run(version: string): Promise<SetupCheck | null> {
-    if (this.stopper.signal.aborted) return this.latest;
-    const finding = await this.deps.check(this.stopper.signal);
-    if (!finding) return this.latest;
+  private plan(version: string): void {
+    this.planned = setTimeout(() => {
+      this.planned = undefined;
+      if (this.deps.busy?.()) this.plan(version);
+      else void this.run(version, true);
+    }, this.deps.waitMs ?? 20_000);
+  }
+
+  private run(version: string, automatic: boolean): Promise<SetupCheck | null> {
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, this.stopper.signal]);
+    let retry = false;
+    const promise = (async () => {
+      if (signal.aborted) return this.latest;
+      const finding = await this.deps.check(signal);
+      if (!finding) {
+        retry = automatic && controller.signal.aborted && !this.stopper.signal.aborted;
+        return this.latest;
+      }
+      return this.record(version, finding);
+    })().finally(() => {
+      this.running = null;
+      // A check that stepped aside for the user's run tries again once it can.
+      if (retry && !this.planned) this.plan(version);
+    });
+    this.running = { promise, controller, automatic };
+    return promise;
+  }
+
+  private async record(version: string, finding: SetupFinding): Promise<SetupCheck> {
+    this.checked.add(version);
     const check: SetupCheck = {
       version,
       ...finding,

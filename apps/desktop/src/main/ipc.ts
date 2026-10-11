@@ -80,7 +80,7 @@ export function registerIpc({ isAppPage, claude: session, setup, jobs, workspace
   // Each status check also notices a new version of Claude Code, which gets its setup checked.
   answer('claude:status', async () => {
     const status = await claudeStatus(nodeStatusDeps());
-    if (status.state === 'ready') void setup.checkIfNeeded(status.version);
+    if (status.state === 'ready') setup.checkIfNeeded(status.version);
     return status;
   });
 
@@ -99,6 +99,8 @@ export function registerIpc({ isAppPage, claude: session, setup, jobs, workspace
   };
 
   answer('claude:start', (size, task) => {
+    // The user's run comes first: a setup check that's going steps aside for it.
+    setup.yieldToRun();
     const valid = parseTerminalSize(size);
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');

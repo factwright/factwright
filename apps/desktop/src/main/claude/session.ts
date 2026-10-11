@@ -105,13 +105,28 @@ interface Run {
 export class ClaudeSession {
   private readonly deps: SessionDeps;
   private run: Run | undefined;
+  private starting = false;
 
   constructor(deps: SessionDeps) {
     this.deps = deps;
   }
 
+  /** Whether a run is starting or going. */
+  busy(): boolean {
+    return this.starting || this.run !== undefined;
+  }
+
   async start(size: TerminalSize, prompt?: string): Promise<StartResult> {
-    if (this.run) return { ok: false, reason: 'busy' };
+    if (this.busy()) return { ok: false, reason: 'busy' };
+    this.starting = true;
+    try {
+      return await this.launch(size, prompt);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private async launch(size: TerminalSize, prompt?: string): Promise<StartResult> {
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,

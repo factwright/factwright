@@ -108,6 +108,10 @@ describe('checkSetup', () => {
     );
     await expect(found).resolves.toEqual({ result: 'untrusted' });
     expect(claude.killed).toBe(true);
+    // Even when the question comes in one big piece, with a long redraw after it.
+    const big = await begin();
+    big.claude.show(`Do you trust the files in this folder?${' '.repeat(20_000)}`);
+    await expect(big.found).resolves.toEqual({ result: 'untrusted' });
   });
 
   it('says what Claude Code showed when it closes before reaching the tools', async () => {
@@ -187,34 +191,46 @@ describe('SetupChecker', () => {
   let file: string;
   let check: ReturnType<typeof vi.fn<(signal: AbortSignal) => Promise<SetupFinding | null>>>;
   let onChange: ReturnType<typeof vi.fn<(check: SetupCheck) => void>>;
+  let busy = false;
   const NOW = () => new Date('2026-10-11T18:00:00.000Z');
+  const PASSED = { version: '2.1.300', result: 'passed', at: '2026-10-11T18:00:00.000Z' };
 
   beforeEach(() => {
     folder = mkdtempSync(join(tmpdir(), 'factwright-setup-'));
     file = join(folder, 'setup-check.json');
     check = vi.fn(async () => ({ result: 'passed' }) as const);
     onChange = vi.fn();
+    busy = false;
   });
   afterEach(() => rmSync(folder, { recursive: true, force: true }));
 
-  const checker = () => new SetupChecker({ file, check, onChange, now: NOW });
+  const checker = () =>
+    new SetupChecker({ file, check, onChange, now: NOW, busy: () => busy, waitMs: 20 });
+  /** A check that runs until it's stopped, as a hidden Claude Code would. */
+  const untilStopped = (signal: AbortSignal) =>
+    new Promise<SetupFinding | null>((resolve) =>
+      signal.addEventListener('abort', () => resolve(null), { once: true }),
+    );
 
-  it('checks a new version, keeps what it found, and skips a version that passed', async () => {
+  it('checks a new version once the app settles, keeps what it found, and skips one that passed', async () => {
     const first = checker();
     await first.load();
     expect(first.current()).toBeNull();
-    const found = await first.checkIfNeeded('2.1.300');
-    expect(found).toEqual({ version: '2.1.300', result: 'passed', at: '2026-10-11T18:00:00.000Z' });
-    expect(onChange).toHaveBeenCalledWith(found);
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(found);
+    first.checkIfNeeded('2.1.300');
+    first.checkIfNeeded('2.1.300');
+    expect(check).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith(PASSED));
+    expect(check).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(PASSED));
     // The next launch remembers it, and checks only a newer version.
     const next = checker();
     await next.load();
-    expect(next.current()).toEqual(found);
-    await next.checkIfNeeded('2.1.300');
+    expect(next.current()).toEqual(PASSED);
+    next.checkIfNeeded('2.1.300');
+    await new Promise((resolve) => setTimeout(resolve, 60));
     expect(check).toHaveBeenCalledOnce();
-    await next.checkIfNeeded('2.1.301');
-    expect(check).toHaveBeenCalledTimes(2);
+    next.checkIfNeeded('2.1.301');
+    await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
   });
 
   it('checks a version that didn’t pass once a launch, and again when asked', async () => {
@@ -225,38 +241,64 @@ describe('SetupChecker', () => {
     check.mockResolvedValue({ result: 'failed', problem: 'No hooks.' });
     const setup = checker();
     await setup.load();
-    await setup.checkIfNeeded('2.1.300');
-    await setup.checkIfNeeded('2.1.300');
+    setup.checkIfNeeded('2.1.300');
+    await vi.waitFor(() => expect(setup.current()).toMatchObject({ problem: 'No hooks.' }));
+    setup.checkIfNeeded('2.1.300');
+    await new Promise((resolve) => setTimeout(resolve, 60));
     expect(check).toHaveBeenCalledOnce();
-    expect(setup.current()).toMatchObject({ result: 'failed', problem: 'No hooks.' });
     await setup.check('2.1.300');
     expect(check).toHaveBeenCalledTimes(2);
   });
 
-  it('runs one check at a time, and records nothing when there was nothing to check', async () => {
+  it('waits while the user’s run is going', async () => {
+    busy = true;
+    const setup = checker();
+    setup.checkIfNeeded('2.1.300');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(check).not.toHaveBeenCalled();
+    busy = false;
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+  });
+
+  it('steps aside when the user starts a run, and tries again later', async () => {
+    check.mockImplementationOnce(untilStopped);
+    const setup = checker();
+    setup.checkIfNeeded('2.1.300');
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+    setup.yieldToRun();
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith(PASSED));
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs Check again at once, without stepping aside, and one check at a time', async () => {
     let finish: (finding: SetupFinding | null) => void = () => {};
     check.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    busy = true;
     const setup = checker();
-    const first = setup.check('2.1.300');
-    const second = setup.checkIfNeeded('2.1.300');
-    finish(null);
-    await expect(first).resolves.toBeNull();
-    await expect(second).resolves.toBeNull();
+    const asked = setup.check('2.1.300');
+    const again = setup.check('2.1.300');
+    setup.yieldToRun();
     expect(check).toHaveBeenCalledOnce();
+    finish({ result: 'passed' });
+    await expect(asked).resolves.toEqual(PASSED);
+    await expect(again).resolves.toEqual(PASSED);
+  });
+
+  it('records nothing when there was nothing to check', async () => {
+    check.mockResolvedValue(null);
+    const setup = checker();
+    await expect(setup.check('2.1.300')).resolves.toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('stops a check as the app quits, and starts no more', async () => {
-    let signal: AbortSignal | undefined;
-    check.mockImplementation(async (given) => {
-      signal = given;
-      return null;
-    });
+  it('stops a check as the app quits, and plans no more', async () => {
+    check.mockImplementationOnce(untilStopped);
     const setup = checker();
-    await setup.check('2.1.300');
+    const going = setup.check('2.1.300');
     setup.stop();
-    expect(signal?.aborted).toBe(true);
-    await setup.check('2.1.301');
+    await expect(going).resolves.toBeNull();
+    setup.checkIfNeeded('2.1.301');
+    await new Promise((resolve) => setTimeout(resolve, 60));
     expect(check).toHaveBeenCalledOnce();
   });
 

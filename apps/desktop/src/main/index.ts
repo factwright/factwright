@@ -93,6 +93,7 @@ function start(): void {
           signal,
         }),
       onChange: (check) => window.webContents.send('setup:checked', check),
+      busy: () => claude.busy(),
     });
     await setup.load();
     registerIpc({
