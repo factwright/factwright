@@ -1,0 +1,299 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { CollectedJob } from '@factwright/core';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { type EditContext, Tracker } from './tracker.ts';
+
+const TODAY = '2026-10-10';
+const NOW = '2026-10-10T18:00:00.000Z';
+const AT: EditContext = { today: TODAY, now: NOW };
+
+function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob {
+  return {
+    id,
+    company: 'Acme Robotics',
+    companyKey: 'acme-robotics',
+    role: 'Staff Engineer',
+    link: null,
+    links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
+    location: null,
+    pay: null,
+    source: 'Fit check',
+    fit: null,
+    search: null,
+    folder: null,
+    stage: 'checked',
+    firstSeen: '2026-10-07',
+    lastActivity: '2026-10-07',
+    summary: null,
+    events: [],
+    docs: {},
+    apply: null,
+    fitReport: null,
+    sentiment: null,
+    files: [],
+    ...extra,
+  };
+}
+
+let tracker: Tracker;
+
+beforeEach(() => {
+  tracker = new Tracker(':memory:');
+  tracker.saveCollected([collected('acme--staff')], NOW);
+});
+
+afterEach(() => tracker.close());
+
+const row = (id = 'acme--staff') => tracker.rows().find((each) => each.id === id);
+const history = (id = 'acme--staff') =>
+  (tracker.history().get(id) ?? []).map((change) => [change.status, change.at]);
+
+describe('saveCollected', () => {
+  it('keeps each job’s name, links and first sighting', () => {
+    expect(tracker.knownJobs()).toEqual([
+      {
+        id: 'acme--staff',
+        company: 'Acme Robotics',
+        companyKey: 'acme-robotics',
+        role: 'Staff Engineer',
+        links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
+      },
+    ]);
+    expect(row()).toMatchObject({ manual: false, firstSeen: '2026-10-07', status: null });
+  });
+
+  it('follows new names and links, keeps the earliest sighting, and never blanks the role', () => {
+    tracker.updateJob('acme--staff', { notes: 'Ask about on-call' }, AT);
+    tracker.saveCollected(
+      [
+        collected('acme--staff', {
+          company: 'Acme Robotics, Inc.',
+          role: '',
+          links: [],
+          firstSeen: '2026-10-09',
+        }),
+      ],
+      NOW,
+    );
+    expect(row()).toMatchObject({
+      company: 'Acme Robotics, Inc.',
+      role: 'Staff Engineer',
+      links: [],
+      firstSeen: '2026-10-07',
+      notes: 'Ask about on-call',
+    });
+    tracker.saveCollected([collected('acme--staff', { firstSeen: '2026-10-01' })], NOW);
+    expect(row()?.firstSeen).toBe('2026-10-01');
+  });
+});
+
+describe('updateJob', () => {
+  it('dates a new status today, logs it, and sets the applied date', () => {
+    expect(tracker.updateJob('acme--staff', { status: 'applied' }, AT)).toEqual({ ok: true });
+    expect(row()).toMatchObject({ status: 'applied', statusOn: TODAY, appliedOn: TODAY });
+    expect(history()).toEqual([['applied', TODAY]]);
+  });
+
+  it('backdates a status, and keeps an applied date the user gave', () => {
+    tracker.updateJob(
+      'acme--staff',
+      { status: 'applied', statusOn: '2026-10-08', appliedOn: '2026-10-06' },
+      AT,
+    );
+    expect(row()).toMatchObject({ statusOn: '2026-10-08', appliedOn: '2026-10-06' });
+    expect(history()).toEqual([['applied', '2026-10-08']]);
+  });
+
+  it('saves the other fields, and clearing the status logs nothing', () => {
+    tracker.updateJob('acme--staff', { status: 'passed' }, AT);
+    tracker.updateJob(
+      'acme--staff',
+      {
+        status: null,
+        nextAction: 'Follow up',
+        nextOn: '2026-10-14',
+        notes: 'Recruiter: Sam',
+        archived: true,
+      },
+      AT,
+    );
+    expect(row()).toMatchObject({
+      status: null,
+      statusOn: null,
+      nextAction: 'Follow up',
+      nextOn: '2026-10-14',
+      notes: 'Recruiter: Sam',
+      archived: true,
+    });
+    expect(history()).toEqual([['passed', TODAY]]);
+  });
+
+  it('logs nothing when the status stays the same', () => {
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    expect(history()).toHaveLength(1);
+  });
+
+  it('corrects when the current status started', () => {
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    tracker.updateJob('acme--staff', { statusOn: '2026-10-03' }, AT);
+    expect(row()).toMatchObject({ statusOn: '2026-10-03', appliedOn: '2026-10-03' });
+    expect(history()).toEqual([['applied', '2026-10-03']]);
+  });
+
+  it('refuses to date a status that comes from the skills', () => {
+    const result = tracker.updateJob('acme--staff', { statusOn: '2026-10-03' }, AT);
+    expect(result).toEqual({ ok: false, message: expect.stringContaining('Claude’s work') });
+  });
+
+  it('says so when the job is gone', () => {
+    expect(tracker.updateJob('gone', { notes: 'x' }, AT)).toMatchObject({ ok: false });
+  });
+});
+
+describe('addJob', () => {
+  it('adds a job by hand with an ID from its company and role', () => {
+    const first = tracker.addJob(
+      {
+        company: 'Harbor & Pine',
+        role: 'Senior Engineer, Payments',
+        link: 'https://harborpine.example/jobs/42',
+        pay: '$155k–$185k',
+        status: 'applied',
+        notes: '  Referred by a friend  ',
+      },
+      AT,
+    );
+    expect(first).toEqual({ ok: true, jobId: 'harbor-and-pine--senior-engineer-payments' });
+    expect(row('harbor-and-pine--senior-engineer-payments')).toMatchObject({
+      manual: true,
+      links: [{ url: 'https://harborpine.example/jobs/42', label: 'Posting' }],
+      payText: '$155k–$185k',
+      firstSeen: TODAY,
+      status: 'applied',
+      appliedOn: TODAY,
+      notes: 'Referred by a friend',
+    });
+    expect(history('harbor-and-pine--senior-engineer-payments')).toEqual([['applied', TODAY]]);
+    const second = tracker.addJob(
+      { company: 'Harbor & Pine', role: 'Senior Engineer, Payments' },
+      AT,
+    );
+    expect(second).toEqual({ ok: true, jobId: 'harbor-and-pine--senior-engineer-payments-2' });
+  });
+
+  it('needs a company, and a link that starts with http', () => {
+    expect(tracker.addJob({ company: '  ' }, AT)).toMatchObject({ ok: false });
+    expect(tracker.addJob({ company: 'Acme', link: 'javascript:alert(1)' }, AT)).toMatchObject({
+      ok: false,
+    });
+  });
+});
+
+describe('calls', () => {
+  it('moves the job forward when a call is booked', () => {
+    tracker.updateJob('acme--staff', { status: 'applied', statusOn: '2026-10-01' }, AT);
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-13', atTime: '10:30' }, AT);
+    expect(row()).toMatchObject({ status: 'screen', statusOn: TODAY });
+    expect(tracker.calls().get('acme--staff')).toEqual([
+      {
+        id: expect.any(String),
+        kind: 'screen',
+        onDate: '2026-10-13',
+        atTime: '10:30',
+        state: 'scheduled',
+        outcome: null,
+        notes: null,
+      },
+    ]);
+  });
+
+  it('dates the move on the call’s own day when it’s logged afterward', () => {
+    tracker.addCall('acme--staff', { kind: 'technical', onDate: '2026-10-08' }, AT);
+    expect(row()).toMatchObject({ status: 'interview', statusOn: '2026-10-08' });
+    expect(tracker.calls().get('acme--staff')?.[0]?.state).toBe('done');
+  });
+
+  it('never moves a job back, or out of a settled outcome', () => {
+    tracker.updateJob('acme--staff', { status: 'offer' }, AT);
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: TODAY }, AT);
+    expect(row()?.status).toBe('offer');
+    tracker.updateJob('acme--staff', { status: 'rejected' }, AT);
+    tracker.addCall('acme--staff', { kind: 'offer', onDate: TODAY }, AT);
+    expect(row()?.status).toBe('rejected');
+  });
+
+  it('leaves the status alone for other kinds of calls', () => {
+    tracker.addCall('acme--staff', { kind: 'other', onDate: TODAY }, AT);
+    expect(row()?.status).toBeNull();
+    expect(tracker.calls().get('acme--staff')).toHaveLength(1);
+  });
+
+  it('closes the job when a call’s outcome is "rejected", and deletes calls', () => {
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: TODAY }, AT);
+    const [call] = tracker.calls().get('acme--staff') ?? [];
+    const id = call?.id ?? '';
+    tracker.updateCall(id, { state: 'done', outcome: 'rejected', notes: 'Wanted Rust' }, AT);
+    expect(row()).toMatchObject({ status: 'rejected', statusOn: TODAY });
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      state: 'done',
+      outcome: 'rejected',
+      notes: 'Wanted Rust',
+    });
+    expect(history().map(([status]) => status)).toEqual(['screen', 'rejected']);
+    tracker.deleteCall(id);
+    expect(tracker.calls().get('acme--staff')).toBeUndefined();
+    expect(tracker.updateCall(id, { state: 'done' }, AT)).toMatchObject({ ok: false });
+  });
+});
+
+describe('history', () => {
+  it('corrects when a change happened, and the dates that follow from it', () => {
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    const [change] = tracker.history().get('acme--staff') ?? [];
+    tracker.redateChange(change?.id ?? '', '2026-10-02', NOW);
+    expect(row()).toMatchObject({ statusOn: '2026-10-02', appliedOn: '2026-10-02' });
+  });
+
+  it('undoes the latest change, putting the job back where it was', () => {
+    tracker.updateJob('acme--staff', { status: 'applied', statusOn: '2026-10-05' }, AT);
+    tracker.updateJob('acme--staff', { status: 'ghosted' }, AT);
+    const changes = tracker.history().get('acme--staff') ?? [];
+    tracker.undoChange(changes[1]?.id ?? '', NOW);
+    expect(row()).toMatchObject({ status: 'applied', statusOn: '2026-10-05' });
+    tracker.undoChange(changes[0]?.id ?? '', NOW);
+    expect(row()).toMatchObject({ status: null, statusOn: null, appliedOn: null });
+    expect(tracker.undoChange('gone', NOW)).toMatchObject({ ok: false });
+  });
+
+  it('orders changes on the same day by when they were made', () => {
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    tracker.updateJob('acme--staff', { status: 'screen' }, AT);
+    const changes = tracker.history().get('acme--staff') ?? [];
+    tracker.undoChange(changes[1]?.id ?? '', NOW);
+    expect(row()?.status).toBe('applied');
+  });
+});
+
+describe('the database file', () => {
+  let folder: string;
+
+  beforeEach(() => {
+    folder = mkdtempSync(join(tmpdir(), 'factwright-tracker-'));
+  });
+
+  afterEach(() => rmSync(folder, { recursive: true, force: true }));
+
+  it('keeps what the user tracked between openings', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { notes: 'Kept' }, AT);
+    first.close();
+    const second = new Tracker(file);
+    expect(second.rows()[0]?.notes).toBe('Kept');
+    second.close();
+  });
+});

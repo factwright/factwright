@@ -10,7 +10,7 @@ It will:
 ## How it's put together
 | Folder | What's there |
 |---|---|
-| [`src/main`](src/main) | The main process: the window, the app's security rules, and running Claude Code ([`src/main/claude`](src/main/claude)) |
+| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), and your jobs ([`src/main/jobs`](src/main/jobs)) |
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
@@ -32,6 +32,13 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
 
+## Your jobs
+Your jobs come from two places, joined into one list:
+- **The workspace:** what the skills save there, such as fit checks, job searches, and each job's folder with its posting and resumes. The app reads it with [`@factwright/core`](../../packages/core), and reads it again whenever something changes, so new work shows up on its own.
+- **The tracker:** what you set by hand, such as statuses with their dates, applied dates, next steps, notes, and calls. It's a small SQLite database (Node's built-in `node:sqlite`) in the app's data folder, beside the workspace rather than in it, so Claude's file tools can't reach it.
+
+Each job keeps its ID in the tracker, so your notes stay with it as new work comes in. A job you've tracked stays listed even if its files go away.
+
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
@@ -40,4 +47,4 @@ You can tuck the panel away while Claude works, and it comes back whenever Claud
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
 
-**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel. The job list and Factwright's tools come next.
+**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel, and the app reads your jobs and keeps your tracker. The job list screens and Factwright's tools come next.

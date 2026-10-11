@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isIsoDate } from './dates.ts';
+import { firstDate, isIsoDate, localDate } from './dates.ts';
 
 describe('isIsoDate', () => {
   it.each(['2026-10-10', '2024-02-29'])('accepts %s', (value) => {
@@ -12,4 +12,20 @@ describe('isIsoDate', () => {
       expect(isIsoDate(value)).toBe(false);
     },
   );
+});
+
+describe('firstDate', () => {
+  it('finds the first date in the text', () => {
+    expect(firstDate('Checked Oct 7 (2026-10-07), again 2026-10-09')).toBe('2026-10-07');
+  });
+
+  it.each(['Oct 7', '', null, undefined])('returns null for %j', (value) => {
+    expect(firstDate(value)).toBeNull();
+  });
+});
+
+describe('localDate', () => {
+  it('writes the local calendar date', () => {
+    expect(localDate(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
 });

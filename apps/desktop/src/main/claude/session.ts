@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
+import { workspaceDir } from '../jobs/workspace.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
@@ -44,7 +45,7 @@ export class ClaudeSession {
       return { ok: false, reason: 'not-ready' };
     }
 
-    const workspace = join(this.deps.dataDir, 'workspace');
+    const workspace = workspaceDir(this.deps.dataDir);
     const runDir = join(this.deps.dataDir, 'run');
     await mkdir(workspace, { recursive: true });
     await mkdir(runDir, { recursive: true });

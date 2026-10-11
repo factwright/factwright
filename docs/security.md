@@ -14,7 +14,7 @@ Factwright holds the most personal parts of a job hunt: your career history, you
 ## What Claude can do on your computer
 Job postings are web pages written by strangers, so a posting could try to give Claude instructions. Factwright limits what those instructions could do:
 - Claude runs without a shell: no Bash, no PowerShell.
-- Its file access stays inside your workspace folder.
+- Its file access stays inside your workspace folder. Your tracker (statuses, notes and calls) sits outside it.
 - Its only extra tools are the ones Factwright provides, each doing one narrow job.
 
 ## Your data in the cloud

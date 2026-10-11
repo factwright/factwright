@@ -97,5 +97,20 @@ export function sampleApi(): FactwrightApi {
       signalListeners.add(listener);
       return () => signalListeners.delete(listener);
     },
+    listJobs: async () => ({ jobs: [], readAt: null }),
+    jobDocs: async () => null,
+    updateJob: unsaved,
+    addJob: unsaved,
+    addCall: unsaved,
+    updateCall: unsaved,
+    deleteCall: unsaved,
+    redateStatusChange: unsaved,
+    undoStatusChange: unsaved,
+    onJobsChanged: () => () => {},
   };
+}
+
+/** Edits in the sample screens go nowhere. */
+async function unsaved() {
+  return { ok: false as const, message: 'The sample screens don’t save changes.' };
 }
