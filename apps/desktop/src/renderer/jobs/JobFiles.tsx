@@ -1,10 +1,11 @@
-import type { Job, JobDocKind, JobDocs } from '@factwright/core';
+import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText } from 'lucide-react';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { fileSize, shortDate } from './format.ts';
 import styles from './JobPanel.module.css';
+import { ResumePreview } from './ResumePreview.tsx';
 
 /** The documents a job's folder can hold, in the order they're listed, with what each one is. */
 const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = [
@@ -21,6 +22,7 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
 export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
+  const [preview, setPreview] = useState<JobFile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
   // Older folders keep the posting inside the job notes.
@@ -60,6 +62,16 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
                   {shortDate(file.modified, today)}
                 </span>
               </span>
+              {file.format === 'pdf' && (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  aria-label={`Preview ${file.name}`}
+                  onClick={() => setPreview(file)}
+                >
+                  Preview
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="quiet"
@@ -99,6 +111,7 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
           <Markdown text={open.text} />
         </Dialog>
       )}
+      {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
     </section>
   );
 }

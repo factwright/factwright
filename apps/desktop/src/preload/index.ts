@@ -27,6 +27,7 @@ const api: FactwrightApi = {
   undoStatusChange: (changeId) => ipcRenderer.invoke('history:undo', changeId),
   onJobsChanged: (listener) => subscribe('jobs:changed', listener),
   openFile: (path) => ipcRenderer.invoke('files:open', path),
+  readPdf: (path) => ipcRenderer.invoke('files:pdf', path),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   saveFile: (name, text) => ipcRenderer.invoke('files:save', name, text),
 };

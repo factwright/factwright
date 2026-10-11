@@ -32,6 +32,7 @@
     "electron": "catalog:",
     "jsdom": "catalog:",
     "lucide-react": "catalog:",
+    "pdfjs-dist": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "catalog:",

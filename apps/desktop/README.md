@@ -89,7 +89,7 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - what people say about the company
   - calls and interviews: log one, and it moves the job forward
   - your notes, which save as you type
-  - its resumes and documents
+  - its resumes and documents. Preview shows a resume PDF's pages right there, exactly as an employer will see them, drawn by [pdf.js](https://github.com/mozilla/pdf.js). pdf.js loads only when a preview opens, and draws pages the way it prints, so a preview finishes even with the window in the background. The window can read only PDFs in your workspace, up to 20 MB.
   - its history, where you can fix a date or undo the latest change
   - archiving, which takes it out of your lists without losing anything
 
