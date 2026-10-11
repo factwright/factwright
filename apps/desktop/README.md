@@ -32,6 +32,17 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
 
+## The setup check
+Claude Code updates itself, so a new version could change something Factwright relies on. Once for each version, the app checks its setup ([`src/main/claude/self-test.ts`](src/main/claude/self-test.ts)). It starts your Claude Code hidden, with exactly what a run gets but no prompt, so it uses none of your plan. Then:
+1. It waits for Claude Code to reach Factwright's tools.
+2. It closes it the way you would, with Ctrl-C twice.
+3. It waits for the session-end hook to arrive.
+
+That covers the launch flags, the tools and their token, the settings, and the hooks. The result is kept in the app's data folder:
+- **Passed:** nothing shows.
+- **Failed:** the sidebar's Your Claude card says what went wrong, in Claude Code's own words where it can, with Check again.
+- **Waiting at the trust question:** a workspace Claude Code doesn't trust yet stops at that question. The check waits for your first run, and tries again at the next launch.
+
 ## Claude's tools
 Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools)), in place of a shell. The server that hears the run's hooks answers them, only for that run's token, and refuses anything a web page sends.
 - **find_job:** whether you've seen a job before: its fit check, job search, folder and status. It matches the company loosely, or the posting's link alone. The skills call it before starting on a job.

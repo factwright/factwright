@@ -9,6 +9,21 @@ export type ClaudeStatus =
   | { state: 'missing' }
   | { state: 'unknown' };
 
+/**
+ * Whether Factwright's setup works with the user's Claude Code, from a check that starts it
+ * hidden with no prompt, so it uses none of their plan. "untrusted" means Claude Code is still
+ * waiting for the user to trust the workspace, which they do in their first run.
+ */
+export interface SetupCheck {
+  /** The Claude Code version checked. */
+  version: string;
+  result: 'passed' | 'failed' | 'untrusted';
+  /** For a failure, what went wrong, in plain words. */
+  problem?: string;
+  /** When, as an ISO time. */
+  at: string;
+}
+
 /** Where a run in Claude's panel stands. Claude Code's hooks report it, and so does its exit. */
 export type RunSignal = 'working' | 'needs-answer' | 'done' | 'stopped' | 'failed';
 
@@ -86,6 +101,12 @@ export interface FactwrightApi {
   /** The operating system, so the window can make room for its title bar buttons. */
   platform: string;
   claudeStatus(): Promise<ClaudeStatus>;
+  /** The latest check of Factwright's setup with the user's Claude Code, or null before one. */
+  setupCheck(): Promise<SetupCheck | null>;
+  /** Checks the setup again now, and answers with what it found. */
+  checkSetup(): Promise<SetupCheck | null>;
+  /** Listens for new setup checks. Returns a function that stops listening. */
+  onSetupCheck(listener: (check: SetupCheck) => void): () => void;
   /** Starts the user's Claude Code in the panel. Only one run happens at a time. */
   startClaude(size: TerminalSize, task?: RunTask): Promise<StartResult>;
   /** Gives the run that's open a skill to run on a job, as if the user typed it. */

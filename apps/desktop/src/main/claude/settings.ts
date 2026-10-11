@@ -18,7 +18,8 @@ const PLUGIN = 'factwright';
  *   public job APIs: the applicant systems' boards and Hacker News's hiring thread. The user OKs
  *   each page Factwright's tools fetch, since a job post could steer Claude to send the user's
  *   details to a site in a link. Searches and those APIs never reach a site the post names.
- * - hooks that tell the app, over HTTP on this computer, where the run stands
+ * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
+ *   session ends, which the self-test listens for
  */
 export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: boolean }) {
   const hook = [
@@ -48,6 +49,7 @@ export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: bool
       PermissionRequest: [{ hooks: hook }],
       Notification: [{ hooks: hook }],
       Stop: [{ hooks: hook }],
+      SessionEnd: [{ hooks: hook }],
     },
   };
 }

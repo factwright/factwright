@@ -12,6 +12,7 @@ import {
   shell,
 } from 'electron';
 import type { EditResult, SaveFileResult } from '../shared/api.ts';
+import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
 import {
@@ -49,6 +50,8 @@ export interface IpcDeps {
   /** Whether a page is the app's own, the only page whose requests are answered. */
   isAppPage: (url: string) => boolean;
   claude: ClaudeSession;
+  /** Checks that Factwright's setup still works with each version of Claude Code. */
+  setup: SetupChecker;
   jobs: JobsService;
   workspace: string;
 }
@@ -62,7 +65,7 @@ const isFile = (path: string) => {
 };
 
 /** Answers the window's requests, after checking each one came from the app's own page. */
-export function registerIpc({ isAppPage, claude: session, jobs, workspace }: IpcDeps): void {
+export function registerIpc({ isAppPage, claude: session, setup, jobs, workspace }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
 
@@ -74,7 +77,19 @@ export function registerIpc({ isAppPage, claude: session, jobs, workspace }: Ipc
     });
   };
 
-  answer('claude:status', () => claudeStatus(nodeStatusDeps()));
+  // Each status check also notices a new version of Claude Code, which gets its setup checked.
+  answer('claude:status', async () => {
+    const status = await claudeStatus(nodeStatusDeps());
+    if (status.state === 'ready') void setup.checkIfNeeded(status.version);
+    return status;
+  });
+
+  answer('setup:latest', () => setup.current());
+
+  answer('setup:check', async () => {
+    const status = await claudeStatus(nodeStatusDeps());
+    return status.state === 'ready' ? setup.check(status.version) : setup.current();
+  });
 
   /** A task the window asked for, if it's a job search, or names a skill and a job the app knows. */
   const knownTask = (value: unknown) => {

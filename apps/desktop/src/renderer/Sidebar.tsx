@@ -1,5 +1,6 @@
 import { NavItem } from '@factwright/ui';
 import { Briefcase } from 'lucide-react';
+import type { SetupCheck } from '../shared/api.ts';
 import { ClaudeCard } from './ClaudeCard.tsx';
 import styles from './Sidebar.module.css';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
@@ -8,10 +9,13 @@ import type { ClaudeStatusView } from './useClaudeStatus.ts';
 export function Sidebar({
   claude,
   onRecheckClaude,
+  setup,
   jobCount,
 }: {
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
+  /** The latest check of Factwright's setup, and how to run it again. */
+  setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
   /** How many jobs there are, once they've loaded. */
   jobCount?: number | undefined;
 }) {
@@ -26,7 +30,13 @@ export function Sidebar({
         />
       </nav>
       <div className={styles.claude}>
-        <ClaudeCard status={claude} onRecheck={onRecheckClaude} />
+        <ClaudeCard
+          status={claude}
+          onRecheck={onRecheckClaude}
+          setup={setup.check}
+          checkingSetup={setup.checking}
+          onCheckSetup={setup.checkAgain}
+        />
       </div>
     </aside>
   );

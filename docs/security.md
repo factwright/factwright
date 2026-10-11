@@ -21,6 +21,7 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - The job search tools run without asking too. They reach only fixed public APIs (Greenhouse, Lever, Ashby, Gem and Hacker News's), and send them nothing but a board's name or a month.
 - Claude's own tool for fetching pages is off. Factwright's tools only fetch public https sites: never this computer, your home network, or a link with a sign-in in it. Each page is capped in size and time.
 - Claude Code asks you before it writes a file, unless you tell it not to for the rest of a run.
+- Once for each new version of Claude Code, the app starts it hidden, with no prompt, to check that its setup still works, then closes it. No prompt means none of your plan is used, and the check runs with the same restrictions as a run.
 - Building a resume runs without asking, since it stays on this computer: Factwright prints it in a hidden window that loads nothing else. Once you've applied to a job, the files you sent stay as they are.
 
 ## Your data in the cloud

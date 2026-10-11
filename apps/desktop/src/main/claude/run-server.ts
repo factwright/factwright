@@ -17,6 +17,14 @@ export interface RunServerOptions {
 /** Hears one run's hook events, as Claude Code sends them. */
 export type HookListener = (event: unknown) => void;
 
+/** Hears which MCP methods a run calls, such as "tools/list", before they're answered. */
+export type ToolsListener = (method: string) => void;
+
+interface RunListeners {
+  hooks: HookListener;
+  tools: ToolsListener | undefined;
+}
+
 /**
  * Listens on this computer for a Claude Code run's hooks, which it passes to that run's
  * listener, and its calls to Factwright's tools, over MCP. Each run gets its own token, and
@@ -24,7 +32,7 @@ export type HookListener = (event: unknown) => void;
  */
 export class RunServer {
   private readonly options: RunServerOptions;
-  private readonly listeners = new Map<string, HookListener>();
+  private readonly listeners = new Map<string, RunListeners>();
   private server: Server | undefined;
   /** Where Claude Code sends its hooks. Set once the server is listening. */
   hookUrl = '';
@@ -48,8 +56,9 @@ export class RunServer {
     this.server?.close();
   }
 
-  listen(token: string, listener: HookListener): () => void {
-    this.listeners.set(token, listener);
+  /** Takes a run's hooks, and maybe its tool calls, by its token, until the returned function is called. */
+  listen(token: string, hooks: HookListener, tools?: ToolsListener): () => void {
+    this.listeners.set(token, { hooks, tools });
     return () => this.listeners.delete(token);
   }
 
@@ -78,8 +87,15 @@ export class RunServer {
       if (request.url === '/hook') {
         // An empty answer lets Claude Code carry on as it would have.
         response.writeHead(204).end();
-        listener(parseJson(body));
+        listener.hooks(parseJson(body));
         return;
+      }
+      if (listener.tools) {
+        const parsed = parseJson(body);
+        for (const message of Array.isArray(parsed) ? parsed : [parsed]) {
+          const method = (message as { method?: unknown } | null)?.method;
+          if (typeof method === 'string') listener.tools(method);
+        }
       }
       void this.answerTools(body, response);
     });
@@ -107,7 +123,7 @@ export class RunServer {
       .end(JSON.stringify(answer.body));
   }
 
-  private listenerFor(token: string | null): HookListener | undefined {
+  private listenerFor(token: string | null): RunListeners | undefined {
     if (!token) return undefined;
     for (const [known, listener] of this.listeners) {
       if (timingSafeEqual(Buffer.from(known), Buffer.from(token))) return listener;

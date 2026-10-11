@@ -5,6 +5,9 @@ import type { FactwrightApi } from '../shared/api.ts';
 const api: FactwrightApi = {
   platform: process.platform,
   claudeStatus: () => ipcRenderer.invoke('claude:status'),
+  setupCheck: () => ipcRenderer.invoke('setup:latest'),
+  checkSetup: () => ipcRenderer.invoke('setup:check'),
+  onSetupCheck: (listener) => subscribe('setup:checked', listener),
   startClaude: (size, task) => ipcRenderer.invoke('claude:start', size, task),
   runTask: (task) => ipcRenderer.invoke('claude:task', task),
   stopClaude: () => ipcRenderer.send('claude:stop'),

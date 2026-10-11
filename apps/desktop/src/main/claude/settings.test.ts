@@ -36,6 +36,7 @@ describe('sessionSettings', () => {
       'PermissionRequest',
       'Notification',
       'Stop',
+      'SessionEnd',
     ]);
   });
 
