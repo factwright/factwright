@@ -98,6 +98,10 @@ function start(): void {
         }),
       onChange: (check) => window.webContents.send('setup:checked', check),
       busy: () => claude.busy(),
+      // The end-to-end tests set a shorter wait, to see the check finish.
+      ...(process.env.FACTWRIGHT_SETUP_WAIT_MS && {
+        waitMs: Number(process.env.FACTWRIGHT_SETUP_WAIT_MS),
+      }),
     });
     await setup.load();
     registerIpc({

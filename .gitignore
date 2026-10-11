@@ -14,3 +14,6 @@ coverage/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Playwright's end-to-end runs
+test-results/

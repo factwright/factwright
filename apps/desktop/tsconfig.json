@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src", "scripts", "*.config.ts"],
+  "include": ["src", "scripts", "e2e", "*.config.ts"],
   "exclude": ["src/renderer"]
 }

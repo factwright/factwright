@@ -167,6 +167,9 @@ catalogs:
     '@biomejs/biome':
       specifier: 2.5.15
       version: 2.5.15
+    '@playwright/test':
+      specifier: 1.63.0
+      version: 1.63.0
     '@testing-library/dom':
       specifier: 10.4.2
       version: 10.4.2
@@ -248,6 +251,9 @@ importers:
       '@factwright/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.63.0
       '@testing-library/dom':
         specifier: 'catalog:'
         version: 10.4.2
@@ -522,6 +528,11 @@ packages:
 
   '@oxc-project/types@0.153.0':
     resolution: {integrity: sha512-jSNrRIyvPVLL5E1z/tS5zLAprosGz/FuI1PWwEOz59j3E4TTTzSpqKb/RDGqJhhW0QHYISGXxq582wGx6T11Tw==}
+
+  '@playwright/test@1.63.0':
+    resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     resolution: {integrity: sha512-Vu/NICrgdRvUOeaJZIyB2FP63s6fO/4ud5l8dXmxDx9yDyn+mN0y+gsvsVviSli+T361Aqo0h46EuMoobrwawA==}
@@ -1097,6 +1108,16 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.63.0:
+    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   postcss@8.5.29:
     resolution: {integrity: sha512-49cGhUbXj8Qenv0iTMxA1cFBzxXoctpC9Ujd77t1WcbJIr6nF/eI7g/8MgxrYldFRuAXvja7xQRwavoW7kgrxQ==}
     engines: {node: ^10 || ^12 || >=14}
@@ -1472,6 +1493,10 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   '@oxc-project/types@0.153.0': {}
+
+  '@playwright/test@1.63.0':
+    dependencies:
+      playwright: 1.63.0
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     optional: true
@@ -1880,6 +1905,12 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.63.0: {}
+
+  playwright@1.63.0:
+    dependencies:
+      playwright-core: 1.63.0
 
   postcss@8.5.29:
     dependencies:

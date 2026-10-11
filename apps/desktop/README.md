@@ -108,5 +108,10 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - `?platform=win32` shows the Windows title bar layout.
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
+- **End-to-end tests:** after a build, `e2e` drives the built app with [Playwright](https://playwright.dev) through its main flows ([`e2e`](e2e)):
+  - It runs on a made-up job hunt in a fresh data folder.
+  - A stand-in for Claude Code ([`e2e/fake-claude`](e2e/fake-claude)) comes first on PATH. It answers the version and sign-in checks, and in a run reaches Factwright's tools and sends its hooks as Claude Code does. It never reaches Anthropic, so the tests use no plan.
+  - `FACTWRIGHT_SETUP_WAIT_MS` shortens the setup check's wait, so the tests see it finish.
+  - CI runs the tests on every change, on Linux, with a virtual display.
 
 **Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools and skills, shows your jobs with their Run buttons, runs job searches, and keeps your tracker. Pasting an application's questions before a run comes next.

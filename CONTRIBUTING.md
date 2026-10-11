@@ -18,6 +18,13 @@ pnpm check   # format, lint, typecheck and test
 pnpm fix     # apply formatting and safe lint fixes
 ```
 
+End-to-end tests drive the built desktop app with Playwright, on a made-up job hunt, with a stand-in for Claude Code:
+
+```bash
+pnpm --filter @factwright/desktop build
+pnpm --filter @factwright/desktop e2e
+```
+
 ## Standards
 Two rules hold for everything in this repo:
 

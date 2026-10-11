@@ -13,10 +13,12 @@
     "build": "vite build -c vite.main.config.ts && vite build -c vite.preload.config.ts && vite build -c vite.renderer.config.ts",
     "start": "electron .",
     "screens": "vite -c vite.renderer.config.ts",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
     "typecheck": "tsc && tsc -p src/renderer",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@factwright/core": "workspace:*",
     "@factwright/engine": "workspace:*",
     "@factwright/ui": "workspace:*",
