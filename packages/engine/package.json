@@ -1,0 +1,23 @@
+{
+  "name": "@factwright/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Turns resume data into PDF-ready HTML and Word files, and checks fit and rules.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "docx": "9.8.1"
+  },
+  "devDependencies": {
+    "jszip": "3.10.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
