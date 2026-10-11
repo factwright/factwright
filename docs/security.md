@@ -15,7 +15,9 @@ Factwright holds the most personal parts of a job hunt: your career history, you
 Job postings are web pages written by strangers, so a posting could try to give Claude instructions. Factwright limits what those instructions could do:
 - Claude runs without a shell: no Bash, no PowerShell.
 - Its file access stays inside your workspace folder. Your tracker (statuses, notes and calls) sits outside it.
-- Its only extra tools are the ones Factwright provides, each doing one narrow job.
+- Its only extra tools are the ones Factwright provides, each doing one narrow job. They answer only the run Factwright started, and refuse anything a web page sends.
+- The tools that only read what's on file run without asking. Saving a posting reaches the internet, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link.
+- Saving a posting only fetches public https sites: never this computer, your home network, or a link with a sign-in in it. Each page is capped in size and time.
 
 ## Your data in the cloud
 ### End-to-end encryption

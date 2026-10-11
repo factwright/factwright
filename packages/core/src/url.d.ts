@@ -5,6 +5,7 @@
  */
 declare class URL {
   constructor(url: string, base?: string);
+  readonly href: string;
   readonly hostname: string;
   readonly pathname: string;
   readonly search: string;
@@ -12,6 +13,7 @@ declare class URL {
 }
 
 declare class URLSearchParams {
+  get(name: string): string | null;
   keys(): IterableIterator<string>;
   delete(name: string): void;
 }

@@ -24,10 +24,11 @@ Factwright doesn't have an AI of its own. It launches the Claude Code you instal
 When you click **Run** on a job, the app starts a session in your workspace and sends the command, such as a fit check or a tailored resume. Claude asks you questions in that terminal when it needs to. Claude Code hooks tell the app when a run finishes or is waiting on you.
 
 ## Tools for Claude
-Claude doesn't get a shell. Instead, the app gives it a small set of tools over MCP ([`plugin`](../plugin)):
+Claude doesn't get a shell. Instead, the app gives it a small set of tools over MCP, which it serves itself, on this computer, while a run is live ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)):
+- see whether you've seen a job before, and how it went
+- look up everything on file for a job, including your notes and calls
 - save a job posting word for word
-- render a resume to PDF or Word
-- look up everything on file for a job
+- render a resume to PDF or Word (coming next)
 
 ## The workspace
 Claude works on plain files in a folder on your computer:

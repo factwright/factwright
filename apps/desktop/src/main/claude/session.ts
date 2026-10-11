@@ -7,8 +7,8 @@ import { workspaceDir } from '../jobs/workspace.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
-import { EMPTY_MCP_CONFIG, HOOK_TOKEN_VARIABLE, sessionSettings } from './settings.ts';
-import type { SignalServer } from './signals.ts';
+import type { RunServer } from './run-server.ts';
+import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
 import { claudeStatus, nodeStatusDeps } from './status.ts';
 
 /** What a run needs from the app: where things live, and where its output and signals go. */
@@ -16,7 +16,8 @@ export interface SessionDeps {
   /** The app's own data folder, which holds the workspace and each run's settings. */
   dataDir: string;
   pluginDir: string;
-  signals: SignalServer;
+  /** Hears the run's hooks and answers its calls to Factwright's tools. */
+  server: RunServer;
   dark: () => boolean;
   onOutput: (data: string) => void;
   onSignal: (signal: RunSignal) => void;
@@ -52,11 +53,11 @@ export class ClaudeSession {
     const settings = join(runDir, 'settings.json');
     const mcpConfig = join(runDir, 'mcp.json');
     const hookSettings = sessionSettings({
-      hookUrl: this.deps.signals.url,
+      hookUrl: this.deps.server.hookUrl,
       dark: this.deps.dark(),
     });
     await writeFile(settings, JSON.stringify(hookSettings, null, 2));
-    await writeFile(mcpConfig, JSON.stringify(EMPTY_MCP_CONFIG));
+    await writeFile(mcpConfig, JSON.stringify(toolsConfig(this.deps.server.toolsUrl), null, 2));
 
     const args = buildLaunchArgs({
       pluginDir: this.deps.pluginDir,
@@ -76,8 +77,8 @@ export class ClaudeSession {
         cols: size.cols,
         rows: size.rows,
         cwd: workspace,
-        // The token reaches Claude Code's hooks through its environment, never a file.
-        env: { ...launchEnv(process.env, path), [HOOK_TOKEN_VARIABLE]: token },
+        // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
+        env: { ...launchEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
       });
     } catch (error) {
       return { ok: false, reason: 'failed', message: String(error) };
@@ -85,7 +86,7 @@ export class ClaudeSession {
 
     const run: Run = {
       terminal,
-      stopListening: this.deps.signals.listen(token, this.deps.onSignal),
+      stopListening: this.deps.server.listen(token, this.deps.onSignal),
       stopping: false,
     };
     this.run = run;
