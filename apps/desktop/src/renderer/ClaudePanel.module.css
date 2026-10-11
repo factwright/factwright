@@ -1,6 +1,7 @@
+/* As tall as its parts: the header, any note, and the terminal. */
 .panel {
   display: flex;
-  flex: 0 0 320px;
+  flex: 0 0 auto;
   flex-direction: column;
   min-height: 0;
   border-top: 1px solid var(--fw-border);
@@ -71,9 +72,18 @@
   margin-left: auto;
 }
 
+/*
+ * A fixed height, so a note above it grows the panel instead of shrinking the terminal: Claude
+ * Code redraws on every resize, and can drop a line of what it shows as it does.
+ */
 .terminal {
-  flex: 1 1 auto;
+  flex: 0 0 270px;
   min-height: 0;
   padding: var(--fw-space-2) var(--fw-space-3);
   background: var(--fw-term);
+}
+
+/* The note about Claude Code's trust question, above the terminal while it's asked. */
+.trust {
+  padding: var(--fw-space-2) var(--fw-space-3) 0;
 }

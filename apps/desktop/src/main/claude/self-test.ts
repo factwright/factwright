@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import type { SetupCheck } from '../../shared/api.ts';
 import type { RunServer } from './run-server.ts';
+import { plainText, TRUST_QUESTION } from './screen.ts';
 import type { Launch } from './session.ts';
 
 /** What one check found, before it's dated and tied to a version. */
@@ -27,21 +28,11 @@ export interface CheckDeps {
   closeMs?: number;
 }
 
-/** The question Claude Code asks once, the first time it opens a folder. */
-const TRUST_QUESTION = /trust this folder|one you trust|trust the files/i;
 const CTRL_C = '\x03';
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: a terminal's title and link codes start with ESC
-const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: a terminal's color and cursor codes start with ESC
-const CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
-
-/** Terminal output as plain text, without its colors and cursor moves. */
-const plain = (text: string) => text.replace(OSC, '').replace(CSI, ' ');
 
 /** The last line of the screen with words on it, to say what Claude Code showed. */
 function lastWords(screen: string): string {
-  const line = plain(screen)
+  const line = plainText(screen)
     .split(/[\r\n]+/)
     .map((each) => each.replace(/\s+/g, ' ').trim())
     .filter((each) => /[a-z]{3}/i.test(each))
@@ -127,7 +118,7 @@ export async function checkSetup(deps: CheckDeps): Promise<SetupFinding | null> 
       const seen = screen + data;
       screen = seen.slice(-8000);
       // Until the user trusts the workspace once, in a run, Claude Code waits on this question.
-      if (!connected && TRUST_QUESTION.test(plain(seen))) finish({ result: 'untrusted' });
+      if (!connected && TRUST_QUESTION.test(plainText(seen))) finish({ result: 'untrusted' });
     });
     child.onExit(() => {
       // A hook that's on its way gets a moment to land.

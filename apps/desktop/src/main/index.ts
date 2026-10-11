@@ -74,6 +74,10 @@ function start(): void {
         window.webContents.send('claude:signal', signal);
         notifyIfAway(window, signal);
       },
+      onTrust: () => {
+        window.webContents.send('claude:trust');
+        notifyIfAway(window, 'needs-answer');
+      },
     });
     // Claude Code updates itself, so each new version gets a check, hidden, that uses no plan.
     const setup = new SetupChecker({

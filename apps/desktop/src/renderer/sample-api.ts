@@ -32,6 +32,13 @@ function sampleRun(dark: boolean) {
   const [main, secondary, bar] = dark ? ['97', '37', '100'] : ['30', '90', '47'];
   const color = (code: string, text: string) => `\x1b[${code}m${text}\x1b[0m`;
   return {
+    /** Claude Code's question, the first time it opens a folder, for ?trust=ask. */
+    trust: [
+      ` ${color(`1;${main}`, 'Do you trust the files in this folder?')}\r\n\r\n`,
+      ` ${color(secondary, 'Claude Code will be able to read, edit, and run files here.')}\r\n\r\n`,
+      ` ${color('34', '❯ 1. Yes, I trust this folder')}\r\n`,
+      `   ${color(main, '2. No, exit')}\r\n\r\n`,
+    ],
     opening: [
       `${color(`1;${main}`, '✻ Claude Code')}  ${color(secondary, '~/Factwright/workspace')}\r\n\r\n`,
       `\x1b[${bar};${secondary}m❯ \x1b[${main}mHelp me get ready for a recruiter call on Monday.\x1b[K\x1b[0m\r\n\r\n`,
@@ -87,6 +94,11 @@ export function sampleApi(): FactwrightApi {
     for (const listener of signalListeners) listener(value);
   };
   let waitingForAnswer = false;
+  // ?trust=ask starts with Claude Code's question about trusting the folder, once.
+  let waitingForTrust = false;
+  let trusted = query.get('trust') !== 'ask';
+  let afterTrust: () => void = () => {};
+  const trustListeners = new Set<() => void>();
   let run = sampleRun(false);
   const playTask = (task: RunTask) => {
     signal('working');
@@ -107,19 +119,31 @@ export function sampleApi(): FactwrightApi {
     onSetupCheck: () => () => {},
     startClaude: async (_size, task) => {
       run = sampleRun(window.matchMedia('(prefers-color-scheme: dark)').matches);
-      if (task) {
-        setTimeout(() => playTask(task), 300);
+      const play = () => {
+        if (task) {
+          setTimeout(() => playTask(task), 300);
+          return;
+        }
+        setTimeout(() => {
+          signal('working');
+          print(run.opening);
+        }, 300);
+        setTimeout(() => {
+          print(run.question);
+          waitingForAnswer = true;
+          signal('needs-answer');
+        }, 1800);
+      };
+      if (trusted) {
+        play();
         return { ok: true };
       }
+      afterTrust = play;
       setTimeout(() => {
-        signal('working');
-        print(run.opening);
+        print(run.trust);
+        waitingForTrust = true;
+        for (const listener of trustListeners) listener();
       }, 300);
-      setTimeout(() => {
-        print(run.question);
-        waitingForAnswer = true;
-        signal('needs-answer');
-      }, 1800);
       return { ok: true };
     },
     runTask: async (task) => {
@@ -128,6 +152,12 @@ export function sampleApi(): FactwrightApi {
     },
     stopClaude: () => signal('stopped'),
     writeToClaude: (data) => {
+      if (waitingForTrust && data.includes('\r')) {
+        waitingForTrust = false;
+        trusted = true;
+        afterTrust();
+        return;
+      }
       if (!waitingForAnswer || !data.includes('\r')) return;
       waitingForAnswer = false;
       print(run.answered);
@@ -145,6 +175,10 @@ export function sampleApi(): FactwrightApi {
     onClaudeSignal: (listener) => {
       signalListeners.add(listener);
       return () => signalListeners.delete(listener);
+    },
+    onClaudeTrust: (listener) => {
+      trustListeners.add(listener);
+      return () => trustListeners.delete(listener);
     },
     ...sampleTracker(query.get('jobs')),
   };

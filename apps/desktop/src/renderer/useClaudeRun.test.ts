@@ -10,6 +10,7 @@ const TASK: RunTask = { skill: 'fit-check', jobId: 'acme--staff-engineer' };
 
 function fakeApi(task: StartResult = { ok: true }) {
   let signal: (value: RunSignal) => void = () => {};
+  let trust: () => void = () => {};
   const api = {
     startClaude: vi.fn(async () => ({ ok: true }) as StartResult),
     runTask: vi.fn(async () => task),
@@ -19,10 +20,15 @@ function fakeApi(task: StartResult = { ok: true }) {
       signal = listener;
       return () => {};
     },
+    onClaudeTrust: (listener: () => void) => {
+      trust = listener;
+      return () => {};
+    },
   };
   return {
     api: api as unknown as FactwrightApi & typeof api,
     signal: (value: RunSignal) => signal(value),
+    trust: () => trust(),
   };
 }
 
@@ -62,5 +68,28 @@ describe('useClaudeRun', () => {
     expect(result.current.phase).toBe('starting');
     await act(async () => result.current.onTerminalSize(SIZE));
     expect(api.startClaude).toHaveBeenCalledWith(SIZE, TASK);
+  });
+
+  it('explains the question about trust until the user answers it, and brings the panel back', async () => {
+    const { api, signal, trust } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => result.current.requestStart());
+    await act(async () => result.current.onTerminalSize(SIZE));
+    act(() => result.current.hide());
+    act(() => trust());
+    expect(result.current.trustAsked).toBe(true);
+    expect(result.current.open).toBe(true);
+    // Moving through the choices isn't an answer yet; Enter is.
+    act(() => result.current.typed('\x1b[B'));
+    expect(result.current.trustAsked).toBe(true);
+    act(() => result.current.typed('\r'));
+    expect(result.current.trustAsked).toBe(false);
+    // A hook also means Claude Code is past it, as does a new run.
+    act(() => trust());
+    act(() => signal('working'));
+    expect(result.current.trustAsked).toBe(false);
+    act(() => trust());
+    act(() => result.current.close());
+    expect(result.current.trustAsked).toBe(false);
   });
 });

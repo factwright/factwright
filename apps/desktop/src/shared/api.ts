@@ -119,6 +119,11 @@ export interface FactwrightApi {
   onClaudeOutput(listener: (data: string) => void): () => void;
   /** Listens for changes in where the run stands. Returns a function that stops listening. */
   onClaudeSignal(listener: (signal: RunSignal) => void): () => void;
+  /**
+   * Listens for Claude Code asking whether to trust the workspace, which it does once, in the
+   * first run. Returns a function that stops listening.
+   */
+  onClaudeTrust(listener: () => void): () => void;
   listJobs(): Promise<JobList>;
   /** The text of a job's documents, such as its posting and fit check. */
   jobDocs(jobId: string): Promise<JobDocs | null>;
