@@ -8,7 +8,7 @@ argument-hint: "[posting link or text]"
 
 Fast and short. The user should get the verdict at a glance. Don't ask questions unless the listing is missing.
 
-Input: the listing (a link or pasted text), plus anything the user adds (company site, recruiter, notes). If there's no listing, ask for it in one line and stop.
+Input: the listing (a link or pasted text), plus anything the user adds (company site, recruiter, notes). The app's Run buttons name a job instead, as `job <id>`: call `job_details` with that id, and work from its folder's posting or its link. If there's no listing, ask for it in one line and stop.
 
 Before starting, read:
 - `searches/criteria.md`: the user's filters, preferences, scoring and tiers. Job searches use the same bar. If it's missing, use the rubric below with no filters, and say so in one line.

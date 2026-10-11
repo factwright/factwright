@@ -28,6 +28,7 @@ export function isRunning(phase: RunPhase): boolean {
 
 /** The top of Claude's panel: where the run stands, whose Claude it is, and what you can do. */
 export function PanelHeader({
+  title = 'Claude',
   phase,
   plan,
   problem,
@@ -35,6 +36,8 @@ export function PanelHeader({
   onHide,
   onClose,
 }: {
+  /** What the run is, such as "Fit check · Acme". */
+  title?: string;
   phase: RunPhase;
   plan: string | undefined;
   problem: string | undefined;
@@ -48,7 +51,7 @@ export function PanelHeader({
       <span role="status">
         <RunStatus state={chipState(phase, problem)} />
       </span>
-      <span className={styles.title}>Claude</span>
+      <span className={styles.title}>{title}</span>
       <span className={styles.hint} title={problem ?? HINTS[phase]}>
         {problem ?? HINTS[phase]}
       </span>

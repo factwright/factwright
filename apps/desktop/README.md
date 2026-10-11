@@ -63,6 +63,7 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - its status, which you can change
   - the next step, with a date that puts it in "Needs you" when it's due
   - how to apply, when there are special steps
+  - **Run with your Claude:** a tailored resume, a fit check, a salary check, who to message, interview prep, or the application's questions, started on this job in Claude's panel. Each says where it stands (Run, Running, Done, or Ran and Ready for work already on file), and the next step for the job is highlighted. The window sends the app only the skill's name and the job's ID, and the app types the command (`/factwright:fit-check job <id>`), so text from a posting never reaches Claude as if you'd typed it. Claude that's open and done takes the next one; otherwise Claude starts with it.
   - why it scored what it did, part by part, with the evidence
   - what people say about the company
   - calls and interviews: log one, and it moves the job forward
@@ -87,4 +88,4 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
 
-**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools, shows your jobs, and keeps your tracker. The skills and the Run buttons come next.
+**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools and skills, shows your jobs with their Run buttons, and keeps your tracker. Job searches come next.

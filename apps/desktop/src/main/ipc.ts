@@ -22,7 +22,13 @@ import {
   parseNewJob,
 } from './jobs/input.ts';
 import type { JobsService } from './jobs/service.ts';
-import { openableFile, parseTerminalSize, saveableFileName } from './policy.ts';
+import {
+  openableFile,
+  parseRunTask,
+  parseTerminalSize,
+  runPrompt,
+  saveableFileName,
+} from './policy.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
@@ -70,10 +76,23 @@ export function registerIpc({ isAppPage, claude: session, jobs, workspace }: Ipc
 
   answer('claude:status', () => claudeStatus(nodeStatusDeps()));
 
-  answer('claude:start', (size) => {
+  /** A task the window asked for, if it names a skill and a job the app knows. */
+  const knownTask = (value: unknown) => {
+    const task = parseRunTask(value);
+    return task && jobs.list().jobs.some((job) => job.id === task.jobId) ? task : null;
+  };
+
+  answer('claude:start', (size, task) => {
     const valid = parseTerminalSize(size);
-    if (!valid) throw new Error('Refused a request to start Claude.');
-    return session.start(valid);
+    const run = task === undefined ? undefined : knownTask(task);
+    if (!valid || run === null) throw new Error('Refused a request to start Claude.');
+    return session.start(valid, run && runPrompt(run));
+  });
+
+  answer('claude:task', (task) => {
+    const run = knownTask(task);
+    if (!run) throw new Error('Refused a task for Claude.');
+    return session.send(runPrompt(run));
   });
 
   ipcMain.on('claude:input', (event, data: unknown) => {

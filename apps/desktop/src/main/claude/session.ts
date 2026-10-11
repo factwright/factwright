@@ -107,6 +107,18 @@ export class ClaudeSession {
     this.run?.terminal.write(data);
   }
 
+  /** Types a prompt into the run that's open, and sends it, as the user would. */
+  send(prompt: string): StartResult {
+    const run = this.run;
+    if (!run) return { ok: false, reason: 'not-running' };
+    run.terminal.write(prompt);
+    // Typed together, Claude Code could read the Enter as part of a paste rather than a send.
+    setTimeout(() => {
+      if (this.run === run) run.terminal.write('\r');
+    }, 150);
+    return { ok: true };
+  }
+
   resize(size: TerminalSize): void {
     this.run?.terminal.resize(size.cols, size.rows);
   }

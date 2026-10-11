@@ -13,10 +13,13 @@ export function ClaudePanel({
   api,
   run,
   plan,
+  title = 'Claude',
 }: {
   api: FactwrightApi;
   run: ClaudeRun;
   plan: string | undefined;
+  /** What the run is, such as "Fit check · Acme". */
+  title?: string;
 }) {
   if (run.phase === 'idle' && !run.problem) return null;
   const hidden = !run.open && isRunning(run.phase);
@@ -24,6 +27,7 @@ export function ClaudePanel({
     <>
       <section className={`${styles.panel} ${hidden ? styles.hidden : ''}`} aria-label="Claude">
         <PanelHeader
+          title={title}
           phase={run.phase}
           plan={plan}
           problem={run.problem}
@@ -40,7 +44,7 @@ export function ClaudePanel({
           <span role="status">
             <RunStatus state={chipState(run.phase, run.problem)} />
           </span>
-          <span className={styles.title}>Claude</span>
+          <span className={styles.title}>{title}</span>
           <Button className={styles.show} size="sm" onClick={run.show}>
             Show Claude
           </Button>
