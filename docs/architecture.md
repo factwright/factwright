@@ -27,8 +27,10 @@ When you click **Run** on a job, the app starts a session in your workspace and 
 Claude doesn't get a shell. Instead, the app gives it a small set of tools over MCP, which it serves itself, on this computer, while a run is live ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)):
 - see whether you've seen a job before, and how it went
 - look up everything on file for a job, including your notes and calls
-- save a job posting word for word
+- read a web page, and save a job posting word for word
 - render a resume to PDF or Word (coming next)
+
+The skills ([`plugin`](../plugin)) tell Claude how to use them for each task, such as a fit check or interview prep.
 
 ## The workspace
 Claude works on plain files in a folder on your computer:

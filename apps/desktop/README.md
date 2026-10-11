@@ -34,11 +34,14 @@ You can tuck the panel away while Claude works, and it comes back whenever Claud
 
 ## Claude's tools
 Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools)), in place of a shell. The server that hears the run's hooks answers them, only for that run's token, and refuses anything a web page sends.
-- **find_job:** whether you've seen a job before: its fit check, job search, folder and status. The skills call it before starting on a job.
+- **find_job:** whether you've seen a job before: its fit check, job search, folder and status. It matches the company loosely, or the posting's link alone. The skills call it before starting on a job.
 - **job_details:** everything on file for a job, including your notes, calls and history. This is how Claude reads your tracker, without reaching its database.
-- **save_posting:** saves a posting word for word in the job's folder, from the applicant system's API (Greenhouse, Lever, Ashby or Gem) or the page itself. A posting already saved there is kept. It only fetches public https sites, never this computer or your home network, and gives up on pages that are too big or too slow.
+- **read_page:** a public web page as plain text, such as a posting, a careers page or a team page. Postings on Greenhouse, Lever, Ashby and Gem are read from the applicant system's API. It answers with at most 40,000 characters, since Claude Code moves longer answers somewhere Claude can't read.
+- **save_posting:** saves a posting word for word in the job's folder, the same way. A posting already saved there is kept.
 
-The two that only read run without asking. Claude Code asks you before each save_posting, since it reaches the internet: a job post could otherwise steer Claude into sending your details to a site in a link.
+Reading and saving only fetch public https sites, never this computer or your home network, and give up on pages that are too big or too slow.
+
+The two that only read what's on file run without asking, as do web searches and Factwright's skills. Claude Code asks you before each page read_page or save_posting fetches, since they reach the internet: a job post could otherwise steer Claude into sending your details to a site in a link.
 
 ## Your jobs
 Your jobs come from two places, joined into one list:

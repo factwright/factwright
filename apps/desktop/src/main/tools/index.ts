@@ -2,7 +2,7 @@ import { localDate } from '@factwright/core';
 import type { JobsService } from '../jobs/service.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import type { McpTool } from './mcp.ts';
-import { type SavePostingDeps, savePosting } from './posting.ts';
+import { readPage, type SavePostingDeps, savePosting } from './posting.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
@@ -13,10 +13,10 @@ export interface ToolDeps {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file, their status and notes, and saving postings. Use them instead of reading the tracker or fetching postings yourself.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading web pages, and saving postings word for word. Use them to read the tracker and the web.';
 
-/** The tools that only read what's on file, so Claude may call them without asking. */
-export const READ_ONLY_TOOLS = ['find_job', 'job_details'];
+/** The tools that only read what's on file, on this computer, so Claude may call them without asking. */
+export const LOCAL_READ_TOOLS = ['find_job', 'job_details'];
 
 /** Tools that only read, and don't reach past this computer. */
 const READS = { readOnlyHint: true, openWorldHint: false };
@@ -41,9 +41,11 @@ function textInput(
 }
 
 function queryFrom(input: Record<string, unknown>): JobQuery {
-  const query: JobQuery = { company: textInput(input, 'company', true) ?? '' };
+  const company = textInput(input, 'company', false);
   const role = textInput(input, 'role', false);
   const link = textInput(input, 'link', false);
+  if (!company && !link) throw new Error('Give the company, or a link to the posting.');
+  const query: JobQuery = { company: company ?? '' };
   if (role) query.role = role;
   if (link) query.link = link;
   return query;
@@ -62,11 +64,10 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'find_job',
       description:
-        'Checks whether the user has seen a job before, and how it went: the fit check, the job search, its folder and status. Call it before starting work on any job, and start the reply with what it found.',
+        'Checks whether the user has seen a job before, and how it went: the fit check, the job search, its folder and status. Give the company, or just the posting’s link when that’s all you have. Call it before starting work on any job, and start the reply with what it found.',
       inputSchema: {
         type: 'object',
         properties: QUERY_PROPERTIES,
-        required: ['company'],
         additionalProperties: false,
       },
       annotations: READS,
@@ -94,12 +95,32 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         const found = id
           ? jobs.filter((job) => job.id === id)
           : findJobs(jobs, queryFrom(input)).slice(0, 3);
-        if (found.length === 0) return `Nothing on file for ${id ?? queryFrom(input).company}.`;
+        if (found.length === 0) {
+          const query = id ? null : queryFrom(input);
+          return `Nothing on file for ${id ?? (query?.company || query?.link)}.`;
+        }
         const details = await Promise.all(
           found.map((job) => jobDetails(job, deps.workspace, today())),
         );
         return details.join('\n\n');
       },
+    },
+    {
+      name: 'read_page',
+      description:
+        'Reads a public web page as plain text: a job posting, a careers page, a company’s about or team page. Postings on Greenhouse, Lever, Ashby and Gem are read from the applicant system itself. Read a posting this way before saving it with save_posting. The user OKs each page, so read only what the task needs.',
+      inputSchema: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'The page’s https link.' } },
+        required: ['url'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      run: async (input) =>
+        readPage(textInput(input, 'url', true) ?? '', {
+          ...(deps.fetch && { fetch: deps.fetch }),
+          ...(deps.now && { now: deps.now }),
+        }),
     },
     {
       name: 'save_posting',

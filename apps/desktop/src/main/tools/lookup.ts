@@ -68,7 +68,9 @@ function summary(job: Job, today: string): string {
 /** Whether the user has seen a job before, for a skill to say so up front. */
 export function findJob(jobs: readonly Job[], query: JobQuery, today: string): string {
   const found = findJobs(jobs, query);
-  const asked = `${query.company}${query.role ? `, ${query.role}` : ''}`;
+  const asked = query.company
+    ? `${query.company}${query.role ? `, ${query.role}` : ''}`
+    : (query.link ?? '');
   if (found.length === 0) return `Not seen before: ${asked}.`;
   return [
     'Seen before:',

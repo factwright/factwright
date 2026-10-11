@@ -1,4 +1,4 @@
-import { READ_ONLY_TOOLS } from '../tools/index.ts';
+import { LOCAL_READ_TOOLS } from '../tools/index.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
 export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
@@ -6,12 +6,16 @@ export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
 /** The name Claude Code knows Factwright's tools by, as in mcp__factwright__find_job. */
 export const TOOLS_SERVER = 'factwright';
 
+/** The plugin's name in its plugin.json, which names its skills, as in /factwright:fit-check. */
+const PLUGIN = 'factwright';
+
 /**
  * The settings Factwright passes with `--settings` for one run:
  * - Claude Code's ANSI theme, so the panel's own colors are the only ones it shows
  * - no claude.ai connectors (such as the user's mail or drive), since job posts are untrusted
- * - Factwright's tools that only read what's on file, without asking. The user OKs each link
- *   save_posting fetches, since a job post could steer Claude to send their details to a site.
+ * - without asking: web searches, Factwright's skills, and its tools that only read what's on
+ *   file. The user OKs each page Factwright's tools fetch, since a job post could steer Claude
+ *   to send the user's details to a site in a link. Searches never reach a site the post names.
  * - hooks that tell the app, over HTTP on this computer, where the run stands
  */
 export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: boolean }) {
@@ -27,7 +31,13 @@ export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: bool
   return {
     theme: dark ? 'dark-ansi' : 'light-ansi',
     disableClaudeAiConnectors: true,
-    permissions: { allow: READ_ONLY_TOOLS.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`) },
+    permissions: {
+      allow: [
+        'WebSearch',
+        `Skill(${PLUGIN} *)`,
+        ...LOCAL_READ_TOOLS.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
+      ],
+    },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],
       PreToolUse: [{ matcher: 'AskUserQuestion', hooks: hook }],
