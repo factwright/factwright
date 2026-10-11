@@ -30,3 +30,4 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `@factwright/core`: reading a job posting as plain text, from an applicant system's API or a web page.
 - The first seven skills, ported from the original repo: fit check, add facts, answer application questions, interview prep, salary check, unmask a job, and who to message. They use Factwright's tools instead of scripts and git, and save their work where the app reads it.
 - `read_page`: Claude reads a public web page through Factwright, which asks you first. `find_job` works from a posting's link alone. Web searches and Factwright's skills run without asking.
+- `@factwright/engine`: the resume engine, ported from the original repo. It lays out a resume as a PDF-ready page in three layouts and as a Word file, checks it against your rules and confidential terms, and measures how its lines fit. A resume can name the heading over its systems cards.
