@@ -37,6 +37,7 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
     '--no-chrome',
     '--plugin-dir',
     pluginDir,
+    // --mcp-config takes several values, so an option must follow it, never the prompt.
     '--mcp-config',
     mcpConfig,
     '--strict-mcp-config',
