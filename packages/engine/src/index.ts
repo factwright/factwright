@@ -1,4 +1,4 @@
-export { resumeDocument } from './docx.ts';
+export { docxFile, resumeDocument } from './docx.ts';
 export { outputName, pdfPageCount } from './files.ts';
 export {
   type FitRow,
@@ -17,6 +17,7 @@ export {
   FORMATS,
   LAYOUTS,
   type Layout,
+  RESUME_FIELDS,
   type Resume,
   type ResumeFormat,
   readResume,

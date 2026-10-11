@@ -1,22 +1,25 @@
 import { localDate } from '@factwright/core';
 import type { JobsService } from '../jobs/service.ts';
+import type { ResumePrinter } from '../resume/printer.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import type { McpTool } from './mcp.ts';
 import { readPage, type SavePostingDeps, savePosting } from './posting.ts';
+import { buildResume } from './resume.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
   workspace: string;
+  printer: ResumePrinter;
   now?: () => Date;
   fetch?: SavePostingDeps['fetch'];
 }
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading web pages, and saving postings word for word. Use them to read the tracker and the web.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading web pages, saving postings word for word, and building resumes. Use them to read the tracker and the web, and to make resume files.';
 
-/** The tools that only read what's on file, on this computer, so Claude may call them without asking. */
-export const LOCAL_READ_TOOLS = ['find_job', 'job_details'];
+/** The tools that never reach past this computer, so Claude may call them without asking. */
+export const LOCAL_TOOLS = ['find_job', 'job_details', 'build_resume'];
 
 /** Tools that only read, and don't reach past this computer. */
 const READS = { readOnlyHint: true, openWorldHint: false };
@@ -119,6 +122,37 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       run: async (input) =>
         readPage(textInput(input, 'url', true) ?? '', {
           ...(deps.fetch && { fetch: deps.fetch }),
+          ...(deps.now && { now: deps.now }),
+        }),
+    },
+    {
+      name: 'build_resume',
+      description:
+        'Builds the resume in a job’s folder from its resume.json: a PDF, a Word file or both, named after its output_name. Says how many pages it runs to, how full the last one is, which lines run short, and what breaks the user’s rules in guide/lint.json. Build again after each change. A job the user applied to keeps the files that were sent.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description:
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
+          },
+          format: {
+            type: 'string',
+            enum: ['pdf', 'docx', 'both'],
+            description: 'Which files to build. Without it, resume.json’s format, or a PDF.',
+          },
+        },
+        required: ['folder'],
+        additionalProperties: false,
+      },
+      // It writes only the job's resume files, from what's on this computer.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) =>
+        buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
+          workspace: deps.workspace,
+          printer: deps.printer,
+          jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
         }),
     },

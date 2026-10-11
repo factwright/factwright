@@ -239,6 +239,9 @@ importers:
       '@factwright/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@factwright/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@factwright/ui':
         specifier: workspace:*
         version: link:../../packages/ui

@@ -28,7 +28,7 @@ Claude doesn't get a shell. Instead, the app gives it a small set of tools over 
 - see whether you've seen a job before, and how it went
 - look up everything on file for a job, including your notes and calls
 - read a web page, and save a job posting word for word
-- render a resume to PDF or Word (coming next)
+- build a resume as a PDF or Word file, with how it fits the pages
 
 The skills ([`plugin`](../plugin)) tell Claude how to use them for each task, such as a fit check or interview prep.
 

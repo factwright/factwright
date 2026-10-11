@@ -1,4 +1,4 @@
-import { LOCAL_READ_TOOLS } from '../tools/index.ts';
+import { LOCAL_TOOLS } from '../tools/index.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
 export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
@@ -13,9 +13,10 @@ const PLUGIN = 'factwright';
  * The settings Factwright passes with `--settings` for one run:
  * - Claude Code's ANSI theme, so the panel's own colors are the only ones it shows
  * - no claude.ai connectors (such as the user's mail or drive), since job posts are untrusted
- * - without asking: web searches, Factwright's skills, and its tools that only read what's on
- *   file. The user OKs each page Factwright's tools fetch, since a job post could steer Claude
- *   to send the user's details to a site in a link. Searches never reach a site the post names.
+ * - without asking: web searches, Factwright's skills, and its tools that stay on this computer,
+ *   such as reading what's on file and building resumes. The user OKs each page Factwright's
+ *   tools fetch, since a job post could steer Claude to send the user's details to a site in a
+ *   link. Searches never reach a site the post names.
  * - hooks that tell the app, over HTTP on this computer, where the run stands
  */
 export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: boolean }) {
@@ -35,7 +36,7 @@ export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: bool
       allow: [
         'WebSearch',
         `Skill(${PLUGIN} *)`,
-        ...LOCAL_READ_TOOLS.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
+        ...LOCAL_TOOLS.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
       ],
     },
     hooks: {

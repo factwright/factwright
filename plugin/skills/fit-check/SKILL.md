@@ -43,7 +43,7 @@ Before starting, read:
 - Gaps: <1–2 real gaps, or "none that matter">
 - Sentiment: <mood>: <rating (n reviews, how recent); 1–2 themes; notable news>
 - Flags: <scam signs, equity-only, location fine print, no pay listed, hidden employer>
-- Next: <one move: tailor a resume, "/factwright:salary-check" (no pay listed), "/factwright:unmask-job" first, "/factwright:who-to-message", or skip>
+- Next: <one move: "/factwright:focused-resume", "/factwright:salary-check" (no pay listed), "/factwright:unmask-job" first, "/factwright:who-to-message", or skip>
 ```
 Never stretch a fact to make the fit look better. Gaps are gaps.
 

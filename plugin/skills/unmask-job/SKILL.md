@@ -51,7 +51,7 @@ Recommend one, with a one-line reason:
 - **Employer not confirmed:** ask the recruiter who the client is before agreeing to anything. Never let anyone submit the user without naming the company.
 
 ## 7. Deliver
-- Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:fit-check`, `/factwright:salary-check` if no pay is listed, a tailored resume).
+- Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:fit-check`, `/factwright:salary-check` if no pay is listed, `/factwright:focused-resume`).
 - Once the employer is confirmed or likely, save the job so it survives the listing coming down:
   - Folder `applications/<YYYY-MM-DD>-<employer>-<role>/`. Reuse it if `find_job` with the employer and role finds one.
   - `posting.md`: `save_posting` with the employer's own posting link. If there's no direct posting, save the board listing instead, or save the user's pasted text with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.

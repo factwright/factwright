@@ -38,10 +38,17 @@ Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools
 - **job_details:** everything on file for a job, including your notes, calls and history. This is how Claude reads your tracker, without reaching its database.
 - **read_page:** a public web page as plain text, such as a posting, a careers page or a team page. Postings on Greenhouse, Lever, Ashby and Gem are read from the applicant system's API. It answers with at most 40,000 characters, since Claude Code moves longer answers somewhere Claude can't read.
 - **save_posting:** saves a posting word for word in the job's folder, the same way. A posting already saved there is kept.
+- **build_resume:** builds a job's resume from its `resume.json` with the [resume engine](../../packages/engine), as a PDF, a Word file or both. It checks the resume against your rules and confidential terms, and says how many pages it runs to, how full the last one is, and which lines run short. Once you've applied to a job, it keeps the files you sent.
 
 Reading and saving only fetch public https sites, never this computer or your home network, and give up on pages that are too big or too slow.
 
-The two that only read what's on file run without asking, as do web searches and Factwright's skills. Claude Code asks you before each page read_page or save_posting fetches, since they reach the internet: a job post could otherwise steer Claude into sending your details to a site in a link.
+The tools that stay on this computer run without asking, as do web searches and Factwright's skills. Claude Code asks you before each page read_page or save_posting fetches, since they reach the internet: a job post could otherwise steer Claude into sending your details to a site in a link.
+
+## Printing resumes
+The main process prints resumes in one hidden window ([`src/main/resume`](src/main/resume)), with Chromium's own layout, so the PDF matches what was measured:
+- **Locked down:** the window has its own session, kept in memory. It loads only the page it's given, and every other request is refused, so a resume can't reach the network or your files.
+- **The last page:** after printing, it finds how full the last page is by printing again with a growing spacer at the end, until the spacer would start a new page.
+- **Fonts:** the layouts use Windows fonts (Segoe UI, Bahnschrift, Calibri, Cambria). Where they aren't installed, such as on a Mac, Chromium uses its own fallbacks.
 
 ## Your jobs
 Your jobs come from two places, joined into one list:
