@@ -1,0 +1,14 @@
+.page {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--fw-space-6) 28px;
+}
+
+.title {
+  margin: 0 0 var(--fw-space-5);
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}

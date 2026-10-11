@@ -9,6 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "dev": "pnpm --filter @factwright/desktop dev",
     "check": "biome check . && pnpm typecheck && pnpm test",
     "fix": "biome check --write .",
     "typecheck": "pnpm --recursive --if-present run typecheck",

@@ -11,3 +11,5 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Desktop app groundwork: finding the user's Claude Code, checking its version and sign-in, and building its locked-down launch command.
 - `@factwright/ui`: the design system. Colors for light and dark are checked against WCAG AA. The first components are buttons, status pills, fit badges, Claude's run status, the views switcher, search, sidebar items, stats and notices, with a gallery page to see them all.
 - `@factwright/core`: fit tiers, from strong to skip.
+- The desktop app's window, built from the design system. It runs sandboxed and loads only the app's own files over an `app://` address. The sidebar shows whether your Claude Code is installed, up to date and signed in, and what to do when it isn't. `pnpm dev` runs it.
+- `@factwright/ui`: the logo and an empty-state block.
