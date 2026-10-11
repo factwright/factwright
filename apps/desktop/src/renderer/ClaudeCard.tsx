@@ -1,16 +1,10 @@
 import { Button } from '@factwright/ui';
 import type { ReactNode } from 'react';
 import styles from './ClaudeCard.module.css';
+import { planName } from './plan.ts';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
 const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
-
-const PLAN_NAMES: Readonly<Record<string, string>> = {
-  pro: 'Pro plan',
-  max: 'Max plan',
-  team: 'Team plan',
-  enterprise: 'Enterprise plan',
-};
 
 interface CardView {
   tone: 'ok' | 'need' | 'bad' | 'checking';
@@ -24,7 +18,7 @@ function describe(status: ClaudeStatusView): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: false };
   switch (status.state) {
     case 'ready': {
-      const plan = status.plan ? PLAN_NAMES[status.plan] : undefined;
+      const plan = planName(status.plan);
       return {
         tone: 'ok',
         line: plan ? `Signed in · ${plan}` : 'Signed in',

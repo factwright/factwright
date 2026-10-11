@@ -1,5 +1,6 @@
 {
   "name": "@factwright/desktop",
+  "productName": "Factwright",
   "version": "0.0.0",
   "private": true,
   "description": "The Factwright app for Mac and Windows.",
@@ -7,6 +8,7 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
+    "postinstall": "node scripts/fix-node-pty.ts",
     "dev": "node scripts/dev.ts",
     "build": "vite build -c vite.main.config.ts && vite build -c vite.preload.config.ts && vite build -c vite.renderer.config.ts",
     "start": "electron .",
@@ -22,6 +24,8 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@xterm/addon-fit": "catalog:",
+    "@xterm/xterm": "catalog:",
     "axe-core": "catalog:",
     "electron": "catalog:",
     "jsdom": "catalog:",
@@ -31,5 +35,8 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "node-pty": "catalog:"
   }
 }

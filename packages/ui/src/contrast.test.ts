@@ -1,6 +1,53 @@
 import { describe, expect, it } from 'vitest';
 import { CONTROL_CONTRAST, contrastRatio, TEXT_CONTRAST } from './contrast.ts';
-import { DARK, LIGHT, type Palette, TONE_COLORS, TONES } from './tokens.ts';
+import {
+  DARK,
+  LIGHT,
+  type Palette,
+  TERMINAL_COLORS,
+  type TerminalColors,
+  TONE_COLORS,
+  TONES,
+} from './tokens.ts';
+
+/** The colored text Claude Code writes in either theme. */
+const TERMINAL_HUES: readonly (keyof TerminalColors)[] = [
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+  'brightRed',
+  'brightGreen',
+  'brightYellow',
+  'brightBlue',
+  'brightMagenta',
+  'brightCyan',
+];
+
+/** How Claude Code's ANSI themes use the grays: main text, secondary text, and the message bar. */
+describe.each([
+  ['light', TERMINAL_COLORS.light, ['black', 'brightBlack'], 'white'],
+  ['dark', TERMINAL_COLORS.dark, ['brightWhite', 'white'], 'brightBlack'],
+] as const)("Claude's panel in %s", (_name, colors, text, bar) => {
+  it.each(['foreground', ...text, ...TERMINAL_HUES] as const)(
+    '%s text meets WCAG AA on the background',
+    (color) => {
+      expect(contrastRatio(colors[color], colors.background)).toBeGreaterThanOrEqual(TEXT_CONTRAST);
+    },
+  );
+
+  it.each(text)('%s text meets WCAG AA on the bar behind the user’s message', (color) => {
+    expect(contrastRatio(colors[color], colors[bar])).toBeGreaterThanOrEqual(TEXT_CONTRAST);
+  });
+
+  it('keeps selected text readable', () => {
+    expect(contrastRatio(colors.foreground, colors.selectionBackground)).toBeGreaterThanOrEqual(
+      TEXT_CONTRAST,
+    );
+  });
+});
 
 describe('contrastRatio', () => {
   it('is 21 for black on white, either way round', () => {

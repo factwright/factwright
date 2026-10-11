@@ -2,11 +2,19 @@ import { cx } from '../cx.ts';
 import styles from './RunStatus.module.css';
 
 /** Where a Claude run can stand, as the app's panel shows it. */
-export const RUN_STATES = ['working', 'needs-answer', 'done', 'stopped', 'failed'] as const;
+export const RUN_STATES = [
+  'starting',
+  'working',
+  'needs-answer',
+  'done',
+  'stopped',
+  'failed',
+] as const;
 
 export type RunState = (typeof RUN_STATES)[number];
 
 const LABELS: Readonly<Record<RunState, string>> = {
+  starting: 'Starting',
   working: 'Working',
   'needs-answer': 'Needs your answer',
   done: 'Done',
@@ -14,7 +22,7 @@ const LABELS: Readonly<Record<RunState, string>> = {
   failed: 'Didn’t finish',
 };
 
-/** A Claude run's state as a tinted label. Its dot pulses while Claude works. */
+/** A Claude run's state as a tinted label. Its dot pulses while Claude starts or works. */
 export function RunStatus({ state }: { state: RunState }) {
   return (
     <span className={cx(styles.status, styles[state])}>

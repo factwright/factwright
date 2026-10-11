@@ -1,0 +1,7 @@
+{
+  "name": "factwright",
+  "version": "0.0.0",
+  "description": "Factwright's skills and tools for Claude Code, loaded only for runs the app starts.",
+  "author": { "name": "Factwright", "url": "https://factwright.com" },
+  "license": "AGPL-3.0-only"
+}

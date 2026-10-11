@@ -13,3 +13,6 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `@factwright/core`: fit tiers, from strong to skip.
 - The desktop app's window, built from the design system. It runs sandboxed and loads only the app's own files over an `app://` address. The sidebar shows whether your Claude Code is installed, up to date and signed in, and what to do when it isn't. `pnpm dev` runs it.
 - `@factwright/ui`: the logo and an empty-state block.
+- Claude's panel: your own Claude Code runs live in the app, locked down. It runs with no shell, only Factwright's plugin and settings, and no claude.ai connectors. Its status reads Starting, Working, Needs your answer, Done or Stopped, from Claude Code's hooks. The panel tucks away and comes back when Claude needs you, with a notification if you're in another app.
+- `@factwright/ui`: the terminal's colors, checked against WCAG AA in the roles Claude Code gives them, and a Starting state for Claude's status.
+- The plugin folder has its manifest, so Claude Code loads it.

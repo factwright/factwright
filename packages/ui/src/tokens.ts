@@ -114,6 +114,85 @@ export const TONE_COLORS: Readonly<Record<Tone, { light: ToneColors; dark: ToneC
   amber: { light: { fg: '#8A5300', bg: '#FBF0DC' }, dark: { fg: '#F0BE6A', bg: '#33270F' } },
 };
 
+/**
+ * Claude's panel: the terminal's colors, including the 16 ANSI colors. Claude Code runs with an
+ * ANSI theme there, so these are all the colors it shows. Seen in a real run of its dark theme:
+ * bright white is the main text, white the secondary text, and bright black the bar behind the
+ * user's message. Its light theme is taken to mirror that: black, bright black, then white.
+ */
+export interface TerminalColors {
+  background: string;
+  foreground: string;
+  cursor: string;
+  cursorAccent: string;
+  selectionBackground: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+export const TERMINAL_COLORS: Readonly<{ light: TerminalColors; dark: TerminalColors }> = {
+  light: {
+    background: LIGHT.term,
+    foreground: LIGHT.termText,
+    cursor: LIGHT.accent,
+    cursorAccent: LIGHT.term,
+    selectionBackground: LIGHT.accentSoft,
+    black: '#262622',
+    red: '#B42318',
+    green: '#1C7442',
+    yellow: '#8A5300',
+    blue: '#2453B5',
+    magenta: '#8A2E9E',
+    cyan: '#0A6B6C',
+    white: '#E9E6DE',
+    brightBlack: '#66655E',
+    brightRed: '#A51E14',
+    brightGreen: '#176538',
+    brightYellow: '#7A4900',
+    brightBlue: '#2F4BD0',
+    brightMagenta: '#7A2690',
+    brightCyan: '#095E5F',
+    brightWhite: '#F0EEE8',
+  },
+  dark: {
+    background: DARK.term,
+    foreground: DARK.termText,
+    cursor: DARK.accent,
+    cursorAccent: DARK.term,
+    selectionBackground: DARK.accentSoft,
+    black: '#2D2D29',
+    red: '#F97066',
+    green: '#5BCB8A',
+    yellow: '#F0BE6A',
+    blue: '#8EA2FF',
+    magenta: '#E8A4F5',
+    cyan: '#6FD6D6',
+    white: '#B5B3AA',
+    brightBlack: '#3A3A35',
+    brightRed: '#FF8E85',
+    brightGreen: '#7EDBA3',
+    brightYellow: '#F5CD84',
+    brightBlue: '#AEBBFF',
+    brightMagenta: '#EFBDF7',
+    brightCyan: '#8FE3E3',
+    brightWhite: '#ECEBE5',
+  },
+};
+
 /** The system fonts, so the app feels native: SF Pro on Mac, Segoe UI on Windows. */
 export const FONTS = {
   sans: "-apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif",
