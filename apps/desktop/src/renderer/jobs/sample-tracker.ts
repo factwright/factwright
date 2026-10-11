@@ -82,6 +82,7 @@ export function sampleTracker(jobs: string | null): TrackerApi {
             }),
             ...(changes.nextOn !== undefined && { nextOn: changes.nextOn }),
             ...(changes.notes !== undefined && { notes: changes.notes?.trim() || null }),
+            ...(changes.questions !== undefined && { questions: changes.questions }),
             ...(changes.archived !== undefined && { archived: changes.archived }),
           };
           const { status } = changes;

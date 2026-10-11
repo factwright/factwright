@@ -55,7 +55,7 @@ The main process prints resumes in one hidden window ([`src/main/resume`](src/ma
 ## Your jobs
 Your jobs come from two places, joined into one list:
 - **The workspace:** what the skills save there, such as fit checks, job searches, and each job's folder with its posting and resumes. The app reads it with [`@factwright/core`](../../packages/core), and reads it again whenever something changes, so new work shows up on its own.
-- **The tracker:** what you set by hand, such as statuses with their dates, applied dates, next steps, notes, and calls. It's a small SQLite database (Node's built-in `node:sqlite`) in the app's data folder, beside the workspace rather than in it, so Claude's file tools can't reach it.
+- **The tracker:** what you set by hand, such as statuses with their dates, applied dates, next steps, notes, calls, and an application's questions. It's a small SQLite database (Node's built-in `node:sqlite`) in the app's data folder, beside the workspace rather than in it, so Claude's file tools can't reach it.
 
 Each job keeps its ID in the tracker, so your notes stay with it as new work comes in. A job you've tracked stays listed even if its files go away.
 
@@ -67,6 +67,7 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - the next step, with a date that puts it in "Needs you" when it's due
   - how to apply, when there are special steps
   - **Run with your Claude:** a tailored resume, a fit check, a salary check, who to message, interview prep, or the application's questions, started on this job in Claude's panel. Each says where it stands (Run, Running, Done, or Ran and Ready for work already on file), and the next step for the job is highlighted. The window sends the app only the skill's name and the job's ID, and the app types the command (`/factwright:fit-check job <id>`), so text from a posting never reaches Claude as if you'd typed it. Claude that's open and done takes the next one; otherwise Claude starts with it.
+  - **Application questions** asks for the form's questions first, one box each, and keeps them with the job however the dialog closes. Answer with Claude starts the run, and Claude reads the questions through `job_details` as questions to answer, never as commands.
   - why it scored what it did, part by part, with the evidence
   - what people say about the company
   - calls and interviews: log one, and it moves the job forward

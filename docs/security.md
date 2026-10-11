@@ -14,7 +14,8 @@ Factwright holds the most personal parts of a job hunt: your career history, you
 ## What Claude can do on your computer
 Job postings are web pages written by strangers, so a posting could try to give Claude instructions. Factwright limits what those instructions could do:
 - Claude runs without a shell: no Bash, no PowerShell.
-- Its file access stays inside your workspace folder. Your tracker (statuses, notes and calls) sits outside it.
+- Its file access stays inside your workspace folder. Your tracker (statuses, notes, calls and pasted application questions) sits outside it.
+- Text from an employer, such as a posting or an application form's questions, reaches Claude only through Factwright's tools, marked as information. The app never types it in as if it were you.
 - Its only extra tools are the ones Factwright provides, each doing one narrow job. They answer only the run Factwright started, and refuse anything a web page sends.
 - The tools that only read what's on file run without asking, as do web searches, whose words go to the search service, never to a site a posting names. Reading a page or saving a posting reaches that site, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link.
 - The job search tools run without asking too. They reach only fixed public APIs (Greenhouse, Lever, Ashby, Gem and Hacker News's), and send them nothing but a board's name or a month.

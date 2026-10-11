@@ -35,6 +35,7 @@ function job(extra: Partial<Job> = {}): Job {
     nextAction: null,
     nextOn: null,
     notes: null,
+    questions: [],
     archived: false,
     manual: false,
     calls: [],

@@ -25,6 +25,19 @@ const anyTextUpTo =
   (value) =>
     typeof value === 'string' && value.length <= max ? value.trim() : BAD;
 
+/** A list of trimmed texts, each up to a length, with the empty ones left out. */
+const textsUpTo =
+  (max: number, count: number): Reader<string[]> =>
+  (value) => {
+    if (!Array.isArray(value) || value.length > count) return BAD;
+    const texts: string[] = [];
+    for (const item of value) {
+      if (typeof item !== 'string' || item.length > max) return BAD;
+      if (item.trim()) texts.push(item.trim());
+    }
+    return texts;
+  };
+
 const date: Reader<string> = (value) => (isIsoDate(value) ? value : BAD);
 const time: Reader<string> = (value) =>
   typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : BAD;
@@ -66,6 +79,7 @@ export function parseJobChanges(value: unknown): JobChanges | null {
     nextAction: textUpTo(LIMITS.nextAction),
     nextOn: orNull(date),
     notes: textUpTo(LIMITS.notes),
+    questions: textsUpTo(LIMITS.question, LIMITS.questions),
     archived: flag,
   });
 }

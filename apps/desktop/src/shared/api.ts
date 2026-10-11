@@ -39,6 +39,8 @@ export interface JobChanges {
   nextAction?: string | null;
   nextOn?: string | null;
   notes?: string | null;
+  /** All of the application's questions, in order, replacing those saved before. */
+  questions?: string[];
   archived?: boolean;
 }
 

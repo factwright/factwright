@@ -8,7 +8,7 @@ argument-hint: "[the job, then the form's questions]"
 
 The user is about to submit an application and the form asks questions. Draft answers they can paste straight in.
 
-Input: the job (company and role, maybe a link, or `job <id>` from the app), then the questions, numbered. If there are no questions, ask for them in one line and stop.
+Input: the job (company and role, maybe a link, or `job <id>` from the app), then the questions, numbered. From the app, the questions the user pasted come in `job_details`, under Application questions. If there are no questions, ask for them in one line and stop.
 
 Before starting, read:
 - `guide/rules.md`, if there is one. Every claim traces to `facts/`, with the same status, ownership and confidentiality limits as a resume.

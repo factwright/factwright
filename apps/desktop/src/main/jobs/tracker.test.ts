@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import type { CollectedJob } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type EditContext, Tracker } from './tracker.ts';
@@ -115,6 +116,7 @@ describe('updateJob', () => {
         nextAction: 'Follow up',
         nextOn: '2026-10-14',
         notes: 'Recruiter: Sam',
+        questions: ['Why Acme?', 'Notice period?'],
         archived: true,
       },
       AT,
@@ -125,6 +127,7 @@ describe('updateJob', () => {
       nextAction: 'Follow up',
       nextOn: '2026-10-14',
       notes: 'Recruiter: Sam',
+      questions: ['Why Acme?', 'Notice period?'],
       archived: true,
     });
     expect(history()).toEqual([['passed', TODAY]]);
@@ -294,6 +297,23 @@ describe('the database file', () => {
     first.close();
     const second = new Tracker(file);
     expect(second.rows()[0]?.notes).toBe('Kept');
+    second.close();
+  });
+
+  it('adds application questions to a tracker from before them, keeping the rest', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { notes: 'Kept' }, AT);
+    first.close();
+    // Back to the first version: no questions yet.
+    const old = new DatabaseSync(file);
+    old.exec('ALTER TABLE jobs DROP COLUMN questions; PRAGMA user_version = 1;');
+    old.close();
+    const second = new Tracker(file);
+    expect(second.rows()[0]).toMatchObject({ notes: 'Kept', questions: [] });
+    second.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
+    expect(second.rows()[0]?.questions).toEqual(['Why Acme?']);
     second.close();
   });
 });
