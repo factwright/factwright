@@ -11,6 +11,16 @@ const api: FactwrightApi = {
   resizeClaude: (size) => ipcRenderer.send('claude:resize', size),
   onClaudeOutput: (listener) => subscribe('claude:output', listener),
   onClaudeSignal: (listener) => subscribe('claude:signal', listener),
+  listJobs: () => ipcRenderer.invoke('jobs:list'),
+  jobDocs: (jobId) => ipcRenderer.invoke('jobs:docs', jobId),
+  updateJob: (jobId, changes) => ipcRenderer.invoke('jobs:update', jobId, changes),
+  addJob: (job) => ipcRenderer.invoke('jobs:add', job),
+  addCall: (jobId, call) => ipcRenderer.invoke('calls:add', jobId, call),
+  updateCall: (callId, changes) => ipcRenderer.invoke('calls:update', callId, changes),
+  deleteCall: (callId) => ipcRenderer.invoke('calls:delete', callId),
+  redateStatusChange: (changeId, at) => ipcRenderer.invoke('history:redate', changeId, at),
+  undoStatusChange: (changeId) => ipcRenderer.invoke('history:undo', changeId),
+  onJobsChanged: (listener) => subscribe('jobs:changed', listener),
 };
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {

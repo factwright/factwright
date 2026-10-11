@@ -57,3 +57,65 @@ export const CALL_STAGE = {
   final: 'interview',
   offer: 'offer',
 } as const satisfies Partial<Record<CallKind, JobStatus>>;
+
+/** How far the skills' work alone has taken a job: found, checked, or with a resume built. */
+export type JobStage = Extract<JobStatus, 'new' | 'checked' | 'resume'>;
+
+/** Outcomes a call can't undo. Logging a call can revive a job marked ghosted or passed, but not these. */
+export const SETTLED_STATUSES: readonly JobStatus[] = [
+  'rejected',
+  'withdrawn',
+  'accepted',
+  'declined',
+];
+
+/** Where a logged call stands. */
+export const CALL_STATES = ['scheduled', 'done', 'canceled'] as const;
+
+export type CallState = (typeof CALL_STATES)[number];
+
+/** How a call went. */
+export const CALL_OUTCOMES = ['advanced', 'waiting', 'rejected'] as const;
+
+export type CallOutcome = (typeof CALL_OUTCOMES)[number];
+
+/** What the user tracks about a job by hand. */
+export interface TrackerFields {
+  status: JobStatus | null;
+  /** When the current status started. */
+  statusOn: string | null;
+  appliedOn: string | null;
+  nextAction: string | null;
+  nextOn: string | null;
+  notes: string | null;
+  archived: boolean;
+}
+
+/** A call or interview the user logged for a job. */
+export interface Call {
+  id: string;
+  kind: CallKind;
+  onDate: string;
+  /** "HH:MM", when the user gave a time. */
+  atTime: string | null;
+  state: CallState;
+  outcome: CallOutcome | null;
+  notes: string | null;
+}
+
+/** One change of status, for a job's history and for undoing a mis-click. */
+export interface StatusChange {
+  id: string;
+  status: JobStatus;
+  at: string;
+}
+
+/**
+ * The status a job shows: the user's own, unless the skills have since taken the job further.
+ * A job the user marked "checked" shows "resume" once a resume is built.
+ */
+export function effectiveStatus(status: JobStatus | null, stage: JobStage): JobStatus {
+  if (!status) return stage;
+  const ahead = (STATUS_RANK[stage] ?? 0) > (STATUS_RANK[status] ?? 0);
+  return AUTO_STATUSES.includes(status) && ahead ? stage : status;
+}

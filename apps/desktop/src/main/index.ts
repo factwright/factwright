@@ -4,6 +4,9 @@ import { app, BrowserWindow, nativeTheme, session } from 'electron';
 import { ClaudeSession } from './claude/session.ts';
 import { SignalServer } from './claude/signals.ts';
 import { registerIpc } from './ipc.ts';
+import { JobsService } from './jobs/service.ts';
+import { Tracker } from './jobs/tracker.ts';
+import { workspaceDir } from './jobs/workspace.ts';
 import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
@@ -41,9 +44,10 @@ function start(): void {
     const signals = new SignalServer();
     await signals.start();
 
+    const dataDir = app.getPath('userData');
     let window = createMainWindow(startUrl);
     const claude = new ClaudeSession({
-      dataDir: app.getPath('userData'),
+      dataDir,
       pluginDir: pluginDir(),
       signals,
       dark: () => nativeTheme.shouldUseDarkColors,
@@ -53,7 +57,16 @@ function start(): void {
         notifyIfAway(window, signal);
       },
     });
-    registerIpc((url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`), claude);
+    // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
+    const tracker = new Tracker(join(dataDir, 'tracker.db'));
+    const jobs = new JobsService({
+      workspace: workspaceDir(dataDir),
+      tracker,
+      onChange: (list) => window.webContents.send('jobs:changed', list),
+    });
+    jobs.read();
+    jobs.watch();
+    registerIpc((url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`), claude, jobs);
 
     // A run belongs to its window, so closing the window or quitting stops it.
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
@@ -61,7 +74,9 @@ function start(): void {
     app.on('before-quit', () => {
       claude.stop();
       signals.stop();
+      jobs.stop();
     });
+    app.on('quit', () => tracker.close());
 
     app.on('second-instance', () => {
       if (window.isMinimized()) window.restore();

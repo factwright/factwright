@@ -37,9 +37,10 @@ Claude works on plain files in a folder on your computer:
 | `facts/` | The fact bank: your experience as checkable claims |
 | `guide/` | Your rules and preferences for resumes and answers |
 | `applications/` | One folder per job: posting, fit check, notes, answers, prep and resumes |
-| `searches/` | Job searches and your search criteria |
+| `searches/` | Job searches, your search criteria, and logs of fit, salary and employer checks |
+| `outreach/` | Messages drafted for people at a company |
 
-The app watches this folder and keeps a local database of your jobs for the dashboard.
+The app watches this folder, and reads it again whenever something changes. What you track by hand, such as statuses, dates, calls and notes, lives in a small database beside the workspace, where Claude's file tools can't reach it.
 
 ## Sync and storage
 Everything syncs to the cloud, encrypted, so your other computers and your phone see the same job hunt. The sync server ([`apps/server`](../apps/server)) runs on Cloudflare:
