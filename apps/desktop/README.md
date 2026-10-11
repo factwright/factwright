@@ -50,7 +50,7 @@ The tools that stay on this computer run without asking, as do web searches and 
 The main process prints resumes in one hidden window ([`src/main/resume`](src/main/resume)), with Chromium's own layout, so the PDF matches what was measured:
 - **Locked down:** the window has its own session, kept in memory. It loads only the page it's given, and every other request is refused, so a resume can't reach the network or your files.
 - **The last page:** after printing, it finds how full the last page is by printing again with a growing spacer at the end, until the spacer would start a new page.
-- **Fonts:** the layouts use Windows fonts (Segoe UI, Bahnschrift, Calibri, Cambria). Where they aren't installed, such as on a Mac, Chromium uses its own fallbacks.
+- **Fonts:** every resume carries the [engine's fonts](../../packages/engine/fonts), built into the app, which stand in for the Windows fonts the layouts were designed with. So a resume prints the same on a Mac as on Windows, down to where each line breaks. The window loads each one before it prints or measures.
 
 ## Your jobs
 Your jobs come from two places, joined into one list:

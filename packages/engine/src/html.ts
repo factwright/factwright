@@ -1,3 +1,4 @@
+import { type FontUrls, fontFaceCss } from './fonts.ts';
 import type { Bullet, Experience, Layout, Resume } from './schema.ts';
 
 /** Text made safe for HTML. */
@@ -116,17 +117,17 @@ const THEMES: Record<Layout, Theme> = {
   executive: {
     css: `
       :root{--ink:#1d2433;--muted:#5b6474;--accent:#1f3a5f;--accent2:#b08d57;--rule:#d5dbe4;--tint:#f3f5f9}
-      body{font-family:Calibri,"Segoe UI",sans-serif;font-size:10.1pt;line-height:1.32}
+      body{font-family:"Factwright Sans",Calibri,"Segoe UI",sans-serif;font-size:10.1pt;line-height:1.32}
       .hdr{text-align:center;border-bottom:2px solid var(--accent);padding-bottom:8px;margin-bottom:10px}
-      .name{font-family:Cambria,Georgia,serif;font-size:27pt;letter-spacing:3px;color:var(--accent);font-weight:700;text-transform:uppercase;line-height:1.05}
+      .name{font-family:Caladea,Cambria,Georgia,serif;font-size:27pt;letter-spacing:3px;color:var(--accent);font-weight:700;text-transform:uppercase;line-height:1.05}
       .headline{font-size:12pt;color:var(--accent2);font-weight:700;letter-spacing:1.2px;text-transform:uppercase;margin-top:4px}
       .tagline{font-size:10pt;color:var(--muted);margin-top:2px}
       .contact{font-size:9.6pt;color:var(--muted);margin-top:5px}
       .contact span+span:before{content:"  •  ";color:var(--accent2)}
-      h2{font-family:Cambria,Georgia,serif;font-size:12.2pt;color:var(--accent);text-transform:uppercase;letter-spacing:1.6px;border-bottom:1px solid var(--rule);padding-bottom:2px;margin:13px 0 6px}
+      h2{font-family:Caladea,Cambria,Georgia,serif;font-size:12.2pt;color:var(--accent);text-transform:uppercase;letter-spacing:1.6px;border-bottom:1px solid var(--rule);padding-bottom:2px;margin:13px 0 6px}
       .stats{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:8px;margin:8px 0 2px}
       .stat{background:var(--tint);border-top:3px solid var(--accent);padding:6px 8px;text-align:center}
-      .stat b{display:block;font-family:Cambria,Georgia,serif;font-size:16pt;color:var(--accent);line-height:1.1}
+      .stat b{display:block;font-family:Caladea,Cambria,Georgia,serif;font-size:16pt;color:var(--accent);line-height:1.1}
       .stat span{font-size:8.6pt;color:var(--muted);line-height:1.2;display:block;margin-top:2px}
       .comp{columns:3;column-gap:18px;font-size:9.8pt;margin:0;padding-left:14px}
       .comp li{break-inside:avoid;margin:1px 0}
@@ -163,7 +164,7 @@ const THEMES: Record<Layout, Theme> = {
   modern: {
     css: `
       :root{--ink:#16232b;--muted:#566771;--accent:#0f766e;--accent2:#134e4a;--rule:#d7e3e1;--tint:#eef6f5;--band:#12343b}
-      body{font-family:"Segoe UI",Calibri,sans-serif;font-size:9.4pt;line-height:1.34}
+      body{font-family:Selawik,"Factwright Sans","Segoe UI",Calibri,sans-serif;font-size:9.4pt;line-height:1.34}
       .band{background:var(--band);color:#fff;border-radius:10px;padding:14px 18px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px}
       .name{font-size:25pt;font-weight:700;letter-spacing:.5px;line-height:1}
       .headline{font-size:11.2pt;color:#8be3d6;font-weight:600;margin-top:5px}
@@ -216,17 +217,17 @@ const THEMES: Record<Layout, Theme> = {
   timeline: {
     css: `
       :root{--ink:#1b1f24;--muted:#5f6670;--accent:#c2410c;--accent2:#1b1f24;--rule:#e2e4e8;--tint:#f6f6f7}
-      body{font-family:"Segoe UI",Calibri,sans-serif;font-size:9.4pt;line-height:1.33}
+      body{font-family:Selawik,"Factwright Sans","Segoe UI",Calibri,sans-serif;font-size:9.4pt;line-height:1.33}
       .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--ink);padding-bottom:9px;margin-bottom:6px}
-      .name{font-family:Bahnschrift,"Segoe UI",sans-serif;font-size:30pt;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1}
+      .name{font-family:Barlow,"Factwright Sans",Bahnschrift,"Segoe UI",sans-serif;font-size:30pt;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1}
       .headline{font-size:12pt;color:var(--accent);font-weight:700;margin-top:4px}
       .tagline{font-size:9.4pt;color:var(--muted);margin-top:2px}
       .contact{font-size:9pt;color:var(--muted);text-align:right;line-height:1.55}.contact span{display:block}
-      h2{font-family:Bahnschrift,"Segoe UI",sans-serif;font-size:13pt;text-transform:uppercase;letter-spacing:1.5px;margin:13px 0 6px;color:var(--ink)}
+      h2{font-family:Barlow,"Factwright Sans",Bahnschrift,"Segoe UI",sans-serif;font-size:13pt;text-transform:uppercase;letter-spacing:1.5px;margin:13px 0 6px;color:var(--ink)}
       h2:after{content:"";display:block;width:34px;height:3px;background:var(--accent);margin-top:2px}
       .stats{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:0;border:1px solid var(--rule);border-radius:6px;margin-top:10px}
       .stat{padding:7px 9px;border-left:1px solid var(--rule)}.stat:first-child{border-left:0}
-      .stat b{display:block;font-family:Bahnschrift,"Segoe UI",sans-serif;font-size:17pt;color:var(--accent);line-height:1.05}
+      .stat b{display:block;font-family:Barlow,"Factwright Sans",Bahnschrift,"Segoe UI",sans-serif;font-size:17pt;color:var(--accent);line-height:1.05}
       .stat span{font-size:8.4pt;color:var(--muted);line-height:1.22;display:block;margin-top:2px}
       .tl{display:grid;grid-template-columns:1.18in 1fr;column-gap:0}
       .tl .d{padding-right:14px;padding-top:1px}
@@ -272,13 +273,15 @@ const THEMES: Record<Layout, Theme> = {
 };
 
 /**
- * A resume as a Letter-size HTML page in one of the layouts, ready to print to PDF. It needs no
- * fonts, images or scripts from anywhere else.
+ * A resume as a Letter-size HTML page in one of the layouts, ready to print to PDF. Given the
+ * font files, it carries them, so it looks the same on any computer. It needs nothing from
+ * anywhere else: no fonts, images or scripts.
  */
-export function renderHtml(resume: Resume, layout: Layout): string {
+export function renderHtml(resume: Resume, layout: Layout, fonts: FontUrls = {}): string {
   const theme = THEMES[layout];
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(resume.name)} — Resume</title>
 <style>
+  ${fontFaceCss(layout, fonts)}
   @page{size:Letter;margin:0.5in 0.55in 0.5in}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:#fff;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}

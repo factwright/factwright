@@ -37,9 +37,16 @@ function printingSession(): Electron.Session {
   return ses;
 }
 
-/** Loads a page from its HTML, through a data URL, so nothing touches the disk. */
-const loadPage = (window: BrowserWindow, html: string) =>
-  window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+/**
+ * Loads a page from its HTML, through a data URL, so nothing touches the disk. Its fonts load
+ * only as text needs them, so it loads them all before anything is printed or measured.
+ */
+async function loadPage(window: BrowserWindow, html: string): Promise<void> {
+  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  await window.webContents.executeJavaScript(
+    'Promise.all([...document.fonts].map((face) => face.load().catch(() => null))).then(() => document.fonts.ready).then(() => true)',
+  );
+}
 
 const printPdf = (window: BrowserWindow) =>
   window.webContents.printToPDF({
