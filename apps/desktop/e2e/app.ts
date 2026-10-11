@@ -1,9 +1,11 @@
-import { delimiter, join } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron, type ElectronApplication, type Page } from '@playwright/test';
 import electronPath from 'electron';
 
-const desktop = fileURLToPath(new URL('..', import.meta.url));
+// Without a trailing separator: on Windows, Playwright quotes each argument, and a trailing
+// backslash would escape the closing quote.
+const desktop = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fakeClaude = join(desktop, 'e2e', 'fake-claude');
 
 export interface Opened {
