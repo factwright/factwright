@@ -28,7 +28,7 @@ describe('RunServer', () => {
     server.listen(TOKEN, listener);
     const response = await post(server.hookUrl, { hook_event_name: 'Stop' });
     expect(response.status).toBe(204);
-    await vi.waitFor(() => expect(listener).toHaveBeenCalledWith('done'));
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledWith({ hook_event_name: 'Stop' }));
   });
 
   it("answers a run's tool calls over MCP", async () => {

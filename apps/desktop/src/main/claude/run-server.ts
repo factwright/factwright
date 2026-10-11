@@ -1,10 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { RunSignal } from '../../shared/api.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool } from '../tools/mcp.ts';
-import { bearerToken, parseJson, signalFor } from './signals.ts';
+import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -15,14 +14,17 @@ export interface RunServerOptions {
   version: string;
 }
 
+/** Hears one run's hook events, as Claude Code sends them. */
+export type HookListener = (event: unknown) => void;
+
 /**
- * Listens on this computer for a Claude Code run's hooks, which become signals for the panel,
- * and its calls to Factwright's tools, over MCP. Each run gets its own token, and requests
- * without a live run's token are refused, as is anything a web page sends.
+ * Listens on this computer for a Claude Code run's hooks, which it passes to that run's
+ * listener, and its calls to Factwright's tools, over MCP. Each run gets its own token, and
+ * requests without a live run's token are refused, as is anything a web page sends.
  */
 export class RunServer {
   private readonly options: RunServerOptions;
-  private readonly listeners = new Map<string, (signal: RunSignal) => void>();
+  private readonly listeners = new Map<string, HookListener>();
   private server: Server | undefined;
   /** Where Claude Code sends its hooks. Set once the server is listening. */
   hookUrl = '';
@@ -46,7 +48,7 @@ export class RunServer {
     this.server?.close();
   }
 
-  listen(token: string, listener: (signal: RunSignal) => void): () => void {
+  listen(token: string, listener: HookListener): () => void {
     this.listeners.set(token, listener);
     return () => this.listeners.delete(token);
   }
@@ -76,8 +78,7 @@ export class RunServer {
       if (request.url === '/hook') {
         // An empty answer lets Claude Code carry on as it would have.
         response.writeHead(204).end();
-        const signal = signalFor(parseJson(body));
-        if (signal) listener(signal);
+        listener(parseJson(body));
         return;
       }
       void this.answerTools(body, response);
@@ -106,7 +107,7 @@ export class RunServer {
       .end(JSON.stringify(answer.body));
   }
 
-  private listenerFor(token: string | null): ((signal: RunSignal) => void) | undefined {
+  private listenerFor(token: string | null): HookListener | undefined {
     if (!token) return undefined;
     for (const [known, listener] of this.listeners) {
       if (timingSafeEqual(Buffer.from(known), Buffer.from(token))) return listener;

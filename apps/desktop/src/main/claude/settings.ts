@@ -42,6 +42,7 @@ export function sessionSettings({ hookUrl, dark }: { hookUrl: string; dark: bool
       UserPromptSubmit: [{ hooks: hook }],
       PreToolUse: [{ matcher: 'AskUserQuestion', hooks: hook }],
       PostToolUse: [{ hooks: hook }],
+      PostToolUseFailure: [{ hooks: hook }],
       PermissionRequest: [{ hooks: hook }],
       Notification: [{ hooks: hook }],
       Stop: [{ hooks: hook }],

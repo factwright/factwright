@@ -27,7 +27,7 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 - **No shell:** Claude Code starts in restricted mode, so it can't run commands.
 - **Only Factwright's extras:** it loads only Factwright's plugin, tools and settings.
 - **No outside reach:** your claude.ai connectors are off, and there's no browser automation.
-- **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file. The same server answers Claude's calls to Factwright's tools.
+- **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. While a permission prompt or question is open, it keeps reading "Needs your answer", even as tools running alongside finish. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file. The same server answers Claude's calls to Factwright's tools.
 - **Matching colors:** Claude Code uses its ANSI theme, so the panel's colors come from the design system.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
