@@ -62,6 +62,11 @@ describe('JobPanel', () => {
     expect(screen.getByRole('img', { name: 'Missing' })).toBeTruthy();
     expect(screen.getByText('People like it')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Open Resume - Northwind Labs.pdf' })).toBeTruthy();
+    // PDFs can be previewed in the app; documents open as text.
+    expect(
+      screen.getByRole('button', { name: 'Preview Resume - Northwind Labs.pdf' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Preview (?!Resume)/ })).toBeNull();
     expect(screen.getByText('Recruiter was friendly. Team of six.')).toBeTruthy();
     expect(screen.getByText('Marked Interview')).toBeTruthy();
     // A call still to come isn't history yet.

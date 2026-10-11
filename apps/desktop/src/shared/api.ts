@@ -24,6 +24,9 @@ export interface SetupCheck {
   at: string;
 }
 
+/** A PDF's bytes, for showing its pages in the window, or why there are none. */
+export type PdfResult = { ok: true; data: Uint8Array } | { ok: false; message: string };
+
 /** Where a run in Claude's panel stands. Claude Code's hooks report it, and so does its exit. */
 export type RunSignal = 'working' | 'needs-answer' | 'done' | 'stopped' | 'failed';
 
@@ -140,6 +143,8 @@ export interface FactwrightApi {
   onJobsChanged(listener: (list: JobList) => void): () => void;
   /** Opens a resume from the workspace in the user's own app for it. */
   openFile(path: string): Promise<EditResult>;
+  /** A resume PDF's bytes, to show its pages in the window. */
+  readPdf(path: string): Promise<PdfResult>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

@@ -6,6 +6,7 @@ import {
   openableFile,
   parseRunTask,
   parseTerminalSize,
+  previewablePdf,
   resolveInside,
   runPrompt,
   saveableFileName,
@@ -73,6 +74,18 @@ describe('resolveInside', () => {
       expect(resolveInside(root, path)).toBeNull();
     },
   );
+});
+
+describe('previewablePdf', () => {
+  const workspace = join(sep, 'data', 'workspace');
+
+  it('previews only PDFs inside the workspace', () => {
+    expect(previewablePdf(workspace, 'applications/acme/Resume.PDF')).toBe(
+      join(workspace, 'applications', 'acme', 'Resume.PDF'),
+    );
+    expect(previewablePdf(workspace, 'applications/acme/resume.docx')).toBeNull();
+    expect(previewablePdf(workspace, '../elsewhere/secret.pdf')).toBeNull();
+  });
 });
 
 describe('openableFile', () => {

@@ -66,6 +66,14 @@ export function openableFile(workspace: string, path: string): string | null {
   return file.startsWith(base + sep) ? file : null;
 }
 
+/** The most a PDF may weigh for the window to preview it. Resumes are far smaller. */
+export const MAX_PREVIEW_BYTES = 20_000_000;
+
+/** A PDF inside the workspace that the window may preview, or null for any other path. */
+export function previewablePdf(workspace: string, path: string): string | null {
+  return /\.pdf$/i.test(path) ? openableFile(workspace, path) : null;
+}
+
 /** The file a URL path names inside `root`, or null if it would reach outside it. */
 export function resolveInside(root: string, urlPath: string): string | null {
   let decoded: string;

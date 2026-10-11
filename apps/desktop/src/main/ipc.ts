@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   app,
@@ -11,7 +11,7 @@ import {
   ipcMain,
   shell,
 } from 'electron';
-import type { EditResult, SaveFileResult } from '../shared/api.ts';
+import type { EditResult, PdfResult, SaveFileResult } from '../shared/api.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
@@ -24,9 +24,11 @@ import {
 } from './jobs/input.ts';
 import type { JobsService } from './jobs/service.ts';
 import {
+  MAX_PREVIEW_BYTES,
   openableFile,
   parseRunTask,
   parseTerminalSize,
+  previewablePdf,
   runPrompt,
   saveableFileName,
 } from './policy.ts';
@@ -55,6 +57,16 @@ export interface IpcDeps {
   jobs: JobsService;
   workspace: string;
 }
+
+/** A file's size in bytes, or null when it isn't a file. */
+const fileSize = (path: string) => {
+  try {
+    const found = statSync(path);
+    return found.isFile() ? found.size : null;
+  } catch {
+    return null;
+  }
+};
 
 const isFile = (path: string) => {
   try {
@@ -170,6 +182,18 @@ export function registerIpc({ isAppPage, claude: session, setup, jobs, workspace
     }
     const failed = await shell.openPath(file);
     return failed ? { ok: false, message: 'Your computer couldn’t open that file.' } : { ok: true };
+  });
+
+  answer('files:pdf', async (path): Promise<PdfResult> => {
+    const file = typeof path === 'string' ? previewablePdf(workspace, path) : null;
+    const size = file ? fileSize(file) : null;
+    if (!file || size === null) {
+      return { ok: false, message: 'That file isn’t in your workspace anymore.' };
+    }
+    if (size > MAX_PREVIEW_BYTES) {
+      return { ok: false, message: 'That PDF is too big to preview here. Open it instead.' };
+    }
+    return { ok: true, data: new Uint8Array(await readFile(file)) };
   });
 
   answer('clipboard:write', (text): EditResult => {

@@ -10,6 +10,7 @@ import {
 } from '@factwright/core';
 import type { EditResult, FactwrightApi, JobList } from '../../shared/api.ts';
 import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
+import { samplePdf } from './sample-pdf.ts';
 
 type TrackerApi = Pick<
   FactwrightApi,
@@ -24,6 +25,7 @@ type TrackerApi = Pick<
   | 'undoStatusChange'
   | 'onJobsChanged'
   | 'openFile'
+  | 'readPdf'
   | 'copyText'
   | 'saveFile'
 >;
@@ -198,6 +200,8 @@ export function sampleTracker(jobs: string | null): TrackerApi {
       return () => listeners.delete(listener);
     },
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
+    // Every resume previews as the same made-up page.
+    readPdf: async () => ({ ok: true, data: samplePdf() }),
     copyText: async (text) => {
       await navigator.clipboard?.writeText(text).catch(() => {});
       return SAVED;
