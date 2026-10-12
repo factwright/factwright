@@ -295,8 +295,8 @@ export function ClaudeSettingsDialog({
         </p>
       )}
       <p className={styles.note}>
-        Changes apply the next time Claude starts, or when it starts a task on another model or
-        effort.
+        Changes apply the next time Claude starts, or when a task needs another model or more effort
+        than Claude is open with.
       </p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>

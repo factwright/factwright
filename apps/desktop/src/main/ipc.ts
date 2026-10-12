@@ -20,7 +20,7 @@ import type {
   ShotFor,
   StartResult,
 } from '../shared/api.ts';
-import { effortFor, parseEffort } from '../shared/effort.ts';
+import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
@@ -200,16 +200,18 @@ export function registerIpc({
     );
   });
 
-  // A task for the run that's open. One that needs another model or effort, or may change other
-  // files without asking, starts a new run instead.
+  // A task for the run that's open. One that needs another model or more effort, or may change
+  // other files without asking, starts a new run instead. One that needs less effort runs at the
+  // open run's.
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
     const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
     const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
+    const thinking = session.effort();
     if (
       differs(session.model(), modelFor(models, run)) ||
-      differs(session.effort(), effortFor(effort, run)) ||
+      (thinking !== undefined && needsMore(thinking, effortFor(effort, run))) ||
       differs(session.scope(), scopeOf(run))
     ) {
       return { ok: false, reason: 'new-run' };
