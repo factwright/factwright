@@ -11,6 +11,8 @@ export const LIMITS = {
   recordChars: 300_000,
   /** Changes in one push. */
   changesPerPush: 100,
+  /** Characters in one push, all its changes together. */
+  pushChars: 4_000_000,
   /** Changes in one page of a pull. */
   changesPerPage: 500,
   /** How long a link code works. */
@@ -100,8 +102,11 @@ export interface PushChange {
 /** What happened to one pushed change. */
 export type PushResult =
   | { record: string; ok: true; version: number; seq: number }
-  /** Another device changed it first. Here's its version, to merge with. */
-  | { record: string; ok: false; reason: 'conflict'; current: Change }
+  /**
+   * Another device changed it first. Here's its version, to merge with. Null means the server
+   * has no version at all, as after a restore from a backup: push it again as a new record.
+   */
+  | { record: string; ok: false; reason: 'conflict'; current: Change | null }
   /** The file contents it points to haven't been uploaded. */
   | { record: string; ok: false; reason: 'missing-file' }
   /** The account is out of space. */

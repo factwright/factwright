@@ -2,9 +2,10 @@
 export type Bytes = Uint8Array<ArrayBuffer>;
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder('utf-8', { fatal: true });
+const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
 
-export const utf8 = (text: string): Bytes => encoder.encode(text);
+// TextEncoder always makes a plain ArrayBuffer, though not every runtime's types say so.
+export const utf8 = (text: string): Bytes => encoder.encode(text) as Bytes;
 
 /** Text from UTF-8 bytes, or null when they aren't valid UTF-8. */
 export function fromUtf8(bytes: Bytes): string | null {
