@@ -1,4 +1,4 @@
-import { type Layout, TEMPLATES, templateOf } from '@factwright/engine/templates';
+import { TEMPLATES } from '@factwright/engine/templates';
 import {
   type AboutYou,
   COMPANY_KINDS,
@@ -13,13 +13,15 @@ import {
 } from './about.ts';
 import { stamped } from './stamp.ts';
 
-/** Who each template suits best: the kinds of company, the fields and the levels. */
-const SUITS: Readonly<
-  Record<
-    Layout,
-    { companies: readonly CompanyKind[]; fields: readonly Field[]; levels: readonly Level[] }
-  >
-> = {
+/** Who a template suits best: the kinds of company, the fields and the levels. */
+interface Suits {
+  companies: readonly CompanyKind[];
+  fields: readonly Field[];
+  levels: readonly Level[];
+}
+
+/** Who each template the app comes with suits best. */
+const SUITS: Readonly<Record<string, Suits>> = {
   classic: {
     companies: ['public', 'established'],
     fields: [
@@ -31,45 +33,20 @@ const SUITS: Readonly<
       'operations',
       'people',
       'trades',
+      'sales',
+      'customer',
     ],
-    levels: ['entry', 'mid', 'senior', 'manager', 'director'],
-  },
-  timeline: {
-    companies: ['startup'],
-    fields: ['software', 'data', 'it', 'product'],
-    levels: ['mid', 'senior', 'lead'],
-  },
-  executive: {
-    companies: ['established'],
-    fields: ['finance', 'operations', 'sales', 'product', 'software', 'people'],
-    levels: ['manager', 'director', 'executive'],
-  },
-  modern: {
-    companies: ['startup'],
-    fields: ['design', 'product', 'marketing', 'creative', 'data'],
-    levels: ['mid', 'senior', 'lead', 'manager'],
-  },
-  compact: {
-    companies: ['startup', 'established'],
-    fields: ['software', 'data', 'it', 'science', 'trades'],
-    levels: ['entry', 'mid'],
+    levels: ['entry', 'mid', 'senior', 'manager', 'director', 'executive'],
   },
   minimal: {
     companies: ['startup'],
-    fields: ['design', 'creative', 'product', 'science'],
-    levels: ['mid', 'senior', 'lead'],
-  },
-  elegant: {
-    companies: ['public', 'established'],
-    fields: ['legal', 'education', 'healthcare', 'creative', 'people'],
-    levels: ['senior', 'lead', 'manager', 'director', 'executive'],
-  },
-  banner: {
-    companies: ['startup', 'established'],
-    fields: ['sales', 'marketing', 'customer', 'operations', 'people'],
-    levels: ['entry', 'mid', 'senior', 'manager'],
+    fields: ['software', 'data', 'it', 'product', 'design', 'creative', 'marketing'],
+    levels: ['entry', 'mid', 'senior', 'lead', 'manager'],
   },
 };
+
+/** The user's own templates are theirs to pick, so none is suggested. */
+const NO_SUITS: Suits = { companies: [], fields: [], levels: [] };
 
 /** A template picked out for the user, with why, in a few words. */
 export interface Suggestion extends Look {
@@ -78,12 +55,12 @@ export interface Suggestion extends Look {
 
 /** How well a template suits the user for one kind of company. */
 function score(
-  layout: Layout,
+  layout: string,
   kind: CompanyKind | 'any',
   fields: readonly Field[],
   levels: readonly Level[],
 ) {
-  const suits = SUITS[layout];
+  const suits = SUITS[layout] ?? NO_SUITS;
   return (
     (kind !== 'any' && suits.companies.includes(kind) ? 3 : 0) +
     (fields.some((field) => suits.fields.includes(field)) ? 2 : 0) +
@@ -92,8 +69,8 @@ function score(
 }
 
 /** The few words on why a template suits the user. */
-function reason(layout: Layout, kind: CompanyKind | 'any', fields: readonly Field[]): string {
-  const suits = SUITS[layout];
+function reason(layout: string, kind: CompanyKind | 'any', fields: readonly Field[]): string {
+  const suits = SUITS[layout] ?? NO_SUITS;
   const parts = [
     kind !== 'any' && suits.companies.includes(kind)
       ? labelOf(COMPANY_KINDS, kind).toLowerCase()
@@ -104,37 +81,57 @@ function reason(layout: Layout, kind: CompanyKind | 'any', fields: readonly Fiel
 }
 
 /**
- * The template that suits each kind of company the user is aiming at, from what they're looking
- * for: one for startups, say, and another for established companies, each its own, since a look
- * goes with one kind. With no kind chosen, one template for any job.
+ * The template the app comes with that suits each kind of company the user is aiming at, from
+ * what they're looking for: one for startups, say, and another for established companies, each
+ * its own, since a look goes with one kind. With no kind chosen, one template for any job. Once
+ * each template has a kind, the kinds left get none, and the user picks for them.
  */
 export function suggestLooks(
   answers: Pick<AboutYou, 'companies' | 'fields' | 'levels'>,
 ): Suggestion[] {
   const kinds: (CompanyKind | 'any')[] = answers.companies.length > 0 ? answers.companies : ['any'];
-  const taken = new Set<Layout>();
-  const fit = (layout: Layout, kind: CompanyKind | 'any') =>
+  const ids = TEMPLATES.map(({ id }) => id);
+  const fit = (layout: string, kind: CompanyKind | 'any') =>
     score(layout, kind, answers.fields, answers.levels);
-  return kinds.map((kind) => {
-    // TEMPLATES lists the safest first, so it wins a tie.
-    const best = TEMPLATES.map((each) => each.layout)
-      .filter((layout) => !taken.has(layout))
-      .reduce((top, layout) => (fit(layout, kind) > fit(top, kind) ? layout : top));
-    taken.add(best);
-    return { layout: best, for: kind, why: reason(best, kind, answers.fields) };
+  // Every way to give the kinds a template each, while there are templates left: the one that
+  // covers the most kinds wins, then the one that suits them best. Templates come safest first,
+  // and earlier kinds first, so of equals the first found wins.
+  const best = { covered: -1, total: 0, picks: [] as (string | null)[] };
+  const walk = (picks: (string | null)[], total: number) => {
+    const kind = kinds[picks.length];
+    if (kind === undefined) {
+      const covered = picks.filter(Boolean).length;
+      if (covered > best.covered || (covered === best.covered && total > best.total)) {
+        Object.assign(best, { covered, total, picks });
+      }
+      return;
+    }
+    for (const id of ids) if (!picks.includes(id)) walk([...picks, id], total + fit(id, kind));
+    walk([...picks, null], total);
+  };
+  walk([], 0);
+  return kinds.flatMap((kind, i) => {
+    const layout = best.picks[i];
+    return layout ? [{ layout, for: kind, why: reason(layout, kind, answers.fields) }] : [];
   });
 }
 
 /** Which kinds of company a template is suggested for, for its badge in the gallery. */
 export function suggestedFor(
-  layout: Layout,
+  layout: string,
   suggestions: readonly Suggestion[],
 ): (CompanyKind | 'any')[] {
   return suggestions.filter((each) => each.layout === layout).map((each) => each.for);
 }
 
-const lookLine = (look: Look) => {
-  const { name } = templateOf(look.layout);
+/** A template's name, from the templates the user has, or its ID when it's gone. */
+export const templateName = (
+  layout: string,
+  templates: readonly { id: string; name: string }[],
+): string => templates.find((each) => each.id === layout)?.name ?? layout;
+
+const lookLine = (look: Look, templates: readonly { id: string; name: string }[]) => {
+  const name = templateName(look.layout, templates);
   const style =
     look.for === 'any'
       ? 'any job'
@@ -142,19 +139,32 @@ const lookLine = (look: Look) => {
   return `| ${name} | \`${look.layout}\` | ${style} |`;
 };
 
+/** The user's picks whose templates they still have: a pick of one that's gone is left out. */
+export const livePicks = (looks: readonly Look[], templates: readonly { id: string }[]): Look[] =>
+  looks.filter((look) => templates.some((each) => each.id === look.layout));
+
 /**
  * The user's templates as guide/templates.md, which the resume skills read: which look goes with
- * which kind of company, how long resumes run, and which files to make.
+ * which kind of company, how long resumes run, and which files to make. A pick of a template
+ * that's gone is left out, so Claude never builds in it.
  */
-export function templatesMarkdown(answers: AboutYou): string {
+export function templatesMarkdown(
+  answers: AboutYou,
+  templates: readonly { id: string; name: string }[],
+): string {
   const pages = pagesFor(answers);
+  const looks = livePicks(answers.looks, templates);
   const body = [
     '# Your resume templates',
     '',
     'The looks the user picked. Use the one for the kind of company a job is at, set as `layout` in its resume.json.',
     '',
-    ...(answers.looks.length > 0
-      ? ['| Template | `layout` | Use it for |', '|---|---|---|', ...answers.looks.map(lookLine)]
+    ...(looks.length > 0
+      ? [
+          '| Template | `layout` | Use it for |',
+          '|---|---|---|',
+          ...looks.map((look) => lookLine(look, templates)),
+        ]
       : ['None picked yet. Use the style file’s layout.']),
     '',
     `- **Length:** ${pages === 1 ? 'one page' : 'up to two pages'}${answers.pages ? '' : ', for their level'}.`,

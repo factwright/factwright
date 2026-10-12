@@ -3,7 +3,7 @@ import type { Resume } from './schema.ts';
 /** A made-up resume for tests. */
 export function sampleResume(): Resume {
   return {
-    layout: 'timeline',
+    layout: 'classic',
     format: 'pdf',
     name: 'Alex Rivera',
     headline: 'Staff Platform Engineer',

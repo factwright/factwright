@@ -15,6 +15,7 @@ What Factwright loads into each Claude Code run, through Claude Code's own `--pl
 | `/factwright:answer-questions` | Answers an application form's questions, typed or in screenshots, in your voice, backed by your facts, what you told Factwright and what you sent on other applications | The job's `answers.md`. What forms ask again, such as your work authorization, in your profile |
 | `/factwright:ask` | Answers your own question about one job, such as what to expect from a call, from everything on file for it and the web | `asked/<job>/<question>.md`, which the app shows under the question |
 | `/factwright:interview-prep` | Gets you ready for a call or interview, or talks a job through, with a mock interview on request | The job's `prep.md` |
+| `/factwright:make-template` | Makes a resume template of your own in the look of a resume you like, from a PDF or a picture of it: its layout, fonts and colors, never its words. It compares a printed preview with the original until they match | `templates/<id>.json`, which the app adds to your templates |
 | `/factwright:job-search` | Searches one source (HN's "Who is hiring?" thread, a company's job board, or a careers page) and ranks what passes your criteria by how well your facts fit | `searches/<month>-<source>/`: the source word for word, `jobs.json` (which the app lists under To review) and `report.md` |
 | `/factwright:salary-check` | Estimates the pay for a job that doesn't list it, with sources and a confidence level | A row in `searches/salary-checks.md` |
 | `/factwright:unmask-job` | Finds the real employer behind a recruiter or job-board listing, and whether to apply direct | The job's folder, with `unmask.md`. A row in `searches/unmask-checks.md` |
@@ -28,6 +29,7 @@ The app passes the rest with each run:
   - `about_you`: what you told Factwright about yourself, such as your work authorization and when you can start
   - `past_answers`: what you sent on your applications, in your own words, to reuse and to sound like you
   - `save_answer`: Claude's answer to your question about a job, kept with the job
+  - `list_templates`, `read_template` and `save_template`: your resume templates, built in and your own, to pick from, to start a new one from, and to save one Claude made, checked first
   - `save_about_you`: something you told Claude that applications ask for, saved to your profile, which Claude Code asks you about first
   - `read_posting`: a posting on Greenhouse, Lever, Ashby or Gem, read from the applicant system's public feed
   - `read_page`: any other web page as plain text

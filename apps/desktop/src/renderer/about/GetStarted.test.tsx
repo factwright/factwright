@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import { TEMPLATES } from '@factwright/engine/templates';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -43,6 +45,7 @@ function profileApi(start: Partial<AboutYou> = {}) {
       criteria: 'none',
       connections: null,
     },
+    templates: TEMPLATES.map(({ id, name, look }) => ({ id, name, look, own: false, stamp: '' })),
   });
   return {
     platform: 'darwin',
@@ -82,6 +85,12 @@ function profileApi(start: Partial<AboutYou> = {}) {
     }),
     // jsdom can't draw PDFs, so the gallery shows each template without its picture.
     templatePreview: vi.fn(async () => ({ ok: false as const, message: 'No preview here' })),
+    addTemplate: vi.fn(async () => ({
+      ok: true as const,
+      kind: 'copy' as const,
+      source: '2026-10-12-1.png',
+    })),
+    removeTemplate: vi.fn(async () => ({ ok: true as const })),
     copyText: vi.fn(async () => ({ ok: true as const })),
     openTerminal: vi.fn(async () => ({ ok: true as const })),
   };
@@ -93,11 +102,13 @@ function Harness({
   api,
   claude = READY,
   onStart = () => {},
+  onMakeTemplate = () => {},
   onSkip = () => {},
 }: {
   api: Api;
   claude?: ClaudeStatusView;
   onStart?: () => void;
+  onMakeTemplate?: (source: string) => void;
   onSkip?: () => void;
 }) {
   const state = useProfile(api as unknown as FactwrightApi);
@@ -110,6 +121,7 @@ function Harness({
       onRecheckClaude={() => {}}
       canStartClaude
       onStart={onStart}
+      onMakeTemplate={onMakeTemplate}
       onSkip={onSkip}
       onOpenSync={() => {}}
     />
@@ -259,26 +271,42 @@ describe('GetStarted', () => {
         expect(api.saveAnswers).toHaveBeenLastCalledWith(
           expect.objectContaining({
             looks: [
-              { layout: 'timeline', for: 'startup' },
-              { layout: 'executive', for: 'established' },
+              { layout: 'minimal', for: 'startup' },
+              { layout: 'classic', for: 'established' },
             ],
           }),
         ),
       SAVED,
     );
     const classic = screen.getByRole('heading', { name: 'Classic' }).closest('li') as HTMLElement;
-    await userEvent.click(within(classic).getByRole('checkbox', { name: 'Use this template' }));
     await userEvent.selectOptions(
       within(classic).getByRole('combobox', { name: 'Use it for' }),
       'any',
     );
+    const minimal = screen.getByRole('heading', { name: 'Minimal' }).closest('li') as HTMLElement;
+    await userEvent.click(within(minimal).getByRole('checkbox', { name: 'Use this template' }));
     await userEvent.click(screen.getByRole('radio', { name: 'One page' }));
     await waitFor(
       () => expect(api.saveAnswers).toHaveBeenLastCalledWith(expect.objectContaining({ pages: 1 })),
       SAVED,
     );
-    expect((await api.profile()).answers.looks).toContainEqual({ layout: 'classic', for: 'any' });
+    expect((await api.profile()).answers.looks).toEqual([{ layout: 'classic', for: 'any' }]);
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('has Claude make a template from a resume the user likes, while they carry on', async () => {
+    const api = profileApi({ step: 5, reached: 5 });
+    const onMakeTemplate = vi.fn();
+    render(<Harness api={api} onMakeTemplate={onMakeTemplate} />);
+    await screen.findByRole('heading', { name: 'Pick your resume templates' });
+    const picker = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await userEvent.upload(picker, new File(['png'], 'Liked.png', { type: 'image/png' }));
+    await waitFor(() => expect(onMakeTemplate).toHaveBeenCalledWith('2026-10-12-1.png'));
+    expect(
+      await screen.findByText(
+        'Your Claude is making a template in its look. It shows up here once it’s saved.',
+      ),
+    ).toBeTruthy();
   });
 
   it('hands everything to Claude once there’s something to start from', async () => {

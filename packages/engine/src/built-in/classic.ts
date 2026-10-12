@@ -1,22 +1,40 @@
-import { md } from '../markup.ts';
-import {
-  block,
-  contact,
-  extraItems,
-  header,
-  jobClassic,
-  placed,
-  project,
-  school,
-  skillRows,
-  stats,
-  systemCards,
-  type Theme,
-} from './parts.ts';
-import { sectionTitles } from './titles.ts';
+import type { Template } from '../templates.ts';
+import { BODY, PARTS } from './markup.ts';
 
 /** Traditional and all serif, in black and white: the safest choice for formal fields. */
-export const classic: Theme = {
+export const classic: Template = {
+  id: 'classic',
+  name: 'Classic',
+  look: 'Traditional and all serif, in black and white. The safest choice for formal fields.',
+  fonts: [
+    'caladea-regular.woff2',
+    'caladea-bold.woff2',
+    'caladea-italic.woff2',
+    'factwright-sans-regular.woff2',
+    'factwright-sans-bold.woff2',
+  ],
+  titles: {
+    summary: 'Summary',
+    competencies: 'Areas of Expertise',
+    experience: 'Professional Experience',
+    education: 'Education',
+    skills: 'Skills',
+  },
+  word: {
+    head: 'Cambria',
+    body: 'Cambria',
+    accent: '16181D',
+    accent2: '16181D',
+    muted: '4A4F57',
+    tint: 'F2F3F4',
+    nameColor: '16181D',
+    headlineColor: '16181D',
+    ruleColor: '2B2F36',
+    nameSize: 46,
+    nameCaps: true,
+    center: true,
+    size: 21,
+  },
   css: `
       :root{--ink:#16181d;--muted:#4a4f57;--rule:#2b2f36;--soft:#c5c9cf}
       body{font-family:Caladea,Cambria,Georgia,serif;font-size:10.4pt;line-height:1.3}
@@ -50,24 +68,6 @@ export const classic: Theme = {
       .proj{margin:3px 0 6px}.proj .pn{font-weight:700}.proj .ps{font-style:italic;color:var(--muted)}
       .edu{margin-bottom:6px}.edu .note{font-size:9.8pt;color:var(--muted)}
     `,
-  body: (r) => {
-    const t = sectionTitles('classic', r);
-    const education = placed(
-      r,
-      r.education?.length ? block(t.education, r.education.map(school).join('')) : '',
-    );
-    return `
-      <div class="hdr">${header(r)}${contact(r)}</div>
-      ${stats(r)}
-      ${block(t.summary, `<div class="sum">${md(r.summary)}</div>`)}
-      ${education.early}
-      ${r.competencies?.length ? block(t.competencies, extraItems(r.competencies, 'comp')) : ''}
-      ${r.systems?.length ? block(t.systems, systemCards(r)) : ''}
-      ${block(t.experience, r.experience.map(jobClassic).join(''))}
-      ${r.projects?.length ? block(t.projects, r.projects.map(project).join('')) : ''}
-      ${education.late}
-      ${r.skills?.length ? block(t.skills, skillRows(r)) : ''}
-      ${(r.extra_sections ?? []).map((x) => block(x.heading, extraItems(x.items))).join('')}
-    `;
-  },
+  body: BODY,
+  parts: PARTS,
 };

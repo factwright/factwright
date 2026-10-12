@@ -1,4 +1,3 @@
-import { templateOf } from '@factwright/engine/templates';
 import { Button } from '@factwright/ui';
 import { Check } from 'lucide-react';
 import { type ReactNode, useId } from 'react';
@@ -10,6 +9,8 @@ import {
   labelOf,
   wordCount,
 } from '../../../shared/about.ts';
+import { livePicks, templateName } from '../../../shared/looks.ts';
+import type { TemplateInfo } from '../../../shared/profile.ts';
 import ready from './ReadyStep.module.css';
 import styles from './steps.module.css';
 
@@ -65,13 +66,17 @@ export function wantsSummary(answers: AboutYou): string | null {
   return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
-/** The templates picked, in a line, such as "Timeline for startups, Executive for established companies". */
-export function looksSummary(answers: Pick<AboutYou, 'looks'>): string | null {
-  if (answers.looks.length === 0) return null;
-  return answers.looks
+/** The templates picked, in a line, such as "Minimal for startups, Classic for established companies". */
+export function looksSummary(
+  answers: Pick<AboutYou, 'looks'>,
+  templates: readonly TemplateInfo[],
+): string | null {
+  const looks = livePicks(answers.looks, templates);
+  if (looks.length === 0) return null;
+  return looks
     .map(
       (look) =>
-        `${templateOf(look.layout).name}${look.for === 'any' ? '' : ` for ${labelOf(COMPANY_KINDS, look.for).toLowerCase()}`}`,
+        `${templateName(look.layout, templates)}${look.for === 'any' ? '' : ` for ${labelOf(COMPANY_KINDS, look.for).toLowerCase()}`}`,
     )
     .join(', ');
 }
@@ -83,6 +88,7 @@ export function looksSummary(answers: Pick<AboutYou, 'looks'>): string | null {
  */
 export function ReadyStep({
   answers,
+  templates,
   notes,
   canStart,
   why,
@@ -91,6 +97,7 @@ export function ReadyStep({
   claude,
 }: {
   answers: AboutYou;
+  templates: readonly TemplateInfo[];
   notes: string;
   canStart: boolean;
   /** Why Claude can't start yet, when it can't. */
@@ -108,7 +115,7 @@ export function ReadyStep({
     ['What you shared', sharedSummary(answers), 2],
     ['In your words', words > 0 ? `${words.toLocaleString()} words about yourself` : null, 3],
     ['What you want', wantsSummary(answers), 4],
-    ['Templates', looksSummary(answers), 5],
+    ['Templates', looksSummary(answers, templates), 5],
   ];
   return (
     <section className={styles.step} aria-labelledby={titleId}>

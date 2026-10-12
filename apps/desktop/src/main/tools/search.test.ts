@@ -75,11 +75,12 @@ const searchFile = (name: string) => readFileSync(join(root, 'searches', SEARCH,
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'factwright-search-'));
   fetch = vi.fn();
-  // Neither tool reads the tracker or prints, so these stay stubs.
+  // Neither tool reads the tracker, prints or reads templates, so these stay stubs.
   tools = factwrightTools({
     about: {} as never,
     jobs: {} as never,
     printer: {} as never,
+    templates: {} as never,
     workspace: root,
     now: NOW,
     fetch,

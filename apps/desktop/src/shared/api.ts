@@ -13,10 +13,12 @@ import type { ModelChoices } from './models.ts';
 import type { ClaudePermissions } from './permissions.ts';
 import type {
   AddFileResult,
+  AddTemplateResult,
   FileUpload,
   LinkedInUpload,
   PreviewResult,
   Profile,
+  TemplateUpload,
 } from './profile.ts';
 import type { RunTask } from './runs.ts';
 import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
@@ -280,7 +282,14 @@ export interface FactwrightApi {
   /** Replaces a criteria file someone changed by hand with one from the answers, keeping theirs. */
   useAnswersForCriteria(): Promise<void>;
   /** A template's look: a made-up resume printed in it, with the user's name if given. */
-  templatePreview(layout: string, name: string): Promise<PreviewResult>;
+  templatePreview(id: string, name: string): Promise<PreviewResult>;
+  /**
+   * Adds a file the user picked to their templates: a template file, or a resume whose look they
+   * like, kept for Claude to make a template from.
+   */
+  addTemplate(upload: TemplateUpload): Promise<AddTemplateResult>;
+  /** Puts one of the user's own templates in the trash, and takes it out of their picks. */
+  removeTemplate(id: string): Promise<EditResult>;
   /** Listens for changes to the profile, by Claude or another device. Returns a function that stops listening. */
   onProfileChanged(listener: (profile: Profile) => void): () => void;
   /** Opens the system's terminal app, where the user runs Claude Code's own commands. */

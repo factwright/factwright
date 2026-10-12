@@ -14,6 +14,7 @@ import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
+import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
 import { factwrightTools } from './tools/index.ts';
@@ -83,15 +84,17 @@ function start(): void {
       },
     });
     jobs.read();
+    const templates = new TemplateLibrary({ workspace, trash: (path) => shell.trashItem(path) });
     const about = new AboutStore({
       workspace,
       starterDir: join(pluginDir(), 'starter'),
       trash: (path) => shell.trashItem(path),
+      templates: () => templates.list(),
     });
     const printer = new ElectronResumePrinter();
-    const previews = new TemplatePreviews(printer);
+    const previews = new TemplatePreviews(printer, templates);
     const server = new RunServer({
-      tools: factwrightTools({ jobs, about, workspace, printer }),
+      tools: factwrightTools({ jobs, about, workspace, printer, templates }),
       version: app.getVersion(),
     });
     await server.start();
@@ -150,6 +153,7 @@ function start(): void {
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
       about,
+      templates,
       previews,
       claude,
       setup,

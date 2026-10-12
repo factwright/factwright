@@ -1,12 +1,14 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { type AboutYou, type AnswerChanges, NO_ANSWERS } from '../../shared/about.ts';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
-import { factwrightTools, LOCAL_TOOLS, PROFILE_TOOLS } from './index.ts';
+import { TemplateLibrary } from '../resume/templates.ts';
+import { factwrightTools, LOCAL_TOOLS, PROFILE_TOOLS, TEMPLATE_TOOLS } from './index.ts';
 import type { McpTool } from './mcp.ts';
 import { FetchRefused } from './safe-fetch.ts';
 
@@ -19,6 +21,7 @@ let tracker: Tracker;
 let jobs: JobsService;
 let fetch: Mock<(url: string, json: boolean, limitMs: number) => Promise<unknown>>;
 let tools: McpTool[];
+let templates: TemplateLibrary;
 let printer: { print: Mock<ResumePrinter['print']>; measure: Mock<ResumePrinter['measure']> };
 // What the user told Factwright about themselves, which save_about_you changes.
 let answers: AboutYou;
@@ -60,7 +63,8 @@ beforeEach(() => {
     ]),
   };
   answers = { ...NO_ANSWERS, you: { ...NO_ANSWERS.you } };
-  tools = factwrightTools({ jobs, about, workspace: root, now: NOW, fetch, printer });
+  templates = new TemplateLibrary({ workspace: root });
+  tools = factwrightTools({ jobs, about, workspace: root, now: NOW, fetch, printer, templates });
 });
 
 afterEach(() => {
@@ -70,7 +74,9 @@ afterEach(() => {
 
 it('marks the tools that stay on this computer, which Claude may call without asking', () => {
   const local = tools.filter(({ annotations }) => annotations?.openWorldHint === false);
-  expect(local.map((each) => each.name)).toEqual([...LOCAL_TOOLS, ...PROFILE_TOOLS]);
+  expect(local.map((each) => each.name).sort()).toEqual(
+    [...LOCAL_TOOLS, ...PROFILE_TOOLS, ...TEMPLATE_TOOLS].sort(),
+  );
 });
 
 describe('find_job', () => {
@@ -445,7 +451,7 @@ describe('read_page', () => {
       clock += 30_000;
       return now;
     };
-    tools = factwrightTools({ jobs, about, workspace: root, now: tick, fetch, printer });
+    tools = factwrightTools({ jobs, about, workspace: root, now: tick, fetch, printer, templates });
     fetch.mockResolvedValue({ jobs: [] });
     expect(await tool('read_page').run({ url: ASHBY })).toBe(
       `Couldn’t read ${ASHBY} (the site took too long to answer).`,
@@ -532,7 +538,7 @@ describe('save_posting', () => {
 describe('build_resume', () => {
   const folder = (file: string) => join(root, 'applications', FOLDER, file);
   const resume = {
-    layout: 'timeline',
+    layout: 'minimal',
     output_name: 'AlexRiveraResume10112026_Acme',
     name: 'Alex Rivera',
     headline: 'Staff Engineer',
@@ -548,7 +554,7 @@ describe('build_resume', () => {
     const answer = await tool('build_resume').run({ folder: FOLDER });
     expect(answer).toBe(
       [
-        `Built applications/${FOLDER}/AlexRiveraResume10112026_Acme.pdf in the timeline layout: 2 pages, the last one 84% full.`,
+        `Built applications/${FOLDER}/AlexRiveraResume10112026_Acme.pdf in the Minimal template: 2 pages, the last one 84% full.`,
         'Lines that run short:',
         '! 2L   9% | Cut deploy time by ~40% across twelve',
         '',
@@ -562,16 +568,16 @@ describe('build_resume', () => {
     );
     const printed = printer.print.mock.calls[0]?.[0] ?? '';
     expect(printed).toContain('<div class="name">Alex Rivera</div>');
-    // The timeline layout carries Segoe UI's and Bahnschrift's stand-ins.
+    // The Minimal template carries Segoe UI's stand-in.
     expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
-    expect(printed).toContain('@font-face{font-family:"Barlow";font-weight:700;');
+    expect(printed).not.toContain('"Caladea"');
     expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
   });
 
   it('builds a Word file too, in the format asked for', async () => {
-    writeResume({ ...resume, layout: 'modern' });
+    writeResume({ ...resume, layout: 'classic' });
     const answer = await tool('build_resume').run({ folder: FOLDER, format: 'both' });
-    expect(answer).toContain('in the modern layout');
+    expect(answer).toContain('in the Classic template');
     expect(answer).toContain(`Built applications/${FOLDER}/AlexRiveraResume10112026_Acme.docx.`);
     expect(
       readFileSync(folder('AlexRiveraResume10112026_Acme.docx')).subarray(0, 2).toString(),
@@ -630,19 +636,46 @@ describe('build_resume', () => {
     writeFileSync(join(root, 'base', 'startup-ic.json'), JSON.stringify(data));
     const answer = await tool('build_resume').run({ folder: 'base/startup-ic', format: 'both' });
     expect(answer).toContain(
-      'Built base/AlexRiveraResume_Startups.pdf in the classic layout: 2 pages, the last one 84% full.',
+      'Built base/AlexRiveraResume_Startups.pdf in the Classic template: 2 pages, the last one 84% full.',
     );
     expect(answer).toContain('Built base/AlexRiveraResume_Startups.docx.');
     expect(readFileSync(join(root, 'base', 'AlexRiveraResume_Startups.pdf'), 'utf8')).toBe(
       '%PDF-1.7 made up',
     );
-    // Caladea, Cambria's stand-in, sets the classic layout.
+    // Caladea, Cambria's stand-in, sets the Classic template.
     expect(printer.print.mock.calls[0]?.[0]).toContain(
       '@font-face{font-family:"Caladea";font-weight:400;',
     );
     expect(await tool('build_resume').run({ folder: 'base/big-company-leader' })).toBe(
       'There’s no base/big-company-leader.json yet. Write the resume there first.',
     );
+  });
+
+  it('builds in a template of the user’s own, in the workspace’s templates folder', async () => {
+    const classic = builtInTemplate('classic') as Template;
+    mkdirSync(join(root, 'templates'));
+    writeFileSync(
+      join(root, 'templates', 'two-tone.json'),
+      templateFile({ ...classic, name: 'Two Tone', css: '.name{color:#123456}' }),
+    );
+    writeResume({ ...resume, layout: 'two-tone' });
+    const answer = await tool('build_resume').run({ folder: FOLDER, format: 'both' });
+    expect(answer).toContain('in the Two Tone template');
+    expect(printer.print.mock.calls[0]?.[0]).toContain('.name{color:#123456}');
+    expect(answer).toContain(`Built applications/${FOLDER}/AlexRiveraResume10112026_Acme.docx.`);
+  });
+
+  it('says when a resume’s template is gone, or can’t be used', async () => {
+    writeResume({ ...resume, layout: 'timeline' });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
+      'Not built: There’s no template “timeline”. The user’s templates are classic, minimal. Set layout in resume.json to one of them.',
+    );
+    mkdirSync(join(root, 'templates'));
+    writeFileSync(join(root, 'templates', 'timeline.json'), '{"factwright": "resume-template"');
+    expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
+      'Not built: templates/timeline.json can’t be used: It isn’t valid JSON.',
+    );
+    expect(printer.print).not.toHaveBeenCalled();
   });
 
   it('keeps the files that went out with an application', async () => {
@@ -655,5 +688,161 @@ describe('build_resume', () => {
     expect(readFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'utf8')).toBe('as sent');
     writeResume({ ...resume, output_name: 'AlexRiveraResume10112026_Acme_v2' });
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('_v2.pdf');
+  });
+});
+
+describe('the template tools', () => {
+  const classic = () => builtInTemplate('classic') as Template;
+  /** A template file as Claude would send one: Classic's markup, under a name of its own. */
+  const file = (changes: Record<string, unknown> = {}) => ({
+    ...JSON.parse(templateFile(classic())),
+    name: 'Navy Sidebar',
+    look: 'A navy column down the left.',
+    ...changes,
+  });
+
+  it('lists the templates, built in and the user’s own', async () => {
+    mkdirSync(join(root, 'templates'));
+    writeFileSync(
+      join(root, 'templates', 'navy-sidebar.json'),
+      JSON.stringify(file({ body: '<p>{{name}}</p>', parts: {} })),
+    );
+    expect(await tool('list_templates').run({})).toBe(
+      [
+        'The templates the user can pick. Set a resume’s `layout` to one’s ID. guide/templates.md says which the user picked for each kind of company.',
+        '',
+        '| ID | Name | Look | Whose | Shows `competencies` |',
+        '|---|---|---|---|---|',
+        '| `classic` | Classic | Traditional and all serif, in black and white. The safest choice for formal fields. | built in | yes |',
+        '| `minimal` | Minimal | Quiet and airy: lots of white space, gray headings and no color. | built in | yes |',
+        '| `navy-sidebar` | Navy Sidebar | A navy column down the left. | the user’s own | no |',
+      ].join('\n'),
+    );
+  });
+
+  it('reads a template’s file, to start one from or to change it', async () => {
+    const answer = await tool('read_template').run({ id: 'classic' });
+    expect(answer).toContain('classic is built into the app, so it can’t be changed.');
+    expect(answer).toContain('"factwright": "resume-template"');
+    await tool('save_template').run({ id: 'navy', template: file() });
+    expect(await tool('read_template').run({ id: 'navy' })).toContain(
+      'templates/navy.json, the user’s own. Save it again with replace to change it.',
+    );
+    expect(await tool('read_template').run({ id: 'nope' })).toBe(
+      'There’s no template “nope”. The user’s templates are classic, minimal, navy.',
+    );
+  });
+
+  it('saves a template Claude made, once it passes the checks, with a preview to read', async () => {
+    const answer = await tool('save_template').run({ id: 'navy-sidebar', template: file() });
+    expect(answer).toBe(
+      [
+        'Saved templates/navy-sidebar.json, “Navy Sidebar”. It’s in the user’s templates now.',
+        'Its preview, with the made-up resume the gallery shows, is templates/.previews/navy-sidebar.pdf: 2 pages, the last one 84% full. Read it to check the look.',
+      ].join('\n'),
+    );
+    expect(readFileSync(join(root, 'templates', '.previews', 'navy-sidebar.pdf'), 'utf8')).toBe(
+      '%PDF-1.7 made up',
+    );
+    expect(printer.print.mock.calls[0]?.[0]).toContain('Jordan Avery');
+    expect(templates.list().map((each) => each.id)).toEqual(['classic', 'minimal', 'navy-sidebar']);
+  });
+
+  it('says what to fix, and never replaces a template unless asked', async () => {
+    expect(
+      await tool('save_template').run({
+        id: 'navy',
+        template: file({ body: '<script>{{name}}</script>' }),
+      }),
+    ).toContain('Not saved. Fix these, then save again:\n- template.body: <script> isn’t allowed.');
+    expect(await tool('save_template').run({ id: 'classic', template: file() })).toBe(
+      'Not saved. Fix these, then save again:\n- classic is one of the app’s own templates. Give yours an ID of its own.',
+    );
+    await tool('save_template').run({ id: 'navy', template: file() });
+    expect(
+      await tool('save_template').run({ id: 'navy', template: file({ name: 'Navy 2' }) }),
+    ).toContain('templates/navy.json is there already.');
+    expect(
+      await tool('save_template').run({
+        id: 'navy',
+        template: file({ name: 'Navy 2' }),
+        replace: true,
+      }),
+    ).toContain('“Navy 2”, in place of the one before');
+    expect(printer.print).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets a run started to make a template replace only the templates it saved', async () => {
+    const call = { scope: 'template' as const, templates: new Set<string>() };
+    const save = (id: string, changes: Record<string, unknown> = {}, replace = false) =>
+      tool('save_template').run({ id, template: file(changes), replace }, call);
+    // One of the user's, from before this run.
+    await tool('save_template').run({ id: 'theirs', template: file() });
+    expect(await save('theirs', { name: 'Mine now' }, true)).toBe(
+      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.',
+    );
+    expect(await save('mine')).toContain('Saved templates/mine.json');
+    expect(await save('mine', { name: 'Mine, wider' }, true)).toContain(
+      '“Mine, wider”, in place of the one before. It’s in the user’s templates now.',
+    );
+  });
+
+  it('puts the user’s template in the trash when another run replaces it', async () => {
+    const trash = vi.fn(async (path: string) => rmSync(path));
+    templates = new TemplateLibrary({ workspace: root, trash });
+    tools = factwrightTools({ jobs, about, workspace: root, now: NOW, fetch, printer, templates });
+    await tool('save_template').run({ id: 'theirs', template: file() });
+    expect(
+      await tool('save_template').run({
+        id: 'theirs',
+        template: file({ name: 'Theirs, changed' }),
+        replace: true,
+      }),
+    ).toContain('in place of the one before, which is in the trash to restore.');
+    expect(trash).toHaveBeenCalledWith(join(root, 'templates', 'theirs.json'));
+  });
+
+  it('takes a template given as JSON text too, and never one too big to read back', async () => {
+    expect(
+      await tool('save_template').run({ id: 'navy', template: JSON.stringify(file()) }),
+    ).toContain('Saved templates/navy.json');
+    expect(await tool('save_template').run({ id: 'navy-2', template: '{ nope' })).toBe(
+      'Not saved: the template isn’t valid JSON. Give it as an object.',
+    );
+    // Each piece is within its own limit, but together they're more than a file can hold.
+    const css = `.a{background:url(data:image/png;base64,${'A'.repeat(1_490_000)})}`;
+    const parts = Object.fromEntries(
+      ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => [name, `<p>${'·'.repeat(95_000)}</p>`]),
+    );
+    expect(
+      await tool('save_template').run({
+        id: 'navy-3',
+        template: file({ css, parts: { ...file().parts, ...parts } }),
+      }),
+    ).toBe(
+      'Not saved. Fix these, then save again:\n- It’s bigger than a template can be: 2 MB, with its pictures and fonts.',
+    );
+  });
+
+  it('previews with one of the user’s resumes when asked', async () => {
+    writeFileSync(
+      join(root, 'applications', FOLDER, 'resume.json'),
+      JSON.stringify({
+        name: 'Alex Rivera',
+        headline: 'Staff Engineer',
+        summary: 'Builds platforms.',
+        experience: [],
+      }),
+    );
+    const answer = await tool('save_template').run({
+      id: 'navy',
+      template: file(),
+      resume: FOLDER,
+    });
+    expect(answer).toContain(`with applications/${FOLDER}/resume.json`);
+    expect(printer.print.mock.calls[0]?.[0]).toContain('Alex Rivera');
+    expect(
+      await tool('save_template').run({ id: 'navy-2', template: file(), resume: '../x' }),
+    ).toBe('Not saved: “../x” isn’t a job folder or a starting resume.');
   });
 });

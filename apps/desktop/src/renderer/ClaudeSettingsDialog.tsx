@@ -26,6 +26,7 @@ const TASKS: readonly { task: ModelTask; label: string }[] = [
   { task: 'job-search', label: 'Find jobs' },
   { task: 'get-started', label: 'Getting started' },
   { task: 'add-facts', label: 'Fact bank interviews' },
+  { task: 'make-template', label: 'Making templates' },
 ];
 
 /**

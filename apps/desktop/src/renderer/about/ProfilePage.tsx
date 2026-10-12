@@ -1,12 +1,12 @@
 import type { JobFile } from '@factwright/core';
-import { TEMPLATES } from '@factwright/engine/templates';
 import { Button, Dialog, DialogActions, VisuallyHidden } from '@factwright/ui';
 import { Check, Circle, FileText, LoaderCircle } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { labelOf, pagesFor, RESUME_FILES } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { templateName } from '../../shared/looks.ts';
 import type { StartingResume } from '../../shared/profile.ts';
-import type { RunTask } from '../../shared/runs.ts';
+import { type RunTask, TEMPLATE_SKILL } from '../../shared/runs.ts';
 import { ResumePreview } from '../jobs/ResumePreview.tsx';
 import { BUSY } from '../jobs/RunActions.tsx';
 import type { RunPhase } from '../useClaudeRun.ts';
@@ -20,10 +20,6 @@ import { WordsStep } from './steps/WordsStep.tsx';
 import type { ProfileState } from './useProfile.ts';
 
 type Editing = 'about' | 'files' | 'words' | 'wants' | 'templates' | null;
-
-/** A layout's template name, such as "Classic" for "classic". */
-const templateName = (layout: string) =>
-  TEMPLATES.find((template) => template.layout === layout)?.name ?? layout;
 
 const plural = (count: number, word: string) =>
   `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
@@ -234,7 +230,9 @@ export function ProfilePage({
                   <FileText size={16} aria-hidden="true" />
                   <span className={styles.resumeName}>
                     {resume.title}
-                    <span className={styles.resumeLook}>{templateName(resume.layout)}</span>
+                    <span className={styles.resumeLook}>
+                      {templateName(resume.layout, profile.templates)}
+                    </span>
                   </span>
                   {resume.pdf && (
                     <Button
@@ -295,7 +293,7 @@ export function ProfilePage({
             </Button>
           }
         >
-          <p>{looksSummary(answers) ?? 'None picked yet.'}</p>
+          <p>{looksSummary(answers, profile.templates) ?? 'None picked yet.'}</p>
           <p className={styles.quiet}>
             {pagesFor(answers) === 1 ? 'One page' : 'Up to two pages'} ·{' '}
             {labelOf(RESUME_FILES, answers.format)}
@@ -380,7 +378,18 @@ export function ProfilePage({
               )}
               {editing === 'wants' && <WantsStep answers={answers} update={state.update} />}
               {editing === 'templates' && (
-                <TemplatesStep answers={answers} update={state.update} api={api} />
+                <TemplatesStep
+                  answers={answers}
+                  templates={profile.templates}
+                  update={state.update}
+                  api={api}
+                  canMake={canRun}
+                  onMake={(source) => {
+                    // Claude's panel shows it at work. The template joins the gallery once saved.
+                    setEditing(null);
+                    run({ skill: TEMPLATE_SKILL, source });
+                  }}
+                />
               )}
               <DialogActions>
                 <Button variant="primary" onClick={close}>

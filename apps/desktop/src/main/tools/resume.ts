@@ -3,11 +3,11 @@ import { join } from 'node:path';
 import { type Job, type JobStatus, WORKSPACE_PATHS } from '@factwright/core';
 import {
   DEFAULT_MAX_PAGES,
+  DEFAULT_TEMPLATE,
   docxFile,
   FORMATS,
   fitReport,
   isRunt,
-  type Layout,
   type LintConfig,
   lintResume,
   outputName,
@@ -18,11 +18,14 @@ import {
 } from '@factwright/engine';
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
+import type { TemplateLibrary } from '../resume/templates.ts';
 import { FOLDER_NAME } from './posting.ts';
 
 export interface BuildResumeDeps {
   workspace: string;
   printer: ResumePrinter;
+  /** The templates the user can pick, built in and their own. */
+  templates: Pick<TemplateLibrary, 'find'>;
   /** The jobs on file, to keep a resume that was sent. */
   jobs: () => readonly Job[];
   now?: () => Date;
@@ -75,7 +78,7 @@ async function rulesIn(workspace: string): Promise<{ rules: LintConfig; problem:
 const BASE_NAME = /^base\/([a-z0-9][a-z0-9-]{0,80})$/;
 
 /** Where a resume's data is and its files go: a job's folder, or a starting resume in base/. */
-function resumeAt(workspace: string, folder: string) {
+export function resumeAt(workspace: string, folder: string) {
   const base = BASE_NAME.exec(folder)?.[1];
   if (base) {
     return { where: 'base', dir: join(workspace, 'base'), data: `${base}.json`, isJob: false };
@@ -122,7 +125,11 @@ export async function buildResume(
   if (!read.ok)
     return [`Not built. Fix ${at.data} first:`, ...read.problems.map((p) => `- ${p}`)].join('\n');
   const resume = read.resume;
-  const layout = (resume.layout ?? 'timeline') as Layout;
+  const found = deps.templates.find(resume.layout ?? DEFAULT_TEMPLATE);
+  if (!found.ok) {
+    return `Not built: ${found.message}${found.missing ? ` Set layout in ${at.data} to one of them.` : ''}`;
+  }
+  const { template } = found;
   const make = (format ?? resume.format ?? 'pdf') as ResumeFormat;
   const name = outputName(resume, deps.now?.() ?? new Date());
   const files = [
@@ -150,19 +157,19 @@ export async function buildResume(
   const maxPages = rules.maxPages ?? DEFAULT_MAX_PAGES;
   const report: string[] = [];
 
-  const html = renderHtml(resume, layout, RESUME_FONTS);
+  const html = renderHtml(resume, template, RESUME_FONTS);
   if (files.some((file) => file.endsWith('.pdf'))) {
     const printed = await deps.printer.print(html);
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);
     const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;
     report.push(
-      `Built ${where}/${name}.pdf in the ${layout} layout: ${printed.pages} pages${fill}.`,
+      `Built ${where}/${name}.pdf in the ${template.name} template: ${printed.pages} pages${fill}.`,
     );
     if (printed.pages > maxPages)
       problems.push(`The PDF runs to ${printed.pages} pages; the most is ${maxPages}.`);
   }
   if (files.some((file) => file.endsWith('.docx'))) {
-    await writeFile(join(dir, `${name}.docx`), Buffer.from(await docxFile(resume, layout)));
+    await writeFile(join(dir, `${name}.docx`), Buffer.from(await docxFile(resume, template)));
     report.push(
       `Built ${where}/${name}.docx. Word lays it out itself, so its page count can differ from the PDF’s.`,
     );

@@ -40,6 +40,7 @@ export function GetStarted({
   onRecheckClaude,
   canStartClaude,
   onStart,
+  onMakeTemplate,
   onSkip,
   onOpenSync,
 }: {
@@ -51,6 +52,8 @@ export function GetStarted({
   canStartClaude: boolean;
   /** Starts Claude on getting to know the user, once the workspace is ready for it. */
   onStart: () => void;
+  /** Starts Claude making a template from a resume the user likes, which the app kept. */
+  onMakeTemplate: (source: string) => void;
   onSkip: () => void;
   /** Opens sync, for someone who already has a job hunt on another computer. */
   onOpenSync: () => void;
@@ -122,10 +125,21 @@ export function GetStarted({
           />
         )}
         {step === 4 && <WantsStep answers={answers} update={update} />}
-        {step === 5 && <TemplatesStep answers={answers} update={update} api={api} pickSuggested />}
+        {step === 5 && (
+          <TemplatesStep
+            answers={answers}
+            templates={profile.templates}
+            update={update}
+            api={api}
+            canMake={canStartClaude}
+            onMake={onMakeTemplate}
+            pickSuggested
+          />
+        )}
         {step === 6 && (
           <ReadyStep
             answers={answers}
+            templates={profile.templates}
             notes={notes}
             canStart={why === null}
             why={why}

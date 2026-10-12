@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { samplePdf } from '../src/renderer/jobs/sample-pdf.ts';
@@ -65,12 +65,12 @@ test('asks what they want, and shows the templates printed for real', async () =
   await next();
   await expect(window.getByRole('heading', { name: 'Pick your resume templates' })).toBeVisible();
   // Each card shows a real print of the sample resume, with the user's own name.
-  const timeline = window
+  const minimal = window
     .getByRole('listitem')
-    .filter({ has: window.getByRole('heading', { name: 'Timeline' }) });
-  await expect(timeline.getByText('Suggested', { exact: true })).toBeVisible();
-  await expect(timeline.getByRole('checkbox', { name: 'Use this template' })).toBeChecked();
-  await expect(timeline.locator('img')).toBeVisible({ timeout: 20_000 });
+    .filter({ has: window.getByRole('heading', { name: 'Minimal' }) });
+  await expect(minimal.getByText('Suggested', { exact: true })).toBeVisible();
+  await expect(minimal.getByRole('checkbox', { name: 'Use this template' })).toBeChecked();
+  await expect(minimal.locator('img')).toBeVisible({ timeout: 20_000 });
 });
 
 test('hands it all to their Claude, with the workspace ready for it', async () => {
@@ -91,7 +91,7 @@ test('hands it all to their Claude, with the workspace ready for it', async () =
     fields: ['software'],
     levels: ['senior'],
     companies: ['startup'],
-    looks: [{ layout: 'timeline', for: 'startup' }],
+    looks: [{ layout: 'minimal', for: 'startup' }],
   });
   expect(answers.startedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(answers.files[0]).toMatchObject({ name: 'Alex Rivera resume.pdf', kind: 'resume' });
@@ -113,7 +113,48 @@ test('hands it all to their Claude, with the workspace ready for it', async () =
   }
   expect(read('searches/criteria.md')).toContain('- **Level:** Senior.');
   expect(read('guide/templates.md')).toContain(
-    '| Timeline | `timeline` | Startups (the startup style) |',
+    '| Minimal | `minimal` | Startups (the startup style) |',
   );
   expect(JSON.parse(read('guide/lint.json')).maxPages).toBe(2);
+});
+
+test('has their Claude make a template of their own from a resume they like', async () => {
+  const { window } = opened;
+  const card = window.getByRole('region', { name: 'Resume templates' });
+  await card.getByRole('button', { name: 'Change' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Resume templates' });
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: 'A resume I like.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(samplePdf()),
+  });
+  // The dialog steps aside for Claude's panel, where Claude makes it from the copy the app kept.
+  await expect(dialog).toBeHidden();
+  const panel = window.locator('section[aria-label="Claude"]');
+  await expect(panel.getByText('A template of your own')).toBeVisible();
+  await expect(panel.getByRole('status')).toHaveText('Done');
+  const terminal = await terminalText(window);
+  expect(terminal).toMatch(
+    /\/factwright:make-template from templates\/sources\/\d{4}-\d{2}-\d{2}-1\.pdf/,
+  );
+  expect(terminal).toContain('Saved templates/liked-look.json, “Liked Look”.');
+  expect(readdirSync(workspace('templates/sources'))).toEqual([
+    expect.stringMatching(/^\d{4}-\d{2}-\d{2}-1\.pdf$/),
+  ]);
+  expect(existsSync(workspace('templates/.previews/liked-look.pdf'))).toBe(true);
+
+  // It joins their templates, printed for real like the app's own, for them to pick.
+  await card.getByRole('button', { name: 'Change' }).click();
+  const liked = dialog
+    .getByRole('listitem')
+    .filter({ has: window.getByRole('heading', { name: 'Liked Look' }) });
+  await expect(liked.getByText('Yours', { exact: true })).toBeVisible();
+  await expect(liked.locator('img')).toBeVisible({ timeout: 20_000 });
+  await liked.getByRole('checkbox', { name: 'Use this template' }).check();
+  await expect
+    .poll(() => JSON.parse(read('about-me/answers.json')).looks)
+    .toContainEqual({ layout: 'liked-look', for: 'any' });
+  await expect
+    .poll(() => read('guide/templates.md'))
+    .toContain('| Liked Look | `liked-look` | any job |');
 });

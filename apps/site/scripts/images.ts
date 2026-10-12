@@ -54,7 +54,7 @@ async function templatePreviews(browser: Browser): Promise<void> {
   });
   const printer = await browser.newPage();
   for (const template of TEMPLATES) {
-    await printer.setContent(renderHtml(previewResume(), template.layout, fonts));
+    await printer.setContent(renderHtml(previewResume(), template, fonts));
     await printer.evaluate(() => document.fonts.ready);
     const pdf = await printer.pdf({ preferCSSPageSize: true, printBackground: true });
     await page.goto('https://draw.invalid/');
@@ -77,9 +77,9 @@ async function templatePreviews(browser: Browser): Promise<void> {
       },
       { data: pdf.toString('base64'), width: PREVIEW_WIDTH },
     );
-    const file = new URL(`templates/${template.layout}.webp`, PUBLIC);
+    const file = new URL(`templates/${template.id}.webp`, PUBLIC);
     writeFileSync(file, Buffer.from(image.replace(/^data:image\/webp;base64,/, ''), 'base64'));
-    console.log(`templates/${template.layout}.webp`);
+    console.log(`templates/${template.id}.webp`);
   }
 }
 

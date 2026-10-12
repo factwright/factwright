@@ -1,4 +1,4 @@
-import { LAYOUTS, type Layout } from '@factwright/engine/templates';
+import { TEMPLATE_ID } from '@factwright/engine/templates';
 
 /**
  * What the user tells Factwright about themselves when they start, and can change later in
@@ -66,7 +66,8 @@ export interface Contact {
 }
 
 export interface Look {
-  layout: Layout;
+  /** The template's ID: one the app has, such as "classic", or one of the user's own. */
+  layout: string;
   /** The kind of company it's for, or "any". */
   for: CompanyKind | 'any';
 }
@@ -277,15 +278,15 @@ function contact(value: unknown): Contact | undefined {
 }
 
 function looks(value: unknown): Look[] | undefined {
-  if (!Array.isArray(value) || value.length > LAYOUTS.length) return undefined;
+  if (!Array.isArray(value) || value.length > ANSWER_LIMITS.entries) return undefined;
   const kept: Look[] = [];
   for (const each of value) {
     if (typeof each !== 'object' || each === null) return undefined;
     const { layout, for: kind } = each as Record<string, unknown>;
-    if (!(LAYOUTS as readonly unknown[]).includes(layout)) return undefined;
+    if (typeof layout !== 'string' || !TEMPLATE_ID.test(layout)) return undefined;
     if (kind !== 'any' && !choice(kind, COMPANY_KINDS)) return undefined;
     if (!kept.some((look) => look.layout === layout)) {
-      kept.push({ layout: layout as Layout, for: kind as Look['for'] });
+      kept.push({ layout, for: kind as Look['for'] });
     }
   }
   return kept;

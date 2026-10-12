@@ -51,18 +51,42 @@ describe('AboutStore', () => {
   });
 
   it('gets the workspace ready for Claude, then keeps the files built from the answers in step', () => {
-    store.saveAnswers({ levels: ['entry'], looks: [{ layout: 'compact', for: 'any' }] });
+    store.saveAnswers({ levels: ['entry'], looks: [{ layout: 'minimal', for: 'any' }] });
     const started = store.start();
     expect(started.startedOn).toBe('2026-10-12');
     expect(read('guide/rules.md')).toBe('# Binding rules\n');
     expect(read('searches/criteria.md')).toContain('- **Level:** Entry level.');
-    expect(read('guide/templates.md')).toContain('| Compact | `compact` | any job |');
+    expect(read('guide/templates.md')).toContain('| Minimal | `minimal` | any job |');
     // The page count follows the user's level, beside the starter's other rules.
     expect(json('guide/lint.json')).toEqual({ banned: [], maxPages: 1 });
 
     store.saveAnswers({ pages: 2, levels: ['senior'] });
     expect(json('guide/lint.json').maxPages).toBe(2);
     expect(read('searches/criteria.md')).toContain('- **Level:** Senior.');
+  });
+
+  it('lists the user’s templates in the profile, and names their own in the templates guide', () => {
+    const navy = {
+      id: 'navy-sidebar',
+      name: 'Navy Sidebar',
+      look: 'A navy column down the left.',
+      own: true,
+      stamp: '1',
+    };
+    const own = new AboutStore({
+      workspace: workspace(),
+      starterDir: join(root, 'starter'),
+      trash,
+      today: () => '2026-10-12',
+      templates: () => [navy],
+    });
+    expect(store.profile().templates.map((each) => each.id)).toEqual(['classic', 'minimal']);
+    expect(own.profile().templates).toEqual([navy]);
+    own.saveAnswers({ looks: [{ layout: 'navy-sidebar', for: 'startup' }] });
+    own.start();
+    expect(read('guide/templates.md')).toContain(
+      '| Navy Sidebar | `navy-sidebar` | Startups (the startup style) |',
+    );
   });
 
   it('leaves files someone changed by hand as they are, until the user picks their answers', () => {

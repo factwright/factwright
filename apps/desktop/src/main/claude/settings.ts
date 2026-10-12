@@ -1,7 +1,14 @@
 import { WORKSPACE_PATHS } from '@factwright/core';
 import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
 import type { RunScope } from '../../shared/runs.ts';
-import { LOCAL_TOOLS, PROFILE_TOOLS, PUBLIC_API_TOOLS, WEB_TOOLS } from '../tools/index.ts';
+import {
+  LOCAL_TOOLS,
+  PROFILE_TOOLS,
+  PUBLIC_API_TOOLS,
+  TEMPLATE_READS,
+  TEMPLATE_TOOLS,
+  WEB_TOOLS,
+} from '../tools/index.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
 export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
@@ -44,12 +51,12 @@ const NEVER_CHANGED = [
 ];
 
 /**
- * What a run for getting to know the user may never use: the web, and the tools that read job
- * posts. That run may change the user's facts and guide without asking, so nothing it reads may
- * come from a page that could tell it what to write. Job searches and fit checks get runs of
- * their own.
+ * What a run for getting to know the user, or for making a template, may never use: the web,
+ * and the tools that read job posts. The first may change the user's facts and guide without
+ * asking, and the second their templates, so nothing it reads may come from a page that could
+ * tell it what to write. Job searches and fit checks get runs of their own.
  */
-const PROFILE_NEVER = [
+const OFF_THE_WEB = [
   'WebSearch',
   ...[...PUBLIC_API_TOOLS, ...WEB_TOOLS].map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
 ];
@@ -58,22 +65,33 @@ const PROFILE_NEVER = [
 function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
   // Saving to the user's profile is like changing their facts: allowed when those are.
   const profile = scope === 'profile' || permissions.anyFile ? PROFILE_TOOLS : [];
+  // Saving a template is the point of a template run. Otherwise it's like changing a file.
+  const templates = scope === 'template' || permissions.anyFile ? TEMPLATE_TOOLS : [];
+  // A template run copies a resume from anywhere, so it reads and saves templates and nothing
+  // else without asking: not building a resume or saving an answer, either.
   const tools =
-    scope === 'profile'
-      ? [...LOCAL_TOOLS, ...profile]
+    scope === 'template'
+      ? [...TEMPLATE_READS, ...templates, ...profile]
+      : scope === 'profile'
+        ? [...LOCAL_TOOLS, ...profile, ...templates]
+        : [
+            ...LOCAL_TOOLS,
+            ...profile,
+            ...templates,
+            ...PUBLIC_API_TOOLS,
+            ...(permissions.anySite ? WEB_TOOLS : []),
+          ];
+  // A template run copies a resume from anywhere, so it changes no file without asking.
+  const files =
+    scope === 'template'
+      ? []
       : [
-          ...LOCAL_TOOLS,
-          ...profile,
-          ...PUBLIC_API_TOOLS,
-          ...(permissions.anySite ? WEB_TOOLS : []),
+          ...WORK_FOLDERS.map((folder) => `${folder}/**`),
+          CONFIDENTIAL_TERMS,
+          ...(scope === 'profile' ? PROFILE_FILES : []),
         ];
-  const files = [
-    ...WORK_FOLDERS.map((folder) => `${folder}/**`),
-    CONFIDENTIAL_TERMS,
-    ...(scope === 'profile' ? PROFILE_FILES : []),
-  ];
   return [
-    ...(scope === 'profile' ? [] : ['WebSearch']),
+    ...(scope === 'hunt' ? ['WebSearch'] : []),
     `Skill(${PLUGIN} *)`,
     ...tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
     ...(permissions.anyFile ? [edits('**')] : files.map(edits)),
@@ -92,7 +110,9 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  * - asking first, unless the user chose otherwise: changing any other file, such as the facts,
  *   and reading any other page, since a job post could steer Claude to send the user's details
  *   to a site in a link. A run started to get to know the user, or to add facts, may change their
- *   facts, starting resumes and guide without asking too, and in return never reads the web.
+ *   facts, starting resumes and guide without asking too, and in return never reads the web. A
+ *   run started to make a template may read and save templates without asking, and nothing
+ *   else, and never reads the web either.
  * - never: changing Claude Code's settings or the instructions it loads
  * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
  *   session ends, which the self-test listens for
@@ -122,7 +142,7 @@ export function sessionSettings({
     disableClaudeAiConnectors: true,
     permissions: {
       allow: allowed(permissions, scope),
-      deny: [...NEVER_CHANGED.map(edits), ...(scope === 'profile' ? PROFILE_NEVER : [])],
+      deny: [...NEVER_CHANGED.map(edits), ...(scope === 'hunt' ? [] : OFF_THE_WEB)],
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],

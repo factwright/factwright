@@ -8,7 +8,7 @@ export {
   measurableHtml,
   RUNT_PERCENT,
 } from './fit.ts';
-export { FONT_FILES, type FontFile, type FontUrls, fontFaceCss } from './fonts.ts';
+export { FONT_FACES, FONT_FILES, type FontFile, type FontUrls, fontFaceCss } from './fonts.ts';
 export {
   DEFAULT_PROJECTS_HEADING,
   DEFAULT_SYSTEMS_HEADING,
@@ -23,11 +23,19 @@ export {
   type Education,
   type Experience,
   FORMATS,
-  LAYOUTS,
-  type Layout,
   RESUME_FIELDS,
   type Resume,
   type ResumeFormat,
   readResume,
 } from './schema.ts';
-export { TEMPLATES, type Template, templateOf } from './templates.ts';
+export { MAX_TEMPLATE_BYTES, readTemplate, TEMPLATE_FILE, templateFile } from './template/file.ts';
+export { sectionTitles } from './template/render.ts';
+export {
+  builtInTemplate,
+  DEFAULT_TEMPLATE,
+  type SectionTitles,
+  TEMPLATE_ID,
+  TEMPLATES,
+  type Template,
+  type WordTheme,
+} from './templates.ts';

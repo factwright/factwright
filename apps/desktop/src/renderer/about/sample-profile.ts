@@ -1,6 +1,7 @@
+import { TEMPLATES } from '@factwright/engine/templates';
 import { type AboutYou, readAnswers, type SharedFile } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { Profile, ProfileStatus } from '../../shared/profile.ts';
+import type { Profile, ProfileStatus, TemplateInfo } from '../../shared/profile.ts';
 import { samplePdf } from '../jobs/sample-pdf.ts';
 
 type ProfileApi = Pick<
@@ -15,6 +16,8 @@ type ProfileApi = Pick<
   | 'startProfile'
   | 'useAnswersForCriteria'
   | 'templatePreview'
+  | 'addTemplate'
+  | 'removeTemplate'
   | 'onProfileChanged'
   | 'openTerminal'
 >;
@@ -57,8 +60,8 @@ const TOLD: AboutYou = readAnswers({
   minPay: '$170,000',
   targetPay: '$200,000',
   looks: [
-    { layout: 'timeline', for: 'startup' },
-    { layout: 'executive', for: 'established' },
+    { layout: 'minimal', for: 'startup' },
+    { layout: 'classic', for: 'established' },
   ],
   files: FILES,
   step: 6,
@@ -69,6 +72,15 @@ const TOLD: AboutYou = readAnswers({
 const NOTES =
   'I lead the platform team at Tidewater Analytics. We moved twelve services onto one deploy pipeline last year, and deploys got about 40% faster.';
 
+/** The templates the app comes with, as the profile lists them. */
+const BUILT_IN: TemplateInfo[] = TEMPLATES.map(({ id, name, look }) => ({
+  id,
+  name,
+  look,
+  own: false,
+  stamp: '',
+}));
+
 const STATUS: Readonly<Record<string, Partial<ProfileStatus>>> = {
   new: { facts: { claims: 0, unconfirmed: 0, files: 0 } },
   started: { facts: { claims: 24, unconfirmed: 18, files: 5 }, unread: [] },
@@ -78,14 +90,14 @@ const STATUS: Readonly<Record<string, Partial<ProfileStatus>>> = {
       {
         path: 'base/startup-builder.json',
         title: 'Staff Platform Engineer',
-        layout: 'timeline',
+        layout: 'minimal',
         pdf: 'base/AlexRiveraResume_Startups.pdf',
         docx: null,
       },
       {
         path: 'base/big-company-leader.json',
         title: 'Engineering Lead, Platform',
-        layout: 'executive',
+        layout: 'classic',
         pdf: 'base/AlexRiveraResume_Enterprise.pdf',
         docx: 'base/AlexRiveraResume_Enterprise.docx',
       },
@@ -104,11 +116,26 @@ export function sampleProfile(state: string | null): ProfileApi {
   let answers: AboutYou = kind === 'new' ? readAnswers({}) : TOLD;
   let notes = kind === 'new' ? '' : NOTES;
   let confidential = kind === 'new' ? [] : ['Bluebird'];
+  let templates: TemplateInfo[] = [
+    ...BUILT_IN,
+    ...(kind === 'new'
+      ? []
+      : [
+          {
+            id: 'navy-sidebar',
+            name: 'Navy Sidebar',
+            look: 'A navy column down the left with the contact details and skills.',
+            own: true,
+            stamp: '1',
+          },
+        ]),
+  ];
   const listeners = new Set<(profile: Profile) => void>();
   const profile = (): Profile => ({
     answers,
     notes,
     confidential,
+    templates,
     status: {
       facts: { claims: 0, unconfirmed: 0, files: 0 },
       starting: [],
@@ -166,6 +193,23 @@ export function sampleProfile(state: string | null): ProfileApi {
     },
     useAnswersForCriteria: async () => {},
     templatePreview: async () => ({ ok: true, data: samplePdf() }),
+    addTemplate: async (upload) => {
+      if (!/\.json$/i.test(upload.name))
+        return { ok: true, kind: 'copy', source: '2026-10-12-1.pdf' };
+      const name = upload.name.replace(/\.json$/i, '');
+      templates = [
+        ...templates,
+        { id: name.toLowerCase(), name, look: 'A template someone shared.', own: true, stamp: '1' },
+      ];
+      setTimeout(changed, 0);
+      return { ok: true, kind: 'template', id: name.toLowerCase(), name, already: false };
+    },
+    removeTemplate: async (id) => {
+      templates = templates.filter((template) => template.id !== id || !template.own);
+      answers = { ...answers, looks: answers.looks.filter((look) => look.layout !== id) };
+      setTimeout(changed, 0);
+      return { ok: true };
+    },
     onProfileChanged: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

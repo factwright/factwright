@@ -1,8 +1,6 @@
-import type { Layout } from './schema.ts';
-
 /**
  * The font files in this package's fonts folder: open fonts drawn to the widths of the Windows
- * fonts the layouts were designed with, so a resume looks the same on any computer.
+ * fonts the templates were designed with, so a resume looks the same on any computer.
  */
 export const FONT_FILES = [
   'factwright-sans-regular.woff2',
@@ -26,62 +24,38 @@ interface Face {
   family: string;
   weight: 400 | 600 | 700;
   style: 'normal' | 'italic';
-  file: FontFile;
 }
 
-const face = (
-  family: string,
-  weight: Face['weight'],
-  file: FontFile,
-  style: Face['style'] = 'normal',
-): Face => ({ family, weight, style, file });
-
-/** Calibri's widths, and the symbols the other fonts lack, such as →. */
-const SANS = [
-  face('Factwright Sans', 400, 'factwright-sans-regular.woff2'),
-  face('Factwright Sans', 700, 'factwright-sans-bold.woff2'),
-];
-
-const SANS_ITALIC = face('Factwright Sans', 400, 'factwright-sans-italic.woff2', 'italic');
-
-/** Cambria's widths, for the layouts set in a serif. */
-const CALADEA = [
-  face('Caladea', 400, 'caladea-regular.woff2'),
-  face('Caladea', 700, 'caladea-bold.woff2'),
-  face('Caladea', 400, 'caladea-italic.woff2', 'italic'),
-];
-
-/** Bahnschrift's look, for display headings, where it can't move a line break. */
-const BARLOW = face('Barlow', 700, 'barlow-bold.woff2');
-
-/** Segoe UI's widths. */
-const SELAWIK = [
-  face('Selawik', 400, 'selawik-regular.woff2'),
-  face('Selawik', 600, 'selawik-semibold.woff2'),
-  face('Selawik', 700, 'selawik-bold.woff2'),
-];
-
-/** The faces each layout's styles call for. */
-const LAYOUT_FACES: Record<Layout, readonly Face[]> = {
-  executive: [...SANS, SANS_ITALIC, face('Caladea', 700, 'caladea-bold.woff2')],
-  modern: [...SELAWIK, ...SANS],
-  timeline: [...SELAWIK, BARLOW, ...SANS],
-  classic: [...CALADEA, ...SANS],
-  elegant: [...CALADEA, ...SANS],
-  compact: [...SANS, SANS_ITALIC],
-  minimal: [...SELAWIK, ...SANS],
-  banner: [...SELAWIK, BARLOW, ...SANS],
+/**
+ * The face each file draws:
+ * - Factwright Sans has Calibri's widths, and the symbols the other fonts lack, such as →.
+ * - Caladea has Cambria's widths, for templates set in a serif.
+ * - Selawik has Segoe UI's widths.
+ * - Barlow has Bahnschrift's look, for display headings, where it can't move a line break.
+ */
+export const FONT_FACES: Readonly<Record<FontFile, Face>> = {
+  'factwright-sans-regular.woff2': { family: 'Factwright Sans', weight: 400, style: 'normal' },
+  'factwright-sans-bold.woff2': { family: 'Factwright Sans', weight: 700, style: 'normal' },
+  'factwright-sans-italic.woff2': { family: 'Factwright Sans', weight: 400, style: 'italic' },
+  'caladea-regular.woff2': { family: 'Caladea', weight: 400, style: 'normal' },
+  'caladea-bold.woff2': { family: 'Caladea', weight: 700, style: 'normal' },
+  'caladea-italic.woff2': { family: 'Caladea', weight: 400, style: 'italic' },
+  'selawik-regular.woff2': { family: 'Selawik', weight: 400, style: 'normal' },
+  'selawik-semibold.woff2': { family: 'Selawik', weight: 600, style: 'normal' },
+  'selawik-bold.woff2': { family: 'Selawik', weight: 700, style: 'normal' },
+  'barlow-bold.woff2': { family: 'Barlow', weight: 700, style: 'normal' },
 };
 
 const DATA_URL = /^data:font\/woff2;base64,[A-Za-z0-9+/]+=*$/;
 
 /**
- * The @font-face rules for a layout's fonts, one for each file it's given. Only data: URLs of
- * WOFF2 fonts are taken, so the page never loads anything from anywhere else.
+ * The @font-face rules for a template's font files, one for each file it's given. Only data:
+ * URLs of WOFF2 fonts are taken, so the page never loads anything from anywhere else.
  */
-export function fontFaceCss(layout: Layout, urls: FontUrls): string {
-  return LAYOUT_FACES[layout]
-    .flatMap(({ family, weight, style, file }) => {
+export function fontFaceCss(files: readonly FontFile[], urls: FontUrls): string {
+  return files
+    .flatMap((file) => {
+      const { family, weight, style } = FONT_FACES[file];
       const url = urls[file];
       if (url === undefined) return [];
       if (!DATA_URL.test(url)) throw new Error(`${file} should be a data:font/woff2 URL.`);

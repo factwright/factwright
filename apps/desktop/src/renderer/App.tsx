@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
-import { FACTS_SKILL, GET_STARTED_SKILL, SEARCH_SKILL, taskJob } from '../shared/runs.ts';
+import {
+  FACTS_SKILL,
+  GET_STARTED_SKILL,
+  SEARCH_SKILL,
+  TEMPLATE_SKILL,
+  taskJob,
+} from '../shared/runs.ts';
 import styles from './App.module.css';
 import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
@@ -107,9 +113,11 @@ export function App({ api }: { api: FactwrightApi }) {
         ? 'Getting to know you'
         : task?.skill === FACTS_SKILL
           ? 'Your fact bank'
-          : runJob && runLabel
-            ? `${runLabel} · ${runJob.company}`
-            : undefined;
+          : task?.skill === TEMPLATE_SKILL
+            ? 'A template of your own'
+            : runJob && runLabel
+              ? `${runLabel} · ${runJob.company}`
+              : undefined;
 
   return (
     <div className={styles.app}>
@@ -153,6 +161,7 @@ export function App({ api }: { api: FactwrightApi }) {
                   setPicked('profile');
                   run.requestStart({ skill: GET_STARTED_SKILL });
                 }}
+                onMakeTemplate={(source) => run.requestStart({ skill: TEMPLATE_SKILL, source })}
                 onSkip={() => {
                   about.update({ skipped: true });
                   setPicked('jobs');

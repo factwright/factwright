@@ -8,22 +8,32 @@ import {
 } from '../../../shared/about.ts';
 import type { FactwrightApi } from '../../../shared/api.ts';
 import { suggestLooks } from '../../../shared/looks.ts';
+import type { TemplateInfo } from '../../../shared/profile.ts';
 import { TemplateGallery } from '../TemplateGallery.tsx';
 import styles from './steps.module.css';
 
 /**
  * How the user's resumes look: the templates they like, one for each kind of company they're
- * aiming at, with the ones that suit them marked; how long resumes run; and which files to make.
+ * aiming at, with the ones that suit them marked, and any they bring of their own; how long
+ * resumes run; and which files to make.
  */
 export function TemplatesStep({
   answers,
+  templates,
   update,
   api,
+  canMake,
+  onMake,
   pickSuggested = false,
 }: {
   answers: AboutYou;
+  templates: readonly TemplateInfo[];
   update: (changes: AnswerChanges) => void;
-  api: Pick<FactwrightApi, 'templatePreview'>;
+  api: Pick<FactwrightApi, 'templatePreview' | 'addTemplate' | 'removeTemplate'>;
+  /** Whether Claude can start making a template now. */
+  canMake: boolean;
+  /** Starts Claude making a template from a resume the app kept. */
+  onMake: (source: string) => void;
   /** Whether arriving with none picked picks the suggested ones, as getting started does. */
   pickSuggested?: boolean;
 }) {
@@ -56,9 +66,12 @@ export function TemplatesStep({
 
       <TemplateGallery
         answers={answers}
+        templates={templates}
         suggestions={suggestions}
         api={api}
+        canMake={canMake}
         onLooks={(looks) => update({ looks })}
+        onMake={onMake}
       />
 
       <div className={styles.fields}>
