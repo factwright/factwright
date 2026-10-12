@@ -10,7 +10,7 @@ The fact bank in `facts/` is the source of truth for every resume and answer: if
 
 There are two modes.
 - **Tell.** The user describes new experience, a status change, or a correction.
-- **Interview.** The user gave no details, or said "interview me". Pick the 4 most resume-valuable unknowns from `facts/gaps.md` (**Needs confirmation** first, then **Open questions**) and ask them in one AskUserQuestion round. With no fact bank yet, start with the basics instead: their roles (employer, title, dates), what they're proudest of in each, and their main tech.
+- **Interview.** The user gave no details, or said "interview me". Pick the 4 most resume-valuable unknowns from `facts/gaps.md` (**Needs confirmation** first, then **Open questions**) and ask them in one AskUserQuestion round. With no fact bank yet, start with the basics instead: their roles (employer, title, dates), what they're proudest of in each, their main tech, and any names that must never appear on a resume, such as customers or internal project names.
 
 ## Steps
 1. Read `facts/README.md` if there is one: it says which file holds what, and may add its own rules. Then read the facts file(s) the change touches, plus `facts/gaps.md`.
@@ -27,6 +27,7 @@ There are two modes.
    - **"No, I haven't":** add a row under **Doesn't have** in gaps.md, so nobody asks again.
    - **Resolved confirmation:** delete it from gaps.md.
    - **New tech:** add a row to `facts/skills.md`.
+   - **Confidential names they mention** (a customer, a colleague, a codename, an internal tool or host): a line each in `guide/confidential-terms.txt`, never in facts/. Say so in one line.
 4. If a status changed (for example, built → live), update wording that's now stale in `base/*.json`, if there are any. Never edit a past application's files.
 5. Reply in 4 lines or fewer: what changed, and where.
 
@@ -55,5 +56,6 @@ If `facts/` doesn't exist yet, make it as you go:
 - `facts/projects.md` and `facts/skills.md` (each technology, how deep, and which file proves it).
 - `facts/gaps.md` with three sections: **Doesn't have** (a table: `| Topic | Their answer | Date |`), **Needs confirmation**, and **Open questions**.
 - `facts/README.md`: a short table of these files and what each holds, then the claim format, the tags and the confidentiality rule above, so every skill that reads it has them.
+- `guide/confidential-terms.txt`: the names that must never appear, one per line, with a `#` line on top saying what the file is for. The resume builder checks every resume against it.
 
 Everything you save here stays in the user's workspace. The app picks it up on its own, so there's nothing to commit or sync.

@@ -72,7 +72,14 @@ export function lintResume(
 
   for (const term of confidential) {
     const secret = pattern(term, 'i');
-    if (secret?.test(text)) issues.push(`A confidential term matching "${term}" is in the resume.`);
+    // A line that won't read as a pattern would otherwise protect nothing, without a word.
+    if (!secret) {
+      issues.push(
+        `The confidential term "${term}" in guide/confidential-terms.txt isn't a valid pattern. Put a \\ before any of . ( ) [ ] + ? * | in it.`,
+      );
+    } else if (secret.test(text)) {
+      issues.push(`A confidential term matching "${term}" is in the resume.`);
+    }
   }
 
   for (const [company, title] of Object.entries(config.titles ?? {})) {

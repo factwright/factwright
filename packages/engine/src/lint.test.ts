@@ -43,6 +43,12 @@ describe('lintResume', () => {
     ]);
   });
 
+  it('says when a confidential term won’t read, so it can’t quietly protect nothing', () => {
+    expect(lintResume(sampleResume(), {}, ['Acme (US', 'Acme \\(US\\)'])).toEqual([
+      'The confidential term "Acme (US" in guide/confidential-terms.txt isn\'t a valid pattern. Put a \\ before any of . ( ) [ ] + ? * | in it.',
+    ]);
+  });
+
   it('skips the history and notes the resume never shows', () => {
     const resume = {
       ...sampleResume(),

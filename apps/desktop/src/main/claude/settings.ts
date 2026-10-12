@@ -14,6 +14,12 @@ const PLUGIN = 'factwright';
 /** Where the skills save their work, which Claude may change without asking. */
 const WORK_FOLDERS = [WORKSPACE_PATHS.jobs, WORKSPACE_PATHS.searches, WORKSPACE_PATHS.outreach];
 
+/**
+ * The list of words that must never appear on a resume, which Claude adds to as the user names
+ * them. Adding to it only makes the resume check stricter, so it needs no OK either.
+ */
+const CONFIDENTIAL_TERMS = 'guide/confidential-terms.txt';
+
 /** A rule for changing files in the workspace, which is where Claude runs. */
 const edits = (path: string) => `Edit(./${path})`;
 
@@ -36,7 +42,9 @@ function allowed(permissions: ClaudePermissions): string[] {
     'WebSearch',
     `Skill(${PLUGIN} *)`,
     ...tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
-    ...(permissions.anyFile ? [edits('**')] : WORK_FOLDERS.map((folder) => edits(`${folder}/**`))),
+    ...(permissions.anyFile
+      ? [edits('**')]
+      : [...WORK_FOLDERS.map((folder) => edits(`${folder}/**`)), edits(CONFIDENTIAL_TERMS)]),
   ];
 }
 
