@@ -17,7 +17,7 @@ import { ElectronResumePrinter } from './resume/printer.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
 import { factwrightTools } from './tools/index.ts';
-import { createMainWindow } from './window.ts';
+import { createMainWindow, DEV_ICON } from './window.ts';
 
 // Set by `pnpm dev`: the screens come from Vite's dev server instead of the built files.
 const devUrl = process.env.FACTWRIGHT_DEV_URL;
@@ -45,6 +45,7 @@ function start(): void {
   app.on('web-contents-created', (_event, contents) => hardenContents(contents));
 
   app.whenReady().then(async () => {
+    if (!app.isPackaged) app.dock?.setIcon(DEV_ICON);
     const policy = contentSecurityPolicy(devUrl);
     if (devUrl) applyDevPolicy(session.defaultSession, policy);
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
