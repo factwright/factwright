@@ -1,4 +1,5 @@
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
+import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleSync } from './sync/sample-sync.ts';
@@ -101,6 +102,7 @@ export function sampleApi(): FactwrightApi {
   let afterTrust: () => void = () => {};
   const trustListeners = new Set<() => void>();
   let run = sampleRun(false);
+  let permissions: ClaudePermissions = ASK_FIRST;
   const playTask = (task: RunTask) => {
     signal('working');
     print(run.task(task));
@@ -183,5 +185,11 @@ export function sampleApi(): FactwrightApi {
     },
     ...sampleTracker(query.get('jobs')),
     ...sampleSync(query.get('sync')),
+    // What Claude may do without asking, kept until the page reloads.
+    claudePermissions: async () => permissions,
+    setClaudePermissions: async (chosen) => {
+      permissions = chosen;
+      return chosen;
+    },
   };
 }

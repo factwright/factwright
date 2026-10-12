@@ -20,7 +20,7 @@ Before starting, read:
 - Read the job's folder: `posting.md` (older folders keep the posting in `job.md`), `job.md`, `fit-check.md`, `unmask.md`, `notes.md`, `apply.md`, and `answers.md` if it exists. Keep new answers consistent with old ones.
 - `resume.json`: the resume they're sending. Answers must match it.
 - Other jobs' `applications/*/answers.md` may already cover the same question ("why healthcare?"). Reuse the substance, never another company's specifics.
-- No folder yet? Make one the way `/factwright:fit-check` does (the folder, `posting.md` through `read_page` and `save_posting`, and `job.md`), so the answers have a home.
+- No folder yet? Make one the way `/factwright:fit-check` does (the folder, `posting.md` through `read_posting` or `read_page` and then `save_posting`, and `job.md`), so the answers have a home.
 
 ## 2. Draft
 - **Sound like the user typed it.** Laid back and plain: first person, contractions, everyday words. "Yep" is fine. Never over the top. Their voice nudges win over this.

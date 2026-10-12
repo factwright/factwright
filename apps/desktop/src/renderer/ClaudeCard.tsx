@@ -93,15 +93,19 @@ export function ClaudeCard({
   setup = null,
   checkingSetup = false,
   onCheckSetup,
+  onPermissions,
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
+  /** Opens what Claude may do without asking, once Claude is ready to run. */
+  onPermissions?: () => void;
 }) {
   const view = describe(status, setup);
   const checking = view.recheck === 'setup' && checkingSetup;
+  const ready = status !== 'checking' && status.state === 'ready' && !view.recheck;
   return (
     <SidebarCard
       title="Your Claude"
@@ -109,11 +113,15 @@ export function ClaudeCard({
       line={view.line}
       help={view.help}
       action={
-        view.recheck && {
-          label: checking ? 'Checking…' : 'Check again',
-          disabled: checking,
-          onClick: () => (view.recheck === 'setup' ? onCheckSetup?.() : onRecheck()),
-        }
+        view.recheck
+          ? {
+              label: checking ? 'Checking…' : 'Check again',
+              disabled: checking,
+              onClick: () => (view.recheck === 'setup' ? onCheckSetup?.() : onRecheck()),
+            }
+          : ready && onPermissions
+            ? { label: 'Permissions', onClick: onPermissions }
+            : null
       }
     />
   );

@@ -24,7 +24,7 @@ Before starting, read:
   - **HN "Who is hiring?":** call `hn_jobs`, with the month if the user named one. It saves every post as `hn-thread.md`, and lists each post's first line and HN id, plus the lines each run of 50 posts spans in the file.
     - The thread goes up on the first weekday of each month and fills in over the next few days. A search in the first days misses late posts, so say so.
   - **A company's board on Greenhouse, Lever, Ashby or Gem:** call `job_board` with the board's link. It saves the whole board as one file and lists every job.
-  - **Anything else** (a careers page, a job site's public listings): read it with `read_page`. The user OKs each page, so read only what the source needs. Never sign in anywhere for a search.
+  - **Anything else** (a careers page, a job site's public listings): read it with `read_page`. The user may have to OK each page, so read only what the source needs. Never sign in anywhere for a search.
 - Count as you go, for the funnel: listings in the source → pass the location filter → pass every filter → ranked.
 
 ## 2. Filter
@@ -54,7 +54,7 @@ For each listing that passed:
   - `searches/criteria.md`, all of `facts/`, and the search's folder
   - its jobs: company, role, link and HN id
   - the jobs.json fields to return for each one
-  - Pages they read with `read_page` still ask the user, so tell the user how many to expect.
+  - Pages read with `read_page` may ask the user, so tell the user how many to expect.
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.
 
 ## 4. Write the report

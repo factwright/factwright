@@ -19,13 +19,14 @@ The skills work on plain files in your workspace, in the formats the app reads, 
 The app passes the rest with each run:
 - **Tools:** the ones Claude uses instead of a shell. The app serves them over MCP on this computer ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)), and the skills call them by name:
   - `find_job` and `job_details`: what's on file for a job, including your notes and calls
-  - `read_page`: a web page as plain text
-  - `save_posting`: a posting saved word for word in the job's folder
+  - `read_posting`: a posting on Greenhouse, Lever, Ashby or Gem, read from the applicant system's public feed
+  - `read_page`: any other web page as plain text
+  - `save_posting`: a posting saved word for word in the job's folder, from what was read
   - `build_resume`: a job's resume built as a PDF or Word file, with how it fits the pages
   - `job_board`: every open job on a company's Greenhouse, Lever, Ashby or Gem board, saved word for word, and whether a posting is still open
   - `hn_jobs`: every post in Hacker News's "Who is hiring?" thread, saved word for word
 - **Hooks:** they tell the app when Claude finishes or needs you.
-- **Settings:** they keep the run locked down. Web searches, these skills, and the tools that stay on this computer run without asking. Claude Code asks you before each page it reads and each file it writes.
+- **Settings:** they keep the run locked down. Without asking, Claude searches the web, runs these skills, uses the tools that stay on this computer or reach only the job systems' public feeds, and saves its work in `applications/`, `searches/` and `outreach/`. Claude Code asks you before Claude reads any other page or changes any other file, unless you choose otherwise in the app (Your Claude → Permissions). It never changes Claude Code's settings or the instructions Claude Code loads.
 
 All of it applies to that run only. Your own Claude Code settings are never changed.
 

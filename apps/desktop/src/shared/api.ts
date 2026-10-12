@@ -1,4 +1,5 @@
 import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
+import type { ClaudePermissions } from './permissions.ts';
 import type { RunTask } from './runs.ts';
 import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
 
@@ -150,6 +151,10 @@ export interface FactwrightApi {
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */
   saveFile(name: string, text: string): Promise<SaveFileResult>;
+  /** What Claude may do without asking. */
+  claudePermissions(): Promise<ClaudePermissions>;
+  /** Changes what Claude may do without asking, from its next start. */
+  setClaudePermissions(permissions: ClaudePermissions): Promise<ClaudePermissions>;
   /** Where sync stands on this computer. */
   syncStatus(): Promise<SyncStatus>;
   /** Listens for changes in where sync stands. Returns a function that stops listening. */

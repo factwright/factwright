@@ -15,16 +15,52 @@ describe('sessionSettings', () => {
     expect(settings.disableClaudeAiConnectors).toBe(true);
   });
 
-  it('allows searches, its skills, the tools that stay on this computer and the job APIs, but not fetching pages', () => {
+  it('lets Claude search, run its skills, use the tools that stay here or read the job APIs, and save its work, without asking', () => {
     expect(settings.permissions.allow).toEqual([
       'WebSearch',
       'Skill(factwright *)',
       'mcp__factwright__find_job',
       'mcp__factwright__job_details',
       'mcp__factwright__build_resume',
+      'mcp__factwright__read_posting',
+      'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
       'mcp__factwright__hn_jobs',
+      'Edit(./applications/**)',
+      'Edit(./searches/**)',
+      'Edit(./outreach/**)',
     ]);
+  });
+
+  it('lets Claude change any file, or read any site, once the user chooses to', () => {
+    const allow = (anyFile: boolean, anySite: boolean) =>
+      sessionSettings({
+        hookUrl: 'http://127.0.0.1:4000/hook',
+        dark: false,
+        permissions: { anyFile, anySite },
+      }).permissions.allow;
+    expect(allow(true, false)).toContain('Edit(./**)');
+    expect(allow(true, false)).not.toContain('Edit(./applications/**)');
+    expect(allow(true, false)).not.toContain('mcp__factwright__read_page');
+    expect(allow(false, true)).toContain('mcp__factwright__read_page');
+    expect(allow(false, true)).not.toContain('Edit(./**)');
+  });
+
+  it('never lets Claude change its own settings or the instructions it loads', () => {
+    for (const anyFile of [false, true]) {
+      const { deny } = sessionSettings({
+        hookUrl: 'http://127.0.0.1:4000/hook',
+        dark: false,
+        permissions: { anyFile, anySite: anyFile },
+      }).permissions;
+      expect(deny).toEqual([
+        'Edit(./.claude/**)',
+        'Edit(./**/.claude/**)',
+        'Edit(./CLAUDE.md)',
+        'Edit(./**/CLAUDE.md)',
+        'Edit(./**/CLAUDE.local.md)',
+      ]);
+    }
   });
 
   it('hears when Claude starts, uses tools, needs the user, and stops', () => {

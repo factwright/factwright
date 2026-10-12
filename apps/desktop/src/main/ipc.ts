@@ -12,6 +12,8 @@ import {
   shell,
 } from 'electron';
 import type { EditResult, PdfResult, SaveFileResult } from '../shared/api.ts';
+import { parsePermissions } from '../shared/permissions.ts';
+import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
@@ -58,6 +60,8 @@ export interface IpcDeps {
   jobs: JobsService;
   workspace: string;
   sync: SyncAccount;
+  /** The app's own data folder, which holds what Claude may do without asking. */
+  dataDir: string;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -86,6 +90,7 @@ export function registerIpc({
   jobs,
   workspace,
   sync,
+  dataDir,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -106,6 +111,15 @@ export function registerIpc({
   });
 
   answer('setup:latest', () => setup.current());
+
+  // What Claude may do without asking. A change applies from Claude's next start.
+  answer('claude:permissions', () => loadPermissions(dataDir));
+  answer('claude:set-permissions', async (value) => {
+    const permissions = parsePermissions(value);
+    if (!permissions) throw new Error('Refused permissions that aren’t two yes-or-no answers.');
+    await savePermissions(dataDir, permissions);
+    return permissions;
+  });
 
   answer('setup:check', async () => {
     const status = await claudeStatus(nodeStatusDeps());

@@ -29,10 +29,6 @@ export interface FetchDeps {
   now?: () => Date;
 }
 
-export interface SavePostingDeps extends FetchDeps {
-  workspace: string;
-}
-
 type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
 
 /** A fetch that gives up once the tool's time is spent, however many requests it took. */
@@ -61,7 +57,12 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function readFrom(url: string, fetch: Fetch): Promise<Posting | null> {
+/**
+ * A posting or page, read from where the link points. With `feedsOnly`, only through an
+ * applicant system's public feed, never the page the link names, so nothing reaches a site the
+ * link chose.
+ */
+async function readFrom(url: string, fetch: Fetch, feedsOnly: boolean): Promise<Posting | null> {
   const source = postingSource(url);
   let failure: unknown = null;
   for (const attempt of postingRequests(source)) {
@@ -73,7 +74,7 @@ async function readFrom(url: string, fetch: Fetch): Promise<Posting | null> {
       failure = error;
     }
   }
-  if (source.kind === 'page') {
+  if (source.kind === 'page' || feedsOnly) {
     if (failure) throw failure;
     return null;
   }
@@ -82,28 +83,74 @@ async function readFrom(url: string, fetch: Fetch): Promise<Posting | null> {
   return readPosting(page, await fetch(page.url, false));
 }
 
+/** Whether a link is to one posting on Greenhouse, Lever, Ashby or Gem. */
+export const isFeedPosting = (url: string) => postingSource(url).kind !== 'page';
+
+/** How long what was read stays on hand for saving, and how many reads at most. */
+const KEEP_MS = 2 * 60 * 60 * 1000;
+const KEEP_AT_MOST = 50;
+
 /**
- * Reads a public page as plain text for Claude: a posting through its applicant system's API
- * when the link is to one, and otherwise the page's JobPosting data or its main text.
+ * Postings and pages read recently, by link, so saving one later needn't fetch it again: a
+ * page the user OK'd once is saved without asking twice. Kept in memory only.
  */
-export async function readPage(url: string, deps: FetchDeps): Promise<string> {
+export class ReadCache {
+  private readonly entries = new Map<string, { posting: Posting; at: number }>();
+
+  remember(url: string, posting: Posting, now: number): void {
+    this.entries.delete(url);
+    this.entries.set(url, { posting, at: now });
+    for (const [oldest] of this.entries) {
+      if (this.entries.size <= KEEP_AT_MOST) break;
+      this.entries.delete(oldest);
+    }
+  }
+
+  recall(url: string, now: number): Posting | null {
+    const entry = this.entries.get(url);
+    if (!entry || now - entry.at > KEEP_MS) return null;
+    return entry.posting;
+  }
+}
+
+export interface ReadDeps extends FetchDeps {
+  /** What was read, for save_posting. */
+  cache: ReadCache;
+}
+
+/**
+ * Reads a posting or a page as plain text for Claude, and keeps it on hand for save_posting.
+ * With `feedsOnly`, as read_posting, it reads only postings on Greenhouse, Lever, Ashby and Gem,
+ * through their public feeds and never the page the link names, so it needs no OK from the user.
+ * Otherwise, as read_page, it reads any public page.
+ */
+export async function readLink(
+  url: string,
+  deps: ReadDeps & { feedsOnly: boolean },
+): Promise<string> {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return `“${url}” isn’t a link.`;
   }
+  if (deps.feedsOnly && !isFeedPosting(parsed.href)) {
+    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, which asks the user first, or use job_board for a company’s whole board.`;
+  }
   let page: Posting | null;
   try {
-    page = await readFrom(parsed.href, fetchInTime(deps));
+    page = await readFrom(parsed.href, fetchInTime(deps), deps.feedsOnly);
   } catch (error) {
     return error instanceof FetchRefused
       ? `Not read: ${reasonOf(error)}`
       : `Couldn’t read ${parsed.href} (${reasonOf(error)}).`;
   }
   if (!page?.text.trim()) {
-    return `${parsed.href} had no text to read, so it probably needs a browser or a sign-in.`;
+    return deps.feedsOnly
+      ? `The applicant system has no posting at ${parsed.href}. It may have closed: check with job_board, or read the link with read_page, which asks the user first.`
+      : `${parsed.href} had no text to read, so it probably needs a browser or a sign-in.`;
   }
+  deps.cache.remember(parsed.href, page, (deps.now?.() ?? new Date()).getTime());
   const length = page.text.length;
   const cut = length > MAX_PAGE_TEXT;
   return [
@@ -119,10 +166,16 @@ export async function readPage(url: string, deps: FetchDeps): Promise<string> {
     .join('\n');
 }
 
+export interface SavePostingDeps extends ReadDeps {
+  workspace: string;
+}
+
 /**
- * Saves a job posting word for word, straight from its source, as posting.md in the job's
- * folder, so it survives the link going dead. A posting already saved there is kept, since
- * it's the one the user saw. Says, in words for Claude, what happened.
+ * Saves a job posting word for word as posting.md in the job's folder, so it survives the link
+ * going dead. It saves what read_page or read_posting read from the link in this run, or reads
+ * a posting on Greenhouse, Lever, Ashby or Gem from its public feed. It never reaches another
+ * site, so it needs no OK from the user. A posting already saved there is kept, since it's the
+ * one the user saw. Says, in words for Claude, what happened.
  */
 export async function savePosting(
   url: string,
@@ -145,17 +198,23 @@ export async function savePosting(
   const kept = `Kept the posting already saved in ${saved}.`;
   if (await exists(file)) return kept;
 
-  let posting: Posting | null;
-  try {
-    posting = await readFrom(parsed.href, fetchInTime(deps));
-  } catch (error) {
-    return error instanceof FetchRefused
-      ? `Not saved: ${reasonOf(error)}`
-      : `Couldn’t read the posting (${reasonOf(error)}). ${ask}`;
+  let posting = deps.cache.recall(parsed.href, (deps.now?.() ?? new Date()).getTime());
+  if (!posting) {
+    if (!isFeedPosting(parsed.href)) {
+      return `Nothing read from ${parsed.href} yet. Read it with read_page first, which asks the user, then save it.`;
+    }
+    try {
+      posting = await readFrom(parsed.href, fetchInTime(deps), true);
+    } catch (error) {
+      return error instanceof FetchRefused
+        ? `Not saved: ${reasonOf(error)}`
+        : `Couldn’t read the posting (${reasonOf(error)}). ${ask}`;
+    }
+    if (!posting)
+      return `The applicant system has no posting at ${parsed.href}, so it may have closed. ${ask}`;
   }
-  if (!posting || posting.text.length < MIN_POSTING_LENGTH) {
-    const size = posting?.text.length ?? 0;
-    return `Got only ${size} characters, so the page probably needs a browser or a sign-in. ${ask}`;
+  if (posting.text.length < MIN_POSTING_LENGTH) {
+    return `Got only ${posting.text.length} characters, so the page probably needs a browser or a sign-in. ${ask}`;
   }
   const body = [
     '# Job posting',

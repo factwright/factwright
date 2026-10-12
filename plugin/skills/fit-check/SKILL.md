@@ -17,7 +17,7 @@ Before starting, read:
 ## 1. Read the job
 - Call `find_job` with what you have. The link alone is fine; call it again once you know the company and role. If the user has seen this job before, open the reply with that line (e.g. "Seen: Good 67 on Oct 6, applied Oct 8"), and reuse its folder.
 - If the job's folder already has `posting.md` (or `job.md` in older folders), read the posting from there.
-- Otherwise read the link with `read_page`. If it needs a sign-in or won't load, ask the user to paste the text.
+- Otherwise read the link: `read_posting` for a posting on Greenhouse, Lever, Ashby or Gem, which never asks the user, and `read_page` for anywhere else. If it needs a sign-in or won't load, ask the user to paste the text.
 - Pull out: company, role, level, remote policy and location limits, pay, must-haves, nice-to-haves, stack, domain.
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.
 
@@ -51,7 +51,7 @@ Never stretch a fact to make the fit look better. Gaps are gaps.
 Every job checked gets a folder, so its posting and this write-up survive dead links. The app shows them in the job's panel.
 - Folder: `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. If `find_job` found a folder for this job, reuse it.
 - `posting.md`, the posting word for word:
-  - From a link: call `save_posting` with the link and the folder's name. It reads the posting straight from its source.
+  - From a link: call `save_posting` with the link and the folder's name. It saves what you read, word for word, without asking.
   - Pasted text, or save_posting couldn't read it: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
 - `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, `- **Fit check:** <Verdict>, <score>/100 (fit-check.md)`, then `## Job description` with one line: "Saved word for word in posting.md."
 - `fit-check.md`: the full write-up, in the shape below. The app reads the parts, the work list and the mood out of it.

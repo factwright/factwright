@@ -10,12 +10,12 @@ Input: the listing (a link or pasted text), plus the company if the listing hide
 
 Research only, and never sign in anywhere. Pay never changes a fit score. This is information for the user.
 
-Use web searches first: snippets often show posted ranges. `read_page` reads a page or an applicant system's data, but the user OKs each one, so save it for the strongest leads.
+Use web searches first: snippets often show posted ranges. `read_posting` reads a posting on Greenhouse, Lever, Ashby or Gem without asking. `read_page` reads anything else, but the user may have to OK each page, so save it for the strongest leads.
 
 ## 1. Look for a posted range for this exact job (best evidence)
 - **Other copies of the posting:** pay-transparency laws (CA, CO, NY, WA, IL and others) push many employers to post a range in at least one location. Search the exact title + company across other boards and location variants.
 - **The applicant system's public data** sometimes has pay the page doesn't show. Read one job, not the whole board:
-  - Ashby: the posting's own link. `read_page` asks Ashby for the job, with any pay the board publishes.
+  - Ashby: the posting's own link. `read_posting` asks Ashby for the job, with any pay the board publishes.
   - Lever: `https://api.lever.co/v0/postings/<org>/<id>` (the `salaryRange` field)
   - Greenhouse: `https://boards-api.greenhouse.io/v1/boards/<org>/jobs/<id>?pay_transparency=true`
 - **Recruiter reposts** of the same role often state a range.

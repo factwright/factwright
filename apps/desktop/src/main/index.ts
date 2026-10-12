@@ -130,6 +130,7 @@ function start(): void {
       jobs,
       workspace,
       sync,
+      dataDir,
     });
     void sync.start();
 

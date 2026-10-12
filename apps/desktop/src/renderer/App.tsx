@@ -12,6 +12,7 @@ import { jobRows, type ListFilter, NO_FILTERS, startingView } from './jobs/rows.
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
+import { PermissionsDialog } from './PermissionsDialog.tsx';
 import { planName } from './plan.ts';
 import { Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
@@ -40,7 +41,7 @@ export function App({ api }: { api: FactwrightApi }) {
     ...NO_FILTERS,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'add-job' | 'journey' | 'sync' | null>(null);
+  const [dialog, setDialog] = useState<'add-job' | 'journey' | 'sync' | 'permissions' | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
 
@@ -99,6 +100,7 @@ export function App({ api }: { api: FactwrightApi }) {
           setup={setup}
           sync={sync}
           onOpenSync={() => setDialog('sync')}
+          onOpenPermissions={() => setDialog('permissions')}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
         />
         <div className={styles.content}>
@@ -153,6 +155,7 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'sync' && sync !== 'checking' && (
         <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
       )}
+      {dialog === 'permissions' && <PermissionsDialog api={api} onClose={() => setDialog(null)} />}
     </div>
   );
 }
