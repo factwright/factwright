@@ -41,25 +41,25 @@ describe('ClaudeCard', () => {
     },
   );
 
-  it('opens what Claude may do without asking, once Claude is ready', () => {
-    const onPermissions = vi.fn();
+  it('opens Claude’s settings, once Claude is ready', () => {
+    const onSettings = vi.fn();
     const { rerender } = render(
       <ClaudeCard
         status={{ state: 'ready', version: '2.1.296', plan: 'max' }}
         onRecheck={vi.fn()}
-        onPermissions={onPermissions}
+        onSettings={onSettings}
       />,
     );
-    screen.getByRole('button', { name: 'Permissions' }).click();
-    expect(onPermissions).toHaveBeenCalledOnce();
+    screen.getByRole('button', { name: 'Settings' }).click();
+    expect(onSettings).toHaveBeenCalledOnce();
     rerender(
       <ClaudeCard
         status={{ state: 'signed-out', version: '2.1.296' }}
         onRecheck={vi.fn()}
-        onPermissions={onPermissions}
+        onSettings={onSettings}
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Permissions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
   });
 
   it('says it is checking while the first answer is on its way', () => {

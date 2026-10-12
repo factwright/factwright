@@ -93,15 +93,15 @@ export function ClaudeCard({
   setup = null,
   checkingSetup = false,
   onCheckSetup,
-  onPermissions,
+  onSettings,
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
-  /** Opens what Claude may do without asking, once Claude is ready to run. */
-  onPermissions?: () => void;
+  /** Opens Claude's settings, once Claude is ready to run. */
+  onSettings?: () => void;
 }) {
   const view = describe(status, setup);
   const checking = view.recheck === 'setup' && checkingSetup;
@@ -119,8 +119,8 @@ export function ClaudeCard({
               disabled: checking,
               onClick: () => (view.recheck === 'setup' ? onCheckSetup?.() : onRecheck()),
             }
-          : ready && onPermissions
-            ? { label: 'Permissions', onClick: onPermissions }
+          : ready && onSettings
+            ? { label: 'Settings', onClick: onSettings }
             : null
       }
     />

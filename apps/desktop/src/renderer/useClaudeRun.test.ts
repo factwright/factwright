@@ -70,6 +70,27 @@ describe('useClaudeRun', () => {
     expect(api.startClaude).toHaveBeenCalledWith(SIZE, TASK);
   });
 
+  it('makes way for a new run when the task needs another model, without showing the old one stop', async () => {
+    const { api, signal } = fakeApi({ ok: false, reason: 'other-model' });
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => signal('done'));
+    const runId = result.current.runId;
+    await act(async () => result.current.requestStart(TASK));
+    expect(api.stopClaude).toHaveBeenCalledOnce();
+    expect(result.current.phase).toBe('starting');
+    expect(result.current.runId).toBe(runId + 1);
+    // The old run's closing comes in first, and isn't shown.
+    act(() => signal('stopped'));
+    expect(result.current.phase).toBe('starting');
+    await act(async () => result.current.onTerminalSize(SIZE));
+    expect(api.startClaude).toHaveBeenCalledWith(SIZE, TASK);
+    // The new run's own signals are.
+    act(() => signal('working'));
+    expect(result.current.phase).toBe('working');
+    act(() => signal('stopped'));
+    expect(result.current.phase).toBe('stopped');
+  });
+
   it('explains the question about trust until the user answers it, and brings the panel back', async () => {
     const { api, signal, trust } = fakeApi();
     const { result } = renderHook(() => useClaudeRun(api));

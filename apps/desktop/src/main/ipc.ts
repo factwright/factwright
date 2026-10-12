@@ -11,8 +11,10 @@ import {
   ipcMain,
   shell,
 } from 'electron';
-import type { EditResult, PdfResult, SaveFileResult } from '../shared/api.ts';
+import type { EditResult, PdfResult, SaveFileResult, StartResult } from '../shared/api.ts';
+import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
+import { loadModels, saveModels } from './claude/models.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
@@ -112,6 +114,16 @@ export function registerIpc({
 
   answer('setup:latest', () => setup.current());
 
+  // Which model Claude runs on, for everything and for each task. A change applies from the next
+  // start, or the next task that needs another model.
+  answer('claude:models', () => loadModels(dataDir));
+  answer('claude:set-models', async (value) => {
+    const models = parseModels(value);
+    if (!models) throw new Error('Refused models Claude Code doesn’t know.');
+    await saveModels(dataDir, models);
+    return models;
+  });
+
   // What Claude may do without asking. A change applies from Claude's next start.
   answer('claude:permissions', () => loadPermissions(dataDir));
   answer('claude:set-permissions', async (value) => {
@@ -139,12 +151,19 @@ export function registerIpc({
     const valid = parseTerminalSize(size);
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');
-    return session.start(valid, run && runPrompt(run));
+    return loadModels(dataDir).then((models) =>
+      session.start(valid, run && runPrompt(run), modelFor(models, run)),
+    );
   });
 
-  answer('claude:task', (task) => {
+  // A task for the run that's open. One that needs another model starts a new run instead.
+  answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
+    const open = session.model();
+    if (open && open !== modelFor(await loadModels(dataDir), run)) {
+      return { ok: false, reason: 'other-model' };
+    }
     return session.send(runPrompt(run));
   });
 

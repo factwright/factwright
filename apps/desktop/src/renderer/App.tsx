@@ -3,6 +3,7 @@ import type { FactwrightApi } from '../shared/api.ts';
 import { SEARCH_SKILL, taskJob } from '../shared/runs.ts';
 import styles from './App.module.css';
 import { ClaudePanel } from './ClaudePanel.tsx';
+import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
@@ -12,7 +13,6 @@ import { jobRows, type ListFilter, NO_FILTERS, startingView } from './jobs/rows.
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
-import { PermissionsDialog } from './PermissionsDialog.tsx';
 import { planName } from './plan.ts';
 import { Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
@@ -41,7 +41,9 @@ export function App({ api }: { api: FactwrightApi }) {
     ...NO_FILTERS,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'add-job' | 'journey' | 'sync' | 'permissions' | null>(null);
+  const [dialog, setDialog] = useState<'add-job' | 'journey' | 'sync' | 'claude-settings' | null>(
+    null,
+  );
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
 
@@ -100,7 +102,7 @@ export function App({ api }: { api: FactwrightApi }) {
           setup={setup}
           sync={sync}
           onOpenSync={() => setDialog('sync')}
-          onOpenPermissions={() => setDialog('permissions')}
+          onOpenClaudeSettings={() => setDialog('claude-settings')}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
         />
         <div className={styles.content}>
@@ -155,7 +157,9 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'sync' && sync !== 'checking' && (
         <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
       )}
-      {dialog === 'permissions' && <PermissionsDialog api={api} onClose={() => setDialog(null)} />}
+      {dialog === 'claude-settings' && (
+        <ClaudeSettingsDialog api={api} onClose={() => setDialog(null)} />
+      )}
     </div>
   );
 }

@@ -37,6 +37,7 @@ const START_PROBLEMS = {
   busy: 'Claude is already running.',
   failed: 'Claude Code couldn’t start.',
   'not-running': 'Claude Code has closed. Start it again.',
+  'other-model': 'Claude is running on another model. Start it again.',
 } as const;
 
 /** Runs the user's Claude Code in the panel and follows its signals. */
@@ -50,10 +51,16 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
   // A run waiting for the terminal's size, with its task. Cleared the moment it launches, so it
   // launches once.
   const pending = useRef<{ task: RunTask | undefined } | null>(null);
+  // Set while a run closes to make way for one on another model, so its closing isn't shown.
+  const replacing = useRef(false);
 
   useEffect(
     () =>
       api.onClaudeSignal((signal) => {
+        if (replacing.current && (signal === 'stopped' || signal === 'failed')) {
+          replacing.current = false;
+          return;
+        }
         setPhase(signal);
         // Any signal means Claude Code is past the question about trust.
         setTrustAsked(false);
@@ -92,8 +99,14 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
       setPhase('working');
       api.runTask(next).then(
         (result) => {
-          // Claude Code closed since the last signal, so start it again with the task.
-          if (!result.ok) startNew(next);
+          if (result.ok) return;
+          // The task runs on another model, so this run makes way for a new one on it.
+          if (result.reason === 'other-model') {
+            replacing.current = true;
+            api.stopClaude();
+          }
+          // Otherwise Claude Code closed since the last signal: start it again with the task.
+          startNew(next);
         },
         () => startNew(next),
       );

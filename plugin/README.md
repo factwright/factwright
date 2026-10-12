@@ -28,7 +28,7 @@ The app passes the rest with each run:
   - `job_board`: every open job on a company's Greenhouse, Lever, Ashby or Gem board, saved word for word, and whether a posting is still open
   - `hn_jobs`: every post in Hacker News's "Who is hiring?" thread, saved word for word
 - **Hooks:** they tell the app when Claude finishes or needs you.
-- **Settings:** they keep the run locked down. Without asking, Claude searches the web, runs these skills, uses the tools that stay on this computer or reach only the job systems' public feeds, and saves its work in `applications/`, `searches/` and `outreach/`. Claude Code asks you before Claude reads any other page or changes any other file, unless you choose otherwise in the app (Your Claude → Permissions). It never changes Claude Code's settings or the instructions Claude Code loads.
+- **Settings:** they keep the run locked down. Without asking, Claude searches the web, runs these skills, uses the tools that stay on this computer or reach only the job systems' public feeds, and saves its work in `applications/`, `searches/` and `outreach/`. Claude Code asks you before Claude reads any other page or changes any other file, unless you choose otherwise in the app (Your Claude → Settings). It never changes Claude Code's settings or the instructions Claude Code loads.
 
 All of it applies to that run only. Your own Claude Code settings are never changed.
 
