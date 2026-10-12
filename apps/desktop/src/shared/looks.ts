@@ -105,21 +105,22 @@ function reason(layout: Layout, kind: CompanyKind | 'any', fields: readonly Fiel
 
 /**
  * The template that suits each kind of company the user is aiming at, from what they're looking
- * for: one for startups, say, and another for established companies. With no kind chosen, one
- * template for any job.
+ * for: one for startups, say, and another for established companies, each its own, since a look
+ * goes with one kind. With no kind chosen, one template for any job.
  */
 export function suggestLooks(
   answers: Pick<AboutYou, 'companies' | 'fields' | 'levels'>,
 ): Suggestion[] {
   const kinds: (CompanyKind | 'any')[] = answers.companies.length > 0 ? answers.companies : ['any'];
+  const taken = new Set<Layout>();
+  const fit = (layout: Layout, kind: CompanyKind | 'any') =>
+    score(layout, kind, answers.fields, answers.levels);
   return kinds.map((kind) => {
     // TEMPLATES lists the safest first, so it wins a tie.
-    const best = TEMPLATES.map((each) => each.layout).reduce((top, layout) =>
-      score(layout, kind, answers.fields, answers.levels) >
-      score(top, kind, answers.fields, answers.levels)
-        ? layout
-        : top,
-    );
+    const best = TEMPLATES.map((each) => each.layout)
+      .filter((layout) => !taken.has(layout))
+      .reduce((top, layout) => (fit(layout, kind) > fit(top, kind) ? layout : top));
+    taken.add(best);
     return { layout: best, for: kind, why: reason(best, kind, answers.fields) };
   });
 }

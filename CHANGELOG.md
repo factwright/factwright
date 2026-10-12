@@ -65,7 +65,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Profile: follows Claude as it gets to know you, then keeps everything changeable: your fact bank and what's left to confirm, your starting resumes, what you want, your templates, what you've shared and your contact details. Your search criteria, templates and page count follow each change, unless you've changed those files by hand.
 - Help with Claude Code: when it's missing, signed out or out of date, the exact command to copy, a button that opens Terminal, and a check again when you come back.
 - Starter files for a new workspace: binding rules, a writing guide, resume styles for startups, established companies and public employers, and the fact bank's format, all free of anyone's personal rules. The skills read them, and never use a fact you haven't confirmed.
-- A run started to get to know you, or for more facts, saves your facts, starting resumes and guide without asking each time. Every other run still asks.
+- A run started to get to know you, or for more facts, saves your facts, starting resumes and guide without asking each time, and can't reach the web at all. Every other run still asks.
 - `build_resume` builds starting resumes in `base/` too.
 - `@factwright/ui`: chip groups, tag lists, file drops and steps.
 - Quitting while Claude runs no longer messages a window that's already closed.

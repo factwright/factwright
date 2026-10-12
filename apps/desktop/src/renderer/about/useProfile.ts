@@ -8,8 +8,19 @@ const SAVE_AFTER_MS = 500;
 
 type ProfileApi = Pick<
   FactwrightApi,
-  'profile' | 'saveAnswers' | 'saveNotes' | 'saveConfidential' | 'onProfileChanged'
+  'profile' | 'saveAnswers' | 'saveNotes' | 'changeConfidential' | 'onProfileChanged'
 >;
+
+/** Changes not saved yet: answers, and the notes when they changed. */
+interface Unsaved {
+  answers: AnswerChanges;
+  notes: string | null;
+}
+
+const NOTHING: Unsaved = { answers: {}, notes: null };
+
+const isEmpty = (unsaved: Unsaved) =>
+  Object.keys(unsaved.answers).length === 0 && unsaved.notes === null;
 
 export interface ProfileState {
   /** Null while it loads. */
@@ -22,6 +33,7 @@ export interface ProfileState {
   saved: boolean;
   /** Saves anything still waiting, such as before Claude starts. */
   flush: () => Promise<void>;
+  /** Saves the user's list of confidential names, as what they added and removed. */
   saveConfidential: (names: string[]) => Promise<void>;
   /** Takes answers the main process sent back, such as after a file was removed. */
   take: (answers: AboutYou) => void;
@@ -34,62 +46,82 @@ export interface ProfileState {
 /**
  * The user's profile, kept in step with the workspace: Claude fills in the fact bank as it goes,
  * and other devices sync theirs. What the user types shows at once and saves a moment later, so
- * a change from elsewhere never overwrites what they're in the middle of typing.
+ * a change from elsewhere never overwrites what they're in the middle of typing, or what's on its
+ * way to being saved. A save that fails keeps its changes, to try again with the next one.
  */
 export function useProfile(api: ProfileApi): ProfileState {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState(true);
-  const pending = useRef<{ answers: AnswerChanges; notes: string | null }>({
-    answers: {},
-    notes: null,
-  });
+  // Typed and not sent yet, then sent and not saved yet.
+  const pending = useRef<Unsaved>(NOTHING);
+  const saving = useRef<Unsaved>(NOTHING);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The latest from the main process, before anything unsaved goes on top.
+  const latest = useRef<Profile | null>(null);
 
-  /** What's on screen: the latest from the main process, with what's still waiting on top. */
-  const withPending = useCallback((latest: Profile): Profile => {
-    const { answers, notes } = pending.current;
-    return {
-      ...latest,
-      answers: { ...latest.answers, ...answers },
-      notes: notes ?? latest.notes,
-    };
+  /** Shows the profile with what's not saved yet on top of it. */
+  const show = useCallback((next: Profile) => {
+    latest.current = next;
+    const [sent, typed] = [saving.current, pending.current];
+    setProfile({
+      ...next,
+      answers: { ...next.answers, ...sent.answers, ...typed.answers },
+      notes: typed.notes ?? sent.notes ?? next.notes,
+    });
   }, []);
 
   useEffect(() => {
     let live = true;
     api.profile().then(
-      (loaded) => live && setProfile(withPending(loaded)),
+      (loaded) => live && show(loaded),
       () => live && setProblem('Your profile didn’t load. Restart Factwright to try again.'),
     );
-    const stop = api.onProfileChanged((latest) => setProfile(withPending(latest)));
+    const stop = api.onProfileChanged((changed) => show(changed));
     return () => {
       live = false;
       stop();
     };
-  }, [api, withPending]);
+  }, [api, show]);
 
   const flush = useCallback(async () => {
     clearTimeout(timer.current);
-    const { answers, notes } = pending.current;
-    pending.current = { answers: {}, notes: null };
-    try {
-      if (Object.keys(answers).length > 0) {
-        const kept = await api.saveAnswers(answers);
-        setProfile((current) => current && withPending({ ...current, answers: kept }));
+    const batch = pending.current;
+    if (isEmpty(batch)) return;
+    pending.current = NOTHING;
+    saving.current = batch;
+    let failed: Unsaved = NOTHING;
+    if (Object.keys(batch.answers).length > 0) {
+      try {
+        const kept = await api.saveAnswers(batch.answers);
+        if (latest.current) latest.current = { ...latest.current, answers: kept };
+      } catch {
+        failed = { ...failed, answers: batch.answers };
       }
-      if (notes !== null) {
-        const result = await api.saveNotes(notes);
-        if (!result.ok) throw new Error(result.message);
-      }
-      setProblem(null);
-    } catch {
-      setProblem(
-        'That didn’t save. Check that Factwright can write to its folder, then try again.',
-      );
     }
-    setSaved(Object.keys(pending.current.answers).length === 0 && pending.current.notes === null);
-  }, [api, withPending]);
+    if (batch.notes !== null) {
+      try {
+        const result = await api.saveNotes(batch.notes);
+        if (!result.ok) throw new Error(result.message);
+        if (latest.current) latest.current = { ...latest.current, notes: batch.notes };
+      } catch {
+        failed = { ...failed, notes: batch.notes };
+      }
+    }
+    // What didn't save goes back under anything typed since, for the next save to carry.
+    pending.current = {
+      answers: { ...failed.answers, ...pending.current.answers },
+      notes: pending.current.notes ?? failed.notes,
+    };
+    saving.current = NOTHING;
+    if (latest.current) show(latest.current);
+    setProblem(
+      isEmpty(failed)
+        ? null
+        : 'That didn’t save yet. It tries again as you go on; if it keeps failing, check that Factwright can write to its folder.',
+    );
+    setSaved(isEmpty(pending.current));
+  }, [api, show]);
 
   const later = useCallback(() => {
     setSaved(false);
@@ -102,50 +134,54 @@ export function useProfile(api: ProfileApi): ProfileState {
 
   const update = useCallback(
     (changes: AnswerChanges) => {
-      pending.current.answers = { ...pending.current.answers, ...changes };
-      setProfile(
-        (current) => current && { ...current, answers: { ...current.answers, ...changes } },
-      );
+      pending.current = { ...pending.current, answers: { ...pending.current.answers, ...changes } };
+      if (latest.current) show(latest.current);
       later();
     },
-    [later],
+    [later, show],
   );
 
   const setNotes = useCallback(
     (text: string) => {
-      pending.current.notes = text;
-      setProfile((current) => current && { ...current, notes: text });
+      pending.current = { ...pending.current, notes: text };
+      if (latest.current) show(latest.current);
       later();
     },
-    [later],
+    [later, show],
   );
 
   const saveConfidential = useCallback(
     async (names: string[]) => {
-      setProfile((current) => current && { ...current, confidential: names });
+      const before = latest.current?.confidential ?? [];
+      const has = (list: readonly string[], name: string) =>
+        list.some((each) => each.toLowerCase() === name.toLowerCase());
+      const add = names.filter((name) => !has(before, name));
+      const remove = before.filter((name) => !has(names, name));
+      if (latest.current) show({ ...latest.current, confidential: names });
       try {
-        const kept = await api.saveConfidential(names);
-        setProfile((current) => current && { ...current, confidential: kept });
+        const kept = await api.changeConfidential({ add, remove });
+        if (latest.current) show({ ...latest.current, confidential: kept });
       } catch {
         setProblem('That didn’t save. Try again.');
       }
     },
-    [api],
+    [api, show],
   );
 
   const take = useCallback(
-    (answers: AboutYou) => setProfile((current) => current && withPending({ ...current, answers })),
-    [withPending],
+    (answers: AboutYou) => {
+      if (latest.current) show({ ...latest.current, answers });
+    },
+    [show],
   );
 
   const refresh = useCallback(async () => {
     try {
-      const latest = await api.profile();
-      setProfile(withPending(latest));
+      show(await api.profile());
     } catch {
       // The next change from the workspace brings it up to date.
     }
-  }, [api, withPending]);
+  }, [api, show]);
 
   return { profile, update, setNotes, saved, flush, saveConfidential, take, refresh, problem };
 }

@@ -27,7 +27,9 @@ describe('countFacts', () => {
       '# Acme\n\n### Built the pipeline\n`unconfirmed` `live` `solo` `medium`\n> Wording\n\n### Led the team\n\n`led-team` `high`\n',
     );
     write('facts/earlier/beta.md', '### Ran support\n`unconfirmed` `shipped` `solo` `low`\n');
-    expect(countFacts(workspace)).toEqual({ claims: 3, unconfirmed: 2, files: 2 });
+    // A heading without tags under it, such as a skills file's section, isn't a claim.
+    write('facts/skills.md', '### Languages\n| Skill | Depth |\n|---|---|\n');
+    expect(countFacts(workspace)).toEqual({ claims: 3, unconfirmed: 2, files: 3 });
   });
 
   it('is empty with no fact bank', () => {
@@ -99,6 +101,10 @@ describe('profileStatus', () => {
   });
 
   it('says what Claude hasn’t read yet, and whether the notes changed since', () => {
+    write('about-me/files/a.pdf', '%PDF');
+    write('about-me/files/b.png', 'png');
+    const before = new Date('2026-10-11T08:00:00');
+    utimesSync(join(workspace, 'about-me/files/a.pdf'), before, before);
     write(
       'about-me/read.md',
       '- about-me/files/a.pdf · 2026-10-11\n- about-me/notes.md · 2026-10-01\n',
@@ -114,6 +120,30 @@ describe('profileStatus', () => {
     expect(status.notesChanged).toBe(true);
     expect(status.criteria).toBe('none');
     expect(status.connections).toBeNull();
+  });
+
+  it('notices files and notes changed later the same day Claude read them', () => {
+    write('about-me/files/a.pdf', '%PDF');
+    write('about-me/files/b.png', 'png');
+    write('about-me/notes.md', 'About me');
+    const day = (hour: number) => new Date(2026, 9, 12, hour);
+    for (const path of ['about-me/files/a.pdf', 'about-me/files/b.png', 'about-me/notes.md']) {
+      utimesSync(join(workspace, path), day(9), day(9));
+    }
+    write(
+      'about-me/read.md',
+      '- about-me/files/a.pdf · 2026-10-12\n- about-me/files/b.png · 2026-10-12\n- about-me/notes.md · 2026-10-12\n',
+    );
+    utimesSync(join(workspace, 'about-me/read.md'), day(10), day(10));
+    expect(profileStatus(workspace, answers)).toMatchObject({ unread: [], notesChanged: false });
+
+    // The user adds to their notes, and shares a file again, after Claude read them.
+    utimesSync(join(workspace, 'about-me/notes.md'), day(11), day(11));
+    utimesSync(join(workspace, 'about-me/files/b.png'), day(11), day(11));
+    expect(profileStatus(workspace, answers)).toMatchObject({
+      unread: ['about-me/files/b.png'],
+      notesChanged: true,
+    });
   });
 
   it('counts the LinkedIn connections, below the export’s notes', () => {

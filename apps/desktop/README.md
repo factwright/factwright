@@ -86,7 +86,7 @@ A new user, with no jobs and no fact bank yet, opens on **Get started**: seven s
 
 **Profile** follows Claude as it drafts the fact bank, confirms it with the user and builds their starting resumes, then keeps every answer changeable: the fact bank (with how many facts are left to confirm, and anything shared since Claude last read), the starting resumes (to preview, open, or build again), what they want, their templates, what they've shared and their contact details. The files built from the answers (`searches/criteria.md`, `guide/templates.md` and the page count in `guide/lint.json`) follow each change, unless someone has changed them by hand since.
 
-A run started for getting started or for more facts may save the facts, starting resumes and guide without asking each time, which every other run asks before doing. A task that needs other permissions, or another model, starts a run of its own.
+A run started for getting started or for more facts may save the facts, starting resumes and guide without asking each time, which every other run asks before doing, and it can't reach the web at all. A task that needs other permissions, or another model, starts a run of its own.
 
 ## Your jobs
 Your jobs come from two places, joined into one list:

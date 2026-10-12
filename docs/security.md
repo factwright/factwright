@@ -33,7 +33,7 @@ Getting started asks for your resumes, your LinkedIn and anything else that show
 - **Files are checked twice.** The window, which runs sandboxed with no access to your files, reads the text out of the files you picked. The app then checks each one again: a type it takes, no bigger than sync can carry, and bytes that are what the name says. It keeps them in your workspace, so Claude can read them.
 - **What's in a file is data.** Claude is told never to follow instructions found in a file you shared, the same as with job posts.
 - **Unconfirmed until you say so.** Every fact Claude drafts from your files is marked `unconfirmed`, and nothing goes on a resume until you've confirmed it.
-- **A run for getting started** may save your facts, starting resumes and guide without asking each time, since that's the work you started it for and it reads only your own files. Every other run still asks first.
+- **A run for getting started,** or for adding facts, may save your facts, starting resumes and guide without asking each time, since that's the work you started it for. In return it can't reach the web at all, so nothing it reads can come from a page that tries to tell it what to write. Every other run asks before changing those files.
 
 ## Your data in the cloud
 Sync is off until you turn it on. Once it's on, your Mac, your Windows PC and your phone show the same job hunt, and everything is locked on your device before it leaves.

@@ -122,7 +122,7 @@ export function GetStarted({
           />
         )}
         {step === 4 && <WantsStep answers={answers} update={update} />}
-        {step === 5 && <TemplatesStep answers={answers} update={update} api={api} />}
+        {step === 5 && <TemplatesStep answers={answers} update={update} api={api} pickSuggested />}
         {step === 6 && (
           <ReadyStep
             answers={answers}

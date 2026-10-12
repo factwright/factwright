@@ -68,6 +68,30 @@ describe('sessionSettings', () => {
     expect(allow).not.toContain('Edit(./about-me/answers.json)');
   });
 
+  it('keeps a run for getting to know the user off the web, whatever else the user allows', () => {
+    const { allow, deny } = sessionSettings({
+      hookUrl: 'http://127.0.0.1:4000/hook',
+      dark: false,
+      scope: 'profile',
+      permissions: { anyFile: false, anySite: true },
+    }).permissions;
+    const web = [
+      'WebSearch',
+      'mcp__factwright__read_posting',
+      'mcp__factwright__save_posting',
+      'mcp__factwright__job_board',
+      'mcp__factwright__hn_jobs',
+      'mcp__factwright__read_page',
+    ];
+    for (const tool of web) {
+      expect(allow).not.toContain(tool);
+      expect(deny).toContain(tool);
+    }
+    expect(allow).toContain('mcp__factwright__build_resume');
+    // A hunt run keeps the web.
+    expect(settings.permissions.deny).not.toContain('WebSearch');
+  });
+
   it('never lets Claude change its own settings or the instructions it loads', () => {
     for (const anyFile of [false, true]) {
       const { deny } = sessionSettings({

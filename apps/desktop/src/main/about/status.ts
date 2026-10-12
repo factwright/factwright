@@ -53,8 +53,10 @@ function markdownUnder(workspace: string, folder: string): string[] {
 const NOT_CLAIMS = new Set(['facts/README.md', 'facts/gaps.md']);
 
 /**
- * The claims in the fact bank: each is a "### " heading in facts/, as the skills write them.
- * One whose tags carry `unconfirmed` came from the user's files and waits for them to confirm it.
+ * The claims in the fact bank, as the skills write them: a "### " heading whose next line with
+ * text is its tags in backticks, such as `live` `solo` `high`. Other headings, such as a skills
+ * file's sections, aren't claims. One tagged `unconfirmed` came from the user's files, and waits
+ * for them to confirm it.
  */
 export function countFacts(workspace: string): ProfileStatus['facts'] {
   let claims = 0;
@@ -64,9 +66,13 @@ export function countFacts(workspace: string): ProfileStatus['facts'] {
     const lines = (readText(join(workspace, path)) ?? '').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (!/^###\s+\S/.test(line)) return;
+      const tags =
+        lines
+          .slice(index + 1, index + 4)
+          .find((next) => next.trim())
+          ?.trim() ?? '';
+      if (!/^`[a-z-]+`/.test(tags)) return;
       claims += 1;
-      // The tags sit on the heading's next line that has text.
-      const tags = lines.slice(index + 1, index + 4).find((next) => next.trim()) ?? '';
       if (/`unconfirmed`/.test(tags)) unconfirmed += 1;
     });
   }
@@ -136,26 +142,38 @@ function connectionsIn(text: string): number {
   return header < 0 ? 0 : lines.slice(header + 1).filter((line) => line.trim()).length;
 }
 
+/** A file's time on disk, or null when it isn't there. */
+function statOf(file: string): { day: string; ms: number; size: number } | null {
+  try {
+    const stats = statSync(file);
+    return { day: localDate(stats.mtime), ms: stats.mtimeMs, size: stats.size };
+  } catch {
+    return null;
+  }
+}
+
 /** How far the profile has come, read from the workspace. */
 export function profileStatus(workspace: string, answers: AboutYou): ProfileStatus {
-  const read = readLog(readText(join(workspace, ABOUT.read)));
-  const unread = answers.files.map((file) => file.path).filter((path) => !read.has(path));
-  let notesChanged = false;
-  try {
-    const notes = statSync(join(workspace, ABOUT.notes));
-    const readOn = read.get(ABOUT.notes);
-    notesChanged = notes.size > 0 && (!readOn || localDate(notes.mtime) > readOn);
-  } catch {
-    // No notes yet.
-  }
+  const log = join(workspace, ABOUT.read);
+  const read = readLog(readText(log));
+  const logged = statOf(log)?.ms ?? 0;
+  // Changed since Claude read it: on a later day than its line in the log, or on that day but
+  // after the log last changed, which Claude writes to as it reads.
+  const changedSince = (path: string) => {
+    const file = statOf(join(workspace, ...path.split('/')));
+    if (!file) return false;
+    const readOn = read.get(path);
+    return !readOn || file.day > readOn || (file.day === readOn && file.ms > logged);
+  };
+  const notes = statOf(join(workspace, ABOUT.notes));
   const criteria = readText(join(workspace, ABOUT.criteria));
   const connections = readText(join(workspace, ABOUT.connections));
   const added = answers.files.find((file) => file.kind === 'linkedin-data')?.added ?? '';
   return {
     facts: countFacts(workspace),
     starting: startingResumes(workspace),
-    unread,
-    notesChanged,
+    unread: answers.files.map((file) => file.path).filter(changedSince),
+    notesChanged: notes !== null && notes.size > 0 && changedSince(ABOUT.notes),
     criteria: criteria === null ? 'none' : untouched(criteria) ? 'app' : 'own',
     connections: connections === null ? null : { count: connectionsIn(connections), added },
   };

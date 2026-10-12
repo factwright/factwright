@@ -19,19 +19,23 @@ export function TemplatesStep({
   answers,
   update,
   api,
+  pickSuggested = false,
 }: {
   answers: AboutYou;
   update: (changes: AnswerChanges) => void;
   api: Pick<FactwrightApi, 'templatePreview'>;
+  /** Whether arriving with none picked picks the suggested ones, as getting started does. */
+  pickSuggested?: boolean;
 }) {
   const titleId = useId();
   const suggestions = useMemo(() => suggestLooks(answers), [answers]);
   const suggestedPages = pagesFor({ ...answers, pages: null });
 
   // The first time here, the suggested templates start picked.
-  // Arriving with none picked, the suggested templates start picked. Picks the user made stay.
+  // Arriving at getting started with none picked, the suggested templates start picked. Anywhere
+  // else, nothing is picked until the user picks it.
   useEffect(() => {
-    if (answers.looks.length === 0) {
+    if (pickSuggested && answers.looks.length === 0) {
       update({ looks: suggestions.map(({ layout, for: kind }) => ({ layout, for: kind })) });
     }
   }, []);

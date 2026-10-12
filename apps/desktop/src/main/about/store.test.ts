@@ -78,6 +78,27 @@ describe('AboutStore', () => {
     expect(store.profile().status.criteria).toBe('app');
   });
 
+  it('leaves a page count set by hand alone, until the user picks one or their level says', () => {
+    mkdirSync(join(workspace(), 'guide'));
+    writeFileSync(join(workspace(), 'guide', 'lint.json'), '{ "maxPages": 1 }');
+    store.start();
+    store.saveAnswers({ roles: ['Designer'] });
+    expect(read('guide/lint.json')).toBe('{ "maxPages": 1 }');
+    store.saveAnswers({ levels: ['senior'] });
+    expect(json('guide/lint.json').maxPages).toBe(2);
+  });
+
+  it('writes the user’s own rules again only when the page count changes', () => {
+    mkdirSync(join(workspace(), 'guide'));
+    const own = '{\n  "_comment": "mine",\n  "maxPages": 2,\n  "cardWords": [16, 26]\n}\n';
+    writeFileSync(join(workspace(), 'guide', 'lint.json'), own);
+    store.saveAnswers({ levels: ['senior'] });
+    store.start();
+    expect(read('guide/lint.json')).toBe(own);
+    store.saveAnswers({ pages: 1 });
+    expect(json('guide/lint.json')).toEqual({ _comment: 'mine', maxPages: 1, cardWords: [16, 26] });
+  });
+
   it('leaves the user’s own rules be when they don’t parse', () => {
     mkdirSync(join(workspace(), 'guide'));
     writeFileSync(join(workspace(), 'guide', 'lint.json'), '{ not json');
@@ -117,6 +138,61 @@ describe('AboutStore', () => {
     expect(store.answers().files).toHaveLength(2);
   });
 
+  it('takes a file off the list after the trash, without undoing changes saved meanwhile', async () => {
+    store.addFile(upload('One.pdf'));
+    store.addFile(upload('Two.pdf', new TextEncoder().encode('%PDF-1.7 two'), null));
+    let release = () => {};
+    trash.mockImplementationOnce(
+      (path) =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            rmSync(path);
+            resolve();
+          };
+        }),
+    );
+    const removing = store.removeFile('about-me/files/2026-10-12-one.pdf');
+    store.saveAnswers({ you: { ...NO_ANSWERS.you, name: 'Jordan Avery' } });
+    await vi.waitFor(() => expect(trash).toHaveBeenCalled());
+    release();
+    const answers = await removing;
+    expect(answers.you.name).toBe('Jordan Avery');
+    expect(answers.files.map((file) => file.name)).toEqual(['Two.pdf']);
+  });
+
+  it('takes LinkedIn’s spreadsheets, connections included, along with its data', async () => {
+    store.addLinkedIn({
+      tables: [
+        { name: 'Connections.csv', text: 'First Name,Last Name\nSam,Lee\n' },
+        { name: 'Profile.csv', text: 'Headline\nPM\n' },
+      ],
+      summary: '# LinkedIn data\n',
+    });
+    writeFileSync(join(workspace(), 'linkedin', 'mine.txt'), 'kept');
+    await store.removeFile('about-me/files/linkedin-data.md');
+    expect(existsSync(join(workspace(), 'linkedin', 'Connections.csv'))).toBe(false);
+    expect(existsSync(join(workspace(), 'linkedin', 'Profile.csv'))).toBe(false);
+    expect(read('linkedin/mine.txt')).toBe('kept');
+    expect(store.profile().status.connections).toBeNull();
+  });
+
+  it('keeps as many files as it can carry, and says so after', () => {
+    const many = Array.from({ length: 200 }, (_, n) => ({
+      path: `about-me/files/2026-10-12-file-${n}.pdf`,
+      name: `file-${n}.pdf`,
+      kind: 'resume',
+      added: '2026-10-12',
+      textFile: null,
+    }));
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    writeFileSync(join(workspace(), 'about-me', 'answers.json'), JSON.stringify({ files: many }));
+    expect(store.addFile(upload('One more.pdf'))).toEqual({
+      ok: false,
+      message: 'That’s as many files as Factwright keeps. Remove some first.',
+    });
+    expect(store.answers().files).toHaveLength(200);
+  });
+
   it('moves a removed file and its text to the trash', async () => {
     store.addFile(upload('Resume.pdf'));
     const answers = await store.removeFile('about-me/files/2026-10-12-resume.pdf');
@@ -142,8 +218,21 @@ describe('AboutStore', () => {
     expect(store.profile().status.connections).toEqual({ count: 2, added: '2026-10-12' });
   });
 
-  it('saves the confidential names, keeping the patterns Claude wrote', () => {
-    expect(store.saveConfidential(['Bluebird', 'Acme (US)'])).toEqual(['Bluebird', 'Acme (US)']);
+  it('adds and removes the confidential names the user changed, keeping any Claude added', () => {
+    expect(store.changeConfidential({ add: ['Bluebird', 'Acme (US)'], remove: [] })).toEqual([
+      'Bluebird',
+      'Acme (US)',
+    ]);
     expect(read('guide/confidential-terms.txt')).toMatch(/\nBluebird\nAcme \\\(US\\\)\n$/);
+    // Claude adds one while the user's list on screen is older.
+    writeFileSync(
+      join(workspace(), 'guide', 'confidential-terms.txt'),
+      `${read('guide/confidential-terms.txt')}Project Kite\n`,
+    );
+    expect(store.changeConfidential({ add: ['Tidewater'], remove: ['bluebird'] })).toEqual([
+      'Acme (US)',
+      'Project Kite',
+      'Tidewater',
+    ]);
   });
 });

@@ -77,6 +77,10 @@ describe('parseAnswerChanges', () => {
     expect(parseAnswerChanges({ files: [] })).toBeNull();
     expect(parseAnswerChanges({ startedOn: '2026-10-12' })).toBeNull();
     expect(parseAnswerChanges({ isAdmin: true })).toBeNull();
+    // Names every object has aren't answers either.
+    expect(parseAnswerChanges({ constructor: { anything: true } })).toBeNull();
+    expect(parseAnswerChanges(JSON.parse('{"__proto__": {"quiet": true}}'))).toBeNull();
+    expect(parseAnswerChanges({ toString: 'x' })).toBeNull();
   });
 });
 

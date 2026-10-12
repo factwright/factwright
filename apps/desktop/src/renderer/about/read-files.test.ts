@@ -37,6 +37,21 @@ describe('wordText', () => {
     );
   });
 
+  it('reads sections inside content controls, as Word’s own resume templates make them', () => {
+    const file = zipSync({
+      'word/document.xml': strToU8(
+        `<w:document ${W}><w:body>` +
+          `<w:p><w:r><w:t>Jordan Avery</w:t></w:r></w:p>` +
+          `<w:sdt><w:sdtPr/><w:sdtContent>` +
+          `<w:p><w:r><w:t>Senior PM, Northwind</w:t></w:r></w:p>` +
+          `<w:customXml><w:p><w:r><w:t>Led the loyalty program</w:t></w:r></w:p></w:customXml>` +
+          `</w:sdtContent></w:sdt>` +
+          `</w:body></w:document>`,
+      ),
+    });
+    expect(wordText(file)).toBe('Jordan Avery\nSenior PM, Northwind\nLed the loyalty program');
+  });
+
   it('refuses a ZIP that isn’t a Word file', () => {
     expect(() => wordText(zipSync({ 'notes.txt': strToU8('hi') }))).toThrow(
       'That isn’t a Word document inside.',

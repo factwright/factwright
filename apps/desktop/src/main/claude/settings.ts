@@ -43,16 +43,30 @@ const NEVER_CHANGED = [
   '**/CLAUDE.local.md',
 ];
 
+/**
+ * What a run for getting to know the user may never use: the web, and the tools that read job
+ * posts. That run may change the user's facts and guide without asking, so nothing it reads may
+ * come from a page that could tell it what to write. Job searches and fit checks get runs of
+ * their own.
+ */
+const PROFILE_NEVER = [
+  'WebSearch',
+  ...[...PUBLIC_API_TOOLS, ...WEB_TOOLS].map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
+];
+
 /** What Claude may do without asking, from the user's choices and what the run is for. */
 function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
-  const tools = [...LOCAL_TOOLS, ...PUBLIC_API_TOOLS, ...(permissions.anySite ? WEB_TOOLS : [])];
+  const tools =
+    scope === 'profile'
+      ? LOCAL_TOOLS
+      : [...LOCAL_TOOLS, ...PUBLIC_API_TOOLS, ...(permissions.anySite ? WEB_TOOLS : [])];
   const files = [
     ...WORK_FOLDERS.map((folder) => `${folder}/**`),
     CONFIDENTIAL_TERMS,
     ...(scope === 'profile' ? PROFILE_FILES : []),
   ];
   return [
-    'WebSearch',
+    ...(scope === 'profile' ? [] : ['WebSearch']),
     `Skill(${PLUGIN} *)`,
     ...tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
     ...(permissions.anyFile ? [edits('**')] : files.map(edits)),
@@ -71,7 +85,7 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  * - asking first, unless the user chose otherwise: changing any other file, such as the facts,
  *   and reading any other page, since a job post could steer Claude to send the user's details
  *   to a site in a link. A run started to get to know the user, or to add facts, may change their
- *   facts, starting resumes and guide without asking too.
+ *   facts, starting resumes and guide without asking too, and in return never reads the web.
  * - never: changing Claude Code's settings or the instructions it loads
  * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
  *   session ends, which the self-test listens for
@@ -101,7 +115,7 @@ export function sessionSettings({
     disableClaudeAiConnectors: true,
     permissions: {
       allow: allowed(permissions, scope),
-      deny: NEVER_CHANGED.map(edits),
+      deny: [...NEVER_CHANGED.map(edits), ...(scope === 'profile' ? PROFILE_NEVER : [])],
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],

@@ -390,7 +390,7 @@ export function parseAnswerChanges(value: unknown): AnswerChanges | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const changes: Record<string, unknown> = {};
   for (const [key, change] of Object.entries(value)) {
-    if (key === 'files' || key === 'startedOn' || !(key in READERS)) return null;
+    if (key === 'files' || key === 'startedOn' || !Object.hasOwn(READERS, key)) return null;
     const valid = READERS[key as keyof AboutYou](change);
     if (valid === undefined) return null;
     changes[key] = valid;

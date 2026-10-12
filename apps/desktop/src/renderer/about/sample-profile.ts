@@ -8,7 +8,7 @@ type ProfileApi = Pick<
   | 'profile'
   | 'saveAnswers'
   | 'saveNotes'
-  | 'saveConfidential'
+  | 'changeConfidential'
   | 'addFile'
   | 'addLinkedIn'
   | 'removeFile'
@@ -132,9 +132,9 @@ export function sampleProfile(state: string | null): ProfileApi {
       notes = text;
       return { ok: true };
     },
-    saveConfidential: async (names) => {
-      confidential = names;
-      return names;
+    changeConfidential: async ({ add, remove }) => {
+      confidential = [...confidential.filter((name) => !remove.includes(name)), ...add];
+      return confidential;
     },
     addFile: async (upload) => {
       const file: SharedFile = {

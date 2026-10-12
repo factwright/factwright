@@ -28,6 +28,18 @@ describe('suggestLooks', () => {
     ]);
   });
 
+  it('gives each kind of company its own template, even when one suits them all best', () => {
+    const suggestions = suggestLooks({
+      companies: ['startup', 'established'],
+      fields: ['software'],
+      levels: ['entry'],
+    });
+    expect(suggestions.map(({ layout, for: kind }) => [kind, layout])).toEqual([
+      ['startup', 'compact'],
+      ['established', 'executive'],
+    ]);
+  });
+
   it('falls back to the safest look with nothing told', () => {
     expect(suggestLooks({ companies: [], fields: [], levels: [] })).toEqual([
       { layout: 'classic', for: 'any', why: 'A safe choice for any job' },

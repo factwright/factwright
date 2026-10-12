@@ -55,9 +55,9 @@ function profileApi(start: Partial<AboutYou> = {}) {
       notes = text;
       return { ok: true as const };
     }),
-    saveConfidential: vi.fn(async (names: string[]) => {
-      confidential = names;
-      return names;
+    changeConfidential: vi.fn(async ({ add, remove }: { add: string[]; remove: string[] }) => {
+      confidential = [...confidential.filter((name) => !remove.includes(name)), ...add];
+      return confidential;
     }),
     onProfileChanged: vi.fn(() => () => {}),
     addFile: vi.fn(async (upload: { name: string; kind: AboutYou['files'][number]['kind'] }) => {
@@ -210,7 +210,7 @@ describe('GetStarted', () => {
       screen.getByRole('textbox', { name: 'Names to keep private' }),
       'Bluebird{Enter}',
     );
-    expect(api.saveConfidential).toHaveBeenLastCalledWith(['Bluebird']);
+    expect(api.changeConfidential).toHaveBeenLastCalledWith({ add: ['Bluebird'], remove: [] });
     expect((await axe.run(container)).violations).toEqual([]);
   });
 

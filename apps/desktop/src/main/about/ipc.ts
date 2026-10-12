@@ -50,13 +50,14 @@ export function registerAboutIpc(
     return { ok: true };
   });
 
-  answer('about:confidential', (names) => {
-    const valid =
-      Array.isArray(names) &&
-      names.length <= 500 &&
-      names.every((name) => typeof name === 'string' && name.length <= ANSWER_LIMITS.entry);
-    if (!valid) throw new Error('Refused a list of names the app doesn’t take.');
-    return about.saveConfidential(names as string[]);
+  answer('about:confidential', (changes) => {
+    const names = (value: unknown): value is string[] =>
+      Array.isArray(value) &&
+      value.length <= 500 &&
+      value.every((name) => typeof name === 'string' && name.length <= ANSWER_LIMITS.entry);
+    const { add, remove } = (changes ?? {}) as Record<string, unknown>;
+    if (!names(add) || !names(remove)) throw new Error('Refused names the app doesn’t take.');
+    return about.changeConfidential({ add, remove });
   });
 
   answer('about:add-file', (upload): AddFileResult => {

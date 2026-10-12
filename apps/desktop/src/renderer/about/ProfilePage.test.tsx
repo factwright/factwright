@@ -62,7 +62,7 @@ function profileApi(status: Partial<ProfileStatus> = {}) {
     profile: vi.fn(async () => profile),
     saveAnswers: vi.fn(async (changes: object) => ({ ...ANSWERS, ...changes })),
     saveNotes: vi.fn(async () => ({ ok: true as const })),
-    saveConfidential: vi.fn(async (names: string[]) => names),
+    changeConfidential: vi.fn(async ({ add }: { add: string[] }) => add),
     onProfileChanged: vi.fn(() => () => {}),
     useAnswersForCriteria: vi.fn(async () => {}),
     openFile: vi.fn(async () => ({ ok: true as const })),

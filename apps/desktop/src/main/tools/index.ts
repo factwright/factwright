@@ -205,7 +205,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           folder: {
             type: 'string',
             description:
-              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer, or base/<name> for the starting resume in base/<name>.json.',
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
           },
         },
         required: ['url', 'folder'],

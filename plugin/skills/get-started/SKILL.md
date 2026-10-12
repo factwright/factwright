@@ -23,9 +23,11 @@ Read these, all at once:
 
 Then start where things stand, and say where in one line:
 - No claims in `facts/` yet: step 1.
-- Files, or the notes, newer than their line in `read.md` (or missing from it): step 1 for those alone, then step 2 for what they add.
+- Files that `read.md` doesn't list: step 1 for those alone, then step 2 for what they add.
 - Claims tagged `unconfirmed`: step 3.
 - Everything confirmed, but no starting resumes in `base/`: step 5.
+
+This run reads only what the user shared: it can't reach the web, and doesn't need to.
 
 ## 1. Read everything they shared
 - `about-me/notes.md`, their own words, every line of it. It's often the richest source.
@@ -76,7 +78,7 @@ Go round by round until every claim is confirmed or gone, or the user says to st
 Write what the interview settled into `guide/rules.md` under **Their rules**: each employer's exact titles, how their education must read, and anything they said must always or never appear. Add the exact titles to `guide/lint.json` under `titles` as well, keeping its other keys; the app sets `maxPages` there from their choice.
 
 ## 5. Starting resumes
-One starting resume for each kind of company in `looks` (or in `companies`, or one for any job):
+One starting resume for each kind of company in `companies` (or one for any job, when there are none), in the look `looks` gives that kind, or the one for any job, or the first one picked:
 - **Style:** `startup` for startups, `big-company` for established companies, `public-sector` for government, nonprofits and schools, and for "any", whichever fits the jobs they want best. Read that style's file.
 - **Track:** from their levels and roles, by `guide/styles/README.md`.
 - **File:** `base/<style>-<track>.json`, with the `layout` `guide/templates.md` gives that kind of company, and the `format` it gives. A starting resume that's already there is the user's: keep it, and build its files again, fixing only what breaks their rules or isn't backed by a confirmed fact, unless they ask for a fresh one.

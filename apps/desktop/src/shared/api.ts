@@ -208,8 +208,11 @@ export interface FactwrightApi {
   saveAnswers(changes: AnswerChanges): Promise<AboutYou>;
   /** Saves the notes the user wrote about themselves. */
   saveNotes(text: string): Promise<EditResult>;
-  /** Saves the names that must never appear on a resume, and answers with them as kept. */
-  saveConfidential(names: string[]): Promise<string[]>;
+  /**
+   * Adds and removes names that must never appear on a resume, keeping any Claude added since,
+   * and answers with them all as kept.
+   */
+  changeConfidential(changes: { add: string[]; remove: string[] }): Promise<string[]>;
   /** Keeps a file the user shared, such as a resume or a screenshot. */
   addFile(upload: FileUpload): Promise<AddFileResult>;
   /** Keeps the useful parts of a LinkedIn data export. */

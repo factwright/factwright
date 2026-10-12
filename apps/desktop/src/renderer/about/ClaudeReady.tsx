@@ -63,7 +63,7 @@ export function ClaudeReady({
     </Button>
   );
   const checkAgain = (
-    <Button size="sm" variant="primary" onClick={onRecheck}>
+    <Button size="sm" onClick={onRecheck}>
       Check again
     </Button>
   );

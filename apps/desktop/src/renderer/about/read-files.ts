@@ -24,12 +24,25 @@ function paragraphText(paragraph: Element): string {
   return text;
 }
 
+/**
+ * The paragraphs and tables in a part of a Word file, in order, including those inside content
+ * controls and custom XML, which Word's own resume templates wrap whole sections in.
+ */
+function blocks(parent: Element): Element[] {
+  return [...parent.children].flatMap((child) => {
+    if (child.localName === 'p' || child.localName === 'tbl') return [child];
+    if (['sdt', 'sdtContent', 'customXml', 'smartTag'].includes(child.localName))
+      return blocks(child);
+    return [];
+  });
+}
+
 /** One part of a Word file as lines: headings marked "##", list items "-", tables by row. */
 function partLines(xml: string): string[] {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const root = doc.getElementsByTagNameNS(WORD, 'body')[0] ?? doc.documentElement;
   const lines: string[] = [];
-  for (const child of root.children) {
+  for (const child of blocks(root)) {
     if (child.localName === 'p') {
       const text = paragraphText(child).trim();
       const style =
@@ -38,7 +51,7 @@ function partLines(xml: string): string[] {
       if (!text) lines.push('');
       else if (/^(heading|title)/i.test(style)) lines.push(`## ${text}`);
       else lines.push(listed ? `- ${text}` : text);
-    } else if (child.localName === 'tbl') {
+    } else {
       for (const row of child.getElementsByTagNameNS(WORD, 'tr')) {
         const cells = [...row.getElementsByTagNameNS(WORD, 'tc')].map((cell) =>
           [...cell.getElementsByTagNameNS(WORD, 'p')].map(paragraphText).join(' ').trim(),

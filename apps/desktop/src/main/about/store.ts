@@ -13,7 +13,12 @@ import {
 } from '../../shared/about.ts';
 import { criteriaMarkdown } from '../../shared/criteria.ts';
 import { templatesMarkdown } from '../../shared/looks.ts';
-import type { AddFileResult, LinkedInUpload, Profile } from '../../shared/profile.ts';
+import {
+  type AddFileResult,
+  LINKEDIN_TABLES,
+  type LinkedInUpload,
+  type Profile,
+} from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
 import { copyStarter } from './starter.ts';
 import { ABOUT, hasFactBank, profileStatus } from './status.ts';
@@ -108,15 +113,29 @@ export class AboutStore {
     return termsIn(this.read(ABOUT.terms));
   }
 
-  /** Saves the user's list of confidential names, keeping every pattern Claude wrote as it was. */
-  saveConfidential(names: readonly string[]): string[] {
-    this.write(ABOUT.terms, withTerms(this.read(ABOUT.terms), names));
+  /**
+   * Adds and removes confidential names as the user changed them. Names Claude added since the
+   * user's list was read stay, and every pattern Claude wrote keeps its exact line.
+   */
+  changeConfidential({
+    add,
+    remove,
+  }: {
+    add: readonly string[];
+    remove: readonly string[];
+  }): string[] {
+    const gone = new Set(remove.map((name) => name.trim().toLowerCase()));
+    const kept = this.confidential().filter((name) => !gone.has(name.toLowerCase()));
+    this.write(ABOUT.terms, withTerms(this.read(ABOUT.terms), [...kept, ...add]));
     return this.confidential();
   }
 
   /** Keeps a shared file, and the text read out of it, in about-me/files. Each file is kept once. */
   addFile(upload: CheckedUpload): AddFileResult {
     const answers = this.answers();
+    if (answers.files.length >= ANSWER_LIMITS.files) {
+      return { ok: false, message: 'That’s as many files as Factwright keeps. Remove some first.' };
+    }
     const print = fingerprint(upload.bytes);
     const same = answers.files.find((file) => {
       try {
@@ -163,15 +182,23 @@ export class AboutStore {
     return { ok: true, file };
   }
 
-  /** Moves a shared file, and its text, to the trash, and takes it off the list. */
+  /**
+   * Moves a shared file, and its text, to the trash, and takes it off the list. LinkedIn data
+   * takes its spreadsheets with it, connections included.
+   */
   async removeFile(path: string): Promise<AboutYou> {
-    const answers = this.answers();
-    const file = answers.files.find((each) => each.path === path);
-    if (!file) return answers;
-    for (const each of [file.path, file.textFile]) {
+    const file = this.answers().files.find((each) => each.path === path);
+    if (!file) return this.answers();
+    const tables =
+      file.kind === 'linkedin-data'
+        ? LINKEDIN_TABLES.map((name) => `${LINKEDIN_FOLDER}/${name}`)
+        : [];
+    for (const each of [file.path, file.textFile, ...tables]) {
       if (each && this.read(each) !== null) await this.trash(this.path(each));
     }
-    return this.saveAll({ ...answers, files: answers.files.filter((each) => each !== file) });
+    // Read again: other changes may have saved while the trash was busy.
+    const answers = this.answers();
+    return this.saveAll({ ...answers, files: answers.files.filter((each) => each.path !== path) });
   }
 
   /**
@@ -198,11 +225,13 @@ export class AboutStore {
       // The user's own rules don't parse; the resume check says so. Leave them be.
       return;
     }
-    // The app owns the page count: the user sets it in the app, or it follows their level.
-    this.write(
-      ABOUT.lint,
-      `${JSON.stringify({ ...lint, maxPages: pagesFor(answers) }, null, 2)}\n`,
-    );
+    // The page count is the user's choice in the app, or follows their level. With neither
+    // given, a count already there stays, such as one set by hand. The rest of the file is the
+    // user's, so it's only written again when the count changes.
+    const chosen = answers.pages !== null || answers.levels.length > 0 ? pagesFor(answers) : null;
+    if (chosen !== null && lint.maxPages !== chosen) {
+      this.write(ABOUT.lint, `${JSON.stringify({ ...lint, maxPages: chosen }, null, 2)}\n`);
+    }
   }
 
   /** Replaces a criteria file the user or Claude wrote with one from the answers, keeping theirs. */
