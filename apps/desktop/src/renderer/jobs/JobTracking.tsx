@@ -12,6 +12,7 @@ import {
   type JobStatus,
   SETTLED_STATUSES,
   STATUS_RANK,
+  shortDate,
 } from '@factwright/core';
 import {
   Button,
@@ -26,7 +27,6 @@ import { X } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
-import { shortDate } from './format.ts';
 import panel from './JobPanel.module.css';
 import styles from './JobTracking.module.css';
 

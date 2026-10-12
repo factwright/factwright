@@ -1,4 +1,5 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { SyncClient } from '@factwright/sync';
 import { createTestHarness } from 'wrangler';
@@ -42,6 +43,8 @@ export interface Account {
  * Accounts are made straight in the database, as GitHub sign-in would make them.
  */
 export async function startServer(vars: Record<string, string> = {}) {
+  // The web view's files are served from here once it's built; the API doesn't need them.
+  mkdirSync(fileURLToPath(new URL('../../web/dist', import.meta.url)), { recursive: true });
   const worker = (appUrl: string) => ({
     configPath: './wrangler.jsonc',
     // Tests sign in far more often than a person would.
@@ -121,3 +124,9 @@ export type TestServer = Awaited<ReturnType<typeof startServer>>;
 
 /** 43 characters of URL-safe base64, the shape of a record or file ID. */
 export const someId = () => randomBytes(32).toString('base64url');
+
+/** The cookie a browser keeps for a session, signed the way sign-in signs it. */
+export function sessionCookie(token: string): string {
+  const signature = createHmac('sha256', SECRET).update(token).digest('base64');
+  return `better-auth.session_token=${encodeURIComponent(`${token}.${signature}`)}`;
+}

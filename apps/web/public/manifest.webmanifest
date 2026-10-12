@@ -1,0 +1,16 @@
+{
+  "name": "Factwright",
+  "short_name": "Factwright",
+  "description": "Your job hunt, anywhere.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#f6f5f1",
+  "theme_color": "#faf9f6",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

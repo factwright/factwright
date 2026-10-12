@@ -1,6 +1,5 @@
-import { localDate } from '@factwright/core';
+import { fileSize, localDate, payLabel, shortDate } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
-import { fileSize, payLabel, shortDate } from './format.ts';
 import {
   filterCount,
   jobRows,

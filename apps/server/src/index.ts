@@ -1,11 +1,21 @@
 import { utf8 } from '@factwright/sync';
-import { failure, handleApi } from './api.ts';
+import { failure, handleApi, json } from './api.ts';
 import { authFor } from './auth.ts';
 import type { Env } from './env.ts';
 
 export { UserStore } from './store.ts';
 
 const ADMIN_RESTORE = '/api/admin/restore';
+const SIGN_IN_OPTIONS = '/api/sign-in-options';
+
+/** The ways to sign in this server has set up, for the web view's buttons. */
+function signInOptions(env: Env): Response {
+  const providers = [
+    ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? ['github'] : []),
+    ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
+  ];
+  return json({ providers });
+}
 
 /** Whether a request carries the operator's token. Without one set, nothing does. */
 async function isOperator(request: Request, env: Env): Promise<boolean> {
@@ -59,6 +69,7 @@ export default {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith('/api/auth/')) return authFor(env).handler(request);
     if (pathname === ADMIN_RESTORE) return restore(request, env);
+    if (pathname === SIGN_IN_OPTIONS) return signInOptions(env);
     if (pathname.startsWith('/api/')) return handleApi(request, env, authFor(env));
     return env.ASSETS
       ? env.ASSETS.fetch(request)

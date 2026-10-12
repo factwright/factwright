@@ -1,4 +1,5 @@
-import { type JobPay, localDate } from '@factwright/core';
+import { localDate } from './dates.ts';
+import type { JobPay } from './jobs.ts';
 
 const MONTH_DAY = new Intl.DateTimeFormat('en-US', {
   month: 'short',

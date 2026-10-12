@@ -1,0 +1,36 @@
+{
+  "name": "@factwright/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The web and phone view of your job hunt. It decrypts your synced data in the browser.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "icons": "node scripts/icons.ts",
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@factwright/core": "workspace:*",
+    "@factwright/server": "workspace:*",
+    "@factwright/sync": "workspace:*",
+    "@factwright/ui": "workspace:*",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@testing-library/user-event": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "axe-core": "catalog:",
+    "fflate": "catalog:",
+    "jsdom": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}
