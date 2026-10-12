@@ -29,6 +29,7 @@ describe('sessionSettings', () => {
       'Edit(./applications/**)',
       'Edit(./searches/**)',
       'Edit(./outreach/**)',
+      'Edit(./guide/confidential-terms.txt)',
     ]);
   });
 

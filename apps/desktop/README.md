@@ -62,7 +62,7 @@ Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools
 
 Reading and saving only fetch public https sites, never this computer or your home network, and give up on pages that are too big or too slow. A whole board can run to 25 MB, since big companies' boards carry every posting in full; a page stops at 5 MB.
 
-The tools that stay on this computer run without asking, as do web searches and Factwright's skills. So do read_posting, save_posting, job_board and hn_jobs: they reach only the applicant systems' and Hacker News's public feeds, and send them nothing but a board's name, a posting's ID or a month. Claude also saves its work in `applications/`, `searches/` and `outreach/` without asking.
+The tools that stay on this computer run without asking, as do web searches and Factwright's skills. So do read_posting, save_posting, job_board and hn_jobs: they reach only the applicant systems' and Hacker News's public feeds, and send them nothing but a board's name, a posting's ID or a month. Claude also saves its work in `applications/`, `searches/` and `outreach/` without asking, and adds to `guide/confidential-terms.txt`, which only makes the resume check stricter.
 
 Claude runs on Opus unless you choose otherwise: **Your Claude → Settings** picks the model for everything, and for each task the app starts (each Run button, and Find jobs). The app passes it with `--model`. When Claude is open on another model than a task needs, the app starts a new run on that model instead of switching the open one, since `/model` would also change your own Claude Code default.
 
