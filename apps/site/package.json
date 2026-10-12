@@ -1,0 +1,31 @@
+{
+  "name": "@factwright/site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "factwright.com: the website that explains Factwright.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite build && wrangler dev --port 8788 --local-upstream localhost:8788",
+    "deploy": "vite build && wrangler deploy",
+    "images": "node scripts/images.ts",
+    "typecheck": "tsc && tsc -p worker",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@factwright/engine": "workspace:*",
+    "@factwright/ui": "workspace:*",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "axe-core": "catalog:",
+    "jsdom": "catalog:",
+    "pdfjs-dist": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

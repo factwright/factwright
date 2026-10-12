@@ -1,0 +1,13 @@
+/*
+ * factwright.com. Its colors and fonts come from the design system's variables (--fw-*), so the
+ * site and the app look like one product, in light and dark. These files add the site's own
+ * layout, sizes and shadows, and drawings of the app's screens, in cascade order.
+ */
+
+@import "./base.css";
+@import "./parts.css";
+@import "./hero.css";
+@import "./window.css";
+@import "./steps.css";
+@import "./facts.css";
+@import "./sections.css";

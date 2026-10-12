@@ -1,0 +1,9 @@
+# Built scripts and styles, and the template previews, skip the site's Worker (see wrangler.jsonc),
+# so their headers live here. Built files carry a hash of their contents in their names, so
+# browsers can keep them for good.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/templates/*
+  X-Content-Type-Options: nosniff

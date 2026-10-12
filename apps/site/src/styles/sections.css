@@ -1,0 +1,439 @@
+/*
+ * The rest of the page: what makes Factwright different, the Run buttons, the templates, whose
+ * Claude does the work, questions, and the closing call.
+ */
+
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(28px, 4vw, 56px);
+  padding-top: clamp(72px, 10vw, 120px);
+}
+
+.pillar h2 {
+  margin-top: 18px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.pillar p {
+  margin-top: 8px;
+  color: var(--fw-muted);
+  font-size: 16px;
+  text-wrap: pretty;
+}
+
+.pillar-icon,
+.task-icon,
+.where-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.pillar-icon .icon,
+.task-icon .icon,
+.where-icon .icon {
+  width: 22px;
+  height: 22px;
+}
+
+@media (max-width: 760px) {
+  .pillars {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .pillar {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    column-gap: 16px;
+  }
+
+  .pillar-icon {
+    grid-row: span 2;
+  }
+
+  .pillar h2 {
+    margin-top: 9px;
+  }
+}
+
+.tasks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.task {
+  padding: 24px;
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+  background: var(--fw-surface);
+  transition:
+    transform 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    border-color 220ms ease;
+}
+
+.task:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--fw-accent) 30%, var(--fw-border));
+  box-shadow: var(--shadow-lift);
+}
+
+.task h3 {
+  margin-top: 18px;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.task p {
+  margin-top: 6px;
+  color: var(--fw-muted);
+  font-size: 15px;
+  text-wrap: pretty;
+}
+
+.tasks-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 32px;
+  color: var(--fw-muted);
+  font-size: 15.5px;
+  text-align: center;
+}
+
+.tasks-note .icon {
+  color: var(--fw-accent-text);
+}
+
+@media (max-width: 1000px) {
+  .tasks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .tasks {
+    grid-template-columns: 1fr;
+  }
+
+  .tasks-note {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+.templates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(20px, 3vw, 36px) clamp(16px, 2.4vw, 28px);
+}
+
+.template img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 612 / 792;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: var(--shadow-paper);
+  transition:
+    transform 260ms var(--ease-out),
+    box-shadow 260ms var(--ease-out);
+}
+
+.template:hover img {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lift);
+}
+
+.template h3 {
+  margin-top: 16px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.template p {
+  margin-top: 2px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  text-wrap: pretty;
+}
+
+.templates-note {
+  margin-top: 40px;
+  color: var(--fw-muted);
+  font-size: 15.5px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .templates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.where {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--fw-border);
+  border-radius: 22px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.where-col {
+  padding: clamp(24px, 3.4vw, 40px);
+}
+
+.where-col + .where-col {
+  border-left: 1px solid var(--fw-border);
+}
+
+.where-col h3 {
+  margin-top: 20px;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.where-col p {
+  margin-top: 8px;
+  color: var(--fw-muted);
+  font-size: 16px;
+  text-wrap: pretty;
+}
+
+.promises {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.promise {
+  padding: 22px;
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+}
+
+.promise > .icon {
+  width: 22px;
+  height: 22px;
+  color: var(--fw-accent-text);
+}
+
+.promise h3 {
+  margin-top: 14px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.promise p {
+  margin-top: 6px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  text-wrap: pretty;
+}
+
+@media (max-width: 1000px) {
+  .promises {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .where {
+    grid-template-columns: 1fr;
+  }
+
+  .where-col {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    column-gap: 16px;
+  }
+
+  .where-icon {
+    grid-row: span 2;
+  }
+
+  .where-col h3 {
+    margin-top: 9px;
+  }
+
+  .where-col + .where-col {
+    border-top: 1px solid var(--fw-border);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .promises {
+    grid-template-columns: 1fr;
+  }
+}
+
+.faq-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  gap: clamp(32px, 6vw, 96px);
+  align-items: start;
+}
+
+.faq-head {
+  position: sticky;
+  top: calc(var(--header) + 32px);
+  margin: 0;
+  text-align: left;
+}
+
+.faq details {
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.faq details:first-child {
+  border-top: 1px solid var(--fw-border);
+}
+
+.faq summary {
+  position: relative;
+  padding: 22px 44px 22px 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  list-style: none;
+  cursor: pointer;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A plus that turns into a minus. */
+.faq summary::before,
+.faq summary::after {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fw-muted);
+  content: "";
+  transition: transform 240ms var(--ease-out);
+}
+
+.faq summary::after {
+  transform: rotate(90deg);
+}
+
+.faq details[open] summary::after {
+  transform: rotate(0deg);
+}
+
+.faq summary:hover::before,
+.faq summary:hover::after {
+  background: var(--fw-text);
+}
+
+.faq details p {
+  max-width: 62ch;
+  padding-bottom: 24px;
+  color: var(--fw-muted);
+  font-size: 16.5px;
+  text-wrap: pretty;
+}
+
+@media (forced-colors: active) {
+  .faq summary::before,
+  .faq summary::after {
+    background: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (interpolate-size: allow-keywords) {
+    .faq {
+      interpolate-size: allow-keywords;
+    }
+
+    .faq details::details-content {
+      block-size: 0;
+      overflow: hidden;
+      transition:
+        block-size 300ms var(--ease-out),
+        content-visibility 300ms allow-discrete;
+    }
+
+    .faq details[open]::details-content {
+      block-size: auto;
+    }
+  }
+}
+
+@media (max-width: 860px) {
+  .faq-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .faq-head {
+    position: static;
+  }
+}
+
+.closing {
+  position: relative;
+  padding-block: clamp(104px, 14vw, 176px);
+  overflow: hidden;
+  isolation: isolate;
+  text-align: center;
+}
+
+.closing::before {
+  position: absolute;
+  inset: 10% 15%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--glow), transparent);
+  content: "";
+  filter: blur(30px);
+}
+
+.closing-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* The app's icon: the mark on a blue rounded square, as the Dock shows it. */
+.closing-icon {
+  width: 76px;
+  height: 76px;
+  margin-bottom: 28px;
+  filter: drop-shadow(0 10px 20px color-mix(in srgb, var(--fw-accent) 35%, transparent));
+}
+
+.closing h2 {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 6.4vw, 76px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.closing .lede {
+  max-width: 560px;
+  text-wrap: balance;
+}

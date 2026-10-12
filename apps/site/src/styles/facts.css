@@ -1,0 +1,231 @@
+/* The fact bank: a resume whose lines each open the fact behind them. */
+
+.trace {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(20px, 3vw, 32px);
+  align-items: start;
+}
+
+.resume {
+  padding: clamp(24px, 4vw, 48px);
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.resume-head {
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--fw-text);
+}
+
+.resume-name {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.resume-sub {
+  margin-top: 2px;
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.resume-section {
+  margin-top: 22px;
+  color: var(--fw-accent-text);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.resume-job {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: 16px;
+}
+
+.resume-job b {
+  font-weight: 650;
+}
+
+.resume-dates {
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.trace-hint {
+  margin-top: 14px;
+  color: var(--fw-muted);
+  font-size: 14px;
+}
+
+.resume-lines {
+  display: grid;
+  gap: 4px;
+  margin: 8px -12px 0;
+}
+
+.line {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 10px 14px 10px 30px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--fw-text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.line::before {
+  position: absolute;
+  top: calc(10px + 0.75em - 2.5px);
+  left: 15px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fw-muted);
+  content: "";
+}
+
+.line:hover {
+  background: var(--fw-hover);
+}
+
+.line[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--fw-accent) 35%, transparent);
+  background: var(--fw-accent-soft);
+}
+
+.line[aria-pressed="true"]::before {
+  background: var(--fw-accent);
+}
+
+@media (forced-colors: active) {
+  .line[aria-pressed="true"] {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+  }
+}
+
+.line mark {
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font-weight: 650;
+}
+
+.line[aria-pressed="true"] mark {
+  color: var(--fw-accent-text);
+}
+
+.fact-card {
+  position: sticky;
+  top: calc(var(--header) + 24px);
+  padding: 22px 24px;
+}
+
+/* On narrow screens the script moves the fact under the line picked. */
+.resume-lines .fact-card {
+  margin: 8px 0 12px;
+  padding: 18px;
+  border-color: color-mix(in srgb, var(--fw-accent) 30%, var(--fw-border));
+  box-shadow: none;
+}
+
+.fact .claim-title {
+  font-size: 19px;
+}
+
+.fact-why {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fact-why .icon {
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  stroke-width: 2.4;
+}
+
+.fact.is-entering {
+  animation: fact-in 320ms var(--ease-out);
+}
+
+@keyframes fact-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+
+.checks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: clamp(36px, 5vw, 56px);
+}
+
+.checks li {
+  display: flex;
+  gap: 10px;
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.checks .icon {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  color: var(--fw-ok);
+  stroke-width: 2.2;
+}
+
+.checks b {
+  display: block;
+  color: var(--fw-text);
+  font-weight: 650;
+}
+
+@media (max-width: 900px) {
+  .trace {
+    grid-template-columns: 1fr;
+  }
+
+  .fact-card {
+    position: static;
+  }
+
+  .checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .checks {
+    grid-template-columns: 1fr;
+  }
+}

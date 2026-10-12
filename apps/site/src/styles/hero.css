@@ -1,0 +1,122 @@
+/* The top of the page: the headline, and the stage the app's window sits on. */
+
+.hero {
+  position: relative;
+  padding-top: clamp(48px, 7vw, 88px);
+  overflow-x: clip;
+  isolation: isolate;
+}
+
+/* Faint graph paper behind the headline, fading out before the window. */
+.hero::before {
+  position: absolute;
+  inset: calc(var(--header) * -1) 0 auto;
+  z-index: -1;
+  height: 760px;
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  content: "";
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
+}
+
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.eyebrow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-surface);
+  box-shadow: 0 1px 2px rgb(27 27 25 / 0.04);
+  color: var(--fw-muted);
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.pulse-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fw-accent);
+}
+
+.pulse-dot::after {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--fw-accent);
+  content: "";
+  opacity: 0.35;
+  animation: ripple 2.4s ease-out infinite;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.45;
+  }
+
+  80%,
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.hero h1 {
+  margin-top: 24px;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 9vw + 6px, 88px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.hero h1 .soft {
+  color: var(--fw-muted);
+}
+
+.hero-lede {
+  max-width: 660px;
+  margin-top: 22px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.hero-note {
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.hero-shot {
+  position: relative;
+  max-width: 1140px;
+  margin-top: clamp(48px, 6vw, 72px);
+  container: shot / inline-size;
+}
+
+.hero-shot::before {
+  position: absolute;
+  inset: 4% 6% -4%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--glow), transparent);
+  content: "";
+  filter: blur(40px);
+}
