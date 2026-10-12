@@ -145,7 +145,8 @@ export function ClaudeSettingsDialog({
           <p className={styles.lead}>
             Opus is the most careful, and uses the most of your plan. Sonnet is quicker, and Haiku
             is the quickest. Each means the newest model of its kind. Effort is how long Claude
-            thinks before it acts: more is more careful, and uses more of your plan.
+            thinks before it acts: more is more careful and slower, and uses more of your plan.
+            Recommended suits your plan, and Max, the most careful, can take many minutes a run.
           </p>
           {plan === 'pro' &&
             ROUTINE.some((task) => (models.tasks[task] ?? models.main) === 'opus') && (
@@ -235,7 +236,7 @@ export function ClaudeSettingsDialog({
                     }
                   >
                     <option value="">
-                      {`${effort.main ? 'Same as everything' : 'Recommended'} (${EFFORT_NAMES[effortWithout(effort, task)]})`}
+                      {`${effort.main ? 'Same as everything' : 'Recommended'} (${EFFORT_NAMES[effortWithout(effort, task, plan)]})`}
                     </option>
                     {levels}
                   </Select>

@@ -173,7 +173,7 @@ export function registerIpc({
       session.start(valid, {
         prompt: run ? runPrompt(run) : undefined,
         model: modelFor(models, run),
-        effort: effortFor(effort, run),
+        effort: (plan) => effortFor(effort, run, plan),
         scope: scopeOf(run),
       }),
     );
@@ -190,7 +190,7 @@ export function registerIpc({
     const thinking = session.effort();
     if (
       differs(session.model(), modelFor(models, run)) ||
-      (thinking !== undefined && needsMore(thinking, effortFor(effort, run))) ||
+      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, session.plan()))) ||
       differs(session.scope(), scopeOf(run))
     ) {
       return { ok: false, reason: 'new-run' };

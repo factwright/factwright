@@ -88,15 +88,20 @@ describe('ClaudeSettingsDialog', () => {
     expect(select('Model for Find jobs')).toBeTruthy();
   });
 
-  it('shows each task’s recommended effort, mostly high, until the user chooses', async () => {
+  it('shows each task’s recommended effort for the plan, until the user chooses', async () => {
     const api = apiWith();
-    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
+    render(<ClaudeSettingsDialog api={api} plan="max" onClose={vi.fn()} />);
     await userEvent.click(await screen.findByText('Choose by task'));
     const option = (label: string) =>
       within(select(`Effort for ${label}`)).getAllByRole('option')[0]?.textContent;
+    expect(option('Tailored resume')).toBe('Recommended (Extra high)');
+    expect(option('Salary check')).toBe('Recommended (Extra high)');
+    expect(option('Find jobs')).toBe('Recommended (High)');
+    cleanup();
+    render(<ClaudeSettingsDialog api={api} plan="pro" onClose={vi.fn()} />);
+    await userEvent.click(await screen.findByText('Choose by task'));
     expect(option('Tailored resume')).toBe('Recommended (High)');
     expect(option('Salary check')).toBe('Recommended (Medium)');
-    expect(option('Find jobs')).toBe('Recommended (Medium)');
     await userEvent.selectOptions(select('Effort for Salary check'), 'xhigh');
     expect(api.setClaudeEffort).toHaveBeenLastCalledWith({
       main: null,
