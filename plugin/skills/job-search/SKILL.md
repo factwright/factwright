@@ -1,15 +1,23 @@
 ---
 name: job-search
-description: Search one source for jobs (Hacker News's monthly "Who is hiring?" thread, a company's job board on Greenhouse, Lever, Ashby or Gem, a careers page, or a job site's public listings, such as YC's Work at a Startup or Wellfound) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names a source to scan. Saves the source word for word, plus a ranked report the app shows as jobs to review.
-argument-hint: "[source: HN, a month like 2026-11, a job board link, or a careers page]"
+description: Search for jobs in one or more places (Hacker News's monthly "Who is hiring?" thread, LinkedIn's or Indeed's listings found through web search, companies' job boards on Greenhouse, Lever, Ashby or Gem, a company's careers page, or a job site's public listings, such as YC's Work at a Startup or Wellfound) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names places to search. Saves each source word for word, plus a ranked report the app shows as jobs to review.
+argument-hint: "[places, between · marks: HN or HN 2026-11, LinkedIn, Indeed, company job boards, a link, or a company's name]"
 ---
 
 # Job search
 
-One source per search. The input is the source, as a name or a link. If there's none, ask for it in one round of AskUserQuestion, with these options:
+The input names the places to search, between " · " marks, as the app's Find jobs dialog types them, such as `HN 2026-11 · LinkedIn · Acme Robotics`:
+- **HN**, or **HN** with a month as YYYY-MM: Hacker News's "Who is hiring?" thread, the newest unless a month is named.
+- **LinkedIn** and **Indeed:** their listings that fit `searches/criteria.md`, found through web search.
+- **company job boards:** openings on Greenhouse, Lever, Ashby and Gem that fit `searches/criteria.md`, found through web search.
+- Anything else is a link to a job board or careers page, or a company's name.
+
+If there's no input, ask for the places in one round of AskUserQuestion, with these options:
 - **The newest HN "Who is hiring?" thread (Recommended)**
 - **A company's job board:** the user pastes a link to it.
 - **A careers page or job site:** the user pastes the link.
+
+Each place is a search of its own, with its own folder, so the app can show which jobs each one found. With several places, search them in turn, in the order given, and finish one before starting the next. A job one place already found is the same job when another finds it too: `find_job` says so. Note it in its flags ("also on HN") rather than ranking it twice.
 
 Before starting, read:
 - `searches/criteria.md`: the user's filters, preferences, pay rule, scoring and tiers. It's binding for searches. The app writes it from what the user told it (Profile → What you want); if the user asks to change it, edit it here, and the app leaves it as edited.
@@ -20,11 +28,19 @@ Before starting, read:
 - the newest `searches/*/jobs.json` and `report.md`, if there are any. Keep their shape.
 
 ## 1. Collect
-- Folder: `searches/<YYYY-MM>-<source>/`, lowercase with hyphens, such as `2026-11-hn-whos-hiring` or `2026-11-acme-board`. The tools save into it.
+- Folder, lowercase with hyphens, which the tools save into:
+  - **HN:** `searches/<YYYY-MM>-hn-whos-hiring/`, by the thread's month, such as `2026-11-hn-whos-hiring`. Searching the same thread again refreshes its folder.
+  - **Everywhere else:** `searches/<YYYY-MM-DD>-<place>/`, by today's date, such as `2026-11-03-linkedin`, `2026-11-03-company-job-boards` or `2026-11-03-acme-robotics`.
 - Save every listing in the source, word for word:
-  - **HN "Who is hiring?":** call `hn_jobs`, with the month if the user named one. It saves every post as `hn-thread.md`, and lists each post's first line and HN id, plus the lines each run of 50 posts spans in the file.
+  - **HN "Who is hiring?":** call `hn_jobs`, with the month if one was named. It saves every post as `hn-thread.md`, and lists each post's first line and HN id, plus the lines each run of 50 posts spans in the file.
     - The thread goes up on the first weekday of each month and fills in over the next few days. A search in the first days misses late posts, so say so.
+  - **LinkedIn or Indeed:** never open their pages, and never sign in. Factwright's tools refuse LinkedIn's pages, since its terms forbid software reading them.
+    - Search the web instead, with WebSearch, for listings on the site that fit criteria.md: its roles, levels and places, such as `site:linkedin.com/jobs "staff engineer" remote`. Run a few searches, one per kind of role, and keep what's been posted in the last few weeks.
+    - The search results are the source. Save their titles, companies, links and snippets in `listings.md` in the folder.
+    - Each job is then read on the employer's own site in step 3. A listing you can't find there stays out of the ranking, as a near miss that couldn't be checked.
+  - **Company job boards:** search the web the same way for openings on the applicant systems that fit criteria.md, such as `site:jobs.ashbyhq.com "staff engineer" remote`, `site:jobs.lever.co`, `site:boards.greenhouse.io` and `site:job-boards.greenhouse.io`. Save the results in `listings.md`. Read each opening with `job_board` in step 3.
   - **A company's board on Greenhouse, Lever, Ashby or Gem:** call `job_board` with the board's link. It saves the whole board as one file and lists every job.
+  - **A company's name:** find its careers page or job board with a web search, then read it as a link.
   - **Anything else** (a careers page, a job site's public listings): read it with `read_page`. The user may have to OK each page, so read only what the source needs. Never sign in anywhere for a search.
 - Count as you go, for the funnel: listings in the source → pass the location filter → pass every filter → ranked.
 
@@ -65,7 +81,7 @@ Write `jobs.json` in the search's folder. The app reads it and lists each ranked
 {
   "meta": {
     "title": "November HN shortlist",
-    "source": "HN November 2026",           // the app shows it as where the job was found
+    "source": "HN November 2026",           // the search's name in the app: the place, then the month for HN or the day for the rest, such as "LinkedIn Nov 3"
     "checked": "2026-11-03",
     "threadUrl": "",
     "lede": "",
@@ -104,10 +120,10 @@ Then write `report.md` in the folder, for reading:
 - exact posting links throughout
 
 ## 5. Deliver
-Reply in 6 lines or fewer:
-- the funnel, in one line
+Reply in 6 lines or fewer, plus a line for each place after the first:
+- the funnel, in one line per place
 - the top 3, with scores
-- anything odd about the source
-- the next step: the ranked jobs are in the app under **To review**, and each job's panel runs `/factwright:fit-check` or `/factwright:focused-resume` on it.
+- anything odd about a source
+- the next step: the ranked jobs are in the app under **To review**, each place as a search of its own to filter by, and each job's panel runs `/factwright:fit-check` or `/factwright:focused-resume` on it.
 
 The app picks up the search on its own. There's nothing to commit or sync.

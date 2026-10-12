@@ -8,27 +8,23 @@ import {
   type Call,
   type CallKind,
   callWhen,
+  dayFrom,
   type Job,
+  type JobProgress,
   type JobStatus,
   SETTLED_STATUSES,
   STATUS_RANK,
   shortDate,
 } from '@factwright/core';
-import {
-  Button,
-  Field,
-  IconButton,
-  Input,
-  JOB_STATUS_DISPLAY,
-  Select,
-  TextArea,
-} from '@factwright/ui';
-import { X } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Button, Field, IconButton, Input, JOB_STATUS_DISPLAY, Select } from '@factwright/ui';
+import { History, Route, X } from 'lucide-react';
+import { type FormEvent, useCallback, useEffect, useId, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import panel from './JobPanel.module.css';
 import styles from './JobTracking.module.css';
+import { PanelSection } from './PanelSection.tsx';
+import { StageTrack } from './StageTrack.tsx';
 
 /** Runs an edit, and keeps its problem, if any, to show beside the control. */
 function useEdit() {
@@ -269,161 +265,93 @@ function CallItem({ call, api, today }: { call: Call; api: FactwrightApi; today:
   );
 }
 
-/** The calls and interviews logged for a job, and a form to log another. */
-export function CallsSection({
+/** Where a job stands in a few words, for its Progress heading: "Screen since Oct 9". */
+export function progressSummary(job: Job, progress: JobProgress, today: string): string {
+  const { label } = JOB_STATUS_DISPLAY[progress.status];
+  const call = progress.nextCall;
+  if (call) return `${CALL_KIND_LABELS[call.kind]} ${dayFrom(call.onDate, today)}`;
+  if (progress.status === 'new') return 'Not applied yet';
+  const since = job.statusOn ?? job.appliedOn;
+  return since ? `${label} since ${shortDate(since, today)}` : label;
+}
+
+/**
+ * How far the job has come, step by step with each date, then the calls and interviews logged
+ * for it and a form to log another. A logged call moves the job along.
+ */
+export function ProgressSection({
   job,
-  status,
+  progress,
   api,
   today,
 }: {
   job: Job;
-  status: JobStatus;
+  progress: JobProgress;
   api: FactwrightApi;
   today: string;
 }) {
   const [logging, setLogging] = useState(false);
+  const { problem, run } = useEdit();
+  const upcoming = job.calls.filter((call) => call.state === 'scheduled' && call.onDate >= today);
+  const others = job.calls.filter((call) => !upcoming.includes(call));
   return (
-    <section className={panel.section}>
-      <div className={styles.sectionHead}>
-        <h3 className={panel.heading}>Calls and interviews</h3>
-        {!logging && (
+    <PanelSection
+      id="progress"
+      title="Progress"
+      icon={<Route size={15} />}
+      summary={progressSummary(job, progress, today)}
+      actions={
+        !logging && (
           <Button size="sm" onClick={() => setLogging(true)}>
             Log a call
           </Button>
-        )}
-      </div>
+        )
+      }
+    >
+      <StageTrack job={job} progress={progress} api={api} today={today} run={run} />
+      <Problem message={problem} />
       {job.calls.length > 0 && (
-        <ul className={styles.calls}>
-          {job.calls.map((call) => (
-            <CallItem key={call.id} call={call} api={api} today={today} />
-          ))}
-        </ul>
+        <>
+          <h4 className={styles.subheading}>Calls and interviews</h4>
+          <ul className={styles.calls}>
+            {[...upcoming, ...others].map((call) => (
+              <CallItem key={call.id} call={call} api={api} today={today} />
+            ))}
+          </ul>
+        </>
       )}
-      {job.calls.length === 0 && !logging && <p className={panel.quiet}>None logged yet.</p>}
       {logging && (
         <LogCallForm
           job={job}
-          status={status}
+          status={progress.status}
           api={api}
           today={today}
           onDone={() => setLogging(false)}
         />
       )}
-    </section>
+    </PanelSection>
   );
 }
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
-
-const SAVE_LABELS: Readonly<Record<SaveState, string>> = {
-  idle: 'Saves as you type',
-  saving: 'Saving…',
-  saved: 'Saved',
-  failed: 'Couldn’t save. Keep typing to try again.',
-};
-
-/**
- * The user's own notes on a job. They save a moment after typing stops, when the box loses
- * focus, and when the panel moves on to another job. Notes changed elsewhere, such as on
- * another computer, show up here too, unless the user is in the box.
- */
-export function NotesSection({ job, api }: { job: Job; api: FactwrightApi }) {
-  const [text, setText] = useState(job.notes ?? '');
-  const [state, setState] = useState<SaveState>('idle');
-  const pending = useRef<string | null>(null);
-  const focused = useRef(false);
-  /** Notes that changed elsewhere while the user was in the box, to show once they leave it. */
-  const outside = useRef<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const id = useId();
-  const jobId = job.id;
-
-  const save = useCallback(async () => {
-    clearTimeout(timer.current);
-    const notes = pending.current;
-    if (notes === null) return;
-    pending.current = null;
-    setState('saving');
-    const result = await api.updateJob(jobId, { notes });
-    setState(result.ok ? 'saved' : 'failed');
-  }, [api, jobId]);
-
-  // Whatever is still waiting saves when the panel closes or moves to another job.
-  useEffect(() => () => void save(), [save]);
-
-  useEffect(() => {
-    const latest = job.notes ?? '';
-    if (focused.current || pending.current !== null) outside.current = latest;
-    else setText(latest);
-  }, [job.notes]);
-
-  return (
-    <section className={panel.section}>
-      <div className={styles.sectionHead}>
-        <label htmlFor={id} className={panel.heading}>
-          Your notes
-        </label>
-        <span className={styles.saveState} aria-live="polite">
-          {SAVE_LABELS[state]}
-        </span>
-      </div>
-      <TextArea
-        id={id}
-        className={styles.notes}
-        rows={4}
-        value={text}
-        maxLength={LIMITS.notes}
-        placeholder="Names, what they asked, anything to remember"
-        onChange={(event) => {
-          setText(event.target.value);
-          pending.current = event.target.value;
-          clearTimeout(timer.current);
-          timer.current = setTimeout(() => void save(), 800);
-        }}
-        onFocus={() => {
-          focused.current = true;
-        }}
-        onBlur={() => {
-          focused.current = false;
-          // Untouched since a change came from elsewhere: show that change.
-          if (pending.current === null && outside.current !== null) setText(outside.current);
-          outside.current = null;
-          void save();
-        }}
-      />
-    </section>
-  );
-}
-
-interface HistoryEntry {
+interface ActivityEntry {
   id: string;
   date: string | null;
   text: string;
-  /** For a change of status: its id, so its date can be fixed or the change undone. */
-  changeId?: string;
 }
 
-/** Everything that happened with the job, newest first. Changes of status can be fixed or undone. */
-export function HistorySection({
-  job,
-  api,
-  today,
-}: {
-  job: Job;
-  api: FactwrightApi;
-  today: string;
-}) {
-  const { problem, run } = useEdit();
-  const latest = job.statusLog.at(-1);
-  const entries: HistoryEntry[] = [
+/**
+ * Everything that happened with the job, newest first: what Claude did, each change of status
+ * and each call that's taken place. Dates of changes are fixed in Progress.
+ */
+export function ActivitySection({ job, today }: { job: Job; today: string }) {
+  const entries: ActivityEntry[] = [
     ...job.events.map((event) => ({ id: event.id, date: event.date, text: event.title })),
     ...job.statusLog.map((change) => ({
       id: change.id,
       date: change.at,
       text: `Marked ${JOB_STATUS_DISPLAY[change.status].label}`,
-      changeId: change.id,
     })),
-    // Calls still to come are under "Calls and interviews", not history yet.
+    // Calls still to come are in Progress, not history yet.
     ...job.calls
       .filter((call) => call.onDate <= today)
       .map((call) => ({
@@ -434,50 +362,22 @@ export function HistorySection({
   ].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
   if (entries.length === 0) return null;
   return (
-    <section className={panel.section}>
-      <h3 className={panel.heading}>History</h3>
+    <PanelSection
+      id="activity"
+      title="Activity"
+      icon={<History size={15} />}
+      summary={entries.length === 1 ? '1 thing so far' : `${entries.length} things so far`}
+      closedAtFirst
+    >
       <ol className={styles.history}>
         {entries.map((entry) => (
           <li key={entry.id}>
-            <span className={styles.when}>
-              {entry.changeId && entry.date ? (
-                <Input
-                  className={styles.whenInput}
-                  type="date"
-                  max={today}
-                  aria-label={`When it was ${entry.text.toLowerCase()}`}
-                  value={entry.date}
-                  onChange={(event) => {
-                    const at = event.target.value;
-                    if (at && entry.changeId) void run(api.redateStatusChange(entry.changeId, at));
-                  }}
-                />
-              ) : (
-                entry.date && shortDate(entry.date, today)
-              )}
-            </span>
+            <span className={styles.when}>{entry.date && shortDate(entry.date, today)}</span>
             <span className={styles.what}>{entry.text}</span>
-            {entry.changeId && entry.changeId === latest?.id && (
-              <Button
-                variant="quiet"
-                size="sm"
-                aria-label={`Undo “${entry.text}”`}
-                onClick={() => void run(api.undoStatusChange(latest.id))}
-              >
-                Undo
-              </Button>
-            )}
           </li>
         ))}
       </ol>
-      {latest && (
-        <p className={styles.hint}>
-          Fix a date if you marked something late. Undo takes back the latest change and puts the
-          job where it was.
-        </p>
-      )}
-      <Problem message={problem} />
-    </section>
+    </PanelSection>
   );
 }
 

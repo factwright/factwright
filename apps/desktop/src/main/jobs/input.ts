@@ -1,5 +1,12 @@
 import { CALL_KINDS, CALL_OUTCOMES, CALL_STATES, isIsoDate, JOB_STATUSES } from '@factwright/core';
-import type { CallChanges, JobChanges, NewCall, NewJob } from '../../shared/api.ts';
+import type {
+  CallChanges,
+  JobChanges,
+  NewCall,
+  NewJob,
+  NewNote,
+  NoteChanges,
+} from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 
 /** A value the window sent that doesn't fit the field. */
@@ -78,7 +85,7 @@ export function parseJobChanges(value: unknown): JobChanges | null {
     appliedOn: orNull(date),
     nextAction: textUpTo(LIMITS.nextAction),
     nextOn: orNull(date),
-    notes: textUpTo(LIMITS.notes),
+    earlierNotes: textUpTo(LIMITS.notes),
     questions: textsUpTo(LIMITS.question, LIMITS.questions),
     archived: flag,
   });
@@ -116,6 +123,18 @@ export function parseCallChanges(value: unknown): CallChanges | null {
     outcome: orNull(oneOf(CALL_OUTCOMES)),
     notes: textUpTo(LIMITS.callNotes),
   });
+}
+
+export function parseNewNote(value: unknown): NewNote | null {
+  const fields = readFields<Required<NewNote>>(value, {
+    text: anyTextUpTo(LIMITS.note),
+    on: date,
+  });
+  return fields?.text ? { ...fields, text: fields.text } : null;
+}
+
+export function parseNoteChanges(value: unknown): NoteChanges | null {
+  return readFields<Required<NoteChanges>>(value, { text: anyTextUpTo(LIMITS.note), on: date });
 }
 
 /** A date sent on its own, such as when a change of status happened. */

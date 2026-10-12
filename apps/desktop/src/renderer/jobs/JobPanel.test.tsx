@@ -22,7 +22,11 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Which sections the user closed, kept for next time.
+  localStorage.clear();
+});
 
 const byCompany = (company: string): Job => {
   const job = sampleJobs().find((each) => each.company === company);
@@ -30,7 +34,11 @@ const byCompany = (company: string): Job => {
   return job;
 };
 
-function panel(job: Job | null, api: Partial<FactwrightApi> = {}) {
+function panel(
+  job: Job | null,
+  api: Partial<FactwrightApi> = {},
+  props: Partial<Parameters<typeof JobPanel>[0]> = {},
+) {
   const fullApi = {
     updateJob: vi.fn(async () => ({ ok: true as const })),
     jobDocs: vi.fn(async () => (job ? sampleDocs(job) : null)),
@@ -40,7 +48,9 @@ function panel(job: Job | null, api: Partial<FactwrightApi> = {}) {
   } as unknown as FactwrightApi;
   const onClose = vi.fn();
   const row = job ? (jobRows([job], TODAY)[0] ?? null) : null;
-  const view = render(<JobPanel row={row} api={fullApi} today={TODAY} onClose={onClose} />);
+  const view = render(
+    <JobPanel row={row} api={fullApi} today={TODAY} onClose={onClose} {...props} />,
+  );
   return { api: fullApi, onClose, ...view };
 }
 
@@ -137,5 +147,99 @@ describe('JobPanel', () => {
     screen.getByRole('combobox').focus();
     await userEvent.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens and closes each section, and keeps it as left for the next job', async () => {
+    panel(byCompany('Northwind Labs'));
+    const fit = screen.getByRole('button', { name: /^Fit/ });
+    expect(fit.getAttribute('aria-expanded')).toBe('true');
+    expect(fit.textContent).toContain('Strong 86');
+    await userEvent.click(fit);
+    expect(fit.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('heading', { name: 'Why it scored 86' })).toBeNull();
+    cleanup();
+    panel(byCompany('Acme Robotics'));
+    expect(screen.getByRole('button', { name: /^Fit/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    // A heading still names each section for screen readers.
+    expect(screen.getByRole('heading', { name: 'Progress' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Notes' })).toBeTruthy();
+  });
+
+  it('gives the job the window, moves through the list, and Escape puts it back', async () => {
+    const onExpand = vi.fn();
+    panel(byCompany('Northwind Labs'), {}, { onExpand });
+    await userEvent.click(screen.getByRole('button', { name: 'Expand' }));
+    expect(onExpand).toHaveBeenCalledWith(true);
+    cleanup();
+    const onStep = vi.fn();
+    const { onClose } = panel(
+      byCompany('Northwind Labs'),
+      {},
+      { onExpand, expanded: true, navigation: { index: 2, count: 3, onStep } },
+    );
+    expect(screen.getByText('2 of 3')).toBeTruthy();
+    // No pressed state on top of the label that says what the button does.
+    expect(
+      screen.getByRole('button', { name: 'Show beside the list' }).getAttribute('aria-pressed'),
+    ).toBeNull();
+    // Its Progress and Notes sit beside what's known about the job.
+    expect(screen.getByRole('complementary', { name: 'Job details' }).className).toMatch(
+      /expanded/,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Next job' }));
+    expect(onStep).toHaveBeenCalledWith(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Previous job' }));
+    expect(onStep).toHaveBeenCalledWith(-1);
+    // Focus moved into the job when it took the window, so Escape works right away.
+    await userEvent.keyboard('{Escape}');
+    expect(onExpand).toHaveBeenLastCalledWith(false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps what’s open and typed when the job takes the window, and when it goes back', async () => {
+    const job = byCompany('Harbor & Pine');
+    const row = jobRows([job], TODAY)[0] ?? null;
+    const api = {
+      jobDocs: vi.fn(async () => sampleDocs(job)),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    } as unknown as FactwrightApi;
+    const shown = (expanded: boolean) => (
+      <JobPanel
+        row={row}
+        api={api}
+        today={TODAY}
+        onClose={() => {}}
+        expanded={expanded}
+        onExpand={() => {}}
+      />
+    );
+    const { rerender } = render(shown(false));
+    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Notes, if any' }), 'With the CTO');
+    rerender(shown(true));
+    expect((screen.getByRole('textbox', { name: 'Notes, if any' }) as HTMLInputElement).value).toBe(
+      'With the CTO',
+    );
+    rerender(shown(false));
+    expect((screen.getByRole('textbox', { name: 'Notes, if any' }) as HTMLInputElement).value).toBe(
+      'With the CTO',
+    );
+  });
+
+  it('keeps the keyboard’s focus on an arrow at the list’s end', async () => {
+    const onStep = vi.fn();
+    panel(
+      byCompany('Northwind Labs'),
+      {},
+      { expanded: true, onExpand: () => {}, navigation: { index: 3, count: 3, onStep } },
+    );
+    const next = screen.getByRole('button', { name: 'Next job' });
+    expect(next.getAttribute('aria-disabled')).toBe('true');
+    next.focus();
+    await userEvent.click(next);
+    expect(onStep).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(next);
   });
 });

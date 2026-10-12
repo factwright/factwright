@@ -1,0 +1,191 @@
+import { Button, Dialog, DialogActions, Input, Select } from '@factwright/ui';
+import { type FormEvent, useId, useState } from 'react';
+import {
+  COMMAND_LINE_MARKS,
+  SEARCH_SITES,
+  type SearchSite,
+  type SearchSources,
+  searchCompany,
+} from '../../shared/runs.ts';
+import { usePref } from '../prefs.ts';
+import styles from './FindJobsDialog.module.css';
+
+/** Each place to look, as the dialog offers it. */
+const PLACES: Readonly<Record<SearchSite, { name: string; about: string }>> = {
+  hn: {
+    name: 'Hacker News: Who is hiring?',
+    about: 'The monthly thread where hundreds of startups post. Your Claude reads all of it.',
+  },
+  linkedin: {
+    name: 'LinkedIn',
+    about:
+      'Postings found through a web search, each read on the employer’s own site. Factwright never opens LinkedIn or signs in.',
+  },
+  indeed: {
+    name: 'Indeed',
+    about: 'Listings found through a web search, each read on the employer’s own site.',
+  },
+  boards: {
+    name: 'Company job boards',
+    about: 'Openings on Greenhouse, Lever, Ashby and Gem, straight from the companies hiring.',
+  },
+};
+
+const MONTH_NAME = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** This month's thread and the three before, by YYYY-MM, newest first. */
+function recentMonths(today: string): { value: string; label: string }[] {
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7)) - 1;
+  return [0, 1, 2, 3].map((back) => {
+    const date = new Date(Date.UTC(year, month - back, 1));
+    return { value: date.toISOString().slice(0, 7), label: MONTH_NAME.format(date) };
+  });
+}
+
+const isSites = (value: unknown): value is SearchSite[] =>
+  Array.isArray(value) &&
+  value.every((site) => (SEARCH_SITES as readonly unknown[]).includes(site));
+
+/**
+ * Where to look for jobs: HN's monthly thread, LinkedIn, Indeed, companies' job boards, and a
+ * company the user has in mind. Each place is a search of its own, so its jobs can be seen
+ * together later. The places picked are kept for next time.
+ */
+export function FindJobsDialog({
+  today,
+  onStart,
+  onClose,
+}: {
+  today: string;
+  onStart: (sources: SearchSources) => void;
+  onClose: () => void;
+}) {
+  const [sites, setSites] = usePref<SearchSite[]>('search.sites', ['hn'], isSites);
+  const [month, setMonth] = useState('');
+  const [naming, setNaming] = useState(false);
+  const [company, setCompany] = useState('');
+  const companyId = useId();
+  const hintId = useId();
+  const named = naming ? searchCompany(company) : null;
+  const badCompany = naming && company.trim() !== '' && named === null;
+  const count = sites.length + (named ? 1 : 0);
+  const ready = count > 0 && !(naming && !named);
+
+  const toggle = (site: SearchSite, on: boolean) =>
+    setSites(SEARCH_SITES.filter((each) => (each === site ? on : sites.includes(each))));
+
+  const start = (event: FormEvent, close: () => void) => {
+    event.preventDefault();
+    if (!ready) return;
+    onStart({
+      sites,
+      ...(month && sites.includes('hn') && { month }),
+      ...(named && { company: named }),
+    });
+    close();
+  };
+
+  return (
+    <Dialog
+      title="Find jobs"
+      description="Pick where your Claude looks. It checks each job against what you want and your fact bank, and the ones that fit land in To review."
+      onClose={onClose}
+    >
+      {(close) => (
+        <form className={styles.form} onSubmit={(event) => start(event, close)}>
+          <fieldset className={styles.places}>
+            <legend className={styles.legend}>Where to look</legend>
+            {SEARCH_SITES.map((site) => {
+              const picked = sites.includes(site);
+              const { name, about } = PLACES[site];
+              return (
+                <div key={site} className={`${styles.place} ${picked ? styles.picked : ''}`}>
+                  <label className={styles.pick}>
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      onChange={(event) => toggle(site, event.target.checked)}
+                    />
+                    <span className={styles.text}>
+                      <span className={styles.name}>{name}</span>
+                      <span className={styles.about}>{about}</span>
+                    </span>
+                  </label>
+                  {site === 'hn' && picked && (
+                    <Select
+                      className={styles.month}
+                      aria-label="Which month’s thread"
+                      value={month}
+                      onChange={(event) => setMonth(event.target.value)}
+                    >
+                      <option value="">The newest thread</option>
+                      {recentMonths(today).map(({ value, label }) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </div>
+              );
+            })}
+            <div className={`${styles.place} ${naming ? styles.picked : ''}`}>
+              <label className={styles.pick}>
+                <input
+                  type="checkbox"
+                  checked={naming}
+                  onChange={(event) => setNaming(event.target.checked)}
+                />
+                <span className={styles.text}>
+                  <span className={styles.name}>A company you have in mind</span>
+                  <span className={styles.about}>
+                    What it’s hiring for, from its own jobs page.
+                  </span>
+                </span>
+              </label>
+              {naming && (
+                <div className={styles.extra}>
+                  <label htmlFor={companyId} className={styles.legend}>
+                    The company
+                  </label>
+                  <Input
+                    id={companyId}
+                    autoFocus
+                    value={company}
+                    maxLength={500}
+                    placeholder="Its name, or a link to its jobs page"
+                    aria-describedby={hintId}
+                    aria-invalid={badCompany}
+                    onChange={(event) => setCompany(event.target.value)}
+                  />
+                  <p id={hintId} className={badCompany ? styles.problem : styles.hint}>
+                    {!badCompany
+                      ? 'Such as Acme Robotics, or https://jobs.lever.co/acme.'
+                      : /^https:/i.test(company.trim()) && COMMAND_LINE_MARKS.test(company)
+                        ? 'A link with % or ! in it can’t be passed on. Type the company’s name instead.'
+                        : 'Type a company’s name, or a link that starts with https://.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </fieldset>
+          <p className={styles.hint}>
+            Each place is a search of its own, so you can see its jobs together later, under Found
+            by. The more places, the longer it takes.
+          </p>
+          <DialogActions>
+            <Button onClick={close}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={!ready}>
+              {count > 1 ? `Search ${count} places` : 'Search'}
+            </Button>
+          </DialogActions>
+        </form>
+      )}
+    </Dialog>
+  );
+}

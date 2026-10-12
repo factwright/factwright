@@ -338,11 +338,11 @@ export function AskSection({
   const asks = [...job.asks].reverse();
 
   return (
-    <section className={panel.section} aria-labelledby={`ask-heading-${job.id}`}>
+    <section className={panel.part} aria-labelledby={`ask-heading-${job.id}`}>
       <div className={tracking.sectionHead}>
-        <h3 id={`ask-heading-${job.id}`} className={panel.heading}>
+        <h4 id={`ask-heading-${job.id}`} className={panel.subheading}>
           Ask Claude
-        </h3>
+        </h4>
         {run && (
           <Button size="sm" disabled={busy} onClick={() => setAsking(true)}>
             Ask a question

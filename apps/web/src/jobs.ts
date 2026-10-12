@@ -7,6 +7,7 @@ import {
   type JobView,
   jobProgress,
   nextStep,
+  startingView as viewToOpen,
 } from '@factwright/core';
 
 /** A job as the phone's list shows it: the job, where it stands, and its next step. */
@@ -15,14 +16,6 @@ export interface PhoneRow {
   progress: JobProgress;
   next: Attention | null;
 }
-
-export const VIEW_LABELS: Readonly<Record<JobView, string>> = {
-  active: 'Active',
-  review: 'To review',
-  applied: 'Applied',
-  closed: 'Closed',
-  all: 'All',
-};
 
 const URGENCY = { urgent: 0, action: 1, info: 2 } as const;
 
@@ -53,7 +46,8 @@ export function visible(rows: readonly PhoneRow[], view: JobView, query: string)
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   return rows.filter(({ job, progress }) => {
     if (!isInView(view, progress.status)) return false;
-    const text = `${job.company} ${job.role} ${job.notes ?? ''}`.toLowerCase();
+    const notes = [job.earlierNotes ?? '', ...job.notes.map((note) => note.text)].join(' ');
+    const text = `${job.company} ${job.role} ${notes}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }
@@ -68,6 +62,6 @@ export function viewCounts(rows: readonly PhoneRow[]): Record<JobView, number> {
   ) as Record<JobView, number>;
 }
 
-/** Opens on the active jobs, or on the ones to review before any are active. */
+/** Opens on the furthest view with jobs in it, such as the interviews. */
 export const startingView = (rows: readonly PhoneRow[]): JobView =>
-  viewCounts(rows).active > 0 ? 'active' : 'review';
+  viewToOpen(rows.map((row) => row.progress.status));

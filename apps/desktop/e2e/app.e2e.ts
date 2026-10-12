@@ -40,11 +40,12 @@ async function closeRun() {
 
 test('shows the jobs on file, and your Claude ready', async () => {
   const { window } = opened;
+  // It opens on the jobs furthest along: Acme, checked with a resume, is the next to apply to.
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
   await pickView(/^To review/);
   await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toBeVisible();
-  await pickView(/^Active/);
+  await pickView(/^To apply/);
 });
 
 test('checks its setup with Claude Code quietly, and it passes', async () => {
@@ -63,15 +64,21 @@ test('checks its setup with Claude Code quietly, and it passes', async () => {
   await expect(opened.window.getByText('Setup check failed')).toHaveCount(0);
 });
 
-test('tracks a job: its status and notes', async () => {
+test('tracks a job: its status, dated, and a note', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
   await window.getByRole('combobox', { name: 'Status for Acme Robotics' }).selectOption('applied');
-  await window
-    .getByPlaceholder('Names, what they asked, anything to remember')
-    .fill('Recruiter: Sam');
   await expect(window.getByRole('combobox', { name: 'Status for Acme Robotics' })).toHaveValue(
     'applied',
+  );
+  // The step it took shows in Progress, dated today, ready to fix.
+  await expect(
+    jobPanel().getByRole('button', { name: /^When you applied: .+\. Change it$/ }),
+  ).toBeVisible();
+  await jobPanel().getByRole('textbox', { name: 'New note' }).fill('Recruiter: Sam');
+  await jobPanel().getByRole('button', { name: 'Add note' }).click();
+  await expect(jobPanel().getByRole('list', { name: 'Your notes' })).toContainText(
+    'Recruiter: Sam',
   );
 });
 
@@ -168,16 +175,34 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
   await closeRun();
 });
 
-test('finds jobs', async () => {
+test('finds jobs where the user picks, and keeps each search’s jobs together', async () => {
   const { window } = opened;
   // Done with Acme. In a narrow window, a job's details cover the page's buttons.
   await window.getByRole('button', { name: 'Close details' }).click();
   await window.getByRole('button', { name: 'Find jobs' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Find jobs' });
+  await dialog.getByRole('checkbox', { name: /^LinkedIn/ }).check();
+  await dialog.getByRole('button', { name: 'Search 2 places' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
-  expect(await terminalText(window)).toContain('/factwright:job-search');
+  // The app types the places picked, in its own words.
+  expect(await terminalText(window)).toContain('/factwright:job-search HN · LinkedIn');
   // A search reads a lot and weighs it lightly, so it thinks at high.
   expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();
+  // The LinkedIn search's job is under To review, saying which search found it now there are
+  // two, and the search can be picked on its own.
+  await pickView(/^To review/);
+  await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toContainText(
+    'LinkedIn Oct 12',
+  );
+  await window
+    .getByRole('combobox', { name: 'Found by' })
+    .selectOption({ label: 'LinkedIn Oct 12 (1)' });
+  await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toBeVisible();
+  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toHaveCount(0);
+  await window
+    .getByRole('combobox', { name: 'Found by' })
+    .selectOption({ label: 'Found anywhere' });
 });
 
 test('adds a job by hand', async () => {
@@ -199,7 +224,7 @@ test('keeps everything tracked after a restart', async () => {
   await expect(window.getByRole('combobox', { name: 'Status for Acme Robotics' })).toHaveValue(
     'applied',
   );
-  await expect(window.getByPlaceholder('Names, what they asked, anything to remember')).toHaveValue(
+  await expect(jobPanel().getByRole('list', { name: 'Your notes' })).toContainText(
     'Recruiter: Sam',
   );
   await jobPanel().getByText('Why Acme?', { exact: true }).click();
@@ -213,6 +238,10 @@ test('explains the first run’s question about trusting the workspace', async (
   opened = await openApp(dataDir, { FAKE_CLAUDE_TRUST: 'ask' });
   const { window } = opened;
   await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
   const panel = claudePanel();
   await expect(panel.getByRole('note')).toContainText(
     'Use the arrow keys to pick “Yes, I trust this folder”',

@@ -11,7 +11,7 @@ const JOBS = [
     status: 'applied',
     statusOn: '2026-10-09',
     appliedOn: '2026-10-09',
-    notes: 'Recruiter: Sam Lee',
+    notes: [{ id: 'n1', on: '2026-10-09', text: 'Recruiter: Sam Lee', at: '2026-10-09T17:00Z' }],
   }),
   job({
     id: 'birch--lead',
@@ -70,26 +70,35 @@ describe('the phone’s job list', () => {
 
   it('shows each view’s jobs, and counts them', () => {
     const rows = phoneRows(JOBS, TODAY);
-    expect(companies(visible(rows, 'active', ''))).toEqual([
-      'Birch Health',
-      'Fable Co',
-      'Acme Robotics',
-    ]);
+    expect(companies(visible(rows, 'applied', ''))).toEqual(['Fable Co', 'Acme Robotics']);
+    expect(companies(visible(rows, 'interviewing', ''))).toEqual(['Birch Health']);
     expect(companies(visible(rows, 'review', ''))).toEqual(['Cobalt']);
     expect(companies(visible(rows, 'closed', ''))).toEqual(['Delta Freight']);
-    expect(viewCounts(rows)).toEqual({ active: 3, review: 1, applied: 3, closed: 1, all: 5 });
+    expect(viewCounts(rows)).toEqual({
+      review: 1,
+      apply: 0,
+      applied: 2,
+      interviewing: 1,
+      closed: 1,
+      all: 5,
+    });
   });
 
   it('searches companies, roles and notes, for every word typed', () => {
     const rows = phoneRows(JOBS, TODAY);
     expect(companies(visible(rows, 'all', 'recruiter  SAM'))).toEqual(['Acme Robotics']);
+    const earlier = phoneRows(
+      [job({ id: 'g--s', company: 'Gale', earlierNotes: 'Met Priya' })],
+      TODAY,
+    );
+    expect(companies(visible(earlier, 'all', 'priya'))).toEqual(['Gale']);
     expect(companies(visible(rows, 'all', 'lead'))).toEqual(['Birch Health']);
     expect(companies(visible(rows, 'all', 'acme lead'))).toEqual([]);
     expect(visible(rows, 'all', '  ')).toHaveLength(5);
   });
 
-  it('opens on the active jobs, or on those to review before any are active', () => {
-    expect(startingView(phoneRows(JOBS, TODAY))).toBe('active');
+  it('opens on the furthest view with jobs in it, or on those to review', () => {
+    expect(startingView(phoneRows(JOBS, TODAY))).toBe('interviewing');
     expect(startingView(phoneRows([job({ id: 'cobalt--senior', company: 'Cobalt' })], TODAY))).toBe(
       'review',
     );

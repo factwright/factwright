@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { type Job, localDate } from '@factwright/core';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
+import { longDate } from './DateEdit.tsx';
 import { JobPanel } from './JobPanel.tsx';
 import { jobRows } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
@@ -14,6 +15,8 @@ const TODAY = localDate();
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  // Which sections the user closed, kept for next time.
+  localStorage.clear();
 });
 
 const byCompany = (company: string): Job => {
@@ -31,6 +34,9 @@ function panel(job: Job, result: EditResult = { ok: true }) {
     deleteCall: answer,
     redateStatusChange: answer,
     undoStatusChange: answer,
+    addNote: answer,
+    updateNote: answer,
+    deleteNote: answer,
     jobDocs: vi.fn(async () => null),
     jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
     openFile: answer,
@@ -129,69 +135,231 @@ describe('calls and interviews', () => {
 });
 
 describe('notes', () => {
-  it('save a moment after typing stops', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it('adds a note, dated today, with the button or ⌘ Enter', async () => {
     const { api } = panel(byCompany('Lumen Health'));
-    const notes = screen.getByRole('textbox', { name: 'Your notes' });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await user.type(notes, 'Kind managers');
-    expect(api.updateJob).not.toHaveBeenCalled();
-    await act(async () => {
-      vi.advanceTimersByTime(900);
+    const box = screen.getByRole('textbox', { name: 'New note' });
+    expect(screen.queryByRole('button', { name: 'Add note' })).toBeNull();
+    await userEvent.type(box, 'Kind managers');
+    await userEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    expect(api.addNote).toHaveBeenCalledWith('lumen-health--senior-full-stack-engineer', {
+      text: 'Kind managers',
     });
-    expect(api.updateJob).toHaveBeenCalledWith('lumen-health--senior-full-stack-engineer', {
-      notes: 'Kind managers',
+    expect((box as HTMLTextAreaElement).value).toBe('');
+    await userEvent.type(box, 'Ask about on-call{Meta>}{Enter}{/Meta}');
+    expect(api.addNote).toHaveBeenLastCalledWith('lumen-health--senior-full-stack-engineer', {
+      text: 'Ask about on-call',
     });
-    expect(await screen.findByText('Saved')).toBeTruthy();
   });
 
-  it('save right away when the box loses focus', async () => {
+  it('dates a note for an earlier day, such as yesterday’s call', async () => {
     const { api } = panel(byCompany('Lumen Health'));
-    await userEvent.type(screen.getByRole('textbox', { name: 'Your notes' }), 'Ask about on-call');
-    await userEvent.tab();
-    expect(api.updateJob).toHaveBeenCalledWith('lumen-health--senior-full-stack-engineer', {
-      notes: 'Ask about on-call',
+    await userEvent.type(screen.getByRole('textbox', { name: 'New note' }), 'Call went well');
+    await userEvent.click(screen.getByRole('button', { name: /^The day this note is about/ }));
+    const date = screen.getByLabelText('The day this note is about');
+    fireEvent.change(date, { target: { value: '2026-10-09' } });
+    fireEvent.blur(date);
+    await userEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    expect(api.addNote).toHaveBeenCalledWith('lumen-health--senior-full-stack-engineer', {
+      text: 'Call went well',
+      on: '2026-10-09',
     });
   });
 
-  it('show notes changed elsewhere, such as on another computer, unless the user is typing', async () => {
-    const job = byCompany('Lumen Health');
-    const { api, update } = panel(job);
-    const notes = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;
-    update({ ...job, notes: 'From the other computer' });
-    expect(notes.value).toBe('From the other computer');
-    await userEvent.click(notes);
-    update({ ...job, notes: 'Changed again elsewhere' });
-    expect(notes.value).toBe('From the other computer');
-    await userEvent.tab();
-    expect(notes.value).toBe('Changed again elsewhere');
-    expect(api.updateJob).not.toHaveBeenCalled();
+  it('lists notes newest first, with the notes from before dates at the end', () => {
+    const job = byCompany('Northwind Labs');
+    panel({ ...job, earlierNotes: 'From the old notes box' });
+    const notes = within(screen.getByRole('list', { name: 'Your notes' })).getAllByRole('listitem');
+    expect(notes.map((item) => item.querySelector('p')?.textContent)).toEqual([
+      'Panel set for Friday: the hiring manager, a staff engineer and a PM. Bring the cost-tooling numbers.',
+      'Screen with Priya, the recruiter. Team of six, mostly Go. She liked the deploy pipeline story.',
+      'From the old notes box',
+    ]);
+    expect(within(notes[2] as HTMLElement).getByText('Earlier notes')).toBeTruthy();
   });
 
-  it('save what’s waiting when the panel closes', async () => {
-    const { api, unmount } = panel(byCompany('Lumen Health'));
-    await userEvent.type(screen.getByRole('textbox', { name: 'Your notes' }), 'Half a thought');
-    unmount();
-    expect(api.updateJob).toHaveBeenCalledWith('lumen-health--senior-full-stack-engineer', {
-      notes: 'Half a thought',
+  it('changes a note’s words or day, and deletes one after asking', async () => {
+    const { api } = panel(byCompany('Tidewater Analytics'));
+    const [note] = byCompany('Tidewater Analytics').notes;
+    const title = `the note from ${longDate(note?.on ?? '')}`;
+    await userEvent.click(screen.getByRole('button', { name: `Change ${title}` }));
+    const box = screen.getByRole('textbox', { name: `Change ${title}` });
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Recruiter asked for my notice period. Two weeks.');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(api.updateNote).toHaveBeenCalledWith('tidewater-note', {
+      text: 'Recruiter asked for my notice period. Two weeks.',
     });
+    await userEvent.click(screen.getByRole('button', { name: `Delete ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(api.deleteNote).not.toHaveBeenCalledWith('tidewater-note');
+    await userEvent.click(screen.getByRole('button', { name: `Delete ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(api.deleteNote).toHaveBeenCalledWith('tidewater-note');
+  });
+
+  it('gives the keyboard’s focus back where it was after a change or a deletion', async () => {
+    const job = byCompany('Tidewater Analytics');
+    const title = `the note from ${longDate(job.notes[0]?.on ?? '')}`;
+    panel(job);
+    await userEvent.click(screen.getByRole('button', { name: `Change ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: `Change ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: `Delete ${title}` }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: `Delete ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: `Delete ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'New note' }));
+  });
+
+  it('changes or clears the notes from before dates', async () => {
+    const job = byCompany('Harbor & Pine');
+    const { api } = panel(job);
+    await userEvent.click(screen.getByRole('button', { name: 'Change your earlier notes' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Change your earlier notes' }), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, {
+      earlierNotes: 'Referred by a former teammate. Ask about the new payments team.!',
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Delete your earlier notes' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(api.updateJob).toHaveBeenLastCalledWith(job.id, { earlierNotes: null });
+  });
+
+  it('keeps a note not added yet when the panel moves to another job and back', async () => {
+    const lumen = byCompany('Lumen Health');
+    const { update } = panel(lumen);
+    await userEvent.type(screen.getByRole('textbox', { name: 'New note' }), 'Half a thought');
+    update(byCompany('Tidewater Analytics'));
+    expect((screen.getByRole('textbox', { name: 'New note' }) as HTMLTextAreaElement).value).toBe(
+      '',
+    );
+    update(lumen);
+    expect((screen.getByRole('textbox', { name: 'New note' }) as HTMLTextAreaElement).value).toBe(
+      'Half a thought',
+    );
   });
 });
 
-describe('history', () => {
-  it('fixes a change’s date, and undoes the latest change', async () => {
-    const { api } = panel(byCompany('Northwind Labs'));
-    const undo = screen.getAllByRole('button', { name: /^Undo/ });
-    expect(undo.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Undo “Marked Interview”',
+describe('progress', () => {
+  const steps = () =>
+    within(screen.getByRole('list', { name: 'Where it’s been' }))
+      .getAllByRole('listitem')
+      .map((step) => step.querySelector('[class*="label"]')?.firstChild?.textContent);
+
+  it('shows each step the job took, where it is now, and the step ahead', () => {
+    panel(byCompany('Northwind Labs'));
+    expect(steps()).toEqual([
+      'Found',
+      'Fit check',
+      'Resume built',
+      'Applied',
+      'Screen',
+      'Interview',
+      'Offer',
     ]);
-    await userEvent.click(undo[0] as HTMLElement);
+    expect(screen.getAllByRole('img', { name: 'Where it is now' })).toHaveLength(1);
+    expect(screen.getByRole('img', { name: 'Not yet' })).toBeTruthy();
+  });
+
+  it('ends a closed job with how it ended', () => {
+    panel(byCompany('Meridian Freight'));
+    expect(steps()).toEqual(['Found', 'Fit check', 'Applied', 'Rejected']);
+  });
+
+  it('fixes a step’s date once the whole date is in, and undoes the latest change', async () => {
+    const { api } = panel(byCompany('Northwind Labs'));
+    await userEvent.click(screen.getByRole('button', { name: /^When it moved to Screen/ }));
+    const date = screen.getByLabelText('When it moved to Screen');
+    // Typing the year digit by digit passes through dates nobody means, like 0002.
+    fireEvent.change(date, { target: { value: '0002-10-01' } });
+    fireEvent.change(date, { target: { value: '2026-10-01' } });
+    fireEvent.blur(date);
+    expect(api.redateStatusChange).toHaveBeenCalledTimes(1);
+    expect(api.redateStatusChange).toHaveBeenCalledWith('northwind-1', '2026-10-01');
+    await userEvent.click(screen.getByRole('button', { name: 'Undo “Marked Interview”' }));
     expect(api.undoStatusChange).toHaveBeenCalledWith('northwind-2');
-    // A date picker sets a whole date at once.
-    fireEvent.change(screen.getByLabelText('When it was marked applied'), {
-      target: { value: '2026-09-01' },
+  });
+
+  it('adds an applied date that was never kept', async () => {
+    const job = byCompany('Meridian Freight');
+    const { api } = panel({ ...job, appliedOn: null, statusLog: job.statusLog.slice(1) });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'When you applied: Add the date. Change it' }),
+    );
+    const date = screen.getByLabelText('When you applied');
+    fireEvent.change(date, { target: { value: '2026-09-01' } });
+    fireEvent.keyDown(date, { key: 'Enter' });
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { appliedOn: '2026-09-01' });
+    // Enter closed the box, so the keyboard's focus is back on the date.
+    expect(document.activeElement?.getAttribute('aria-label')).toMatch(/^When you applied/);
+  });
+
+  it('keeps a date that can’t be, such as one to come, open to fix', async () => {
+    const { api } = panel(byCompany('Northwind Labs'));
+    await userEvent.click(screen.getByRole('button', { name: /^When it moved to Screen/ }));
+    const date = screen.getByLabelText('When it moved to Screen');
+    fireEvent.change(date, { target: { value: '2999-01-01' } });
+    fireEvent.keyDown(date, { key: 'Enter' });
+    expect(date.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByLabelText('When it moved to Screen')).toBe(date);
+    fireEvent.keyDown(date, { key: 'Escape' });
+    expect(api.redateStatusChange).not.toHaveBeenCalled();
+    expect(document.activeElement?.getAttribute('aria-label')).toMatch(
+      /^When it moved to Screen: \w{3} \d+\. Change it$/,
+    );
+  });
+
+  it('shows and fixes the date of the change that marked a step, not an earlier call’s', () => {
+    const job = byCompany('Northwind Labs');
+    const screenChange = job.statusLog.find((change) => change.status === 'screen');
+    panel({
+      ...job,
+      calls: [
+        ...job.calls,
+        {
+          id: 'early-screen',
+          kind: 'screen',
+          onDate: '2020-01-02',
+          atTime: null,
+          state: 'done',
+          outcome: null,
+          notes: null,
+        },
+      ],
     });
-    expect(api.redateStatusChange).toHaveBeenLastCalledWith('northwind-0', '2026-09-01');
+    const button = screen.getByRole('button', { name: /^When it moved to Screen/ });
+    expect(button.getAttribute('title')).toBe(longDate(screenChange?.at ?? ''));
+  });
+
+  it('fixes an offer’s date only by the change that marked it', () => {
+    const job = byCompany('Fernway');
+    panel({
+      ...job,
+      status: 'accepted',
+      statusOn: job.statusOn,
+      statusLog: [
+        ...job.statusLog.filter((change) => change.status !== 'offer'),
+        { id: 'fernway-accepted', status: 'accepted', at: job.statusOn ?? '' },
+      ],
+    });
+    expect(screen.queryByRole('button', { name: /^When it moved to Offer/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^When it moved to Accepted/ })).toBeTruthy();
+  });
+});
+
+describe('activity', () => {
+  it('lists what happened, newest first, once opened', async () => {
+    panel(byCompany('Northwind Labs'));
+    const toggle = screen.getByRole('button', { name: /^Activity/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await userEvent.click(toggle);
+    const activity = screen.getByRole('region', { name: 'Activity' });
+    expect(within(activity).getByText('Marked Interview')).toBeTruthy();
+    expect(within(activity).getByText('Fit check: Strong 86')).toBeTruthy();
+    // A call still to come isn't history yet.
+    expect(within(activity).queryByText('Panel interview: scheduled')).toBeNull();
   });
 });
 

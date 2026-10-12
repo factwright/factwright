@@ -5,10 +5,23 @@ import {
   callOrder,
   changeOrder,
   jobList,
+  noteOrder,
+  type TrackedItems,
   trackedCall,
   trackedChange,
+  trackedNote,
   trackedRow,
 } from './tracked.ts';
+import type { Note } from './tracker.ts';
+
+const NOTHING_KEPT: TrackedItems = { calls: new Map(), history: new Map(), notes: new Map() };
+
+const NOTE: Note = {
+  id: 'n1',
+  on: '2026-10-12',
+  text: 'Screen with Sam: they want Go.',
+  at: '2026-10-12T19:00:00.000Z',
+};
 
 const STORED_JOB = {
   id: 'acme--staff',
@@ -42,7 +55,7 @@ describe('tracker rows', () => {
       links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
       manual: false,
       status: 'applied',
-      notes: 'Recruiter: Sam',
+      earlierNotes: 'Recruiter: Sam',
       questions: ['Why Acme?'],
       sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-10' }],
       asks: [
@@ -138,6 +151,27 @@ describe('tracker rows', () => {
     ].sort(changeOrder);
     expect(changes.map((change) => change.status)).toEqual(['applied', 'screen']);
   });
+
+  it('read notes by the day they’re about, then when they were written, leaving out blank ones', () => {
+    const notes = [
+      { id: 'c', job_id: 'acme', on_date: '2026-10-12', text: 'Later', created_at: 'T2' },
+      { id: 'b', job_id: 'acme', on_date: '2026-10-12', text: 'Earlier', created_at: 'T1' },
+      { id: 'a', job_id: 'acme', on_date: '2026-10-09', text: 'Before', created_at: 'T9' },
+      { id: 'd', job_id: 'acme', on_date: '2026-10-12', text: '  ', created_at: 'T3' },
+      { id: 'e', job_id: 'acme', on_date: 'someday', text: 'Undated', created_at: 'T4' },
+    ].sort(noteOrder);
+    expect(
+      byJob(notes, trackedNote)
+        .get('acme')
+        ?.map((note) => note.text),
+    ).toEqual(['Before', 'Earlier', 'Later']);
+    expect(trackedNote(notes[0] as Record<string, unknown>)).toEqual({
+      id: 'a',
+      on: '2026-10-09',
+      text: 'Before',
+      at: 'T9',
+    });
+  });
 });
 
 describe('jobList', () => {
@@ -151,16 +185,15 @@ describe('jobList', () => {
   } as unknown as CollectedJob;
 
   it('joins each tracked job with what the workspace says about it', () => {
-    const [job] = jobList(
-      [trackedRow(STORED_JOB)],
-      new Map([['acme--staff', found]]),
-      new Map(),
-      new Map(),
-    );
+    const [job] = jobList([trackedRow(STORED_JOB)], new Map([['acme--staff', found]]), {
+      ...NOTHING_KEPT,
+      notes: new Map([['acme--staff', [NOTE]]]),
+    });
     expect(job).toMatchObject({
       id: 'acme--staff',
       status: 'applied',
-      notes: 'Recruiter: Sam',
+      earlierNotes: 'Recruiter: Sam',
+      notes: [NOTE],
       source: 'Fit check',
       docKinds: ['posting'],
     });
@@ -176,7 +209,14 @@ describe('jobList', () => {
       sent: '[]',
       asks: '[]',
     });
-    expect(jobList([untracked], new Map(), new Map(), new Map())).toEqual([]);
+    expect(jobList([untracked], new Map(), NOTHING_KEPT)).toEqual([]);
+    // A dated note keeps it, as a call does.
+    expect(
+      jobList([untracked], new Map(), {
+        ...NOTHING_KEPT,
+        notes: new Map([['acme--staff', [NOTE]]]),
+      }),
+    ).toHaveLength(1);
     for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }]) {
       const row = trackedRow({
         ...STORED_JOB,
@@ -188,9 +228,9 @@ describe('jobList', () => {
         asks: '[]',
         ...kept,
       });
-      expect(jobList([row], new Map(), new Map(), new Map())).toHaveLength(1);
+      expect(jobList([row], new Map(), NOTHING_KEPT)).toHaveLength(1);
     }
-    const [kept] = jobList([trackedRow(STORED_JOB)], new Map(), new Map(), new Map());
+    const [kept] = jobList([trackedRow(STORED_JOB)], new Map(), NOTHING_KEPT);
     expect(kept).toMatchObject({
       id: 'acme--staff',
       folder: null,
@@ -200,7 +240,7 @@ describe('jobList', () => {
 
   it('shows a job added by hand with the pay the user typed', () => {
     const typed = trackedRow({ ...STORED_JOB, manual: 1, pay_text: '$150k–$180k' });
-    const [job] = jobList([typed], new Map(), new Map(), new Map());
+    const [job] = jobList([typed], new Map(), NOTHING_KEPT);
     expect(job).toMatchObject({ source: 'Added by hand', pay: { min: 150000, max: 180000 } });
   });
 });

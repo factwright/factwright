@@ -406,6 +406,8 @@ export class SyncEngine {
     for (const synced of state.all('row:')) {
       if (synced.deleted || rowsHere.has(synced.name)) continue;
       const [, table = '', ...rest] = synced.name.split(':');
+      // A table only a newer version keeps, as after going back to an older app, isn't gone.
+      if (!isSyncTable(table)) continue;
       outgoing.push({
         name: synced.name,
         record: synced.record,

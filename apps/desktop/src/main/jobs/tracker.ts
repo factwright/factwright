@@ -10,6 +10,7 @@ import {
   companyKey,
   type JobStatus,
   type KnownJob,
+  type Note,
   questionKey,
   roleKey,
   SETTLED_STATUSES,
@@ -21,6 +22,7 @@ import {
   type TrackedRow,
   trackedCall,
   trackedChange,
+  trackedNote,
   trackedRow,
 } from '@factwright/core';
 import type { RowValues } from '@factwright/sync';
@@ -32,6 +34,8 @@ import type {
   JobChanges,
   NewCall,
   NewJob,
+  NewNote,
+  NoteChanges,
 } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 
@@ -41,8 +45,11 @@ export interface EditContext {
   now: string;
 }
 
-/** The tables that sync, in the order a new device fills them: jobs before their calls and history. */
-export const SYNC_TABLES = ['jobs', 'status_log', 'calls'] as const;
+/**
+ * The tables that sync, in the order a new device fills them: jobs before their history, calls
+ * and notes.
+ */
+export const SYNC_TABLES = ['jobs', 'status_log', 'calls', 'notes'] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
@@ -98,6 +105,17 @@ const MIGRATIONS = [
   // the job, each as a JSON list.
   `ALTER TABLE jobs ADD COLUMN sent TEXT NOT NULL DEFAULT '[]';
   ALTER TABLE jobs ADD COLUMN asks TEXT NOT NULL DEFAULT '[]';`,
+  // Dated notes, one a row, such as what was said on a call. The jobs table's notes column keeps
+  // the one undated box of notes the app had before.
+  `CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    on_date TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS notes_job ON notes(job_id);`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -108,11 +126,12 @@ const required = (value: unknown) => (typeof value === 'string' ? value : '');
 
 const failed = (message: string): { ok: false; message: string } => ({ ok: false, message });
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
+const NO_NOTE = failed('That note isn’t in your tracker anymore. Reload and try again.');
 const DONE: EditResult = { ok: true };
 
 /**
  * The tracker: a small SQLite database, outside the workspace, of what the user sets by hand.
- * Statuses with their dates, applied dates, next steps, notes, calls, and jobs added by hand.
+ * Statuses with their dates, applied dates, next steps, dated notes, calls, and jobs added by hand.
  * What the skills found stays in the workspace's files. Here each job keeps only its name and
  * links, so its ID holds steady as new work comes in.
  */
@@ -120,6 +139,8 @@ export class Tracker {
   private readonly db: DatabaseSync;
   /** The columns opening it added to tables that sync, when it was from an earlier version. */
   private readonly gained = new Map<SyncTable, string[]>();
+  /** The tables that sync that opening it made, when it was from an earlier version. */
+  private readonly made: SyncTable[] = [];
 
   /** Opens the tracker at a file path, or in memory for ":memory:". */
   constructor(file: string) {
@@ -136,6 +157,15 @@ export class Tracker {
     return this.gained;
   }
 
+  /**
+   * The tables that sync that opening this tracker made, such as notes, when it was from an
+   * earlier version. Another device may have sent rows for them, which this one passed over
+   * while it couldn't keep them, so sync reads every change again once.
+   */
+  gainedTables(): readonly SyncTable[] {
+    return this.made;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -149,12 +179,14 @@ export class Tracker {
         this.db.exec(`PRAGMA user_version = ${version + i + 1}`);
       });
     });
-    // A new tracker gains nothing: it had no rows another device could have sent.
+    // A new tracker gains nothing: it had no rows another device could have sent. Nor does a
+    // new table: this version's the first to keep its rows.
     if (version === 0) return;
     for (const table of SYNC_TABLES) {
       const had = before.get(table) ?? [];
       const added = this.columns(table).filter((column) => !had.includes(column));
-      if (added.length > 0) this.gained.set(table, added);
+      if (had.length === 0 && added.length > 0) this.made.push(table);
+      else if (added.length > 0) this.gained.set(table, added);
     }
   }
 
@@ -270,6 +302,12 @@ export class Tracker {
     return byJob(rows, trackedChange);
   }
 
+  /** Each job's notes, oldest first: by the day they're about, then when they were written. */
+  notes(): Map<string, Note[]> {
+    const rows = this.db.prepare('SELECT * FROM notes ORDER BY on_date, created_at, rowid').all();
+    return byJob(rows, trackedNote);
+  }
+
   /**
    * Keeps each job the skills found: its name, its links and when it was first seen. A job
    * keeps its row when its files go away, so the user's statuses and notes stay with it.
@@ -326,7 +364,7 @@ export class Tracker {
     if (changes.appliedOn !== undefined) set('applied_on', changes.appliedOn);
     if (changes.nextAction !== undefined) set('next_action', changes.nextAction);
     if (changes.nextOn !== undefined) set('next_on', changes.nextOn);
-    if (changes.notes !== undefined) set('notes', changes.notes);
+    if (changes.earlierNotes !== undefined) set('notes', changes.earlierNotes);
     if (changes.questions !== undefined) set('questions', JSON.stringify(changes.questions));
     if (changes.archived !== undefined) set('archived', changes.archived ? 1 : 0);
 
@@ -451,12 +489,13 @@ export class Tracker {
     let id = base;
     for (let n = 2; taken.get(id); n++) id = `${base}-${n}`;
     const { today, now } = context;
+    const note = input.notes?.trim();
     this.transaction(() => {
       this.db
         .prepare(
           `INSERT INTO jobs (id, company, company_key, role, links, manual, pay_text, first_seen,
-             status, status_on, applied_on, notes, updated_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+             status, status_on, applied_on, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -469,10 +508,10 @@ export class Tracker {
           status,
           status ? today : null,
           status === 'applied' ? today : null,
-          input.notes?.trim() || null,
           now,
         );
       if (status) this.logStatus(id, status, today);
+      if (note) this.insertNote(id, note, today, now);
     });
     return { ok: true, jobId: id };
   }
@@ -550,6 +589,47 @@ export class Tracker {
 
   deleteCall(callId: string): EditResult {
     this.db.prepare('DELETE FROM calls WHERE id = ?').run(callId);
+    return DONE;
+  }
+
+  private insertNote(jobId: string, text: string, on: string, now: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO notes (id, job_id, on_date, text, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(randomUUID(), jobId, on, text, now, now);
+  }
+
+  /** Keeps a note about a job, dated today unless the user gave the day it's about. */
+  addNote(jobId: string, input: NewNote, context: EditContext): EditResult {
+    if (!this.row(jobId)) return NOT_FOUND;
+    const text = input.text.trim();
+    if (!text) return failed('Type your note first.');
+    this.insertNote(jobId, text, input.on ?? context.today, context.now);
+    return DONE;
+  }
+
+  /** Changes a note's words, or the day it's about. */
+  updateNote(noteId: string, changes: NoteChanges, context: EditContext): EditResult {
+    const note = this.db.prepare('SELECT id FROM notes WHERE id = ?').get(noteId);
+    if (!note) return NO_NOTE;
+    const text = changes.text?.trim();
+    if (changes.text !== undefined && !text) {
+      return failed('A note needs some words. Delete it instead, if it’s done with.');
+    }
+    if (text === undefined && changes.on === undefined) return DONE;
+    this.db
+      .prepare(
+        `UPDATE notes SET text = COALESCE(?, text), on_date = COALESCE(?, on_date), updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(text ?? null, changes.on ?? null, context.now, noteId);
+    return DONE;
+  }
+
+  deleteNote(noteId: string): EditResult {
+    this.db.prepare('DELETE FROM notes WHERE id = ?').run(noteId);
     return DONE;
   }
 

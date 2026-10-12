@@ -1,3 +1,8 @@
+/* The summary or the chart, under the choice between them. */
+.view {
+  margin-top: var(--fw-space-5);
+}
+
 .steps {
   display: flex;
   flex-direction: column;

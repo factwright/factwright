@@ -71,7 +71,7 @@ describe('RunActions', () => {
     const { container } = render(
       <RunActions job={job} status="new" run={controls()} api={apiStub()} />,
     );
-    expect(screen.getByRole('heading', { name: 'Run with your Claude' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Run with your Claude' })).toBeTruthy();
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Tailored resumeA resume for this job, every line traced to a factRun',
       'Fit checkScore the job against your fact bankRun',

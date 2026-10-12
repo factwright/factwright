@@ -1,0 +1,34 @@
+/* A date that reads as text, with a dotted underline that says it can be changed. */
+.date {
+  margin: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--fw-radius-sm);
+  background: none;
+  color: var(--fw-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline dotted var(--fw-control-border);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.date:hover {
+  background: var(--fw-hover);
+  color: var(--fw-accent-text);
+}
+
+.missing {
+  color: var(--fw-muted);
+}
+
+.input {
+  width: 140px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: var(--fw-text-sm);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--fw-bad);
+}

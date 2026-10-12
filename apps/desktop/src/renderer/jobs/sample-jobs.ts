@@ -5,6 +5,7 @@ import {
   type JobDocs,
   type JobStatus,
   localDate,
+  type Note,
   type ScorePart,
   type SearchDetail,
   type Sentiment,
@@ -16,6 +17,24 @@ function day(offset: number): string {
   date.setDate(date.getDate() + offset);
   return localDate(date);
 }
+
+const MONTH_DAY = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
+/** The HN thread most samples came from, and a LinkedIn search from a few days ago. */
+const HN_RUN = { folder: '2026-10-hn-whos-hiring', source: 'HN October 2026', date: day(-24) };
+const LINKEDIN_RUN = (() => {
+  const date = day(-3);
+  const label = MONTH_DAY.format(new Date(`${date}T12:00:00`));
+  return { folder: `${date}-linkedin`, source: `LinkedIn ${label}`, date };
+})();
+
+/** A note the user jotted, some days ago. */
+const note = (id: string, offset: number, text: string): Note => ({
+  id,
+  on: day(offset),
+  text,
+  at: `${day(offset)}T17:30:00.000Z`,
+});
 
 const NO_DETAIL: SearchDetail = {
   why: [],
@@ -102,9 +121,10 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     links: [],
     location: 'Remote, US',
     pay: null,
-    source: 'HN October 2026',
+    source: HN_RUN.source,
     fit: null,
     search: null,
+    searches: [HN_RUN],
     folder: null,
     stage: 'new',
     firstSeen: day(-24),
@@ -121,14 +141,15 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     appliedOn: null,
     nextAction: null,
     nextOn: null,
-    notes: null,
     questions: [],
     sent: [],
     asks: [],
+    earlierNotes: null,
     archived: false,
     manual: false,
     calls: [],
     statusLog: [],
+    notes: [],
     docKinds: [],
     ...base,
   };
@@ -197,6 +218,18 @@ export function sampleJobs(): Job[] {
           notes: 'Recruiter was friendly. Team of six.',
         }),
         call('northwind-panel', { kind: 'panel', onDate: day(4), atTime: '14:00' }),
+      ],
+      notes: [
+        note(
+          'northwind-note-1',
+          -9,
+          'Screen with Priya, the recruiter. Team of six, mostly Go. She liked the deploy pipeline story.',
+        ),
+        note(
+          'northwind-note-2',
+          -3,
+          'Panel set for Friday: the hiring manager, a staff engineer and a PM. Bring the cost-tooling numbers.',
+        ),
       ],
       files: [resume('Northwind Labs', day(-17))],
       docKinds: ['posting', 'job', 'fit', 'prep', 'answers'],
@@ -285,6 +318,9 @@ export function sampleJobs(): Job[] {
         ['screen', -2],
       ]),
       calls: [call('tidewater-screen', { onDate: day(2), atTime: '10:30' })],
+      notes: [
+        note('tidewater-note', -2, 'Recruiter reached out on email. Asked for my notice period.'),
+      ],
       files: [resume('Tidewater Analytics', day(-12))],
       docKinds: ['posting', 'job'],
     }),
@@ -315,6 +351,8 @@ export function sampleJobs(): Job[] {
       pay: listed(140, 165),
       stage: 'resume',
       fit: { verdict: 'Worth a look', score: 69, date: day(-3) },
+      source: LINKEDIN_RUN.source,
+      searches: [LINKEDIN_RUN],
       files: [resume('Brightpath Learning', day(-1))],
       lastActivity: day(-1),
       docKinds: ['posting'],
@@ -332,7 +370,7 @@ export function sampleJobs(): Job[] {
       appliedOn: day(-12),
       statusLog: changes('harbor', [['applied', -12]]),
       files: [resume('Harbor & Pine', day(-13))],
-      notes: 'Referred by a former teammate. Ask about the new payments team.',
+      earlierNotes: 'Referred by a former teammate. Ask about the new payments team.',
     }),
     sampleJob({
       id: 'fernway--engineering-lead',
@@ -378,6 +416,8 @@ export function sampleJobs(): Job[] {
       id: 'bluewave-staffing--senior-engineer',
       company: 'Bluewave Staffing',
       role: 'Senior Engineer (client: fintech)',
+      source: LINKEDIN_RUN.source,
+      searches: [LINKEDIN_RUN],
       firstSeen: day(-1),
       lastActivity: day(-1),
     }),

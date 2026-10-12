@@ -81,6 +81,30 @@ const ROWS: SyncRecord[] = [
     row: { job_id: ACME_ID, kind: 'screen', on_date: '2026-10-14', state: 'scheduled' },
     ...MADE,
   },
+  {
+    kind: 'row',
+    table: 'notes',
+    id: 'n2',
+    row: {
+      job_id: ACME_ID,
+      on_date: '2026-10-12',
+      text: 'Screen went well',
+      created_at: '2026-10-12T17:00:00.000Z',
+    },
+    ...MADE,
+  },
+  {
+    kind: 'row',
+    table: 'notes',
+    id: 'n1',
+    row: {
+      job_id: ACME_ID,
+      on_date: '2026-10-09',
+      text: 'They want Go',
+      created_at: '2026-10-09T17:00:00.000Z',
+    },
+    ...MADE,
+  },
 ];
 
 /** Locks records and pushes them as new, the way the desktop app does. */
@@ -153,7 +177,12 @@ describe('opening the job hunt in the browser', () => {
       location: 'Remote, US',
       link: 'https://jobs.ashbyhq.com/acme/7f3a',
       status: 'screen',
-      notes: 'Recruiter: Sam Lee',
+      earlierNotes: 'Recruiter: Sam Lee',
+      // Oldest first, however they arrived.
+      notes: [
+        { id: 'n1', text: 'They want Go' },
+        { id: 'n2', text: 'Screen went well' },
+      ],
       calls: [{ id: 'c1', kind: 'screen', onDate: '2026-10-14', state: 'scheduled' }],
       // Oldest first, however they arrived.
       statusLog: [
@@ -169,6 +198,7 @@ describe('opening the job hunt in the browser', () => {
     expect(vault.rows.jobs).toHaveLength(1);
     expect(vault.rows.status_log).toHaveLength(2);
     expect(vault.rows.calls).toHaveLength(1);
+    expect(vault.rows.notes).toHaveLength(2);
   });
 
   it('downloads only the files the job list is read from, and the rest when asked', async () => {

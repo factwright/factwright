@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { AddJobDialog } from './AddJobDialog.tsx';
 import { FiltersPanel } from './FiltersPanel.tsx';
+import { FindJobsDialog } from './FindJobsDialog.tsx';
 import { JourneyDialog } from './JourneyDialog.tsx';
 import { jobRows, type ListFilter, NO_FILTERS } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
@@ -25,12 +26,16 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // What the dialogs remember for next time, such as the places a search looked.
+  localStorage.clear();
+});
 
 describe('FiltersPanel', () => {
   function Harness({ onFilter }: { onFilter: (filter: ListFilter) => void }) {
     const [filter, setFilter] = useState<ListFilter>({
-      view: 'active',
+      view: 'applied',
       query: '',
       needsYou: false,
       ...NO_FILTERS,
@@ -38,7 +43,6 @@ describe('FiltersPanel', () => {
     return (
       <FiltersPanel
         filter={filter}
-        sources={['Added by hand', 'HN October 2026']}
         onFilter={(next) => {
           setFilter(next);
           onFilter(next);
@@ -56,10 +60,6 @@ describe('FiltersPanel', () => {
     const panel = screen.getByRole('region', { name: 'Filters' });
     await userEvent.click(within(panel).getByRole('button', { name: 'Strong' }));
     await userEvent.click(within(panel).getByRole('button', { name: 'Not scored' }));
-    await userEvent.selectOptions(
-      within(panel).getByRole('combobox', { name: 'Found through' }),
-      'HN October 2026',
-    );
     fireEvent.change(within(panel).getByRole('spinbutton', { name: 'Pays at least' }), {
       target: { value: '150' },
     });
@@ -68,13 +68,12 @@ describe('FiltersPanel', () => {
     expect(onFilter).toHaveBeenLastCalledWith(
       expect.objectContaining({
         tiers: ['strong', 'none'],
-        source: 'HN October 2026',
         minPay: 150_000,
         hasResume: true,
         showArchived: true,
       }),
     );
-    expect(screen.getByRole('button', { name: 'Filters · 6' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Filters · 5' })).toBeTruthy();
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
     await userEvent.click(within(panel).getByRole('button', { name: 'Clear filters' }));
@@ -194,7 +193,7 @@ describe('JourneyDialog', () => {
         onClose={() => {}}
       />,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Copy as a flow chart' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy for SankeyMATIC' }));
     expect(copyText).toHaveBeenCalledWith(expect.stringContaining('Jobs found ['));
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Download as a spreadsheet' }));
@@ -203,6 +202,30 @@ describe('JourneyDialog', () => {
       expect.stringContaining('Company,Role,Source'),
     );
     expect(screen.getByRole('button', { name: 'Saved' })).toBeTruthy();
+  });
+
+  it('draws every path the jobs took as a flow chart, and remembers that view', async () => {
+    const { container, unmount } = render(
+      <JourneyDialog rows={rows} api={{} as FactwrightApi} today={TODAY} onClose={() => {}} />,
+    );
+    await userEvent.click(screen.getByRole('radio', { name: 'Flow chart' }));
+    const chart = screen.getByRole('img', {
+      name: 'How your jobs moved, from finding them to how they ended',
+    });
+    // Each step and ending a bar with its count, each path a band that says how many went.
+    expect(chart.textContent).toContain('Found12');
+    expect(chart.textContent).toContain('Not applied');
+    expect(chart.querySelector('desc')?.textContent).toContain('Applied to Rejected: 1 job.');
+    expect(chart.querySelectorAll('path').length).toBeGreaterThan(8);
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    unmount();
+    render(
+      <JourneyDialog rows={rows} api={{} as FactwrightApi} today={TODAY} onClose={() => {}} />,
+    );
+    expect((screen.getByRole('radio', { name: 'Flow chart' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 
   it('keeps the button as it was when the user cancels saving', async () => {
@@ -217,5 +240,72 @@ describe('JourneyDialog', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Download as a spreadsheet' }));
     expect(screen.getByRole('button', { name: 'Download as a spreadsheet' })).toBeTruthy();
+  });
+});
+
+describe('FindJobsDialog', () => {
+  it('starts on HN, and searches every place picked, with the month and a company', async () => {
+    const onStart = vi.fn();
+    const { container } = render(
+      <FindJobsDialog today="2026-10-12" onStart={onStart} onClose={() => {}} />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Find jobs' });
+    expect(
+      (within(dialog).getByRole('checkbox', { name: /^Hacker News/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+    await userEvent.selectOptions(
+      within(dialog).getByRole('combobox', { name: 'Which month’s thread' }),
+      'September 2026',
+    );
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /^LinkedIn/ }));
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /^Company job boards/ }));
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /^A company/ }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'The company' }), 'Acme');
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Search 4 places' }));
+    expect(onStart).toHaveBeenCalledWith({
+      sites: ['hn', 'linkedin', 'boards'],
+      month: '2026-09',
+      company: 'Acme',
+    });
+  });
+
+  it('says how to name a company, and won’t search until it can', async () => {
+    render(<FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Hacker News/ }));
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
+    await userEvent.click(screen.getByRole('checkbox', { name: /^A company/ }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'The company' }),
+      'http://acme.example',
+    );
+    expect(
+      screen.getByText('Type a company’s name, or a link that starts with https://.'),
+    ).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
+    // Windows' command line would fill in what's between two % marks.
+    const box = screen.getByRole('textbox', { name: 'The company' });
+    await userEvent.clear(box);
+    await userEvent.type(box, 'https://acme.example/jobs?team=a%20b');
+    expect(
+      screen.getByText(
+        'A link with % or ! in it can’t be passed on. Type the company’s name instead.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
+  });
+
+  it('remembers the places picked for next time', async () => {
+    const { unmount } = render(
+      <FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
+    );
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Indeed/ }));
+    unmount();
+    render(<FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />);
+    expect((screen.getByRole('checkbox', { name: /^Indeed/ }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect(screen.getByRole('button', { name: 'Search 2 places' })).toBeTruthy();
   });
 });

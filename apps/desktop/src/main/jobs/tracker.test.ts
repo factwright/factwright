@@ -23,6 +23,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     source: 'Fit check',
     fit: null,
     search: null,
+    searches: [],
     folder: null,
     stage: 'checked',
     firstSeen: '2026-10-07',
@@ -67,7 +68,7 @@ describe('saveCollected', () => {
   });
 
   it('follows new names and links, keeps the earliest sighting, and never blanks the role', () => {
-    tracker.updateJob('acme--staff', { notes: 'Ask about on-call' }, AT);
+    tracker.updateJob('acme--staff', { earlierNotes: 'Ask about on-call' }, AT);
     tracker.saveCollected(
       [
         collected('acme--staff', {
@@ -84,7 +85,7 @@ describe('saveCollected', () => {
       role: 'Staff Engineer',
       links: [],
       firstSeen: '2026-10-07',
-      notes: 'Ask about on-call',
+      earlierNotes: 'Ask about on-call',
     });
     tracker.saveCollected([collected('acme--staff', { firstSeen: '2026-10-01' })], NOW);
     expect(row()?.firstSeen).toBe('2026-10-01');
@@ -116,7 +117,7 @@ describe('updateJob', () => {
         status: null,
         nextAction: 'Follow up',
         nextOn: '2026-10-14',
-        notes: 'Recruiter: Sam',
+        earlierNotes: 'Recruiter: Sam',
         questions: ['Why Acme?', 'Notice period?'],
         archived: true,
       },
@@ -127,7 +128,7 @@ describe('updateJob', () => {
       statusOn: null,
       nextAction: 'Follow up',
       nextOn: '2026-10-14',
-      notes: 'Recruiter: Sam',
+      earlierNotes: 'Recruiter: Sam',
       questions: ['Why Acme?', 'Notice period?'],
       archived: true,
     });
@@ -153,7 +154,7 @@ describe('updateJob', () => {
   });
 
   it('says so when the job is gone', () => {
-    expect(tracker.updateJob('gone', { notes: 'x' }, AT)).toMatchObject({ ok: false });
+    expect(tracker.updateJob('gone', { earlierNotes: 'x' }, AT)).toMatchObject({ ok: false });
   });
 });
 
@@ -178,9 +179,13 @@ describe('addJob', () => {
       firstSeen: TODAY,
       status: 'applied',
       appliedOn: TODAY,
-      notes: 'Referred by a friend',
+      earlierNotes: null,
     });
     expect(history('harbor-and-pine--senior-engineer-payments')).toEqual([['applied', TODAY]]);
+    // What the user typed about it becomes its first note, dated today.
+    expect(tracker.notes().get('harbor-and-pine--senior-engineer-payments')).toEqual([
+      { id: expect.any(String), on: TODAY, text: 'Referred by a friend', at: NOW },
+    ]);
     const second = tracker.addJob(
       { company: 'Harbor & Pine', role: 'Senior Engineer, Payments' },
       AT,
@@ -294,10 +299,10 @@ describe('the database file', () => {
     const file = join(folder, 'tracker.db');
     const first = new Tracker(file);
     first.saveCollected([collected('acme--staff')], NOW);
-    first.updateJob('acme--staff', { notes: 'Kept' }, AT);
+    first.updateJob('acme--staff', { earlierNotes: 'Kept' }, AT);
     first.close();
     const second = new Tracker(file);
-    expect(second.rows()[0]?.notes).toBe('Kept');
+    expect(second.rows()[0]?.earlierNotes).toBe('Kept');
     expect(second.gainedColumns().size).toBe(0);
     second.close();
   });
@@ -306,16 +311,16 @@ describe('the database file', () => {
     const file = join(folder, 'tracker.db');
     const first = new Tracker(file);
     first.saveCollected([collected('acme--staff')], NOW);
-    first.updateJob('acme--staff', { notes: 'Kept' }, AT);
+    first.updateJob('acme--staff', { earlierNotes: 'Kept' }, AT);
     first.close();
     // Back to the first version: no questions yet, nor anything since.
     const old = new DatabaseSync(file);
     old.exec(
-      'ALTER TABLE jobs DROP COLUMN questions; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 1;',
+      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN questions; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 1;',
     );
     old.close();
     const second = new Tracker(file);
-    expect(second.rows()[0]).toMatchObject({ notes: 'Kept', questions: [] });
+    expect(second.rows()[0]).toMatchObject({ earlierNotes: 'Kept', questions: [] });
     second.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
     expect(second.rows()[0]?.questions).toEqual(['Why Acme?']);
     second.close();
@@ -329,7 +334,7 @@ describe('the database file', () => {
     first.close();
     const old = new DatabaseSync(file);
     old.exec(
-      'ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
+      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
     );
     old.close();
     const second = new Tracker(file);
@@ -338,9 +343,82 @@ describe('the database file', () => {
     expect(second.rows()[0]?.sent).toEqual([
       { question: 'Why Acme?', nth: 0, text: 'Deploys, mostly.', on: TODAY, at: NOW },
     ]);
-    // Sync fills the columns it gained from what other devices sent before.
+    // Sync fills the columns it gained from what other devices sent before, and reads every
+    // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(new Map([['jobs', ['sent', 'asks']]]));
+    expect(second.gainedTables()).toEqual(['notes']);
     second.close();
+  });
+
+  it('adds dated notes to a tracker from before them, keeping the earlier notes', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { earlierNotes: 'From the old box' }, AT);
+    first.close();
+    const old = new DatabaseSync(file);
+    old.exec('DROP TABLE notes; PRAGMA user_version = 3;');
+    old.close();
+    const second = new Tracker(file);
+    expect(second.notes()).toEqual(new Map());
+    expect(second.addNote('acme--staff', { text: 'Screen went well' }, AT)).toEqual({ ok: true });
+    expect(second.rows()[0]?.earlierNotes).toBe('From the old box');
+    expect(
+      second
+        .notes()
+        .get('acme--staff')
+        ?.map((note) => note.text),
+    ).toEqual(['Screen went well']);
+    expect(second.gainedColumns().size).toBe(0);
+    expect(second.gainedTables()).toEqual(['notes']);
+    second.close();
+    // A tracker that's up to date, or new, made nothing.
+    const third = new Tracker(file);
+    expect(third.gainedTables()).toEqual([]);
+    third.close();
+    expect(new Tracker(':memory:').gainedTables()).toEqual([]);
+  });
+});
+
+describe('notes', () => {
+  const texts = () =>
+    (tracker.notes().get('acme--staff') ?? []).map((note) => [note.on, note.text]);
+
+  it('keeps each note dated today, or on the day given, oldest first', () => {
+    tracker.addNote('acme--staff', { text: '  Screen with Sam: they want Go.  ' }, AT);
+    tracker.addNote('acme--staff', { text: 'Applied through a referral', on: '2026-10-02' }, AT);
+    tracker.addNote('acme--staff', { text: 'Asked about the band' }, AT);
+    expect(texts()).toEqual([
+      ['2026-10-02', 'Applied through a referral'],
+      [TODAY, 'Screen with Sam: they want Go.'],
+      [TODAY, 'Asked about the band'],
+    ]);
+  });
+
+  it('changes a note’s words or day, and deletes one', () => {
+    tracker.addNote('acme--staff', { text: 'Fist draft' }, AT);
+    const [note] = tracker.notes().get('acme--staff') ?? [];
+    const later = { today: TODAY, now: '2026-10-10T19:00:00.000Z' };
+    expect(tracker.updateNote(note?.id ?? '', { text: 'First draft' }, later)).toEqual({
+      ok: true,
+    });
+    expect(tracker.updateNote(note?.id ?? '', { on: '2026-10-08' }, later)).toEqual({ ok: true });
+    expect(texts()).toEqual([['2026-10-08', 'First draft']]);
+    // When it was written stays, and the row says when it last changed, for sync.
+    expect(tracker.notes().get('acme--staff')?.[0]?.at).toBe(NOW);
+    expect(tracker.syncRow('notes', note?.id ?? '')).toMatchObject({ updated_at: later.now });
+    expect(tracker.deleteNote(note?.id ?? '')).toEqual({ ok: true });
+    expect(texts()).toEqual([]);
+  });
+
+  it('refuses a blank note, and one for a job or note that’s gone', () => {
+    expect(tracker.addNote('acme--staff', { text: '   ' }, AT)).toMatchObject({ ok: false });
+    expect(tracker.addNote('gone', { text: 'Hi' }, AT)).toMatchObject({ ok: false });
+    expect(tracker.updateNote('gone', { text: 'Hi' }, AT)).toMatchObject({ ok: false });
+    tracker.addNote('acme--staff', { text: 'Keep me' }, AT);
+    const [note] = tracker.notes().get('acme--staff') ?? [];
+    expect(tracker.updateNote(note?.id ?? '', { text: ' ' }, AT)).toMatchObject({ ok: false });
+    expect(texts()).toEqual([[TODAY, 'Keep me']]);
   });
 });
 
@@ -424,7 +502,7 @@ describe('questions for Claude', () => {
 
 describe('sync', () => {
   it('lists every row of the tables that sync, as stored', () => {
-    tracker.updateJob('acme--staff', { status: 'applied', notes: 'Sent' }, AT);
+    tracker.updateJob('acme--staff', { status: 'applied', earlierNotes: 'Sent' }, AT);
     tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-12' }, AT);
     const rows = tracker.syncRows();
     expect(rows.map((each) => each.table)).toEqual(['jobs', 'status_log', 'status_log', 'calls']);
@@ -437,18 +515,20 @@ describe('sync', () => {
   });
 
   it('puts rows as another device left them, jobs before their calls', () => {
-    tracker.updateJob('acme--staff', { status: 'applied', notes: 'Sent' }, AT);
+    tracker.updateJob('acme--staff', { status: 'applied', earlierNotes: 'Sent' }, AT);
     tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-12' }, AT);
+    tracker.addNote('acme--staff', { text: 'Screen went well' }, AT);
     const other = new Tracker(':memory:');
     for (const { table, id, row } of tracker.syncRows()) other.applySyncRow(table, id, row);
     expect(other.rows()).toEqual(tracker.rows());
     expect(other.calls()).toEqual(tracker.calls());
     expect(other.history()).toEqual(tracker.history());
+    expect(other.notes()).toEqual(tracker.notes());
     other.close();
   });
 
   it('writes only the columns this version knows, and keeps those a row lacks', () => {
-    tracker.updateJob('acme--staff', { questions: ['Why Acme?'], notes: 'Before' }, AT);
+    tracker.updateJob('acme--staff', { questions: ['Why Acme?'], earlierNotes: 'Before' }, AT);
     const stored = tracker.syncRow('jobs', 'acme--staff') ?? {};
     const { questions: _, ...fromOlderApp } = stored;
     tracker.applySyncRow('jobs', 'acme--staff', {
@@ -456,7 +536,7 @@ describe('sync', () => {
       notes: 'After',
       salary_band: 'From a newer app',
     });
-    expect(row()).toMatchObject({ notes: 'After', questions: ['Why Acme?'] });
+    expect(row()).toMatchObject({ earlierNotes: 'After', questions: ['Why Acme?'] });
   });
 
   it('removes a row, and a job’s calls and history go with it', () => {

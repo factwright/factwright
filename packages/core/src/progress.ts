@@ -76,10 +76,33 @@ export interface JobProgress {
   attention: Attention | null;
 }
 
-/** The lists of jobs the jobs page can show. */
-export const JOB_VIEWS = ['active', 'review', 'applied', 'closed', 'all'] as const;
+/**
+ * The lists of jobs the jobs page can show, in the order a job moves through them: found and
+ * waiting for a look, checked and on the way to applying, applied and waiting to hear, in
+ * interviews (an offer included), and closed. Then every job.
+ */
+export const JOB_VIEWS = ['review', 'apply', 'applied', 'interviewing', 'closed', 'all'] as const;
 
 export type JobView = (typeof JOB_VIEWS)[number];
+
+/** How each view reads on screen. */
+export const JOB_VIEW_LABELS: Readonly<Record<JobView, string>> = {
+  review: 'To review',
+  apply: 'To apply',
+  applied: 'Applied',
+  interviewing: 'Interviewing',
+  closed: 'Closed',
+  all: 'All',
+};
+
+/** The statuses each view holds. Every status is in one of them, and in "all". */
+export const VIEW_STATUSES: Readonly<Record<Exclude<JobView, 'all'>, readonly JobStatus[]>> = {
+  review: ['new'],
+  apply: ['checked', 'resume'],
+  applied: ['applied'],
+  interviewing: ['screen', 'interview', 'offer'],
+  closed: CLOSED_STATUSES,
+};
 
 /** Signs that a posting hides the real employer behind a recruiter or a job board. */
 const HIDDEN_EMPLOYER =
@@ -212,6 +235,7 @@ export function jobProgress(job: Job, today: string): JobProgress {
     job.appliedOn,
     ...job.statusLog.map((change) => change.at),
     ...calls.filter((call) => call.onDate <= today).map((call) => call.onDate),
+    ...job.notes.filter((note) => note.on <= today).map((note) => note.on),
   ].filter((date): date is string => Boolean(date));
   const progress = {
     status,
@@ -226,18 +250,22 @@ export function jobProgress(job: Job, today: string): JobProgress {
 
 /** Whether a job belongs in a view of the jobs page, by the status it shows. */
 export function isInView(view: JobView, status: JobStatus): boolean {
-  switch (view) {
-    case 'active':
-      return status !== 'new' && !CLOSED_STATUSES.includes(status);
-    case 'review':
-      return status === 'new';
-    case 'applied':
-      return LIVE_STATUSES.includes(status);
-    case 'closed':
-      return CLOSED_STATUSES.includes(status);
-    case 'all':
-      return true;
-  }
+  return view === 'all' || VIEW_STATUSES[view].includes(status);
+}
+
+/**
+ * The view to open on: the furthest along that has jobs in it, where things move fastest, from
+ * interviews back to the jobs to review, and the closed ones when there's nothing else.
+ */
+export function startingView(statuses: readonly JobStatus[]): JobView {
+  const views = ['interviewing', 'applied', 'apply', 'review', 'closed'] as const;
+  return views.find((view) => statuses.some((status) => isInView(view, status))) ?? 'review';
+}
+
+/** The view a job with this status is in, other than "all". */
+export function viewOf(status: JobStatus): Exclude<JobView, 'all'> {
+  const views = Object.keys(VIEW_STATUSES) as Exclude<JobView, 'all'>[];
+  return views.find((view) => VIEW_STATUSES[view].includes(status)) ?? 'review';
 }
 
 /** Whether a posting looks like it hides the real employer. */
@@ -308,7 +336,7 @@ export function jobStats(
     jobs.filter(test).length;
   return {
     inPlay: count(({ progress }) => LIVE_STATUSES.includes(progress.status)),
-    interviewing: count(({ progress }) => ['screen', 'interview'].includes(progress.status)),
+    interviewing: count(({ progress }) => isInView('interviewing', progress.status)),
     callsAhead: jobs.reduce(
       (total, { job }) =>
         total +

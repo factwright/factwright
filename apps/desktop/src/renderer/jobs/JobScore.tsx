@@ -141,8 +141,8 @@ export function ScoreSection({ job, today }: { job: Job; today: string }) {
   const model = scoreModel(job);
   if (!model) {
     return (
-      <section className={styles.section}>
-        <h3 className={styles.heading}>Not scored yet</h3>
+      <section className={styles.part}>
+        <h4 className={styles.subheading}>Not scored yet</h4>
         <p className={styles.quiet}>
           A fit check scores this job against your fact bank, and looks up what people say about the
           company. Ask your Claude to run one.
@@ -159,11 +159,11 @@ export function ScoreSection({ job, today }: { job: Job; today: string }) {
   ).filter(([, list]) => list.length > 0);
   const failed = model.filters && !model.filters.pass;
   return (
-    <section className={styles.section}>
+    <section className={styles.part}>
       <div className={styles.sectionHead}>
-        <h3 className={styles.heading}>
+        <h4 className={styles.subheading}>
           {model.total !== null ? `Why it scored ${model.total}` : 'Score'}
-        </h3>
+        </h4>
         <span className={styles.meta}>
           From the {model.from}
           {model.date && ` · ${shortDate(model.date, today)}`}
@@ -199,7 +199,7 @@ export function ScoreSection({ job, today }: { job: Job; today: string }) {
           <summary>{lists.map(([title, list]) => `${title} (${list.length})`).join(' · ')}</summary>
           {lists.map(([title, list]) => (
             <div key={title} className={styles.moreGroup}>
-              <h4 className={styles.subheading}>{title}</h4>
+              <h5 className={styles.listHeading}>{title}</h5>
               <ItemList list={list} />
             </div>
           ))}
@@ -215,9 +215,9 @@ export function SentimentSection({ job, today }: { job: Job; today: string }) {
   if (!sentiment) return null;
   const { mood, summary, points, date } = sentiment;
   return (
-    <section className={styles.section}>
+    <section className={styles.part}>
       <div className={styles.sectionHead}>
-        <h3 className={styles.heading}>What people say</h3>
+        <h4 className={styles.subheading}>What people say</h4>
         <span className={styles.meta}>
           From the {sentiment.from === 'job-notes' ? 'job notes' : 'fit check'}
           {date && ` · ${shortDate(date, today)}`}
@@ -262,9 +262,9 @@ export function SearchSection({ job, today }: { job: Job; today: string }) {
   ).flatMap(([label, value]) => (value ? [{ label, value }] : []));
   if (facts.length === 0 && !report) return null;
   return (
-    <section className={styles.section}>
+    <section className={styles.part}>
       <div className={styles.sectionHead}>
-        <h3 className={styles.heading}>From the job search</h3>
+        <h4 className={styles.subheading}>From the job search</h4>
         <span className={styles.meta}>
           {search.source}
           {search.date && ` · ${shortDate(search.date, today)}`}

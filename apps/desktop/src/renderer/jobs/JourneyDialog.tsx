@@ -6,11 +6,19 @@ import {
   journeySummary,
   journeys,
 } from '@factwright/core';
-import { Button, Dialog, Pill, type Tone } from '@factwright/ui';
+import { Button, Dialog, Pill, SegmentedControl, type Tone } from '@factwright/ui';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { usePref } from '../prefs.ts';
+import { FlowChart } from './FlowChart.tsx';
 import styles from './JourneyDialog.module.css';
 import type { JobRow } from './rows.ts';
+
+/** The two ways to see the journey: how far jobs got, step by step, or every path as a chart. */
+type JourneyView = 'summary' | 'chart';
+
+const isJourneyView = (value: unknown): value is JourneyView =>
+  value === 'summary' || value === 'chart';
 
 type Step = Exclude<keyof JourneySummary, 'outcomes'>;
 
@@ -38,7 +46,10 @@ const ENDINGS: readonly { outcome: JourneyOutcome; words: string; tone: Tone }[]
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
-/** How far the user's jobs got, how they ended, and the two ways to take that elsewhere. */
+/**
+ * How far the user's jobs got and how they ended, as a summary or as a flow chart of every path
+ * they took, and the two ways to take that elsewhere.
+ */
 export function JourneyDialog({
   rows,
   api,
@@ -54,6 +65,7 @@ export function JourneyDialog({
   const summary = journeySummary(list);
   const [done, setDone] = useState<'copied' | 'saved' | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [view, setView] = usePref<JourneyView>('journey.view', 'summary', isJourneyView);
   const endings = ENDINGS.filter(({ outcome }) => summary.outcomes[outcome]);
 
   const copy = async () => {
@@ -71,8 +83,47 @@ export function JourneyDialog({
     <Dialog
       title="Your journey"
       description={`How far your ${plural(summary.found, 'job')} got, from finding them to how they ended.`}
+      size="xl"
       onClose={onClose}
     >
+      <SegmentedControl
+        label="Show"
+        options={[
+          { value: 'summary', label: 'Summary' },
+          { value: 'chart', label: 'Flow chart' },
+        ]}
+        value={view}
+        onChange={setView}
+      />
+      <div className={styles.view}>
+        {view === 'chart' ? (
+          <FlowChart list={list} />
+        ) : (
+          <Summary summary={summary} endings={endings} />
+        )}
+      </div>
+
+      <div className={styles.actions}>
+        <Button onClick={copy}>{done === 'copied' ? 'Copied' : 'Copy for SankeyMATIC'}</Button>
+        <Button onClick={save}>{done === 'saved' ? 'Saved' : 'Download as a spreadsheet'}</Button>
+      </div>
+      <p className={styles.hint}>
+        The flow chart can be copied as text for sankeymatic.com, a free site where you can restyle
+        it. The spreadsheet has each step’s date.
+      </p>
+      {problem && (
+        <p className={styles.problem} role="alert">
+          {problem}
+        </p>
+      )}
+    </Dialog>
+  );
+}
+
+/** How far jobs got, step by step, and how the ones that ended, ended. */
+function Summary({ summary, endings }: { summary: JourneySummary; endings: typeof ENDINGS }) {
+  return (
+    <>
       <ol className={styles.steps} aria-label="How far your jobs got">
         {STEPS.map(({ step, label, tone }) => {
           const count = summary[step];
@@ -109,20 +160,6 @@ export function JourneyDialog({
       ) : (
         <p className={styles.hint}>None yet. Jobs show here once you apply.</p>
       )}
-
-      <div className={styles.actions}>
-        <Button onClick={copy}>{done === 'copied' ? 'Copied' : 'Copy as a flow chart'}</Button>
-        <Button onClick={save}>{done === 'saved' ? 'Saved' : 'Download as a spreadsheet'}</Button>
-      </div>
-      <p className={styles.hint}>
-        The flow chart is text for sankeymatic.com, a free site that draws every path your jobs
-        took. The spreadsheet has each step’s date.
-      </p>
-      {problem && (
-        <p className={styles.problem} role="alert">
-          {problem}
-        </p>
-      )}
-    </Dialog>
+    </>
   );
 }

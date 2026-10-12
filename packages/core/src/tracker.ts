@@ -109,13 +109,17 @@ export interface TrackerFields {
   appliedOn: string | null;
   nextAction: string | null;
   nextOn: string | null;
-  notes: string | null;
   /** Questions from the job's application form, which the user pasted for Claude to answer. */
   questions: string[];
   /** What the user actually sent for the form's questions, recorded after applying. */
   sent: SentAnswer[];
   /** Questions the user asked Claude about the job. */
   asks: Ask[];
+  /**
+   * What the user kept in the one free-text notes box the app had before notes were dated. New
+   * notes are dated, one each.
+   */
+  earlierNotes: string | null;
   archived: boolean;
 }
 
@@ -129,6 +133,16 @@ export interface Call {
   state: CallState;
   outcome: CallOutcome | null;
   notes: string | null;
+}
+
+/** A note the user jotted about a job along the way, such as what was said on a call. */
+export interface Note {
+  id: string;
+  /** The day it's about, as an ISO date: the day it was written, unless the user changed it. */
+  on: string;
+  text: string;
+  /** When it was written, to the moment, so notes from the same day keep their order. */
+  at: string;
 }
 
 /** One change of status, for a job's history and for undoing a mis-click. */

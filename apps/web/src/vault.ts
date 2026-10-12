@@ -7,12 +7,14 @@ import {
   type Job,
   type JobDocs,
   jobList,
+  noteOrder,
   readJobExtras,
   readRecords,
   type StoredRow,
   type TrackedRow,
   trackedCall,
   trackedChange,
+  trackedNote,
   trackedRow,
   type WorkspaceEntry,
   type WorkspaceReader,
@@ -129,10 +131,10 @@ function untracked(job: CollectedJob): TrackedRow {
     appliedOn: null,
     nextAction: null,
     nextOn: null,
-    notes: null,
     questions: [],
     sent: [],
     asks: [],
+    earlierNotes: null,
     archived: false,
   };
 }
@@ -144,7 +146,7 @@ function untracked(job: CollectedJob): TrackedRow {
  */
 export async function openVault(client: SyncClient, keys: AccountKeys): Promise<Vault> {
   const files = new Map<string, SyncedFile>();
-  const rows: Record<string, StoredRow[]> = { jobs: [], status_log: [], calls: [] };
+  const rows: Record<string, StoredRow[]> = { jobs: [], status_log: [], calls: [], notes: [] };
   let unreadable = 0;
   for (const change of await allChanges(client)) {
     if (change.deleted) continue;
@@ -190,8 +192,9 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
   const all = [...tracked, ...collected.filter((job) => !ids.has(job.id)).map(untracked)];
   const calls = byJob([...(rows.calls ?? [])].sort(callOrder), trackedCall);
   const history = byJob([...(rows.status_log ?? [])].sort(changeOrder), trackedChange);
+  const notes = byJob([...(rows.notes ?? [])].sort(noteOrder), trackedNote);
   const docs = new Map(collected.map((job) => [job.id, job.docs]));
-  const jobs = jobList(all, found, calls, history);
+  const jobs = jobList(all, found, { calls, history, notes });
   const asked = new Map(jobs.map((job) => [job.id, readJobExtras(reader, job.id).asked]));
   return { jobs, files, docs, asked, rows, unreadable };
 }

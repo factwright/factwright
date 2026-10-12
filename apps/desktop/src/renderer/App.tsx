@@ -1,3 +1,4 @@
+import { JOB_VIEWS, type JobView, viewOf } from '@factwright/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
@@ -14,15 +15,24 @@ import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import { ClaudePanel } from './ClaudePanel.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
+import { FindJobsDialog } from './jobs/FindJobsDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
-import { jobRows, type ListFilter, NO_FILTERS, startingView } from './jobs/rows.ts';
+import {
+  jobRows,
+  type ListFilter,
+  NO_FILTERS,
+  startingView,
+  stepFrom,
+  visibleRows,
+} from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
+import { isBoolean, readPref, usePref, writePref } from './prefs.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useSync } from './sync/useSync.ts';
@@ -30,6 +40,9 @@ import { TopBar } from './TopBar.tsx';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
+
+const isView = (value: unknown): value is JobView =>
+  (JOB_VIEWS as readonly unknown[]).includes(value);
 
 /** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 export function App({ api }: { api: FactwrightApi }) {
@@ -44,16 +57,23 @@ export function App({ api }: { api: FactwrightApi }) {
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
     [jobs, today],
   );
-  const [filter, setFilter] = useState<ListFilter>({
-    view: 'active',
+  // The view the user last picked, or, the first time, one chosen once the jobs load.
+  const [filter, setFilter] = useState<ListFilter>(() => ({
+    view: readPref<JobView>('jobs.view', 'review', isView),
     query: '',
     needsYou: false,
     ...NO_FILTERS,
-  });
+  }));
+  const changeFilter = (next: ListFilter) => {
+    if (next.view !== filter.view) writePref('jobs.view', next.view);
+    setFilter(next);
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'add-job' | 'journey' | 'sync' | 'claude-settings' | null>(
-    null,
-  );
+  // Whether a picked job has the window to itself, kept for next time.
+  const [expanded, setExpanded] = usePref('panel.expanded', false, isBoolean);
+  const [dialog, setDialog] = useState<
+    'add-job' | 'find-jobs' | 'journey' | 'sync' | 'claude-settings' | null
+  >(null);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
@@ -71,10 +91,12 @@ export function App({ api }: { api: FactwrightApi }) {
       ? 'profile'
       : 'jobs');
 
-  // Open on the jobs to review when nothing is active yet.
+  // The first time, open on the view furthest along that has jobs in it, once there are some,
+  // such as when sync brings them to a new computer. After that, the view the user last picked.
   useEffect(() => {
-    if (viewChosen.current || jobs.state !== 'ready') return;
+    if (viewChosen.current || jobs.state !== 'ready' || rows.length === 0) return;
     viewChosen.current = true;
+    if (readPref<JobView | null>('jobs.view', null, isView) !== null) return;
     setFilter((current) => ({ ...current, view: startingView(rows) }));
   }, [jobs.state, rows]);
 
@@ -95,6 +117,23 @@ export function App({ api }: { api: FactwrightApi }) {
   const plan = ready ? planName(status.plan) : undefined;
   const openJobs = rows.filter((row) => !row.job.archived).length;
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
+  // The list as it shows, for moving from job to job while one has the window to itself.
+  const shown = useMemo(() => visibleRows(rows, filter), [rows, filter]);
+  // The list's order when a job took the window, to step through. It holds still as jobs get
+  // new activity or leave the view, so the next job is always the next one the user saw.
+  const [order, setOrder] = useState<string[]>([]);
+  const alone = expanded && selected !== null && openJobs > 0;
+  const keepOrder = () => setOrder(shown.map((row) => row.job.id));
+  const at = order.indexOf(selectedId ?? '');
+  const pick = (jobId: string) => {
+    if (expanded) keepOrder();
+    setSelectedId(jobId);
+  };
+  const step = (offset: -1 | 1) => {
+    const ids = new Set(rows.map((row) => row.job.id));
+    const next = stepFrom(order, selectedId ?? '', offset, (id) => ids.has(id));
+    if (next) setSelectedId(next);
+  };
   const runControls = useMemo<RunControls>(
     () => ({ phase: run.phase, task: run.task, start: run.requestStart, show: run.show }),
     [run.phase, run.task, run.requestStart, run.show],
@@ -124,7 +163,11 @@ export function App({ api }: { api: FactwrightApi }) {
       <TopBar
         platform={api.platform}
         query={filter.query}
-        onQuery={(query) => setFilter((current) => ({ ...current, query }))}
+        onQuery={(query) => {
+          setFilter((current) => ({ ...current, query }));
+          // Searching while a job has the window brings back the list, to show what matches.
+          if (alone) setSelectedId(null);
+        }}
         searchRef={search}
         onAddJob={() => setDialog('add-job')}
       />
@@ -183,20 +226,20 @@ export function App({ api }: { api: FactwrightApi }) {
                 {about.problem ?? 'Loading your profile…'}
               </main>
             )}
-            {page === 'jobs' && (
+            {page === 'jobs' && !alone && (
               <JobsPage
                 jobs={jobs}
                 rows={rows}
                 today={today}
                 filter={filter}
-                onFilter={setFilter}
+                onFilter={changeFilter}
                 selectedId={selectedId}
-                onSelect={setSelectedId}
+                onSelect={pick}
                 onRetry={reload}
                 canStartClaude={ready && !isRunning(run.phase)}
                 onStartClaude={() => run.requestStart()}
                 canFindJobs={ready && !BUSY.includes(run.phase)}
-                onFindJobs={() => run.requestStart({ skill: SEARCH_SKILL })}
+                onFindJobs={() => setDialog('find-jobs')}
                 onOpenJourney={() => setDialog('journey')}
                 onGetStarted={gettingStarted ? () => setPicked('profile') : undefined}
               />
@@ -207,6 +250,13 @@ export function App({ api }: { api: FactwrightApi }) {
                 api={api}
                 today={today}
                 onClose={() => setSelectedId(null)}
+                expanded={alone}
+                onExpand={(next) => {
+                  if (next) keepOrder();
+                  setExpanded(next);
+                }}
+                {...(alone &&
+                  at >= 0 && { navigation: { index: at + 1, count: order.length, onStep: step } })}
                 {...(ready && { run: runControls })}
               />
             )}
@@ -219,14 +269,16 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           onAdded={(jobId, status) => {
             // Show the new job in the list as well as the panel.
-            setFilter({
-              ...NO_FILTERS,
-              view: status === 'new' ? 'review' : 'active',
-              query: '',
-              needsYou: false,
-            });
+            changeFilter({ ...NO_FILTERS, view: viewOf(status), query: '', needsYou: false });
             setSelectedId(jobId);
           }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'find-jobs' && (
+        <FindJobsDialog
+          today={today}
+          onStart={(sources) => run.requestStart({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
       )}

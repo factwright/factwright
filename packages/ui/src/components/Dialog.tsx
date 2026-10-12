@@ -10,8 +10,8 @@ export interface DialogProps {
   description?: string;
   /** Called once the dialog has closed, by its close button, Escape, or a call to close it. */
   onClose: () => void;
-  /** "lg" for reading, such as a saved posting. */
-  size?: 'md' | 'lg';
+  /** "lg" for reading, such as a saved posting, and "xl" for a chart. */
+  size?: 'md' | 'lg' | 'xl';
   /** What's inside. As a function, it's given a way to close the dialog, such as after saving. */
   children: ReactNode | ((close: () => void) => ReactNode);
 }

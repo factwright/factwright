@@ -1,3 +1,4 @@
+import type { FlowLink, FlowNode } from './flows.ts';
 import type { Job } from './jobs.ts';
 import type { JobProgress } from './progress.ts';
 import { type CallKind, type JobStatus, STATUS_RANK } from './tracker.ts';
@@ -170,35 +171,90 @@ export function journeySummary(list: readonly Journey[]): JourneySummary {
 
 const MONTH = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
+/** How jobs ended, in the order the flow chart stacks them: those still in play first. */
+const OUTCOME_ORDER: readonly JourneyOutcome[] = [
+  'In progress',
+  'Accepted offer',
+  'Declined offer',
+  'Rejected',
+  'Withdrew',
+  'No response',
+  'Passed',
+  'Not applied',
+];
+
+/** A step jobs reached, or a way they ended, as the flow chart draws it. Its ID is its label. */
+export type JourneyNode = FlowNode &
+  ({ kind: 'stage'; stage: JourneyStage } | { kind: 'outcome'; outcome: JourneyOutcome });
+
+/** Every path the jobs took, as steps and endings with the jobs that went between them. */
+export interface JourneyFlows {
+  /** The steps left to right, in the order jobs reach them, then the endings in a last column. */
+  nodes: JourneyNode[];
+  /** In the order jobs first took them. */
+  links: FlowLink[];
+}
+
+export function journeyFlows(list: readonly Journey[]): JourneyFlows {
+  const flows = new Map<string, FlowLink>();
+  const add = (from: string, to: string) => {
+    const key = `${from}\u0000${to}`;
+    const flow = flows.get(key) ?? { from, to, value: 0 };
+    flow.value++;
+    flows.set(key, flow);
+  };
+  const reached = new Set<JourneyStage>();
+  const ended = new Set<JourneyOutcome>();
+  for (const { stages, outcome } of list) {
+    stages.forEach((stage, i) => {
+      reached.add(stage);
+      const previous = stages[i - 1];
+      if (previous) add(JOURNEY_STAGE_LABELS[previous], JOURNEY_STAGE_LABELS[stage]);
+    });
+    const last = stages.at(-1);
+    if (last) {
+      add(JOURNEY_STAGE_LABELS[last], outcome);
+      ended.add(outcome);
+    }
+  }
+  const stages = JOURNEY_STAGES.filter((stage) => reached.has(stage));
+  return {
+    nodes: [
+      ...stages.map(
+        (stage, column): JourneyNode => ({
+          id: JOURNEY_STAGE_LABELS[stage],
+          column,
+          kind: 'stage',
+          stage,
+        }),
+      ),
+      ...OUTCOME_ORDER.filter((outcome) => ended.has(outcome)).map(
+        (outcome): JourneyNode => ({
+          id: outcome,
+          column: stages.length,
+          kind: 'outcome',
+          outcome,
+        }),
+      ),
+    ],
+    links: [...flows.values()],
+  };
+}
+
 /**
  * Every path the jobs took, as text for SankeyMATIC (sankeymatic.com), which draws it as a
  * flow chart: one line per step, such as "Applied [7] Recruiter screen".
  */
 export function journeyFlowChart(list: readonly Journey[], today: string): string {
-  const flows = new Map<string, { from: string; to: string; count: number }>();
-  const add = (from: string, to: string) => {
-    const key = `${from}\u0000${to}`;
-    const flow = flows.get(key) ?? { from, to, count: 0 };
-    flow.count++;
-    flows.set(key, flow);
-  };
-  for (const { stages, outcome } of list) {
-    const labels = stages.map((stage) => JOURNEY_STAGE_LABELS[stage]);
-    labels.forEach((label, i) => {
-      const previous = labels[i - 1];
-      if (previous) add(previous, label);
-    });
-    const last = labels.at(-1);
-    if (last) add(last, outcome);
-  }
-  const used = new Set([...flows.values()].flatMap(({ from, to }) => [from, to]));
+  const { links } = journeyFlows(list);
+  const used = new Set(links.flatMap(({ from, to }) => [from, to]));
   const colors = Object.entries(FLOW_COLORS)
     .filter(([name]) => used.has(name))
     .map(([name, color]) => `:${name} ${color}`);
   const month = MONTH.format(new Date(`${today}T00:00:00Z`));
   return [
     `// Job-search journey, ${month}`,
-    ...[...flows.values()].map(({ from, to, count }) => `${from} [${count}] ${to}`),
+    ...links.map(({ from, to, value }) => `${from} [${value}] ${to}`),
     '',
     ...colors,
   ].join('\n');

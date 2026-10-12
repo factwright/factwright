@@ -343,6 +343,16 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
   return records;
 }
 
+/**
+ * Where a search looked, in a few words: "Hacker News · Who is hiring? (October 2026)" is
+ * "HN October 2026".
+ */
+function searchSource(source: string): string {
+  const short = source.replace(/^Hacker News · /, 'HN ');
+  const month = short.match(/^HN\b.*\bwho is hiring\??\s*\(([a-z]+ \d{4})\)$/i)?.[1];
+  return month ? `HN ${month}` : short;
+}
+
 function searchRecords(workspace: WorkspaceReader): ToolRecord[] {
   const records: ToolRecord[] = [];
   for (const entry of workspace.list(WORKSPACE_PATHS.searches).sort(byName)) {
@@ -360,10 +370,7 @@ function searchRecords(workspace: WorkspaceReader): ToolRecord[] {
     const { meta, jobs, longShots } = data as Record<string, unknown>;
     const about = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {};
     const date = firstDate(text(about.checked)) ?? firstDate(`${folder.slice(0, 7)}-01`);
-    const source = (text(about.source) ?? text(about.title) ?? folder).replace(
-      /^Hacker News · /,
-      'HN ',
-    );
+    const source = searchSource(text(about.source) ?? text(about.title) ?? folder);
     const report = text(about.artifactUrl);
 
     const found = (item: Record<string, unknown>, longShot: boolean): SearchRecord => {

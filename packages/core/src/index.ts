@@ -44,6 +44,15 @@ export {
   type ScorePartKey,
   type Sentiment,
 } from './fit-report.ts';
+export {
+  type FlowLayout,
+  type FlowLink,
+  type FlowNode,
+  type FlowSize,
+  layoutFlows,
+  type PlacedLink,
+  type PlacedNode,
+} from './flows.ts';
 export { fileSize, payLabel, shortDate } from './format.ts';
 export {
   HN_THREADS_URL,
@@ -63,16 +72,20 @@ export {
   type JobEvent,
   type JobPay,
   type KnownJob,
+  type SearchRun,
 } from './jobs.ts';
 export {
   JOURNEY_STAGE_LABELS,
   JOURNEY_STAGES,
   type Journey,
+  type JourneyFlows,
+  type JourneyNode,
   type JourneyOutcome,
   type JourneyStage,
   type JourneySummary,
   journeyCsv,
   journeyFlowChart,
+  journeyFlows,
   journeyOf,
   journeySummary,
   journeys,
@@ -110,6 +123,7 @@ export {
   dayFrom,
   fitTier,
   isInView,
+  JOB_VIEW_LABELS,
   JOB_VIEWS,
   type JobProgress,
   type JobStats,
@@ -119,6 +133,9 @@ export {
   LIVE_STATUSES,
   looksHidden,
   nextStep,
+  startingView,
+  VIEW_STATUSES,
+  viewOf,
 } from './progress.ts';
 export {
   JOB_DOCS,
@@ -138,10 +155,13 @@ export {
   callOrder,
   changeOrder,
   jobList,
+  noteOrder,
   type StoredRow,
+  type TrackedItems,
   type TrackedRow,
   trackedCall,
   trackedChange,
+  trackedNote,
   trackedRow,
 } from './tracked.ts';
 export {
@@ -159,6 +179,7 @@ export {
   JOB_STATUSES,
   type JobStage,
   type JobStatus,
+  type Note,
   SETTLED_STATUSES,
   type SentAnswer,
   STATUS_RANK,

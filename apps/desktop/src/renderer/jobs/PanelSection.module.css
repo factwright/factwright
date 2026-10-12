@@ -1,0 +1,94 @@
+/* Each section reaches the panel's edges, so a line sets it apart from the one before. */
+.section {
+  margin: 0 calc(-1 * var(--panel-pad));
+  padding: 0 var(--panel-pad);
+  border-top: 1px solid var(--fw-border);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  min-height: 48px;
+}
+
+.heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fw-text-md);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--fw-radius-sm);
+}
+
+.chevron {
+  flex: 0 0 auto;
+  margin-left: -3px;
+  color: var(--fw-muted);
+  transition: transform 120ms ease;
+}
+
+.turned {
+  transform: rotate(90deg);
+}
+
+.icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fw-muted);
+}
+
+.title {
+  flex: 0 0 auto;
+  font-weight: 650;
+}
+
+.toggle:hover .title {
+  color: var(--fw-accent-text);
+}
+
+/* What's inside, in a few words, at the right. */
+.summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 450;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--fw-space-2);
+}
+
+.body {
+  padding-bottom: 18px;
+}
+
+.body > :first-child {
+  margin-top: 0;
+}

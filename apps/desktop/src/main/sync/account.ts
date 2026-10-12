@@ -29,7 +29,7 @@ import type {
 import type { Tracker } from '../jobs/tracker.ts';
 import { computerName, userAgent } from './device.ts';
 import { SyncEngine } from './engine.ts';
-import { adoptGainedColumns } from './rows.ts';
+import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
 import { SyncRunner } from './runner.ts';
 import { type Keychain, Secrets } from './secrets.ts';
 import { DeviceSignIn } from './sign-in.ts';
@@ -97,8 +97,10 @@ export class SyncAccount {
     mkdirSync(folder, { recursive: true });
     this.secrets = new Secrets(join(folder, 'secrets.json'), deps.keychain);
     this.state = new SyncState(join(folder, 'sync.db'));
-    // Before anything changes the tracker: columns an update added take what was synced.
+    // Before anything changes the tracker: columns an update added take what was synced, and
+    // tables it added get what other devices sent before.
     adoptGainedColumns(deps.tracker, this.state);
+    adoptGainedTables(deps.tracker, this.state);
   }
 
   status(): SyncStatus {

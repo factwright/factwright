@@ -86,7 +86,8 @@ export interface JobChanges {
   appliedOn?: string | null;
   nextAction?: string | null;
   nextOn?: string | null;
-  notes?: string | null;
+  /** The one undated box of notes the app had before notes were dated. */
+  earlierNotes?: string | null;
   /** All of the application's questions, in order, replacing those saved before. */
   questions?: string[];
   archived?: boolean;
@@ -99,7 +100,20 @@ export interface NewJob {
   link?: string | null;
   pay?: string | null;
   status?: JobStatus | null;
+  /** A first note, dated today. */
   notes?: string | null;
+}
+
+/** A note the user jots about a job: its words, and the day it's about if not today. */
+export interface NewNote {
+  text: string;
+  on?: string;
+}
+
+/** Changes to a note. Only the fields given change. */
+export interface NoteChanges {
+  text?: string;
+  on?: string;
 }
 
 /** A call or interview the user logs. */
@@ -193,6 +207,10 @@ export interface FactwrightApi {
   redateStatusChange(changeId: string, at: string): Promise<EditResult>;
   /** Removes a change of status, to undo a mis-click. */
   undoStatusChange(changeId: string): Promise<EditResult>;
+  /** Keeps a note about a job, dated today unless it says otherwise. */
+  addNote(jobId: string, note: NewNote): Promise<EditResult>;
+  updateNote(noteId: string, changes: NoteChanges): Promise<EditResult>;
+  deleteNote(noteId: string): Promise<EditResult>;
   /** Listens for any change to the jobs. Returns a function that stops listening. */
   onJobsChanged(listener: (list: JobList) => void): () => void;
   /** Claude's answers to the user's questions about a job, and its screenshots. */

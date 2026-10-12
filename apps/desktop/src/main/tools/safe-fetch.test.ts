@@ -46,6 +46,19 @@ describe('linkProblem', () => {
     expect(linkProblem(new URL(address))).toContain(reason);
   });
 
+  it('never reads LinkedIn, whose terms forbid software reading it', () => {
+    for (const address of [
+      'https://www.linkedin.com/jobs/view/4012345678',
+      'https://linkedin.com/company/acme',
+      'https://de.linkedin.com/in/someone',
+      'https://lnkd.in/abc123',
+      'https://media.licdn.com/dms/image/x.png',
+    ]) {
+      expect(linkProblem(new URL(address))).toContain('never reads LinkedIn');
+    }
+    expect(linkProblem(new URL('https://notlinkedin.com/jobs'))).toBeNull();
+  });
+
   it('refuses links with a sign-in in them', () => {
     // Built rather than written out, so the secret scan doesn't take it for a real one.
     const url = new URL('https://acme.example/jobs');

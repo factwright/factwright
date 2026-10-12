@@ -1,4 +1,4 @@
-import { JOB_VIEWS, type JobView, jobStats, payLabel } from '@factwright/core';
+import { JOB_VIEW_LABELS, JOB_VIEWS, type JobView, jobStats, payLabel } from '@factwright/core';
 import {
   Button,
   EmptyState,
@@ -11,14 +11,7 @@ import {
 import { Briefcase, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import styles from './Dashboard.module.css';
-import {
-  type PhoneRow,
-  phoneRows,
-  startingView,
-  VIEW_LABELS,
-  viewCounts,
-  visible,
-} from './jobs.ts';
+import { type PhoneRow, phoneRows, startingView, viewCounts, visible } from './jobs.ts';
 import { navigate } from './route.ts';
 import type { Vault } from './vault.ts';
 
@@ -146,7 +139,7 @@ export function Dashboard({
           label="Views"
           options={JOB_VIEWS.map((each) => ({
             value: each,
-            label: VIEW_LABELS[each],
+            label: JOB_VIEW_LABELS[each],
             count: counts[each],
           }))}
           value={view}

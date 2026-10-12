@@ -2,7 +2,8 @@
 // sign-in checks, and in a run it talks to the app the way Claude Code does: it reaches
 // Factwright's tools with the run's token, and sends the prompt, Stop and session-end hooks. It
 // never reaches Anthropic. FAKE_CLAUDE_TRUST=ask makes it ask whether to trust the folder first.
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const args = process.argv.slice(2);
 
@@ -65,6 +66,28 @@ async function work(text) {
     for (const id of named ? [named] : open) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
+  }
+  // As Claude would for a search of LinkedIn: write the run's report in a folder of its own,
+  // in the workspace it runs in.
+  if (/^\/factwright:job-search .*\bLinkedIn\b/.test(text)) {
+    const folder = join(process.cwd(), 'searches', '2026-10-12-linkedin');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'jobs.json'),
+      JSON.stringify({
+        meta: { source: 'LinkedIn Oct 12', checked: '2026-10-12' },
+        jobs: [
+          {
+            company: 'Lakeside Data',
+            role: 'Senior Platform Engineer',
+            posting: 'https://boards.greenhouse.io/lakeside/jobs/1',
+            tier: 'strong',
+            score: 81,
+            why: ['Platform work, from the stand-in Claude'],
+          },
+        ],
+      }),
+    );
   }
   // As Claude would for a template: start from one of the app's, and save one of the user's own.
   if (/^\/factwright:make-template from templates\/sources\/\S+$/.test(text)) {

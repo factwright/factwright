@@ -1,13 +1,4 @@
-import {
-  Button,
-  Checkbox,
-  Chip,
-  FIT_TIER_DISPLAY,
-  Field,
-  Input,
-  Select,
-  type Tone,
-} from '@factwright/ui';
+import { Button, Checkbox, Chip, FIT_TIER_DISPLAY, Field, Input, type Tone } from '@factwright/ui';
 import { SlidersHorizontal } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import styles from './FiltersPanel.module.css';
@@ -21,15 +12,13 @@ const TIERS: readonly { tier: TierFilter; label: string; tone: Tone }[] = [
   { tier: 'none', label: 'Not scored', tone: 'gray' },
 ];
 
-/** The Filters button, and the panel it opens: fit, where jobs came from, pay, resumes, archived. */
+/** The Filters button, and the panel it opens: fit, pay, resumes, and archived jobs. */
 export function FiltersPanel({
   filter,
   onFilter,
-  sources,
 }: {
   filter: ListFilter;
   onFilter: (filter: ListFilter) => void;
-  sources: readonly string[];
 }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -98,22 +87,6 @@ export function FiltersPanel({
               ))}
             </div>
           </fieldset>
-          <Field label="Found through">
-            {(control) => (
-              <Select
-                {...control}
-                value={filter.source ?? ''}
-                onChange={(event) => onFilter({ ...filter, source: event.target.value || null })}
-              >
-                <option value="">Anywhere</option>
-                {sources.map((source) => (
-                  <option key={source} value={source}>
-                    {source}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
           <Field label="Pays at least" hint="In thousands a year, such as 150 for $150k.">
             {(control) => (
               <Input

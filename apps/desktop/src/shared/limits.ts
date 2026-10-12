@@ -5,7 +5,10 @@ export const LIMITS = {
   link: 2000,
   pay: 200,
   nextAction: 500,
+  /** The one undated box of notes the app had before notes were dated. */
   notes: 20_000,
+  /** One dated note, such as what was said on a call. */
+  note: 10_000,
   callNotes: 2000,
   /** One question from an application form, which can carry instructions and a word limit. */
   question: 4000,

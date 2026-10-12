@@ -125,6 +125,21 @@ const RESUME = {
 };
 
 describe('collectJobs', () => {
+  it('keeps every search run that found a job, once each, oldest first', () => {
+    const later = { folder: '2026-11-hn', source: 'HN November 2026', date: '2026-11-03' };
+    const [job] = collectJobs([
+      search('Acme Robotics', 'Staff Engineer', { ...later, key: 'nov:acme', score: 60 }),
+      search('Acme Robotics', 'Staff Engineer', { key: 'oct:acme', score: 80 }),
+      search('Acme Robotics', 'Staff Engineer', { key: 'oct:acme-again', score: 75 }),
+    ]);
+    expect(job?.searches).toEqual([
+      { folder: '2026-10-hn', source: 'HN October 2026', date: '2026-10-05' },
+      later,
+    ]);
+    // The best-rated run is the one the job's score comes from.
+    expect(job?.search).toMatchObject({ source: 'HN October 2026', score: 80 });
+  });
+
   it('joins one job’s records across skills by its own link', () => {
     const posting = [{ url: ASHBY, label: 'Posting' }];
     const jobs = collectJobs([
@@ -152,6 +167,7 @@ describe('collectJobs', () => {
       source: 'HN October 2026',
       fit: { verdict: 'Strong', score: 82, date: '2026-10-07' },
       search: { tier: 'good', score: 85, source: 'HN October 2026' },
+      searches: [{ folder: '2026-10-hn', source: 'HN October 2026', date: '2026-10-05' }],
       folder: '2026-10-07-Acme Robotics',
       stage: 'resume',
       firstSeen: '2026-10-05',

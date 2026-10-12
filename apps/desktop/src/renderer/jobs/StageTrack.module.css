@@ -1,0 +1,106 @@
+/* The steps down the side, each a dot on a line that runs to the next. */
+.track {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  min-height: 34px;
+}
+
+/* The line from this step's dot down to the next one. */
+.step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 15px;
+  bottom: -5px;
+  left: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--step-tone);
+  opacity: 0.35;
+}
+
+.step.now::before,
+.step:has(+ .next)::before {
+  background: var(--fw-border);
+  opacity: 1;
+}
+
+.dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--step-tone);
+}
+
+/* Where it is now: a ring around its dot. */
+.now .dot {
+  box-shadow:
+    0 0 0 3px var(--fw-surface),
+    0 0 0 5px var(--step-tone);
+}
+
+/* The step ahead: an empty dot. */
+.next .dot {
+  border: 2px solid var(--fw-control-border);
+  background: var(--fw-surface);
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1px 0 8px;
+  font-weight: 550;
+}
+
+.now .label {
+  font-weight: 700;
+}
+
+.next .label {
+  color: var(--fw-muted);
+  font-weight: 500;
+}
+
+.detail {
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 450;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.when {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 22px;
+  color: var(--fw-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.fixed {
+  padding: 2px 4px;
+}
+
+.notYet {
+  padding: 2px 4px;
+  color: var(--fw-muted);
+}
+
+.undo {
+  margin-right: 2px;
+}

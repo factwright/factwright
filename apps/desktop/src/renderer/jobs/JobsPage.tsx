@@ -1,27 +1,61 @@
-import { type JobView, jobStats } from '@factwright/core';
-import { Button, Checkbox, EmptyState, SegmentedControl, Stat } from '@factwright/ui';
+import { JOB_VIEW_LABELS, JOB_VIEWS, jobStats } from '@factwright/core';
+import { Button, Checkbox, EmptyState, SegmentedControl, Select, Stat } from '@factwright/ui';
 import { Activity, Briefcase, Search, SearchX } from 'lucide-react';
 import { FiltersPanel } from './FiltersPanel.tsx';
 import { JobList } from './JobList.tsx';
 import styles from './JobsPage.module.css';
 import {
+  type FoundOption,
   filterCount,
+  foundOptions,
   type JobRow,
   type ListFilter,
   NO_FILTERS,
-  sources,
   viewCounts,
   visibleRows,
 } from './rows.ts';
 import type { JobsState } from './useJobs.ts';
 
-const VIEW_LABELS: Readonly<Record<JobView, string>> = {
-  active: 'Active',
-  review: 'To review',
-  applied: 'Applied',
-  closed: 'Closed',
-  all: 'All',
-};
+const option = ({ value, label, count }: FoundOption) => (
+  <option key={value} value={value}>
+    {label} ({count})
+  </option>
+);
+
+/**
+ * Where the jobs came from: each job search, so its jobs can be seen together, such as the
+ * month's HN thread, then the other ways jobs came in.
+ */
+function FoundBy({
+  rows,
+  today,
+  filter,
+  onFilter,
+}: {
+  rows: readonly JobRow[];
+  today: string;
+  filter: ListFilter;
+  onFilter: (filter: ListFilter) => void;
+}) {
+  const { searches, others } = foundOptions(rows, today);
+  const { found } = filter;
+  // What's picked always shows, even once nothing is left with it, so it can be cleared.
+  const gone = found && ![...searches, ...others].some((each) => each.value === found);
+  if (searches.length === 0 && others.length < 2 && !found) return null;
+  return (
+    <Select
+      className={`${styles.foundBy} ${found ? styles.foundOn : ''}`}
+      aria-label="Found by"
+      value={found ?? ''}
+      onChange={(event) => onFilter({ ...filter, found: event.target.value || null })}
+    >
+      <option value="">Found anywhere</option>
+      {gone && option({ value: found, label: found.replace(/^(search|from):/, ''), count: 0 })}
+      {searches.length > 0 && <optgroup label="Job searches">{searches.map(option)}</optgroup>}
+      {others.length > 0 && <optgroup label="Other ways">{others.map(option)}</optgroup>}
+    </Select>
+  );
+}
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
@@ -77,7 +111,7 @@ export function JobsPage(props: JobsPageProps) {
   const counts = viewCounts(rows, filter);
   const shown = visibleRows(rows, filter);
   const heardBack = stats.applied ? `${Math.round((100 * stats.heardBack) / stats.applied)}%` : '—';
-  const narrowed = Boolean(filter.query || filter.needsYou || filterCount(filter));
+  const narrowed = Boolean(filter.query || filter.needsYou || filter.found || filterCount(filter));
 
   return (
     <main className={styles.page}>
@@ -173,25 +207,38 @@ export function JobsPage(props: JobsPageProps) {
           <div className={styles.toolbar}>
             <SegmentedControl
               label="Views"
-              options={(Object.keys(VIEW_LABELS) as JobView[]).map((view) => ({
+              options={JOB_VIEWS.map((view) => ({
                 value: view,
-                label: VIEW_LABELS[view],
+                label: JOB_VIEW_LABELS[view],
                 count: counts[view],
               }))}
               value={filter.view}
               onChange={(view) => onFilter({ ...filter, view })}
             />
-            <Checkbox
-              className={styles.needsYou}
-              label="Needs you"
-              checked={filter.needsYou}
-              onChange={(event) => onFilter({ ...filter, needsYou: event.target.checked })}
-            />
-            <FiltersPanel filter={filter} onFilter={onFilter} sources={sources(rows)} />
+            <div className={styles.narrowing}>
+              <FoundBy rows={rows} today={today} filter={filter} onFilter={onFilter} />
+              <Checkbox
+                label="Needs you"
+                checked={filter.needsYou}
+                onChange={(event) => onFilter({ ...filter, needsYou: event.target.checked })}
+              />
+              <FiltersPanel filter={filter} onFilter={onFilter} />
+            </div>
           </div>
 
           {shown.length > 0 ? (
-            <JobList rows={shown} selectedId={props.selectedId} onSelect={props.onSelect} />
+            <JobList
+              rows={shown}
+              view={filter.view}
+              today={today}
+              // Only when the jobs come from more than one search: otherwise it's only noise.
+              showFound={
+                filter.view === 'review' &&
+                new Set(shown.flatMap(({ job }) => job.searches.map((run) => run.folder))).size > 1
+              }
+              selectedId={props.selectedId}
+              onSelect={props.onSelect}
+            />
           ) : (
             <div className={styles.noMatch}>
               <EmptyState
@@ -204,7 +251,7 @@ export function JobsPage(props: JobsPageProps) {
                         onFilter({ ...filter, ...NO_FILTERS, query: '', needsYou: false })
                       }
                     >
-                      Show all in {VIEW_LABELS[filter.view]}
+                      Show all in {JOB_VIEW_LABELS[filter.view]}
                     </Button>
                   ) : undefined
                 }

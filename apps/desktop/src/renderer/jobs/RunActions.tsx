@@ -79,11 +79,9 @@ export function RunActions({
   const begin = (skill: RunSkill) =>
     skill === 'answer-questions' ? setAsking(true) : run.start({ skill, jobId: job.id });
   return (
-    <section className={styles.section} aria-labelledby={`run-heading-${job.id}`}>
-      <h3 id={`run-heading-${job.id}`} className={styles.heading}>
-        Run with your Claude
-      </h3>
-      <div className={styles.actions}>
+    <div className={styles.section}>
+      <fieldset className={styles.actions}>
+        <legend className={styles.legend}>Run with your Claude</legend>
         {RUN_ACTIONS.map(({ skill, label, why }) => {
           const mine = run.task?.skill === skill && taskJob(run.task) === job.id;
           const running = mine && busy;
@@ -110,7 +108,7 @@ export function RunActions({
             </button>
           );
         })}
-      </div>
+      </fieldset>
       {asking && (
         <QuestionsDialog
           job={job}
@@ -119,6 +117,6 @@ export function RunActions({
           onClose={() => setAsking(false)}
         />
       )}
-    </section>
+    </div>
   );
 }
