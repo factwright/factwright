@@ -1,6 +1,6 @@
 import { type Ask, askAnswer, type Job, type JobShot, shortDate } from '@factwright/core';
 import { Button, Dialog, DialogActions, Markdown, Pill, TextArea } from '@factwright/ui';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import { taskJob } from '../../shared/runs.ts';
@@ -37,13 +37,16 @@ export function AskDialog({
   job: Job;
   api: FactwrightApi;
   /** Starts the run that answers it, once it's kept. */
-  onAsked: () => void;
+  onAsked: (askId: string) => void;
   onClose: () => void;
 }) {
   const [question, setQuestion] = useState('');
   const [shots, setShots] = useState<PickedShot[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  // Once the question is kept, trying again only saves the screenshots still waiting.
+  const [askId, setAskId] = useState<string | null>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
 
   const ask = async (event: FormEvent, close: () => void) => {
     event.preventDefault();
@@ -52,21 +55,36 @@ export function AskDialog({
       return;
     }
     setAsking(true);
-    const asked = await api.askAboutJob(job.id, question);
-    if (!asked.ok) {
+    try {
+      let id = askId;
+      if (!id) {
+        const asked = await api.askAboutJob(job.id, question);
+        if (!asked.ok) {
+          setProblem(asked.message);
+          return;
+        }
+        id = asked.askId;
+        setAskId(id);
+      }
+      const failed: string[] = [];
+      for (const shot of shots) {
+        const saved = await api
+          .addShot(job.id, { name: shot.name, bytes: shot.bytes }, { kind: 'ask', ask: id })
+          .catch(() => null);
+        if (saved?.ok) setShots((now) => now.filter((each) => each.key !== shot.key));
+        else failed.push(saved?.message ?? `${shot.name} couldn’t be saved.`);
+      }
+      if (failed.length > 0) {
+        setProblem(
+          `Your question is kept, but ${failed.length === 1 ? 'a screenshot isn’t' : 'some screenshots aren’t'}: ${failed.join(' ')} Remove ${failed.length === 1 ? 'it' : 'them'} and ask, or try again.`,
+        );
+        return;
+      }
+      close();
+      onAsked(id);
+    } finally {
       setAsking(false);
-      setProblem(asked.message);
-      return;
     }
-    for (const shot of shots) {
-      await api.addShot(
-        job.id,
-        { name: shot.name, bytes: shot.bytes },
-        { kind: 'ask', ask: asked.askId },
-      );
-    }
-    close();
-    onAsked();
   };
 
   return (
@@ -78,12 +96,14 @@ export function AskDialog({
       {(close) => (
         <form className={styles.form} onSubmit={(event) => ask(event, close)}>
           <TextArea
+            ref={box}
             className={styles.question}
             aria-label="Your question"
             placeholder="Such as: I have a 15 minute recruiter call tomorrow. What should I expect?"
             rows={4}
             maxLength={LIMITS.ask}
             value={question}
+            readOnly={askId !== null}
             onChange={(event) => setQuestion(event.target.value)}
             data-autofocus
           />
@@ -94,7 +114,11 @@ export function AskDialog({
                   key={starter}
                   type="button"
                   className={styles.starter}
-                  onClick={() => setQuestion(starter)}
+                  onClick={() => {
+                    setQuestion(starter);
+                    // The starters go once there's a question, so the box takes the focus.
+                    box.current?.focus();
+                  }}
                 >
                   {starter}
                 </button>
@@ -129,18 +153,23 @@ export function AskDialog({
 /** Screenshots that came with a question, loaded once it's open. */
 function AskShots({ shots, api }: { shots: readonly JobShot[]; api: FactwrightApi }) {
   const [shown, setShown] = useState<ShownShot[]>([]);
+  // The pictures load again only when they change, not each time the panel draws.
+  const paths = shots.map((shot) => shot.path).join('\n');
   useEffect(() => {
     let live = true;
     void Promise.all(
-      shots.map(async ({ path }) => {
-        const bytes = await api.readShot(path);
-        return bytes ? [{ key: path, url: pictureUrl(bytes, typeOf(path)) }] : [];
-      }),
+      paths
+        .split('\n')
+        .filter(Boolean)
+        .map(async (path) => {
+          const bytes = await api.readShot(path);
+          return bytes ? [{ key: path, url: pictureUrl(bytes, typeOf(path)) }] : [];
+        }),
     ).then((loaded) => live && setShown(loaded.flat()));
     return () => {
       live = false;
     };
-  }, [api, shots]);
+  }, [api, paths]);
   if (shown.length === 0) return null;
   return (
     <ul className={styles.shots}>
@@ -185,6 +214,18 @@ function AskItem({
   const [open, setOpen] = useState(newest);
   const [removing, setRemoving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const removeButton = useRef<HTMLButtonElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  // The button that was pressed goes away, so the focus moves to the one that takes its place.
+  const toggled = useRef(false);
+  useEffect(() => {
+    if (!toggled.current) return;
+    (removing ? keepButton : removeButton).current?.focus();
+  }, [removing]);
+  const confirming = (next: boolean) => {
+    toggled.current = true;
+    setRemoving(next);
+  };
   const shown = answer ? askAnswer(answer) : null;
   const state = answering ? 'Answering' : shown ? 'Answered' : 'Waiting';
   const remove = async () => {
@@ -228,16 +269,23 @@ function AskItem({
             )}
             {removing ? (
               <>
-                <span className={styles.confirm}>Remove the question and its answer?</span>
+                <span className={styles.confirm} role="status">
+                  Remove the question and its answer?
+                </span>
                 <Button size="sm" onClick={() => void remove()}>
                   Remove
                 </Button>
-                <Button size="sm" variant="quiet" onClick={() => setRemoving(false)}>
+                <Button
+                  ref={keepButton}
+                  size="sm"
+                  variant="quiet"
+                  onClick={() => confirming(false)}
+                >
                   Keep
                 </Button>
               </>
             ) : (
-              <Button size="sm" variant="quiet" onClick={() => setRemoving(true)}>
+              <Button ref={removeButton} size="sm" variant="quiet" onClick={() => confirming(true)}>
                 Remove
               </Button>
             )}
@@ -281,10 +329,13 @@ export function AskSection({
   }, [api, job]);
 
   const busy = run ? BUSY.includes(run.phase) : true;
-  const mine = run?.task?.skill === 'ask' && taskJob(run.task) === job.id;
-  const start = () => run?.start({ skill: 'ask', jobId: job.id });
+  const task = run?.task;
+  const mine = task?.skill === 'ask' && taskJob(task) === job.id;
+  // The question the open run is answering: the one it names, or every one waiting.
+  const answering = (ask: Ask) =>
+    mine && busy && (task && 'askId' in task ? task.askId === ask.id : !extras?.asked[ask.id]);
+  const start = (askId: string) => run?.start({ skill: 'ask', jobId: job.id, askId });
   const asks = [...job.asks].reverse();
-  const unanswered = asks.filter((ask) => !extras?.asked[ask.id]);
 
   return (
     <section className={panel.section} aria-labelledby={`ask-heading-${job.id}`}>
@@ -312,10 +363,10 @@ export function AskSection({
               newest={i === 0}
               answer={extras?.asked[ask.id]}
               shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
-              answering={mine && busy && unanswered.includes(ask)}
+              answering={answering(ask)}
               canRun={Boolean(run) && !busy}
               api={api}
-              onRun={start}
+              onRun={() => start(ask.id)}
               today={today}
             />
           ))}

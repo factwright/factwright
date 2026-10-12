@@ -195,8 +195,11 @@ export interface FactwrightApi {
   onJobsChanged(listener: (list: JobList) => void): () => void;
   /** Claude's answers to the user's questions about a job, and its screenshots. */
   jobExtras(jobId: string): Promise<JobExtras | null>;
-  /** Keeps what the user actually sent for one of the application's questions. Blank forgets it. */
-  recordAnswer(jobId: string, question: string, text: string): Promise<EditResult>;
+  /**
+   * Keeps what the user actually sent for one of the application's questions, the nth time the
+   * form asks it, counting from 0. Blank forgets it.
+   */
+  recordAnswer(jobId: string, question: string, nth: number, text: string): Promise<EditResult>;
   /** Keeps a question for Claude about a job, ready for a run to answer it. */
   askAboutJob(jobId: string, question: string): Promise<AskResult>;
   /** Forgets a question about a job, and puts its answer and screenshots in the trash. */

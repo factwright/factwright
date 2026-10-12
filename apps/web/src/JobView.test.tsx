@@ -97,7 +97,15 @@ describe('a job on the phone', () => {
     const asked = {
       ...ACME,
       questions: ['Why Acme?', 'Anything else?'],
-      sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-08' }],
+      sent: [
+        {
+          question: 'Why Acme?',
+          nth: 0,
+          text: 'Deploys, mostly.',
+          on: '2026-10-08',
+          at: '2026-10-08T18:00:00.000Z',
+        },
+      ],
       asks: [
         {
           id: '2026-10-09-what-should-i-expect',

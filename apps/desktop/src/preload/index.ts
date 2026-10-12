@@ -27,8 +27,8 @@ const api: FactwrightApi = {
   undoStatusChange: (changeId) => ipcRenderer.invoke('history:undo', changeId),
   onJobsChanged: (listener) => subscribe('jobs:changed', listener),
   jobExtras: (jobId) => ipcRenderer.invoke('jobs:extras', jobId),
-  recordAnswer: (jobId, question, text) =>
-    ipcRenderer.invoke('jobs:record-answer', jobId, question, text),
+  recordAnswer: (jobId, question, nth, text) =>
+    ipcRenderer.invoke('jobs:record-answer', jobId, question, nth, text),
   askAboutJob: (jobId, question) => ipcRenderer.invoke('jobs:ask', jobId, question),
   removeAsk: (jobId, askId) => ipcRenderer.invoke('jobs:remove-ask', jobId, askId),
   addShot: (jobId, shot, purpose) => ipcRenderer.invoke('jobs:add-shot', jobId, shot, purpose),

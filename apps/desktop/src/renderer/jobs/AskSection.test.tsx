@@ -69,6 +69,7 @@ describe('AskSection', () => {
       name: 'Your question',
     }) as HTMLTextAreaElement;
     expect(box.value).toBe('What’s the team and its culture like, from what people say?');
+    expect(document.activeElement).toBe(box);
     await userEvent.clear(box);
     await userEvent.type(box, 'What’s their stack?');
     const picture = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'email.png', {
@@ -79,7 +80,13 @@ describe('AskSection', () => {
     expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
     expect(api.askAboutJob).toHaveBeenCalledWith(job.id, 'What’s their stack?');
-    await waitFor(() => expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id }));
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({
+        skill: 'ask',
+        jobId: job.id,
+        askId: '2026-10-12-whats-their-stack',
+      }),
+    );
     expect(api.addShot).toHaveBeenCalledWith(
       job.id,
       { name: 'email.png', bytes: expect.any(Uint8Array) },
@@ -127,7 +134,7 @@ describe('AskSection', () => {
     render(<AskSection job={asked} api={apiStub()} run={run} today={TODAY} />);
     expect(await screen.findByText('Waiting')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Answer now' }));
-    expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id });
+    expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: ASK.id });
     cleanup();
     render(
       <AskSection
@@ -144,12 +151,47 @@ describe('AskSection', () => {
     ).toBe(true);
   });
 
+  it('keeps the question when a screenshot isn’t saved, and doesn’t ask it twice', async () => {
+    const api = apiStub();
+    const run = controls();
+    api.addShot.mockResolvedValueOnce({ ok: false, message: 'email.png is empty.' });
+    render(<AskSection job={job} api={api} run={run} today={TODAY} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ask about Acme' });
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Your question' }), 'Why?');
+    await userEvent.upload(
+      dialog.querySelector('input[type="file"]') as HTMLInputElement,
+      new File([new Uint8Array([1])], 'email.png', { type: 'image/png' }),
+    );
+    await within(dialog).findByRole('img', { name: 'Screenshot 1' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Your question is kept, but a screenshot isn’t: email.png is empty. Remove it and ask, or try again.',
+    );
+    expect(run.start).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove screenshot 1' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
+    await waitFor(() => expect(run.start).toHaveBeenCalledOnce());
+    expect(api.askAboutJob).toHaveBeenCalledOnce();
+  });
+
+  it('asks again about an answered question, by its ID', async () => {
+    const run = controls();
+    const api = apiStub({ asked: { [ASK.id]: 'A short screen.' }, shots: [] });
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={run} today={TODAY} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Ask again' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: ASK.id });
+  });
+
   it('removes a question once the user confirms it', async () => {
     const api = apiStub();
     render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={controls()} today={TODAY} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    expect(screen.getByText('Remove the question and its answer?')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Remove the question and its answer?');
+    // The focus moves to the choices that took the button's place, and back.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep' }));
     await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Remove' }));
     expect(api.removeAsk).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));

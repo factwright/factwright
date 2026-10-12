@@ -98,8 +98,24 @@ describe('tracker rows', () => {
         { id: '2026-10-12-culture', question: 'What’s the culture like?', on: '2026-10-12' },
       ]),
     });
-    expect(row.sent).toEqual([{ question: 'Start date?', text: 'Two weeks', on: '2026-10-10' }]);
+    expect(row.sent).toEqual([
+      { question: 'Start date?', nth: 0, text: 'Two weeks', on: '2026-10-10', at: '2026-10-10' },
+    ]);
     expect(row.asks.map((ask) => ask.id)).toEqual(['2026-10-12-culture']);
+    // Two devices answered the same question: the later answer stands, and a repeated
+    // question's second box keeps its own.
+    const twice = trackedRow({
+      ...STORED_JOB,
+      sent: JSON.stringify([
+        { question: 'Why Acme?', text: 'Later', on: '2026-10-11', at: '2026-10-11T10:00:00Z' },
+        { question: 'Why Acme?', text: 'Earlier', on: '2026-10-11', at: '2026-10-11T09:00:00Z' },
+        { question: 'If yes, explain.', nth: 1, text: 'Second box', on: '2026-10-11' },
+      ]),
+    });
+    expect(twice.sent.map((answer) => [answer.text, answer.nth])).toEqual([
+      ['Later', 0],
+      ['Second box', 1],
+    ]);
     expect(trackedRow({ ...STORED_JOB, sent: undefined, asks: 'not json' })).toMatchObject({
       sent: [],
       asks: [],

@@ -24,11 +24,13 @@ export const GET_STARTED_SKILL = 'get-started';
 export const FACTS_SKILL = 'add-facts';
 
 /**
- * What the window asks the app to run: a skill on one job, a job search, getting started (or
- * only its starting resumes), or more facts, from an interview or from new files and notes.
+ * What the window asks the app to run: a skill on one job, or one of the user's questions about
+ * it, a job search, getting started (or only its starting resumes), or more facts, from an
+ * interview or from new files and notes.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
+  | { skill: 'ask'; jobId: string; askId: string }
   | { skill: typeof SEARCH_SKILL }
   | { skill: typeof GET_STARTED_SKILL; mode?: 'resumes' }
   | { skill: typeof FACTS_SKILL; mode: 'interview' | 'new' };

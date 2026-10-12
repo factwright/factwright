@@ -54,11 +54,16 @@ async function work(text) {
   show(`> ${text}\nWorking on it…\n`);
   // As Claude would for a question about a job: read what's on file, then answer each one
   // that's waiting, with the tool that keeps the answer with the job.
-  const asked = text.match(/^\/factwright:ask job (\S+)/);
+  const asked = text.match(/^\/factwright:ask job (\S+)(?: question (\S+))?/);
   if (asked) {
-    const details = await call('job_details', { job: asked[1] });
-    for (const [, id] of details.matchAll(/^- (\S+) \(asked [^)]+\): not answered yet$/gm)) {
-      await call('save_answer', { job: asked[1], question: id, answer: ANSWER });
+    const [, job, named] = asked;
+    const details = await call('job_details', { job });
+    const waiting = [...details.matchAll(/^- (\S+) \(asked [^)]+\): not answered yet$/gm)];
+    const open = waiting.map(([, each]) => each);
+    // A question named again after it was answered gets a fresh answer.
+    const again = named && !open.includes(named);
+    for (const id of named ? [named] : open) {
+      await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
   }
   setTimeout(async () => {

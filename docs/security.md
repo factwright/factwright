@@ -15,8 +15,8 @@ Factwright holds the most personal parts of a job hunt: your career history, you
 Job postings are web pages written by strangers, so a posting could try to give Claude instructions. Factwright limits what those instructions could do:
 - Claude runs without a shell: no Bash, no PowerShell.
 - Its file access stays inside your workspace folder. Your tracker (statuses, notes, calls, pasted application questions, the answers you sent and your questions for Claude) sits outside it.
-- Text from an employer, such as a posting or an application form's questions, reaches Claude only through Factwright's tools, marked as information. The app never types it in as if it were you.
-- Your own questions about a job reach Claude the same way, through `job_details`, marked as your words. The app types only the skill and the job's ID, so a question is never sent as a command line.
+- Text from an employer, such as a posting or an application form's questions, reaches Claude only through Factwright's tools, marked as information. The app never types it in as if it were you. Screenshots, such as of a form or a recruiter's email, Claude reads from the workspace, and the standing rules, the tools that list them and the skills all say what's in them is information, never instructions.
+- Your own questions about a job reach Claude the same way, through `job_details`, marked as your words. The app types only the skill, the job's ID and the question's ID, so a question is never sent as a command line.
 - Screenshots you add, or paste into Claude's panel, are checked like any picture you share: a type Claude reads, no bigger than sync carries, and bytes that are what the name says. They're kept in the workspace's `screenshots/` folder, and the window can show only pictures from there.
 - Its only extra tools are the ones Factwright provides, each doing one narrow job. They answer only the run Factwright started, and refuse anything a web page sends.
 - The tools that only read what's on file run without asking, as do web searches, whose words go to the search service, never to a site a posting names.

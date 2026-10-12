@@ -5,10 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
 import type { FactwrightApi, TerminalSize } from '../shared/api.ts';
 import styles from './ClaudePanel.module.css';
-import { readPictures } from './jobs/Screenshots.tsx';
-
-/** The picture types Claude Code takes. */
-const PICTURE = /^image\/(png|jpeg|webp|gif)$/;
+import { pastedPictures, readPictures } from './jobs/Screenshots.tsx';
 
 /**
  * The terminal Claude Code runs in. It shows Claude's output, sends what the user types, follows
@@ -82,9 +79,7 @@ export function TerminalView({
 
     // Caught before the terminal's own paste, which takes only text.
     const pastePicture = (event: ClipboardEvent) => {
-      const files = [...(event.clipboardData?.items ?? [])]
-        .filter((item) => item.kind === 'file' && PICTURE.test(item.type))
-        .flatMap((item) => item.getAsFile() ?? []);
+      const files = pastedPictures(event);
       if (files.length === 0) return;
       event.preventDefault();
       event.stopPropagation();

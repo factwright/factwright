@@ -210,6 +210,8 @@ export function sampleJobs(): Job[] {
           question: 'Why do you want to work at Northwind?',
           text: 'Honestly, the platform team. I’ve run an internal platform for four years and I miss being close to the people using it. Your teams seem to actually talk to each other.',
           on: day(-16),
+          at: `${day(-16)}T18:00:00.000Z`,
+          nth: 0,
         },
       ],
       asks: [

@@ -67,9 +67,13 @@ export async function readPictures(files: readonly File[]): Promise<PickedShot[]
   );
 }
 
-/** The image files in a paste, if any. */
-function pastedFiles(event: ClipboardEvent): File[] {
-  const items = [...(event.clipboardData?.items ?? [])];
+/**
+ * The pictures in a paste, if it's pictures. Text copied from a spreadsheet or a document often
+ * comes with a picture of itself too, and that paste is the text.
+ */
+export function pastedPictures(event: ClipboardEvent): File[] {
+  if (!event.clipboardData || event.clipboardData.getData('text/plain')) return [];
+  const items = [...event.clipboardData.items];
   return items
     .filter((item) => item.kind === 'file' && TYPES[item.type])
     .flatMap((item) => item.getAsFile() ?? []);
@@ -108,7 +112,7 @@ export function Screenshots({
   // A screenshot pasted anywhere in the dialog joins the others. Pasted text goes on as usual.
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {
-      const files = pastedFiles(event);
+      const files = pastedPictures(event);
       if (files.length === 0) return;
       event.preventDefault();
       latest.current(files);

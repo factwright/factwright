@@ -1,4 +1,4 @@
-import { ASK_ID } from './answers.ts';
+import { ASK_ID, questionKey } from './answers.ts';
 import { isIsoDate } from './dates.ts';
 import type { CollectedJob, Job, JobPay } from './jobs.ts';
 import type { Link } from './links.ts';
@@ -70,14 +70,28 @@ function listOf(json: unknown): unknown[] {
 const textsOf = (json: unknown): string[] =>
   listOf(json).filter((item): item is string => typeof item === 'string');
 
-/** The answers the user recorded, leaving out any that don't read. */
-const sentOf = (json: unknown): SentAnswer[] =>
-  listOf(json).flatMap((item) => {
-    const { question, text, on } = (item ?? {}) as StoredRow;
-    return typeof question === 'string' && typeof text === 'string' && isIsoDate(on)
-      ? [{ question, text, on }]
-      : [];
-  });
+/**
+ * The answers the user recorded, leaving out any that don't read. Two devices can each record an
+ * answer to the same question; the later one stands.
+ */
+function sentOf(json: unknown): SentAnswer[] {
+  const kept = new Map<string, SentAnswer>();
+  for (const item of listOf(json)) {
+    const { question, text, on, at, nth } = (item ?? {}) as StoredRow;
+    if (typeof question !== 'string' || typeof text !== 'string' || !isIsoDate(on)) continue;
+    const answer: SentAnswer = {
+      question,
+      nth: Number.isInteger(nth) && (nth as number) >= 0 ? (nth as number) : 0,
+      text,
+      on,
+      at: typeof at === 'string' ? at : on,
+    };
+    const key = `${questionKey(question)}#${answer.nth}`;
+    const known = kept.get(key);
+    if (!known || answer.at >= known.at) kept.set(key, answer);
+  }
+  return [...kept.values()];
+}
 
 /** The questions the user asked Claude, leaving out any that don't read. */
 const asksOf = (json: unknown): Ask[] =>

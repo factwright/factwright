@@ -240,9 +240,14 @@ export function registerIpc({
 
   answer('jobs:extras', (jobId) => (isId(jobId) && jobs.has(jobId) ? jobs.extras(jobId) : null));
 
-  answer('jobs:record-answer', (jobId, question, text) =>
-    isId(jobId) && isTextUpTo(question, LIMITS.question) && isTextUpTo(text, LIMITS.answer)
-      ? jobs.recordAnswer(jobId, question, text)
+  answer('jobs:record-answer', (jobId, question, nth, text) =>
+    isId(jobId) &&
+    isTextUpTo(question, LIMITS.question) &&
+    Number.isInteger(nth) &&
+    (nth as number) >= 0 &&
+    (nth as number) < LIMITS.questions &&
+    isTextUpTo(text, LIMITS.answer)
+      ? jobs.recordAnswer(jobId, question, nth as number, text)
       : REFUSED,
   );
 

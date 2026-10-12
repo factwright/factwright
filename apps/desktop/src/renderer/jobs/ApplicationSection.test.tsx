@@ -31,7 +31,7 @@ const job = sampleJob({
   role: 'Staff Engineer',
   docKinds: ['answers'],
   questions: ['Why Acme?', 'Are you authorized to work in the US?', 'Anything else?'],
-  sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.', on: TODAY }],
+  sent: [{ question: 'Why Acme?', nth: 0, text: 'Deploys, mostly.', on: TODAY, at: TODAY }],
 });
 
 function apiStub() {
@@ -85,7 +85,7 @@ describe('ApplicationSection', () => {
     await userEvent.type(box, 'Nope.');
     await userEvent.tab();
     await waitFor(() =>
-      expect(api.recordAnswer).toHaveBeenLastCalledWith(job.id, 'Anything else?', 'Nope.'),
+      expect(api.recordAnswer).toHaveBeenLastCalledWith(job.id, 'Anything else?', 0, 'Nope.'),
     );
     expect(await within(item('Anything else?')).findByText('Saved')).toBeTruthy();
   });
@@ -105,7 +105,61 @@ describe('ApplicationSection', () => {
       expect(api.recordAnswer).toHaveBeenCalledWith(
         job.id,
         'Are you authorized to work in the US?',
+        0,
         'Yes',
+      ),
+    );
+  });
+
+  it('keeps an answer under the wording it was recorded with, so clearing it forgets it', async () => {
+    const api = apiStub();
+    const recorded = {
+      ...job,
+      questions: ['Why do you want to work at Acme Robotics, and why now?'],
+      sent: [
+        {
+          question: 'Why do you want to work at Acme Robotics',
+          nth: 0,
+          text: 'Deploys.',
+          on: TODAY,
+          at: TODAY,
+        },
+      ],
+      docKinds: [],
+    };
+    render(<ApplicationSection job={recorded} api={api} today={TODAY} />);
+    await userEvent.click(screen.getByText(/and why now/, { selector: 'span' }));
+    await userEvent.clear(screen.getByRole('textbox', { name: /What you sent/ }));
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(api.recordAnswer).toHaveBeenLastCalledWith(
+        job.id,
+        'Why do you want to work at Acme Robotics',
+        0,
+        '',
+      ),
+    );
+  });
+
+  it('keeps a separate answer for each time the form asks the same question', async () => {
+    const api = apiStub();
+    const twice = {
+      ...job,
+      questions: ['If yes, please explain.', 'If yes, please explain.'],
+      sent: [],
+      docKinds: [],
+    };
+    render(<ApplicationSection job={twice} api={api} today={TODAY} />);
+    const [, second] = screen.getAllByText('If yes, please explain.', { selector: 'span' });
+    await userEvent.click(second as HTMLElement);
+    await userEvent.type(screen.getByRole('textbox', { name: /What you sent/ }), 'On-call.');
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(api.recordAnswer).toHaveBeenLastCalledWith(
+        job.id,
+        'If yes, please explain.',
+        1,
+        'On-call.',
       ),
     );
   });

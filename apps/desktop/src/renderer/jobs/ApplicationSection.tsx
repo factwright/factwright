@@ -47,7 +47,9 @@ function SentBox({
   const focused = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const id = useId();
-  const { question } = answer;
+  // Kept under the question as it was recorded, which may be Claude's wording of it.
+  const question = answer.sent?.question ?? answer.question;
+  const nth = answer.sent?.nth ?? answer.nth;
   const jobId = job.id;
 
   const save = useCallback(async () => {
@@ -56,9 +58,9 @@ function SentBox({
     if (next === null) return;
     pending.current = null;
     setState('saving');
-    const result = await api.recordAnswer(jobId, question, next);
+    const result = await api.recordAnswer(jobId, question, nth, next);
     setState(result.ok ? 'saved' : 'failed');
-  }, [api, jobId, question]);
+  }, [api, jobId, question, nth]);
 
   useEffect(() => () => void save(), [save]);
 

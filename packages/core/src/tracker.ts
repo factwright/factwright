@@ -83,9 +83,13 @@ export type CallOutcome = (typeof CALL_OUTCOMES)[number];
 export interface SentAnswer {
   /** The question, as the form asked it. */
   question: string;
+  /** For a question the form asks more than once, such as "If yes, please explain", which time. */
+  nth: number;
   text: string;
   /** When they recorded it, as an ISO date. */
   on: string;
+  /** When they recorded it, to the moment, so the latest of two devices' changes wins. */
+  at: string;
 }
 
 /** A question the user asked Claude about a job. Claude saves its answer in the job's folder. */

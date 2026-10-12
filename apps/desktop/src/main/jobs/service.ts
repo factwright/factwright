@@ -146,8 +146,8 @@ export class JobsService {
   }
 
   /** Keeps what the user actually sent for one of the application's questions. */
-  recordAnswer(jobId: string, question: string, text: string): EditResult {
-    return this.saved(this.deps.tracker.recordAnswer(jobId, question, text, this.context()));
+  recordAnswer(jobId: string, question: string, nth: number, text: string): EditResult {
+    return this.saved(this.deps.tracker.recordAnswer(jobId, question, nth, text, this.context()));
   }
 
   /** Keeps a question the user asked Claude about a job. */

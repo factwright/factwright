@@ -130,6 +130,10 @@ test('answers a question about the job, and keeps the answer with it', async () 
   });
   await expect(asked.getByText('Answered')).toBeVisible();
   await expect(asked.getByText('A short screen, from the stand-in Claude.')).toBeVisible();
+  // Asked again, Claude answers it again, in place of the first answer.
+  await asked.getByRole('button', { name: 'Ask again' }).click();
+  await expect(asked.getByText('A short screen, from the stand-in Claude. Again.')).toBeVisible();
+  expect(await terminalText(window)).toMatch(/\/factwright:ask job \S+ question 20\d\d-/);
 });
 
 test('keeps a picture pasted into Claude’s panel with the run’s job, for Claude to read', async () => {

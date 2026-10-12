@@ -252,17 +252,15 @@ export function sampleTracker(jobs: string | null): TrackerApi {
           .filter((shot) => shot.path.startsWith(`${shotsFolder(jobId)}/`)),
       };
     },
-    recordAnswer: async (jobId, question, text) =>
+    recordAnswer: async (jobId, question, nth, text) =>
       change(
         (job) => job.id === jobId,
         (job) => {
           const others = job.sent.filter(
-            (each) => questionKey(each.question) !== questionKey(question),
+            (each) => questionKey(each.question) !== questionKey(question) || each.nth !== nth,
           );
-          return {
-            ...job,
-            sent: text.trim() ? [...others, { question, text, on: localDate() }] : others,
-          };
+          const answer = { question, nth, text, on: localDate(), at: new Date().toISOString() };
+          return { ...job, sent: text.trim() ? [...others, answer] : others };
         },
       ),
     askAboutJob: async (jobId, question) => {

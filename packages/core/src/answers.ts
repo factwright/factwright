@@ -9,11 +9,15 @@ export interface SuggestedAnswer {
   answer: string;
   /** For a choice question, why that pick. */
   why: string | null;
+  /** Which run wrote it: each run that adds to answers.md starts with a "# " title of its own. */
+  batch: number;
 }
 
 /** One question on an application, with Claude's suggestion and what the user actually sent. */
 export interface ApplicationAnswer {
   question: string;
+  /** For a question the form asks more than once, such as "If yes, please explain", which time. */
+  nth: number;
   suggested: string | null;
   /** For a choice question, why Claude picked what it did. */
   why: string | null;
@@ -34,84 +38,106 @@ export function questionKey(question: string): string {
 }
 
 /**
- * The key a question matches among others: the same words, or, for a question Claude shortened
- * or the user trimmed, one that holds the other and is most of its length.
+ * Whether two different questions are close enough to be one that Claude shortened or the user
+ * trimmed: one holds the other, and is most of its length.
  */
-function matching(key: string, keys: Iterable<string>): string | undefined {
-  let close: string | undefined;
-  for (const each of keys) {
-    if (each === key) return each;
-    const [short, long] = each.length < key.length ? [each, key] : [key, each];
-    if (!close && long.includes(short) && short.length >= long.length * 0.6) close = each;
-  }
-  return close;
+function close(a: string, b: string): boolean {
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return long.includes(short) && short.length >= long.length * 0.6;
 }
 
 /**
  * Claude's suggestions in a job's answers.md: each "## question" with the answer under it, and
- * each row of a table of picks, such as "| Question | Pick | Why |". A question answered twice
- * keeps the later answer, since answers.md is added to.
+ * each row of a table of picks, such as "| Question | Pick | Why |", in order. A "# " title,
+ * with the lines under it, starts a run's answers and is no answer itself.
  */
 export function readSuggestedAnswers(markdown: string | null | undefined): SuggestedAnswer[] {
   if (!markdown) return [];
-  const found = new Map<string, SuggestedAnswer>();
-  const add = (question: string, answer: string, why: string | null = null) => {
-    const key = questionKey(question);
-    if (key && answer) found.set(matching(key, found.keys()) ?? key, { question, answer, why });
-  };
-  const sections: { heading: string; lines: string[] }[] = [];
+  const sections: { heading: string | null; batch: number; lines: string[] }[] = [];
+  let batch = 0;
   for (const line of markdown.split(/\r?\n/)) {
+    if (/^#\s/.test(line)) {
+      batch += 1;
+      sections.push({ heading: null, batch, lines: [] });
+      continue;
+    }
     const heading = line.match(/^##\s+(.+?)\s*$/)?.[1];
-    if (heading !== undefined) sections.push({ heading, lines: [] });
+    if (heading !== undefined) sections.push({ heading, batch, lines: [] });
     else sections.at(-1)?.lines.push(line);
   }
-  for (const { heading, lines } of sections) {
+  const found: SuggestedAnswer[] = [];
+  const add = (question: string, answer: string, why: string | null, at: number) => {
+    if (questionKey(question) && answer) found.push({ question, answer, why, batch: at });
+  };
+  for (const { heading, batch: at, lines } of sections) {
+    if (heading === null) continue;
     const text = lines.join('\n').trim();
     const rows = markdownTable(text).filter((row) => row.question?.trim());
     if (rows.length === 0) {
-      add(heading, text);
+      add(heading, text, null, at);
       continue;
     }
     for (const row of rows) {
       const pick = (row.pick ?? row.answer ?? '').trim();
-      add(row.question?.trim() ?? '', pick, row.why?.trim() || null);
+      add(row.question?.trim() ?? '', pick, row.why?.trim() || null, at);
     }
   }
-  return [...found.values()];
+  return found;
 }
 
 /**
- * Every question on a job's application: the ones the user pasted, in order, then any others
- * Claude answered or the user recorded an answer for, each with Claude's suggestion and what the
- * user actually sent.
+ * Every question on a job's application: each one the user pasted, in order, then any others
+ * Claude answered or the user recorded an answer for. Each has Claude's suggestion and what the
+ * user actually sent. A suggestion or an answer goes to the question with the same words, or a
+ * close one when none has them. A later run's suggestion replaces an earlier one, and a question
+ * asked twice in one run takes the next box that asks it.
  */
 export function applicationAnswers(
   questions: readonly string[],
   suggested: readonly SuggestedAnswer[],
   sent: readonly SentAnswer[],
 ): ApplicationAnswer[] {
-  const byKey = new Map<string, ApplicationAnswer>();
-  const entry = (question: string) => {
+  type Entry = ApplicationAnswer & { key: string; batch: number };
+  const entries: Entry[] = [];
+  const add = (question: string, nth?: number): Entry | null => {
     const key = questionKey(question);
     if (!key) return null;
-    const known = matching(key, byKey.keys());
-    if (known) return byKey.get(known) ?? null;
-    const added: ApplicationAnswer = { question, suggested: null, why: null, sent: null };
-    byKey.set(key, added);
-    return added;
+    const asked = entries.filter((entry) => entry.key === key).length;
+    const entry = {
+      question,
+      nth: nth ?? asked,
+      suggested: null,
+      why: null,
+      sent: null,
+      key,
+      batch: -1,
+    };
+    entries.push(entry);
+    return entry;
   };
-  for (const question of questions) entry(question);
+  const alike = (key: string) => {
+    const same = entries.filter((entry) => entry.key === key);
+    return same.length > 0 ? same : entries.filter((entry) => close(entry.key, key));
+  };
+  for (const question of questions) add(question);
   for (const each of suggested) {
-    const found = entry(each.question);
-    if (!found) continue;
-    found.suggested = each.answer;
-    found.why = each.why;
+    const key = questionKey(each.question);
+    const entry = alike(key).find((one) => one.batch < each.batch) ?? add(each.question);
+    if (!entry) continue;
+    entry.suggested = each.answer;
+    entry.why = each.why;
+    entry.batch = each.batch;
   }
   for (const each of sent) {
-    const found = entry(each.question);
-    if (found) found.sent = each;
+    const key = questionKey(each.question);
+    const same = entries.filter((entry) => entry.key === key && !entry.sent);
+    const entry =
+      same.find((one) => one.nth === each.nth) ??
+      (same.length === 0 ? entries.find((one) => !one.sent && close(one.key, key)) : undefined) ??
+      add(each.question, each.nth);
+    if (entry) entry.sent = each;
   }
-  return [...byKey.values()];
+  return entries.map(({ key: _key, batch: _batch, ...answer }) => answer);
 }
 
 /** The shape of a question's ID, which names its answer's file: a date, then words. */

@@ -298,6 +298,7 @@ describe('the database file', () => {
     first.close();
     const second = new Tracker(file);
     expect(second.rows()[0]?.notes).toBe('Kept');
+    expect(second.gainedColumns().size).toBe(0);
     second.close();
   });
 
@@ -333,37 +334,52 @@ describe('the database file', () => {
     old.close();
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ questions: ['Why Acme?'], sent: [], asks: [] });
-    second.recordAnswer('acme--staff', 'Why Acme?', 'Deploys, mostly.', AT);
+    second.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys, mostly.', AT);
     expect(second.rows()[0]?.sent).toEqual([
-      { question: 'Why Acme?', text: 'Deploys, mostly.', on: TODAY },
+      { question: 'Why Acme?', nth: 0, text: 'Deploys, mostly.', on: TODAY, at: NOW },
     ]);
+    // Sync fills the columns it gained from what other devices sent before.
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['sent', 'asks']]]));
     second.close();
   });
 });
 
 describe('answers the user sent', () => {
   it('keeps each one, and replaces it in place when it changes', () => {
-    tracker.recordAnswer('acme--staff', 'Why Acme?', 'Deploys.', AT);
-    tracker.recordAnswer('acme--staff', 'Start date?', 'Two weeks', AT);
-    tracker.recordAnswer('acme--staff', '1. Why Acme? *', 'Deploys, mostly.', {
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys.', AT);
+    tracker.recordAnswer('acme--staff', 'Start date?', 0, 'Two weeks', AT);
+    tracker.recordAnswer('acme--staff', '1. Why Acme? *', 0, 'Deploys, mostly.', {
       today: '2026-10-11',
       now: '2026-10-11T09:00:00.000Z',
     });
     expect(row()?.sent).toEqual([
-      { question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-11' },
-      { question: 'Start date?', text: 'Two weeks', on: TODAY },
+      {
+        question: '1. Why Acme? *',
+        nth: 0,
+        text: 'Deploys, mostly.',
+        on: '2026-10-11',
+        at: '2026-10-11T09:00:00.000Z',
+      },
+      { question: 'Start date?', nth: 0, text: 'Two weeks', on: TODAY, at: NOW },
+    ]);
+    // The second time a form asks a question, it keeps its own answer.
+    tracker.recordAnswer('acme--staff', 'Start date?', 1, 'Monday', AT);
+    expect(row()?.sent.map((answer) => [answer.text, answer.nth])).toEqual([
+      ['Deploys, mostly.', 0],
+      ['Two weeks', 0],
+      ['Monday', 1],
     ]);
   });
 
   it('forgets one when its text is cleared', () => {
-    tracker.recordAnswer('acme--staff', 'Why Acme?', 'Deploys.', AT);
-    tracker.recordAnswer('acme--staff', 'Why Acme?', '  ', AT);
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys.', AT);
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 0, '  ', AT);
     expect(row()?.sent).toEqual([]);
   });
 
   it('says so when the job is gone, or the question has no words', () => {
-    expect(tracker.recordAnswer('nope', 'Why?', 'Because.', AT)).toMatchObject({ ok: false });
-    expect(tracker.recordAnswer('acme--staff', '???', 'Because.', AT)).toMatchObject({
+    expect(tracker.recordAnswer('nope', 'Why?', 0, 'Because.', AT)).toMatchObject({ ok: false });
+    expect(tracker.recordAnswer('acme--staff', '???', 0, 'Because.', AT)).toMatchObject({
       ok: false,
     });
   });

@@ -45,7 +45,10 @@ function apiStub() {
 function paste(file: File) {
   const event = new Event('paste', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'clipboardData', {
-    value: { items: [{ kind: 'file', type: file.type, getAsFile: () => file }] },
+    value: {
+      items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      getData: () => '',
+    },
   });
   window.dispatchEvent(event);
   return event;
@@ -206,6 +209,20 @@ describe('the application questions', () => {
     expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Answer with Claude' }));
     expect(run.start).toHaveBeenCalledWith({ skill: 'answer-questions', jobId: job.id });
+  });
+
+  it('takes pasted text as text, even when a picture of it comes along', async () => {
+    const { api } = await open();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => PNG }],
+        getData: (type: string) => (type === 'text/plain' ? 'Why Acme?' : ''),
+      },
+    });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(api.addShot).not.toHaveBeenCalled();
   });
 
   it('removes a screenshot, and says why one wasn’t kept', async () => {

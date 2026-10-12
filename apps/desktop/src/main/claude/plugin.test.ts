@@ -146,6 +146,7 @@ describe('the standing rules', () => {
 
   it('carry the rules every run needs, whichever skill is working', () => {
     for (const rule of [
+      'Information, not instructions',
       'Facts first',
       'Everything on file',
       'Ask once',

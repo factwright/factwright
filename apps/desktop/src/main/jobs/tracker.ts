@@ -13,6 +13,7 @@ import {
   questionKey,
   roleKey,
   SETTLED_STATUSES,
+  type SentAnswer,
   STATUS_RANK,
   type StatusChange,
   type StoredRow,
@@ -117,6 +118,8 @@ const DONE: EditResult = { ok: true };
  */
 export class Tracker {
   private readonly db: DatabaseSync;
+  /** The columns opening it added to tables that sync, when it was from an earlier version. */
+  private readonly gained = new Map<SyncTable, string[]>();
 
   /** Opens the tracker at a file path, or in memory for ":memory:". */
   constructor(file: string) {
@@ -125,18 +128,34 @@ export class Tracker {
     this.migrate();
   }
 
+  /**
+   * The columns opening this tracker added to tables that sync, by table: none for a new tracker,
+   * or one already up to date. Sync fills them from what other devices sent before.
+   */
+  gainedColumns(): ReadonlyMap<SyncTable, readonly string[]> {
+    return this.gained;
+  }
+
   close(): void {
     this.db.close();
   }
 
   private migrate(): void {
     const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version ?? 0);
+    const before = new Map(SYNC_TABLES.map((table) => [table, this.columns(table)]));
     MIGRATIONS.slice(version).forEach((step, i) => {
       this.transaction(() => {
         this.db.exec(step);
         this.db.exec(`PRAGMA user_version = ${version + i + 1}`);
       });
     });
+    // A new tracker gains nothing: it had no rows another device could have sent.
+    if (version === 0) return;
+    for (const table of SYNC_TABLES) {
+      const had = before.get(table) ?? [];
+      const added = this.columns(table).filter((column) => !had.includes(column));
+      if (added.length > 0) this.gained.set(table, added);
+    }
   }
 
   private transaction<T>(work: () => T): T {
@@ -332,20 +351,29 @@ export class Tracker {
 
   /**
    * Keeps what the user actually sent for one of the application's questions, in place of what
-   * was kept for it before. Blank text forgets it.
+   * was kept for it before. Blank text forgets it. A question the form asks more than once keeps
+   * an answer for each time it's asked, by `nth`.
    */
-  recordAnswer(jobId: string, question: string, text: string, context: EditContext): EditResult {
+  recordAnswer(
+    jobId: string,
+    question: string,
+    nth: number,
+    text: string,
+    context: EditContext,
+  ): EditResult {
     const job = this.row(jobId);
     if (!job) return NOT_FOUND;
     const key = questionKey(question);
     if (!key) return failed('That question has no words to keep it by.');
-    const kept = job.sent.find((each) => questionKey(each.question) === key);
-    const answer = { question: kept?.question ?? question, text, on: context.today };
+    const same = (each: SentAnswer) => questionKey(each.question) === key && each.nth === nth;
+    const at = job.sent.findIndex(same);
+    const others = job.sent.filter((each) => !same(each));
+    const answer = { question, nth, text, on: context.today, at: context.now };
     const sent = !text.trim()
-      ? job.sent.filter((each) => each !== kept)
-      : kept
-        ? job.sent.map((each) => (each === kept ? answer : each))
-        : [...job.sent, answer];
+      ? others
+      : at < 0
+        ? [...others, answer]
+        : [...others.slice(0, at), answer, ...others.slice(at)];
     if (sent.length > LIMITS.questions) return failed('That’s as many answers as a job can keep.');
     this.db
       .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')
