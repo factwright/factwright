@@ -17,3 +17,7 @@ Thumbs.db
 
 # Playwright's end-to-end runs
 test-results/
+
+# Wrangler's local state, and secrets for local runs of the sync server
+.wrangler/
+.dev.vars

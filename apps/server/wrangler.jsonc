@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The sync server. Its first deploy creates the database and the file bucket on its own.
+  "name": "factwright",
+  // No usage data to Cloudflare from anyone running Wrangler here.
+  "send_metrics": false,
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "app.factwright.com", "custom_domain": true }],
+  "vars": {
+    "APP_URL": "https://app.factwright.com",
+    "STORAGE_LIMIT_MB": "1024"
+  },
+  // Accounts and sessions, for signing in.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "factwright", "migrations_dir": "migrations" }
+  ],
+  // Each account's locked files, and its daily backups.
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "factwright-files" }],
+  // One store per account.
+  "durable_objects": { "bindings": [{ "name": "STORES", "class_name": "UserStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStore"] }],
+  // The daily backup, at a quiet hour.
+  "triggers": { "crons": ["17 4 * * *"] },
+  "observability": { "enabled": true }
+}
