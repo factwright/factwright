@@ -1,5 +1,6 @@
 import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
 import type { RunTask } from './runs.ts';
+import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
 
 /** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
 export type ClaudeStatus =
@@ -149,4 +150,30 @@ export interface FactwrightApi {
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */
   saveFile(name: string, text: string): Promise<SaveFileResult>;
+  /** Where sync stands on this computer. */
+  syncStatus(): Promise<SyncStatus>;
+  /** Listens for changes in where sync stands. Returns a function that stops listening. */
+  onSyncStatus(listener: (status: SyncStatus) => void): () => void;
+  /** Signs in to sync through the browser. Answers once the user approves, or it stops. */
+  signInToSync(): Promise<EditResult>;
+  cancelSyncSignIn(): void;
+  /** On the account's first device: makes the recovery key to save before sync turns on. */
+  makeRecoveryKey(): Promise<RecoveryKeyResult>;
+  /** On the first device, once the recovery key is saved. */
+  turnOnSync(): Promise<EditResult>;
+  /** Links this computer with a code from a device that's set up. */
+  linkWithCode(code: string): Promise<EditResult>;
+  /** Links this computer with the account's recovery key. */
+  useRecoveryKey(recoveryKey: string): Promise<EditResult>;
+  /** A code for adding a phone or computer, good once, for 10 minutes. */
+  makeLinkCode(): Promise<LinkCodeResult>;
+  cancelLinkCode(id: string): void;
+  syncNow(): void;
+  /** Who the account is, its signed-in devices, and how much it stores. */
+  syncAccount(): Promise<AccountResult>;
+  removeSyncDevice(id: string): Promise<EditResult>;
+  /** Turns sync off on this computer, keeping its job hunt. */
+  signOutOfSync(): Promise<EditResult>;
+  /** Opens the account's page on the web, to download everything or delete the account. */
+  openAccountPage(): Promise<void>;
 }

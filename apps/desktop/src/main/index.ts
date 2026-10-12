@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, nativeTheme, session } from 'electron';
+import { app, BrowserWindow, nativeTheme, safeStorage, session, shell } from 'electron';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
@@ -13,12 +13,16 @@ import { contentSecurityPolicy } from './policy.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
+import { SyncAccount } from './sync/account.ts';
 import { factwrightTools } from './tools/index.ts';
 import { createMainWindow } from './window.ts';
 
 // Set by `pnpm dev`: the screens come from Vite's dev server instead of the built files.
 const devUrl = process.env.FACTWRIGHT_DEV_URL;
 const startUrl = devUrl ?? `${APP_ORIGIN}/index.html`;
+
+/** The sync server. Development and tests point it at one running locally. */
+const syncServer = process.env.FACTWRIGHT_SERVER_URL ?? 'https://app.factwright.com';
 
 if (app.requestSingleInstanceLock()) {
   start();
@@ -49,10 +53,25 @@ function start(): void {
     // Claude reaches it only through Factwright's tools.
     const tracker = new Tracker(join(dataDir, 'tracker.db'));
     const workspace = workspaceDir(dataDir);
+    const sync = new SyncAccount({
+      dataDir,
+      server: syncServer,
+      version: app.getVersion(),
+      keychain: safeStorage,
+      tracker,
+      workspace,
+      openUrl: (url) => shell.openExternal(url),
+      onStatus: (status) => window.webContents.send('sync:status', status),
+      // Changes from other devices: read the workspace again, and show the new list.
+      onApplied: () => window.webContents.send('jobs:changed', jobs.read()),
+    });
     const jobs = new JobsService({
       workspace,
       tracker,
-      onChange: (list) => window.webContents.send('jobs:changed', list),
+      onChange: (list) => {
+        window.webContents.send('jobs:changed', list);
+        sync.requestSync();
+      },
     });
     jobs.read();
     const printer = new ElectronResumePrinter();
@@ -110,7 +129,9 @@ function start(): void {
       setup,
       jobs,
       workspace,
+      sync,
     });
+    void sync.start();
 
     // A run belongs to its window, so closing the window or quitting stops it.
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
@@ -121,6 +142,7 @@ function start(): void {
       server.stop();
       printer.close();
       jobs.stop();
+      void sync.stop();
     });
     app.on('quit', () => tracker.close());
 

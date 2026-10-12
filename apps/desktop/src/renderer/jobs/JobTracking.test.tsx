@@ -34,9 +34,13 @@ function panel(job: Job, result: EditResult = { ok: true }) {
     jobDocs: vi.fn(async () => null),
     openFile: answer,
   } as unknown as FactwrightApi;
-  const row = jobRows([job], TODAY)[0] ?? null;
-  const view = render(<JobPanel row={row} api={api} today={TODAY} onClose={() => {}} />);
-  return { api, ...view };
+  const shown = (each: Job) => (
+    <JobPanel row={jobRows([each], TODAY)[0] ?? null} api={api} today={TODAY} onClose={() => {}} />
+  );
+  const view = render(shown(job));
+  /** Shows the job again as it changed, such as after a sync. */
+  const update = (next: Job) => view.rerender(shown(next));
+  return { api, update, ...view };
 }
 
 describe('the next step', () => {
@@ -147,6 +151,20 @@ describe('notes', () => {
     expect(api.updateJob).toHaveBeenCalledWith('lumen-health--senior-full-stack-engineer', {
       notes: 'Ask about on-call',
     });
+  });
+
+  it('show notes changed elsewhere, such as on another computer, unless the user is typing', async () => {
+    const job = byCompany('Lumen Health');
+    const { api, update } = panel(job);
+    const notes = screen.getByRole('textbox', { name: 'Your notes' }) as HTMLTextAreaElement;
+    update({ ...job, notes: 'From the other computer' });
+    expect(notes.value).toBe('From the other computer');
+    await userEvent.click(notes);
+    update({ ...job, notes: 'Changed again elsewhere' });
+    expect(notes.value).toBe('From the other computer');
+    await userEvent.tab();
+    expect(notes.value).toBe('Changed again elsewhere');
+    expect(api.updateJob).not.toHaveBeenCalled();
   });
 
   it('save what’s waiting when the panel closes', async () => {

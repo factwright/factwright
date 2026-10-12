@@ -1,14 +1,13 @@
-import { Button } from '@factwright/ui';
 import type { ReactNode } from 'react';
 import type { SetupCheck } from '../shared/api.ts';
-import styles from './ClaudeCard.module.css';
 import { planName } from './plan.ts';
+import { type CardTone, SidebarCard } from './SidebarCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
 const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 
 interface CardView {
-  tone: 'ok' | 'need' | 'bad' | 'checking';
+  tone: CardTone;
   line: string;
   help?: ReactNode;
   /** What Check again checks: Claude Code itself, or Factwright's setup with it. */
@@ -102,26 +101,20 @@ export function ClaudeCard({
   onCheckSetup?: () => void;
 }) {
   const view = describe(status, setup);
+  const checking = view.recheck === 'setup' && checkingSetup;
   return (
-    <section className={styles.card} aria-labelledby="claude-card-title">
-      <h2 id="claude-card-title" className={styles.title}>
-        <span className={`${styles.dot} ${styles[view.tone]}`} aria-hidden="true" />
-        Your Claude
-      </h2>
-      <p className={styles.line} aria-live="polite">
-        {view.line}
-      </p>
-      {view.help && <p className={styles.help}>{view.help}</p>}
-      {view.recheck && (
-        <Button
-          className={styles.recheck}
-          size="sm"
-          disabled={view.recheck === 'setup' && checkingSetup}
-          onClick={view.recheck === 'setup' ? onCheckSetup : onRecheck}
-        >
-          {view.recheck === 'setup' && checkingSetup ? 'Checking…' : 'Check again'}
-        </Button>
-      )}
-    </section>
+    <SidebarCard
+      title="Your Claude"
+      tone={view.tone}
+      line={view.line}
+      help={view.help}
+      action={
+        view.recheck && {
+          label: checking ? 'Checking…' : 'Check again',
+          disabled: checking,
+          onClick: () => (view.recheck === 'setup' ? onCheckSetup?.() : onRecheck()),
+        }
+      }
+    />
   );
 }

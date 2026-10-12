@@ -14,6 +14,8 @@ import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
 import { Sidebar } from './Sidebar.tsx';
+import { SyncDialog } from './sync/SyncDialog.tsx';
+import { useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
@@ -23,6 +25,7 @@ import { useSetupCheck } from './useSetupCheck.ts';
 export function App({ api }: { api: FactwrightApi }) {
   const { status, recheck } = useClaudeStatus(api);
   const setup = useSetupCheck(api);
+  const sync = useSync(api);
   const run = useClaudeRun(api);
   const { jobs, reload } = useJobs(api);
   const today = useToday();
@@ -37,7 +40,7 @@ export function App({ api }: { api: FactwrightApi }) {
     ...NO_FILTERS,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'add-job' | 'journey' | null>(null);
+  const [dialog, setDialog] = useState<'add-job' | 'journey' | 'sync' | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
 
@@ -94,6 +97,8 @@ export function App({ api }: { api: FactwrightApi }) {
           claude={status}
           onRecheckClaude={recheck}
           setup={setup}
+          sync={sync}
+          onOpenSync={() => setDialog('sync')}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
         />
         <div className={styles.content}>
@@ -144,6 +149,9 @@ export function App({ api }: { api: FactwrightApi }) {
       )}
       {dialog === 'journey' && (
         <JourneyDialog rows={rows} api={api} today={today} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'sync' && sync !== 'checking' && (
+        <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
       )}
     </div>
   );

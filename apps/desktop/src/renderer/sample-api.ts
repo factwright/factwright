@@ -1,6 +1,7 @@
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
+import { sampleSync } from './sync/sample-sync.ts';
 
 const READY: ClaudeStatus = { state: 'ready', version: '2.1.296', plan: 'max' };
 
@@ -181,5 +182,6 @@ export function sampleApi(): FactwrightApi {
       return () => trustListeners.delete(listener);
     },
     ...sampleTracker(query.get('jobs')),
+    ...sampleSync(query.get('sync')),
   };
 }

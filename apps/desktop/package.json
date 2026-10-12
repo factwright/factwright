@@ -21,6 +21,8 @@
     "@playwright/test": "catalog:",
     "@factwright/core": "workspace:*",
     "@factwright/engine": "workspace:*",
+    "@factwright/server": "workspace:*",
+    "@factwright/sync": "workspace:*",
     "@factwright/ui": "workspace:*",
     "@testing-library/dom": "catalog:",
     "@testing-library/react": "catalog:",
@@ -38,6 +40,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "catalog:",
+    "uqr": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
   },
