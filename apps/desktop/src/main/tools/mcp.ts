@@ -1,3 +1,15 @@
+import type { RunScope } from '../../shared/runs.ts';
+
+/** The run calling a tool: what it was started for, and what it has saved so far. */
+export interface ToolCall {
+  scope: RunScope;
+  /** The templates this run saved, which it may change again. */
+  templates: Set<string>;
+}
+
+/** A call from no run in particular, such as a test's: a run on the job hunt. */
+export const huntCall = (): ToolCall => ({ scope: 'hunt', templates: new Set() });
+
 /** A tool Claude can call: its name, what it's for, what it takes, and what it does. */
 export interface McpTool {
   name: string;
@@ -8,7 +20,7 @@ export interface McpTool {
   /** Hints for Claude Code: whether the tool only reads, and whether it reaches the internet. */
   annotations?: { readOnlyHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
   /** Runs the tool and says what happened, in words for Claude. Throwing reports an error. */
-  run(input: Record<string, unknown>): Promise<string>;
+  run(input: Record<string, unknown>, call?: ToolCall): Promise<string>;
 }
 
 /** What to send back: a status, and a JSON body unless the message needs no answer. */
@@ -36,6 +48,7 @@ async function answerOne(
   message: unknown,
   tools: readonly McpTool[],
   server: { name: string; version: string; instructions: string },
+  call: ToolCall,
 ): Promise<unknown | null> {
   if (!isObject(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     return failure(null, -32600, 'Not a JSON-RPC 2.0 request.');
@@ -70,7 +83,7 @@ async function answerOne(
       if (!tool) return failure(id, -32602, `There's no tool named ${String(params.name)}.`);
       const input = isObject(params.arguments) ? params.arguments : {};
       try {
-        return result(id, { content: [{ type: 'text', text: await tool.run(input) }] });
+        return result(id, { content: [{ type: 'text', text: await tool.run(input, call) }] });
       } catch (error) {
         const text = error instanceof Error ? error.message : 'The tool failed.';
         return result(id, { content: [{ type: 'text', text }], isError: true });
@@ -89,13 +102,14 @@ export async function answerMcp(
   message: unknown,
   tools: readonly McpTool[],
   server: { name: string; version: string; instructions: string },
+  call: ToolCall = huntCall(),
 ): Promise<McpAnswer> {
   if (Array.isArray(message)) {
     if (message.length === 0) return { status: 400, body: failure(null, -32600, 'Empty batch.') };
-    const answers = await Promise.all(message.map((each) => answerOne(each, tools, server)));
+    const answers = await Promise.all(message.map((each) => answerOne(each, tools, server, call)));
     const sent = answers.filter((answer) => answer !== null);
     return sent.length > 0 ? { status: 200, body: sent } : { status: 202 };
   }
-  const answer = await answerOne(message, tools, server);
+  const answer = await answerOne(message, tools, server, call);
   return answer === null ? { status: 202 } : { status: 200, body: answer };
 }

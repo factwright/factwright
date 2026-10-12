@@ -106,7 +106,7 @@ describe('renderHtml', () => {
     }
   });
 
-  it('runs no scripts, whatever a template holds', () => {
+  it('tells the browser to run no scripts and load nothing from elsewhere', () => {
     expect(renderHtml(sampleResume(), classic)).toContain(
       "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; base-uri 'none'; form-action 'none'\">",
     );
@@ -115,12 +115,12 @@ describe('renderHtml', () => {
   it('shows a value inside an attribute’s quotes as plain text, which can’t end them', () => {
     const own: Template = {
       ...classic,
-      body: '<div class="sum" title="{{summary}} ok">{{summary}}</div>',
+      body: '<div class="sum" data-text="{{summary}} ·">{{summary}}</div>',
       parts: {},
     };
     const html = renderHtml({ ...sampleResume(), summary: 'Led **[[n]]** "teams"' }, own);
     expect(html).toContain(
-      '<div class="sum" title="Led [n] &quot;teams&quot; ok">Led <strong><mark class="ph">[n]</mark></strong> &quot;teams&quot;</div>',
+      '<div class="sum" data-text="Led [n] &quot;teams&quot; ·">Led <strong><mark class="ph">[n]</mark></strong> &quot;teams&quot;</div>',
     );
   });
 

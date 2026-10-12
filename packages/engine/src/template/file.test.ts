@@ -82,7 +82,12 @@ describe('readTemplate', () => {
       'template.titles should name each part, up to 40 characters: summary, competencies, experience, education, skills.',
     ]);
     expect(problems({ titles: { ...classic.titles, awards: 'Awards' } })).toEqual([
-      'template.titles.awards isn’t a part with a title of its own.',
+      'template.titles.awards isn’t a part with a title of its own. Besides the five, a template can name highlights and contact.',
+    ]);
+    const more = readTemplate(file({ titles: { ...classic.titles, highlights: ' Impact ' } }), 'x');
+    expect(more.ok && more.template.titles.highlights).toBe('Impact');
+    expect(problems({ titles: { ...classic.titles, contact: '' } })).toEqual([
+      'template.titles.contact should be up to 40 characters.',
     ]);
     expect(problems({ fonts: ['caladea-bold.woff2', 'caladea-bold.woff2'] })[0]).toContain(
       'each once',

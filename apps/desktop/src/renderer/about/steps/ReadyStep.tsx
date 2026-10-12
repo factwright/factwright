@@ -9,7 +9,7 @@ import {
   labelOf,
   wordCount,
 } from '../../../shared/about.ts';
-import { templateName } from '../../../shared/looks.ts';
+import { livePicks, templateName } from '../../../shared/looks.ts';
 import type { TemplateInfo } from '../../../shared/profile.ts';
 import ready from './ReadyStep.module.css';
 import styles from './steps.module.css';
@@ -71,8 +71,9 @@ export function looksSummary(
   answers: Pick<AboutYou, 'looks'>,
   templates: readonly TemplateInfo[],
 ): string | null {
-  if (answers.looks.length === 0) return null;
-  return answers.looks
+  const looks = livePicks(answers.looks, templates);
+  if (looks.length === 0) return null;
+  return looks
     .map(
       (look) =>
         `${templateName(look.layout, templates)}${look.for === 'any' ? '' : ` for ${labelOf(COMPANY_KINDS, look.for).toLowerCase()}`}`,

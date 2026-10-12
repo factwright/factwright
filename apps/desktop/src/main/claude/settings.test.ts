@@ -124,21 +124,16 @@ describe('sessionSettings', () => {
     expect(allow(false, 'template')).toContain('mcp__factwright__save_template');
   });
 
-  it('keeps a run for making a template off the web, and changing no file without asking', () => {
+  it('lets a run for making a template read and save templates without asking, and nothing else', () => {
     const { allow, deny } = sessionSettings({
       hookUrl: 'http://127.0.0.1:4000/hook',
       dark: false,
       scope: 'template',
       permissions: { anyFile: false, anySite: true },
     }).permissions;
+    // Not building a resume or saving an answer, and no files: the resume it copies came from anywhere.
     expect(allow).toEqual([
       'Skill(factwright *)',
-      'mcp__factwright__find_job',
-      'mcp__factwright__job_details',
-      'mcp__factwright__build_resume',
-      'mcp__factwright__about_you',
-      'mcp__factwright__past_answers',
-      'mcp__factwright__save_answer',
       'mcp__factwright__list_templates',
       'mcp__factwright__read_template',
       'mcp__factwright__save_template',

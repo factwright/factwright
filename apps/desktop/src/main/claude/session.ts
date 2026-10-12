@@ -214,10 +214,15 @@ export class ClaudeSession {
     const signals = new RunSignals(this.deps.onSignal);
     const trust = new TrustWatch();
     // Listening first, so no hook can arrive before the run is ready for it.
-    const stopListening = this.deps.server.listen(launch.token, (event) => {
-      trust.pastIt();
-      signals.hear(event);
-    });
+    const stopListening = this.deps.server.listen(
+      launch.token,
+      (event) => {
+        trust.pastIt();
+        signals.hear(event);
+      },
+      undefined,
+      scope,
+    );
     let terminal: IPty;
     try {
       terminal = spawn(launch.file, launch.args, {

@@ -24,12 +24,13 @@ The templates the app comes with:
 A user can have templates of their own too, kept as files in their workspace's `templates/` folder: one someone shared, or one Claude made in the look of a resume they like. A template is data: its look in a sentence, the font files it carries, what it calls each section, its look in Word, its styles, and its page's markup in [Mustache's syntax](https://mustache.github.io/mustache.5.html), which the engine fills in from the resume (see [`template/view.ts`](src/template/view.ts) for what it can show). Its file is JSON, with `"factwright": "resume-template"` and a version, and its name gives its ID, which a resume's `layout` names.
 
 A template can come from anywhere, so `readTemplate` checks one before it's used, and says what's wrong in plain words:
-- The markup uses only elements for text, such as div, section, h2, ul and table, with attributes such as class and style, each in double quotes. Nothing that runs a script, loads a file or takes input.
-- Values go between tags or inside an attribute's quotes, and each is escaped, so no resume can add markup. A section starts and ends in the same place.
-- The styles can't hold "<", so they can't end the stylesheet, nor `@import`, and `url()` holds only a data: picture or font.
-- Every name the markup shows is part of a resume, so a typo is caught rather than showing nothing.
+- **Markup:** only elements for text, such as div, section, h2, ul and table, with attributes such as class, style and data-*, each in double quotes. Nothing that runs a script, loads a file or takes input, no HTML comments, and no "<" inside quotes.
+- **Values:** they go between tags or inside an attribute's quotes, where they show as plain text, and each one is escaped, so no resume can add markup. A section starts and ends in the same place.
+- **Styles:** read with their escapes undone, they can't hold "<", so they can't end the stylesheet. They load nothing: no `@import`, `url()` only for a data: picture (PNG, JPEG, GIF or WebP) or a WOFF2 font, and no `image-set()`, `attr()` and the like.
+- **No words of its own:** the markup's own text, and strings that print, such as `content`'s, hold only marks such as · or |. Every word on the page comes from the resume or the template's titles (summary, competencies, experience, education and skills, plus highlights and contact for templates that head those).
+- **Names:** every name the markup shows is part of a resume, so a typo is caught rather than showing nothing.
 
-The app prints in a hidden, sandboxed window that loads nothing but the page, as well.
+The page itself carries a policy that runs no scripts and loads nothing from elsewhere, and the app prints it in a hidden, sandboxed window that loads nothing but the page.
 
 Every template the app comes with shows the same parts of a resume, so a resume can change its look without changing its text. Any text can hold `**bold**`, and `[[placeholders]]`, which lint refuses so none ship by accident. A resume can name its own headings: `systems_heading` over the highlight cards (otherwise "Key Systems"), `projects_heading` (otherwise "Independent Projects") and `skills_heading` (otherwise the template's own). Education comes after the experience, or first with `education_first`, as early in a career it says the most.
 
@@ -37,7 +38,9 @@ Every template the app comes with shows the same parts of a resume, so a resume 
 import { builtInTemplate, lintResume, readResume, readTemplate, renderHtml, resumeDocument } from '@factwright/engine';
 
 const read = readResume(JSON.parse(text));
-const template = builtInTemplate('classic'); // or readTemplate(JSON.parse(file), id) for the user's own
+// One the app comes with, or the user's own, checked: readTemplate says what's wrong with one.
+const own = readTemplate(JSON.parse(file), 'navy-sidebar');
+const template = own.ok ? own.template : builtInTemplate('classic');
 if (read.ok && template) {
   const html = renderHtml(read.resume, template, fonts); // print to PDF; fonts are data: URLs
   const doc = resumeDocument(read.resume, template); // pack with docx's Packer

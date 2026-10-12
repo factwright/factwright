@@ -139,25 +139,31 @@ const lookLine = (look: Look, templates: readonly { id: string; name: string }[]
   return `| ${name} | \`${look.layout}\` | ${style} |`;
 };
 
+/** The user's picks whose templates they still have: a pick of one that's gone is left out. */
+export const livePicks = (looks: readonly Look[], templates: readonly { id: string }[]): Look[] =>
+  looks.filter((look) => templates.some((each) => each.id === look.layout));
+
 /**
  * The user's templates as guide/templates.md, which the resume skills read: which look goes with
- * which kind of company, how long resumes run, and which files to make.
+ * which kind of company, how long resumes run, and which files to make. A pick of a template
+ * that's gone is left out, so Claude never builds in it.
  */
 export function templatesMarkdown(
   answers: AboutYou,
   templates: readonly { id: string; name: string }[],
 ): string {
   const pages = pagesFor(answers);
+  const looks = livePicks(answers.looks, templates);
   const body = [
     '# Your resume templates',
     '',
     'The looks the user picked. Use the one for the kind of company a job is at, set as `layout` in its resume.json.',
     '',
-    ...(answers.looks.length > 0
+    ...(looks.length > 0
       ? [
           '| Template | `layout` | Use it for |',
           '|---|---|---|',
-          ...answers.looks.map((look) => lookLine(look, templates)),
+          ...looks.map((look) => lookLine(look, templates)),
         ]
       : ['None picked yet. Use the style file’s layout.']),
     '',

@@ -282,15 +282,24 @@ export class TemplateLibrary {
     );
   }
 
+  /** Whether the user has a template of their own by this ID. */
+  has(id: string): boolean {
+    return TEMPLATE_ID.test(id) && !builtInTemplate(id) && existsSync(this.file(id));
+  }
+
   /**
    * Saves a template Claude made or changed, once it passes the checks. It never takes the ID
-   * of one the app has, nor replaces one of the user's unless asked to.
+   * of one the app has, nor replaces one of the user's unless asked to. With keepOld, the one it
+   * replaces goes to the trash, to restore.
    */
-  save(
+  async save(
     value: unknown,
     id: string,
     replace: boolean,
-  ): { ok: true; template: Template; replaced: boolean } | { ok: false; problems: string[] } {
+    keepOld = false,
+  ): Promise<
+    { ok: true; template: Template; replaced: boolean } | { ok: false; problems: string[] }
+  > {
     if (!TEMPLATE_ID.test(id)) {
       return {
         ok: false,
@@ -321,6 +330,7 @@ export class TemplateLibrary {
         problems: ['It’s bigger than a template can be: 2 MB, with its pictures and fonts.'],
       };
     }
+    if (there && keepOld) await this.trash(this.file(id));
     this.write(this.file(id), text);
     return { ok: true, template: read.template, replaced: there };
   }

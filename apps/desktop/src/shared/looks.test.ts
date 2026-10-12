@@ -96,6 +96,23 @@ describe('templatesMarkdown', () => {
     );
   });
 
+  it('leaves out a pick whose template is gone, such as one the app no longer has', () => {
+    const text = templatesMarkdown(
+      readAnswers({
+        looks: [
+          { layout: 'modern', for: 'startup' },
+          { layout: 'classic', for: 'any' },
+        ],
+      }),
+      TEMPLATES,
+    );
+    expect(text).not.toContain('modern');
+    expect(text).toContain('| Classic | `classic` | any job |');
+    expect(
+      templatesMarkdown(readAnswers({ looks: [{ layout: 'banner', for: 'any' }] }), TEMPLATES),
+    ).toContain('None picked yet.');
+  });
+
   it('says when none are picked', () => {
     expect(templatesMarkdown(readAnswers({}), TEMPLATES)).toContain('None picked yet.');
   });

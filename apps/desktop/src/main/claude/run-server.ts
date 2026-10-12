@@ -1,8 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { RunScope } from '../../shared/runs.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
-import { answerMcp, type McpAnswer, type McpTool } from '../tools/mcp.ts';
+import { answerMcp, type McpAnswer, type McpTool, type ToolCall } from '../tools/mcp.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -23,6 +24,8 @@ export type ToolsListener = (method: string) => void;
 interface RunListeners {
   hooks: HookListener;
   tools: ToolsListener | undefined;
+  /** What the run is for, and what it's saved, which its tool calls carry. */
+  call: ToolCall;
 }
 
 /**
@@ -56,9 +59,17 @@ export class RunServer {
     this.server?.close();
   }
 
-  /** Takes a run's hooks, and maybe its tool calls, by its token, until the returned function is called. */
-  listen(token: string, hooks: HookListener, tools?: ToolsListener): () => void {
-    this.listeners.set(token, { hooks, tools });
+  /**
+   * Takes a run's hooks, and maybe its tool calls, by its token, until the returned function is
+   * called. Its tools know what it was started for.
+   */
+  listen(
+    token: string,
+    hooks: HookListener,
+    tools?: ToolsListener,
+    scope: RunScope = 'hunt',
+  ): () => void {
+    this.listeners.set(token, { hooks, tools, call: { scope, templates: new Set() } });
     return () => this.listeners.delete(token);
   }
 
@@ -97,18 +108,19 @@ export class RunServer {
           if (typeof method === 'string') listener.tools(method);
         }
       }
-      void this.answerTools(body, response);
+      void this.answerTools(body, response, listener.call);
     });
   }
 
-  private async answerTools(body: string, response: ServerResponse): Promise<void> {
+  private async answerTools(body: string, response: ServerResponse, call: ToolCall): Promise<void> {
     let answer: McpAnswer;
     try {
-      answer = await answerMcp(parseJson(body), this.options.tools, {
-        name: 'factwright',
-        version: this.options.version,
-        instructions: TOOLS_INSTRUCTIONS,
-      });
+      answer = await answerMcp(
+        parseJson(body),
+        this.options.tools,
+        { name: 'factwright', version: this.options.version, instructions: TOOLS_INSTRUCTIONS },
+        call,
+      );
     } catch {
       // Tools report their own failures, so this is a bug: say so rather than leave Claude waiting.
       response.writeHead(500).end();

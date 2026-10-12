@@ -5,6 +5,7 @@ import {
   LOCAL_TOOLS,
   PROFILE_TOOLS,
   PUBLIC_API_TOOLS,
+  TEMPLATE_READS,
   TEMPLATE_TOOLS,
   WEB_TOOLS,
 } from '../tools/index.ts';
@@ -66,16 +67,20 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
   const profile = scope === 'profile' || permissions.anyFile ? PROFILE_TOOLS : [];
   // Saving a template is the point of a template run. Otherwise it's like changing a file.
   const templates = scope === 'template' || permissions.anyFile ? TEMPLATE_TOOLS : [];
+  // A template run copies a resume from anywhere, so it reads and saves templates and nothing
+  // else without asking: not building a resume or saving an answer, either.
   const tools =
-    scope === 'hunt'
-      ? [
-          ...LOCAL_TOOLS,
-          ...profile,
-          ...templates,
-          ...PUBLIC_API_TOOLS,
-          ...(permissions.anySite ? WEB_TOOLS : []),
-        ]
-      : [...LOCAL_TOOLS, ...profile, ...templates];
+    scope === 'template'
+      ? [...TEMPLATE_READS, ...templates, ...profile]
+      : scope === 'profile'
+        ? [...LOCAL_TOOLS, ...profile, ...templates]
+        : [
+            ...LOCAL_TOOLS,
+            ...profile,
+            ...templates,
+            ...PUBLIC_API_TOOLS,
+            ...(permissions.anySite ? WEB_TOOLS : []),
+          ];
   // A template run copies a resume from anywhere, so it changes no file without asking.
   const files =
     scope === 'template'
@@ -106,8 +111,8 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  *   and reading any other page, since a job post could steer Claude to send the user's details
  *   to a site in a link. A run started to get to know the user, or to add facts, may change their
  *   facts, starting resumes and guide without asking too, and in return never reads the web. A
- *   run started to make a template may save templates without asking, changes no file without
- *   asking, and never reads the web either.
+ *   run started to make a template may read and save templates without asking, and nothing
+ *   else, and never reads the web either.
  * - never: changing Claude Code's settings or the instructions it loads
  * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
  *   session ends, which the self-test listens for

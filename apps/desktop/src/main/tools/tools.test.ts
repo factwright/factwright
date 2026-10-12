@@ -768,8 +768,38 @@ describe('the template tools', () => {
         template: file({ name: 'Navy 2' }),
         replace: true,
       }),
-    ).toContain('“Navy 2”, in place of the one before.');
+    ).toContain('“Navy 2”, in place of the one before');
     expect(printer.print).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets a run started to make a template replace only the templates it saved', async () => {
+    const call = { scope: 'template' as const, templates: new Set<string>() };
+    const save = (id: string, changes: Record<string, unknown> = {}, replace = false) =>
+      tool('save_template').run({ id, template: file(changes), replace }, call);
+    // One of the user's, from before this run.
+    await tool('save_template').run({ id: 'theirs', template: file() });
+    expect(await save('theirs', { name: 'Mine now' }, true)).toBe(
+      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.',
+    );
+    expect(await save('mine')).toContain('Saved templates/mine.json');
+    expect(await save('mine', { name: 'Mine, wider' }, true)).toContain(
+      '“Mine, wider”, in place of the one before. It’s in the user’s templates now.',
+    );
+  });
+
+  it('puts the user’s template in the trash when another run replaces it', async () => {
+    const trash = vi.fn(async (path: string) => rmSync(path));
+    templates = new TemplateLibrary({ workspace: root, trash });
+    tools = factwrightTools({ jobs, about, workspace: root, now: NOW, fetch, printer, templates });
+    await tool('save_template').run({ id: 'theirs', template: file() });
+    expect(
+      await tool('save_template').run({
+        id: 'theirs',
+        template: file({ name: 'Theirs, changed' }),
+        replace: true,
+      }),
+    ).toContain('in place of the one before, which is in the trash to restore.');
+    expect(trash).toHaveBeenCalledWith(join(root, 'templates', 'theirs.json'));
   });
 
   it('takes a template given as JSON text too, and never one too big to read back', async () => {
@@ -782,7 +812,7 @@ describe('the template tools', () => {
     // Each piece is within its own limit, but together they're more than a file can hold.
     const css = `.a{background:url(data:image/png;base64,${'A'.repeat(1_490_000)})}`;
     const parts = Object.fromEntries(
-      ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => [name, `<p>${name.repeat(95_000)}</p>`]),
+      ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => [name, `<p>${'·'.repeat(95_000)}</p>`]),
     );
     expect(
       await tool('save_template').run({

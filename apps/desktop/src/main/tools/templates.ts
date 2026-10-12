@@ -12,6 +12,7 @@ import {
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import { TEMPLATES_FOLDER, type TemplateLibrary } from '../resume/templates.ts';
+import { huntCall, type ToolCall } from './mcp.ts';
 import { resumeAt } from './resume.ts';
 
 export interface TemplateToolDeps {
@@ -73,11 +74,14 @@ async function previewOf(
 
 /**
  * Saves a template Claude made, once it passes the checks, and prints a preview for Claude to
- * read: the made-up resume the gallery shows, or one of the user's.
+ * read: the made-up resume the gallery shows, or one of the user's. A run started to make a
+ * template, which saves without asking, may replace only the templates it saved itself. Any
+ * other run replacing one of the user's templates puts the one before in the trash.
  */
 export async function saveTemplate(
   input: { id: string; template: unknown; replace: boolean; resume: string | undefined },
   deps: TemplateToolDeps,
+  call: ToolCall = huntCall(),
 ): Promise<string> {
   const preview = await previewOf(deps.workspace, input.resume);
   if (typeof preview === 'string') return `Not saved: ${preview}`;
@@ -90,13 +94,18 @@ export async function saveTemplate(
       return 'Not saved: the template isn’t valid JSON. Give it as an object.';
     }
   }
-  const saved = deps.templates.save(given, input.id, input.replace);
+  const before = deps.templates.has(input.id) && !call.templates.has(input.id);
+  if (input.replace && before && call.scope === 'template') {
+    return `Not saved: ${TEMPLATES_FOLDER}/${input.id}.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.`;
+  }
+  const saved = await deps.templates.save(given, input.id, input.replace, before);
   if (!saved.ok) {
     return ['Not saved. Fix these, then save again:', ...saved.problems.map((p) => `- ${p}`)].join(
       '\n',
     );
   }
   const { template } = saved;
+  call.templates.add(template.id);
   const path = deps.templates.previewPath(template.id);
   const printed = await deps.printer.print(renderHtml(preview.resume, template, RESUME_FONTS));
   const file = join(deps.workspace, ...path.split('/'));
@@ -104,7 +113,7 @@ export async function saveTemplate(
   await writeFile(file, printed.pdf);
   const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;
   return [
-    `Saved ${TEMPLATES_FOLDER}/${template.id}.json, “${template.name}”${saved.replaced ? ', in place of the one before' : ''}. It’s in the user’s templates now.`,
+    `Saved ${TEMPLATES_FOLDER}/${template.id}.json, “${template.name}”${saved.replaced ? (before ? ', in place of the one before, which is in the trash to restore' : ', in place of the one before') : ''}. It’s in the user’s templates now.`,
     `Its preview, with ${preview.label}, is ${path}: ${printed.pages} pages${fill}. Read it to check the look.`,
   ].join('\n');
 }

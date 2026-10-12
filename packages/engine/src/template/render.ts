@@ -17,6 +17,8 @@ export function sectionTitles(template: Template, resume: Resume): ResumeTitles 
     skills: resume.skills_heading || template.titles.skills,
     systems: resume.systems_heading || DEFAULT_SYSTEMS_HEADING,
     projects: resume.projects_heading || DEFAULT_PROJECTS_HEADING,
+    highlights: template.titles.highlights || 'Highlights',
+    contact: template.titles.contact || 'Contact',
   };
 }
 

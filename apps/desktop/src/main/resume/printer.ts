@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { type FitRow, MEASURE_SCRIPT, measurableHtml, pdfPageCount } from '@factwright/engine';
 import { BrowserWindow, session } from 'electron';
 import { denyPermissions } from '../security.ts';
@@ -67,9 +68,11 @@ const pagesIn = (pdf: Buffer) => pdfPageCount(pdf.toString('latin1'));
  * there without starting a new page, found by printing with a growing spacer at the end.
  */
 async function freeSpace(window: BrowserWindow, pages: number): Promise<number> {
+  // An ID no template could have taken, so the spacer found is the one added.
+  const id = `fit-${randomUUID()}`;
   await window.webContents.executeJavaScript(`(() => {
     const spacer = document.createElement('div');
-    spacer.id = 'fit-spacer';
+    spacer.id = '${id}';
     spacer.style.cssText = 'height:0;margin:0;padding:0;break-inside:avoid';
     document.body.appendChild(spacer);
   })()`);
@@ -78,7 +81,7 @@ async function freeSpace(window: BrowserWindow, pages: number): Promise<number> 
   while (spills - fits > PRECISION_PX) {
     const height = Math.round((fits + spills) / 2);
     await window.webContents.executeJavaScript(
-      `document.getElementById('fit-spacer').style.height = '${height}px'`,
+      `document.getElementById('${id}').style.height = '${height}px'`,
     );
     if (pagesIn(await printPdf(window)) === pages) fits = height;
     else spills = height;

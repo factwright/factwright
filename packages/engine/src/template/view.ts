@@ -11,6 +11,8 @@ export interface ResumeTitles {
   skills: string;
   systems: string;
   projects: string;
+  highlights: string;
+  contact: string;
 }
 
 /** Text made safe for the page. */
@@ -100,5 +102,5 @@ export const VIEW_NAMES: ReadonlySet<string> = new Set([
   ...['company_line', 'location', 'start', 'end', 'dates', 'intro', 'groups', 'heading'],
   ...['bullets', 'lead', 'projects', 'status', 'url', 'education', 'degree', 'school', 'note'],
   ...['education_first', 'skills', 'category', 'items', 'items_line', 'extra_sections'],
-  ...['titles', 'summary', 'length'],
+  ...['titles', 'highlights', 'length'],
 ]);

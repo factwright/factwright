@@ -2,13 +2,20 @@ import { classic } from './built-in/classic.ts';
 import { minimal } from './built-in/minimal.ts';
 import type { FontFile } from './fonts.ts';
 
-/** What a template calls the parts of a resume. The PDF and the Word file use the same words. */
+/**
+ * What a template calls the parts of a resume. The PDF and the Word file use the same words.
+ * They're the only words a template prints itself; everything else comes from the resume.
+ */
 export interface SectionTitles {
   summary: string;
   competencies: string;
   experience: string;
   education: string;
   skills: string;
+  /** Over the highlight numbers, for a template that heads them. "Highlights" when unset. */
+  highlights?: string;
+  /** Over the contact details, for a template that heads them. "Contact" when unset. */
+  contact?: string;
 }
 
 /**

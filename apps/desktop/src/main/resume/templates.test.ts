@@ -167,39 +167,50 @@ describe('TemplateLibrary', () => {
   describe('save', () => {
     const file = (template: Template) => JSON.parse(templateFile(template));
 
-    it('saves a template that passes the checks, and replaces one only when asked', () => {
-      expect(library.save(file(navy), 'navy', false)).toEqual({
+    it('saves a template that passes the checks, and replaces one only when asked', async () => {
+      expect(await library.save(file(navy), 'navy', false)).toEqual({
         ok: true,
         template: navy,
         replaced: false,
       });
-      expect(library.save(file(navy), 'navy', false)).toEqual({
+      expect(library.has('navy')).toBe(true);
+      expect(await library.save(file(navy), 'navy', false)).toEqual({
         ok: false,
         problems: [
           'templates/navy.json is there already. Pick another ID, or save with replace when this is the template to change.',
         ],
       });
-      expect(library.save(file({ ...navy, name: 'Navy 2' }), 'navy', true)).toMatchObject({
+      expect(await library.save(file({ ...navy, name: 'Navy 2' }), 'navy', true)).toMatchObject({
         ok: true,
         replaced: true,
       });
+      expect(trash).not.toHaveBeenCalled();
     });
 
-    it('never takes a built-in template’s ID, or one that can’t name a file', () => {
-      expect(library.save(file(navy), 'minimal', true)).toEqual({
+    it('puts the one it replaces in the trash, when asked to keep it', async () => {
+      await library.save(file(navy), 'navy', false);
+      await library.save(file({ ...navy, name: 'Navy 2' }), 'navy', true, true);
+      expect(trash).toHaveBeenCalledWith(join(root, 'templates', 'navy.json'));
+      const found = library.find('navy');
+      expect(found.ok && found.template.name).toBe('Navy 2');
+    });
+
+    it('never takes a built-in template’s ID, or one that can’t name a file', async () => {
+      expect(await library.save(file(navy), 'minimal', true)).toEqual({
         ok: false,
         problems: ['minimal is one of the app’s own templates. Give yours an ID of its own.'],
       });
-      expect(library.save(file(navy), '../navy', true)).toEqual({
+      expect(await library.save(file(navy), '../navy', true)).toEqual({
         ok: false,
         problems: [
           '“../navy” can’t be a template’s ID: lowercase letters, digits and hyphens only.',
         ],
       });
-      expect(library.save({ ...file(navy), css: '</style>' }, 'navy', false)).toMatchObject({
+      expect(await library.save({ ...file(navy), css: '</style>' }, 'navy', false)).toMatchObject({
         ok: false,
       });
       expect(existsSync(join(root, 'templates', 'navy.json'))).toBe(false);
+      expect(library.has('classic')).toBe(false);
     });
   });
 

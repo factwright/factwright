@@ -30,6 +30,7 @@ Input: `from templates/sources/<file>`, a PDF or a picture the app kept. Without
 ## 3. Write it, and save it
 - Name it for its look, such as "Navy Sidebar", never for a company or a person. Its ID comes from the name: `navy-sidebar`.
 - `save_template` with the ID and the whole template, in the format below. It checks the template, saves it to the user's templates, and prints a preview PDF of the made-up resume the app's gallery shows. If it says what to fix, fix that and save again.
+- Save under a new ID. This run can replace only templates it saved itself, so the user's own are safe from it. To change one of theirs, they ask in a run that asks first.
 
 ## 4. Compare, and refine
 - Read the preview, then compare it with the resume you're copying: the page's layout, the header, the headings, how a job reads, the spacing, the colors and the type. Fix what's off, and `save_template` again with replace. Two or three rounds usually do it.
@@ -50,13 +51,13 @@ JSON, as `read_template` shows:
   - Barlow is a bold display face, like Bahnschrift: `barlow-bold.woff2`.
 
   Name the font first in `font-family`, then the Windows font it stands in for, such as `font-family: Caladea, Cambria, Georgia, serif`. Any other font would look different on each computer.
-- `titles`: what it calls each part: `summary`, `competencies`, `experience`, `education`, `skills`. Keep to the standard words applicant systems know, such as "Experience" or "Professional Experience".
+- `titles`: what it calls each part: `summary`, `competencies`, `experience`, `education`, `skills`, and for a template that heads them, `highlights` (over the numbers) and `contact`. Keep to the standard words applicant systems know, such as "Experience" or "Professional Experience". They're the only words a template prints itself.
 - `word`: its look in the Word file, which is always one column for applicant systems:
   - `head` and `body`: Windows fonts, such as Calibri, Cambria, Segoe UI or Georgia.
   - `accent`, `accent2`, `muted`, `tint`, `nameColor`, `headlineColor` and `ruleColor`: hex, without the #.
   - `nameSize` and `size`: half points, such as 48 for 24 points.
   - `nameCaps` and `center`: true or false.
-- `css`: its styles. Letter pages and their margins are set already. Styles can't hold "<", `@import`, or `url()` except a data: picture or font.
+- `css`: its styles. Letter pages and their margins are set already. Styles can't hold "<" or `@import`. `url()` can hold only a data: picture (PNG, JPEG, GIF or WebP) or a WOFF2 font, and there's no `image-set()` or `attr()`. A string that prints, such as `content`'s or a list's marker, holds marks such as • or |, never letters or digits.
 - `body`: the page's markup, and `parts`: named pieces of markup it shows.
 
 ## The markup
@@ -71,8 +72,9 @@ There's no `{{{ }}}`. Inside a section, names come from its item first: inside a
 
 Only elements for text, each with its attributes in double quotes:
 - **Elements:** div, span, section, header, footer, main, aside, article, h1 to h6, p, ul, ol, li, dl, dt, dd, b, strong, i, em, small, br, hr, and tables.
-- **Attributes:** class, style, id, title, colspan, rowspan, and aria- and data- ones.
-- **Values:** between tags, or inside an attribute's quotes.
+- **Attributes:** class, style, id, lang, dir, role, colspan, rowspan, and data- ones, with no "<" in them.
+- **Values:** between tags, or inside an attribute's quotes, where they show as plain text.
+- **No words of its own:** the markup's own text holds only marks such as ·, | or —. Every word comes from the resume, or from `{{titles.highlights}}` and the other titles. No HTML comments either: write a note as `{{! note }}`.
 
 What a resume gives the markup. Every part is optional except the name, headline, summary and experience, so wrap each in a section that shows only when it's there:
 - `{{name}}`, `{{headline}}` and `{{tagline}}`.
@@ -90,7 +92,7 @@ What a resume gives the markup. Every part is optional except the name, headline
 - `{{#education}}`: `{{degree}}`, `{{school}}`, `{{location}}`, `{{dates}}` and `{{note}}`.
 - `{{#skills}}`: `{{category}}`, and its items as `{{items_line}}` (joined with " · ") or `{{#items}}` with `{{.}}`.
 - `{{#extra_sections}}`: `{{heading}}`, then `{{#items}}` with `{{.}}`.
-- `{{titles.summary}}` and the other titles. They include `{{titles.systems}}` and `{{titles.projects}}`, and the resume's own headings for skills, systems and projects.
+- `{{titles.summary}}` and the other titles. They include `{{titles.systems}}` and `{{titles.projects}}`, the resume's own headings for skills, systems and projects, and `{{titles.highlights}}` and `{{titles.contact}}`.
 - Education goes first when a resume says so. Put it in a part, and show it twice:
   - `{{#education_first}}{{> education}}{{/education_first}}` before the experience.
   - `{{^education_first}}{{> education}}{{/education_first}}` after it.

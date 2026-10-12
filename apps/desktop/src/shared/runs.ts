@@ -50,9 +50,9 @@ export const HUNT_SKILLS = [SEARCH_SKILL, GET_STARTED_SKILL, FACTS_SKILL, TEMPLA
 
 /**
  * What a run may change without asking. A run started to get to know the user, or to add facts,
- * may save their facts, starting resumes and guide. A run started to make a template may save
- * templates, and nothing else: the resume it copies came from anywhere. Every other run asks
- * first. Neither reads the web.
+ * may save their facts, starting resumes and guide. A run started to make a template may read
+ * and save templates, and nothing else, and may replace only the ones it saved: the resume it
+ * copies came from anywhere. Every other run asks first. Neither of those two reads the web.
  */
 export type RunScope = 'hunt' | 'profile' | 'template';
 

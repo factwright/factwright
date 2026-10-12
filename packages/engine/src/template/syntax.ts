@@ -35,7 +35,8 @@ const NAME = /^(?:\.|[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)$/;
 /** A part's name, such as "job" or "contact-line". */
 export const PART_NAME = /^[a-z][a-z0-9_-]{0,40}$/;
 
-const TAG = /\{\{([\s\S]*?)\}\}/g;
+/** A tag: short, so a "{{" left open is found out without reading to the end each time. */
+const TAG = /\{\{([\s\S]{0,200}?)\}\}/g;
 
 /**
  * A template's pieces, in the syntax of Mustache: {{value}}, {{#section}}…{{/section}},
@@ -153,27 +154,47 @@ function shown(value: Value, attribute = false): string {
 }
 
 /**
+ * The most a page may run to, many times a long resume, so no template can make one endless:
+ * its length, plus a little for each piece filled in.
+ */
+export const MAX_PAGE_LENGTH = 5_000_000;
+
+/**
  * Fills in a template's pieces from a view of the data. Parts come from `parts`, already parsed;
- * a template whose parts call each other in a circle never gets this far.
+ * a template whose parts call each other in a circle never gets this far. One whose parts show
+ * each other over and over, or a page past MAX_PAGE_LENGTH, stops with an error.
  */
 export function renderNodes(
   nodes: readonly Node[],
   stack: readonly Value[],
   parts: ReadonlyMap<string, readonly Node[]>,
+  budget = { left: MAX_PAGE_LENGTH },
 ): string {
   let out = '';
+  const spend = (cost: number) => {
+    budget.left -= cost;
+    if (budget.left < 0) throw new Error('This template makes a page too long to print.');
+  };
+  const add = (text: string) => {
+    spend(text.length);
+    out += text;
+  };
   for (const node of nodes) {
-    if (node.kind === 'text') out += node.text;
-    else if (node.kind === 'value') out += shown(lookup(stack, node.name), node.attribute);
-    else if (node.kind === 'part') out += renderNodes(parts.get(node.name) ?? [], stack, parts);
-    else {
+    // Each piece costs something, so parts that show each other over and over run out too.
+    spend(1);
+    if (node.kind === 'text') add(node.text);
+    else if (node.kind === 'value') add(shown(lookup(stack, node.name), node.attribute));
+    else if (node.kind === 'part') {
+      // A part shown is counted once, as it's filled in, not again as it's added.
+      out += renderNodes(parts.get(node.name) ?? [], stack, parts, budget);
+    } else {
       const value = lookup(stack, node.name);
       if (node.inverted) {
-        if (!isShown(value)) out += renderNodes(node.nodes, stack, parts);
+        if (!isShown(value)) out += renderNodes(node.nodes, stack, parts, budget);
       } else if (Array.isArray(value)) {
-        for (const item of value) out += renderNodes(node.nodes, [...stack, item], parts);
+        for (const item of value) out += renderNodes(node.nodes, [...stack, item], parts, budget);
       } else if (isShown(value)) {
-        out += renderNodes(node.nodes, [...stack, value], parts);
+        out += renderNodes(node.nodes, [...stack, value], parts, budget);
       }
     }
   }

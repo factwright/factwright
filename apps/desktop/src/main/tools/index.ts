@@ -61,6 +61,9 @@ export const PROFILE_TOOLS = ['save_about_you'];
  */
 export const TEMPLATE_TOOLS = ['save_template'];
 
+/** The tools that read the templates, which a run started to make one needs. */
+export const TEMPLATE_READS = ['list_templates', 'read_template'];
+
 /**
  * The tools that reach only fixed public job APIs: the applicant systems' postings and boards,
  * and Hacker News's. They send nothing but a board's name, a posting's ID or a month, never to
@@ -251,7 +254,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_template',
       description:
-        'Saves a resume template in the user’s templates, once it passes the checks, and prints a preview PDF to read: the made-up resume the app’s gallery shows, or one of the user’s. Give the whole template each time, as read_template shows one. It never replaces one of the user’s templates unless replace is true: use that only for a template you made in this run, or one the user asked you to change.',
+        'Saves a resume template in the user’s templates, once it passes the checks, and prints a preview PDF to read: the made-up resume the app’s gallery shows, or one of the user’s. Give the whole template each time, as read_template shows one. It never replaces one of the user’s templates unless replace is true: use that only for a template you saved in this run, or one the user asked you to change. A run started to make a template can replace only the ones it saved.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -280,7 +283,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only the template's own file and its preview, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) =>
+      run: async (input, call) =>
         saveTemplate(
           {
             id: textInput(input, 'id', true) ?? '',
@@ -289,6 +292,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             resume: textInput(input, 'resume', false),
           },
           { workspace: deps.workspace, printer: deps.printer, templates: deps.templates },
+          call,
         ),
     },
     {

@@ -1,6 +1,8 @@
 import { FONT_FILES, type FontFile } from '../fonts.ts';
+import { previewResume } from '../sample.ts';
 import { type SectionTitles, TEMPLATE_ID, type Template, type WordTheme } from '../templates.ts';
 import { cssProblems, markupProblems } from './check.ts';
+import { renderBody } from './render.ts';
 import { type Node, PART_NAME, parseTemplate } from './syntax.ts';
 import { VIEW_NAMES } from './view.ts';
 
@@ -32,6 +34,9 @@ const TITLES: readonly (keyof SectionTitles)[] = [
   'education',
   'skills',
 ];
+
+/** Titles only a template that shows them needs. */
+const MORE_TITLES: readonly (keyof SectionTitles)[] = ['highlights', 'contact'];
 
 const COLORS = [
   'accent',
@@ -222,8 +227,12 @@ export function readTemplate(
     );
   } else {
     for (const key of Object.keys(titles)) {
-      if (!(TITLES as readonly string[]).includes(key)) {
-        problems.push(`template.titles.${key} isn’t a part with a title of its own.`);
+      if (!([...TITLES, ...MORE_TITLES] as readonly string[]).includes(key)) {
+        problems.push(
+          `template.titles.${key} isn’t a part with a title of its own. Besides the five, a template can name highlights and contact.`,
+        );
+      } else if (!isLine(titles[key], MAX.title)) {
+        problems.push(`template.titles.${key} should be up to ${MAX.title} characters.`);
       }
     }
   }
@@ -266,22 +275,29 @@ export function readTemplate(
     if (loop) problems.push(`template.parts show each other in a circle: ${loop}.`);
   }
   if (problems.length > 0) return { ok: false, problems };
-  return {
-    ok: true,
-    template: {
-      id,
-      name: (value.name as string).trim(),
-      look: (value.look as string).trim(),
-      fonts: fonts as FontFile[],
-      titles: Object.fromEntries(
-        TITLES.map((key) => [key, ((titles as Record<string, string>)[key] as string).trim()]),
-      ) as unknown as SectionTitles,
-      word: wordTheme(value.word as Record<string, unknown>),
-      css: value.css as string,
-      body: value.body as string,
-      parts: parts as Record<string, string>,
-    },
+  const template: Template = {
+    id,
+    name: (value.name as string).trim(),
+    look: (value.look as string).trim(),
+    fonts: fonts as FontFile[],
+    titles: Object.fromEntries(
+      [...TITLES, ...MORE_TITLES].flatMap((key) => {
+        const title = (titles as Record<string, unknown>)[key];
+        return typeof title === 'string' ? [[key, title.trim()]] : [];
+      }),
+    ) as unknown as SectionTitles,
+    word: wordTheme(value.word as Record<string, unknown>),
+    css: value.css as string,
+    body: value.body as string,
+    parts: parts as Record<string, string>,
   };
+  // A page in it must print in reasonable time and length, whatever its parts do.
+  try {
+    renderBody(template, previewResume());
+  } catch (error) {
+    return { ok: false, problems: [error instanceof Error ? error.message : String(error)] };
+  }
+  return { ok: true, template };
 }
 
 /** A template as its file holds it, as JSON: everything but its ID, which names the file. */
