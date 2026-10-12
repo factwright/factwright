@@ -19,10 +19,28 @@ export const EFFORT_NAMES: Readonly<Record<Effort, string>> = {
 };
 
 /**
- * Each task's effort until the user chooses: high for the writing and judgment calls, where care
- * shows, and medium for salary checks and job searches, which read a lot and weigh it lightly.
+ * Each task's effort until the user chooses: extra high, the most careful short of max, except
+ * job searches, which read hundreds of postings and weigh each one lightly. Max is the user's
+ * choice for a task, since it can take many minutes a run and much more of a plan.
  */
 export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
+  'focused-resume': 'xhigh',
+  'fit-check': 'xhigh',
+  'salary-check': 'xhigh',
+  'who-to-message': 'xhigh',
+  'interview-prep': 'xhigh',
+  'answer-questions': 'xhigh',
+  ask: 'xhigh',
+  'job-search': 'high',
+  'get-started': 'xhigh',
+  'add-facts': 'xhigh',
+};
+
+/**
+ * Each task's effort on a Pro plan, whose limits are the tightest: high for the writing and
+ * judgment calls, and medium for salary checks and job searches.
+ */
+export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'focused-resume': 'high',
   'fit-check': 'high',
   'salary-check': 'medium',
@@ -35,8 +53,14 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'add-facts': 'high',
 };
 
-/** The effort for a run started with no task, unless the user chose one for everything. */
-export const PLAIN_EFFORT: Effort = 'high';
+/**
+ * The effort a task gets on a plan until the user chooses, by Claude Code's name for the plan,
+ * such as "pro" or "max". A run with no task gets what the writing gets.
+ */
+export function recommendedEffort(task: ModelTask | undefined, plan?: string): Effort {
+  const levels = plan === 'pro' ? PRO_EFFORT : RECOMMENDED_EFFORT;
+  return levels[task ?? 'focused-resume'];
+}
 
 /** How hard Claude thinks: one level for everything or each task's own, and any task's choice. */
 export interface EffortChoices {
@@ -65,9 +89,12 @@ export function parseEffort(value: unknown): EffortChoices | null {
   return { main, tasks: chosen };
 }
 
-/** The level a task gets when it has no choice of its own: the one for everything, or its own. */
-export const effortWithout = (choices: EffortChoices, task?: ModelTask): Effort =>
-  choices.main ?? (task ? RECOMMENDED_EFFORT[task] : PLAIN_EFFORT);
+/**
+ * The level a task gets when it has no choice of its own: the one for everything, or its
+ * recommended level on the user's plan.
+ */
+export const effortWithout = (choices: EffortChoices, task?: ModelTask, plan?: string): Effort =>
+  choices.main ?? recommendedEffort(task, plan);
 
 /**
  * Whether a task needs more effort than the run that's open gives it. One that needs less runs in
@@ -76,6 +103,9 @@ export const effortWithout = (choices: EffortChoices, task?: ModelTask): Effort 
 export const needsMore = (open: Effort, wanted: Effort): boolean =>
   EFFORTS.indexOf(wanted) > EFFORTS.indexOf(open);
 
-/** The effort a run uses: its task's own, the one for everything, or the task's recommended. */
-export const effortFor = (choices: EffortChoices, task?: RunTask | null): Effort =>
-  (task && choices.tasks[task.skill]) || effortWithout(choices, task?.skill);
+/**
+ * The effort a run uses: its task's own, the one for everything, or the task's recommended level
+ * on the user's plan.
+ */
+export const effortFor = (choices: EffortChoices, task?: RunTask | null, plan?: string): Effort =>
+  (task && choices.tasks[task.skill]) || effortWithout(choices, task?.skill, plan);

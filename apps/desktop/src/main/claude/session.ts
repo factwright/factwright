@@ -26,6 +26,10 @@ export interface Launch {
   env: NodeJS.ProcessEnv;
   /** The run's own token, which its hooks and tool calls carry. */
   token: string;
+  /** The user's Claude plan, such as "max", when Claude Code says. */
+  plan: string | undefined;
+  /** How hard it thinks, when it was given an effort. */
+  effort: Effort | undefined;
 }
 
 export interface LaunchOptions {
@@ -38,8 +42,11 @@ export interface LaunchOptions {
   name: string;
   /** Which model to run on. Without one, Claude Code picks. */
   model?: Model;
-  /** How hard it thinks. Without one, Claude Code's default for the model. */
-  effort?: Effort;
+  /**
+   * How hard it thinks, from the user's plan, which only the check before it starts knows.
+   * Without it, Claude Code's default for the model.
+   */
+  effort?: (plan: string | undefined) => Effort;
   /** What it may change without asking. Every run but getting started is "hunt". */
   scope?: RunScope;
   prompt?: string;
@@ -51,7 +58,10 @@ export interface LaunchOptions {
  */
 export async function prepareLaunch(options: LaunchOptions): Promise<Launch | null> {
   const claude = await findClaude(nodeFindDeps());
-  if (!claude || (await claudeStatus(nodeStatusDeps())).state !== 'ready') return null;
+  const status = claude ? await claudeStatus(nodeStatusDeps()) : null;
+  if (!claude || status?.state !== 'ready') return null;
+  const plan = status.plan;
+  const effort = options.effort?.(plan);
 
   const workspace = workspaceDir(options.dataDir);
   const runDir = join(options.dataDir, 'run');
@@ -74,7 +84,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     settings,
     permissionMode: 'default',
     ...(options.model ? { model: options.model } : {}),
-    ...(options.effort ? { effort: options.effort } : {}),
+    ...(effort ? { effort } : {}),
     ...(options.prompt ? { prompt: options.prompt } : {}),
   });
   const command = claudeCommand(claude, args, process.platform);
@@ -87,6 +97,8 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
     env: { ...launchEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
     token,
+    plan,
+    effort,
   };
 }
 
@@ -104,7 +116,8 @@ export const startHidden = (launch: Launch): IPty =>
 export interface RunOptions {
   prompt?: string | undefined;
   model?: Model | undefined;
-  effort?: Effort | undefined;
+  /** How hard it thinks, from the user's plan. */
+  effort?: ((plan: string | undefined) => Effort) | undefined;
   scope?: RunScope;
 }
 
@@ -127,9 +140,10 @@ interface Run {
   stopListening: () => void;
   /** Set when the user stops the run, so its exit doesn't read as a failure. */
   stopping: boolean;
-  /** The model it runs on, and how hard it thinks. */
+  /** The model it runs on, how hard it thinks, and the plan it runs on. */
   model: Model | undefined;
   effort: Effort | undefined;
+  plan: string | undefined;
   scope: RunScope;
   /** Settles once it has exited. */
   exited: Promise<void>;
@@ -158,6 +172,11 @@ export class ClaudeSession {
   /** How hard the open run thinks, or undefined when none is open. */
   effort(): Effort | undefined {
     return this.run?.effort;
+  }
+
+  /** The user's Claude plan, as of the open run's start, or undefined when none is open. */
+  plan(): string | undefined {
+    return this.run?.plan;
   }
 
   /** What the open run may change without asking, or undefined when none is open. */
@@ -219,7 +238,8 @@ export class ClaudeSession {
       stopListening,
       stopping: false,
       model,
-      effort,
+      effort: launch.effort,
+      plan: launch.plan,
       scope,
       exited: new Promise((resolve) => {
         exited = resolve;

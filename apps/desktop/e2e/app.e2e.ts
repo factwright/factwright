@@ -96,8 +96,9 @@ test('asks for an application’s questions, then runs them in Claude’s panel'
     '/factwright:answer-questions job acme-robotics--staff-engineer',
   );
   expect(await terminalText(window)).not.toContain('Why Acme?');
-  // Answers are writing, so they get Opus and high effort until the user chooses otherwise.
-  expect(await terminalText(window)).toContain('opus · high effort');
+  // Answers are writing, so they get Opus and extra high effort on a Max plan, until the user
+  // chooses otherwise.
+  expect(await terminalText(window)).toContain('opus · xhigh effort');
   await closeRun();
 });
 
@@ -174,8 +175,8 @@ test('finds jobs', async () => {
   await window.getByRole('button', { name: 'Find jobs' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('/factwright:job-search');
-  // A search reads a lot and weighs it lightly, so it thinks at medium.
-  expect(await terminalText(window)).toContain('opus · medium effort');
+  // A search reads a lot and weighs it lightly, so it thinks at high.
+  expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();
 });
 
