@@ -1,13 +1,13 @@
 # Resume fonts
 
-The layouts were designed with Windows fonts: Calibri, Cambria, Segoe UI and Bahnschrift. Macs don't have them. So every resume carries open fonts drawn to the same character widths, and a resume looks the same and breaks its lines in the same places on any computer.
+The layouts are designed with Windows fonts: Calibri, Cambria, Segoe UI and Bahnschrift. Macs don't have them. So every resume carries open fonts drawn to the same character widths, and a resume looks the same and breaks its lines in the same places on any computer.
 
 | Files | Stands in for | From | Changes |
 |---|---|---|---|
-| `factwright-sans-regular`, `-bold`, `-italic` | Calibri, in the executive layout. It also supplies symbols the other fonts lack, such as → | [Carlito](https://github.com/googlefonts/carlito) at `3a810ca` | Trimmed (below) and renamed, since Carlito's license reserves its name |
-| `caladea-bold` | Cambria, in the executive layout's headings | [Caladea](https://github.com/huertatipografica/Caladea) at `336a529` | Trimmed |
-| `selawik-regular`, `-semibold`, `-bold` | Segoe UI, in the modern and timeline layouts | [Selawik](https://github.com/microsoft/Selawik) 1.01 | None: Microsoft's own web fonts |
-| `barlow-bold` | Bahnschrift, in the timeline layout's headings | [Barlow](https://github.com/jpt/barlow) at `dc2940e` | Trimmed |
+| `factwright-sans-regular`, `-bold`, `-italic` | Calibri, in the executive and compact layouts. It also supplies symbols the other fonts lack, such as → | [Carlito](https://github.com/googlefonts/carlito) at `3a810ca` | Trimmed (below) and renamed, since Carlito's license reserves its name |
+| `caladea-regular`, `-bold`, `-italic` | Cambria: the classic and elegant layouts' text, and the executive layout's headings | [Caladea](https://github.com/huertatipografica/Caladea) at `336a529` | Trimmed |
+| `selawik-regular`, `-semibold`, `-bold` | Segoe UI, in the modern, timeline, minimal and banner layouts | [Selawik](https://github.com/microsoft/Selawik) 1.01 | None: Microsoft's own web fonts |
+| `barlow-bold` | Bahnschrift, in the timeline and banner layouts' headings | [Barlow](https://github.com/jpt/barlow) at `dc2940e` | Trimmed |
 
 Carlito, Caladea and Selawik match their Windows fonts' widths. Bahnschrift has no open font with its widths, so Barlow, a similar DIN-style face, takes its place in headings, where it can't move a line break.
 
@@ -28,7 +28,7 @@ All four fonts are under the SIL Open Font License 1.1, which lets them be bundl
 ## Rebuilding
 [`build.py`](build.py) makes these files with [fontTools](https://github.com/fonttools/fonttools), from a folder holding:
 - `Carlito-Regular.ttf`, `Carlito-Bold.ttf` and `Carlito-Italic.ttf`, from Carlito's `fonts/ttf`
-- `Caladea-Bold.ttf`, from Caladea's `fonts/ttf`
+- `Caladea-Regular.ttf`, `Caladea-Bold.ttf` and `Caladea-Italic.ttf`, from Caladea's `fonts/ttf`
 - `Barlow-Bold.ttf`, from Barlow's `fonts/ttf`
 - `selawik/`: the contents of `Selawik_Release.zip`, from Selawik's 1.01 release
 

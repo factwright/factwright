@@ -24,7 +24,7 @@ export function measurableHtml(html: string): string {
  * it takes, and how full its last line is. It evaluates to a list of FitRows.
  */
 export const MEASURE_SCRIPT = `(() => {
-  const selector = '.headline,.tagline,.stat span,.sys div,.intro,section>div:not(.systems):not(.stats):not(.skills):not(.tl),li,.proj div,.skills .s';
+  const selector = '.headline,.tagline,.stat span,.sys div,.intro,section>div:not(.systems):not(.stats):not(.skills):not(.tl):not(.blk):not(.job):not(.proj),.sum,li,.proj div,.skills .s';
   return [...document.querySelectorAll(selector)].map((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);

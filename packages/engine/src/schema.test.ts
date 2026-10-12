@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sampleResume } from './sample.ts';
+import { previewResume, sampleResume } from './sample.ts';
 import { readResume } from './schema.ts';
 
 describe('readResume', () => {
@@ -25,11 +25,33 @@ describe('readResume', () => {
     });
   });
 
+  it('checks education and the section headings', () => {
+    expect(
+      readResume({
+        ...sampleResume(),
+        education: [{ degree: 'B.A., History' }],
+        education_first: 'yes',
+        skills_heading: 3,
+      }),
+    ).toEqual({
+      ok: false,
+      problems: [
+        'resume.education[0].school is missing.',
+        'resume.education_first should be true or false.',
+        'resume.skills_heading should be text.',
+      ],
+    });
+  });
+
+  it('accepts the resume every template is shown with', () => {
+    expect(readResume(previewResume()).ok).toBe(true);
+  });
+
   it('knows the layouts and formats', () => {
     expect(readResume({ ...sampleResume(), layout: 'fancy', format: 'rtf' })).toEqual({
       ok: false,
       problems: [
-        'resume.layout should be timeline, executive, modern.',
+        'resume.layout should be timeline, executive, modern, classic, elegant, compact, minimal, banner.',
         'resume.format should be pdf, docx, both.',
       ],
     });
