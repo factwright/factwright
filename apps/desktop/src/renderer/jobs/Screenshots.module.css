@@ -18,9 +18,9 @@
 .list {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--fw-space-2);
+  gap: var(--fw-space-3);
   margin: 0;
-  padding: 0;
+  padding: 8px 8px 0 0;
   list-style: none;
 }
 
@@ -39,13 +39,15 @@
   object-position: top left;
 }
 
-/* The remove button sits on the picture's corner. */
+/* The remove button sits on the picture's corner, off the picture itself. */
 .remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: -8px;
+  right: -8px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
   background: var(--fw-surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
 }
 
 .add {
