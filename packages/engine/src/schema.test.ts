@@ -47,11 +47,14 @@ describe('readResume', () => {
     expect(readResume(previewResume()).ok).toBe(true);
   });
 
-  it('knows the layouts and formats', () => {
-    expect(readResume({ ...sampleResume(), layout: 'fancy', format: 'rtf' })).toEqual({
+  it('takes any template by its ID, and knows the formats', () => {
+    for (const layout of ['classic', 'minimal', 'timeline', 'navy-sidebar-2']) {
+      expect(readResume({ ...sampleResume(), layout }).ok).toBe(true);
+    }
+    expect(readResume({ ...sampleResume(), layout: 'Fancy One', format: 'rtf' })).toEqual({
       ok: false,
       problems: [
-        'resume.layout should be timeline, executive, modern, classic, elegant, compact, minimal, banner.',
+        'resume.layout should be a template’s ID, such as classic or minimal.',
         'resume.format should be pdf, docx, both.',
       ],
     });

@@ -1,22 +1,40 @@
-import { md } from '../markup.ts';
-import {
-  block,
-  contact,
-  extraItems,
-  header,
-  jobClassic,
-  placed,
-  project,
-  school,
-  skillRows,
-  stats,
-  systemCards,
-  type Theme,
-} from './parts.ts';
-import { sectionTitles } from './titles.ts';
+import type { Template } from '../templates.ts';
+import { BODY, PARTS } from './markup.ts';
 
 /** Quiet and airy: lots of white space, gray headings and no color. */
-export const minimal: Theme = {
+export const minimal: Template = {
+  id: 'minimal',
+  name: 'Minimal',
+  look: 'Quiet and airy: lots of white space, gray headings and no color.',
+  fonts: [
+    'selawik-regular.woff2',
+    'selawik-semibold.woff2',
+    'selawik-bold.woff2',
+    'factwright-sans-regular.woff2',
+    'factwright-sans-bold.woff2',
+  ],
+  titles: {
+    summary: 'Summary',
+    competencies: 'Strengths',
+    experience: 'Experience',
+    education: 'Education',
+    skills: 'Skills',
+  },
+  word: {
+    head: 'Segoe UI',
+    body: 'Segoe UI',
+    accent: '1F2328',
+    accent2: '1F2328',
+    muted: '656B74',
+    tint: 'F4F5F6',
+    nameColor: '1F2328',
+    headlineColor: '656B74',
+    ruleColor: 'E6E8EB',
+    nameSize: 52,
+    nameCaps: false,
+    center: false,
+    size: 19,
+  },
   css: `
       :root{--ink:#1f2328;--muted:#656b74;--soft:#a3a8af;--rule:#e6e8eb}
       body{font-family:Selawik,"Factwright Sans","Segoe UI",Calibri,sans-serif;font-size:9.5pt;line-height:1.42}
@@ -49,24 +67,6 @@ export const minimal: Theme = {
       .proj{margin:3px 0 8px}.proj .pn{font-weight:600}.proj .ps{color:var(--muted);font-size:8.8pt}
       .edu{margin-bottom:8px}.edu .note{color:var(--muted)}
     `,
-  body: (r) => {
-    const t = sectionTitles('minimal', r);
-    const education = placed(
-      r,
-      r.education?.length ? block(t.education, r.education.map(school).join('')) : '',
-    );
-    return `
-      <div class="hdr">${header(r)}${contact(r)}</div>
-      ${stats(r)}
-      ${block(t.summary, `<div class="sum">${md(r.summary)}</div>`)}
-      ${education.early}
-      ${r.competencies?.length ? block(t.competencies, extraItems(r.competencies, 'comp')) : ''}
-      ${r.systems?.length ? block(t.systems, systemCards(r)) : ''}
-      ${block(t.experience, r.experience.map(jobClassic).join(''))}
-      ${r.projects?.length ? block(t.projects, r.projects.map(project).join('')) : ''}
-      ${education.late}
-      ${r.skills?.length ? block(t.skills, skillRows(r)) : ''}
-      ${(r.extra_sections ?? []).map((x) => block(x.heading, extraItems(x.items))).join('')}
-    `;
-  },
+  body: BODY,
+  parts: PARTS,
 };

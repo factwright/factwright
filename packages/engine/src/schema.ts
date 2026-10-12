@@ -1,15 +1,4 @@
-/** The looks a resume can have, its templates. Timeline is the default. */
-export const LAYOUTS = [
-  'timeline',
-  'executive',
-  'modern',
-  'classic',
-  'elegant',
-  'compact',
-  'minimal',
-  'banner',
-] as const;
-export type Layout = (typeof LAYOUTS)[number];
+import { TEMPLATE_ID } from './templates.ts';
 
 /** The files a build makes. PDF is the default. */
 export const FORMATS = ['pdf', 'docx', 'both'] as const;
@@ -59,6 +48,7 @@ export interface Education {
  * [[placeholders]], which lint refuses, so none ship by accident.
  */
 export interface Resume {
+  /** Its template's ID: a built-in one, such as "classic", the default, or one of the user's own. */
   layout?: string;
   format?: string;
   /** The files' name, without an extension. */
@@ -80,7 +70,7 @@ export interface Resume {
   education?: Education[];
   /** Education before the experience, as early in a career it says the most. */
   education_first?: boolean;
-  /** The heading over the skills, such as "Clinical Skills". Each layout has its own default. */
+  /** The heading over the skills, such as "Clinical Skills". Each template has its own default. */
   skills_heading?: string;
   skills?: { category: string; items: string[] }[];
   extra_sections?: { heading: string; items: string[] }[];
@@ -209,8 +199,8 @@ export function readResume(
   if (!isObject(value)) return { ok: false, problems: ['The resume should be a JSON object.'] };
   const problems: string[] = [];
   for (const [key, check] of Object.entries(CHECKS)) check(value[key], `resume.${key}`, problems);
-  if (typeof value.layout === 'string' && !(LAYOUTS as readonly string[]).includes(value.layout)) {
-    problems.push(`resume.layout should be ${LAYOUTS.join(', ')}.`);
+  if (typeof value.layout === 'string' && !TEMPLATE_ID.test(value.layout)) {
+    problems.push('resume.layout should be a template’s ID, such as classic or minimal.');
   }
   if (typeof value.format === 'string' && !(FORMATS as readonly string[]).includes(value.format)) {
     problems.push(`resume.format should be ${FORMATS.join(', ')}.`);
