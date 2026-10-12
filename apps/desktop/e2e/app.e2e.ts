@@ -99,6 +99,8 @@ test('asks for an application’s questions, then runs them in Claude’s panel'
 
 test('finds jobs', async () => {
   const { window } = opened;
+  // Done with Acme. In a narrow window, a job's details cover the page's buttons.
+  await window.getByRole('button', { name: 'Close details' }).click();
   await window.getByRole('button', { name: 'Find jobs' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('/factwright:job-search');
