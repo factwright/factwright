@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Factwright · Your job hunt, run by your own Claude</title>
+    <meta
+      name="description"
+      content="Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes and answers from facts you confirmed, and gets you ready for the interview."
+    />
+    <link rel="canonical" href="https://factwright.com/" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Factwright" />
+    <meta property="og:url" content="https://factwright.com/" />
+    <meta property="og:title" content="Factwright: tailored to the job, true to the facts" />
+    <meta
+      property="og:description"
+      content="Your job hunt, run by your own Claude. Tailored resumes and answers where every line is backed by a fact, plus interview prep."
+    />
+    <meta property="og:image" content="https://factwright.com/social.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Factwright: tailored to the job, true to the facts. A resume line linked to the fact behind it."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-logo" viewBox="19 20 80 80"><path d="M31 43.5V48.5M31 71.5V76.5" fill="none" stroke="currentColor" stroke-width="6" /><circle cx="31" cy="32" r="8" fill="none" stroke="currentColor" stroke-width="7" /><circle cx="31" cy="60" r="8" fill="none" stroke="currentColor" stroke-width="7" /><circle cx="31" cy="88" r="11.5" fill="currentColor" /><rect x="49" y="23.5" width="49" height="17" rx="8.5" fill="currentColor" /><rect x="49" y="51.5" width="31" height="17" rx="8.5" fill="currentColor" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="12.5" rx="2.5" /><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3.5 12.5h17" /></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5" /><path d="M5 19.5c1.2-3.3 3.9-5 7-5s5.8 1.7 7 5" /></symbol>
+      <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4" /></symbol>
+      <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" /></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H8A2.5 2.5 0 0 0 5.5 6v12A2.5 2.5 0 0 0 8 20.5h8a2.5 2.5 0 0 0 2.5-2.5V8z" /><path d="M14 3.5V8h4.5M9 12.5h6M9 16h6" /></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="10" r="1.75" /><path d="M20.5 16L16 11.5 7 19.5" /></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="M7 9.5l3 2.5-3 2.5M12.5 15H17" /></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" /></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.2c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6.3z" /><path d="M9 12l2.2 2.2L15.5 10" /></symbol>
+      <symbol id="i-find" viewBox="0 0 24 24"><path d="M4 6h9M4 11h6M4 16h5" /><circle cx="16" cy="14" r="3.5" /><path d="M18.6 16.6L21 19" /></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 16.5a7.5 7.5 0 1 1 15 0" /><path d="M12 16.5l3.5-4.5" /></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></symbol>
+      <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="7" rx="6.5" ry="2.75" /><path d="M5.5 7v5c0 1.5 2.9 2.75 6.5 2.75s6.5-1.25 6.5-2.75V7M5.5 12v5c0 1.5 2.9 2.75 6.5 2.75s6.5-1.25 6.5-2.75v-5" /></symbol>
+      <symbol id="i-pen" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L9 19H5v-4z" /><path d="M13 7l4 4" /></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3" /><path d="M3.5 19c.8-2.9 3-4.5 5.5-4.5s4.7 1.6 5.5 4.5M15.5 6.2a3 3 0 0 1 0 5.6M17 14.8c1.7.6 3 2 3.5 4.2" /></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5a2 2 0 0 1-2-2z" /><path d="M8.5 9.5h7M8.5 12.5h4.5" /></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5L10 14M20.5 3.5l-6.5 17-4-6.5-6.5-4z" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" /></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.7 5.4 3.7 8.5s-1.2 5.9-3.7 8.5c-2.5-2.6-3.7-5.4-3.7-8.5S9.5 6.1 12 3.5z" /></symbol>
+    </svg>
+
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Factwright, home">
+          <svg class="logo" aria-hidden="true"><use href="#i-logo" /></svg>
+          <span>Factwright</span>
+        </a>
+        <nav class="header-nav" aria-label="On this page">
+          <a href="#how">How it works</a>
+          <a href="#facts">Fact bank</a>
+          <a href="#templates">Templates</a>
+          <a href="#your-claude">Your Claude</a>
+          <a href="#questions">Questions</a>
+        </nav>
+        <a class="button button-secondary button-sm header-cta" href="#how">How it works</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Hero -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="wrap hero-copy">
+          <p class="eyebrow-pill"><span class="pulse-dot" aria-hidden="true"></span>Coming soon for Mac and Windows</p>
+          <h1 id="hero-title">Tailored to the job.<br /><span class="soft">True to the facts.</span></h1>
+          <p class="lede hero-lede">
+            Factwright runs your job hunt with your own Claude. It learns what’s true about you, finds
+            jobs that fit, writes every resume and answer from facts you’ve confirmed, and gets you
+            ready for the interview.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary button-lg" href="#how">
+              See how it works
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow-down" /></svg>
+            </a>
+            <p class="hero-note">Free during the beta · Uses your own Claude plan</p>
+          </div>
+        </div>
+
+        <figure class="wrap hero-shot">
+          <figcaption class="visually-hidden">
+            The Factwright app: a list of jobs with their status and fit, the Lumen Health job open
+            with a Run button for each task, and Claude’s panel at the bottom, where your own Claude
+            Code writes an interview prep sheet and asks you one question along the way.
+          </figcaption>
+          <div class="window" aria-hidden="true" data-demo>
+            <div class="win-bar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="win-brand">
+                <svg aria-hidden="true" class="logo"><use href="#i-logo" /></svg>
+                Factwright
+              </span>
+              <span class="win-search">
+                <svg aria-hidden="true" class="icon"><use href="#i-search" /></svg>
+                <span class="win-search-text">Search jobs, companies and notes</span>
+                <kbd>⌘K</kbd>
+              </span>
+              <span class="ui-button ui-primary win-add"><svg aria-hidden="true" class="icon"><use href="#i-plus" /></svg>Add job</span>
+            </div>
+
+            <div class="win-body">
+              <div class="win-side">
+                <div class="nav-item is-current">
+                  <svg aria-hidden="true" class="icon"><use href="#i-briefcase" /></svg><span>Jobs</span><b class="nav-count">14</b>
+                </div>
+                <div class="nav-item">
+                  <svg aria-hidden="true" class="icon"><use href="#i-user" /></svg><span>Profile</span>
+                </div>
+                <div class="side-cards">
+                  <div class="side-card">
+                    <p class="side-title"><i class="dot dot-ok"></i>Sync</p>
+                    <p class="side-line">Up to date</p>
+                    <span class="ui-button ui-secondary ui-sm side-action">Manage</span>
+                  </div>
+                  <div class="side-card">
+                    <p class="side-title"><i class="dot dot-ok"></i>Your Claude</p>
+                    <p class="side-line">Signed in · Max plan</p>
+                    <p class="side-help">Factwright never sees your login.</p>
+                    <span class="ui-button ui-secondary ui-sm side-action">Settings</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="win-content">
+                <div class="win-work">
+                  <div class="win-list">
+                    <div class="list-head">
+                      <div>
+                        <p class="list-title">Jobs</p>
+                        <p class="list-sub">14 jobs</p>
+                      </div>
+                      <div class="list-buttons">
+                        <span class="ui-button ui-secondary"><svg aria-hidden="true" class="icon"><use href="#i-search" /></svg>Find jobs</span>
+                        <span class="ui-button ui-secondary"><svg aria-hidden="true" class="icon"><use href="#i-pulse" /></svg>Your journey</span>
+                      </div>
+                    </div>
+                    <div class="stats">
+                      <div class="stat"><p class="stat-label">In play</p><p class="stat-value">4</p><p class="stat-detail">2 calls ahead</p></div>
+                      <div class="stat"><p class="stat-label">Applied</p><p class="stat-value">9</p><p class="stat-detail">2 this week</p></div>
+                      <div class="stat"><p class="stat-label">Heard back</p><p class="stat-value">44%</p><p class="stat-detail">4 of 9</p></div>
+                      <div class="stat"><p class="stat-label">Needs you</p><p class="stat-value is-need">2</p><p class="stat-detail">1 due today</p></div>
+                    </div>
+                    <div class="seg">
+                      <span class="seg-option is-selected">Active <b>6</b></span>
+                      <span class="seg-option">To review <b>3</b></span>
+                      <span class="seg-option">Applied <b>4</b></span>
+                      <span class="seg-option">All <b>14</b></span>
+                    </div>
+                    <div class="table">
+                      <div class="t-head"><span>Job</span><span>Status</span><span>Fit</span></div>
+                      <div class="t-row is-selected">
+                        <span class="t-job"><b>Lumen Health</b><span>Senior Product Manager, Growth</span><em>Panel interview Friday at 2:00 PM</em></span>
+                        <span class="pill tone-purple">Interview</span>
+                        <span class="pill tone-green">86 · Strong</span>
+                      </div>
+                      <div class="t-row">
+                        <span class="t-job"><b>Fernway</b><span>Product Lead, Payments</span><em class="is-need">Reply to the offer by Thursday</em></span>
+                        <span class="pill tone-green">Offer</span>
+                        <span class="pill tone-green">81 · Strong</span>
+                      </div>
+                      <div class="t-row">
+                        <span class="t-job"><b>Harbor &amp; Pine</b><span>Group Product Manager, Marketplace</span><em>Applied 3 days ago</em></span>
+                        <span class="pill tone-blue">Applied</span>
+                        <span class="pill tone-blue">72 · Good</span>
+                      </div>
+                      <div class="t-row">
+                        <span class="t-job"><b>Tidewater Analytics</b><span>Senior Product Manager, Data</span><em>Recruiter screen Wednesday at 10:30 AM</em></span>
+                        <span class="pill tone-teal">Screen</span>
+                        <span class="pill tone-blue">74 · Good</span>
+                      </div>
+                      <div class="t-row">
+                        <span class="t-job"><b>Brightpath Learning</b><span>Product Manager III</span><em>Ready to apply</em></span>
+                        <span class="pill tone-violet">Resume ready</span>
+                        <span class="pill tone-amber">58 · Worth a look</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="win-panel">
+                    <div class="panel-top">
+                      <p class="panel-company">Lumen Health</p>
+                      <svg aria-hidden="true" class="icon panel-close"><use href="#i-x" /></svg>
+                    </div>
+                    <p class="panel-role">Senior Product Manager, Growth</p>
+                    <p class="panel-meta">Remote, US · $165k–$190k · <u>Posting</u></p>
+                    <div class="panel-pills">
+                      <span class="pill tone-purple pill-select">Interview<svg aria-hidden="true" class="icon"><use href="#i-chevron" /></svg></span>
+                      <span class="pill tone-green">86 · Strong</span>
+                    </div>
+                    <div class="next-step">
+                      <p class="next-label">Next step</p>
+                      <p class="next-text">Panel interview · Fri, Oct 16, 2:00 PM</p>
+                    </div>
+                    <p class="panel-heading">Run with your Claude</p>
+                    <div class="runs">
+                      <div class="run">
+                        <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
+                        <span class="run-state is-ok" data-demo-before>Done</span>
+                      </div>
+                      <div class="run" data-demo-run>
+                        <span class="run-text"><b>Interview prep</b><span>A prep sheet for a call or an interview</span></span>
+                        <span class="run-state" data-demo-run-state><i class="run-dot"></i><span data-demo-run-label>Run</span></span>
+                      </div>
+                      <div class="run">
+                        <span class="run-text"><b>Application questions</b><span>Answers to the form, in your own voice</span></span>
+                        <span class="run-state is-quiet">Ran</span>
+                      </div>
+                    </div>
+                    <p class="panel-heading">Documents</p>
+                    <div class="docs">
+                      <span class="doc"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Posting</span>
+                      <span class="doc"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Fit check</span>
+                      <span class="doc"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Resume · PDF</span>
+                      <span class="doc is-new" data-demo-doc><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Interview prep<b>New</b></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="claude-panel" data-demo-claude>
+                  <div class="claude-head">
+                    <span class="run-status is-done" data-demo-status><i class="status-dot"></i><span data-demo-status-label>Done</span></span>
+                    <span class="claude-title" data-demo-title>Tailored resume · Lumen Health</span>
+                    <span class="claude-hint" data-demo-hint>Claude is done. Type to keep going, or close the panel.</span>
+                    <span class="claude-plan"><i class="dot dot-ok"></i>Runs on your own Claude · Max plan</span>
+                    <span class="ui-button ui-quiet ui-sm claude-stop">Stop</span>
+                    <span class="ui-button ui-secondary ui-sm" data-demo-toggle>Show Claude</span>
+                  </div>
+                  <div class="term">
+                    <p class="t-line t-user" data-at="1">❯ /factwright:interview-prep job lumen-health--senior-product-manager-growth</p>
+                    <p class="t-line" data-at="2" data-until="3"><span class="t-spin">✻</span> <span class="t-dim">Reading everything on file for the job…</span></p>
+                    <p class="t-line" data-at="3"><span class="t-ok">⏺</span> Read the posting, your fit check, the resume you sent and your notes.</p>
+                    <p class="t-line t-gap t-bold" data-at="4" data-until="5">Which round is Friday’s interview?</p>
+                    <p class="t-line t-pick" data-at="4" data-until="5">❯ 1. Panel with the product team</p>
+                    <p class="t-line t-indent" data-at="4" data-until="5">2. Hiring manager, one on one</p>
+                    <p class="t-line t-indent" data-at="4" data-until="5">3. Type something else</p>
+                    <p class="t-line t-gap t-dim" data-at="5">⏺ You answered: Which round is Friday’s interview? → Panel with the product team</p>
+                    <p class="t-line" data-at="6" data-until="7"><span class="t-spin">✻</span> <span class="t-dim">Checking company news and writing your prep sheet…</span></p>
+                    <p class="t-line t-gap" data-at="7"><span class="t-ok">⏺</span> Your prep sheet is ready: likely questions answered from your facts, your best stories, and questions to ask them.</p>
+                    <p class="t-line t-gap t-dim" data-at="7">❯ <span class="t-caret"></span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </figure>
+      </section>
+
+      <!-- What makes it different -->
+      <section class="pillars wrap" aria-label="What makes Factwright different">
+        <div class="pillar reveal">
+          <span class="pillar-icon"><svg aria-hidden="true" class="icon"><use href="#i-terminal" /></svg></span>
+          <h2>Your own Claude</h2>
+          <p>
+            Factwright runs the Claude Code you already use, in plain view. It never sees your
+            login, and runs count against your own plan.
+          </p>
+        </div>
+        <div class="pillar reveal">
+          <span class="pillar-icon"><svg aria-hidden="true" class="icon"><use href="#i-shield" /></svg></span>
+          <h2>Nothing made up</h2>
+          <p>
+            Every claim stays unconfirmed until you check it. Resumes and answers use only what
+            you’ve confirmed, and every resume gets fact-checked line by line.
+          </p>
+        </div>
+        <div class="pillar reveal">
+          <span class="pillar-icon"><svg aria-hidden="true" class="icon"><use href="#i-folder" /></svg></span>
+          <h2>Yours to keep</h2>
+          <p>
+            Your fact bank, resumes and documents are plain files in a folder on your computer.
+            Sync to your phone is there when you want it.
+          </p>
+        </div>
+      </section>
+
+      <!-- How it works -->
+      <section class="section" id="how" aria-labelledby="how-title">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">Set it up once. Then every job is a few clicks.</h2>
+            <p class="lede">
+              Factwright does the busywork of a job hunt with your Claude: the reading, the
+              tailoring, the checking and the tracking. You make the calls.
+            </p>
+          </header>
+
+          <ol class="steps">
+            <!-- 1. Tell it about you -->
+            <li class="step reveal">
+              <div class="step-copy">
+                <span class="step-number">1</span>
+                <h3>Tell it about you</h3>
+                <p>
+                  Share your old resumes, your LinkedIn profile saved as a PDF, screenshots of your
+                  work, and everything you’d say about yourself in your own words. Then say what
+                  you’re after: titles, pay, where, the kinds of company, and your deal-breakers.
+                </p>
+                <p class="step-aside">About 20 minutes, saved as you go, so you can stop any time.</p>
+              </div>
+              <figure class="step-visual">
+                <figcaption class="visually-hidden">
+                  Getting started in Factwright: three files shared, some notes in your own words,
+                  and what you’re looking for.
+                </figcaption>
+                <div class="card card-start" aria-hidden="true">
+                  <div class="mini-steps">
+                    <span class="is-done"><i class="step-dot">✓</i>About you</span>
+                    <span class="is-current"><i class="step-dot">3</i>Your files</span>
+                    <span><i class="step-dot">4</i>In your words</span>
+                    <span><i class="step-dot">5</i>What you want</span>
+                  </div>
+                  <div class="files">
+                    <div class="file">
+                      <span class="file-icon"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg></span>
+                      <span class="file-text"><b>Jordan Avery resume 2025.pdf</b><span>2 pages · read</span></span>
+                      <svg aria-hidden="true" class="icon file-ok"><use href="#i-check" /></svg>
+                    </div>
+                    <div class="file">
+                      <span class="file-icon"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg></span>
+                      <span class="file-text"><b>LinkedIn profile.pdf</b><span>LinkedIn’s own “Save to PDF”</span></span>
+                      <svg aria-hidden="true" class="icon file-ok"><use href="#i-check" /></svg>
+                    </div>
+                    <div class="file">
+                      <span class="file-icon"><svg aria-hidden="true" class="icon"><use href="#i-image" /></svg></span>
+                      <span class="file-text"><b>Pricing launch dashboard.png</b><span>Screenshot</span></span>
+                      <svg aria-hidden="true" class="icon file-ok"><use href="#i-check" /></svg>
+                    </div>
+                  </div>
+                  <div class="words">
+                    <p class="words-label">In your words</p>
+                    <p class="words-text">
+                      At Northwind I ran the repeat booking program end to end. We tried rewards
+                      first, then reminders, and the reminders are what moved it<span class="caret"></span>
+                    </p>
+                  </div>
+                  <div class="wants">
+                    <span class="chip">Senior PM</span>
+                    <span class="chip">Remote or Denver</span>
+                    <span class="chip">$160k+</span>
+                    <span class="chip">Growth-stage startups</span>
+                    <span class="chip chip-no">No crypto</span>
+                  </div>
+                </div>
+              </figure>
+            </li>
+
+            <!-- 2. Confirm your fact bank -->
+            <li class="step reveal">
+              <div class="step-copy">
+                <span class="step-number">2</span>
+                <h3>Confirm your fact bank</h3>
+                <p>
+                  Your Claude turns all of it into a fact bank: your experience as short, checkable
+                  claims, each marked unconfirmed. Then it interviews you, a few questions at a
+                  time, to confirm each one and fill the gaps.
+                </p>
+                <p class="step-aside">Nothing goes on a resume until you’ve said it’s true.</p>
+              </div>
+              <figure class="step-visual">
+                <figcaption class="visually-hidden">
+                  Claude asks what your part in a project was. Your answer confirms the claim, with
+                  how sure it is and what to say and not say.
+                </figcaption>
+                <div class="confirm" aria-hidden="true" data-confirm>
+                  <div class="term term-card">
+                    <p class="t-line t-bold">What was your part in the repeat booking program?</p>
+                    <p class="t-line t-pick">❯ 1. I led it, and built much of it</p>
+                    <p class="t-line t-indent">2. My team did it, and I led them</p>
+                    <p class="t-line t-indent">3. I helped with one part of it</p>
+                  </div>
+                  <div class="card claim">
+                    <p class="claim-path">facts/northwind-stays.md</p>
+                    <p class="claim-title">Repeat booking program</p>
+                    <div class="tags">
+                      <span class="tag tag-pending">unconfirmed</span>
+                      <span class="tag">shipped</span>
+                      <span class="tag">led-and-built</span>
+                      <span class="tag">high</span>
+                    </div>
+                    <blockquote>
+                      Led the repeat booking program from research to launch, lifting repeat
+                      bookings by ~31%.
+                    </blockquote>
+                    <dl class="claim-facts">
+                      <dt>Numbers</dt>
+                      <dd>Repeat bookings up ~31% in a year</dd>
+                      <dt>Say</dt>
+                      <dd>“led the program”, never “built it alone”</dd>
+                      <dt>Source</dt>
+                      <dd class="claim-source"><span class="source-pending">resume 2025.pdf</span><span class="source-done">Jordan, Oct 12</span></dd>
+                    </dl>
+                    <span class="stamp"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Confirmed</span>
+                  </div>
+                </div>
+              </figure>
+            </li>
+
+            <!-- 3. Find jobs that fit -->
+            <li class="step reveal">
+              <div class="step-copy">
+                <span class="step-number">3</span>
+                <h3>Find jobs that fit</h3>
+                <p>
+                  Point it at Hacker News’s monthly “Who is hiring?” thread, a company’s job board or
+                  a careers page, or paste any posting. Every job gets scored against your facts, and
+                  a fit check adds what people say about working there.
+                </p>
+                <p class="step-aside">
+                  A salary check estimates pay a posting hides, and an unmask finds the company behind
+                  a recruiter’s post.
+                </p>
+              </div>
+              <figure class="step-visual">
+                <figcaption class="visually-hidden">
+                  A fit check: 86 out of 100, strong, split into work, role, stack and requirements,
+                  plus what people say about the company.
+                </figcaption>
+                <div class="card fit" aria-hidden="true">
+                  <div class="fit-head">
+                    <div>
+                      <p class="fit-company">Lumen Health</p>
+                      <p class="fit-role">Senior Product Manager, Growth</p>
+                    </div>
+                    <span class="pill tone-green pill-lg">86 · Strong</span>
+                  </div>
+                  <div class="scores">
+                    <div class="score" data-share="85">
+                      <p class="score-head"><b>Work</b><span class="score-points">34 of 40</span></p>
+                      <span class="track"><span class="track-fill"></span></span>
+                      <small>Marketplace growth, like Northwind Stays</small>
+                    </div>
+                    <div class="score" data-share="88">
+                      <p class="score-head"><b>Role</b><span class="score-points">22 of 25</span></p>
+                      <span class="track"><span class="track-fill"></span></span>
+                      <small>A senior PM owning a growth area</small>
+                    </div>
+                    <div class="score" data-share="80">
+                      <p class="score-head"><b>Stack</b><span class="score-points">16 of 20</span></p>
+                      <span class="track"><span class="track-fill"></span></span>
+                      <small>SQL, Amplitude and A/B testing match</small>
+                    </div>
+                    <div class="score" data-share="93">
+                      <p class="score-head"><b>Requirements</b><span class="score-points">14 of 15</span></p>
+                      <span class="track"><span class="track-fill"></span></span>
+                      <small>Every must-have is covered</small>
+                    </div>
+                  </div>
+                  <ul class="fit-marks">
+                    <li><svg aria-hidden="true" class="icon fit-yes"><use href="#i-check" /></svg><span><b>Pricing experiments:</b> proven, 40+ run</span></li>
+                    <li><svg aria-hidden="true" class="icon fit-part"><use href="#i-minus" /></svg><span><b>Healthcare:</b> partly, through clinic bookings</span></li>
+                    <li><svg aria-hidden="true" class="icon fit-no"><use href="#i-x" /></svg><span><b>HIPAA:</b> missing, so it won’t be claimed</span></li>
+                  </ul>
+                  <div class="mood">
+                    <p class="mood-head"><b>What people say</b><span class="pill tone-green">People like it</span></p>
+                    <p>Praise for the team and a steady pace. Pay sits at the top of the band.</p>
+                  </div>
+                </div>
+              </figure>
+            </li>
+
+            <!-- 4. Click Run -->
+            <li class="step reveal">
+              <div class="step-copy">
+                <span class="step-number">4</span>
+                <h3>Click Run, and watch your Claude work</h3>
+                <p>
+                  Every job has a Run button for each task. Your own Claude Code does the work in a
+                  panel you can watch and type into, so you can always see what it’s doing. Keep
+                  working while it runs.
+                </p>
+                <ul class="states">
+                  <li><span class="run-status is-working"><i class="status-dot"></i>Working</span>Claude is on it. You’ll hear when it needs you.</li>
+                  <li><span class="run-status is-need"><i class="status-dot"></i>Needs your answer</span>The panel comes back with Claude’s question.</li>
+                  <li><span class="run-status is-done"><i class="status-dot"></i>Done</span>The results land in the job, ready to open.</li>
+                </ul>
+              </div>
+              <figure class="step-visual">
+                <figcaption class="visually-hidden">
+                  A job’s Run buttons, with a tailored resume running in Claude’s panel. Claude asks
+                  about something the job wants that isn’t in your fact bank yet.
+                </figcaption>
+                <div class="run-demo" aria-hidden="true">
+                  <div class="card run-card">
+                    <p class="panel-heading">Run with your Claude</p>
+                    <div class="runs">
+                      <div class="run is-suggested">
+                        <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
+                        <span class="run-state is-running"><i class="run-dot"></i>Running</span>
+                      </div>
+                      <div class="run">
+                        <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
+                        <span class="run-state is-quiet">Ran</span>
+                      </div>
+                      <div class="run">
+                        <span class="run-text"><b>Salary check</b><span>Estimate the pay when the posting doesn’t say</span></span>
+                        <span class="run-state">Run</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card mini-claude">
+                    <div class="claude-head">
+                      <span class="run-status is-need"><i class="status-dot"></i>Needs your answer</span>
+                      <span class="claude-title">Tailored resume · Harbor &amp; Pine</span>
+                    </div>
+                    <div class="term">
+                      <p class="t-line"><span class="t-ok">⏺</span> Mapped the posting to 23 of your facts. Two gaps.</p>
+                      <p class="t-line t-gap t-bold">Have you set pricing for a two-sided marketplace?</p>
+                      <p class="t-line t-pick">❯ 1. Yes: I’ll tell you about it</p>
+                      <p class="t-line t-indent">2. No, so leave it out</p>
+                    </div>
+                  </div>
+                </div>
+              </figure>
+            </li>
+
+            <!-- 5. Apply and keep track -->
+            <li class="step reveal">
+              <div class="step-copy">
+                <span class="step-number">5</span>
+                <h3>Apply, and keep track</h3>
+                <p>
+                  Resumes come out as PDF or Word in the templates you picked, fitted to their pages
+                  and fact-checked line by line. You send them yourself. Then track every status,
+                  call and interview, and see what needs you next.
+                </p>
+                <p class="step-aside">Turn on sync to see it all on your phone.</p>
+              </div>
+              <figure class="step-visual">
+                <figcaption class="visually-hidden">
+                  A finished one-page resume that passed its fact check, and the job list on a
+                  phone.
+                </figcaption>
+                <div class="send" aria-hidden="true">
+                  <div class="paper">
+                    <img src="/templates/timeline.webp" width="612" height="792" alt="" loading="lazy" decoding="async" />
+                    <span class="paper-badge badge-check"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Every line fact-checked</span>
+                    <span class="paper-badge badge-fit">Fits on one page</span>
+                  </div>
+                  <div class="phone">
+                    <div class="phone-screen">
+                      <p class="phone-title">Jobs</p>
+                      <div class="phone-stats">
+                        <span><b>4</b>In play</span>
+                        <span><b class="is-need">2</b>Needs you</span>
+                      </div>
+                      <div class="phone-row">
+                        <b>Fernway</b><span>Product Lead, Payments</span>
+                        <em class="is-need">Reply to the offer by Thursday</em>
+                        <span class="pill tone-green">Offer</span>
+                      </div>
+                      <div class="phone-row">
+                        <b>Lumen Health</b><span>Senior Product Manager, Growth</span>
+                        <em>Panel interview Friday at 2:00 PM</em>
+                        <span class="pill tone-purple">Interview</span>
+                      </div>
+                      <div class="phone-row">
+                        <b>Tidewater Analytics</b><span>Senior Product Manager, Data</span>
+                        <em>Recruiter screen Wednesday</em>
+                        <span class="pill tone-teal">Screen</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </figure>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- Every line traces back to a fact -->
+      <section class="section section-band" id="facts" aria-labelledby="facts-title">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <p class="eyebrow">The fact bank</p>
+            <h2 id="facts-title">Every line traces back to a fact.</h2>
+            <p class="lede">
+              Your fact bank holds what’s true about you: what you did, how far it got, and how to
+              say it. Every resume line and answer is built from it, and before a resume is done, a
+              second pass checks each line against it.
+            </p>
+          </header>
+
+          <div class="trace reveal" data-trace>
+            <p class="visually-hidden" role="status" data-trace-status></p>
+            <div class="resume">
+              <div class="resume-head">
+                <p class="resume-name">Jordan Avery</p>
+                <p class="resume-sub">Senior Product Manager · Denver, CO</p>
+              </div>
+              <p class="resume-section">Experience</p>
+              <p class="resume-job"><span><b>Senior Product Manager</b>, Northwind Stays</span><span class="resume-dates">2021 – Present</span></p>
+              <p class="trace-hint" id="trace-hint">Pick a line to see the fact behind it.</p>
+              <ul class="resume-lines">
+                <li>
+                  <button type="button" class="line" aria-pressed="true" aria-controls="trace-fact" aria-describedby="trace-hint" data-fact="0">
+                    Led the repeat booking program from research to launch, lifting repeat bookings
+                    by <mark>~31%</mark>.
+                  </button>
+                </li>
+                <li>
+                  <button type="button" class="line" aria-pressed="false" aria-controls="trace-fact" aria-describedby="trace-hint" data-fact="1">
+                    Ran 40+ pricing and checkout experiments with data science, adding
+                    <mark>$2.4M</mark> in yearly revenue.
+                  </button>
+                </li>
+                <li>
+                  <button type="button" class="line" aria-pressed="false" aria-controls="trace-fact" aria-describedby="trace-hint" data-fact="2">
+                    Launched suggested pricing that hosts adopted on <mark>most</mark> new listings
+                    within a quarter.
+                  </button>
+                </li>
+                <li>
+                  <button type="button" class="line" aria-pressed="false" aria-controls="trace-fact" aria-describedby="trace-hint" data-fact="3">
+                    Grew the guest team to <mark>12</mark> across engineering, design and research, and
+                    set its quarterly goals.
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <div class="fact-card card" id="trace-fact">
+              <!-- Each fact, in the fact bank's own format. The script shows the one picked. -->
+              <article class="fact" data-fact-card="0">
+                <p class="claim-path">facts/northwind-stays.md</p>
+                <h3 class="claim-title">Repeat booking program</h3>
+                <div class="tags"><span class="tag">shipped</span><span class="tag">led-and-built</span><span class="tag">high</span></div>
+                <blockquote>Led the repeat booking program from research to launch, lifting repeat bookings by ~31%.</blockquote>
+                <dl class="claim-facts">
+                  <dt>Numbers</dt><dd>Repeat bookings up ~31% in a year</dd>
+                  <dt>Say</dt><dd>“led the program”, never “built it alone”</dd>
+                  <dt>Source</dt><dd>Jordan, Oct 12</dd>
+                </dl>
+                <p class="fact-why"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>The number, the verb and the claim all match.</p>
+              </article>
+              <article class="fact" data-fact-card="1" hidden>
+                <p class="claim-path">facts/northwind-stays.md</p>
+                <h3 class="claim-title">Pricing and checkout experiments</h3>
+                <div class="tags"><span class="tag">live</span><span class="tag">led-and-built</span><span class="tag">high</span></div>
+                <blockquote>Ran 40+ pricing and checkout experiments with data science, adding $2.4M in yearly revenue.</blockquote>
+                <dl class="claim-facts">
+                  <dt>Numbers</dt><dd>40+ experiments; $2.4M a year, from finance’s 2025 report</dd>
+                  <dt>Say</dt><dd>“ran with data science”, never “built the pricing engine”</dd>
+                  <dt>Source</dt><dd>Jordan, Oct 12</dd>
+                </dl>
+                <p class="fact-why"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Credits the data science team, as the fact says to.</p>
+              </article>
+              <article class="fact" data-fact-card="2" hidden>
+                <p class="claim-path">facts/northwind-stays.md</p>
+                <h3 class="claim-title">Host pricing tool</h3>
+                <div class="tags"><span class="tag">live</span><span class="tag">led-team</span><span class="tag tag-medium">medium</span></div>
+                <blockquote>Launched suggested pricing that hosts adopted on most new listings within a quarter.</blockquote>
+                <dl class="claim-facts">
+                  <dt>Numbers</dt><dd>Most new listings within a quarter; no exact share on file</dd>
+                  <dt>Say</dt><dd>“most new listings”, never a percentage</dd>
+                  <dt>Source</dt><dd>Jordan, Oct 12</dd>
+                </dl>
+                <p class="fact-why"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Only medium confidence, so it says “most” instead of a number.</p>
+              </article>
+              <article class="fact" data-fact-card="3" hidden>
+                <p class="claim-path">facts/northwind-stays.md</p>
+                <h3 class="claim-title">Guest team</h3>
+                <div class="tags"><span class="tag">live</span><span class="tag">led-team</span><span class="tag">high</span></div>
+                <blockquote>Grew the guest team to 12 across engineering, design and research, and set its quarterly goals.</blockquote>
+                <dl class="claim-facts">
+                  <dt>Numbers</dt><dd>12 people, from 5 in 2021</dd>
+                  <dt>Say</dt><dd>“grew the team”, never “hired the team”</dd>
+                  <dt>Source</dt><dd>Jordan, Oct 12</dd>
+                </dl>
+                <p class="fact-why"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Names the team, and no one on it.</p>
+              </article>
+            </div>
+          </div>
+
+          <ul class="checks reveal" aria-label="What the fact check looks at">
+            <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg><span><b>Numbers match.</b> Every figure is the one on file.</span></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg><span><b>Verbs fit.</b> “Launched” only for what shipped, “led” only for what you led.</span></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg><span><b>Hedged where it should be.</b> Less certain facts say “about” or “most”.</span></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg><span><b>Nothing confidential.</b> Names you list, such as customers, never appear.</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Every task -->
+      <section class="section" id="tasks" aria-labelledby="tasks-title">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <p class="eyebrow">Run with your Claude</p>
+            <h2 id="tasks-title">Ready for every part of the hunt.</h2>
+            <p class="lede">
+              Factwright gives your Claude a skill for each task, grounded in your facts. Most start
+              from a Run button on the job, and the results show up there as documents you can read.
+            </p>
+          </header>
+          <ul class="tasks">
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-find" /></svg></span>
+              <h3>Find jobs</h3>
+              <p>Reads a hiring thread, a job board or a careers page, and ranks what fits your criteria.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg></span>
+              <h3>Fit check</h3>
+              <p>Scores a job against your facts, from strong to skip, with what people say about it.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-eye" /></svg></span>
+              <h3>Unmask a listing</h3>
+              <p>Finds the real company behind a recruiter’s post, and the direct way to apply.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-coins" /></svg></span>
+              <h3>Salary check</h3>
+              <p>Estimates the pay when a posting doesn’t say, with sources and how sure it is.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg></span>
+              <h3>Tailored resume</h3>
+              <p>A resume for the job in your templates, with every line traced to a fact.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-pen" /></svg></span>
+              <h3>Application questions</h3>
+              <p>Answers to the form in your own voice, short and ready to paste.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-users" /></svg></span>
+              <h3>Who to message</h3>
+              <p>Three to five people worth reaching, any warm path, and drafts you send yourself.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-chat" /></svg></span>
+              <h3>Interview prep</h3>
+              <p>Likely questions answered from your facts, stories to tell, and questions to ask.</p>
+            </li>
+          </ul>
+          <p class="tasks-note reveal">
+            <svg class="icon" aria-hidden="true"><use href="#i-terminal" /></svg>
+            For anything else about your search, just ask: Claude’s panel is your own Claude
+            Code.
+          </p>
+        </div>
+      </section>
+
+      <!-- Templates -->
+      <section class="section section-band" id="templates" aria-labelledby="templates-title">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <p class="eyebrow">Templates</p>
+            <h2 id="templates-title">Eight looks. The same true words.</h2>
+            <p class="lede">
+              Every template shows the same parts of your resume, so changing the look never
+              changes what it says. Factwright suggests looks for the kind of company you’re aiming
+              at, and fits each resume to its pages, with no half-empty last page.
+            </p>
+          </header>
+          <ul class="templates">
+            <li class="template reveal">
+              <img src="/templates/classic.webp" width="612" height="792" alt="The Classic template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Classic</h3>
+              <p>Traditional and all serif, in black and white.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/timeline.webp" width="612" height="792" alt="The Timeline template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Timeline</h3>
+              <p>A bold name and a date rail, with one warm accent.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/executive.webp" width="612" height="792" alt="The Executive template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Executive</h3>
+              <p>A centered header and serif headings, in navy and gold.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/modern.webp" width="612" height="792" alt="The Modern template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Modern</h3>
+              <p>Two columns under a dark header, numbers at the side.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/compact.webp" width="612" height="792" alt="The Compact template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Compact</h3>
+              <p>Section names in the margin, to fit a lot on one page.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/minimal.webp" width="612" height="792" alt="The Minimal template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Minimal</h3>
+              <p>Quiet and airy, with gray headings and no color.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/elegant.webp" width="612" height="792" alt="The Elegant template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Elegant</h3>
+              <p>Serif type with a deep red accent, and room to breathe.</p>
+            </li>
+            <li class="template reveal">
+              <img src="/templates/banner.webp" width="612" height="792" alt="The Banner template, filled in for a made-up product manager" loading="lazy" decoding="async" />
+              <h3>Banner</h3>
+              <p>A blue banner across the top, and a bar over each section.</p>
+            </li>
+          </ul>
+          <p class="templates-note reveal">Every resume comes as a PDF or a Word file. One-column looks read best in applicant systems.</p>
+        </div>
+      </section>
+
+      <!-- Your Claude, your files -->
+      <section class="section" id="your-claude" aria-labelledby="your-claude-title">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <p class="eyebrow">Your Claude, your files</p>
+            <h2 id="your-claude-title">Your own Claude does the work, where you can see it.</h2>
+            <p class="lede">
+              Factwright doesn’t have an AI of its own. It starts the Claude Code you installed and
+              signed in to, unmodified, and hands it Factwright’s skills for that run only.
+            </p>
+          </header>
+
+          <ol class="where reveal" aria-label="What runs where">
+            <li class="where-col">
+              <span class="where-icon"><svg class="icon" aria-hidden="true"><use href="#i-folder" /></svg></span>
+              <h3>On your computer</h3>
+              <p>
+                Factwright, your Claude Code, and your job hunt as plain files in a folder you own.
+                Claude works only inside that folder, with no command line.
+              </p>
+            </li>
+            <li class="where-col">
+              <span class="where-icon"><svg class="icon" aria-hidden="true"><use href="#i-terminal" /></svg></span>
+              <h3>With Anthropic, as you</h3>
+              <p>
+                Claude Code talks to Anthropic under your own account, so runs count against your
+                Claude plan or API key. Factwright never sees, stores or passes your login.
+              </p>
+            </li>
+            <li class="where-col">
+              <span class="where-icon"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg></span>
+              <h3>Synced, if you want it</h3>
+              <p>
+                Turn on sync to see your hunt on your phone and your other computers. It stays off
+                until you turn it on.
+              </p>
+            </li>
+          </ol>
+
+          <ul class="promises">
+            <li class="promise reveal">
+              <svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg>
+              <h3>Asks before it browses</h3>
+              <p>
+                Postings are untrusted text, so by default Claude asks before it opens a web page.
+                Boards on Greenhouse, Lever, Ashby and Gem are read without asking.
+              </p>
+            </li>
+            <li class="promise reveal">
+              <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
+              <h3>Never signs in to LinkedIn</h3>
+              <p>
+                Share LinkedIn’s own PDF or data export instead, and your account stays out of it.
+              </p>
+            </li>
+            <li class="promise reveal">
+              <svg class="icon" aria-hidden="true"><use href="#i-send" /></svg>
+              <h3>You send everything</h3>
+              <p>
+                Factwright drafts and you decide. It never applies or messages anyone for you.
+              </p>
+            </li>
+            <li class="promise reveal">
+              <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+              <h3>Yours to take</h3>
+              <p>Your files are plain text, PDF and Word. With sync on, download it all as a ZIP.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Questions -->
+      <section class="section section-band" id="questions" aria-labelledby="questions-title">
+        <div class="wrap faq-wrap">
+          <header class="section-head faq-head reveal">
+            <p class="eyebrow">Questions</p>
+            <h2 id="questions-title">Good to know.</h2>
+          </header>
+          <div class="faq reveal">
+            <details>
+              <summary>What do I need?</summary>
+              <p>
+                A Mac or a Windows PC, and Claude Code signed in with your Claude plan or an API
+                key. Factwright checks your setup when it opens and walks you through anything that’s
+                missing.
+              </p>
+            </details>
+            <details>
+              <summary>What does it cost?</summary>
+              <p>
+                Factwright is free during the beta. The work Claude does counts against your own
+                Claude plan or API key.
+              </p>
+            </details>
+            <details>
+              <summary>Does Factwright see my Claude login?</summary>
+              <p>
+                No. It starts the Claude Code you installed, as it is, and never reads, stores or
+                passes your login. If you’re signed out, it tells you how to sign in yourself.
+              </p>
+            </details>
+            <details>
+              <summary>Will it make things up?</summary>
+              <p>
+                It’s built not to. Claims stay unconfirmed until you check them, resumes and answers
+                use only confirmed facts, and every resume gets a second pass that checks each line
+                against your fact bank.
+                When a job asks for something you haven’t done, Claude asks you instead of guessing,
+                and remembers your answer.
+              </p>
+            </details>
+            <details>
+              <summary>Does it apply to jobs for me?</summary>
+              <p>
+                No. Factwright gets everything ready: the resume, the answers, the messages. You read
+                them, change what you like, and send them yourself.
+              </p>
+            </details>
+            <details>
+              <summary>Where does it look for jobs?</summary>
+              <p>
+                Hacker News’s monthly “Who is hiring?” thread, company job boards on Greenhouse,
+                Lever, Ashby and Gem, careers pages, and public listings such as Y Combinator’s Work
+                at a Startup and Wellfound. You can also paste any posting, or add a job by hand.
+              </p>
+            </details>
+            <details>
+              <summary>Can it use my LinkedIn?</summary>
+              <p>
+                Yes, without signing in. Save your profile with LinkedIn’s own “Save to PDF”, or
+                download your data from LinkedIn. Factwright reads your profile and connections from
+                it, so Claude can spot warm paths into a company.
+              </p>
+            </details>
+            <details>
+              <summary>Is Factwright made by Anthropic?</summary>
+              <p>
+                No. Factwright is an independent app by Neatifai LLC, and isn’t affiliated with
+                Anthropic. It works with your own Claude account.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- Close -->
+      <section class="closing" aria-labelledby="closing-title">
+        <div class="wrap closing-inner reveal">
+          <svg class="closing-icon" viewBox="0 0 120 120" aria-hidden="true">
+            <defs>
+              <linearGradient id="app-icon-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#4260e4" />
+                <stop offset="1" stop-color="#2741be" />
+              </linearGradient>
+              <filter id="app-icon-shade" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" flood-color="#0a1450" flood-opacity="0.28" />
+              </filter>
+            </defs>
+            <path
+              fill="url(#app-icon-fill)"
+              d="M120 60L119.9 83.7L119.5 91.2L119 96.6L118.1 100.9L117.1 104.4L115.7 107.4L114.1 110L112.2 112.2L110 114.1L107.4 115.7L104.4 117.1L100.9 118.1L96.6 119L91.2 119.5L83.7 119.9L60 120L36.3 119.9L28.8 119.5L23.4 119L19.1 118.1L15.6 117.1L12.6 115.7L10 114.1L7.8 112.2L5.9 110L4.3 107.4L2.9 104.4L1.9 100.9L1 96.6L0.5 91.2L0.1 83.7L0 60L0.1 36.3L0.5 28.8L1 23.4L1.9 19.1L2.9 15.6L4.3 12.6L5.9 10L7.8 7.8L10 5.9L12.6 4.3L15.6 2.9L19.1 1.9L23.4 1L28.8 0.5L36.3 0.1L60 0L83.7 0.1L91.2 0.5L96.6 1L100.9 1.9L104.4 2.9L107.4 4.3L110 5.9L112.2 7.8L114.1 10L115.7 12.6L117.1 15.6L118.1 19.1L119 23.4L119.5 28.8L119.9 36.3Z"
+            />
+            <g filter="url(#app-icon-shade)" transform="translate(2 0)">
+              <path d="M31 42V50M31 70V78" fill="none" stroke="#fff" stroke-width="5" />
+              <circle cx="31" cy="32" r="7.5" fill="none" stroke="#fff" stroke-width="5" />
+              <circle cx="31" cy="60" r="7.5" fill="none" stroke="#fff" stroke-width="5" />
+              <circle cx="31" cy="88" r="10" fill="#fff" />
+              <rect x="48" y="25" width="50" height="14" rx="7" fill="#fff" />
+              <rect x="48" y="53" width="32" height="14" rx="7" fill="#fff" />
+            </g>
+          </svg>
+          <h2 id="closing-title">Start with what’s true.</h2>
+          <p class="lede">
+            Factwright is coming soon for Mac and Windows, free during the beta.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <div class="footer-top">
+          <a class="brand" href="/" aria-label="Factwright, home">
+            <svg class="logo" aria-hidden="true"><use href="#i-logo" /></svg>
+            <span>Factwright</span>
+          </a>
+          <nav class="footer-nav" aria-label="Footer">
+            <a href="#how">How it works</a>
+            <a href="#facts">Fact bank</a>
+            <a href="#templates">Templates</a>
+            <a href="#your-claude">Your Claude</a>
+            <a href="#questions">Questions</a>
+          </nav>
+        </div>
+        <p class="footer-legal">
+          © 2026 Neatifai LLC. Factwright isn’t affiliated with Anthropic. It uses your own Claude
+          account, and its runs count against your plan. Claude and Claude Code are trademarks of
+          Anthropic, PBC.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

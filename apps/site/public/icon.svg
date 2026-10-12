@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="19 20 80 80">
+  <title>Factwright</title>
+  <style>
+    .mark { color: #2F4BD0 }
+    @media (prefers-color-scheme: dark) {
+      .mark { color: #8EA2FF }
+    }
+  </style>
+  <g class="mark"><path d="M31 43.5V48.5M31 71.5V76.5" stroke="currentColor" stroke-width="6"/><circle cx="31" cy="32" r="8" fill="none" stroke="currentColor" stroke-width="7"/><circle cx="31" cy="60" r="8" fill="none" stroke="currentColor" stroke-width="7"/><circle cx="31" cy="88" r="11.5" fill="currentColor"/><rect x="49" y="23.5" width="49" height="17" rx="8.5" fill="currentColor"/><rect x="49" y="51.5" width="31" height="17" rx="8.5" fill="currentColor"/></g>
+</svg>

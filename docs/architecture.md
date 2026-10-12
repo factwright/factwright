@@ -69,3 +69,6 @@ Once you turn sync on, your other computers and your phone see the same job hunt
 
 ## Resumes
 Resume data is JSON. The engine ([`packages/engine`](../packages/engine)) renders it to PDF with the browser built into Electron, and to Word with the `docx` library, in any of eight templates. Every template shows the same parts of a resume, so changing its look never changes its words.
+
+## The website
+factwright.com ([`apps/site`](../apps/site)) is a static page built from the same design system as the app, served by a small Worker of its own on Cloudflare. It sits on its own address, apart from the web view and sync server at app.factwright.com, so nothing on it shares the address where the web view keeps its keys.

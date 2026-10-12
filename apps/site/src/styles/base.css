@@ -1,0 +1,422 @@
+/*
+ * The site's own variables and base styles: page type, buttons, the header and footer, section
+ * layout, cards, the "not found" page, and parts easing in as they scroll into view.
+ */
+
+/* The site's own backgrounds, shadows and glows, in each theme. */
+:root,
+[data-theme="light"] {
+  --band: var(--fw-sunken);
+  --stage: var(--fw-sunken);
+  --bezel: #1b1b19;
+  --shadow-card: 0 1px 2px rgb(27 27 25 / 0.04), 0 10px 28px -12px rgb(27 27 25 / 0.14);
+  --shadow-lift: 0 2px 4px rgb(27 27 25 / 0.05), 0 18px 40px -16px rgb(27 27 25 / 0.2);
+  --shadow-window:
+    0 2px 4px rgb(27 27 25 / 0.04), 0 18px 40px -12px rgb(27 27 25 / 0.14),
+    0 60px 120px -40px rgb(27 27 25 / 0.22);
+  --shadow-paper: 0 1px 2px rgb(27 27 25 / 0.08), 0 12px 32px -14px rgb(27 27 25 / 0.24);
+  --glow: color-mix(in srgb, var(--fw-accent) 16%, transparent);
+  --grid-dot: color-mix(in srgb, var(--fw-text) 11%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --band: var(--fw-bar);
+    --stage: var(--fw-bar);
+    --bezel: #050505;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.5);
+    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 20px 44px -16px rgb(0 0 0 / 0.6);
+    --shadow-window: 0 24px 60px -16px rgb(0 0 0 / 0.6), 0 60px 120px -40px rgb(0 0 0 / 0.7);
+    --shadow-paper: 0 1px 2px rgb(0 0 0 / 0.4), 0 14px 36px -14px rgb(0 0 0 / 0.7);
+    --glow: color-mix(in srgb, var(--fw-accent) 14%, transparent);
+    --grid-dot: color-mix(in srgb, var(--fw-text) 9%, transparent);
+  }
+}
+
+[data-theme="dark"] {
+  --band: var(--fw-bar);
+  --stage: var(--fw-bar);
+  --bezel: #050505;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.5);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 20px 44px -16px rgb(0 0 0 / 0.6);
+  --shadow-window: 0 24px 60px -16px rgb(0 0 0 / 0.6), 0 60px 120px -40px rgb(0 0 0 / 0.7);
+  --shadow-paper: 0 1px 2px rgb(0 0 0 / 0.4), 0 14px 36px -14px rgb(0 0 0 / 0.7);
+  --glow: color-mix(in srgb, var(--fw-accent) 14%, transparent);
+  --grid-dot: color-mix(in srgb, var(--fw-text) 9%, transparent);
+}
+
+:root {
+  /* Display sizes use the system's display cuts: SF Pro Display, Segoe UI Variable Display. */
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", system-ui,
+    sans-serif;
+  --gutter: clamp(16px, 4vw, 40px);
+  --header: 64px;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  scroll-padding-top: calc(var(--header) + 16px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  font-size: 17px;
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+blockquote {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+.wrap {
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin-inline: auto;
+}
+
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.icon {
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Factwright's mark: two lines of a resume on one thread, traced down to the fact behind them. */
+.logo {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--fw-accent);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip {
+  position: absolute;
+  top: -60px;
+  left: 16px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-accent);
+  color: var(--fw-accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip:focus {
+  top: 12px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button-sm {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 14.5px;
+}
+
+.button-lg {
+  height: 50px;
+  padding: 0 22px;
+  border-radius: 12px;
+  font-size: 16.5px;
+}
+
+.button-primary {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent);
+  box-shadow:
+    0 1px 2px rgb(16 24 64 / 0.18),
+    0 6px 16px -6px color-mix(in srgb, var(--fw-accent) 60%, transparent);
+  color: var(--fw-accent-ink);
+}
+
+.button-primary:hover {
+  border-color: var(--fw-accent-hover);
+  background: var(--fw-accent-hover);
+}
+
+.button-secondary {
+  border-color: var(--fw-border);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font-weight: 550;
+}
+
+.button-secondary:hover {
+  border-color: var(--fw-control-border);
+  background: var(--fw-hover);
+}
+
+.button .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid transparent;
+  background: color-mix(in srgb, var(--fw-bg) 82%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(16px);
+  backdrop-filter: saturate(1.6) blur(16px);
+  transition: border-color 200ms ease;
+}
+
+.site-header.is-scrolled {
+  border-bottom-color: var(--fw-border);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: var(--header);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fw-text);
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+  text-decoration: none;
+}
+
+.header-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.header-nav a {
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  font-weight: 550;
+  text-decoration: none;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.header-nav a:hover {
+  background: var(--fw-hover);
+  color: var(--fw-text);
+}
+
+.header-cta {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .header-nav {
+    display: none;
+  }
+
+  .header-cta {
+    display: inline-flex;
+    margin-left: auto;
+  }
+}
+
+.lede {
+  margin-top: 20px;
+  color: var(--fw-muted);
+  font-size: clamp(17px, 1.7vw, 20px);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.section {
+  padding-block: clamp(88px, 12vw, 152px);
+}
+
+.section-band {
+  background: var(--band);
+}
+
+.section-head {
+  max-width: 780px;
+  margin: 0 auto clamp(48px, 7vw, 80px);
+  text-align: center;
+}
+
+.eyebrow {
+  margin-bottom: 14px;
+  color: var(--fw-accent-text);
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.section h2 {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4.8vw, 54px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.card {
+  border: 1px solid var(--fw-border);
+  border-radius: 16px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.site-footer {
+  padding-block: 40px 48px;
+  border-top: 1px solid var(--fw-border);
+}
+
+.footer-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+
+.footer-nav a {
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  text-decoration: none;
+}
+
+.footer-nav a:hover {
+  color: var(--fw-text);
+}
+
+.footer-legal {
+  max-width: 84ch;
+  margin-top: 24px;
+  color: var(--fw-muted);
+  font-size: 13.5px;
+}
+
+.lost {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - var(--header) - 160px);
+  padding-block: 96px;
+  text-align: center;
+}
+
+.lost-code {
+  color: var(--fw-muted);
+  font-family: var(--fw-font-mono);
+  font-size: 14px;
+}
+
+.lost h1 {
+  margin-top: 16px;
+  font-family: var(--font-display);
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.lost .lede {
+  max-width: 480px;
+}
+
+.lost .button {
+  margin-top: 32px;
+}
+
+/* The script marks what's below the fold, then lets each part in as it scrolls into view. */
+.reveal.is-pending {
+  transform: translateY(18px);
+  opacity: 0;
+}
+
+.reveal.is-revealing {
+  transition:
+    opacity 700ms var(--ease-out),
+    transform 700ms var(--ease-out);
+}

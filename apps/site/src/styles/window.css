@@ -1,0 +1,639 @@
+/*
+ * The app's window in the hero: the sidebar, the jobs, a job's panel, and Claude's panel, which
+ * opens when the drawing's run starts. Narrower windows drop what the app drops first.
+ */
+
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 660px;
+  overflow: hidden;
+  border: 1px solid var(--fw-border);
+  border-radius: 14px;
+  background: var(--fw-bg);
+  box-shadow: var(--shadow-window);
+  color: var(--fw-text);
+  font-family: var(--fw-font-sans);
+  font-size: var(--fw-text-md);
+  line-height: 1.45;
+  text-align: left;
+  container: win / inline-size;
+}
+
+.win-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  height: 52px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-bar);
+}
+
+.lights {
+  display: flex;
+  gap: 8px;
+  width: 56px;
+}
+
+.lights i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fw-border);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fw-control-border) 35%, transparent);
+}
+
+.win-brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-width: 132px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.win-search {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  gap: 8px;
+  max-width: 440px;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-surface);
+  color: var(--fw-muted);
+  white-space: nowrap;
+}
+
+.win-search .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.win-search-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.win-search kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--fw-border);
+  border-radius: 5px;
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.win-add {
+  margin-left: auto;
+}
+
+.win-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.win-side {
+  display: flex;
+  flex: 0 0 196px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--fw-border);
+  background: var(--fw-bar);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.nav-item .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.nav-item span {
+  flex: 1;
+}
+
+.nav-count {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+}
+
+.nav-item.is-current {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-weight: 600;
+}
+
+.nav-item.is-current .nav-count {
+  color: inherit;
+}
+
+.side-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.side-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.side-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.side-line,
+.side-help {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.side-line {
+  margin-top: 2px;
+  color: var(--fw-text);
+}
+
+.side-action {
+  margin-top: 8px;
+}
+
+.win-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.win-work {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.win-list {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 24px 0;
+  overflow: hidden;
+}
+
+.list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.list-title {
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.list-sub {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.list-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.stat {
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.stat-label,
+.stat-detail {
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-label {
+  font-weight: 550;
+}
+
+.stat-value {
+  margin-top: 2px;
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  margin-top: 18px;
+  padding: 3px;
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+  background: var(--fw-sunken);
+}
+
+.seg-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.seg-option b {
+  color: var(--fw-muted);
+  font-weight: 500;
+}
+
+.seg-option.is-selected {
+  background: var(--fw-surface);
+  box-shadow: 0 1px 2px rgb(20 20 10 / 0.1);
+  font-weight: 600;
+}
+
+.table {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.t-head,
+.t-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px 128px;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.t-head {
+  padding-block: 9px;
+  border-bottom: 1px solid var(--fw-border);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.t-row {
+  padding-block: 10px;
+}
+
+.t-row + .t-row {
+  border-top: 1px solid var(--fw-border);
+}
+
+.t-row.is-selected {
+  background: var(--fw-accent-soft);
+}
+
+.t-job {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.t-job > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t-job b {
+  font-weight: 600;
+}
+
+.t-job em {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-style: normal;
+}
+
+.t-job .is-need {
+  color: var(--fw-need);
+  font-weight: 550;
+}
+
+.win-panel {
+  flex: 0 0 384px;
+  min-width: 0;
+  padding: 20px 22px;
+  overflow: hidden;
+  border-left: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-company {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.panel-close {
+  width: 16px;
+  height: 16px;
+  color: var(--fw-muted);
+}
+
+.panel-role {
+  margin-top: 2px;
+  font-size: var(--fw-text-lg);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.panel-meta {
+  margin-top: 4px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.panel-meta u {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.panel-pills {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pill-select {
+  padding-right: 6px;
+}
+
+.next-step {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-sunken);
+}
+
+.next-label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.next-text {
+  margin-top: 2px;
+  font-size: var(--fw-text-sm);
+}
+
+.docs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--fw-border);
+  border-radius: 8px;
+  background: var(--fw-surface);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.doc .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--fw-muted);
+}
+
+.doc b {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+/* The prep sheet appears once the run in the drawing is done. */
+[data-demo] .doc.is-new {
+  display: none;
+}
+
+[data-demo] .doc.is-new.is-shown {
+  display: inline-flex;
+  animation: pop 420ms var(--ease-out);
+}
+
+/* Claude's panel: a slim bar until a run starts, then the terminal opens under it. */
+.claude-panel {
+  flex: none;
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.is-open > .claude-head {
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.claude-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.claude-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.claude-plan .dot {
+  width: 6px;
+  height: 6px;
+}
+
+[data-demo-toggle] {
+  margin-left: auto;
+}
+
+.claude-panel:not(.is-open) :is(.claude-hint, .claude-plan, .claude-stop) {
+  display: none;
+}
+
+.claude-panel.is-open [data-demo-toggle] {
+  margin-left: 0;
+}
+
+.claude-panel .term {
+  height: 0;
+  padding: 0 16px;
+  transition:
+    height 520ms var(--ease-out),
+    padding 520ms var(--ease-out);
+}
+
+.is-open > .term {
+  height: 184px;
+  padding-block: 12px;
+}
+
+.claude-panel .t-line:not([hidden]) {
+  animation: line-in 240ms ease-out;
+}
+
+@keyframes line-in {
+  from {
+    transform: translateY(3px);
+    opacity: 0;
+  }
+}
+
+/* Narrower windows drop what the app drops first: the sidebar, then the list. */
+@container win (max-width: 1040px) {
+  .win-side {
+    display: none;
+  }
+}
+
+@container win (max-width: 900px) {
+  .list-buttons,
+  .claude-plan,
+  .claude-stop {
+    display: none;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container win (max-width: 760px) {
+  .win-list,
+  .win-search {
+    display: none;
+  }
+
+  .win-panel {
+    flex: 1;
+    border-left: 0;
+  }
+
+  .claude-hint {
+    display: none;
+  }
+}
+
+@container win (max-width: 480px) {
+  .lights,
+  .win-add {
+    display: none;
+  }
+
+  .win-panel {
+    padding: 18px 16px;
+  }
+
+  .run-text span {
+    white-space: normal;
+  }
+
+  .win-panel .run:nth-child(n + 3) {
+    display: none;
+  }
+
+  .claude-head {
+    padding-inline: 12px;
+  }
+
+  .claude-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .claude-panel .term {
+    padding-inline: 12px;
+  }
+
+  .is-open > .term {
+    height: 300px;
+  }
+}
+
+/* On a phone, the drawing grows to fit the job instead of keeping the window's height. */
+@container shot (max-width: 760px) {
+  .window {
+    height: auto;
+  }
+
+  .win-work {
+    flex: none;
+  }
+}

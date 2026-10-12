@@ -10,4 +10,4 @@ Factwright is built in phases, and each one ends with something that works.
 | 3. Desktop app | The dashboard becomes a real app. Run buttons start your Claude on a job in a built-in terminal you can watch, and results land in the right place on their own | In progress |
 | 4. Cloud | End-to-end encrypted sync across your computers and your phone, with a private store per account | In progress |
 | 5. For everyone | Getting started: share your resumes, LinkedIn and your own words, build your fact bank through an interview, set what you're looking for, and pick from eight resume templates | In progress |
-| 6. Beta | Signed installers for Mac and Windows, automatic updates, a website, and the first outside users | Planned |
+| 6. Beta | Signed installers for Mac and Windows, automatic updates, a website, and the first outside users | In progress |
