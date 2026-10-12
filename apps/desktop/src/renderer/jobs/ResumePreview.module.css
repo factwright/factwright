@@ -1,5 +1,6 @@
 /* The pages, one under the other, on a backdrop like a PDF app's, scrolling as one. */
 .pages {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: var(--fw-space-4);
