@@ -51,6 +51,7 @@ import {
   runPrompt,
   saveableFileName,
 } from './policy.ts';
+import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
@@ -83,8 +84,9 @@ function shotFor(value: unknown): ShotFor | null {
 export interface IpcDeps {
   /** Whether a page is the app's own, the only page whose requests are answered. */
   isAppPage: (url: string) => boolean;
-  /** What the user tells Factwright about themselves, and the templates' previews. */
+  /** What the user tells Factwright about themselves, their templates, and the previews. */
   about: AboutStore;
+  templates: TemplateLibrary;
   previews: TemplatePreviews;
   claude: ClaudeSession;
   /** Checks that Factwright's setup still works with each version of Claude Code. */
@@ -118,6 +120,7 @@ const isFile = (path: string) => {
 export function registerIpc({
   isAppPage,
   about,
+  templates,
   previews,
   claude: session,
   setup,
@@ -177,9 +180,13 @@ export function registerIpc({
     return status.state === 'ready' ? setup.check(status.version) : setup.current();
   });
 
-  /** A task the window asked for, if it's a job search, or names a skill and a job the app knows. */
+  /**
+   * A task the window asked for, if it's a job search, names a skill and a job the app knows, or
+   * a resume to copy that the app kept.
+   */
   const knownTask = (value: unknown) => {
     const task = parseRunTask(value);
+    if (task && 'source' in task) return templates.hasSource(task.source) ? task : null;
     if (!task || !('jobId' in task)) return task;
     return jobs.list().jobs.some((job) => job.id === task.jobId) ? task : null;
   };
@@ -385,5 +392,5 @@ export function registerIpc({
   answer('sync:sign-out', () => sync.signOut());
   answer('sync:account-page', () => sync.openAccountPage());
 
-  registerAboutIpc(answer, { about, previews });
+  registerAboutIpc(answer, { about, previews, templates });
 }

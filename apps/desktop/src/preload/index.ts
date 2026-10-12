@@ -69,7 +69,9 @@ const api: FactwrightApi = {
   removeFile: (path) => ipcRenderer.invoke('about:remove-file', path),
   startProfile: () => ipcRenderer.invoke('about:start'),
   useAnswersForCriteria: () => ipcRenderer.invoke('about:use-answers'),
-  templatePreview: (layout, name) => ipcRenderer.invoke('about:preview', layout, name),
+  templatePreview: (id, name) => ipcRenderer.invoke('about:preview', id, name),
+  addTemplate: (upload) => ipcRenderer.invoke('templates:add', upload),
+  removeTemplate: (id) => ipcRenderer.invoke('templates:remove', id),
   onProfileChanged: (listener) => subscribe('about:changed', listener),
   openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
 };

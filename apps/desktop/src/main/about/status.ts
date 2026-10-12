@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { localDate } from '@factwright/core';
+import { DEFAULT_TEMPLATE } from '@factwright/engine';
 import type { AboutYou } from '../../shared/about.ts';
 import type { ProfileStatus, StartingResume } from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
@@ -110,7 +111,7 @@ export function startingResumes(workspace: string): StartingResume[] {
         typeof data.headline === 'string' && data.headline
           ? data.headline
           : name.replace(/\.json$/, ''),
-      layout: typeof data.layout === 'string' ? data.layout : 'timeline',
+      layout: typeof data.layout === 'string' ? data.layout : DEFAULT_TEMPLATE,
       pdf: built('pdf'),
       docx: built('docx'),
     };

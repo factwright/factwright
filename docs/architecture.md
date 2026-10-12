@@ -19,7 +19,7 @@ flowchart LR
 An Electron app for Mac and Windows ([`apps/desktop`](../apps/desktop)). It holds your dashboard and tracker, runs Claude Code in a built-in terminal, and syncs your data.
 
 ## Getting started
-A new user's first stop is **Get started**, a few calm steps in the app: who they are, their resumes and LinkedIn (a profile saved as a PDF, or LinkedIn's own data export, since Factwright never signs in to LinkedIn), screenshots, everything they want to say about themselves in their own words, what they're looking for, and which of eight resume templates they like. It's all saved as they go, in the workspace's `about-me/` folder, so they can stop and come back.
+A new user's first stop is **Get started**, a few calm steps in the app: who they are, their resumes and LinkedIn (a profile saved as a PDF, or LinkedIn's own data export, since Factwright never signs in to LinkedIn), screenshots, everything they want to say about themselves in their own words, what they're looking for, and which resume templates they like. It's all saved as they go, in the workspace's `about-me/` folder, so they can stop and come back.
 
 The window reads the text out of each PDF and Word file itself, in its sandbox; the app checks every file again (its type, its size, and that its bytes are what its name says) before keeping it. The last step hands everything to the user's Claude with `/factwright:get-started`, which drafts the fact bank with every claim marked `unconfirmed`, interviews the user to confirm it, then builds and fact-checks a starting resume in each template they picked. The **Profile** page follows along, and keeps every answer changeable afterward.
 
@@ -68,7 +68,9 @@ Once you turn sync on, your other computers and your phone see the same job hunt
 - **The web view** ([`apps/web`](../apps/web)) downloads your locked data and opens it in the browser, with keys kept there. It builds the job list with the same code as the desktop app.
 
 ## Resumes
-Resume data is JSON. The engine ([`packages/engine`](../packages/engine)) renders it to PDF with the browser built into Electron, and to Word with the `docx` library, in any of eight templates. Every template shows the same parts of a resume, so changing its look never changes its words.
+Resume data is JSON. The engine ([`packages/engine`](../packages/engine)) renders it to PDF with the browser built into Electron, and to Word with the `docx` library, in a template: one of the two the app comes with, Classic and Minimal, or one of the user's own. Changing the look never changes the words.
+
+A template is data, kept as a JSON file: its styles, markup in Mustache's syntax that the engine fills in from the resume, the fonts it carries, what it calls each section, and its look in Word. The user's own live in the workspace's `templates/` folder, so they sync with everything else. They come from a file someone shared, or from Claude, which makes one in the look of a resume the user likes (`/factwright:make-template`), from a PDF or a picture of it. A template can come from anywhere, so the engine checks each one before it's used: only elements and attributes for text, every value escaped, and styles that can't load anything. Resumes print in a hidden, sandboxed window that loads nothing but the page itself.
 
 ## The website
 factwright.com ([`apps/site`](../apps/site)) is a static page built from the same design system as the app, served by a small Worker of its own on Cloudflare. It sits on its own address, apart from the web view and sync server at app.factwright.com, so nothing on it shares the address where the web view keeps its keys.

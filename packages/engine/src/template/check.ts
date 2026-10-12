@@ -69,18 +69,29 @@ export function cssProblems(css: string, where: string): string[] {
   return problems;
 }
 
+/** Every value a template's markup shows, in the order the skeleton marks them. */
+function valuesIn(nodes: readonly Node[]): Extract<Node, { kind: 'value' }>[] {
+  return nodes.flatMap((node) => {
+    if (node.kind === 'value') return [node];
+    return node.kind === 'section' ? valuesIn(node.nodes) : [];
+  });
+}
+
 /**
- * What's wrong with a template's markup, if anything. It must be elements from the list with
- * attributes from the list, each value in double quotes. Values go between tags or inside an
- * attribute's quotes, and a section starts and ends in the same place. Parts go between tags.
- * So whatever the data, the page is only these elements, and no value can add markup.
+ * Reads a template's markup as a browser would, element by element: what's wrong with it, if
+ * anything, and whether each value it shows goes between tags or inside an attribute's quotes.
  */
-export function markupProblems(nodes: readonly Node[], where: string): string[] {
+function scan(
+  nodes: readonly Node[],
+  where: string,
+): { problems: string[]; inAttribute: boolean[] } {
   const text = skeleton(nodes);
   const problems: string[] = [];
+  const inAttribute: boolean[] = [];
   const opened: string[] = [];
   let attributes = 0;
   const mark = (char: string, at: string) => {
+    if (char === VALUE) inAttribute.push(at !== 'text');
     if (char === PART && at !== 'text') problems.push(`${where}: a part can only go between tags.`);
     if (char === OPEN) opened.push(at);
     if (char === CLOSE && opened.pop() !== at) {
@@ -102,13 +113,10 @@ export function markupProblems(nodes: readonly Node[], where: string): string[] 
       continue;
     }
     const rest = text.slice(i);
-    if (rest.startsWith('<!--')) {
-      const end = rest.indexOf('-->', 4);
-      if (end < 0) problems.push(`${where}: a comment is never closed.`);
-      else if ([...rest.slice(0, end)].some(isMark))
-        problems.push(`${where}: a comment can’t hold tags.`);
-      i += end + 3;
-      continue;
+    // Browsers end a comment in more ways than one, such as "<!-->", so none is allowed.
+    if (rest.startsWith('<!')) {
+      problems.push(`${where}: HTML comments aren’t allowed. Write a note as {{! note }}.`);
+      break;
     }
     const closing = /^<\/([a-zA-Z][a-zA-Z0-9]*)\s*>/.exec(rest);
     const opening = closing ? null : /^<([a-zA-Z][a-zA-Z0-9]*)/.exec(rest);
@@ -156,6 +164,11 @@ export function markupProblems(nodes: readonly Node[], where: string): string[] 
         break;
       }
       const value = attribute[2] as string;
+      // Nothing in quotes needs markup, and none there could ever come alive.
+      if (value.includes('<')) {
+        problems.push(`${where}: <${name} ${attributeName}> can’t hold “<”. Write &lt;.`);
+        break;
+      }
       const at = `attribute ${attributes++}`;
       for (const each of value) if (isMark(each)) mark(each, at);
       if (attributeName === 'style') {
@@ -169,5 +182,27 @@ export function markupProblems(nodes: readonly Node[], where: string): string[] 
       i += attribute[0].length;
     }
   }
-  return problems;
+  return { problems, inAttribute };
+}
+
+/**
+ * What's wrong with a template's markup, if anything. It must be elements from the list with
+ * attributes from the list, each value in double quotes, with no "<" in them, and no HTML
+ * comments. Values go between tags or inside an attribute's quotes, and a section starts and
+ * ends in the same place. Parts go between tags. So whatever the data, the page is only these
+ * elements, and no value can add markup.
+ */
+export function markupProblems(nodes: readonly Node[], where: string): string[] {
+  return scan(nodes, where).problems;
+}
+
+/**
+ * Marks each value that goes inside an attribute's quotes, which shows as plain text: the
+ * resume's **bold** marked up there would end the quotes.
+ */
+export function markAttributeValues(nodes: Node[]): void {
+  const { inAttribute } = scan(nodes, 'template');
+  valuesIn(nodes).forEach((node, i) => {
+    if (inAttribute[i]) node.attribute = true;
+  });
 }

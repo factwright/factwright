@@ -2,6 +2,7 @@ import { localDate } from '@factwright/core';
 import type { AboutStore } from '../about/store.ts';
 import type { JobsService } from '../jobs/service.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
+import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
@@ -9,6 +10,7 @@ import type { McpTool } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import { buildResume } from './resume.ts';
 import { hnJobs, jobBoard } from './search.ts';
+import { listTemplates, readTemplateFile, saveTemplate } from './templates.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
@@ -16,6 +18,8 @@ export interface ToolDeps {
   about: Pick<AboutStore, 'answers' | 'saveAnswers'>;
   workspace: string;
   printer: ResumePrinter;
+  /** The resume templates, built in and the user's own. */
+  templates: TemplateLibrary;
   now?: () => Date;
   fetch?: FetchDeps['fetch'];
   /** What was read, for saving it later. Tests pass their own. */
@@ -29,7 +33,7 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, and building resumes. Use them to read the tracker and the web, and to save answers and make resume files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes, and the resume templates. Use them to read the tracker and the web, and to save answers, templates and resume files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
@@ -39,6 +43,8 @@ export const LOCAL_TOOLS = [
   'about_you',
   'past_answers',
   'save_answer',
+  'list_templates',
+  'read_template',
 ];
 
 /**
@@ -47,6 +53,13 @@ export const LOCAL_TOOLS = [
  * otherwise, or started a run to get to know them.
  */
 export const PROFILE_TOOLS = ['save_about_you'];
+
+/**
+ * The tool that adds to the user's templates. It stays on this computer, but a template is
+ * something the user picks, so Claude asks before saving one, unless the user chose otherwise or
+ * started a run to make one.
+ */
+export const TEMPLATE_TOOLS = ['save_template'];
 
 /**
  * The tools that reach only fixed public job APIs: the applicant systems' postings and boards,
@@ -209,9 +222,74 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
           workspace: deps.workspace,
           printer: deps.printer,
+          templates: deps.templates,
           jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
         }),
+    },
+    {
+      name: 'list_templates',
+      description:
+        'Lists the resume templates the user can pick, built in and their own, each with its ID, which a resume’s layout names, what it looks like, and whether it shows the strengths list (competencies).',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READS,
+      run: async () => listTemplates(deps.templates),
+    },
+    {
+      name: 'read_template',
+      description:
+        'A resume template’s file, as JSON: its look in a sentence, the fonts it carries, its section titles, its look in Word, its styles, and its markup in Mustache’s syntax. Read one to start a template of the user’s own from it, or to change one of theirs.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'The template’s ID, such as classic.' } },
+        required: ['id'],
+        additionalProperties: false,
+      },
+      annotations: READS,
+      run: async (input) => readTemplateFile(deps.templates, textInput(input, 'id', true) ?? ''),
+    },
+    {
+      name: 'save_template',
+      description:
+        'Saves a resume template in the user’s templates, once it passes the checks, and prints a preview PDF to read: the made-up resume the app’s gallery shows, or one of the user’s. Give the whole template each time, as read_template shows one. It never replaces one of the user’s templates unless replace is true: use that only for a template you made in this run, or one the user asked you to change.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description:
+              'Its ID, from its name, such as navy-sidebar: lowercase letters, digits and hyphens.',
+          },
+          template: {
+            type: 'object',
+            description:
+              'The template, as its file holds it: factwright, version, name, look, fonts, titles, word, css, body and parts.',
+          },
+          replace: {
+            type: 'boolean',
+            description: 'Whether to replace the user’s template with this ID. False unless asked.',
+          },
+          resume: {
+            type: 'string',
+            description:
+              'A resume to preview it with: a job’s folder name, or base/<name>. Without it, the made-up one.',
+          },
+        },
+        required: ['id', 'template'],
+        additionalProperties: false,
+      },
+      // It writes only the template's own file and its preview, from what's on this computer.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) =>
+        saveTemplate(
+          {
+            id: textInput(input, 'id', true) ?? '',
+            template: input.template,
+            replace: input.replace === true,
+            resume: textInput(input, 'resume', false),
+          },
+          { workspace: deps.workspace, printer: deps.printer, templates: deps.templates },
+        ),
     },
     {
       name: 'save_posting',

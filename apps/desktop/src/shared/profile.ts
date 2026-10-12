@@ -72,6 +72,19 @@ export interface ProfileStatus {
   connections: { count: number; added: string } | null;
 }
 
+/** A resume template the user can pick: one the app comes with, or one of their own. */
+export interface TemplateInfo {
+  /** What resume.json's layout calls it, such as "classic". */
+  id: string;
+  name: string;
+  /** What it looks like, in a sentence. */
+  look: string;
+  /** Whether it's the user's own, from a file or made by Claude, rather than one the app has. */
+  own: boolean;
+  /** Changes whenever the template does, so its preview is drawn again. */
+  stamp: string;
+}
+
 /** Everything the profile shows, read together. */
 export interface Profile {
   answers: AboutYou;
@@ -79,7 +92,25 @@ export interface Profile {
   /** The names in guide/confidential-terms.txt, as the user would type them. */
   confidential: string[];
   status: ProfileStatus;
+  /** Every template the user can pick: the app's, then their own. */
+  templates: TemplateInfo[];
 }
 
 /** A template's preview: a made-up resume printed in it, or why it couldn't be. */
 export type PreviewResult = { ok: true; data: Uint8Array } | { ok: false; message: string };
+
+/** A file the user picked to add a template from. */
+export interface TemplateUpload {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * What became of a file the user picked: a template file, added to their templates (or found
+ * there already), or a resume whose look they like, kept for Claude to make a template from.
+ * Otherwise, why not, in words the user can act on.
+ */
+export type AddTemplateResult =
+  | { ok: true; kind: 'template'; id: string; name: string; already: boolean }
+  | { ok: true; kind: 'copy'; source: string }
+  | { ok: false; message: string };

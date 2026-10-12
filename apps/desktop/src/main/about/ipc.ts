@@ -3,6 +3,7 @@ import { shell } from 'electron';
 import { ANSWER_LIMITS, parseAnswerChanges } from '../../shared/about.ts';
 import type { EditResult } from '../../shared/api.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
+import type { TemplateLibrary } from '../resume/templates.ts';
 import type { TemplatePreviews } from './previews.ts';
 import type { AboutStore } from './store.ts';
 import { checkLinkedIn, checkUpload } from './uploads.ts';
@@ -29,12 +30,16 @@ function terminalApp(platform: NodeJS.Platform): string | null {
 
 /**
  * The window's requests about the user: their answers, notes, confidential names and shared
- * files, the templates' previews, and getting the workspace ready for Claude. Each input is
- * checked here, whatever the window checked first.
+ * files, their templates and the templates' previews, and getting the workspace ready for
+ * Claude. Each input is checked here, whatever the window checked first.
  */
 export function registerAboutIpc(
   answer: Answer,
-  { about, previews }: { about: AboutStore; previews: TemplatePreviews },
+  {
+    about,
+    previews,
+    templates,
+  }: { about: AboutStore; previews: TemplatePreviews; templates: TemplateLibrary },
 ): void {
   answer('about:profile', () => about.profile());
 
@@ -82,7 +87,19 @@ export function registerAboutIpc(
 
   answer('about:start', () => about.start());
   answer('about:use-answers', () => about.useAnswersForCriteria());
-  answer('about:preview', (layout, name) => previews.preview(layout, name));
+  answer('about:preview', (id, name) => previews.preview(id, name));
+
+  answer('templates:add', (upload) => templates.add(upload));
+
+  // A template that's gone can't be picked, so it leaves the user's picks too.
+  answer('templates:remove', async (id): Promise<EditResult> => {
+    const removed = await templates.remove(id);
+    const { looks } = about.answers();
+    if (removed.ok && looks.some((look) => look.layout === id)) {
+      about.saveAnswers({ looks: looks.filter((look) => look.layout !== id) });
+    }
+    return removed;
+  });
 
   answer('system:open-terminal', async (): Promise<EditResult> => {
     const app = terminalApp(process.platform);

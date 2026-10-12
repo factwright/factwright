@@ -66,6 +66,23 @@ async function work(text) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
   }
+  // As Claude would for a template: start from one of the app's, and save one of the user's own.
+  if (/^\/factwright:make-template from templates\/sources\/\S+$/.test(text)) {
+    const classic = await call('read_template', { id: 'classic' });
+    const file = JSON.parse(classic.slice(classic.indexOf('{'), classic.lastIndexOf('}') + 1));
+    show(
+      await call('save_template', {
+        id: 'liked-look',
+        template: {
+          ...file,
+          name: 'Liked Look',
+          look: 'Navy headings, copied by the stand-in Claude.',
+          css: `${file.css}\nh2{color:#1f3a5f}`,
+        },
+      }),
+    );
+    show('\n');
+  }
   setTimeout(async () => {
     show('Done.\n> ');
     await hook('Stop');

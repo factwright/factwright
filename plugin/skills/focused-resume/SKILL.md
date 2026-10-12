@@ -75,7 +75,7 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 ## 6. Draft `resume.json` in the folder
 - Copy the closest starting point: the style and track's starting resume (`base/<style>-<track>.json`, or the base the style file names), or a past `applications/*/resume.json` for a more similar role.
 - Set `layout`, `format` and `output_name`:
-  - `layout`: the template `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or the one for any job; otherwise the starting point's. If the user names a template, use it.
+  - `layout`: the template `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or the one for any job; otherwise the starting point's. If the user names a template, use it: `list_templates` gives each one's ID, built in or their own.
   - `format`: what the user asked for, or what `guide/templates.md` says.
   - `output_name` is `<FirstLast>Resume<MMDDYYYY>_<Company>`: the user's name from `facts/profile.md` without spaces, the folder's date, and the company's short name in letters and digits only (e.g. `AlexRiveraResume10072026_Acme`).
   - Leave the role out unless one company gets two resumes on the same date; then add a short role tag (e.g. `_Acme_TL`).
@@ -95,12 +95,12 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 The shape of `resume.json` (leave out what doesn't apply):
 ```jsonc
 {
-  "layout": "timeline", "format": "pdf", "output_name": "AlexRiveraResume10072026_Acme",
+  "layout": "classic", "format": "pdf", "output_name": "AlexRiveraResume10072026_Acme",
   "name": "", "headline": "", "tagline": "",
   "contact": { "phone": "", "email": "", "linkedin": "", "location": "", "website": "" },
   "summary": "",
   "impact_stats": [{ "value": "~40%", "label": "" }],
-  "competencies": [""],             // the executive and modern layouts only
+  "competencies": [""],             // only in templates that show them: list_templates says
   "systems_heading": "", "systems": [{ "name": "", "text": "" }],
   "experience": [{ "title": "", "company": "", "company_note": "", "location": "", "start": "07/2024", "end": "Present",
     "intro": "", "bullet_groups": [{ "heading": "", "bullets": [{ "lead": "", "text": "" }] }] }],
@@ -112,7 +112,7 @@ The shape of `resume.json` (leave out what doesn't apply):
   "change_log": [], "notes": []     // history the resume never shows
 }
 ```
-Layouts: `classic`, `timeline` (the default), `executive`, `modern`, `compact`, `minimal`, `elegant` and `banner`; `guide/writing.md` says how each one looks and fits. Any text can hold `**bold**` (one key metric per bullet, at most) and `[[placeholders]]`, which the build refuses while one is left.
+Templates: the app's `classic` (the default) and `minimal`, and any of the user's own, each by its ID; `list_templates` names them all, and `guide/writing.md` says how they fit. Any text can hold `**bold**` (one key metric per bullet, at most) and `[[placeholders]]`, which the build refuses while one is left.
 
 ## 7. Build and fit
 Call `build_resume` with the folder's name (and `format: "both"` when the user wants Word). It builds the files and reports the pages, how full the last page is, the lines that run short, and anything that breaks the rules.

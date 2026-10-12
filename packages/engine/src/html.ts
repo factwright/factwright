@@ -8,12 +8,19 @@ export { DEFAULT_PROJECTS_HEADING, DEFAULT_SYSTEMS_HEADING } from './template/re
 export { escapeHtml };
 
 /**
+ * What the page may load, should a template ever carry more than it should: no scripts at all,
+ * and only its own styles, and fonts and pictures from data: URLs.
+ */
+const POLICY =
+  "default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; base-uri 'none'; form-action 'none'";
+
+/**
  * A resume as a Letter-size HTML page in a template, ready to print to PDF. Given the font
  * files, it carries them, so it looks the same on any computer. It needs nothing from anywhere
- * else: no fonts, images or scripts.
+ * else, and runs no scripts: no fonts, images or scripts load from anywhere.
  */
 export function renderHtml(resume: Resume, template: Template, fonts: FontUrls = {}): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(resume.name)} — Resume</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}"><title>${escapeHtml(resume.name)} — Resume</title>
 <style>
   ${fontFaceCss(template.fonts, fonts)}
   @page{size:Letter;margin:0.5in 0.55in 0.5in}

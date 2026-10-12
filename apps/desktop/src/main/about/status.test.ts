@@ -53,7 +53,7 @@ describe('startingResumes', () => {
       {
         path: 'base/public-sector-ic.json',
         title: 'public-sector-ic',
-        layout: 'timeline',
+        layout: 'classic',
         pdf: null,
         docx: null,
       },

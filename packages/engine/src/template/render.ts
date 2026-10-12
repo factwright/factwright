@@ -1,5 +1,6 @@
 import type { Resume } from '../schema.ts';
 import type { Template } from '../templates.ts';
+import { markAttributeValues } from './check.ts';
 import { type Node, parseTemplate, renderNodes } from './syntax.ts';
 import { type ResumeTitles, resumeView } from './view.ts';
 
@@ -29,6 +30,7 @@ const parsed = new WeakMap<Template, Parsed>();
 function parse(source: string, where: string): Node[] {
   const read = parseTemplate(source, where);
   if (!read.ok) throw new Error(read.problems.join(' '));
+  markAttributeValues(read.nodes);
   return read.nodes;
 }
 

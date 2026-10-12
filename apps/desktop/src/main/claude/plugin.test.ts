@@ -38,6 +38,7 @@ const toolNames = factwrightTools({
   about: {} as never,
   workspace: '',
   printer: {} as never,
+  templates: {} as never,
 }).map((tool) => tool.name);
 
 describe('the plugin’s skills', () => {
@@ -51,6 +52,7 @@ describe('the plugin’s skills', () => {
       'get-started',
       'interview-prep',
       'job-search',
+      'make-template',
       'salary-check',
       'unmask-job',
       'who-to-message',

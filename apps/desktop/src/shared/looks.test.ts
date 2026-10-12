@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { readAnswers } from './about.ts';
-import { suggestedFor, suggestLooks, templatesMarkdown } from './looks.ts';
+import { suggestedFor, suggestLooks, templateName, templatesMarkdown } from './looks.ts';
+
+const TEMPLATES = [
+  { id: 'classic', name: 'Classic' },
+  { id: 'minimal', name: 'Minimal' },
+  { id: 'timeline', name: 'Timeline' },
+];
 
 describe('suggestLooks', () => {
   it('suggests a template for each kind of company the user is aiming at', () => {
@@ -10,13 +16,14 @@ describe('suggestLooks', () => {
       levels: ['senior'],
     });
     expect(suggestions.map(({ layout, for: kind }) => [kind, layout])).toEqual([
-      ['startup', 'timeline'],
-      ['established', 'executive'],
+      ['startup', 'minimal'],
+      ['established', 'classic'],
     ]);
     expect(suggestions[0]?.why).toBe('Suits startups and your field');
+    expect(suggestions[1]?.why).toBe('Suits established companies');
   });
 
-  it('suits formal fields and public employers with the classic look', () => {
+  it('suits formal fields and public employers with the classic look, and design with the minimal one', () => {
     const [suggestion] = suggestLooks({
       companies: ['public'],
       fields: ['legal'],
@@ -24,19 +31,20 @@ describe('suggestLooks', () => {
     });
     expect(suggestion?.layout).toBe('classic');
     expect(suggestLooks({ companies: [], fields: ['design'], levels: ['senior'] })).toEqual([
-      { layout: 'modern', for: 'any', why: 'Suits your field' },
+      { layout: 'minimal', for: 'any', why: 'Suits your field' },
     ]);
   });
 
-  it('gives each kind of company its own template, even when one suits them all best', () => {
+  it('gives each kind of company its own template, and the kinds that suit one best get theirs', () => {
     const suggestions = suggestLooks({
-      companies: ['startup', 'established'],
-      fields: ['software'],
-      levels: ['entry'],
+      companies: ['public', 'established', 'startup'],
+      fields: [],
+      levels: [],
     });
+    // Two templates for three kinds: the startups get the one that suits them, not what's left.
     expect(suggestions.map(({ layout, for: kind }) => [kind, layout])).toEqual([
-      ['startup', 'compact'],
-      ['established', 'executive'],
+      ['public', 'classic'],
+      ['startup', 'minimal'],
     ]);
   });
 
@@ -52,8 +60,16 @@ describe('suggestLooks', () => {
       fields: ['software'],
       levels: ['entry'],
     });
-    expect(suggestedFor('compact', suggestions)).toEqual(['startup']);
-    expect(suggestedFor('banner', suggestions)).toEqual([]);
+    expect(suggestedFor('minimal', suggestions)).toEqual(['startup']);
+    expect(suggestedFor('classic', suggestions)).toEqual(['public']);
+    expect(suggestedFor('timeline', suggestions)).toEqual([]);
+  });
+});
+
+describe('templateName', () => {
+  it('names a template from the user’s, or by its ID once it’s gone', () => {
+    expect(templateName('timeline', TEMPLATES)).toBe('Timeline');
+    expect(templateName('banner', TEMPLATES)).toBe('banner');
   });
 });
 
@@ -63,15 +79,16 @@ describe('templatesMarkdown', () => {
       readAnswers({
         looks: [
           { layout: 'timeline', for: 'startup' },
-          { layout: 'executive', for: 'established' },
+          { layout: 'classic', for: 'established' },
         ],
         levels: ['entry'],
         format: 'both',
       }),
+      TEMPLATES,
     );
     expect(text).toContain('| Timeline | `timeline` | Startups (the startup style) |');
     expect(text).toContain(
-      '| Executive | `executive` | Established companies (the big-company style) |',
+      '| Classic | `classic` | Established companies (the big-company style) |',
     );
     expect(text).toContain('- **Length:** one page, for their level.');
     expect(text).toContain(
@@ -80,6 +97,6 @@ describe('templatesMarkdown', () => {
   });
 
   it('says when none are picked', () => {
-    expect(templatesMarkdown(readAnswers({}))).toContain('None picked yet.');
+    expect(templatesMarkdown(readAnswers({}), TEMPLATES)).toContain('None picked yet.');
   });
 });

@@ -12,7 +12,7 @@ describe('markupProblems', () => {
   it('passes text elements with values between tags and inside quotes', () => {
     expect(
       problems(
-        '<section class="x {{kind}}" data-n="{{stats.length}}"><h2>{{title}}</h2><!-- note --><br/><table><tr><td colspan="2">{{#a}}{{b}}{{/a}}</td></tr></table>{{> part}}</section>',
+        '<section class="x {{kind}}" data-n="{{stats.length}}"><h2>{{title}}</h2>{{! a note }}<br/><table><tr><td colspan="2">{{#a}}{{b}}{{/a}}</td></tr></table>{{> part}}</section>',
       ),
     ).toEqual([]);
   });
@@ -68,6 +68,13 @@ describe('markupProblems', () => {
     ]);
   });
 
+  it('keeps “<” out of attributes, where it could come alive if the quotes ended early', () => {
+    expect(problems('<div title="{{summary}} <img src=x onerror=alert(1)>">x</div>')).toEqual([
+      'body: <div title> can’t hold “<”. Write &lt;.',
+    ]);
+    expect(problems('<div title="1 &lt; 2">x</div>')).toEqual([]);
+  });
+
   it('starts and ends each section in the same place', () => {
     expect(problems('<div title="{{#a}}">{{/a}}</div>')[0]).toContain(
       'start and end in the same place',
@@ -76,10 +83,14 @@ describe('markupProblems', () => {
     expect(problems('<div class="a{{#b}} b{{/b}}">{{#c}}<i>c</i>{{/c}}</div>')).toEqual([]);
   });
 
-  it('wants < written as &lt;, comments closed, and tags finished', () => {
+  it('wants < written as &lt;, notes as Mustache comments, and tags finished', () => {
     expect(problems('a < b')[0]).toContain('Write &lt;');
-    expect(problems('<!-- open')).toEqual(['body: a comment is never closed.']);
-    expect(problems('<!-- {{a}} -->')).toEqual(['body: a comment can’t hold tags.']);
+    // A browser ends "<!-->" right there, so what follows would be markup, not a comment.
+    for (const comment of ['<!-- note -->', '<!--><img src=x>-->', '<!--->', '<!DOCTYPE html>']) {
+      expect(problems(comment)).toEqual([
+        'body: HTML comments aren’t allowed. Write a note as {{! note }}.',
+      ]);
+    }
     expect(problems('<div class="a"')).toEqual(['body ends inside <div>.']);
     expect(problems('<div style="background:url(https://x.example/a.png)"></div>')[0]).toContain(
       'url()',

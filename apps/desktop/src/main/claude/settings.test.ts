@@ -25,6 +25,8 @@ describe('sessionSettings', () => {
       'mcp__factwright__about_you',
       'mcp__factwright__past_answers',
       'mcp__factwright__save_answer',
+      'mcp__factwright__list_templates',
+      'mcp__factwright__read_template',
       'mcp__factwright__read_posting',
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
@@ -106,6 +108,44 @@ describe('sessionSettings', () => {
     expect(allow).toContain('mcp__factwright__build_resume');
     // A hunt run keeps the web.
     expect(settings.permissions.deny).not.toContain('WebSearch');
+  });
+
+  it('asks before saving a template, unless the run was started to make one or the user chose otherwise', () => {
+    const allow = (anyFile: boolean, scope: 'hunt' | 'profile' | 'template' = 'hunt') =>
+      sessionSettings({
+        hookUrl: 'http://127.0.0.1:4000/hook',
+        dark: false,
+        permissions: { anyFile, anySite: false },
+        scope,
+      }).permissions.allow;
+    expect(allow(false)).not.toContain('mcp__factwright__save_template');
+    expect(allow(false, 'profile')).not.toContain('mcp__factwright__save_template');
+    expect(allow(true)).toContain('mcp__factwright__save_template');
+    expect(allow(false, 'template')).toContain('mcp__factwright__save_template');
+  });
+
+  it('keeps a run for making a template off the web, and changing no file without asking', () => {
+    const { allow, deny } = sessionSettings({
+      hookUrl: 'http://127.0.0.1:4000/hook',
+      dark: false,
+      scope: 'template',
+      permissions: { anyFile: false, anySite: true },
+    }).permissions;
+    expect(allow).toEqual([
+      'Skill(factwright *)',
+      'mcp__factwright__find_job',
+      'mcp__factwright__job_details',
+      'mcp__factwright__build_resume',
+      'mcp__factwright__about_you',
+      'mcp__factwright__past_answers',
+      'mcp__factwright__save_answer',
+      'mcp__factwright__list_templates',
+      'mcp__factwright__read_template',
+      'mcp__factwright__save_template',
+    ]);
+    for (const tool of ['WebSearch', 'mcp__factwright__read_page', 'mcp__factwright__job_board']) {
+      expect(deny).toContain(tool);
+    }
   });
 
   it('never lets Claude change its own settings or the instructions it loads', () => {

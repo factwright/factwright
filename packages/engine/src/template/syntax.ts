@@ -25,7 +25,7 @@ export type Value =
 /** A piece of a template: its own markup, a value, a section, or one of its parts. */
 export type Node =
   | { kind: 'text'; text: string }
-  | { kind: 'value'; name: string }
+  | { kind: 'value'; name: string; attribute?: boolean }
   | { kind: 'section'; name: string; inverted: boolean; nodes: Node[] }
   | { kind: 'part'; name: string };
 
@@ -142,8 +142,12 @@ export function isShown(value: Value): boolean {
   return Boolean(value);
 }
 
-function shown(value: Value): string {
-  if (value instanceof Html) return value.html;
+/**
+ * A value as the page shows it: escaped, or the engine's own markup as it is. Inside an
+ * attribute's quotes, that markup's tags are left out, leaving its escaped text.
+ */
+function shown(value: Value, attribute = false): string {
+  if (value instanceof Html) return attribute ? value.html.replace(/<[^>]*>/g, '') : value.html;
   if (typeof value === 'string' || typeof value === 'number') return escapeHtml(value);
   return '';
 }
@@ -160,7 +164,7 @@ export function renderNodes(
   let out = '';
   for (const node of nodes) {
     if (node.kind === 'text') out += node.text;
-    else if (node.kind === 'value') out += shown(lookup(stack, node.name));
+    else if (node.kind === 'value') out += shown(lookup(stack, node.name), node.attribute);
     else if (node.kind === 'part') out += renderNodes(parts.get(node.name) ?? [], stack, parts);
     else {
       const value = lookup(stack, node.name);

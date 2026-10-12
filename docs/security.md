@@ -28,6 +28,7 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - Whatever you choose, Claude can never change Claude Code's settings or the instructions it loads (`.claude/` and `CLAUDE.md` files), which a posting could otherwise use to steer later runs.
 - Once for each new version of Claude Code, the app starts it hidden, with no prompt, to check that its setup still works, then closes it. No prompt means none of your plan is used, and the check runs with the same restrictions as a run.
 - Building a resume runs without asking, since it stays on this computer: Factwright prints it in a hidden window that loads nothing else. Once you've applied to a job, the files you sent stay as they are.
+- A resume template of your own can come from anywhere: a file someone shared, or one Claude made from a resume you liked. Each is checked before it's used, so it can only lay out text: elements and attributes for text alone, with nothing that runs a script, loads a file or takes input, every value escaped, and styles that can't load anything. Claude asks before saving a template, unless you started a run to make one. That run can't reach the web, and asks before changing any file, since the resume it copies came from anywhere.
 
 ## What you share when you start
 Getting started asks for your resumes, your LinkedIn and anything else that shows your work.

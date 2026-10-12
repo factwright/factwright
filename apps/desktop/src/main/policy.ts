@@ -8,7 +8,10 @@ import {
   type RunSkill,
   type RunTask,
   SEARCH_SKILL,
+  TEMPLATE_SKILL,
+  TEMPLATE_SOURCE,
 } from '../shared/runs.ts';
+import { SOURCES_FOLDER } from './resume/templates.ts';
 
 /** A panel size from the window, if it's whole numbers in a sensible range. */
 export function parseTerminalSize(value: unknown): TerminalSize | null {
@@ -100,12 +103,22 @@ const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 /**
  * A task from the window, in the shape the app takes: a skill on a job, a job search, getting
- * started, or more facts. Anything else is null.
+ * started, more facts, or a template from a resume the app kept. Anything else is null.
  */
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
-  const { skill, jobId, mode, askId, ...rest } = value as Record<string, unknown>;
+  const { skill, jobId, mode, askId, source, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0) return null;
+  if (skill === TEMPLATE_SKILL || source !== undefined) {
+    const valid =
+      skill === TEMPLATE_SKILL &&
+      jobId === undefined &&
+      mode === undefined &&
+      askId === undefined &&
+      typeof source === 'string' &&
+      TEMPLATE_SOURCE.test(source);
+    return valid ? { skill, source } : null;
+  }
   if (askId !== undefined) {
     const valid =
       skill === 'ask' &&
@@ -143,6 +156,7 @@ const MODE_WORDS = {
  * asks the user for one.
  */
 export function runPrompt(task: RunTask): string {
+  if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;
   const mode = 'mode' in task ? task.mode : undefined;

@@ -36,7 +36,7 @@ A reader skims the top third of the first page before deciding to read on.
 - Fix every runt: trim a few words, or add a detail so the line fills.
 - The last page should be 70–98% full. Emptier looks thin; fuller risks spilling over in Word.
 - Look at the PDF for headings stranded at the bottom of a page.
-- About how many characters fit on a line, before you build: a bullet runs about 100 in classic, timeline, minimal, elegant and banner; about 115 in executive and compact; about 80 in modern, whose side column takes room. A highlight card fits about 190.
+- About how many characters fit on a line, before you build: a bullet runs about 100 in classic and minimal, and a highlight card about 190. In a template of the user's own, build once and go by the fit report.
 
 ## Applicant systems
 - Section names stay standard: Summary, Experience, Education, Skills. The templates use them.
@@ -44,15 +44,11 @@ A reader skims the top third of the first page before deciding to read on.
 - Mirror the posting's terms, but only where they're true.
 
 ## Templates
-`templates.md` has the user's picks: use the one for the kind of company the job is at, as `layout` in resume.json. All eight show every part of a resume, so changing the look never changes the words.
+`templates.md` has the user's picks: use the one for the kind of company the job is at, as `layout` in resume.json. Changing the look never changes the words.
 
 | `layout` | Look | Shows the strengths list (`competencies`) |
 |---|---|---|
 | `classic` | Traditional, all serif, black and white | Yes, three columns |
-| `timeline` | Bold name, a date rail, one warm accent | No |
-| `executive` | Centered header, serif headings, navy and gold | Yes, three columns |
-| `modern` | Two columns under a dark header | Yes, as chips at the side |
-| `compact` | Section names in the margin, tight spacing | Yes, three columns |
 | `minimal` | White space, gray headings, no color | Yes, three columns |
-| `elegant` | Serif type with a deep red accent | Yes, three columns |
-| `banner` | A blue banner across the top | Yes, as chips |
+
+The user can have templates of their own too, made from a resume whose look they like, or from a file someone shared. `list_templates` lists them all, and says which show the strengths list.

@@ -34,6 +34,7 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'job-search': 'high',
   'get-started': 'xhigh',
   'add-facts': 'xhigh',
+  'make-template': 'xhigh',
 };
 
 /**
@@ -51,6 +52,7 @@ export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'job-search': 'medium',
   'get-started': 'high',
   'add-facts': 'high',
+  'make-template': 'high',
 };
 
 /**

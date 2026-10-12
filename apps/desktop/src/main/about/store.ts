@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { localDate } from '@factwright/core';
+import { TEMPLATES } from '@factwright/engine';
 import {
   type AboutYou,
   ANSWER_LIMITS,
@@ -18,6 +19,7 @@ import {
   LINKEDIN_TABLES,
   type LinkedInUpload,
   type Profile,
+  type TemplateInfo,
 } from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
 import { copyStarter } from './starter.ts';
@@ -32,7 +34,12 @@ export interface AboutStoreDeps {
   /** Moves a file the user removed to the system's trash. Tests delete it instead. */
   trash?: (path: string) => Promise<void>;
   today?: () => string;
+  /** The templates the user can pick, built in and their own. Without it, the built-in ones. */
+  templates?: () => TemplateInfo[];
 }
+
+const BUILT_IN = (): TemplateInfo[] =>
+  TEMPLATES.map(({ id, name, look }) => ({ id, name, look, own: false, stamp: '' }));
 
 /** Where LinkedIn's spreadsheets are kept, and the summary Claude reads. */
 const LINKEDIN_FOLDER = 'linkedin';
@@ -49,12 +56,14 @@ export class AboutStore {
   private readonly starterDir: string;
   private readonly trash: (path: string) => Promise<void>;
   private readonly today: () => string;
+  private readonly templates: () => TemplateInfo[];
 
   constructor(deps: AboutStoreDeps) {
     this.workspace = deps.workspace;
     this.starterDir = deps.starterDir;
     this.trash = deps.trash ?? (async (path) => rmSync(path, { force: true }));
     this.today = deps.today ?? (() => localDate());
+    this.templates = deps.templates ?? BUILT_IN;
   }
 
   private path(file: string): string {
@@ -216,7 +225,7 @@ export class AboutStore {
   writeDerived(answers: AboutYou = this.answers()): void {
     if (untouched(this.read(ABOUT.criteria))) this.write(ABOUT.criteria, criteriaMarkdown(answers));
     if (untouched(this.read(ABOUT.templates)))
-      this.write(ABOUT.templates, templatesMarkdown(answers));
+      this.write(ABOUT.templates, templatesMarkdown(answers, this.templates()));
     let lint: Record<string, unknown> = {};
     const text = this.read(ABOUT.lint);
     try {
@@ -262,6 +271,7 @@ export class AboutStore {
       notes: this.notes(),
       confidential: this.confidential(),
       status: profileStatus(this.workspace, answers),
+      templates: this.templates(),
     };
   }
 }
