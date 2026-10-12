@@ -5,6 +5,7 @@ import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
 import { RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
 import { factwrightTools } from '../tools/index.ts';
+import { buildLaunchArgs, STANDING_RULES } from './launch.ts';
 import { sessionSettings } from './settings.ts';
 
 const pluginDir = fileURLToPath(new URL('../../../../../plugin/', import.meta.url));
@@ -106,5 +107,47 @@ describe('the plugin’s skills', () => {
     expect(plugin.name).toBe('factwright');
     const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
     expect(settings.permissions.allow).toContain(`Skill(${plugin.name} *)`);
+  });
+});
+
+describe('the standing rules', () => {
+  const rules = readFileSync(join(pluginDir, STANDING_RULES), 'utf8');
+
+  it('reach every run, after Claude Code’s own instructions', () => {
+    const args = buildLaunchArgs({
+      pluginDir,
+      mcpConfig: 'mcp.json',
+      settings: 'settings.json',
+      permissionMode: 'default',
+    });
+    const at = args.indexOf('--append-system-prompt-file');
+    expect(args[at + 1]).toBe(join(pluginDir, STANDING_RULES));
+  });
+
+  it('carry the rules every run needs, whichever skill is working', () => {
+    for (const rule of [
+      'Facts first',
+      "What's on file comes first",
+      'Learn from feedback',
+      'Confidential stays out',
+      'Names',
+      'What went out stays as it went',
+      'How to apply',
+      'Accounts',
+      'Short replies',
+    ]) {
+      expect(rules).toContain(`**${rule}.**`);
+    }
+  });
+
+  it('have nothing personal, and nothing left from the old repo', () => {
+    for (const leftover of [
+      /\bSteve\b/,
+      /\.private\//,
+      /\bgit (?:add|commit|push)\b/,
+      /linkedin ok/i,
+    ]) {
+      expect(rules).not.toMatch(leftover);
+    }
   });
 });

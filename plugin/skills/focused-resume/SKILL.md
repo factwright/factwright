@@ -1,6 +1,6 @@
 ---
 name: focused-resume
-description: Build a resume focused on one job. Use when the user shares a job posting (plus maybe a company link, notes, "pdf"/"word", "startup"/"big company") and wants a tailored resume. Maps the job to their fact bank, asks them about experience the bank lacks, files their answers into facts/, then builds and fact-checks the PDF or Word file.
+description: Build a resume focused on one job. Use when the user shares a job posting (plus maybe a company link, notes, "pdf"/"word", "startup"/"big company") and wants a tailored resume. Maps the job to their fact bank, asks them about experience the bank lacks, files their answers into facts/, then builds and fact-checks the PDF or Word file. Also use whenever the user gives feedback on a resume, now or in a later session: it fixes the resume and saves the feedback as a nudge.
 argument-hint: "[posting link or text, plus pdf/word and startup/big-company]"
 ---
 
@@ -23,18 +23,18 @@ Before starting, read:
 If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 
 ## 1. Set up the application folder
-- Call `find_job` with what you have (the link alone is fine). If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on.
+- For a job from the app (`job <id>`), call `job_details` with the id: it gives everything on file. Otherwise call `find_job` with what you have (the link alone is fine). If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on.
 - If a fit check (or unmask) already made a folder for this job, reuse it: keep its `posting.md`, `job.md` and `fit-check.md`, and add to them. Otherwise use `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
 - Save the posting word for word as `posting.md`, if the folder doesn't have one yet:
   - From a link: read it with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name.
   - Pasted text, or the link needs a sign-in: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
-- If the posting has special application steps (apply by email, an exact subject or phrase, specific attachments), write `apply.md`, which the app shows as a How to apply alert: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
+- If the posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"), write `apply.md`, which the app shows as a How to apply alert. Skip it for a plain apply button. Its format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
 - Write (or update) `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Format:** <pdf, word or both>` and `- **Style / track:** <style> / <track>`, then:
   - `## Job description`: "Saved word for word in posting.md."
   - `## The user's notes`, verbatim
 
 ## 2. Research the company (brief)
-- Read the company's site with `read_page` if the user gave it (the user may have to OK each page), and run 1–2 web searches at most, for stage and funding, size, product, customers, and tech stack.
+- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful (the user may have to OK each page). Run 1–2 web searches at most, for stage and funding, size, product, customers, and tech stack.
 - Append `## Company notes` to job.md: what they do, stage and size, domain, stack, and the words they use about themselves.
 - Pick the **style** with `guide/styles/README.md`, then read that style's file.
 - Pick the **track** from the role title and scope.
@@ -63,8 +63,8 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 - Follow up once, briefly, if a "yes" is missing what, where, when, or scale. Don't nag.
 - Skip this step if coverage is strong. Never ask about trivia.
 
-**File every answer before drafting**, the way `/factwright:add-facts` does:
-- **Yes or partial:** add a new claim, or extend one, in the right facts file. Tag it exactly as they described it, with `Source: <first name> <YYYY-MM-DD>`. Record what they said and never upgrade it.
+**File every answer before drafting**:
+- **Yes or partial:** add a new claim, or extend one, in the right facts file, in that file's format: a `### Short claim title` heading, then its tags in backticks (status such as `live`, `shipped` or `built`; ownership such as `solo`, `led-and-built`, `took-over` or `led-team`; confidence `high`, `medium` or `low`), the resume-ready wording as a `>` quote of about 190 characters at most, and `- **Source:** <first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`). Tag it exactly as they described it. Record what they said, never upgrade it, and leave out anything confidential.
 - **No:** add a row to gaps.md under **Doesn't have**.
 - **Confirmed or corrected:** update the claim in place and remove the item from gaps.md.
 - **New tech:** add a row to `facts/skills.md`.
@@ -79,9 +79,9 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
   - **Headline and tagline:** aimed at this role.
   - **Summary:** rewritten for this job.
   - **Stats:** the most relevant approved stats (usually 4).
-  - **Systems cards:** ranked by relevance, as many as `guide/lint.json` asks.
+  - **Systems cards:** ranked by relevance, as many as `guide/lint.json` asks (6 when it doesn't say).
   - **Bullets:** choose and re-order the bullets from facts, and re-head the groups to match the job's themes. Mirror the posting's exact terms where they're true.
-  - **Skills:** as many lines as `guide/lint.json` asks, must-have tech first, only tech that's in `facts/skills.md`.
+  - **Skills:** as many lines as `guide/lint.json` asks (4 when it doesn't say), must-have tech first, only tech that's in `facts/skills.md`.
   - **Projects:** keep them or drop them per the style.
 - Apply the nudges in `guide/preferences.md` as defaults. If the job needs something else, skip the nudge and note why in notes.md.
 - Every line must trace to a `facts/` claim. Reuse approved wording and stay inside each claim's Say / don't-say limits.
@@ -113,11 +113,11 @@ Call `build_resume` with the folder's name (and `format: "both"` when the user w
 - Fix every runt line it lists, and every problem.
 - Build again until all of these hold:
   - `Checks: clean`
-  - no more pages than `guide/lint.json` allows (2 when it doesn't say)
+  - exactly as many pages as `guide/lint.json`'s `maxPages` (2 when it doesn't say), unless the user asks for fewer
   - the last page is 70–98% full
   - no runts
   - no orphaned headings
-- Word lays out the Word file itself, so its page count can differ a little from the PDF's.
+- Word lays out the Word file itself, and its page count can't be measured here. It nearly always matches the PDF's, but when you deliver a Word file, tell the user to open it and check the page count before sending.
 - Rule problems are real problems. Fix the text. If one is a false alarm, say so in notes.md. Don't loosen `guide/lint.json` unless the user agrees.
 
 ## 8. Verify (adversarial fact-check)

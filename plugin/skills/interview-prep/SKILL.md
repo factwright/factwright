@@ -10,7 +10,7 @@ Input: the company, plus the role or link if they have more than one job there, 
 
 Before starting, read:
 - `guide/rules.md`, if there is one. Every claim in an answer still traces to `facts/`, with the same status and ownership limits as a resume.
-- all of `facts/`.
+- all of `facts/`. If there's no fact bank yet, say so in one line, suggest `/factwright:add-facts`, and prep from the posting alone, without answer outlines.
 
 ## 1. Load everything on file
 - Call `job_details` with the job's id, or its company and role. It gives the status, dates, the user's notes, the calls and interviews they logged, history and the job's folder.
@@ -18,7 +18,7 @@ Before starting, read:
 - Read the job's folder in `applications/`:
   - `posting.md`: the posting as saved, word for word, so it's there even if the link is dead. Older folders keep it inside `job.md`.
   - `job.md` (company notes, requirements), `fit-check.md`, `unmask.md`, `notes.md` (evidence map, tailoring choices, pay), `answers.md`
-  - `resume.json`: the resume they actually sent. Answers must match it.
+  - The resume they actually sent: the PDF (or Word file) in the folder, which `job_details` lists with its date. Read the PDF: `resume.json` may have changed since it went out. Answers must match what was sent.
 - If the job came from a job search, read its entry in `searches/*/jobs.json` (why, gaps, flags).
 - If `outreach/<YYYY-MM-DD>-<company>.md` exists, read it for context.
 - If nothing is saved and the link still works, save the posting first: read it with `read_posting` or `read_page`, then `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
@@ -28,10 +28,10 @@ If the user only wants to talk the job through, stop here and chat from what you
 
 ## 3. Refresh the company (3 searches at most)
 - News from the last ~3 months: funding, launches, leadership changes, layoffs, acquisitions.
-- If the user names who they're meeting, look up their public role and background: search results and public pages only, never a sign-in. Work info only: title, team, public posts and talks.
+- If the user names who they're meeting, look up their public role and background: search results and public pages only, never a sign-in. Work info only: title, team, public posts and talks. Their names can go in prep.md, since it's the user's own notes.
 
 ## 4. Write `applications/<folder>/prep.md`
-Header: `# Prep: <Company>, <Role>`, then `- **Date:** <today>`, and `- **Conversation:** <type, date>` if known.
+Header: `# Prep: <Company>, <Role>`, then `- **Date:** <today>`, and `- **Conversation:** <type, date, who with>` if known.
 
 Sections, short and scannable:
 - **The job in 5 lines:** what they need most, and what they'll probe.

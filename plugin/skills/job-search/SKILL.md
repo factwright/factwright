@@ -1,6 +1,6 @@
 ---
 name: job-search
-description: Search one source for jobs (Hacker News's monthly "Who is hiring?" thread, a company's job board on Greenhouse, Lever, Ashby or Gem, or a careers page) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names a source to scan. Saves the source word for word, plus a ranked report the app shows as jobs to review.
+description: Search one source for jobs (Hacker News's monthly "Who is hiring?" thread, a company's job board on Greenhouse, Lever, Ashby or Gem, a careers page, or a job site's public listings, such as YC's Work at a Startup or Wellfound) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names a source to scan. Saves the source word for word, plus a ranked report the app shows as jobs to review.
 argument-hint: "[source: HN, a month like 2026-11, a job board link, or a careers page]"
 ---
 
@@ -53,6 +53,7 @@ For each listing that passed:
 - With more than ~15 jobs to verify, split this step across subagents, ~8 jobs each, all at once. Give each one:
   - `searches/criteria.md`, all of `facts/`, and the search's folder
   - its jobs: company, role, link and HN id
+  - to call `find_job` for each job first, and flag the ones the user has seen before
   - the jobs.json fields to return for each one
   - Pages read with `read_page` may ask the user, so tell the user how many to expect.
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.

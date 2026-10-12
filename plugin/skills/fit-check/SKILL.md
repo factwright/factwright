@@ -16,7 +16,7 @@ Before starting, read:
 
 ## 1. Read the job
 - Call `find_job` with what you have. The link alone is fine; call it again once you know the company and role. If the user has seen this job before, open the reply with that line (e.g. "Seen: Good 67 on Oct 6, applied Oct 8"), and reuse its folder.
-- If the job's folder already has `posting.md` (or `job.md` in older folders), read the posting from there.
+- If the job's folder already has `posting.md` (or `job.md` in older folders), read the posting from there, plus `unmask.md` and `notes.md` if they're there: an employer check may already have found the real employer behind a board listing.
 - Otherwise read the link: `read_posting` for a posting on Greenhouse, Lever, Ashby or Gem, which never asks the user, and `read_page` for anywhere else. If it needs a sign-in or won't load, ask the user to paste the text.
 - Pull out: company, role, level, remote policy and location limits, pay, must-haves, nice-to-haves, stack, domain.
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.
@@ -30,7 +30,7 @@ Before starting, read:
 
 ## 3. Sentiment (5 searches at most)
 - Reviews: Glassdoor, Indeed, Blind, Comparably. Search snippets are enough, so never sign in. Note the rating, the review count, and how recent the reviews are.
-- Talk: Reddit and Hacker News.
+- Talk: Reddit and Hacker News. A web search with `site:news.ycombinator.com` finds HN threads.
 - News from the last ~12 months: layoffs, funding or runway, acquisitions, lawsuits, leadership churn, return-to-office.
 - Small startups often have no reviews. Say "thin data", then lean on funding, the founders' track record, and HN/Reddit.
 - Report themes, not single angry reviews. Every point gets a source link.

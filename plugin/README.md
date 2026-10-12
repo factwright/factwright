@@ -1,6 +1,8 @@
 # Claude Code plugin
 
-What Factwright loads into each Claude Code run, through Claude Code's own `--plugin-dir` flag. Today that's its skills: step-by-step instructions Claude follows for one job-hunt task.
+What Factwright loads into each Claude Code run, through Claude Code's own `--plugin-dir` flag: its skills, step-by-step instructions Claude follows for one job-hunt task, and its standing rules.
+
+**Standing rules:** [`standing-rules.md`](standing-rules.md) is added to Claude's instructions in every run (`--append-system-prompt-file`), whichever skill is working, and for plain questions too. Facts come first, what's on file is read before anything's fetched, feedback becomes a nudge, confidential details stay out of what you send, what went out stays as it went, and the How to apply format.
 
 | Skill | What it does | What it saves |
 |---|---|---|
