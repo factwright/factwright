@@ -30,7 +30,8 @@ More in [architecture](docs/architecture.md) and [security](docs/security.md).
 | [`apps/desktop`](apps/desktop) | The app for Mac and Windows |
 | [`apps/web`](apps/web) | The web and phone view of your tracker |
 | [`apps/server`](apps/server) | The sync server |
-| [`packages/core`](packages/core) | Shared logic: tracker rules and pay parsing today, sync and encryption later |
+| [`packages/core`](packages/core) | Shared logic: reading the workspace, jobs, tracker rules and pay parsing |
+| [`packages/sync`](packages/sync) | End-to-end encryption and the sync protocol |
 | [`packages/ui`](packages/ui) | The design system and shared screens |
 | [`packages/engine`](packages/engine) | Turns resume data into PDF and Word files |
 | [`plugin`](plugin) | The skills Factwright gives Claude Code, such as the fit check and interview prep |

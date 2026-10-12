@@ -1,0 +1,66 @@
+export {
+  type Bytes,
+  concat,
+  fromBase64Url,
+  fromUtf8,
+  randomBytes,
+  sameBytes,
+  toBase64Url,
+  utf8,
+} from './bytes.ts';
+export { type ClientOptions, SyncClient, SyncError, type SyncErrorKind } from './client.ts';
+export { fromCode, toCode } from './code.ts';
+export {
+  ACCOUNT_KEY_BYTES,
+  type AccountKeys,
+  accountKeys,
+  type Key,
+  LINK_CODE_BYTES,
+  linkId,
+  lock,
+  lockForLink,
+  lockWithRecoveryKey,
+  newAccountKey,
+  newLinkCode,
+  newRecoveryKey,
+  openLink,
+  openWithRecoveryKey,
+  RECOVERY_KEY_BYTES,
+  readLinkCode,
+  readRecoveryKey,
+  unlock,
+  type WrittenSecret,
+} from './keys.ts';
+export { type MergeRules, mergeRows, mergeText, sameRow } from './merge.ts';
+export {
+  type AccountInfo,
+  API,
+  type Change,
+  type ChangesPage,
+  type Device,
+  type ErrorBody,
+  isFileId,
+  isKeyId,
+  isLinkId,
+  isRecordId,
+  type KeyRecord,
+  LIMITS,
+  type PushChange,
+  type PushResponse,
+  type PushResult,
+  type VersionInfo,
+} from './protocol.ts';
+export {
+  decodeRecord,
+  encodeRecord,
+  type FileRecord,
+  fileName,
+  isSyncPath,
+  nameOf,
+  type RowRecord,
+  type RowValue,
+  type RowValues,
+  rowName,
+  type SyncRecord,
+} from './record.ts';
+export { fileId, openFile, openRecord, recordId, sealFile, sealRecord } from './seal.ts';
