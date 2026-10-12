@@ -1,0 +1,390 @@
+.page {
+  /* It holds what's placed in it, such as labels only screen readers see, so they scroll with it. */
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--fw-space-6) 28px;
+  overflow-y: auto;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-md);
+}
+
+.lead {
+  max-width: 70ch;
+  margin: var(--fw-space-3) 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-3);
+  margin-top: var(--fw-space-4);
+}
+
+.search {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.quiet {
+  margin: var(--fw-space-2) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.quiet:empty {
+  display: none;
+}
+
+.empty {
+  margin-top: var(--fw-space-4);
+}
+
+.problem {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}
+
+/* The files on the left, and what's in the open one, or what a search found, on the right. */
+.body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--fw-space-5);
+  margin-top: var(--fw-space-5);
+}
+
+.files {
+  position: sticky;
+  top: 0;
+}
+
+.fileList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fileLink {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--fw-radius-md);
+  background: none;
+  color: var(--fw-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileLink:hover {
+  background: var(--fw-hover);
+}
+
+.fileLink:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+.current {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-weight: 600;
+}
+
+.current:hover {
+  background: var(--fw-accent-soft);
+}
+
+/* The files about the bank itself, after the files of facts. */
+.aside {
+  margin-top: var(--fw-space-2);
+  padding-top: var(--fw-space-2);
+  border-top: 1px solid var(--fw-border);
+}
+
+/* While searching, the files with nothing found. */
+.dim {
+  color: var(--fw-muted);
+}
+
+.fileName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fileCount {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+  min-width: 0;
+}
+
+.file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+}
+
+.fileHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+}
+
+.fileTitles {
+  min-width: 0;
+}
+
+.fileTools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--fw-space-1);
+}
+
+.fileTitle {
+  margin: 0;
+  font-size: var(--fw-text-lg);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.meta {
+  margin: 2px 0 0;
+  color: var(--fw-muted);
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  overflow-wrap: anywhere;
+}
+
+/* What a file says under its title, such as who the employer was. */
+.opening {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+}
+
+.openingText {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.openingTools {
+  flex: none;
+  margin-left: auto;
+}
+
+.section {
+  margin-top: var(--fw-space-3);
+  padding-top: var(--fw-space-3);
+  border-top: 1px solid var(--fw-border);
+}
+
+.subsection {
+  padding: var(--fw-space-1) 0;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--fw-text-base);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.sectionText {
+  margin-top: var(--fw-space-2);
+  font-size: 13px;
+}
+
+/* A short word in a table, such as a skill's depth, stays whole rather than breaking. */
+.sectionText td code,
+.openingText td code {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-3) var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.factHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+}
+
+.factTitle {
+  margin: 0;
+  padding-top: 3px;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The words resumes use, the claim itself. */
+.wording {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.details {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.confirmDelete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fw-bad-soft);
+  font-size: 13px;
+}
+
+.confirmDelete span {
+  margin-right: auto;
+}
+
+.editing {
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-accent);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+}
+
+.group + .group {
+  margin-top: var(--fw-space-4);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--fw-text-base);
+  font-weight: 650;
+}
+
+.groupLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupLink:hover {
+  text-decoration: underline;
+}
+
+.groupLink:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 2px;
+  border-radius: var(--fw-radius-sm);
+}
+
+/* A narrow window: the files wrap above what's in them. */
+@media (max-width: 760px) {
+  .page {
+    padding: var(--fw-space-5) var(--fw-space-4);
+  }
+
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .files {
+    position: static;
+  }
+
+  .fileList {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .fileLink {
+    width: auto;
+  }
+}

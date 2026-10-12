@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp, terminalText } from './app.ts';
@@ -231,6 +231,80 @@ test('adds a job by hand', async () => {
   await dialog.getByRole('textbox', { name: 'Company' }).fill('Northwind Labs');
   await dialog.getByRole('button', { name: 'Add job' }).click();
   await expect(window.getByRole('button', { name: /^Northwind Labs/ })).toBeVisible();
+});
+
+test('reads and changes the fact bank: a fact’s words, a confirmation, and a new fact', async () => {
+  const { window } = opened;
+  // The fact bank, as getting started would have drafted it.
+  const facts = join(dataDir, 'workspace', 'facts');
+  const file = join(facts, 'larkspur-logistics.md');
+  mkdirSync(facts, { recursive: true });
+  writeFileSync(
+    file,
+    [
+      '# Larkspur Logistics',
+      '',
+      '## Overview',
+      'Senior engineer, 2019–2024.',
+      '',
+      '### Route planner',
+      '`live` `led-and-built` `high`',
+      '> Built a route planner used by 300 drivers.',
+      '- **Source:** Alex 2026-10-01',
+      '',
+      '### Dispatch alerts',
+      '`unconfirmed` `shipped` `solo` `medium`',
+      '> Shipped dispatch alerts that cut late pickups.',
+      '- **Source:** resume alex.pdf 2026-10-10',
+      '',
+    ].join('\n'),
+  );
+  const read = () => readFileSync(file, 'utf8');
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Fact bank/ })
+    .click();
+  await expect(window.getByRole('heading', { name: 'Larkspur Logistics', level: 2 })).toBeVisible();
+
+  const planner = window.getByRole('article', { name: 'Route planner' });
+  await planner.getByRole('button', { name: 'Change “Route planner”' }).click();
+  const form = window.getByRole('form', { name: 'Change “Route planner”' });
+  await form
+    .getByRole('textbox', { name: 'What resumes say' })
+    .fill('Built a route planner used by 320 drivers.');
+  await form.getByRole('combobox', { name: 'Status' }).selectOption('shipped');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(planner).toContainText('320 drivers');
+  expect(read()).toContain(
+    '### Route planner\n`shipped` `led-and-built` `high`\n> Built a route planner used by 320 drivers.\n- **Source:** Alex 2026-10-01\n\n### Dispatch alerts',
+  );
+
+  await window.getByRole('button', { name: 'Confirm “Dispatch alerts”' }).click();
+  await expect(window.getByRole('button', { name: 'Confirm “Dispatch alerts”' })).toHaveCount(0);
+  expect(read()).toMatch(
+    /### Dispatch alerts\n`shipped` `solo` `medium`\n> Shipped dispatch alerts that cut late pickups\.\n- \*\*Source:\*\* \S+ \d{4}-\d{2}-\d{2}\n/,
+  );
+
+  await window.getByRole('button', { name: 'Add a fact' }).click();
+  const added = window.getByRole('form', { name: 'New fact' });
+  await added.getByRole('textbox', { name: 'Title' }).fill('Driver app');
+  await added.getByRole('textbox', { name: 'What resumes say' }).fill('Shipped a driver app.');
+  await added.getByRole('combobox', { name: 'Status' }).selectOption('shipped');
+  await added.getByRole('button', { name: 'Save' }).click();
+  await expect(window.getByRole('article', { name: 'Driver app' })).toBeVisible();
+  expect(read()).toMatch(
+    /\n\n### Driver app\n`shipped`\n> Shipped a driver app\.\n- \*\*Source:\*\* /,
+  );
+
+  // The sidebar counts them, and the jobs are where they were.
+  await expect(
+    window.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^Fact bank/ }),
+  ).toContainText('3');
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Jobs/ })
+    .click();
+  await expect(window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
 });
 
 test('keeps everything tracked after a restart', async () => {

@@ -4,6 +4,7 @@ import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
+import { sampleFacts } from './facts/sample-facts.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleSync } from './sync/sample-sync.ts';
 
@@ -192,6 +193,7 @@ export function sampleApi(): FactwrightApi {
     ...sampleTracker(query.get('jobs')),
     ...sampleSync(query.get('sync')),
     ...sampleProfile(query.get('profile')),
+    ...sampleFacts(query.get('profile')),
     // Which model Claude runs on, kept until the page reloads.
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {

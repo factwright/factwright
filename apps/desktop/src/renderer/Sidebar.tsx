@@ -1,5 +1,5 @@
 import { NavItem } from '@factwright/ui';
-import { Briefcase, UserRound } from 'lucide-react';
+import { BookCheck, Briefcase, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
 import type { SyncStatus } from '../shared/sync.ts';
 import { ClaudeCard } from './ClaudeCard.tsx';
@@ -7,8 +7,8 @@ import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
-/** The app's places: the jobs, and everything about the user. */
-export type Page = 'jobs' | 'profile';
+/** The app's places: the jobs, the fact bank, and everything else about the user. */
+export type Page = 'jobs' | 'facts' | 'profile';
 
 /** The sidebar: the app's places, then sync and the user's Claude at the bottom. */
 export function Sidebar({
@@ -22,6 +22,7 @@ export function Sidebar({
   onOpenSync,
   onOpenClaudeSettings,
   jobCount,
+  factCount,
 }: {
   page: Page;
   onPage: (page: Page) => void;
@@ -37,6 +38,8 @@ export function Sidebar({
   onOpenClaudeSettings: () => void;
   /** How many jobs there are, once they've loaded. */
   jobCount?: number | undefined;
+  /** How many facts the fact bank holds, once there are some. */
+  factCount?: number | undefined;
 }) {
   return (
     <aside className={styles.sidebar}>
@@ -47,6 +50,13 @@ export function Sidebar({
           count={jobCount}
           current={page === 'jobs'}
           onClick={() => onPage('jobs')}
+        />
+        <NavItem
+          icon={<BookCheck size={16} aria-hidden="true" />}
+          label="Fact bank"
+          count={factCount}
+          current={page === 'facts'}
+          onClick={() => onPage('facts')}
         />
         <NavItem
           icon={<UserRound size={16} aria-hidden="true" />}

@@ -96,6 +96,12 @@ A new user, with no jobs and no fact bank yet, opens on **Get started**: seven s
 
 **Profile** follows Claude as it drafts the fact bank, confirms it with the user and builds their starting resumes, then keeps every answer changeable: the fact bank (with how many facts are left to confirm, and anything shared since Claude last read), the starting resumes (to preview, open, or build again), what they want, their templates, what they've shared and their contact details. The files built from the answers (`searches/criteria.md`, `guide/templates.md` and the page count in `guide/lint.json`) follow each change, unless someone has changed them by hand since.
 
+**Fact bank** ([`src/renderer/facts`](src/renderer/facts)) shows `facts/` file by file:
+- **Each claim** is a card: its tags in words (Live, Led and built, High confidence), the words resumes use, and its details. Each file's other sections, such as its overview, show around them.
+- **Search** reaches every file, and **To confirm** gathers the facts drafted from your files that you haven't checked.
+- **Changing a fact** happens in a form, so its tags stay ones the skills know. A section changes as Markdown. Confirming a fact does what the skills do: it drops `unconfirmed` and makes you its source, with the date.
+- **Each change** goes to the main process as one block, the way the window read it ([`src/main/about/facts.ts`](src/main/about/facts.ts)). A block that changed since, such as by Claude or another computer, is refused rather than overwritten, and the rest of the file stays byte for byte. Only Markdown files already in `facts/` change, each saved whole or not at all, never through a link.
+
 A run started for getting started or for more facts may save the facts, starting resumes and guide without asking each time, which every other run asks before doing, and it can't reach the web at all. A run started to make a template may read and save templates without asking, and nothing else: it can't reach the web either, and asks before building a resume, saving an answer or changing any file, since the resume it copies came from anywhere. Each tool call knows which run it's from, so that run can replace only the templates it saved. The app keeps that resume in `templates/sources/`, under a name of its own, and names it to Claude by that. A task that needs other permissions, or another model, starts a run of its own.
 
 ## Your jobs

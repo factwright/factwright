@@ -101,10 +101,12 @@ function Harness({
   api,
   phase = 'idle',
   onRun = () => {},
+  onOpenFacts = () => {},
 }: {
   api: ReturnType<typeof profileApi>;
   phase?: RunPhase;
   onRun?: (task: unknown) => void;
+  onOpenFacts?: () => void;
 }) {
   const state = useProfile(api as unknown as FactwrightApi);
   if (!state.profile) return null;
@@ -115,11 +117,20 @@ function Harness({
       phase={phase}
       ready
       onRun={onRun}
+      onOpenFacts={onOpenFacts}
     />
   );
 }
 
 describe('ProfilePage', () => {
+  it('opens the fact bank, to read and change each fact', async () => {
+    const user = userEvent.setup();
+    const onOpenFacts = vi.fn();
+    render(<Harness api={profileApi()} onOpenFacts={onOpenFacts} />);
+    await user.click(await screen.findByRole('button', { name: 'See and change them' }));
+    expect(onOpenFacts).toHaveBeenCalled();
+  });
+
   it('shows how far Claude has come, and carries on from there', async () => {
     const onRun = vi.fn();
     const { container } = render(<Harness api={profileApi()} onRun={onRun} />);

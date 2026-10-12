@@ -22,6 +22,7 @@ import {
   type TemplateInfo,
 } from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
+import { FactBankFiles } from './facts.ts';
 import { copyStarter } from './starter.ts';
 import { ABOUT, hasFactBank, profileStatus } from './status.ts';
 import { termsIn, withTerms } from './terms.ts';
@@ -57,6 +58,8 @@ export class AboutStore {
   private readonly trash: (path: string) => Promise<void>;
   private readonly today: () => string;
   private readonly templates: () => TemplateInfo[];
+  /** The fact bank's files, which the user reads and changes on its own page. */
+  readonly facts: FactBankFiles;
 
   constructor(deps: AboutStoreDeps) {
     this.workspace = deps.workspace;
@@ -64,6 +67,11 @@ export class AboutStore {
     this.trash = deps.trash ?? (async (path) => rmSync(path, { force: true }));
     this.today = deps.today ?? (() => localDate());
     this.templates = deps.templates ?? BUILT_IN;
+    this.facts = new FactBankFiles({
+      workspace: this.workspace,
+      name: () => this.answers().you.name,
+      today: this.today,
+    });
   }
 
   private path(file: string): string {

@@ -9,6 +9,7 @@ import type {
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
+import type { FactBank, FactChange, FactResult, FactTarget, NewFact } from './facts.ts';
 import type { ModelChoices } from './models.ts';
 import type { ClaudePermissions } from './permissions.ts';
 import type {
@@ -310,6 +311,16 @@ export interface FactwrightApi {
   removeTemplate(id: string): Promise<EditResult>;
   /** Listens for changes to the profile, by Claude or another device. Returns a function that stops listening. */
   onProfileChanged(listener: (profile: Profile) => void): () => void;
+  /** The fact bank, file by file. Each change answers with it as it is then. */
+  factBank(): Promise<FactBank>;
+  /** Gives a claim or a section new text, if it still reads as the window last read it. */
+  changeFact(change: FactChange): Promise<FactResult>;
+  /** Adds a claim to a file of facts, after its last one. */
+  addFact(fact: NewFact): Promise<FactResult>;
+  /** Deletes a claim, if it still reads as the window last read it. */
+  removeFact(target: FactTarget): Promise<FactResult>;
+  /** Confirms a claim drafted from the user's files, with them as its source and today's date. */
+  confirmFact(target: FactTarget): Promise<FactResult>;
   /** Opens the system's terminal app, where the user runs Claude Code's own commands. */
   openTerminal(): Promise<EditResult>;
 }
