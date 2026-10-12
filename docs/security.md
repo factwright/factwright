@@ -3,7 +3,7 @@
 Factwright holds the most personal parts of a job hunt: your career history, your pay, the companies you're talking to, and the people you're reaching out to. It also runs an AI agent on your computer. This is how it protects both.
 
 > [!NOTE]
-> This is the design. The exact key handling gets written up here as the encryption is built.
+> The cloud part below is written up in full so it can be reviewed. Until someone outside the project has checked it, Factwright doesn't claim in public that nobody else can read your data.
 
 ## Your Claude login
 - Factwright never reads, stores or passes Claude credentials, tokens or API keys.
@@ -25,17 +25,63 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - Building a resume runs without asking, since it stays on this computer: Factwright prints it in a hidden window that loads nothing else. Once you've applied to a job, the files you sent stay as they are.
 
 ## Your data in the cloud
-### End-to-end encryption
-- Your first device creates a random data key and keeps it in the operating system's keychain.
-- You get a recovery key once, to print or save in a password manager.
-- The server keeps a copy of the data key locked with your recovery key, which it can't open.
-- A new device gets the key by scanning a QR code from a device that's already set up, or from your recovery key.
-- Everything is encrypted before it leaves your computer. The server sees only opaque IDs, sizes and timestamps.
+Sync is off until you turn it on. Once it's on, your Mac, your Windows PC and your phone show the same job hunt, and everything is locked on your device before it leaves.
+
+### The account key
+- Your first device makes the **account key**: 32 random bytes. It never leaves your devices unlocked.
+- The desktop app keeps it in the system's keychain, through Electron's safe storage: the Keychain on a Mac, and Windows' data protection on Windows.
+- The web view keeps only keys made from it, as Web Crypto keys the page can use but can't read back out.
+
+Each device makes four keys from the account key with HKDF-SHA-256, one for each purpose, plus an ID:
+
+| Key | Algorithm | What it's for |
+|---|---|---|
+| Records | AES-256-GCM | Locks each record: what a synced file is called, or what a tracked row says |
+| Files | AES-256-GCM | Locks file contents |
+| Record IDs | HMAC-SHA-256 | Turns a record's name, such as a file's path, into an ID that reveals nothing |
+| File IDs | HMAC-SHA-256 | Turns a file's contents into an ID, so the same contents are stored once |
+| Key ID | 128 bits from HKDF | Names the account key, so devices can tell they hold the same one |
+
+### Locking
+- Everything is locked with AES-256-GCM, with a fresh random 96-bit nonce each time. A locked value is a version byte, the nonce, then the ciphertext and its tag.
+- What a value is for is bound in as GCM's additional data. A record is bound to its ID and its version number, and a file to its ID. So the server can't swap one record's data for another's, pass an old version off under a new number, or hand back a file under another file's ID.
+- A file's ID is an HMAC of its contents. A device checks the contents it opens hash to the ID it asked for.
+- The code is in [`packages/sync`](../packages/sync). It uses only Web Crypto, which every platform Factwright runs on has built in, and no home-made cryptography.
+
+### The recovery key
+- When you turn on sync, your first device shows a **recovery key** once: 160 random bits, written as 32 characters to print or keep in a password manager.
+- The server keeps the account key locked with a key made from the recovery key (HKDF, then AES-256-GCM). It can't open it.
+- With the recovery key, any device you sign in on can unlock the account key. Since the recovery key is random and long, guessing it is out of reach, so it needs no slow key derivation.
+
+### Adding a device
+- On a device that's set up, **Link a phone or computer** makes a link code: 160 random bits, shown as a QR code and as 32 characters to type.
+- It leaves the account key on the server for 10 minutes, locked with a key made from the code, under an ID that's a hash of the code. The server never sees the code.
+- The new device signs in to the same account, then scans or types the code. It picks the link up once, and the link is gone.
+- A phone scans the QR code with its camera. The code is in the link's `#` part, which browsers don't send to the server.
+
+### Signing in
+- Signing in is separate from the keys: it proves who you are to the server, and the keys never touch it. You sign in with GitHub or Google, through [Better Auth](https://www.better-auth.com) running in the sync server.
+- The desktop app signs in through your browser with a device code (RFC 8628): the app shows a short code, and you check the browser shows the same one before you allow it. The app keeps its session token in the system's keychain.
+- A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out.
+
+### What the server sees
+- Your account: the email and name your sign-in shares, and each session's device name, IP address and when it was last used.
+- For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, and which file contents it points to.
+- For each file: an opaque ID and its size.
+- Never your file names, the files' contents, what you track, or any key that opens them.
+
+### What it can't prevent
+A server that misbehaved couldn't read your data or forge it. It could still delete it, hold back new changes, or keep serving an old version of a record.
 
 ### Separate accounts
 - The server takes your account from your verified session only, never from the request.
-- Each account has its own store, so there's no shared table of user data to leak across accounts.
-- Automated tests try to read across accounts and must fail.
+- Each account has its own store: a Durable Object with its own database, and its own folder of files in R2. There's no shared table of user data to leak across accounts.
+- Automated tests try to read and write across accounts, through every part of the API, and must fail.
+- Each account has limits on storage, file size and requests, since a free service invites abuse.
+
+### Backups and deleting
+- Each account's store is snapshotted to R2 every day and kept for 14 days. Cloudflare also keeps 30 days of point-in-time recovery for each store.
+- Deleting your account removes your store, your files, your backups and your sign-in records. It needs a fresh sign-in first.
 
 ### The trade-off
 If you lose every device and your recovery key, your data can't be recovered, by you or by us. You can export an unencrypted copy whenever you like.

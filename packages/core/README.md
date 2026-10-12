@@ -20,7 +20,7 @@ Shared logic for the desktop app, the web view and the sync server. It runs anyw
 | `pay` | Reads an annual pay range from posting text such as "$150-200k" or "$70-$85 an hour" |
 | `dates` | Checks `YYYY-MM-DD` calendar dates, and gives the user's own date |
 
-It reads the workspace through a small interface, so the desktop app reads files on disk and tests use a few files in memory. The sync protocol and the encryption will live here too.
+It reads the workspace through a small interface, so the desktop app reads files on disk and tests use a few files in memory. Encryption and the sync protocol are in [`packages/sync`](../sync).
 
 ```ts
 import { collectJobs, companyKey, parsePay, readRecords } from '@factwright/core';

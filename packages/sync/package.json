@@ -1,0 +1,20 @@
+{
+  "name": "@factwright/sync",
+  "version": "0.0.0",
+  "private": true,
+  "description": "End-to-end encryption and the sync protocol, shared by the app, the web view and the sync server.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
