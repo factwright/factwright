@@ -79,7 +79,7 @@ Write what the interview settled into `guide/rules.md` under **Their rules**: ea
 One starting resume for each kind of company in `looks` (or in `companies`, or one for any job):
 - **Style:** `startup` for startups, `big-company` for established companies, `public-sector` for government, nonprofits and schools, and for "any", whichever fits the jobs they want best. Read that style's file.
 - **Track:** from their levels and roles, by `guide/styles/README.md`.
-- **File:** `base/<style>-<track>.json`, with the `layout` `guide/templates.md` gives that kind of company, and the `format` it gives.
+- **File:** `base/<style>-<track>.json`, with the `layout` `guide/templates.md` gives that kind of company, and the `format` it gives. A starting resume that's already there is the user's: keep it, and build its files again, fixing only what breaks their rules or isn't backed by a confirmed fact, unless they ask for a fresh one.
 - **Content:** confirmed claims only, by `guide/writing.md` and the style: a headline and tagline for the roles they want, the summary, highlights, highlight cards, experience bullets, projects, education and skills. `contact` comes from `you`. Set `output_name` to `<FirstLast>Resume_<Style>`, such as `JordanAveryResume_Startups`.
 - **Build:** `build_resume` with `base/<style>-<track>`. Read the PDF, fix every runt and problem, and build again until: `Checks: clean`, no more pages than `guide/lint.json` allows, the last page 70–98% full, and no stranded headings.
 
