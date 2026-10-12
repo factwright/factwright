@@ -1,4 +1,5 @@
 import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
+import type { ModelChoices } from './models.ts';
 import type { ClaudePermissions } from './permissions.ts';
 import type { RunTask } from './runs.ts';
 import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
@@ -41,7 +42,12 @@ export interface TerminalSize {
 /** Whether a run started, or took a task, and if not, why. */
 export type StartResult =
   | { ok: true }
-  | { ok: false; reason: 'not-ready' | 'busy' | 'failed' | 'not-running'; message?: string };
+  | {
+      ok: false;
+      /** "other-model": the open run is on another model than the task's. */
+      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'other-model';
+      message?: string;
+    };
 
 /** Every job, as the app last read them from the workspace and the tracker. */
 export interface JobList {
@@ -151,6 +157,10 @@ export interface FactwrightApi {
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */
   saveFile(name: string, text: string): Promise<SaveFileResult>;
+  /** Which model Claude runs on, for everything and for each task. */
+  claudeModels(): Promise<ModelChoices>;
+  /** Changes which model Claude runs on, from its next start or the next task that needs another. */
+  setClaudeModels(models: ModelChoices): Promise<ModelChoices>;
   /** What Claude may do without asking. */
   claudePermissions(): Promise<ClaudePermissions>;
   /** Changes what Claude may do without asking, from its next start. */

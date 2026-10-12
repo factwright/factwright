@@ -1,4 +1,5 @@
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
+import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
@@ -103,6 +104,7 @@ export function sampleApi(): FactwrightApi {
   const trustListeners = new Set<() => void>();
   let run = sampleRun(false);
   let permissions: ClaudePermissions = ASK_FIRST;
+  let models: ModelChoices = DEFAULT_MODELS;
   const playTask = (task: RunTask) => {
     signal('working');
     print(run.task(task));
@@ -185,6 +187,12 @@ export function sampleApi(): FactwrightApi {
     },
     ...sampleTracker(query.get('jobs')),
     ...sampleSync(query.get('sync')),
+    // Which model Claude runs on, kept until the page reloads.
+    claudeModels: async () => models,
+    setClaudeModels: async (chosen) => {
+      models = chosen;
+      return chosen;
+    },
     // What Claude may do without asking, kept until the page reloads.
     claudePermissions: async () => permissions,
     setClaudePermissions: async (chosen) => {

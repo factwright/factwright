@@ -34,6 +34,20 @@ describe('buildLaunchArgs', () => {
     ]);
   });
 
+  it('runs on the model chosen, and only a model Claude Code knows', () => {
+    const args = buildLaunchArgs({ ...OPTIONS, model: 'sonnet' });
+    expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2)).toEqual([
+      '--model',
+      'sonnet',
+    ]);
+    expect(buildLaunchArgs(OPTIONS)).not.toContain('--model');
+    for (const model of ['--dangerously-skip-permissions', 'gpt-5', '']) {
+      expect(() => buildLaunchArgs({ ...OPTIONS, model: model as 'opus' })).toThrow(
+        'Unsupported model',
+      );
+    }
+  });
+
   it('passes acceptEdits as the permission mode', () => {
     const args = buildLaunchArgs({ ...OPTIONS, permissionMode: 'acceptEdits' });
     expect(args.slice(0, 3)).toEqual(['--restricted', '--permission-mode', 'acceptEdits']);

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
+import type { Model } from '../../shared/models.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -33,6 +34,8 @@ export interface LaunchOptions {
   dark: boolean;
   /** Names the run's settings files, so runs that overlap don't share them. */
   name: string;
+  /** Which model to run on. Without one, Claude Code picks. */
+  model?: Model;
   prompt?: string;
 }
 
@@ -63,6 +66,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     mcpConfig,
     settings,
     permissionMode: 'default',
+    ...(options.model ? { model: options.model } : {}),
     ...(options.prompt ? { prompt: options.prompt } : {}),
   });
   const command = claudeCommand(claude, args, process.platform);
@@ -107,6 +111,10 @@ interface Run {
   stopListening: () => void;
   /** Set when the user stops the run, so its exit doesn't read as a failure. */
   stopping: boolean;
+  /** The model it runs on. */
+  model: Model | undefined;
+  /** Settles once it has exited. */
+  exited: Promise<void>;
 }
 
 /** The user's Claude Code, running in the panel. One run at a time. */
@@ -124,23 +132,31 @@ export class ClaudeSession {
     return this.starting || this.run !== undefined;
   }
 
-  async start(size: TerminalSize, prompt?: string): Promise<StartResult> {
+  /** The model the open run is on, or undefined when none is open. */
+  model(): Model | undefined {
+    return this.run?.model;
+  }
+
+  /** Starts a run, once one that's stopping has closed, such as to change models. */
+  async start(size: TerminalSize, prompt?: string, model?: Model): Promise<StartResult> {
+    if (this.run?.stopping) await this.run.exited;
     if (this.busy()) return { ok: false, reason: 'busy' };
     this.starting = true;
     try {
-      return await this.launch(size, prompt);
+      return await this.launch(size, prompt, model);
     } finally {
       this.starting = false;
     }
   }
 
-  private async launch(size: TerminalSize, prompt?: string): Promise<StartResult> {
+  private async launch(size: TerminalSize, prompt?: string, model?: Model): Promise<StartResult> {
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,
       server: this.deps.server,
       dark: this.deps.dark(),
       name: 'panel',
+      ...(model ? { model } : {}),
       ...(prompt ? { prompt } : {}),
     });
     if (!launch) return { ok: false, reason: 'not-ready' };
@@ -166,7 +182,16 @@ export class ClaudeSession {
       return { ok: false, reason: 'failed', message: String(error) };
     }
 
-    const run: Run = { terminal, stopListening, stopping: false };
+    let exited = () => {};
+    const run: Run = {
+      terminal,
+      stopListening,
+      stopping: false,
+      model,
+      exited: new Promise((resolve) => {
+        exited = resolve;
+      }),
+    };
     this.run = run;
     terminal.onData((data) => {
       this.deps.onOutput(data);
@@ -174,8 +199,9 @@ export class ClaudeSession {
     });
     terminal.onExit(({ exitCode }) => {
       run.stopListening();
-      this.run = undefined;
+      if (this.run === run) this.run = undefined;
       this.deps.onSignal(run.stopping || exitCode === 0 ? 'stopped' : 'failed');
+      exited();
     });
     // Claude Code may first ask whether to trust the workspace, which the window explains, so
     // the run stays "starting" until a hook says otherwise.
