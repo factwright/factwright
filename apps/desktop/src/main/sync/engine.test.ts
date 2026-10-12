@@ -39,6 +39,7 @@ const job = (id: string): CollectedJob => ({
   summary: null,
   events: [],
   docs: {},
+  outreach: [],
   apply: null,
   fitReport: null,
   sentiment: null,

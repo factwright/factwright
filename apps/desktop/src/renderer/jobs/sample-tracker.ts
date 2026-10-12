@@ -1,12 +1,17 @@
 import {
+  askedFile,
+  askId,
   CALL_STAGE,
   type Call,
   type Job,
+  type JobShot,
   type JobStatus,
   localDate,
   parsePay,
+  questionKey,
   SETTLED_STATUSES,
   STATUS_RANK,
+  shotsFolder,
 } from '@factwright/core';
 import type { EditResult, FactwrightApi, JobList } from '../../shared/api.ts';
 import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
@@ -28,7 +33,33 @@ type TrackerApi = Pick<
   | 'readPdf'
   | 'copyText'
   | 'saveFile'
+  | 'jobExtras'
+  | 'recordAnswer'
+  | 'askAboutJob'
+  | 'removeAsk'
+  | 'addShot'
+  | 'removeShot'
+  | 'readShot'
+  | 'pasteImage'
 >;
+
+/** What Claude answered about the sample jobs, by job and question. */
+function sampleAnswer(question: string): string {
+  return [
+    `# ${question}`,
+    '',
+    `Asked ${localDate()}.`,
+    '',
+    'Expect three people for 45 minutes: the hiring manager, a senior engineer and a product manager. Most panels there start with a walk through your resume, then one system you built, in depth.',
+    '',
+    '**Worth asking them:**',
+    '- What would you want the platform team to have shipped a year from now?',
+    '- How do product teams ask for platform work today?',
+    '',
+    '## Sources',
+    '- Interview reports on Glassdoor, 2025 and 2026',
+  ].join('\n');
+}
 
 const SAVED: EditResult = { ok: true };
 
@@ -43,6 +74,13 @@ export function sampleTracker(jobs: string | null): TrackerApi {
     readAt: new Date().toISOString(),
   };
   const listeners = new Set<(list: JobList) => void>();
+  // Screenshots added in the sample screens, by path, and Claude's answers to questions.
+  const shots = new Map<string, { shot: JobShot; bytes: Uint8Array }>();
+  const asked = new Map<string, string>(
+    list.jobs.flatMap((job) =>
+      job.asks.map((ask) => [askedFile(job.id, ask.id), sampleAnswer(ask.question)]),
+    ),
+  );
   let next = 0;
   const newId = (kind: string) => `${kind}-${++next}`;
 
@@ -199,6 +237,85 @@ export function sampleTracker(jobs: string | null): TrackerApi {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    jobExtras: async (jobId) => {
+      const job = list.jobs.find((each) => each.id === jobId);
+      if (!job) return null;
+      return {
+        asked: Object.fromEntries(
+          job.asks.flatMap((ask) => {
+            const answer = asked.get(askedFile(job.id, ask.id));
+            return answer ? [[ask.id, answer]] : [];
+          }),
+        ),
+        shots: [...shots.values()]
+          .map((each) => each.shot)
+          .filter((shot) => shot.path.startsWith(`${shotsFolder(jobId)}/`)),
+      };
+    },
+    recordAnswer: async (jobId, question, text) =>
+      change(
+        (job) => job.id === jobId,
+        (job) => {
+          const others = job.sent.filter(
+            (each) => questionKey(each.question) !== questionKey(question),
+          );
+          return {
+            ...job,
+            sent: text.trim() ? [...others, { question, text, on: localDate() }] : others,
+          };
+        },
+      ),
+    askAboutJob: async (jobId, question) => {
+      const job = list.jobs.find((each) => each.id === jobId);
+      if (!job) return { ok: false, message: 'That job isn’t in your tracker anymore.' };
+      if (!question.trim()) return { ok: false, message: 'Type your question first.' };
+      const id = askId(
+        question,
+        localDate(),
+        job.asks.map((ask) => ask.id),
+      );
+      change(
+        (each) => each.id === jobId,
+        (each) => ({
+          ...each,
+          asks: [...each.asks, { id, question: question.trim(), on: localDate() }],
+        }),
+      );
+      // Claude answers a moment later, as a run would.
+      setTimeout(() => {
+        asked.set(askedFile(jobId, id), sampleAnswer(question.trim()));
+        publish(list.jobs.map((each) => ({ ...each })));
+      }, 2500);
+      return { ok: true, askId: id };
+    },
+    removeAsk: async (jobId, id) => {
+      asked.delete(askedFile(jobId, id));
+      return change(
+        (job) => job.id === jobId,
+        (job) => ({ ...job, asks: job.asks.filter((ask) => ask.id !== id) }),
+      );
+    },
+    addShot: async (jobId, upload, purpose) => {
+      const stem = purpose.kind === 'ask' ? `ask-${purpose.ask}` : `form-${localDate()}`;
+      const name = `${stem}-${shots.size + 1}.png`;
+      const path = `${shotsFolder(jobId)}/${name}`;
+      const shot: JobShot = {
+        path,
+        name,
+        kind: purpose.kind,
+        ask: purpose.kind === 'ask' ? purpose.ask : null,
+        size: upload.bytes.length,
+        modified: new Date().toISOString(),
+      };
+      shots.set(path, { shot, bytes: upload.bytes });
+      return { ok: true, path };
+    },
+    removeShot: async (path) => {
+      shots.delete(path);
+      return SAVED;
+    },
+    readShot: async (path) => shots.get(path)?.bytes ?? null,
+    pasteImage: async () => ({ ok: true, file: '/sample/workspace/screenshots/pasted-1.png' }),
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
     // Every resume previews as the same made-up page.
     readPdf: async () => ({ ok: true, data: samplePdf() }),

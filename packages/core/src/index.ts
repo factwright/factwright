@@ -1,3 +1,12 @@
+export {
+  type ApplicationAnswer,
+  ASK_ID,
+  applicationAnswers,
+  askId,
+  questionKey,
+  readSuggestedAnswers,
+  type SuggestedAnswer,
+} from './answers.ts';
 export { type ApplySteps, readApplySteps } from './apply-steps.ts';
 export {
   type BoardJob,
@@ -11,6 +20,15 @@ export {
   readBoard,
 } from './boards.ts';
 export { daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
+export {
+  askedFile,
+  JOB_EXTRAS,
+  type JobShot,
+  readJobExtras,
+  SHOT_TYPES,
+  type ShotKind,
+  shotsFolder,
+} from './extras.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
 export {
   type Evidence,
@@ -126,6 +144,7 @@ export {
   trackedRow,
 } from './tracked.ts';
 export {
+  type Ask,
   AUTO_STATUSES,
   CALL_KINDS,
   CALL_OUTCOMES,
@@ -140,6 +159,7 @@ export {
   type JobStage,
   type JobStatus,
   SETTLED_STATUSES,
+  type SentAnswer,
   STATUS_RANK,
   type StatusChange,
   type TrackerFields,

@@ -30,6 +30,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     summary: null,
     events: [],
     docs: {},
+    outreach: [],
     apply: null,
     fitReport: null,
     sentiment: null,
@@ -306,15 +307,102 @@ describe('the database file', () => {
     first.saveCollected([collected('acme--staff')], NOW);
     first.updateJob('acme--staff', { notes: 'Kept' }, AT);
     first.close();
-    // Back to the first version: no questions yet.
+    // Back to the first version: no questions yet, nor anything since.
     const old = new DatabaseSync(file);
-    old.exec('ALTER TABLE jobs DROP COLUMN questions; PRAGMA user_version = 1;');
+    old.exec(
+      'ALTER TABLE jobs DROP COLUMN questions; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 1;',
+    );
     old.close();
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ notes: 'Kept', questions: [] });
     second.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
     expect(second.rows()[0]?.questions).toEqual(['Why Acme?']);
     second.close();
+  });
+
+  it('adds answers sent and questions for Claude to a tracker from before them', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
+    first.close();
+    const old = new DatabaseSync(file);
+    old.exec(
+      'ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
+    );
+    old.close();
+    const second = new Tracker(file);
+    expect(second.rows()[0]).toMatchObject({ questions: ['Why Acme?'], sent: [], asks: [] });
+    second.recordAnswer('acme--staff', 'Why Acme?', 'Deploys, mostly.', AT);
+    expect(second.rows()[0]?.sent).toEqual([
+      { question: 'Why Acme?', text: 'Deploys, mostly.', on: TODAY },
+    ]);
+    second.close();
+  });
+});
+
+describe('answers the user sent', () => {
+  it('keeps each one, and replaces it in place when it changes', () => {
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 'Deploys.', AT);
+    tracker.recordAnswer('acme--staff', 'Start date?', 'Two weeks', AT);
+    tracker.recordAnswer('acme--staff', '1. Why Acme? *', 'Deploys, mostly.', {
+      today: '2026-10-11',
+      now: '2026-10-11T09:00:00.000Z',
+    });
+    expect(row()?.sent).toEqual([
+      { question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-11' },
+      { question: 'Start date?', text: 'Two weeks', on: TODAY },
+    ]);
+  });
+
+  it('forgets one when its text is cleared', () => {
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 'Deploys.', AT);
+    tracker.recordAnswer('acme--staff', 'Why Acme?', '  ', AT);
+    expect(row()?.sent).toEqual([]);
+  });
+
+  it('says so when the job is gone, or the question has no words', () => {
+    expect(tracker.recordAnswer('nope', 'Why?', 'Because.', AT)).toMatchObject({ ok: false });
+    expect(tracker.recordAnswer('acme--staff', '???', 'Because.', AT)).toMatchObject({
+      ok: false,
+    });
+  });
+});
+
+describe('questions for Claude', () => {
+  it('keeps each question under an ID for its answer, unique on the same day', () => {
+    const question = '  I have a 15 minute recruiter call. What should I expect?  ';
+    expect(tracker.addAsk('acme--staff', question, AT)).toEqual({
+      ok: true,
+      askId: '2026-10-10-i-have-a-15-minute-recruiter',
+    });
+    expect(tracker.addAsk('acme--staff', question, AT)).toEqual({
+      ok: true,
+      askId: '2026-10-10-i-have-a-15-minute-recruiter-2',
+    });
+    expect(row()?.asks).toEqual([
+      {
+        id: '2026-10-10-i-have-a-15-minute-recruiter',
+        question: 'I have a 15 minute recruiter call. What should I expect?',
+        on: TODAY,
+      },
+      {
+        id: '2026-10-10-i-have-a-15-minute-recruiter-2',
+        question: 'I have a 15 minute recruiter call. What should I expect?',
+        on: TODAY,
+      },
+    ]);
+  });
+
+  it('forgets a question, and needs one to keep', () => {
+    tracker.addAsk('acme--staff', 'What’s their stack?', AT);
+    tracker.removeAsk('acme--staff', '2026-10-10-what-s-their-stack', AT);
+    expect(row()?.asks).toEqual([]);
+    expect(tracker.addAsk('acme--staff', '   ', AT)).toEqual({
+      ok: false,
+      message: 'Type your question first.',
+    });
+    expect(tracker.addAsk('nope', 'Why?', AT)).toMatchObject({ ok: false });
   });
 });
 

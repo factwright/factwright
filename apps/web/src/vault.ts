@@ -125,6 +125,8 @@ function untracked(job: CollectedJob): TrackedRow {
     nextOn: null,
     notes: null,
     questions: [],
+    sent: [],
+    asks: [],
     archived: false,
   };
 }

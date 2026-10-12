@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
+  askId,
   byJob,
   CALL_STAGE,
   type Call,
@@ -9,6 +10,7 @@ import {
   companyKey,
   type JobStatus,
   type KnownJob,
+  questionKey,
   roleKey,
   SETTLED_STATUSES,
   STATUS_RANK,
@@ -23,12 +25,14 @@ import {
 import type { RowValues } from '@factwright/sync';
 import type {
   AddJobResult,
+  AskResult,
   CallChanges,
   EditResult,
   JobChanges,
   NewCall,
   NewJob,
 } from '../../shared/api.ts';
+import { LIMITS } from '../../shared/limits.ts';
 
 /** When an edit happens: the user's date, and the exact time. */
 export interface EditContext {
@@ -89,6 +93,10 @@ const MIGRATIONS = [
   CREATE INDEX calls_job ON calls(job_id);`,
   // The questions the user pasted from a job's application form, as a JSON list.
   `ALTER TABLE jobs ADD COLUMN questions TEXT NOT NULL DEFAULT '[]';`,
+  // What the user actually sent for those questions, and the questions they asked Claude about
+  // the job, each as a JSON list.
+  `ALTER TABLE jobs ADD COLUMN sent TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE jobs ADD COLUMN asks TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -97,7 +105,7 @@ const LATEST_FIRST = 'ORDER BY at DESC, rowid DESC';
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 const required = (value: unknown) => (typeof value === 'string' ? value : '');
 
-const failed = (message: string): EditResult => ({ ok: false, message });
+const failed = (message: string): { ok: false; message: string } => ({ ok: false, message });
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
 const DONE: EditResult = { ok: true };
 
@@ -319,6 +327,62 @@ export class Tracker {
       this.db.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
       if (statusChanged && status) this.logStatus(id, status, on);
     });
+    return DONE;
+  }
+
+  /**
+   * Keeps what the user actually sent for one of the application's questions, in place of what
+   * was kept for it before. Blank text forgets it.
+   */
+  recordAnswer(jobId: string, question: string, text: string, context: EditContext): EditResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const key = questionKey(question);
+    if (!key) return failed('That question has no words to keep it by.');
+    const kept = job.sent.find((each) => questionKey(each.question) === key);
+    const answer = { question: kept?.question ?? question, text, on: context.today };
+    const sent = !text.trim()
+      ? job.sent.filter((each) => each !== kept)
+      : kept
+        ? job.sent.map((each) => (each === kept ? answer : each))
+        : [...job.sent, answer];
+    if (sent.length > LIMITS.questions) return failed('That’s as many answers as a job can keep.');
+    this.db
+      .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(sent), context.now, jobId);
+    return DONE;
+  }
+
+  /** Keeps a question the user asked Claude about a job, under a new ID for its answer. */
+  addAsk(jobId: string, question: string, context: EditContext): AskResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const asked = question.trim();
+    if (!asked) return failed('Type your question first.');
+    if (job.asks.length >= LIMITS.asks) {
+      return failed('That’s as many questions as a job can keep. Remove one you’re done with.');
+    }
+    const id = askId(
+      asked,
+      context.today,
+      job.asks.map((ask) => ask.id),
+    );
+    const asks = [...job.asks, { id, question: asked, on: context.today }];
+    this.db
+      .prepare('UPDATE jobs SET asks = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(asks), context.now, jobId);
+    return { ok: true, askId: id };
+  }
+
+  /** Forgets a question the user asked Claude about a job. */
+  removeAsk(jobId: string, id: string, context: EditContext): EditResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const asks = job.asks.filter((ask) => ask.id !== id);
+    if (asks.length === job.asks.length) return DONE;
+    this.db
+      .prepare('UPDATE jobs SET asks = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(asks), context.now, jobId);
     return DONE;
   }
 

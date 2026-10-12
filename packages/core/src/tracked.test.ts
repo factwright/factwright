@@ -26,6 +26,10 @@ const STORED_JOB = {
   next_on: null,
   notes: 'Recruiter: Sam',
   questions: JSON.stringify(['Why Acme?']),
+  sent: JSON.stringify([{ question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-10' }]),
+  asks: JSON.stringify([
+    { id: '2026-10-12-what-should-i-expect', question: 'What should I expect?', on: '2026-10-12' },
+  ]),
   archived: 0,
   updated_at: '2026-10-10T18:00:00.000Z',
 };
@@ -40,6 +44,14 @@ describe('tracker rows', () => {
       status: 'applied',
       notes: 'Recruiter: Sam',
       questions: ['Why Acme?'],
+      sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-10' }],
+      asks: [
+        {
+          id: '2026-10-12-what-should-i-expect',
+          question: 'What should I expect?',
+          on: '2026-10-12',
+        },
+      ],
       archived: false,
     });
     expect(
@@ -71,6 +83,27 @@ describe('tracker rows', () => {
       trackedCall({ id: 'c1', kind: 'hologram', on_date: '2026-10-14', state: 'done' }),
     ).toBeNull();
     expect(trackedChange({ id: 's1', status: 'teleported', at: '2026-10-10' })).toBeNull();
+  });
+
+  it('leave out answers and questions that don’t read, keeping the rest', () => {
+    const row = trackedRow({
+      ...STORED_JOB,
+      sent: JSON.stringify([
+        { question: 'Why Acme?', text: 'Deploys.', on: 'yesterday' },
+        { question: 'Start date?', text: 'Two weeks', on: '2026-10-10' },
+        'Why Acme?',
+      ]),
+      asks: JSON.stringify([
+        { id: '../../outside', question: 'Escape?', on: '2026-10-12' },
+        { id: '2026-10-12-culture', question: 'What’s the culture like?', on: '2026-10-12' },
+      ]),
+    });
+    expect(row.sent).toEqual([{ question: 'Start date?', text: 'Two weeks', on: '2026-10-10' }]);
+    expect(row.asks.map((ask) => ask.id)).toEqual(['2026-10-12-culture']);
+    expect(trackedRow({ ...STORED_JOB, sent: undefined, asks: 'not json' })).toMatchObject({
+      sent: [],
+      asks: [],
+    });
   });
 
   it('group by job, in the order calls happen and statuses change', () => {
@@ -124,8 +157,23 @@ describe('jobList', () => {
       applied_on: null,
       notes: null,
       questions: '[]',
+      sent: '[]',
+      asks: '[]',
     });
     expect(jobList([untracked], new Map(), new Map(), new Map())).toEqual([]);
+    for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }]) {
+      const row = trackedRow({
+        ...STORED_JOB,
+        status: null,
+        applied_on: null,
+        notes: null,
+        questions: '[]',
+        sent: '[]',
+        asks: '[]',
+        ...kept,
+      });
+      expect(jobList([row], new Map(), new Map(), new Map())).toHaveLength(1);
+    }
     const [kept] = jobList([trackedRow(STORED_JOB)], new Map(), new Map(), new Map());
     expect(kept).toMatchObject({
       id: 'acme--staff',

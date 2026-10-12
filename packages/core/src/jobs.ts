@@ -9,15 +9,16 @@ import {
 import { companyKey, roleKey, slug } from './keys.ts';
 import { isJobLink, type Link, normalizeUrl } from './links.ts';
 import { parsePay } from './pay.ts';
-import type {
-  FolderRecord,
-  JobDocKind,
-  JobDocs,
-  JobFile,
-  SearchDetail,
-  SearchRecord,
-  Tool,
-  ToolRecord,
+import {
+  type FolderRecord,
+  type JobDocKind,
+  type JobDocs,
+  type JobFile,
+  type SearchDetail,
+  type SearchRecord,
+  type Tool,
+  type ToolRecord,
+  WORKSPACE_PATHS,
 } from './records.ts';
 import type { Call, JobStage, StatusChange, TrackerFields } from './tracker.ts';
 
@@ -81,6 +82,8 @@ export interface CollectedJob {
   events: JobEvent[];
   /** The Markdown files in its folder. */
   docs: JobDocs;
+  /** Messages drafted for people at the company, such as "outreach/2026-10-08-acme.md". */
+  outreach: string[];
   /** Special steps for applying, from apply.md or the job search's notes. */
   apply: string | null;
   fitReport: FitReport | null;
@@ -350,6 +353,7 @@ function build(draft: Draft): CollectedJob {
     summary: fit?.note ?? bestSearch?.detail.pick ?? bestSearch?.detail.note ?? null,
     events: records.flatMap((record) => eventOf(record, draft.id) ?? []),
     docs,
+    outreach: outreach.map((record) => `${WORKSPACE_PATHS.outreach}/${record.key}`),
     apply: docs.apply ?? searchApplySteps(searches),
     fitReport,
     sentiment,

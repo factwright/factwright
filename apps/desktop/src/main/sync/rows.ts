@@ -1,17 +1,22 @@
 import { createHash } from 'node:crypto';
+import { questionKey } from '@factwright/core';
 import type { MergeRules, RowValues } from '@factwright/sync';
 import type { SyncTable } from '../jobs/tracker.ts';
 
 /**
- * How each tracker table merges when two devices change the same row. A job's links and
- * application questions keep what either device added, its notes keep both texts, and on a
- * clash the later change wins, by when the row changed. A call's notes keep both too.
+ * How each tracker table merges when two devices change the same row. A job's links,
+ * application questions, the answers the user sent and the questions they asked Claude keep
+ * what either device added, its notes keep both texts, and on a clash the later change wins, by
+ * when the row changed. A call's notes keep both too.
  */
 export const MERGE_RULES: Record<SyncTable, MergeRules> = {
   jobs: {
     lists: {
       links: (link) => String((link as { url?: unknown } | null)?.url ?? ''),
       questions: (question) => String(question),
+      sent: (answer) =>
+        questionKey(String((answer as { question?: unknown } | null)?.question ?? '')),
+      asks: (ask) => String((ask as { id?: unknown } | null)?.id ?? ''),
     },
     texts: ['notes'],
     stamp: 'updated_at',
