@@ -123,10 +123,12 @@ export function JobPanel({
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
   const jobId = row?.job.id;
-  // A job given the window to itself takes the keyboard's focus too, since the list it was
-  // picked from is gone, so Escape and Tab work in it right away.
+  // When what had the keyboard's focus goes away, such as the row a job was picked from once
+  // the job takes the window, or the arrows between jobs once it's put back, the panel takes
+  // it, so Escape and Tab keep working.
   useEffect(() => {
-    if (expanded && jobId && !panel.current?.contains(document.activeElement)) {
+    const focused = document.activeElement;
+    if (jobId && (!focused || focused === document.body)) {
       panel.current?.focus({ preventScroll: true });
     }
   }, [expanded, jobId]);
@@ -181,7 +183,7 @@ export function JobPanel({
       icon={<NotebookPen size={15} />}
       summary={notesSummary(job)}
     >
-      <JobNotes job={job} api={api} today={today} />
+      <JobNotes key={job.id} job={job} api={api} today={today} />
     </PanelSection>,
   ];
   const about: ReactNode[] = [
@@ -228,8 +230,9 @@ export function JobPanel({
                     variant="quiet"
                     size="sm"
                     icon={<ChevronLeft size={16} aria-hidden="true" />}
-                    disabled={navigation.index <= 1}
-                    onClick={() => navigation.onStep(-1)}
+                    // Not disabled outright, so the keyboard's focus stays at the list's end.
+                    aria-disabled={navigation.index <= 1}
+                    onClick={() => navigation.index > 1 && navigation.onStep(-1)}
                   />
                   <span className={styles.position}>
                     {navigation.index} of {navigation.count}
@@ -239,8 +242,8 @@ export function JobPanel({
                     variant="quiet"
                     size="sm"
                     icon={<ChevronRight size={16} aria-hidden="true" />}
-                    disabled={navigation.index >= navigation.count}
-                    onClick={() => navigation.onStep(1)}
+                    aria-disabled={navigation.index >= navigation.count}
+                    onClick={() => navigation.index < navigation.count && navigation.onStep(1)}
                   />
                 </span>
               )}
@@ -255,7 +258,6 @@ export function JobPanel({
                       <Maximize2 size={15} aria-hidden="true" />
                     )
                   }
-                  aria-pressed={expanded}
                   onClick={() => onExpand(!expanded)}
                 />
               )}
@@ -294,21 +296,15 @@ export function JobPanel({
           )}
         </header>
 
-        {expanded ? (
-          <div className={styles.columns}>
-            <div className={styles.column}>
-              {nextStep}
-              {tracking}
-            </div>
-            <div className={styles.column}>{about}</div>
-          </div>
-        ) : (
+        {/* The same two columns either way, side by side only when expanded, so expanding
+            never loses what's being typed. */}
+        <div className={styles.columns}>
           <div className={styles.column}>
             {nextStep}
             {tracking}
-            {about}
           </div>
-        )}
+          <div className={styles.column}>{about}</div>
+        </div>
         <ArchiveFooter job={job} api={api} />
       </div>
     </aside>

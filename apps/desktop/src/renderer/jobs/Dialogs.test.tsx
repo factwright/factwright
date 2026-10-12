@@ -284,6 +284,16 @@ describe('FindJobsDialog', () => {
       screen.getByText('Type a company’s name, or a link that starts with https://.'),
     ).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
+    // Windows' command line would fill in what's between two % marks.
+    const box = screen.getByRole('textbox', { name: 'The company' });
+    await userEvent.clear(box);
+    await userEvent.type(box, 'https://acme.example/jobs?team=a%20b');
+    expect(
+      screen.getByText(
+        'A link with % or ! in it can’t be passed on. Type the company’s name instead.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
   });
 
   it('remembers the places picked for next time', async () => {

@@ -229,22 +229,36 @@
   overflow-wrap: anywhere;
 }
 
-/* Expanded: the job's progress and notes at the left, what's known about it at the right. */
+/* One column beside the list. Expanded: the job's progress and notes at the left, what's known
+   about it at the right. */
 .columns {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.expanded .columns {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 48px;
   align-items: start;
 }
 
-/* Sections reach the edges of their column, not the window's. */
-.columns .column {
+/* Expanded, sections reach the edges of their column, not the window's, and the first in a
+   column needs no line above it. */
+.expanded .column {
   --panel-pad: 0px;
 }
 
+.expanded .column > section:first-child {
+  border-top: 0;
+}
+
 @container panel (max-width: 900px) {
-  .columns {
+  .expanded .columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .expanded .column > section:first-child {
+    border-top: 1px solid var(--fw-border);
   }
 }
 

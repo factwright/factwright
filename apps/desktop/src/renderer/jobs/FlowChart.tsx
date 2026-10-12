@@ -54,9 +54,10 @@ const toneOf = (node: JourneyNode | undefined): Tone =>
 
 const color = (tone: Tone) => `var(--fw-tone-${tone}-fg)`;
 
-/** Room at the right for the last column's labels. */
+/** Room at the right for the last column's labels, and above and below for those at the edges. */
 const LABEL_ROOM = 150;
-const HEIGHT = 380;
+const EDGE = 10;
+const HEIGHT = 400;
 /** Narrower than this, the labels would run into the next column, so the chart scrolls instead. */
 const MIN_WIDTH = 760;
 
@@ -95,7 +96,7 @@ export function FlowChart({ list }: { list: readonly Journey[] }) {
   const drawn = Math.max(MIN_WIDTH, width);
   const layout = layoutFlows(nodes, links, {
     width: drawn - LABEL_ROOM,
-    height: HEIGHT,
+    height: HEIGHT - 2 * EDGE,
     nodeWidth: 10,
     gap: 16,
   });
@@ -105,8 +106,8 @@ export function FlowChart({ list }: { list: readonly Journey[] }) {
       <svg
         className={styles.svg}
         width={drawn}
-        height={HEIGHT + 2}
-        viewBox={`0 -1 ${drawn} ${HEIGHT + 2}`}
+        height={HEIGHT}
+        viewBox={`0 ${-EDGE} ${drawn} ${HEIGHT}`}
         role="img"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}

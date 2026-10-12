@@ -1,6 +1,7 @@
 import { Button, Dialog, DialogActions, Input, Select } from '@factwright/ui';
 import { type FormEvent, useId, useState } from 'react';
 import {
+  COMMAND_LINE_MARKS,
   SEARCH_SITES,
   type SearchSite,
   type SearchSources,
@@ -26,7 +27,7 @@ const PLACES: Readonly<Record<SearchSite, { name: string; about: string }>> = {
   },
   boards: {
     name: 'Company job boards',
-    about: 'Openings on Greenhouse, Lever and Ashby, straight from the companies hiring.',
+    about: 'Openings on Greenhouse, Lever, Ashby and Gem, straight from the companies hiring.',
   },
 };
 
@@ -117,7 +118,7 @@ export function FindJobsDialog({
                   </label>
                   {site === 'hn' && picked && (
                     <Select
-                      className={styles.extra}
+                      className={styles.month}
                       aria-label="Which month’s thread"
                       value={month}
                       onChange={(event) => setMonth(event.target.value)}
@@ -163,9 +164,11 @@ export function FindJobsDialog({
                     onChange={(event) => setCompany(event.target.value)}
                   />
                   <p id={hintId} className={badCompany ? styles.problem : styles.hint}>
-                    {badCompany
-                      ? 'Type a company’s name, or a link that starts with https://.'
-                      : 'Such as Acme Robotics, or https://jobs.lever.co/acme.'}
+                    {!badCompany
+                      ? 'Such as Acme Robotics, or https://jobs.lever.co/acme.'
+                      : /^https:/i.test(company.trim()) && COMMAND_LINE_MARKS.test(company)
+                        ? 'A link with % or ! in it can’t be passed on. Type the company’s name instead.'
+                        : 'Type a company’s name, or a link that starts with https://.'}
                   </p>
                 </div>
               )}

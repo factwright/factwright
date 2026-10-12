@@ -15,7 +15,9 @@
     color 120ms ease;
 }
 
-.button:disabled {
+/* aria-disabled does nothing too, but keeps the keyboard's focus, as at the end of a list. */
+.button:disabled,
+.button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -48,7 +50,7 @@
   color: var(--fw-accent-ink);
 }
 
-.primary:hover:not(:disabled) {
+.primary:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--fw-accent-hover);
   background: var(--fw-accent-hover);
 }
@@ -60,7 +62,7 @@
   font-weight: 550;
 }
 
-.secondary:hover:not(:disabled) {
+.secondary:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--fw-hover);
 }
 
@@ -70,7 +72,7 @@
   font-weight: 550;
 }
 
-.quiet:hover:not(:disabled) {
+.quiet:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--fw-hover);
   color: var(--fw-text);
 }

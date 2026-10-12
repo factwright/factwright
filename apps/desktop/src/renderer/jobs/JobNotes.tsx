@@ -1,7 +1,7 @@
 import { type Job, type Note, shortDate } from '@factwright/core';
 import { Button, IconButton, TextArea } from '@factwright/ui';
 import { Pencil, Trash2 } from 'lucide-react';
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import { DateEdit, longDate } from './DateEdit.tsx';
@@ -33,7 +33,8 @@ function useEdit() {
 /** A box for jotting a note down, dated today unless the user picks the day it's about. */
 function AddNote({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const [text, setText] = useState(drafts.get(job.id) ?? '');
-  const [on, setOn] = useState(today);
+  // The day the user picked for it, or null for whatever day it is when it's added.
+  const [on, setOn] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const { problem, run } = useEdit();
   const id = useId();
@@ -46,11 +47,11 @@ function AddNote({ job, api, today }: { job: Job; api: FactwrightApi; today: str
     event?.preventDefault();
     if (!text.trim() || saving) return;
     setSaving(true);
-    const saved = await run(api.addNote(job.id, on === today ? { text } : { text, on }));
+    const saved = await run(api.addNote(job.id, on && on !== today ? { text, on } : { text }));
     setSaving(false);
     if (saved) {
       type('');
-      setOn(today);
+      setOn(null);
     }
   };
   return (
@@ -76,7 +77,7 @@ function AddNote({ job, api, today }: { job: Job; api: FactwrightApi; today: str
           <span className={styles.for}>
             For{' '}
             <DateEdit
-              date={on}
+              date={on ?? today}
               label="The day this note is about"
               today={today}
               max={today}
@@ -106,6 +107,7 @@ function NoteItem({
   onSave,
   onRedate,
   onDelete,
+  onDeleted,
   max,
 }: {
   /** What it's called when read aloud, such as "the note from October 12, 2026". */
@@ -116,14 +118,28 @@ function NoteItem({
   onSave: (text: string) => Promise<boolean>;
   onRedate?: ((date: string) => void) | undefined;
   onDelete: () => Promise<boolean>;
+  /** Once it's deleted, so the keyboard's focus has somewhere to go. */
+  onDeleted?: () => void;
   max?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
   const [deleting, setDeleting] = useState(false);
   const boxId = useId();
+  const item = useRef<HTMLLIElement>(null);
+  /** Which of its buttons takes the keyboard's focus back once a change or a deletion is done. */
+  const back = useRef<'change' | 'delete' | null>(null);
+  useEffect(() => {
+    if (editing || deleting || !back.current) return;
+    item.current?.querySelector<HTMLElement>(`[data-tool="${back.current}"]`)?.focus();
+    back.current = null;
+  }, [editing, deleting]);
+  const stopEditing = () => {
+    back.current = 'change';
+    setEditing(false);
+  };
   return (
-    <li className={styles.note}>
+    <li ref={item} className={styles.note}>
       <div className={styles.noteHead}>
         <span className={styles.when}>
           {date && onRedate ? (
@@ -143,6 +159,7 @@ function NoteItem({
         {!editing && !deleting && (
           <span className={styles.tools}>
             <IconButton
+              data-tool="change"
               label={`Change ${title}`}
               variant="quiet"
               size="sm"
@@ -153,6 +170,7 @@ function NoteItem({
               }}
             />
             <IconButton
+              data-tool="delete"
               label={`Delete ${title}`}
               variant="quiet"
               size="sm"
@@ -167,7 +185,7 @@ function NoteItem({
           className={styles.edit}
           onSubmit={async (event) => {
             event.preventDefault();
-            if (draft.trim() === text.trim() || (await onSave(draft))) setEditing(false);
+            if (draft.trim() === text.trim() || (await onSave(draft))) stopEditing();
           }}
         >
           <label htmlFor={boxId} className={styles.addLabel}>
@@ -184,12 +202,12 @@ function NoteItem({
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.preventDefault();
-                setEditing(false);
+                stopEditing();
               }
             }}
           />
           <div className={styles.editActions}>
-            <Button size="sm" onClick={() => setEditing(false)}>
+            <Button size="sm" onClick={stopEditing}>
               Cancel
             </Button>
             <Button size="sm" variant="primary" type="submit" disabled={!draft.trim()}>
@@ -203,14 +221,26 @@ function NoteItem({
       {deleting && (
         <div className={styles.confirm}>
           <span>Delete this note?</span>
-          <Button size="sm" onClick={() => setDeleting(false)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              back.current = 'delete';
+              setDeleting(false);
+            }}
+          >
             Keep it
           </Button>
           <Button
             size="sm"
             variant="primary"
+            // The user just asked to delete it, so the choice to make takes the focus.
+            autoFocus
             onClick={async () => {
-              if (!(await onDelete())) setDeleting(false);
+              if (await onDelete()) onDeleted?.();
+              else {
+                back.current = 'delete';
+                setDeleting(false);
+              }
             }}
           >
             Delete
@@ -228,8 +258,11 @@ function NoteItem({
 export function JobNotes({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const { problem, run } = useEdit();
   const notes = [...job.notes].sort(newestFirst);
+  const box = useRef<HTMLDivElement>(null);
+  // A note deleted, the box for a new one takes the keyboard's focus.
+  const deleted = () => box.current?.querySelector('textarea')?.focus();
   return (
-    <div className={styles.notes}>
+    <div ref={box} className={styles.notes}>
       <AddNote key={job.id} job={job} api={api} today={today} />
       {(notes.length > 0 || job.earlierNotes) && (
         <ul className={styles.list} aria-label="Your notes">
@@ -244,6 +277,7 @@ export function JobNotes({ job, api, today }: { job: Job; api: FactwrightApi; to
               onSave={(text) => run(api.updateNote(note.id, { text }))}
               onRedate={(on) => void run(api.updateNote(note.id, { on }))}
               onDelete={() => run(api.deleteNote(note.id))}
+              onDeleted={deleted}
             />
           ))}
           {job.earlierNotes && (
@@ -255,6 +289,7 @@ export function JobNotes({ job, api, today }: { job: Job; api: FactwrightApi; to
               max={LIMITS.notes}
               onSave={(text) => run(api.updateJob(job.id, { earlierNotes: text }))}
               onDelete={() => run(api.updateJob(job.id, { earlierNotes: null }))}
+              onDeleted={deleted}
             />
           )}
         </ul>

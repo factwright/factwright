@@ -49,6 +49,21 @@ export function rowHash(table: SyncTable, row: RowValues): string {
 }
 
 /**
+ * Reads every change again on the next sync when this version just made a table that syncs,
+ * such as notes. A device on an earlier version passed over rows for it, since it had nowhere
+ * to keep them, and its place in the account's changes moved on past them. The server sends
+ * each record's latest version once, and those already here are skipped.
+ */
+export function adoptGainedTables(
+  tracker: Pick<Tracker, 'gainedTables'>,
+  state: Pick<SyncState, 'setCursor'>,
+): boolean {
+  if (tracker.gainedTables().length === 0) return false;
+  state.setCursor(0);
+  return true;
+}
+
+/**
  * Fills the columns this version just added to the tracker from what each row last synced. A
  * device on an earlier version keeps columns it doesn't know only in what it synced, so without
  * this, the new columns' empty values would look like changes made here, and go up in place of

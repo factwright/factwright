@@ -79,7 +79,8 @@ function cameFrom(job: Job, found: string): boolean {
 /**
  * Where the jobs came from, for the "Found by" menu: each job search, newest first, by where it
  * looked and, when two looked in the same place, when; then the other ways jobs came, such as
- * fit checks of postings the user found and jobs added by hand.
+ * fit checks of postings the user found and jobs added by hand. Each counts the jobs still in
+ * the lists, and stays even when they're all archived, so a search picked never vanishes.
  */
 export function foundOptions(
   rows: readonly JobRow[],
@@ -88,12 +89,13 @@ export function foundOptions(
   const runs = new Map<string, { source: string; date: string | null; count: number }>();
   const others = new Map<string, number>();
   for (const { job } of rows) {
+    const counted = job.archived ? 0 : 1;
     for (const run of job.searches) {
       const known = runs.get(run.folder) ?? { ...run, count: 0 };
-      runs.set(run.folder, { ...known, count: known.count + 1 });
+      runs.set(run.folder, { ...known, count: known.count + counted });
     }
     if (job.searches.length === 0 && job.source) {
-      others.set(job.source, (others.get(job.source) ?? 0) + 1);
+      others.set(job.source, (others.get(job.source) ?? 0) + counted);
     }
   }
   const sources = [...runs.values()].map((run) => run.source);
@@ -180,4 +182,23 @@ export function viewCounts(rows: readonly JobRow[], filter: ListFilter): Record<
 /** The view to open on: the furthest along with jobs in it, where things move fastest. */
 export function startingView(rows: readonly JobRow[]): JobView {
   return viewToOpen(rows.filter((row) => !row.job.archived).map((row) => row.progress.status));
+}
+
+/**
+ * The job a step away from the current one, in the order the list had when a job took the
+ * window, passing over jobs that have gone since. Null at either end.
+ */
+export function stepFrom(
+  order: readonly string[],
+  current: string,
+  offset: -1 | 1,
+  present: (jobId: string) => boolean,
+): string | null {
+  const at = order.indexOf(current);
+  if (at < 0) return null;
+  for (let next = at + offset; next >= 0 && next < order.length; next += offset) {
+    const id = order[next];
+    if (id && present(id)) return id;
+  }
+  return null;
 }

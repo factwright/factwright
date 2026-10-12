@@ -197,6 +197,22 @@ describe('notes', () => {
     expect(api.deleteNote).toHaveBeenCalledWith('tidewater-note');
   });
 
+  it('gives the keyboard’s focus back where it was after a change or a deletion', async () => {
+    const job = byCompany('Tidewater Analytics');
+    const title = `the note from ${longDate(job.notes[0]?.on ?? '')}`;
+    panel(job);
+    await userEvent.click(screen.getByRole('button', { name: `Change ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: `Change ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: `Delete ${title}` }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: `Delete ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: `Delete ${title}` }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'New note' }));
+  });
+
   it('changes or clears the notes from before dates', async () => {
     const job = byCompany('Harbor & Pine');
     const { api } = panel(job);
@@ -270,12 +286,66 @@ describe('progress', () => {
     const job = byCompany('Meridian Freight');
     const { api } = panel({ ...job, appliedOn: null, statusLog: job.statusLog.slice(1) });
     await userEvent.click(
-      screen.getByRole('button', { name: 'When you applied: not known. Change it' }),
+      screen.getByRole('button', { name: 'When you applied: Add the date. Change it' }),
     );
     const date = screen.getByLabelText('When you applied');
     fireEvent.change(date, { target: { value: '2026-09-01' } });
     fireEvent.keyDown(date, { key: 'Enter' });
     expect(api.updateJob).toHaveBeenCalledWith(job.id, { appliedOn: '2026-09-01' });
+    // Enter closed the box, so the keyboard's focus is back on the date.
+    expect(document.activeElement?.getAttribute('aria-label')).toMatch(/^When you applied/);
+  });
+
+  it('keeps a date that can’t be, such as one to come, open to fix', async () => {
+    const { api } = panel(byCompany('Northwind Labs'));
+    await userEvent.click(screen.getByRole('button', { name: /^When it moved to Screen/ }));
+    const date = screen.getByLabelText('When it moved to Screen');
+    fireEvent.change(date, { target: { value: '2999-01-01' } });
+    fireEvent.keyDown(date, { key: 'Enter' });
+    expect(date.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByLabelText('When it moved to Screen')).toBe(date);
+    fireEvent.keyDown(date, { key: 'Escape' });
+    expect(api.redateStatusChange).not.toHaveBeenCalled();
+    expect(document.activeElement?.getAttribute('aria-label')).toMatch(
+      /^When it moved to Screen: \w{3} \d+\. Change it$/,
+    );
+  });
+
+  it('shows and fixes the date of the change that marked a step, not an earlier call’s', () => {
+    const job = byCompany('Northwind Labs');
+    const screenChange = job.statusLog.find((change) => change.status === 'screen');
+    panel({
+      ...job,
+      calls: [
+        ...job.calls,
+        {
+          id: 'early-screen',
+          kind: 'screen',
+          onDate: '2020-01-02',
+          atTime: null,
+          state: 'done',
+          outcome: null,
+          notes: null,
+        },
+      ],
+    });
+    const button = screen.getByRole('button', { name: /^When it moved to Screen/ });
+    expect(button.getAttribute('title')).toBe(longDate(screenChange?.at ?? ''));
+  });
+
+  it('fixes an offer’s date only by the change that marked it', () => {
+    const job = byCompany('Fernway');
+    panel({
+      ...job,
+      status: 'accepted',
+      statusOn: job.statusOn,
+      statusLog: [
+        ...job.statusLog.filter((change) => change.status !== 'offer'),
+        { id: 'fernway-accepted', status: 'accepted', at: job.statusOn ?? '' },
+      ],
+    });
+    expect(screen.queryByRole('button', { name: /^When it moved to Offer/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^When it moved to Accepted/ })).toBeTruthy();
   });
 });
 

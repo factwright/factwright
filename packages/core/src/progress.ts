@@ -255,10 +255,10 @@ export function isInView(view: JobView, status: JobStatus): boolean {
 
 /**
  * The view to open on: the furthest along that has jobs in it, where things move fastest, from
- * interviews back to the jobs to review.
+ * interviews back to the jobs to review, and the closed ones when there's nothing else.
  */
 export function startingView(statuses: readonly JobStatus[]): JobView {
-  const views = ['interviewing', 'applied', 'apply', 'review'] as const;
+  const views = ['interviewing', 'applied', 'apply', 'review', 'closed'] as const;
   return views.find((view) => statuses.some((status) => isInView(view, status))) ?? 'review';
 }
 
@@ -336,7 +336,7 @@ export function jobStats(
     jobs.filter(test).length;
   return {
     inPlay: count(({ progress }) => LIVE_STATUSES.includes(progress.status)),
-    interviewing: count(({ progress }) => ['screen', 'interview'].includes(progress.status)),
+    interviewing: count(({ progress }) => isInView('interviewing', progress.status)),
     callsAhead: jobs.reduce(
       (total, { job }) =>
         total +

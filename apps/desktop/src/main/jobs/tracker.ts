@@ -139,6 +139,8 @@ export class Tracker {
   private readonly db: DatabaseSync;
   /** The columns opening it added to tables that sync, when it was from an earlier version. */
   private readonly gained = new Map<SyncTable, string[]>();
+  /** The tables that sync that opening it made, when it was from an earlier version. */
+  private readonly made: SyncTable[] = [];
 
   /** Opens the tracker at a file path, or in memory for ":memory:". */
   constructor(file: string) {
@@ -153,6 +155,15 @@ export class Tracker {
    */
   gainedColumns(): ReadonlyMap<SyncTable, readonly string[]> {
     return this.gained;
+  }
+
+  /**
+   * The tables that sync that opening this tracker made, such as notes, when it was from an
+   * earlier version. Another device may have sent rows for them, which this one passed over
+   * while it couldn't keep them, so sync reads every change again once.
+   */
+  gainedTables(): readonly SyncTable[] {
+    return this.made;
   }
 
   close(): void {
@@ -174,7 +185,8 @@ export class Tracker {
     for (const table of SYNC_TABLES) {
       const had = before.get(table) ?? [];
       const added = this.columns(table).filter((column) => !had.includes(column));
-      if (had.length > 0 && added.length > 0) this.gained.set(table, added);
+      if (had.length === 0 && added.length > 0) this.made.push(table);
+      else if (added.length > 0) this.gained.set(table, added);
     }
   }
 

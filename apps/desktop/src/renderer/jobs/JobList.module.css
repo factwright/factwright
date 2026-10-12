@@ -148,8 +148,9 @@
 
 /* Which search found the job: quiet, and the first to give way when space runs out. */
 .found {
-  flex: 0 1 auto;
+  flex: 0 100 auto;
   min-width: 0;
+  max-width: 50%;
   overflow: hidden;
   padding: 0 7px;
   border-radius: var(--fw-radius-full);

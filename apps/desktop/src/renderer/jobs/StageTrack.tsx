@@ -50,11 +50,23 @@ export function trackSteps(job: Job, progress: JobProgress): TrackStep[] {
   const { dates } = journeyOf(job, progress);
   const first = (statuses: readonly JobStatus[]) =>
     job.statusLog.find((change) => statuses.includes(change.status));
-  const fixBy = (change: StatusChange | undefined): Fix | undefined =>
-    change ? { kind: 'change', change } : undefined;
   const steps: TrackStep[] = [];
   const add = (step: Omit<TrackStep, 'state'>) => steps.push({ ...step, state: 'done' });
   const when = (date: string | undefined) => date || null;
+  /**
+   * A step a change of status marked shows that change's date, the one fixing it changes. Else
+   * it shows the date the job's story gives it, such as a call's, and can't be fixed here.
+   */
+  const marked = (
+    step: Omit<TrackStep, 'state' | 'date' | 'fix'>,
+    change: StatusChange | undefined,
+    otherwise: string | undefined,
+  ) =>
+    add(
+      change
+        ? { ...step, date: change.at, fix: { kind: 'change', change } }
+        : { ...step, date: when(otherwise) },
+    );
 
   add({ key: 'found', label: 'Found', tone: 'new', date: when(dates.found), detail: job.source });
   if (dates.checked !== undefined) {
@@ -71,53 +83,53 @@ export function trackSteps(job: Job, progress: JobProgress): TrackStep[] {
     add({ key: 'resume', label: 'Resume built', tone: 'resume', date: when(dates.resume) });
   }
   if (dates.applied !== undefined) {
-    const fix = fixBy(first(['applied'])) ?? { kind: 'applied' };
-    add({ key: 'applied', label: 'Applied', tone: 'applied', date: when(dates.applied), fix });
+    const change = first(['applied']);
+    add(
+      change
+        ? {
+            key: 'applied',
+            label: 'Applied',
+            tone: 'applied',
+            date: change.at,
+            fix: { kind: 'change', change },
+          }
+        : // An applied date with no change behind it, or none yet, is fixed as the applied date.
+          {
+            key: 'applied',
+            label: 'Applied',
+            tone: 'applied',
+            date: job.appliedOn,
+            fix: { kind: 'applied' },
+          },
+    );
   }
   if (dates.screen !== undefined) {
-    const fix = fixBy(first(['screen']));
-    add({
-      key: 'screen',
-      label: 'Screen',
-      tone: 'screen',
-      date: when(dates.screen),
-      ...(fix && { fix }),
-    });
+    marked({ key: 'screen', label: 'Screen', tone: 'screen' }, first(['screen']), dates.screen);
   }
   if (dates.interview !== undefined) {
-    const fix = fixBy(first(['interview']));
-    add({
-      key: 'interview',
-      label: 'Interview',
-      tone: 'interview',
-      date: when(dates.interview),
-      ...(fix && { fix }),
-    });
+    marked(
+      { key: 'interview', label: 'Interview', tone: 'interview' },
+      first(['interview']),
+      dates.interview,
+    );
   }
   if (dates.final !== undefined) {
     add({ key: 'final', label: 'Final round', tone: 'interview', date: when(dates.final) });
   }
   if (dates.offer !== undefined) {
-    const fix = fixBy(first(['offer']) ?? first(['accepted', 'declined']));
-    add({
-      key: 'offer',
-      label: 'Offer',
-      tone: 'offer',
-      date: when(dates.offer),
-      ...(fix && { fix }),
-    });
+    marked({ key: 'offer', label: 'Offer', tone: 'offer' }, first(['offer']), dates.offer);
   }
 
   const { status } = progress;
   if (CLOSED_STATUSES.includes(status)) {
-    const fix = fixBy(job.statusLog.findLast((change) => change.status === status));
+    const change = job.statusLog.findLast((each) => each.status === status);
     steps.push({
       key: status,
       label: JOB_STATUS_DISPLAY[status].label,
       tone: status,
-      date: job.statusOn,
+      date: change?.at ?? job.statusOn,
       state: 'now',
-      ...(fix && { fix }),
+      ...(change && { fix: { kind: 'change', change } }),
     });
     return steps;
   }
@@ -177,7 +189,7 @@ export function StageTrack({
         return (
           <li
             key={step.key}
-            className={`${styles.step} ${styles[step.state]}`}
+            className={`${styles.step} ${step.state === 'done' ? '' : styles[step.state]}`}
             style={{ '--step-tone': `var(--fw-tone-${tone}-fg)` } as CSSProperties}
           >
             <span className={styles.dot} role="img" aria-label={STATE_WORDS[step.state]} />
@@ -186,6 +198,17 @@ export function StageTrack({
               {step.detail && <span className={styles.detail}>{step.detail}</span>}
             </span>
             <span className={styles.when}>
+              {step.state === 'now' && undoable && step.fix?.kind === 'change' && (
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  className={styles.undo}
+                  aria-label={`Undo “Marked ${JOB_STATUS_DISPLAY[undoable.status].label}”`}
+                  onClick={() => void run(api.undoStatusChange(undoable.id))}
+                >
+                  Undo
+                </Button>
+              )}
               {step.state === 'next' ? (
                 <span className={styles.notYet}>Not yet</span>
               ) : step.fix ? (
@@ -200,17 +223,6 @@ export function StageTrack({
                 />
               ) : (
                 step.date && <span className={styles.fixed}>{shortDate(step.date, today)}</span>
-              )}
-              {step.state === 'now' && undoable && step.fix?.kind === 'change' && (
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  className={styles.undo}
-                  aria-label={`Undo “Marked ${JOB_STATUS_DISPLAY[undoable.status].label}”`}
-                  onClick={() => void run(api.undoStatusChange(undoable.id))}
-                >
-                  Undo
-                </Button>
               )}
             </span>
           </li>

@@ -87,6 +87,12 @@
   margin: -2px 14px 12px 42px;
 }
 
+/* The month's menu keeps the flex layout that centers its arrow. */
+.month {
+  display: flex;
+  margin: -2px 14px 12px 42px;
+}
+
 .hint,
 .problem {
   margin: 6px 0 0;

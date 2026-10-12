@@ -38,15 +38,19 @@ function FoundBy({
   onFilter: (filter: ListFilter) => void;
 }) {
   const { searches, others } = foundOptions(rows, today);
-  if (searches.length === 0 && others.length < 2) return null;
+  const { found } = filter;
+  // What's picked always shows, even once nothing is left with it, so it can be cleared.
+  const gone = found && ![...searches, ...others].some((each) => each.value === found);
+  if (searches.length === 0 && others.length < 2 && !found) return null;
   return (
     <Select
-      className={`${styles.foundBy} ${filter.found ? styles.foundOn : ''}`}
+      className={`${styles.foundBy} ${found ? styles.foundOn : ''}`}
       aria-label="Found by"
-      value={filter.found ?? ''}
+      value={found ?? ''}
       onChange={(event) => onFilter({ ...filter, found: event.target.value || null })}
     >
       <option value="">Found anywhere</option>
+      {gone && option({ value: found, label: found.replace(/^(search|from):/, ''), count: 0 })}
       {searches.length > 0 && <optgroup label="Job searches">{searches.map(option)}</optgroup>}
       {others.length > 0 && <optgroup label="Other ways">{others.map(option)}</optgroup>}
     </Select>
@@ -212,7 +216,7 @@ export function JobsPage(props: JobsPageProps) {
               onChange={(view) => onFilter({ ...filter, view })}
             />
             <div className={styles.narrowing}>
-              <FoundBy rows={open} today={today} filter={filter} onFilter={onFilter} />
+              <FoundBy rows={rows} today={today} filter={filter} onFilter={onFilter} />
               <Checkbox
                 label="Needs you"
                 checked={filter.needsYou}
@@ -227,8 +231,11 @@ export function JobsPage(props: JobsPageProps) {
               rows={shown}
               view={filter.view}
               today={today}
-              // Once the list shows one search's jobs, each one saying so is only noise.
-              showFound={filter.view === 'review' && !filter.found?.startsWith('search:')}
+              // Only when the jobs come from more than one search: otherwise it's only noise.
+              showFound={
+                filter.view === 'review' &&
+                new Set(shown.flatMap(({ job }) => job.searches.map((run) => run.folder))).size > 1
+              }
               selectedId={props.selectedId}
               onSelect={props.onSelect}
             />

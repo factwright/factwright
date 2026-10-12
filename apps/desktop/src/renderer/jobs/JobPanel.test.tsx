@@ -180,6 +180,10 @@ describe('JobPanel', () => {
       { onExpand, expanded: true, navigation: { index: 2, count: 3, onStep } },
     );
     expect(screen.getByText('2 of 3')).toBeTruthy();
+    // No pressed state on top of the label that says what the button does.
+    expect(
+      screen.getByRole('button', { name: 'Show beside the list' }).getAttribute('aria-pressed'),
+    ).toBeNull();
     // Its Progress and Notes sit beside what's known about the job.
     expect(screen.getByRole('complementary', { name: 'Job details' }).className).toMatch(
       /expanded/,
@@ -192,5 +196,50 @@ describe('JobPanel', () => {
     await userEvent.keyboard('{Escape}');
     expect(onExpand).toHaveBeenLastCalledWith(false);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps what’s open and typed when the job takes the window, and when it goes back', async () => {
+    const job = byCompany('Harbor & Pine');
+    const row = jobRows([job], TODAY)[0] ?? null;
+    const api = {
+      jobDocs: vi.fn(async () => sampleDocs(job)),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    } as unknown as FactwrightApi;
+    const shown = (expanded: boolean) => (
+      <JobPanel
+        row={row}
+        api={api}
+        today={TODAY}
+        onClose={() => {}}
+        expanded={expanded}
+        onExpand={() => {}}
+      />
+    );
+    const { rerender } = render(shown(false));
+    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Notes, if any' }), 'With the CTO');
+    rerender(shown(true));
+    expect((screen.getByRole('textbox', { name: 'Notes, if any' }) as HTMLInputElement).value).toBe(
+      'With the CTO',
+    );
+    rerender(shown(false));
+    expect((screen.getByRole('textbox', { name: 'Notes, if any' }) as HTMLInputElement).value).toBe(
+      'With the CTO',
+    );
+  });
+
+  it('keeps the keyboard’s focus on an arrow at the list’s end', async () => {
+    const onStep = vi.fn();
+    panel(
+      byCompany('Northwind Labs'),
+      {},
+      { expanded: true, onExpand: () => {}, navigation: { index: 3, count: 3, onStep } },
+    );
+    const next = screen.getByRole('button', { name: 'Next job' });
+    expect(next.getAttribute('aria-disabled')).toBe('true');
+    next.focus();
+    await userEvent.click(next);
+    expect(onStep).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(next);
   });
 });

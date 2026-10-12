@@ -44,10 +44,7 @@ test('shows the jobs on file, and your Claude ready', async () => {
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
   await pickView(/^To review/);
-  // A job to review says which search found it.
-  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toContainText(
-    'HN October 2026',
-  );
+  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toBeVisible();
   await pickView(/^To apply/);
 });
 
@@ -192,7 +189,8 @@ test('finds jobs where the user picks, and keeps each search’s jobs together',
   // A search reads a lot and weighs it lightly, so it thinks at high.
   expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();
-  // The LinkedIn search's job is under To review, and the search can be picked on its own.
+  // The LinkedIn search's job is under To review, saying which search found it now there are
+  // two, and the search can be picked on its own.
   await pickView(/^To review/);
   await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toContainText(
     'LinkedIn Oct 12',

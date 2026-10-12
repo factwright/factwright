@@ -39,10 +39,14 @@ export interface SearchSources {
 /** A month as YYYY-MM. */
 export const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** Marks Windows' command line would act on, even in quotes, when it starts Claude Code. */
+export const COMMAND_LINE_MARKS = /[%!]/;
+
 /**
  * A company's name or a link to its jobs, as the user typed it, in a form that's safe to type
  * into Claude: an https link, or a name of up to 80 letters, digits and common marks. Anything
- * else, such as a line break, is null.
+ * else, such as a line break, is null. So is a link with % or !, which Windows' command line
+ * would fill in when it starts Claude Code with the search.
  */
 export function searchCompany(text: string): string | null {
   const typed = text.trim();
@@ -50,7 +54,8 @@ export function searchCompany(text: string): string | null {
     if (typed.length > 500 || /[\s\p{C}]/u.test(typed)) return null;
     try {
       const url = new URL(typed);
-      return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+      const safe = url.protocol === 'https:' && !url.username && !url.password;
+      return safe && !COMMAND_LINE_MARKS.test(url.href) ? url.href : null;
     } catch {
       return null;
     }

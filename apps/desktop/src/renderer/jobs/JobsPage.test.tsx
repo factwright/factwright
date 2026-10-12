@@ -107,6 +107,16 @@ describe('JobsPage', () => {
     );
   });
 
+  it('keeps showing a search that’s picked once nothing is left in it, to clear it', async () => {
+    const props = page({
+      filter: { view: 'all', query: '', needsYou: false, ...NO_FILTERS, found: 'search:gone-run' },
+    });
+    const menu = screen.getByRole('combobox', { name: 'Found by' }) as HTMLSelectElement;
+    expect(menu.selectedOptions[0]?.textContent).toBe('gone-run (0)');
+    await userEvent.selectOptions(menu, 'Found anywhere');
+    expect(props.onFilter).toHaveBeenCalledWith(expect.objectContaining({ found: null }));
+  });
+
   it('narrows the list to one search’s jobs', async () => {
     const props = page({ filter: { view: 'all', query: '', needsYou: false, ...NO_FILTERS } });
     const menu = screen.getByRole('combobox', { name: 'Found by' });

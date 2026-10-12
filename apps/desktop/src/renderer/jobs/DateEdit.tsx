@@ -1,6 +1,6 @@
 import { isIsoDate, shortDate } from '@factwright/core';
 import { Input } from '@factwright/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from './DateEdit.module.css';
 
 const LONG_DATE = new Intl.DateTimeFormat('en-US', {
@@ -27,7 +27,7 @@ export function DateEdit({
   placeholder = 'Add the date',
 }: {
   date: string | null;
-  /** What the date is, such as "When it was marked Applied". */
+  /** What the date is, such as "When it moved to Screen". */
   label: string;
   today: string;
   onChange: (date: string) => void;
@@ -38,44 +38,71 @@ export function DateEdit({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(date ?? '');
+  const [invalid, setInvalid] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  /** Whether the keyboard closed the box, so focus goes back to the date. */
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (editing || !refocus.current) return;
+    refocus.current = false;
+    button.current?.focus();
+  }, [editing]);
 
   if (!editing) {
+    const shown = date ? shortDate(date, today) : placeholder;
     return (
       <button
+        ref={button}
         type="button"
         className={`${styles.date} ${date ? '' : styles.missing}`}
-        aria-label={`${label}: ${date ? longDate(date) : 'not known'}. Change it`}
+        // The words on the button come first, so a voice command naming them finds it.
+        aria-label={`${label}: ${shown}. Change it`}
+        title={date ? longDate(date) : undefined}
         onClick={() => {
           setDraft(date ?? '');
+          setInvalid(false);
           setEditing(true);
         }}
       >
-        {date ? shortDate(date, today) : placeholder}
+        {shown}
       </button>
     );
   }
-  const save = () => {
+  // A year typed in full: "0020" on the way to "2026" isn't a date anyone means.
+  const fits = isIsoDate(draft) && draft >= '2000-01-01' && (!max || draft <= max);
+  const close = (save: boolean) => {
     setEditing(false);
-    // A year typed in full: "0020" on the way to "2026" isn't a date anyone means.
-    if (isIsoDate(draft) && draft >= '2000-01-01' && draft !== date && (!max || draft <= max)) {
-      onChange(draft);
-    }
+    if (save && fits && draft !== date) onChange(draft);
   };
   return (
     <Input
       className={styles.input}
       type="date"
       aria-label={label}
+      aria-invalid={invalid}
       autoFocus
       value={draft}
+      min="2000-01-01"
       max={max}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={save}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
+      onBlur={() => close(true)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') save();
+        if (event.key === 'Enter') {
+          // A date that can't be, such as one still to come, stays open to fix.
+          if (!fits) {
+            setInvalid(true);
+            return;
+          }
+          refocus.current = true;
+          close(true);
+        }
         if (event.key === 'Escape') {
           event.preventDefault();
-          setEditing(false);
+          refocus.current = true;
+          close(false);
         }
       }}
     />

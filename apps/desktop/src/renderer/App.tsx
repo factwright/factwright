@@ -20,7 +20,14 @@ import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
-import { jobRows, type ListFilter, NO_FILTERS, startingView, visibleRows } from './jobs/rows.ts';
+import {
+  jobRows,
+  type ListFilter,
+  NO_FILTERS,
+  startingView,
+  stepFrom,
+  visibleRows,
+} from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
@@ -112,8 +119,21 @@ export function App({ api }: { api: FactwrightApi }) {
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
   // The list as it shows, for moving from job to job while one has the window to itself.
   const shown = useMemo(() => visibleRows(rows, filter), [rows, filter]);
-  const at = shown.findIndex((row) => row.job.id === selectedId);
-  const alone = expanded && selected !== null;
+  // The list's order when a job took the window, to step through. It holds still as jobs get
+  // new activity or leave the view, so the next job is always the next one the user saw.
+  const [order, setOrder] = useState<string[]>([]);
+  const alone = expanded && selected !== null && openJobs > 0;
+  const keepOrder = () => setOrder(shown.map((row) => row.job.id));
+  const at = order.indexOf(selectedId ?? '');
+  const pick = (jobId: string) => {
+    if (expanded) keepOrder();
+    setSelectedId(jobId);
+  };
+  const step = (offset: -1 | 1) => {
+    const ids = new Set(rows.map((row) => row.job.id));
+    const next = stepFrom(order, selectedId ?? '', offset, (id) => ids.has(id));
+    if (next) setSelectedId(next);
+  };
   const runControls = useMemo<RunControls>(
     () => ({ phase: run.phase, task: run.task, start: run.requestStart, show: run.show }),
     [run.phase, run.task, run.requestStart, run.show],
@@ -143,7 +163,11 @@ export function App({ api }: { api: FactwrightApi }) {
       <TopBar
         platform={api.platform}
         query={filter.query}
-        onQuery={(query) => setFilter((current) => ({ ...current, query }))}
+        onQuery={(query) => {
+          setFilter((current) => ({ ...current, query }));
+          // Searching while a job has the window brings back the list, to show what matches.
+          if (alone) setSelectedId(null);
+        }}
         searchRef={search}
         onAddJob={() => setDialog('add-job')}
       />
@@ -210,7 +234,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 filter={filter}
                 onFilter={changeFilter}
                 selectedId={selectedId}
-                onSelect={setSelectedId}
+                onSelect={pick}
                 onRetry={reload}
                 canStartClaude={ready && !isRunning(run.phase)}
                 onStartClaude={() => run.requestStart()}
@@ -227,17 +251,12 @@ export function App({ api }: { api: FactwrightApi }) {
                 today={today}
                 onClose={() => setSelectedId(null)}
                 expanded={alone}
-                onExpand={setExpanded}
-                {...(at >= 0 && {
-                  navigation: {
-                    index: at + 1,
-                    count: shown.length,
-                    onStep: (offset: -1 | 1) => {
-                      const next = shown[at + offset];
-                      if (next) setSelectedId(next.job.id);
-                    },
-                  },
-                })}
+                onExpand={(next) => {
+                  if (next) keepOrder();
+                  setExpanded(next);
+                }}
+                {...(alone &&
+                  at >= 0 && { navigation: { index: at + 1, count: order.length, onStep: step } })}
                 {...(ready && { run: runControls })}
               />
             )}

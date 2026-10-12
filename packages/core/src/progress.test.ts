@@ -238,7 +238,8 @@ describe('isInView', () => {
     expect(startingView(['new', 'applied', 'screen', 'rejected'])).toBe('interviewing');
     expect(startingView(['new', 'resume', 'applied'])).toBe('applied');
     expect(startingView(['new', 'checked'])).toBe('apply');
-    expect(startingView(['rejected'])).toBe('review');
+    expect(startingView(['rejected'])).toBe('closed');
+    expect(startingView(['rejected', 'new'])).toBe('review');
     expect(startingView([])).toBe('review');
   });
 

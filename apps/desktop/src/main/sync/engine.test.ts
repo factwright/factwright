@@ -8,7 +8,7 @@ import { accountKeys, type Bytes, newAccountKey } from '@factwright/sync';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type EditContext, Tracker } from '../jobs/tracker.ts';
 import { SyncEngine } from './engine.ts';
-import { adoptGainedColumns } from './rows.ts';
+import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
 import { SyncState } from './state.ts';
 
 const AT: EditContext = { today: '2026-10-12', now: '2026-10-12T09:00:00.000Z' };
@@ -91,6 +91,24 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
       tracker.close();
       tracker = new Tracker(file);
       adoptGainedColumns(tracker, state);
+      adoptGainedTables(tracker, state);
+      engine = engineFor(tracker);
+    },
+    /**
+     * Updates the app from a version before notes, which passed over the notes other devices
+     * sent: it had no table to keep them in, so it never noted them as synced.
+     */
+    updateFromBeforeNotes() {
+      tracker.close();
+      const old = new DatabaseSync(file);
+      old.exec('DROP TABLE notes; PRAGMA user_version = 3;');
+      old.close();
+      const synced = new DatabaseSync(join(folder, 'sync.db'));
+      synced.exec("DELETE FROM synced WHERE name LIKE 'row:notes:%'");
+      synced.close();
+      tracker = new Tracker(file);
+      adoptGainedColumns(tracker, state);
+      adoptGainedTables(tracker, state);
       engine = engineFor(tracker);
     },
     write(path: string, text: string | Uint8Array) {
@@ -224,6 +242,26 @@ describe('two computers on one account', () => {
         .get('acme--staff')
         ?.map((note) => note.text),
     ).toEqual(['Panel is four people']);
+  });
+
+  it('bring a computer that passed over notes the ones it missed, once it updates', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    mac.tracker.addNote('acme--staff', { text: 'Screen went well, from the Mac' }, AT);
+    await mac.sync();
+    await pc.sync();
+    pc.updateFromBeforeNotes();
+    expect(pc.tracker.notes().size).toBe(0);
+    await pc.sync();
+    expect(
+      pc.tracker
+        .notes()
+        .get('acme--staff')
+        ?.map((note) => note.text),
+    ).toEqual(['Screen went well, from the Mac']);
+    // Once is enough: after that, sync goes on from where it got to.
+    expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
   });
 
   it('leave alone the rows of a table only a newer version keeps', async () => {

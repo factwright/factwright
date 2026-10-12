@@ -6,6 +6,7 @@ import {
   jobRows,
   NO_FILTERS,
   startingView,
+  stepFrom,
   viewCounts,
   visibleRows,
 } from './rows.ts';
@@ -194,5 +195,39 @@ describe('format', () => {
     // A file's time goes on the user's calendar, not by its UTC date.
     const lateEvening = new Date(2026, 9, 10, 23, 30);
     expect(shortDate(lateEvening.toISOString(), '2026-10-10')).toBe('Oct 10');
+  });
+});
+
+describe('stepFrom', () => {
+  const order = ['a', 'b', 'c', 'd'];
+  const all = () => true;
+
+  it('steps through the order the list had, passing over jobs that have gone', () => {
+    expect(stepFrom(order, 'b', 1, all)).toBe('c');
+    expect(stepFrom(order, 'b', -1, all)).toBe('a');
+    expect(stepFrom(order, 'b', 1, (id) => id !== 'c')).toBe('d');
+  });
+
+  it('stops at either end, and for a job not in the order', () => {
+    expect(stepFrom(order, 'd', 1, all)).toBeNull();
+    expect(stepFrom(order, 'a', -1, all)).toBeNull();
+    expect(stepFrom(order, 'z', 1, all)).toBeNull();
+  });
+});
+
+describe('foundOptions with archived jobs', () => {
+  it('keeps a search whose jobs are all archived, counting none', () => {
+    const archived = jobRows(
+      sampleJobs().map((job) =>
+        job.searches.some((run) => run.source.startsWith('LinkedIn'))
+          ? { ...job, archived: true }
+          : job,
+      ),
+      TODAY,
+    );
+    const linkedIn = foundOptions(archived, TODAY).searches.find((each) =>
+      each.label.startsWith('LinkedIn'),
+    );
+    expect(linkedIn?.count).toBe(0);
   });
 });

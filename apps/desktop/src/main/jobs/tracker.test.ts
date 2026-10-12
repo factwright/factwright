@@ -343,9 +343,10 @@ describe('the database file', () => {
     expect(second.rows()[0]?.sent).toEqual([
       { question: 'Why Acme?', nth: 0, text: 'Deploys, mostly.', on: TODAY, at: NOW },
     ]);
-    // Sync fills the columns it gained from what other devices sent before. A new table, such
-    // as notes, had no rows to fill.
+    // Sync fills the columns it gained from what other devices sent before, and reads every
+    // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(new Map([['jobs', ['sent', 'asks']]]));
+    expect(second.gainedTables()).toEqual(['notes']);
     second.close();
   });
 
@@ -369,7 +370,13 @@ describe('the database file', () => {
         ?.map((note) => note.text),
     ).toEqual(['Screen went well']);
     expect(second.gainedColumns().size).toBe(0);
+    expect(second.gainedTables()).toEqual(['notes']);
     second.close();
+    // A tracker that's up to date, or new, made nothing.
+    const third = new Tracker(file);
+    expect(third.gainedTables()).toEqual([]);
+    third.close();
+    expect(new Tracker(':memory:').gainedTables()).toEqual([]);
   });
 });
 

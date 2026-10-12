@@ -107,10 +107,6 @@ export function resolveInside(root: string, urlPath: string): string | null {
 const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 /**
- * A task from the window, in the shape the app takes: a skill on a job, a job search, getting
- * started, more facts, or a template from a resume the app kept. Anything else is null.
- */
-/**
  * Where a search should look, as the Find jobs dialog sent it: known places, each once, an HN
  * month only with HN, and a company typed in a safe form. At least one place. Anything else is
  * null.
@@ -136,6 +132,11 @@ export function parseSearchSources(value: unknown): SearchSources | null {
   };
 }
 
+/**
+ * A task from the window, in the shape the app takes: a skill on a job, a job search and the
+ * places it looks, getting started, more facts, or a template from a resume the app kept.
+ * Anything else is null.
+ */
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
   const { skill, jobId, mode, askId, source, sources, ...rest } = value as Record<string, unknown>;
