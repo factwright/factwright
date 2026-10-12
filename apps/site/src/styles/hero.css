@@ -120,3 +120,79 @@
   content: "";
   filter: blur(40px);
 }
+
+/* What Factwright does, and what it never does, side by side under the headline. */
+.stance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 980px;
+  margin-top: clamp(40px, 5vw, 56px);
+}
+
+.stance-card {
+  padding: 24px 26px 26px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-xl);
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.stance-card h2 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.stance-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.stance-list li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  column-gap: 12px;
+  color: var(--fw-muted);
+  font-size: 15.5px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.stance-list b {
+  color: var(--fw-text);
+  font-weight: 620;
+}
+
+.stance-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+}
+
+.stance-does .stance-mark {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.stance-never .stance-mark {
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+}
+
+.stance-mark .icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
+}
+
+@media (max-width: 760px) {
+  .stance {
+    grid-template-columns: 1fr;
+  }
+}

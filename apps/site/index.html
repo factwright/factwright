@@ -59,6 +59,7 @@
       <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3" /><path d="M3.5 19c.8-2.9 3-4.5 5.5-4.5s4.7 1.6 5.5 4.5M15.5 6.2a3 3 0 0 1 0 5.6M17 14.8c1.7.6 3 2 3.5 4.2" /></symbol>
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5a2 2 0 0 1-2-2z" /><path d="M8.5 9.5h7M8.5 12.5h4.5" /></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5L10 14M20.5 3.5l-6.5 17-4-6.5-6.5-4z" /></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4.5M7 9l5-5 5 5M5 19.5h14" /></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" /></symbol>
       <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.7 5.4 3.7 8.5s-1.2 5.9-3.7 8.5c-2.5-2.6-3.7-5.4-3.7-8.5S9.5 6.1 12 3.5z" /></symbol>
     </svg>
@@ -89,8 +90,8 @@
           <p class="eyebrow-pill"><span class="pulse-dot" aria-hidden="true"></span>Coming soon for Mac and Windows</p>
           <h1 id="hero-title">Tailored to the job.<br /><span class="soft">True to the facts.</span></h1>
           <p class="lede hero-lede">
-            Factwright runs your job hunt with your own Claude. It learns what’s true about you, finds
-            jobs that fit, writes every resume and answer from facts you’ve confirmed, and gets you
+            A job hunt app for people putting their real experience forward. Your own Claude finds
+            jobs that fit, tailors each resume to the job from facts you’ve confirmed, and gets you
             ready for the interview.
           </p>
           <div class="hero-actions">
@@ -99,6 +100,44 @@
               <svg class="icon" aria-hidden="true"><use href="#i-arrow-down" /></svg>
             </a>
             <p class="hero-note">Free during the beta · Uses your own Claude plan</p>
+          </div>
+        </div>
+
+        <!-- What it does, and what it never does -->
+        <div class="wrap stance">
+          <div class="stance-card stance-does">
+            <h2>What it does</h2>
+            <ul class="stance-list">
+              <li>
+                <span class="stance-mark"><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg></span>
+                <span><b>Tailors every resume to the job,</b> using only facts you’ve confirmed, then checks each line against them.</span>
+              </li>
+              <li>
+                <span class="stance-mark"><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg></span>
+                <span><b>Runs on your own Claude,</b> signed in as you, so runs count against your plan. Factwright never sees your login.</span>
+              </li>
+              <li>
+                <span class="stance-mark"><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg></span>
+                <span><b>Keeps your job hunt on your computer.</b> If you sync it to your phone, it’s encrypted before it leaves, so we can’t read it.</span>
+              </li>
+            </ul>
+          </div>
+          <div class="stance-card stance-never">
+            <h2>What it never does</h2>
+            <ul class="stance-list">
+              <li>
+                <span class="stance-mark"><svg class="icon" aria-hidden="true"><use href="#i-x" /></svg></span>
+                <span><b>Apply for you.</b> Factwright drafts and you decide. You send every application yourself.</span>
+              </li>
+              <li>
+                <span class="stance-mark"><svg class="icon" aria-hidden="true"><use href="#i-x" /></svg></span>
+                <span><b>Make things up.</b> No fact, no line. If a job wants something you haven’t done, it stays off your resume.</span>
+              </li>
+              <li>
+                <span class="stance-mark"><svg class="icon" aria-hidden="true"><use href="#i-x" /></svg></span>
+                <span><b>Help during an interview.</b> It gets you ready beforehand. In the room, it’s all you.</span>
+              </li>
+            </ul>
           </div>
         </div>
 
@@ -268,34 +307,6 @@
             </div>
           </div>
         </figure>
-      </section>
-
-      <!-- What makes it different -->
-      <section class="pillars wrap" aria-label="What makes Factwright different">
-        <div class="pillar reveal">
-          <span class="pillar-icon"><svg aria-hidden="true" class="icon"><use href="#i-terminal" /></svg></span>
-          <h2>Your own Claude</h2>
-          <p>
-            Factwright runs the Claude Code you already use, in plain view. It never sees your
-            login, and runs count against your own plan.
-          </p>
-        </div>
-        <div class="pillar reveal">
-          <span class="pillar-icon"><svg aria-hidden="true" class="icon"><use href="#i-shield" /></svg></span>
-          <h2>Nothing made up</h2>
-          <p>
-            Every claim stays unconfirmed until you check it. Resumes and answers use only what
-            you’ve confirmed, and every resume gets fact-checked line by line.
-          </p>
-        </div>
-        <div class="pillar reveal">
-          <span class="pillar-icon"><svg aria-hidden="true" class="icon"><use href="#i-folder" /></svg></span>
-          <h2>Yours to keep</h2>
-          <p>
-            Your fact bank, resumes and documents are plain files in a folder on your computer.
-            Sync to your phone is there when you want it.
-          </p>
-        </div>
       </section>
 
       <!-- How it works -->
@@ -545,22 +556,21 @@
                 <span class="step-number">5</span>
                 <h3>Apply, and keep track</h3>
                 <p>
-                  Resumes come out as PDF or Word in the templates you picked, fitted to their pages
-                  and fact-checked line by line. You send them yourself. Then track every status,
+                  Resumes come out as PDF or Word in your templates, filling the pages you chose and
+                  fact-checked line by line. You send them yourself. Then track every status,
                   call and interview, and see what needs you next.
                 </p>
                 <p class="step-aside">Turn on sync to see it all on your phone.</p>
               </div>
               <figure class="step-visual">
                 <figcaption class="visually-hidden">
-                  A finished one-page resume that passed its fact check, and the job list on a
-                  phone.
+                  A finished resume that passed its fact check, and the job list on a phone.
                 </figcaption>
                 <div class="send" aria-hidden="true">
                   <div class="paper">
-                    <img src="/templates/timeline.webp" width="612" height="792" alt="" loading="lazy" decoding="async" />
+                    <img src="/templates/classic.webp" width="612" height="792" alt="" loading="lazy" decoding="async" />
                     <span class="paper-badge badge-check"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Every line fact-checked</span>
-                    <span class="paper-badge badge-fit">Fits on one page</span>
+                    <span class="paper-badge badge-fit">Fills the pages you chose</span>
                   </div>
                   <div class="phone">
                     <div class="phone-screen">
@@ -772,11 +782,11 @@
         <div class="wrap">
           <header class="section-head reveal">
             <p class="eyebrow">Templates</p>
-            <h2 id="templates-title">Eight looks. The same true words.</h2>
+            <h2 id="templates-title">Two clean looks, or bring your own.</h2>
             <p class="lede">
-              Every template shows the same parts of your resume, so changing the look never
-              changes what it says. Factwright suggests looks for the kind of company you’re aiming
-              at, and fits each resume to its pages, with no half-empty last page.
+              Start with Classic or Minimal. Or show Factwright a resume whose look you like, and
+              your own Claude makes a template in that look. Whatever the look, the words come from
+              your facts, and every resume fills the pages you chose, with no half-empty last page.
             </p>
           </header>
           <ul class="templates">
@@ -786,39 +796,17 @@
               <p>Traditional and all serif, in black and white.</p>
             </li>
             <li class="template reveal">
-              <img src="/templates/timeline.webp" width="612" height="792" alt="The Timeline template, filled in for a made-up product manager" loading="lazy" decoding="async" />
-              <h3>Timeline</h3>
-              <p>A bold name and a date rail, with one warm accent.</p>
-            </li>
-            <li class="template reveal">
-              <img src="/templates/executive.webp" width="612" height="792" alt="The Executive template, filled in for a made-up product manager" loading="lazy" decoding="async" />
-              <h3>Executive</h3>
-              <p>A centered header and serif headings, in navy and gold.</p>
-            </li>
-            <li class="template reveal">
-              <img src="/templates/modern.webp" width="612" height="792" alt="The Modern template, filled in for a made-up product manager" loading="lazy" decoding="async" />
-              <h3>Modern</h3>
-              <p>Two columns under a dark header, numbers at the side.</p>
-            </li>
-            <li class="template reveal">
-              <img src="/templates/compact.webp" width="612" height="792" alt="The Compact template, filled in for a made-up product manager" loading="lazy" decoding="async" />
-              <h3>Compact</h3>
-              <p>Section names in the margin, to fit a lot on one page.</p>
-            </li>
-            <li class="template reveal">
               <img src="/templates/minimal.webp" width="612" height="792" alt="The Minimal template, filled in for a made-up product manager" loading="lazy" decoding="async" />
               <h3>Minimal</h3>
               <p>Quiet and airy, with gray headings and no color.</p>
             </li>
-            <li class="template reveal">
-              <img src="/templates/elegant.webp" width="612" height="792" alt="The Elegant template, filled in for a made-up product manager" loading="lazy" decoding="async" />
-              <h3>Elegant</h3>
-              <p>Serif type with a deep red accent, and room to breathe.</p>
-            </li>
-            <li class="template reveal">
-              <img src="/templates/banner.webp" width="612" height="792" alt="The Banner template, filled in for a made-up product manager" loading="lazy" decoding="async" />
-              <h3>Banner</h3>
-              <p>A blue banner across the top, and a bar over each section.</p>
+            <li class="template template-own reveal">
+              <div class="template-drop" aria-hidden="true">
+                <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+                <span>A PDF or a picture</span>
+              </div>
+              <h3>Your own</h3>
+              <p>Its layout, fonts, colors and spacing, never its words. Private, on your computer.</p>
             </li>
           </ul>
           <p class="templates-note reveal">Every resume comes as a PDF or a Word file. One-column looks read best in applicant systems.</p>
@@ -858,7 +846,8 @@
               <span class="where-icon"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg></span>
               <h3>Synced, if you want it</h3>
               <p>
-                Turn on sync to see your hunt on your phone and your other computers. It stays off
+                Turn on sync to see your hunt on your phone and your other computers. It’s
+                encrypted before it leaves your computer, so we can’t read it, and it stays off
                 until you turn it on.
               </p>
             </li>
@@ -927,6 +916,15 @@
               </p>
             </details>
             <details>
+              <summary>Who can see my job hunt?</summary>
+              <p>
+                Only you and your own Claude. Your fact bank, resumes and documents are plain files
+                on your computer, and Claude Code reads them under your own Anthropic account when it
+                works on them. If you turn on sync, they’re encrypted on your computer before they
+                leave it, so the sync server keeps only what it can’t read.
+              </p>
+            </details>
+            <details>
               <summary>Will it make things up?</summary>
               <p>
                 It’s built not to. Claims stay unconfirmed until you check them, resumes and answers
@@ -941,6 +939,26 @@
               <p>
                 No. Factwright gets everything ready: the resume, the answers, the messages. You read
                 them, change what you like, and send them yourself.
+              </p>
+            </details>
+            <details>
+              <summary>Will it help me during an interview?</summary>
+              <p>
+                No. Before a call or an interview, it writes you a prep sheet: likely questions,
+                answered from your facts, and the stories worth telling. In the interview itself,
+                it’s all you.
+              </p>
+            </details>
+            <details>
+              <summary>Can I use my own resume template?</summary>
+              <p>
+                Yes. Show Factwright a resume whose look you like, as a PDF or a picture (PNG, JPEG
+                or WebP), and your own Claude makes a template in that look: the layout, fonts,
+                colors and spacing, never the words. You see it on your own resume first, and it
+                stays private, on your computer. Save a Word file as a PDF first. A template another
+                Factwright user shares with you can be imported too. A template changes how your
+                resume looks, never what it says: apart from its section headings, every word comes
+                from your facts.
               </p>
             </details>
             <details>
