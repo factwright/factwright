@@ -317,3 +317,65 @@ describe('the database file', () => {
     second.close();
   });
 });
+
+describe('sync', () => {
+  it('lists every row of the tables that sync, as stored', () => {
+    tracker.updateJob('acme--staff', { status: 'applied', notes: 'Sent' }, AT);
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-12' }, AT);
+    const rows = tracker.syncRows();
+    expect(rows.map((each) => each.table)).toEqual(['jobs', 'status_log', 'status_log', 'calls']);
+    expect(rows[0]).toMatchObject({
+      id: 'acme--staff',
+      row: { company: 'Acme Robotics', status: 'screen', notes: 'Sent', archived: 0 },
+    });
+    expect(tracker.syncRow('jobs', 'acme--staff')).toEqual(rows[0]?.row);
+    expect(tracker.syncRow('jobs', 'nobody')).toBeNull();
+  });
+
+  it('puts rows as another device left them, jobs before their calls', () => {
+    tracker.updateJob('acme--staff', { status: 'applied', notes: 'Sent' }, AT);
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-12' }, AT);
+    const other = new Tracker(':memory:');
+    for (const { table, id, row } of tracker.syncRows()) other.applySyncRow(table, id, row);
+    expect(other.rows()).toEqual(tracker.rows());
+    expect(other.calls()).toEqual(tracker.calls());
+    expect(other.history()).toEqual(tracker.history());
+    other.close();
+  });
+
+  it('writes only the columns this version knows, and keeps those a row lacks', () => {
+    tracker.updateJob('acme--staff', { questions: ['Why Acme?'], notes: 'Before' }, AT);
+    const stored = tracker.syncRow('jobs', 'acme--staff') ?? {};
+    const { questions: _, ...fromOlderApp } = stored;
+    tracker.applySyncRow('jobs', 'acme--staff', {
+      ...fromOlderApp,
+      notes: 'After',
+      salary_band: 'From a newer app',
+    });
+    expect(row()).toMatchObject({ notes: 'After', questions: ['Why Acme?'] });
+  });
+
+  it('removes a row, and a job’s calls and history go with it', () => {
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-12' }, AT);
+    const [call] = tracker.calls().get('acme--staff') ?? [];
+    tracker.applySyncRow('calls', call?.id ?? '', null);
+    expect(tracker.calls().get('acme--staff')).toBeUndefined();
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-12' }, AT);
+    tracker.applySyncRow('jobs', 'acme--staff', null);
+    expect(tracker.rows()).toEqual([]);
+    expect(tracker.syncRows()).toEqual([]);
+  });
+
+  it('refuses a call for a job it doesn’t have yet', () => {
+    expect(() =>
+      tracker.applySyncRow('calls', 'call-1', {
+        id: 'call-1',
+        job_id: 'nobody',
+        kind: 'screen',
+        on_date: '2026-10-12',
+        state: 'scheduled',
+        created_at: NOW,
+      }),
+    ).toThrow();
+  });
+});

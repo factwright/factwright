@@ -1,21 +1,27 @@
 import { NavItem } from '@factwright/ui';
 import { Briefcase } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
+import type { SyncStatus } from '../shared/sync.ts';
 import { ClaudeCard } from './ClaudeCard.tsx';
 import styles from './Sidebar.module.css';
+import { SyncCard } from './sync/SyncCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
-/** The sidebar: the app's places, and the user's Claude at the bottom. */
+/** The sidebar: the app's places, then sync and the user's Claude at the bottom. */
 export function Sidebar({
   claude,
   onRecheckClaude,
   setup,
+  sync,
+  onOpenSync,
   jobCount,
 }: {
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
   /** The latest check of Factwright's setup, and how to run it again. */
   setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
+  sync: SyncStatus | 'checking';
+  onOpenSync: () => void;
   /** How many jobs there are, once they've loaded. */
   jobCount?: number | undefined;
 }) {
@@ -29,7 +35,8 @@ export function Sidebar({
           current
         />
       </nav>
-      <div className={styles.claude}>
+      <div className={styles.cards}>
+        <SyncCard status={sync} onOpen={onOpenSync} />
         <ClaudeCard
           status={claude}
           onRecheck={onRecheckClaude}

@@ -41,9 +41,11 @@ const FILES: Readonly<Record<string, string | Uint8Array>> = {
   }),
 };
 
-/** A new app data folder, with the made-up job hunt in its workspace. */
-export function newDataFolder(): string {
+/** A new app data folder, with the made-up job hunt in its workspace, or empty. */
+export function newDataFolder({ empty = false } = {}): string {
   const dataDir = mkdtempSync(join(tmpdir(), 'factwright-e2e-'));
+  mkdirSync(join(dataDir, 'workspace'));
+  if (empty) return dataDir;
   for (const [path, contents] of Object.entries(FILES)) {
     const file = join(dataDir, 'workspace', path);
     mkdirSync(join(file, '..'), { recursive: true });

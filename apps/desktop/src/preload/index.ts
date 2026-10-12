@@ -30,6 +30,21 @@ const api: FactwrightApi = {
   readPdf: (path) => ipcRenderer.invoke('files:pdf', path),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   saveFile: (name, text) => ipcRenderer.invoke('files:save', name, text),
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
+  onSyncStatus: (listener) => subscribe('sync:status', listener),
+  signInToSync: () => ipcRenderer.invoke('sync:sign-in'),
+  cancelSyncSignIn: () => ipcRenderer.send('sync:cancel-sign-in'),
+  makeRecoveryKey: () => ipcRenderer.invoke('sync:recovery-key'),
+  turnOnSync: () => ipcRenderer.invoke('sync:turn-on'),
+  linkWithCode: (code) => ipcRenderer.invoke('sync:link', code),
+  useRecoveryKey: (recoveryKey) => ipcRenderer.invoke('sync:recover', recoveryKey),
+  makeLinkCode: () => ipcRenderer.invoke('sync:link-code'),
+  cancelLinkCode: (id) => ipcRenderer.send('sync:cancel-link-code', id),
+  syncNow: () => ipcRenderer.send('sync:now'),
+  syncAccount: () => ipcRenderer.invoke('sync:account'),
+  removeSyncDevice: (id) => ipcRenderer.invoke('sync:remove-device', id),
+  signOutOfSync: () => ipcRenderer.invoke('sync:sign-out'),
+  openAccountPage: () => ipcRenderer.invoke('sync:account-page'),
 };
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {

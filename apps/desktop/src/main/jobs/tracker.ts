@@ -20,6 +20,7 @@ import {
   slug,
   type TrackerFields,
 } from '@factwright/core';
+import type { RowValues } from '@factwright/sync';
 import type {
   AddJobResult,
   CallChanges,
@@ -48,6 +49,18 @@ export interface TrackedRow extends TrackerFields {
 export interface EditContext {
   today: string;
   now: string;
+}
+
+/** The tables that sync, in the order a new device fills them: jobs before their calls and history. */
+export const SYNC_TABLES = ['jobs', 'status_log', 'calls'] as const;
+
+export type SyncTable = (typeof SYNC_TABLES)[number];
+
+/** A row as sync carries it between devices: its table, its ID and its columns as stored. */
+export interface SyncRow {
+  table: SyncTable;
+  id: string;
+  row: RowValues;
 }
 
 /** Each step brings the database up to the next version, in order. Never edit a shipped step. */
@@ -242,6 +255,54 @@ export class Tracker {
       .prepare('UPDATE jobs SET status = ?, status_on = ?, updated_at = ? WHERE id = ?')
       .run(status, at, now, jobId);
     this.logStatus(jobId, status, at);
+  }
+
+  /** The columns a table has in this version of the app. */
+  private columns(table: SyncTable): string[] {
+    return this.db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .map((column) => required(column.name));
+  }
+
+  /** Every row of the tables that sync, as stored, for sync to compare and send. */
+  syncRows(): SyncRow[] {
+    return SYNC_TABLES.flatMap((table) =>
+      this.db
+        .prepare(`SELECT * FROM ${table} ORDER BY rowid`)
+        .all()
+        .map((row) => ({ table, id: required(row.id), row: row as RowValues })),
+    );
+  }
+
+  /** One row as stored, or null when there's none. */
+  syncRow(table: SyncTable, id: string): RowValues | null {
+    const row = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+    return row ? (row as RowValues) : null;
+  }
+
+  /**
+   * Puts a row as another device left it, or removes it for null. Only the columns this
+   * version of the app knows are written, and a column the row lacks keeps its value.
+   */
+  applySyncRow(table: SyncTable, id: string, row: RowValues | null): void {
+    if (row === null) {
+      this.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      return;
+    }
+    const columns = this.columns(table).filter((column) => column === 'id' || column in row);
+    const values = columns.map((column) => (column === 'id' ? id : (row[column] ?? null)));
+    const updates = columns.filter((column) => column !== 'id');
+    this.db
+      .prepare(
+        `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})
+         ON CONFLICT (id) DO ${
+           updates.length
+             ? `UPDATE SET ${updates.map((column) => `${column} = excluded.${column}`).join(', ')}`
+             : 'NOTHING'
+         }`,
+      )
+      .run(...values);
   }
 
   /** Every job the tracker knows, so the skills' records keep joining the same job. */

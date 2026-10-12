@@ -41,6 +41,10 @@
   animation: pulse 1.6s ease-in-out infinite;
 }
 
+.off {
+  background: var(--fw-control-border);
+}
+
 .line,
 .help {
   margin: 0;
@@ -67,7 +71,7 @@
   font-weight: 550;
 }
 
-.recheck {
+.action {
   margin-top: var(--fw-space-2);
 }
 
