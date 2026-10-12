@@ -1,4 +1,6 @@
 .page {
+  /* It holds what's placed in it, such as labels only screen readers see, so they scroll with it. */
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   overflow: auto;

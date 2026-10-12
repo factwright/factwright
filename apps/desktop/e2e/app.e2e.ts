@@ -48,6 +48,25 @@ test('shows the jobs on file, and your Claude ready', async () => {
   await pickView(/^To apply/);
 });
 
+test('scrolls only its panes, never the window, however far the list runs', async () => {
+  const { app, window } = opened;
+  const zoom = (factor: number) =>
+    app.evaluate(
+      ({ BrowserWindow }, by) => BrowserWindow.getAllWindows()[0]?.webContents.setZoomFactor(by),
+      factor,
+    );
+  // Zoomed in, the list runs well past the window's bottom edge.
+  await zoom(2.5);
+  await pickView(/^All/);
+  await expect.poll(() => window.evaluate<number>('innerHeight')).toBeLessThan(400);
+  const page = await window.evaluate<{ scrollHeight: number; clientHeight: number }>(
+    '({ scrollHeight: document.scrollingElement.scrollHeight, clientHeight: document.scrollingElement.clientHeight })',
+  );
+  await zoom(1);
+  expect(page.scrollHeight).toBe(page.clientHeight);
+  await pickView(/^To apply/);
+});
+
 test('checks its setup with Claude Code quietly, and it passes', async () => {
   await expect
     .poll(

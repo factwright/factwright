@@ -116,6 +116,7 @@
 }
 
 .large {
+  position: relative;
   display: grid;
   justify-items: center;
   max-height: min(70vh, 900px);

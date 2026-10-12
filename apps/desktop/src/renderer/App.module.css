@@ -1,7 +1,9 @@
+/* The window itself never scrolls, only its panes: nothing can stretch it past its edges. */
 .app {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: clip;
 }
 
 .body {

@@ -4,6 +4,7 @@
 }
 
 .list {
+  position: relative;
   display: grid;
   gap: var(--fw-space-2);
   max-height: min(52vh, 480px);
