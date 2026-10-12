@@ -75,3 +75,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Screenshots: of an application form, with a question for Claude, or pasted into Claude's panel, where Claude Code takes them as pictures.
 - `about_you`, `past_answers` and `save_about_you`: application answers use what you told Factwright, such as your work authorization and when you can start, and sound like what you sent before. Something forms ask again is saved to your profile, after you OK it, so nobody asks twice.
 - How hard Claude thinks, for each task, by your plan: extra high on Max, Team and Enterprise (job searches at high), and on Pro, high, with medium for salary checks and job searches. **Your Claude → Settings** changes it for everything or one task, beside the model. Until now, runs used Claude Code's default, since restricted mode ignores your own settings. A task needing more effort than the open run starts Claude afresh; one needing less runs in the open run.
+
+### Changed
+- Factwright's new mark: two lines of a resume on one thread, traced down to a dot, the fact behind them. It's in the top bar, getting started and the web view, a heavier cut keeps it crisp at small sizes, and the browser tab and home-screen icons are drawn from it.
+- The app has its own icon, the mark on a blue rounded square, and shows it in the Dock while you develop. Installers will build it in.
+- `@factwright/ui/brand`: the mark's shapes, and the app icon drawn as a PNG with no browser or image library.

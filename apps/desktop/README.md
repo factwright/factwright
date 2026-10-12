@@ -14,7 +14,8 @@ It will:
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
-| [`scripts`](scripts) | The development runner, and a fix node-pty needs after every install |
+| [`scripts`](scripts) | The development runner, the app icon's drawing, and a fix node-pty needs after every install |
+| [`build`](build) | The app icon, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`). Installers will build it in, and the app shows it in the Dock while you develop |
 
 The window is locked down:
 - It runs sandboxed, with no Node and no access to files.

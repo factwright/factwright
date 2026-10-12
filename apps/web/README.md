@@ -18,7 +18,7 @@ It builds the job list with the same code as the desktop app, from [`@factwright
 | `src/server.ts` | Sign-in, and the client for the sync server |
 | `src/jobs.ts` | The phone's job list: most pressing first, the views, and search |
 | `public/_headers` | The pages' security headers: nothing but the app's own scripts may run |
-| `scripts/icons.ts` | Draws the home-screen icons from Factwright's mark (`pnpm --filter @factwright/web icons`) |
+| `scripts/icons.ts` | Draws the browser tab's icon and the home-screen icons from Factwright's mark (`pnpm --filter @factwright/web icons`) |
 
 ## Running it
 The sync server builds it and serves it, at http://localhost:8787: see [Running it locally](../server/README.md#running-it-locally). To work on it with instant reloads, run the server, then:
