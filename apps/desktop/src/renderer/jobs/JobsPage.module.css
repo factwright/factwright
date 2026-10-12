@@ -56,8 +56,29 @@
   margin-top: 22px;
 }
 
-.needsYou {
+/* Narrowing what a view shows: where jobs came from, what needs the user, and the filters. */
+.narrowing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-3);
   margin-left: auto;
+}
+
+.foundBy {
+  max-width: 230px;
+}
+
+.foundBy select {
+  height: 32px;
+  font-size: 13px;
+}
+
+.foundOn select {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-weight: 600;
 }
 
 .noMatch {

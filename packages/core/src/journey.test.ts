@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Job } from './jobs.ts';
-import { journeyCsv, journeyFlowChart, journeyOf, journeySummary, journeys } from './journey.ts';
+import {
+  journeyCsv,
+  journeyFlowChart,
+  journeyFlows,
+  journeyOf,
+  journeySummary,
+  journeys,
+} from './journey.ts';
 import { jobProgress } from './progress.ts';
 import type { Call } from './tracker.ts';
 
@@ -19,6 +26,7 @@ function job(extra: Partial<Job> = {}): Job {
     source: 'HN October 2026',
     fit: null,
     search: null,
+    searches: [],
     folder: null,
     stage: 'new',
     firstSeen: '2026-09-01',
@@ -35,14 +43,15 @@ function job(extra: Partial<Job> = {}): Job {
     appliedOn: null,
     nextAction: null,
     nextOn: null,
-    notes: null,
     questions: [],
     sent: [],
     asks: [],
+    earlierNotes: null,
     archived: false,
     manual: false,
     calls: [],
     statusLog: [],
+    notes: [],
     docKinds: [],
     ...extra,
   };
@@ -171,6 +180,26 @@ describe('journeys and the summary', () => {
       ':Not applied #c4c2b9',
       ':In progress #2a66d0',
     ]);
+  });
+
+  it('lays the steps out left to right, and every ending in a last column', () => {
+    const { nodes, links } = journeyFlows(list);
+    expect(nodes.map(({ id, column }) => [id, column])).toEqual([
+      ['Jobs found', 0],
+      ['Checked', 1],
+      ['Resume built', 2],
+      ['Applied', 3],
+      ['Recruiter screen', 4],
+      ['Interviews', 5],
+      ['Final round', 6],
+      ['Offer', 7],
+      ['In progress', 8],
+      ['Rejected', 8],
+      ['Not applied', 8],
+    ]);
+    expect(nodes[0]).toMatchObject({ kind: 'stage', stage: 'found' });
+    expect(nodes.at(-1)).toMatchObject({ kind: 'outcome', outcome: 'Not applied' });
+    expect(links).toContainEqual({ from: 'Checked', to: 'Applied', value: 2 });
   });
 });
 

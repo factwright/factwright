@@ -104,11 +104,11 @@ test('links a second computer with a code, and the job hunt arrives', async () =
 test('keeps both computers in step as the job hunt changes', async () => {
   await mac.window.getByRole('button', { name: 'Done' }).click();
   await pc.window.getByRole('button', { name: /^Acme Robotics/ }).click();
-  await pc.window
-    .getByPlaceholder('Names, what they asked, anything to remember')
-    .fill('Recruiter: Sam, from the PC');
+  await pc.window.getByRole('textbox', { name: 'New note' }).fill('Recruiter: Sam, from the PC');
+  await pc.window.getByRole('button', { name: 'Add note' }).click();
   await mac.window.getByRole('button', { name: /^Acme Robotics/ }).click();
-  await expect(
-    mac.window.getByPlaceholder('Names, what they asked, anything to remember'),
-  ).toHaveValue('Recruiter: Sam, from the PC', { timeout: 20_000 });
+  await expect(mac.window.getByRole('list', { name: 'Your notes' })).toContainText(
+    'Recruiter: Sam, from the PC',
+    { timeout: 20_000 },
+  );
 });

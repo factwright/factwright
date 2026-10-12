@@ -20,7 +20,7 @@ import {
   type ToolRecord,
   WORKSPACE_PATHS,
 } from './records.ts';
-import type { Call, JobStage, StatusChange, TrackerFields } from './tracker.ts';
+import type { Call, JobStage, Note, StatusChange, TrackerFields } from './tracker.ts';
 
 /** A job's pay, and whether the posting listed it or a salary check estimated it. */
 export interface JobPay {
@@ -39,6 +39,16 @@ export interface JobEvent {
   tool: EventTool;
   date: string | null;
   title: string;
+}
+
+/**
+ * One run of a job search, which can find many jobs: its folder under searches/, which names it,
+ * where it looked, such as "HN October 2026", and when.
+ */
+export interface SearchRun {
+  folder: string;
+  source: string;
+  date: string | null;
 }
 
 /** A job the app has seen before, so it keeps its ID as new work comes in. */
@@ -72,6 +82,8 @@ export interface CollectedJob {
     score: number | null;
     detail: SearchDetail;
   } | null;
+  /** Every job search that found it, oldest first. */
+  searches: SearchRun[];
   /** Its folder under applications/, once a fit check has made one. */
   folder: string | null;
   stage: JobStage;
@@ -97,6 +109,8 @@ export interface Job extends Omit<CollectedJob, 'docs'>, TrackerFields {
   manual: boolean;
   calls: Call[];
   statusLog: StatusChange[];
+  /** The user's dated notes, oldest first. */
+  notes: Note[];
   /** Which Markdown files its folder holds. Their text loads when the job is opened. */
   docKinds: JobDocKind[];
 }
@@ -238,6 +252,17 @@ function eventOf(record: ToolRecord, jobId: string): JobEvent | null {
   }
 }
 
+/** Each run of a job search that found a job, once, oldest first. */
+function searchRuns(searches: readonly SearchRecord[]): SearchRun[] {
+  const runs = new Map<string, SearchRun>();
+  for (const { folder, source, date } of searches) {
+    if (!runs.has(folder)) runs.set(folder, { folder, source, date });
+  }
+  return [...runs.values()].sort(
+    (a, b) => compare(a.date ?? '', b.date ?? '') || compare(a.folder, b.folder),
+  );
+}
+
 /** The job search's note about applying, in the same shape as an apply.md, when it's unusual. */
 function searchApplySteps(searches: readonly SearchRecord[]): string | null {
   const search = [...searches]
@@ -346,6 +371,7 @@ function build(draft: Draft): CollectedJob {
           detail: bestSearch.detail,
         }
       : null,
+    searches: searchRuns(searches),
     folder: folder?.folder ?? null,
     stage,
     firstSeen: dates[0] ?? null,

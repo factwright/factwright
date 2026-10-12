@@ -45,6 +45,16 @@
   width: 140px;
 }
 
+/* A part within a section, such as the calls under Progress. */
+.subheading {
+  margin: var(--fw-space-4) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .calls {
   display: flex;
   flex-direction: column;
@@ -150,15 +160,11 @@
   font-size: var(--fw-text-sm);
 }
 
-.notes {
-  margin-top: var(--fw-space-2);
-}
-
 .history {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: var(--fw-space-2) 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
   font-size: 13px;
@@ -166,23 +172,14 @@
 
 .history li {
   display: flex;
-  align-items: center;
-  gap: var(--fw-space-2);
-  min-height: 30px;
+  align-items: baseline;
+  gap: var(--fw-space-3);
 }
 
 .when {
-  flex: 0 0 120px;
+  flex: 0 0 84px;
   color: var(--fw-muted);
   font-variant-numeric: tabular-nums;
-}
-
-.when .whenInput {
-  width: 120px;
-  height: 28px;
-  padding: 0 6px;
-  color: var(--fw-muted);
-  font-size: var(--fw-text-xs);
 }
 
 .what {

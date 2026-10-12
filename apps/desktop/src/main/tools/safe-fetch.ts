@@ -71,6 +71,9 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
+/** LinkedIn's sites, which its terms keep software from reading. */
+const LINKEDIN = /(^|\.)(linkedin\.com|lnkd\.in|licdn\.com)$/;
+
 /** Why a link can't be fetched, or null when it can. The address itself is checked on connecting. */
 export function linkProblem(url: URL): string | null {
   if (url.protocol !== 'https:') return 'Only https links work.';
@@ -79,6 +82,9 @@ export function linkProblem(url: URL): string | null {
   if (isIP(host)) return 'Links to a bare network address are off limits. Use the site’s name.';
   if (!host.includes('.') || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) {
     return 'Links to this computer or a home network are off limits.';
+  }
+  if (LINKEDIN.test(host.replace(/\.$/, ''))) {
+    return 'Factwright never reads LinkedIn: its terms forbid software reading it. Find the job on the employer’s own site, or ask the user to paste it.';
   }
   return null;
 }

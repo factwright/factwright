@@ -20,7 +20,8 @@ const ACME = job({
   appliedOn: '2026-10-08',
   nextAction: 'Send references',
   nextOn: '2026-10-12',
-  notes: 'Recruiter: Sam Lee',
+  earlierNotes: 'Recruiter: Sam Lee',
+  notes: [{ id: 'n1', on: '2026-10-09', text: 'Screen went well', at: '2026-10-09T17:00Z' }],
   links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
   calls: [
     {
@@ -83,7 +84,11 @@ describe('a job on the phone', () => {
     );
     expect(screen.getByText('Acme Robotics')).toBeTruthy();
     expect(screen.getByText('Remote, US')).toBeTruthy();
-    expect(within(section('Your notes')).getByText('Recruiter: Sam Lee')).toBeTruthy();
+    const notes = within(section('Your notes'));
+    expect(notes.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'Oct 9Screen went well',
+      'Earlier notesRecruiter: Sam Lee',
+    ]);
     expect(within(section('Calls and interviews')).getByText('With Sam, on Zoom')).toBeTruthy();
     expect(within(section('History')).getAllByRole('listitem')).toHaveLength(2);
     const posting = within(section('Links')).getByRole('link', { name: 'Posting' });

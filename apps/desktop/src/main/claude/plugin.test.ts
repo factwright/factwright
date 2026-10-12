@@ -120,9 +120,17 @@ describe('the plugin’s skills', () => {
     }
   });
 
-  it('include the job search the jobs page runs, which asks for a source when it has none', () => {
+  it('include the job search the jobs page runs, with each place it types, or none', () => {
     const found = skills.find(({ folder }) => folder === SEARCH_SKILL);
-    expect(found?.text).toMatch(/If there's none, ask .*AskUserQuestion/);
+    expect(found?.text).toMatch(/If there's no input, ask .*AskUserQuestion/);
+    // The words the app types for each place, word for word.
+    for (const place of ['**HN**', '**LinkedIn**', '**Indeed:**', '**company job boards:**']) {
+      expect(found?.text).toContain(place);
+    }
+    expect(found?.text).toContain('Each place is a search of its own, with its own folder');
+    expect(found?.text).toMatch(
+      /LinkedIn or Indeed:\*\* never open their pages, and never sign in/,
+    );
   });
 
   it('run without asking, under the plugin’s own name', () => {

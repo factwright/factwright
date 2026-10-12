@@ -8,13 +8,14 @@ import {
   shortDate,
 } from '@factwright/core';
 import { Button, Markdown, Pill, TextArea } from '@factwright/ui';
-import { Copy } from 'lucide-react';
+import { ClipboardList, Copy } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import styles from './ApplicationSection.module.css';
 import panel from './JobPanel.module.css';
 import tracking from './JobTracking.module.css';
+import { PanelSection } from './PanelSection.tsx';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
@@ -225,15 +226,12 @@ export function ApplicationSection({
   const sent = answers.filter((answer) => answer.sent).length;
 
   return (
-    <section className={panel.section} aria-labelledby={`answers-heading-${job.id}`}>
-      <div className={tracking.sectionHead}>
-        <h3 id={`answers-heading-${job.id}`} className={panel.heading}>
-          Application answers
-        </h3>
-        <span className={tracking.saveState}>
-          {sent} of {answers.length} sent
-        </span>
-      </div>
+    <PanelSection
+      id="application"
+      title="Application answers"
+      icon={<ClipboardList size={15} />}
+      summary={`${sent} of ${answers.length} sent`}
+    >
       <p className={panel.quiet}>
         Keep what you actually sent, so it’s here when the job moves on. Claude reads it before your
         interviews.
@@ -250,6 +248,6 @@ export function ApplicationSection({
           />
         ))}
       </ol>
-    </section>
+    </PanelSection>
   );
 }

@@ -1,11 +1,35 @@
-/* Beside the list when there's room for both. */
+/* Beside the list when there's room for both. It holds what's placed inside it, such as labels
+   only screen readers see, so they scroll with it rather than stretch the window. */
 .panel {
+  --panel-pad: var(--fw-space-6);
+  position: relative;
   flex: 0 0 clamp(340px, 32%, 420px);
   min-width: 0;
   overflow: auto;
-  padding: var(--fw-space-6);
   border-left: 1px solid var(--fw-border);
   background: var(--fw-surface);
+  container: panel / inline-size;
+}
+
+/* It takes focus only so the keyboard works in it: the controls inside show where focus is. */
+.panel:focus {
+  outline: none;
+}
+
+.inner {
+  padding: 0 var(--panel-pad) var(--panel-pad);
+}
+
+/* The job alone, in place of the list: wider, in two columns, and centered past a point. */
+.expanded {
+  --panel-pad: var(--fw-space-8);
+  flex: 1 1 auto;
+  border-left: 0;
+}
+
+.expanded .inner {
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
 .empty {
@@ -31,12 +55,34 @@
     box-shadow: -12px 0 32px rgb(0 0 0 / 0.14);
   }
 
+  .panel.expanded {
+    width: 100%;
+    box-shadow: none;
+  }
+
   .empty {
     display: none;
   }
 }
 
+/* The job's name and status stay in view while the rest scrolls under them. */
 .head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * var(--panel-pad));
+  padding: var(--fw-space-5) var(--panel-pad) 14px;
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+/* Expanded, the header's background reaches the window's edges past the centered column. */
+.expanded .head {
+  box-shadow: 0 0 0 100vmax var(--fw-surface);
+  clip-path: inset(0 -100vmax);
+}
+
+.headRow {
   display: flex;
   align-items: flex-start;
   gap: var(--fw-space-3);
@@ -62,6 +108,35 @@
   letter-spacing: -0.01em;
 }
 
+.expanded .role {
+  font-size: var(--fw-text-xl);
+}
+
+.tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  margin: -6px -8px 0 0;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: var(--fw-space-2);
+  padding-right: var(--fw-space-2);
+  border-right: 1px solid var(--fw-border);
+}
+
+.position {
+  min-width: 52px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .where {
   margin: 6px 0 0;
   color: var(--fw-muted);
@@ -76,17 +151,12 @@
   font-weight: 550;
 }
 
-.close {
-  flex: 0 0 auto;
-  margin: -6px -8px 0 0;
-}
-
 .badges {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--fw-space-2);
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .problem {
@@ -95,8 +165,17 @@
   font-size: var(--fw-text-sm);
 }
 
+/* What needs the user, the next step and how to apply: above the sections, never closed. */
+.top {
+  padding: var(--fw-space-4) 0 var(--fw-space-5);
+}
+
+.top > :first-child {
+  margin-top: 0;
+}
+
 .next {
-  margin: var(--fw-space-3) 0 0;
+  margin: 0 0 var(--fw-space-3);
   padding: 8px 12px;
   border-radius: 10px;
   font-size: 13px;
@@ -150,8 +229,28 @@
   overflow-wrap: anywhere;
 }
 
-.section {
-  margin-top: 22px;
+/* Expanded: the job's progress and notes at the left, what's known about it at the right. */
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 48px;
+  align-items: start;
+}
+
+/* Sections reach the edges of their column, not the window's. */
+.columns .column {
+  --panel-pad: 0px;
+}
+
+@container panel (max-width: 900px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A part of a section, such as what people say under Fit. */
+.part + .part {
+  margin-top: var(--fw-space-5);
 }
 
 .sectionHead {
@@ -162,13 +261,17 @@
   gap: 4px var(--fw-space-3);
 }
 
-.heading {
+.subheading {
   margin: 0;
-  font-size: var(--fw-text-md);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
   font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.subheading {
+/* The lists under a score, such as Gaps. */
+.listHeading {
   margin: var(--fw-space-3) 0 var(--fw-space-1);
   font-size: 13px;
   font-weight: 650;
@@ -245,7 +348,7 @@
   cursor: pointer;
 }
 
-.moreGroup:first-of-type .subheading {
+.moreGroup:first-of-type .listHeading {
   margin-top: var(--fw-space-2);
 }
 
@@ -258,12 +361,11 @@
   font-size: 13px;
 }
 
-.files,
-.calls {
+.files {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: var(--fw-space-2) 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -300,52 +402,6 @@
 .fileMeta {
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
-}
-
-.notes {
-  margin: var(--fw-space-1) 0 0;
-  font-size: 13px;
-  white-space: pre-wrap;
-}
-
-.calls li {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 10px;
-  border: 1px solid var(--fw-border);
-  border-radius: 10px;
-}
-
-.callKind {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.callNotes {
-  margin: 4px 0 0;
-  font-size: 13px;
-  white-space: pre-wrap;
-}
-
-.history {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: var(--fw-space-2) 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-
-.history li {
-  display: grid;
-  grid-template-columns: 84px 1fr;
-  gap: var(--fw-space-2);
-}
-
-.when {
-  color: var(--fw-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* Lists from a write-up, such as why the job fits. */

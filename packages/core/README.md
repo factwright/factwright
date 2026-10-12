@@ -5,11 +5,13 @@ Shared logic for the desktop app, the web view and the sync server. It runs anyw
 | Module | What it does |
 |---|---|
 | `records` | Reads what the skills saved in the workspace: the fit check log, each job's folder, job searches, salary and employer checks, and drafted messages |
-| `jobs` | Folds those records into one job each, matching them by the job's own link or by role, and keeps known jobs' IDs |
+| `jobs` | Folds those records into one job each, matching them by the job's own link or by role, keeps known jobs' IDs, and notes each job search that found a job |
 | `fit-report` | Reads a fit check's write-up: the score's parts with their evidence, and what people say about the company |
-| `tracker` | Job statuses, calls, the status a job shows, and how far along each status is |
-| `progress` | Where each job stands: what needs your attention, its next step, the stats and the views |
-| `journey` | How far each job got and how it ended, as a flow chart for sankeymatic.com or a spreadsheet |
+| `tracker` | Job statuses, calls, dated notes, the status a job shows, and how far along each status is |
+| `tracked` | Reads the tracker's rows as stored, on this computer or synced from another, and joins them with what the workspace says |
+| `progress` | Where each job stands: what needs your attention, its next step, the stats, and the views it moves through, from To review to Closed |
+| `journey` | How far each job got and how it ended, as the paths of a flow chart, text for sankeymatic.com, or a spreadsheet |
+| `flows` | Lays out a flow chart (a Sankey diagram): each step a bar as tall as its count, each path a band as thick as its count |
 | `apply-steps` | Special steps for applying, from a job's `apply.md` |
 | `posting` | Reads a job posting as plain text, from an applicant system's API (Greenhouse, Lever, Ashby, Gem) or a web page |
 | `boards` | Reads every open job on a company's board from its applicant system's API, finds which posting a link is to, and writes the board as one Markdown file |

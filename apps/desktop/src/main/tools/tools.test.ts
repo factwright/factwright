@@ -127,7 +127,12 @@ describe('find_job', () => {
 describe('job_details', () => {
   it('gives everything on file, including the user’s notes, calls and folder', async () => {
     const id = 'acme-robotics--staff-engineer';
-    jobs.updateJob(id, { notes: 'Recruiter: Sam', nextAction: 'Prepare', nextOn: '2026-10-13' });
+    jobs.updateJob(id, {
+      earlierNotes: 'Recruiter: Sam',
+      nextAction: 'Prepare',
+      nextOn: '2026-10-13',
+    });
+    jobs.addNote(id, { text: 'They want Go.\nAsk about on-call.', on: '2026-10-09' });
     jobs.addCall(id, { kind: 'screen', onDate: '2026-10-14', atTime: '10:30' });
     const answer = await tool('job_details').run({ job: id });
     expect(answer).toContain('## Acme Robotics, Staff Engineer');
@@ -146,7 +151,14 @@ describe('job_details', () => {
     expect(answer).toContain(
       '- How to apply: Apply on their careers page, not LinkedIn. (all steps in apply.md)',
     );
-    expect(answer).toContain('    Recruiter: Sam');
+    expect(answer).toContain(
+      [
+        '- The user’s notes, oldest first:',
+        '    (undated)  Recruiter: Sam',
+        '    2026-10-09  They want Go.',
+        '                Ask about on-call.',
+      ].join('\n'),
+    );
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled');
     expect(answer).toContain('    2026-10-11  The user marked it screen');
   });

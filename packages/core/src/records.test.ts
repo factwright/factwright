@@ -254,4 +254,24 @@ describe('readRecords', () => {
   it('reads an empty workspace as no records', () => {
     expect(readRecords(memoryWorkspace({}))).toEqual([]);
   });
+
+  it('names an HN search by its month, however the search wrote it', () => {
+    const sourceOf = (source: string) => {
+      const [record] = of(
+        readRecords(
+          memoryWorkspace({
+            'searches/2026-10-hn-whos-hiring/jobs.json': JSON.stringify({
+              meta: { source },
+              jobs: [{ company: 'Acme Robotics', role: 'Staff Engineer' }],
+            }),
+          }),
+        ),
+        'search',
+      );
+      return record?.source;
+    };
+    expect(sourceOf('Hacker News · Who is hiring? (October 2026)')).toBe('HN October 2026');
+    expect(sourceOf('HN November 2026')).toBe('HN November 2026');
+    expect(sourceOf('LinkedIn Oct 12')).toBe('LinkedIn Oct 12');
+  });
 });

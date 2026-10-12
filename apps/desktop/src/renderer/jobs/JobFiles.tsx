@@ -1,10 +1,11 @@
 import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
 import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
-import { FileText } from 'lucide-react';
+import { FileText, FolderOpen } from 'lucide-react';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import styles from './JobPanel.module.css';
+import { PanelSection } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
 
 /** The documents a job's folder can hold, in the order they're listed, with what each one is. */
@@ -45,9 +46,17 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
     if (text) setOpen({ title: `${title}: ${job.company}`, text });
   };
 
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const summary =
+    [
+      job.files.length > 0 && count(job.files.length, 'resume'),
+      documents.length > 0 && count(documents.length, 'document'),
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'None yet';
+
   return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>Files</h3>
+    <PanelSection id="files" title="Files" icon={<FolderOpen size={15} />} summary={summary}>
       {job.files.length === 0 && documents.length === 0 ? (
         <p className={styles.quiet}>No files yet.</p>
       ) : (
@@ -112,6 +121,6 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
         </Dialog>
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
-    </section>
+    </PanelSection>
   );
 }

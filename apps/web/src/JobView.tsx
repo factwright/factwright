@@ -157,12 +157,25 @@ export function JobView({
         </dl>
       </section>
 
-      {job.notes && (
+      {(job.notes.length > 0 || job.earlierNotes) && (
         <section className={styles.section} aria-labelledby="notes">
           <h2 id="notes" className={styles.heading}>
             Your notes
           </h2>
-          <p className={styles.notes}>{job.notes}</p>
+          <ul className={styles.items}>
+            {[...job.notes].reverse().map((note) => (
+              <li key={note.id}>
+                <span className={styles.itemNote}>{shortDate(note.on, today)}</span>
+                <p className={styles.notes}>{note.text}</p>
+              </li>
+            ))}
+            {job.earlierNotes && (
+              <li>
+                <span className={styles.itemNote}>Earlier notes</span>
+                <p className={styles.notes}>{job.earlierNotes}</p>
+              </li>
+            )}
+          </ul>
         </section>
       )}
 

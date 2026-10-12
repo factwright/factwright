@@ -1,0 +1,137 @@
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+}
+
+/* Named for screen readers; the section's heading says what it is. */
+.addLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.box {
+  min-height: 2lh;
+  max-height: 14lh;
+  field-sizing: content;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+}
+
+.for {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note {
+  padding: 10px 0;
+  border-top: 1px dashed var(--fw-border);
+}
+
+.note:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.noteHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+  min-height: 26px;
+}
+
+.when {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.when button {
+  margin-left: -4px;
+  color: var(--fw-muted);
+  font-weight: 600;
+}
+
+/* Change and delete stay quiet until the note is hovered or focused. */
+.tools {
+  display: flex;
+  gap: 2px;
+  opacity: 0.35;
+  transition: opacity 120ms ease;
+}
+
+.note:hover .tools,
+.tools:focus-within {
+  opacity: 1;
+}
+
+.text {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  margin-top: 4px;
+}
+
+.editActions,
+.confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+}
+
+.confirm {
+  margin-top: var(--fw-space-2);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fw-bad-soft);
+  font-size: 13px;
+}
+
+.confirm span {
+  margin-right: auto;
+}
+
+.problem {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

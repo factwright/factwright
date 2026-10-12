@@ -34,6 +34,7 @@ const job = (id: string): CollectedJob => ({
   source: 'Fit check',
   fit: null,
   search: null,
+  searches: [],
   folder: null,
   stage: 'checked',
   firstSeen: '2026-10-07',
@@ -72,6 +73,7 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
   const at = (path: string) => join(workspace, ...path.split('/'));
   return {
     workspace,
+    state,
     get tracker() {
       return tracker;
     },
@@ -129,7 +131,7 @@ describe('two computers on one account', () => {
     mac.write('applications/acme--staff/posting.md', '# Staff Engineer at Acme');
     mac.write('applications/acme--staff/resume.pdf', new Uint8Array([37, 80, 68, 70, 0, 255]));
     mac.tracker.saveCollected([job('acme--staff')], AT.now);
-    mac.tracker.updateJob('acme--staff', { status: 'applied', notes: 'Recruiter: Sam' }, AT);
+    mac.tracker.updateJob('acme--staff', { status: 'applied', earlierNotes: 'Recruiter: Sam' }, AT);
     mac.tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-14' }, AT);
 
     expect(await mac.sync()).toMatchObject({ pushed: 7, pulled: 0, conflicts: 0 });
@@ -188,21 +190,75 @@ describe('two computers on one account', () => {
     expect(mac.read('facts/skills.md')).toBe('the Mac’s change');
   });
 
-  it('merge a job both changed, keeping both notes', async () => {
+  it('keep the notes each one jots, and both words when both change one', async () => {
     mac.tracker.saveCollected([job('acme--staff')], AT.now);
-    mac.tracker.updateJob('acme--staff', { notes: 'Recruiter: Sam' }, AT);
+    mac.tracker.addNote('acme--staff', { text: 'Screen with Sam on Tuesday' }, AT);
     await mac.sync();
     await pc.sync();
     const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
-    mac.tracker.updateJob('acme--staff', { notes: 'Recruiter: Sam. Salary band shared.' }, later);
-    pc.tracker.updateJob('acme--staff', { status: 'interview', notes: 'Referred by Priya' }, later);
+    const [shared] = pc.tracker.notes().get('acme--staff') ?? [];
+    mac.tracker.updateNote(shared?.id ?? '', { text: 'Screen with Sam: they want Go' }, later);
+    pc.tracker.updateNote(shared?.id ?? '', { text: 'Screen with Sam, then a panel' }, later);
+    pc.tracker.addNote('acme--staff', { text: 'Panel is four people' }, later);
+    await mac.sync();
+    expect(await pc.sync()).toMatchObject({ conflicts: 1 });
+    await mac.sync();
+    for (const each of [mac, pc]) {
+      expect(
+        each.tracker
+          .notes()
+          .get('acme--staff')
+          ?.map((note) => note.text),
+      ).toEqual([
+        'Screen with Sam, then a panel\n\nFrom Sam’s Mac:\nScreen with Sam: they want Go',
+        'Panel is four people',
+      ]);
+    }
+    // Deleted on one, gone from both.
+    mac.tracker.deleteNote(shared?.id ?? '');
+    await mac.sync();
+    await pc.sync();
+    expect(
+      pc.tracker
+        .notes()
+        .get('acme--staff')
+        ?.map((note) => note.text),
+    ).toEqual(['Panel is four people']);
+  });
+
+  it('leave alone the rows of a table only a newer version keeps', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    // As after going back to an older app: its last sync saw a row it has no table for.
+    const [synced] = mac.state.all('row:jobs:');
+    if (!synced) throw new Error('No synced job');
+    mac.state.save({ ...synced, name: 'row:reminders:r1', record: synced.record });
+    expect(await mac.sync()).toMatchObject({ pushed: 0 });
+  });
+
+  it('merge a job both changed, keeping both notes', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    mac.tracker.updateJob('acme--staff', { earlierNotes: 'Recruiter: Sam' }, AT);
+    await mac.sync();
+    await pc.sync();
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    mac.tracker.updateJob(
+      'acme--staff',
+      { earlierNotes: 'Recruiter: Sam. Salary band shared.' },
+      later,
+    );
+    pc.tracker.updateJob(
+      'acme--staff',
+      { status: 'interview', earlierNotes: 'Referred by Priya' },
+      later,
+    );
     await mac.sync();
     expect(await pc.sync()).toMatchObject({ conflicts: 1 });
     await mac.sync();
     for (const each of [mac, pc]) {
       expect(each.tracker.rows()[0]).toMatchObject({
         status: 'interview',
-        notes: 'Referred by Priya\n\nFrom Sam’s Mac:\nRecruiter: Sam. Salary band shared.',
+        earlierNotes: 'Referred by Priya\n\nFrom Sam’s Mac:\nRecruiter: Sam. Salary band shared.',
       });
     }
     expect(mac.tracker.history()).toEqual(pc.tracker.history());
@@ -217,7 +273,7 @@ describe('two computers on one account', () => {
     // The PC is still on the version before them, so it keeps them only in what it synced.
     pc.downgrade();
     await pc.sync();
-    expect(pc.tracker.rows()[0]?.notes).toBeNull();
+    expect(pc.tracker.rows()[0]?.earlierNotes).toBeNull();
     pc.update();
     expect(pc.tracker.rows()[0]).toMatchObject({
       sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.' }],
@@ -235,13 +291,13 @@ describe('two computers on one account', () => {
     await mac.sync();
     pc.downgrade();
     await pc.sync();
-    pc.tracker.updateJob('acme--staff', { notes: 'Referred by Priya' }, AT);
+    pc.tracker.updateJob('acme--staff', { earlierNotes: 'Referred by Priya' }, AT);
     pc.update();
     expect(await pc.sync()).toMatchObject({ pushed: 1 });
     await mac.sync();
     for (const each of [mac, pc]) {
       expect(each.tracker.rows()[0]).toMatchObject({
-        notes: 'Referred by Priya',
+        earlierNotes: 'Referred by Priya',
         sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.' }],
       });
     }

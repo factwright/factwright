@@ -2,9 +2,9 @@ import { fileSize, localDate, payLabel, shortDate } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   filterCount,
+  foundOptions,
   jobRows,
   NO_FILTERS,
-  sources,
   startingView,
   viewCounts,
   visibleRows,
@@ -29,8 +29,12 @@ describe('visibleRows', () => {
       'Meridian Freight',
       'Orchard Health',
     ]);
-    const active = visibleRows(rows, { ...ALL, view: 'active' });
-    const dates = active.map((row) => row.progress.lastActivity ?? '');
+    expect(companies(visibleRows(rows, { ...ALL, view: 'apply' }))).toEqual([
+      'Acme Robotics',
+      'Brightpath Learning',
+    ]);
+    const all = visibleRows(rows, ALL);
+    const dates = all.map((row) => row.progress.lastActivity ?? '');
     expect(dates).toEqual([...dates].sort().reverse());
   });
 
@@ -41,6 +45,16 @@ describe('visibleRows', () => {
     ]);
     expect(companies(visibleRows(rows, { ...ALL, query: 'no reply' }))).toEqual(['Sable Systems']);
     expect(visibleRows(rows, { ...ALL, query: 'payments zebra' })).toEqual([]);
+    // Dated notes, and the search that found a job, are searched too.
+    expect(companies(visibleRows(rows, { ...ALL, query: 'cost-tooling' }))).toEqual([
+      'Northwind Labs',
+    ]);
+    // Acme's How to apply mentions LinkedIn too.
+    expect(companies(visibleRows(rows, { ...ALL, query: 'linkedin' }))).toEqual([
+      'Acme Robotics',
+      'Bluewave Staffing',
+      'Brightpath Learning',
+    ]);
   });
 
   it('narrows to the jobs that need the user', () => {
@@ -77,31 +91,86 @@ describe('visibleRows', () => {
       'Lumen Health',
     ]);
     expect(visibleRows(rows, { ...ALL, hasResume: true })).toHaveLength(5);
-    expect(visibleRows(rows, { ...ALL, source: 'Added by hand' })).toEqual([]);
+  });
+
+  it('narrows to the jobs one search found, or that came another way', () => {
+    const [linkedIn] = rows.flatMap((row) =>
+      row.job.searches.filter((run) => run.source.startsWith('LinkedIn')),
+    );
+    expect(companies(visibleRows(rows, { ...ALL, found: `search:${linkedIn?.folder}` }))).toEqual([
+      'Bluewave Staffing',
+      'Brightpath Learning',
+    ]);
+    expect(visibleRows(rows, { ...ALL, found: 'search:2026-10-hn-whos-hiring' })).toHaveLength(10);
+    expect(visibleRows(rows, { ...ALL, found: 'from:Added by hand' })).toEqual([]);
+    const byHand = jobRows(
+      sampleJobs().map((job, i) =>
+        i === 0 ? { ...job, searches: [], source: 'Added by hand' } : job,
+      ),
+      TODAY,
+    );
+    expect(companies(visibleRows(byHand, { ...ALL, found: 'from:Added by hand' }))).toEqual([
+      'Northwind Labs',
+    ]);
   });
 });
 
-describe('filterCount and sources', () => {
-  it('counts the filters that are on, and lists where jobs came from', () => {
+describe('filterCount and foundOptions', () => {
+  it('counts the filters that are on, apart from where jobs came from', () => {
     expect(filterCount(ALL)).toBe(0);
     expect(filterCount({ ...ALL, tiers: ['strong', 'good'], minPay: 150_000 })).toBe(3);
-    expect(sources(rows)).toEqual(['HN October 2026']);
+    expect(filterCount({ ...ALL, found: 'search:2026-10-hn-whos-hiring' })).toBe(0);
+  });
+
+  it('lists each search, newest first, with how many jobs it found', () => {
+    const { searches, others } = foundOptions(rows, TODAY);
+    expect(
+      searches.map(({ label, count }) => [label.replace(/^LinkedIn .+/, 'LinkedIn'), count]),
+    ).toEqual([
+      ['LinkedIn', 2],
+      ['HN October 2026', 10],
+    ]);
+    expect(others).toEqual([]);
+    // Two searches of the same place say when each was.
+    const twice = jobRows(
+      sampleJobs().map((job) =>
+        job.company === 'Fernway'
+          ? {
+              ...job,
+              searches: [
+                { folder: '2026-09-hn-whos-hiring', source: 'HN October 2026', date: '2026-09-02' },
+              ],
+            }
+          : job,
+      ),
+      '2026-10-12',
+    );
+    expect(foundOptions(twice, '2026-10-12').searches.map((each) => each.label)).toContain(
+      'HN October 2026 · Sep 2',
+    );
   });
 });
 
 describe('viewCounts', () => {
   it('counts each view with the same search', () => {
-    expect(viewCounts(rows, ALL)).toEqual({ active: 7, review: 2, applied: 5, closed: 3, all: 12 });
-    expect(viewCounts(rows, { ...ALL, query: 'payments' })).toMatchObject({ active: 1, all: 1 });
+    expect(viewCounts(rows, ALL)).toEqual({
+      review: 2,
+      apply: 2,
+      applied: 2,
+      interviewing: 3,
+      closed: 3,
+      all: 12,
+    });
+    expect(viewCounts(rows, { ...ALL, query: 'payments' })).toMatchObject({ applied: 1, all: 1 });
   });
 });
 
 describe('startingView', () => {
-  it('opens on active jobs, or on the ones to review when nothing is active', () => {
-    expect(startingView(rows)).toBe('active');
+  it('opens on the furthest view with jobs in it, or on the ones to review', () => {
+    expect(startingView(rows)).toBe('interviewing');
     const fresh = rows.filter((row) => row.progress.status === 'new');
     expect(startingView(fresh)).toBe('review');
-    expect(startingView([])).toBe('active');
+    expect(startingView([])).toBe('review');
   });
 });
 

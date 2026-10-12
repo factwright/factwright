@@ -10,8 +10,10 @@ import {
   jobProgress,
   jobStats,
   nextStep,
+  startingView,
+  viewOf,
 } from './progress.ts';
-import type { Call } from './tracker.ts';
+import { type Call, JOB_STATUSES } from './tracker.ts';
 
 const TODAY = '2026-10-10';
 
@@ -28,6 +30,7 @@ function job(extra: Partial<Job> = {}): Job {
     source: 'Fit check',
     fit: null,
     search: null,
+    searches: [],
     folder: null,
     stage: 'new',
     firstSeen: '2026-10-01',
@@ -44,14 +47,15 @@ function job(extra: Partial<Job> = {}): Job {
     appliedOn: null,
     nextAction: null,
     nextOn: null,
-    notes: null,
     questions: [],
     sent: [],
     asks: [],
+    earlierNotes: null,
     archived: false,
     manual: false,
     calls: [],
     statusLog: [],
+    notes: [],
     docKinds: [],
     ...extra,
   };
@@ -158,6 +162,11 @@ describe('jobProgress', () => {
     });
     expect(progress.lastActivity).toBe('2026-10-08');
     expect(progress.nextCall?.id).toBe('next');
+    // A note counts as something happening, once its day has come.
+    const noted = (on: string) =>
+      progressOf({ lastActivity: '2026-10-02', notes: [{ id: 'n', on, text: 'Hi', at: on }] });
+    expect(noted('2026-10-09').lastActivity).toBe('2026-10-09');
+    expect(noted('2026-10-30').lastActivity).toBe('2026-10-02');
   });
 });
 
@@ -213,12 +222,31 @@ describe('attention', () => {
 describe('isInView', () => {
   it.each([
     ['new', ['review', 'all']],
-    ['checked', ['active', 'all']],
-    ['applied', ['active', 'applied', 'all']],
-    ['offer', ['active', 'applied', 'all']],
+    ['checked', ['apply', 'all']],
+    ['resume', ['apply', 'all']],
+    ['applied', ['applied', 'all']],
+    ['screen', ['interviewing', 'all']],
+    ['interview', ['interviewing', 'all']],
+    ['offer', ['interviewing', 'all']],
     ['ghosted', ['closed', 'all']],
+    ['accepted', ['closed', 'all']],
   ] as const)('puts %s in %j', (status, views) => {
     expect(JOB_VIEWS.filter((view) => isInView(view, status))).toEqual(views);
+  });
+
+  it('opens on the furthest view with jobs in it', () => {
+    expect(startingView(['new', 'applied', 'screen', 'rejected'])).toBe('interviewing');
+    expect(startingView(['new', 'resume', 'applied'])).toBe('applied');
+    expect(startingView(['new', 'checked'])).toBe('apply');
+    expect(startingView(['rejected'])).toBe('review');
+    expect(startingView([])).toBe('review');
+  });
+
+  it('puts every status in one view besides all, and says which', () => {
+    for (const status of JOB_STATUSES) {
+      const views = JOB_VIEWS.filter((view) => view !== 'all' && isInView(view, status));
+      expect(views).toEqual([viewOf(status)]);
+    }
   });
 });
 

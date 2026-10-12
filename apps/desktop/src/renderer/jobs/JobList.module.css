@@ -135,8 +135,58 @@
   white-space: nowrap;
 }
 
+.companyLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  min-width: 0;
+}
+
 .company {
   font-weight: 600;
+}
+
+/* Which search found the job: quiet, and the first to give way when space runs out. */
+.found {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 7px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 550;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The calls so far, as a line of small steps. */
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text);
+  font-size: var(--fw-text-xs);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.stepDone {
+  border-color: transparent;
+  background: var(--fw-tone-teal-bg);
+  color: var(--fw-tone-teal-fg);
 }
 
 .role {

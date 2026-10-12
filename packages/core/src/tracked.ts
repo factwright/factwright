@@ -11,6 +11,7 @@ import {
   CALL_STATES,
   type Call,
   JOB_STATUSES,
+  type Note,
   type SentAnswer,
   STATUS_RANK,
   type StatusChange,
@@ -121,10 +122,10 @@ export function trackedRow(row: StoredRow): TrackedRow {
     appliedOn: text(row.applied_on),
     nextAction: text(row.next_action),
     nextOn: text(row.next_on),
-    notes: text(row.notes),
     questions: textsOf(row.questions),
     sent: sentOf(row.sent),
     asks: asksOf(row.asks),
+    earlierNotes: text(row.notes),
     archived: row.archived === 1,
   };
 }
@@ -147,6 +148,14 @@ export function trackedCall(row: StoredRow): Call | null {
 export function trackedChange(row: StoredRow): StatusChange | null {
   return isOneOf(JOB_STATUSES, row.status)
     ? { id: required(row.id), status: row.status, at: required(row.at) }
+    : null;
+}
+
+/** A note, read from the tracker's notes table, or null when it doesn't read. */
+export function trackedNote(row: StoredRow): Note | null {
+  const { id, on_date: on, text, created_at: at } = row;
+  return typeof id === 'string' && isIsoDate(on) && typeof text === 'string' && text.trim()
+    ? { id, on, text, at: required(at) }
     : null;
 }
 
@@ -176,17 +185,23 @@ export const changeOrder = (a: StoredRow, b: StoredRow) =>
   (STATUS_RANK[required(a.status) as keyof typeof STATUS_RANK] ?? 0) -
     (STATUS_RANK[required(b.status) as keyof typeof STATUS_RANK] ?? 0);
 
+/** Notes oldest first, by the day they're about, then when they were written. */
+export const noteOrder = (a: StoredRow, b: StoredRow) =>
+  `${required(a.on_date)} ${required(a.created_at)}`.localeCompare(
+    `${required(b.on_date)} ${required(b.created_at)}`,
+  );
+
 const ADDED_BY_HAND = 'Added by hand';
 
 /** Whether the user has tracked anything about a job, so it stays listed after its files go. */
-function isTracked(row: TrackedRow, calls: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, notes } = row;
+function isTracked(row: TrackedRow, kept: number): boolean {
+  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes } = row;
   return (
     manual ||
     archived ||
-    calls > 0 ||
+    kept > 0 ||
     [row.questions, row.sent, row.asks].some((list) => list.length > 0) ||
-    [status, appliedOn, nextAction, nextOn, notes].some(Boolean)
+    [status, appliedOn, nextAction, nextOn, earlierNotes].some(Boolean)
   );
 }
 
@@ -198,26 +213,20 @@ function typedPay(row: TrackedRow): JobPay | null {
 }
 
 /** A job as the app shows it: its tracker row, plus what the workspace says when it has files. */
-function assemble(
-  row: TrackedRow,
-  found: CollectedJob | undefined,
-  calls: Call[],
-  statusLog: StatusChange[],
-): Job {
+function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept): Job {
   const tracking = {
     status: row.status,
     statusOn: row.statusOn,
     appliedOn: row.appliedOn,
     nextAction: row.nextAction,
     nextOn: row.nextOn,
-    notes: row.notes,
     questions: row.questions,
     sent: row.sent,
     asks: row.asks,
+    earlierNotes: row.earlierNotes,
     archived: row.archived,
     manual: row.manual,
-    calls,
-    statusLog,
+    ...kept,
   };
   if (found) {
     const { docs, ...job } = found;
@@ -241,6 +250,7 @@ function assemble(
     source: row.manual ? ADDED_BY_HAND : '',
     fit: null,
     search: null,
+    searches: [],
     folder: null,
     stage: 'new',
     firstSeen: row.firstSeen,
@@ -257,6 +267,20 @@ function assemble(
   };
 }
 
+/** What the tracker keeps for each job in tables of their own, by the job's ID. */
+export interface TrackedItems {
+  calls: ReadonlyMap<string, Call[]>;
+  history: ReadonlyMap<string, StatusChange[]>;
+  notes: ReadonlyMap<string, Note[]>;
+}
+
+/** One job's calls, changes of status and notes. */
+interface Kept {
+  calls: Call[];
+  statusLog: StatusChange[];
+  notes: Note[];
+}
+
 /**
  * Every job to show: each tracker row joined with what the workspace says about it. A job whose
  * files are gone stays listed only while the user has tracked something about it.
@@ -264,13 +288,16 @@ function assemble(
 export function jobList(
   rows: readonly TrackedRow[],
   found: ReadonlyMap<string, CollectedJob>,
-  calls: ReadonlyMap<string, Call[]>,
-  history: ReadonlyMap<string, StatusChange[]>,
+  items: TrackedItems,
 ): Job[] {
   return rows.flatMap((row) => {
     const job = found.get(row.id);
-    const jobCalls = calls.get(row.id) ?? [];
-    if (!job && !isTracked(row, jobCalls.length)) return [];
-    return [assemble(row, job, jobCalls, history.get(row.id) ?? [])];
+    const kept: Kept = {
+      calls: items.calls.get(row.id) ?? [],
+      statusLog: items.history.get(row.id) ?? [],
+      notes: items.notes.get(row.id) ?? [],
+    };
+    if (!job && !isTracked(row, kept.calls.length + kept.notes.length)) return [];
+    return [assemble(row, job, kept)];
   });
 }

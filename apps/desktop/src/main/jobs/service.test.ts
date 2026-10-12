@@ -93,7 +93,7 @@ describe('JobsService', () => {
 
   it('sends nothing when an edit fails', () => {
     jobs.read();
-    expect(jobs.updateJob('missing', { notes: 'x' })).toMatchObject({ ok: false });
+    expect(jobs.updateJob('missing', { earlierNotes: 'x' })).toMatchObject({ ok: false });
     expect(changes).toEqual([]);
   });
 
@@ -113,12 +113,13 @@ describe('JobsService', () => {
   it('keeps a tracked job listed after its files go, and drops one that wasn’t tracked', () => {
     write('applications/tidewater/job.md', '# Tidewater Analytics: Senior Backend Engineer');
     jobs.read();
-    jobs.updateJob('acme-robotics--staff-engineer', { notes: 'Recruiter: Sam' });
+    jobs.updateJob('acme-robotics--staff-engineer', { earlierNotes: 'Recruiter: Sam' });
+    jobs.addNote('acme-robotics--staff-engineer', { text: 'Screen went well' });
     rmSync(join(root, 'applications'), { recursive: true });
     const list = jobs.read();
-    expect(list.jobs.map((job) => [job.id, job.stage, job.notes])).toEqual([
-      ['acme-robotics--staff-engineer', 'new', 'Recruiter: Sam'],
-    ]);
+    expect(
+      list.jobs.map((job) => [job.id, job.stage, job.earlierNotes, job.notes.map((n) => n.text)]),
+    ).toEqual([['acme-robotics--staff-engineer', 'new', 'Recruiter: Sam', ['Screen went well']]]);
   });
 
   it('keeps a job’s ID when its role is renamed', () => {

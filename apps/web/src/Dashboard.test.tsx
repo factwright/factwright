@@ -15,7 +15,7 @@ const VAULT = vaultOf([
     statusOn: '2026-10-09',
     appliedOn: '2026-10-09',
     pay: { text: '$185k–$215k', min: 185_000, max: 215_000, source: 'listed' },
-    notes: 'Recruiter: Sam Lee',
+    notes: [{ id: 'n1', on: '2026-10-09', text: 'Recruiter: Sam Lee', at: '2026-10-09T17:00Z' }],
   }),
   job({
     id: 'birch--lead',
@@ -36,24 +36,26 @@ const shownCompanies = () =>
     .map((link) => link.querySelector('span span')?.textContent);
 
 describe('the jobs page on the phone', () => {
-  it('shows the numbers that matter, then the active jobs, most pressing first', async () => {
+  it('shows the numbers that matter, then the jobs furthest along, most pressing first', async () => {
     const { container } = render(
       <Dashboard vault={VAULT} today={TODAY} refreshing={false} onRefresh={vi.fn()} />,
     );
     expect(screen.getByRole('heading', { name: 'Jobs' })).toBeTruthy();
     expect(screen.getByText('Needs you')).toBeTruthy();
     expect(screen.getByText('1 overdue')).toBeTruthy();
-    expect((screen.getByRole('radio', { name: 'Active 2' }) as HTMLInputElement).checked).toBe(
-      true,
-    );
-    expect(shownCompanies()).toEqual(['Birch Health', 'Acme Robotics']);
+    expect(
+      (screen.getByRole('radio', { name: 'Interviewing 1' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(shownCompanies()).toEqual(['Birch Health']);
     expect(screen.getByText('Overdue: Send references')).toBeTruthy();
-    expect(screen.getByText('$185k–$215k')).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
   it('switches views, and searches', async () => {
     render(<Dashboard vault={VAULT} today={TODAY} refreshing={false} onRefresh={vi.fn()} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'Applied 1' }));
+    expect(shownCompanies()).toEqual(['Acme Robotics']);
+    expect(screen.getByText('$185k–$215k')).toBeTruthy();
     await userEvent.click(screen.getByRole('radio', { name: 'To review 1' }));
     expect(shownCompanies()).toEqual(['Cobalt']);
 
@@ -67,6 +69,7 @@ describe('the jobs page on the phone', () => {
 
   it('opens a job on its own page', async () => {
     render(<Dashboard vault={VAULT} today={TODAY} refreshing={false} onRefresh={vi.fn()} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'Applied 1' }));
     await userEvent.click(screen.getByRole('link', { name: /Acme Robotics/ }));
     expect(location.pathname).toBe('/jobs/acme--staff');
   });

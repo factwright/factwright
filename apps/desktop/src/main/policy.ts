@@ -4,10 +4,15 @@ import type { TerminalSize } from '../shared/api.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
+  MONTH,
   RUN_SKILLS,
   type RunSkill,
   type RunTask,
+  SEARCH_SITES,
   SEARCH_SKILL,
+  type SearchSite,
+  type SearchSources,
+  searchCompany,
   TEMPLATE_SKILL,
   TEMPLATE_SOURCE,
 } from '../shared/runs.ts';
@@ -105,10 +110,42 @@ const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
  * A task from the window, in the shape the app takes: a skill on a job, a job search, getting
  * started, more facts, or a template from a resume the app kept. Anything else is null.
  */
+/**
+ * Where a search should look, as the Find jobs dialog sent it: known places, each once, an HN
+ * month only with HN, and a company typed in a safe form. At least one place. Anything else is
+ * null.
+ */
+export function parseSearchSources(value: unknown): SearchSources | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const { sites, month, company, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0 || !Array.isArray(sites)) return null;
+  const known = (site: unknown): site is SearchSite =>
+    (SEARCH_SITES as readonly unknown[]).includes(site);
+  if (!sites.every(known) || new Set(sites).size !== sites.length) return null;
+  if (month !== undefined && (typeof month !== 'string' || !MONTH.test(month))) return null;
+  if (month !== undefined && !sites.includes('hn')) return null;
+  const named = company === undefined ? undefined : searchCompany(String(company));
+  if (named === null || (typeof company !== 'string' && company !== undefined)) return null;
+  if (sites.length === 0 && !named) return null;
+  // In the order a search goes through them, whatever order they came in.
+  const ordered = SEARCH_SITES.filter((site) => sites.includes(site));
+  return {
+    sites: ordered,
+    ...(month !== undefined && { month }),
+    ...(named !== undefined && { company: named }),
+  };
+}
+
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
-  const { skill, jobId, mode, askId, source, ...rest } = value as Record<string, unknown>;
+  const { skill, jobId, mode, askId, source, sources, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0) return null;
+  if (sources !== undefined) {
+    const valid = skill === SEARCH_SKILL && jobId === undefined && mode === undefined;
+    const parsed =
+      valid && askId === undefined && source === undefined && parseSearchSources(sources);
+    return parsed ? { skill, sources: parsed } : null;
+  }
   if (skill === TEMPLATE_SKILL || source !== undefined) {
     const valid =
       skill === TEMPLATE_SKILL &&
@@ -142,6 +179,14 @@ export function parseRunTask(value: unknown): RunTask | null {
   return { skill: skill as RunSkill, jobId };
 }
 
+/** What the app types for each place a search looks, word for word. */
+const SITE_WORDS: Readonly<Record<SearchSite, string>> = {
+  hn: 'HN',
+  linkedin: 'LinkedIn',
+  indeed: 'Indeed',
+  boards: 'company job boards',
+};
+
 /** What the app types after a skill's name for each of its modes, word for word. */
 const MODE_WORDS = {
   resumes: 'starting resumes',
@@ -152,10 +197,19 @@ const MODE_WORDS = {
 /**
  * What the app types to start a task. It names a job only by its ID, and everything else it
  * types is its own fixed words, so text from a posting or a file, such as a company's name,
- * never reaches Claude as if the user had typed it. A search starts without a source, so Claude
- * asks the user for one.
+ * never reaches Claude as if the user had typed it. The one exception is a company the user
+ * typed for a search themselves, checked first. A search the user picked no places for starts
+ * without any, so Claude asks.
  */
 export function runPrompt(task: RunTask): string {
+  if ('sources' in task && task.sources) {
+    const { sites, month, company } = task.sources;
+    const places = [
+      ...sites.map((site) => (site === 'hn' && month ? `HN ${month}` : SITE_WORDS[site])),
+      ...(company ? [company] : []),
+    ];
+    return `/factwright:${task.skill} ${places.join(' · ')}`;
+  }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;

@@ -221,8 +221,15 @@ export async function jobDetails(job: Job, workspace: string, today: string): Pr
       `${steps.alert ?? 'special steps'}${job.docKinds.includes('apply') ? ' (all steps in apply.md)' : ''}`,
     );
   }
-  if (job.notes)
-    out.push('- The user’s notes:', ...job.notes.split(/\r?\n/).map((line) => `    ${line}`));
+  const indented = (text: string, first: string) =>
+    text.split(/\r?\n/).map((line, i) => `${i === 0 ? first : ' '.repeat(first.length)}${line}`);
+  if (job.earlierNotes || job.notes.length > 0) {
+    out.push(
+      '- The user’s notes, oldest first:',
+      ...(job.earlierNotes ? indented(job.earlierNotes, '    (undated)  ') : []),
+      ...job.notes.flatMap((note) => indented(note.text, `    ${note.on}  `)),
+    );
+  }
   if (job.calls.length > 0) {
     out.push(
       '- Calls and interviews:',

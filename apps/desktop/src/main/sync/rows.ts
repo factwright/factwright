@@ -7,8 +7,8 @@ import type { SyncState } from './state.ts';
 /**
  * How each tracker table merges when two devices change the same row. A job's links,
  * application questions, the answers the user sent and the questions they asked Claude keep
- * what either device added, its notes keep both texts, and on a clash the later change wins, by
- * when the row changed. A call's notes keep both too.
+ * what either device added, its earlier notes keep both texts, and on a clash the later change
+ * wins, by when the row changed. A call's notes keep both too, and so does a note's text.
  */
 export const MERGE_RULES: Record<SyncTable, MergeRules> = {
   jobs: {
@@ -28,6 +28,7 @@ export const MERGE_RULES: Record<SyncTable, MergeRules> = {
   },
   status_log: {},
   calls: { texts: ['notes'] },
+  notes: { texts: ['text'], stamp: 'updated_at' },
 };
 
 /** Columns that don't count as a change on their own, such as when a row last changed. */
@@ -35,6 +36,7 @@ export const IGNORED: Record<SyncTable, readonly string[]> = {
   jobs: ['updated_at'],
   status_log: [],
   calls: [],
+  notes: ['updated_at'],
 };
 
 /** What a row says, as a hash: the same on every device for the same values. */

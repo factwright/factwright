@@ -6,6 +6,8 @@ import {
   parseJobChanges,
   parseNewCall,
   parseNewJob,
+  parseNewNote,
+  parseNoteChanges,
 } from './input.ts';
 
 describe('parseJobChanges', () => {
@@ -15,7 +17,7 @@ describe('parseJobChanges', () => {
         status: 'applied',
         statusOn: '2026-10-08',
         nextAction: '  Follow up  ',
-        notes: '   ',
+        earlierNotes: '   ',
         nextOn: null,
         archived: false,
       }),
@@ -23,7 +25,7 @@ describe('parseJobChanges', () => {
       status: 'applied',
       statusOn: '2026-10-08',
       nextAction: 'Follow up',
-      notes: null,
+      earlierNotes: null,
       nextOn: null,
       archived: false,
     });
@@ -43,7 +45,7 @@ describe('parseJobChanges', () => {
     { statusOn: null },
     { statusOn: '2026-02-30' },
     { appliedOn: 'yesterday' },
-    { notes: 'x'.repeat(LIMITS.notes + 1) },
+    { earlierNotes: 'x'.repeat(LIMITS.notes + 1) },
     { questions: 'Why us?' },
     { questions: [42] },
     { questions: ['x'.repeat(LIMITS.question + 1)] },
@@ -116,5 +118,34 @@ describe('parseDate', () => {
     expect(parseDate('2026-10-02')).toBe('2026-10-02');
     expect(parseDate('2026-10-32')).toBeNull();
     expect(parseDate(20261002)).toBeNull();
+  });
+});
+
+describe('notes', () => {
+  it('take a note’s words, trimmed, and the day it’s about if given', () => {
+    expect(parseNewNote({ text: '  They want Go.  ' })).toEqual({ text: 'They want Go.' });
+    expect(parseNewNote({ text: 'Call went well', on: '2026-10-11' })).toEqual({
+      text: 'Call went well',
+      on: '2026-10-11',
+    });
+    expect(parseNoteChanges({ on: '2026-10-09' })).toEqual({ on: '2026-10-09' });
+    expect(parseNoteChanges({ text: ' Fixed ' })).toEqual({ text: 'Fixed' });
+  });
+
+  it.each([
+    { text: '   ' },
+    { text: 'x'.repeat(LIMITS.note + 1) },
+    { text: 'Fine', on: 'yesterday' },
+    { on: '2026-10-11' },
+    { text: 42 },
+    null,
+  ])('refuses a new note of %j', (value) => {
+    expect(parseNewNote(value)).toBeNull();
+  });
+
+  it('refuses changes that don’t fit', () => {
+    expect(parseNoteChanges({ on: '2026-02-30' })).toBeNull();
+    expect(parseNoteChanges({ text: 'x'.repeat(LIMITS.note + 1) })).toBeNull();
+    expect(parseNoteChanges('not an object')).toBeNull();
   });
 });

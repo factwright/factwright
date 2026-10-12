@@ -28,6 +28,9 @@ type TrackerApi = Pick<
   | 'deleteCall'
   | 'redateStatusChange'
   | 'undoStatusChange'
+  | 'addNote'
+  | 'updateNote'
+  | 'deleteNote'
   | 'onJobsChanged'
   | 'openFile'
   | 'readPdf'
@@ -121,7 +124,10 @@ export function sampleTracker(jobs: string | null): TrackerApi {
               nextAction: changes.nextAction?.trim() || null,
             }),
             ...(changes.nextOn !== undefined && { nextOn: changes.nextOn }),
-            ...(changes.notes !== undefined && { notes: changes.notes?.trim() || null }),
+            ...(changes.appliedOn !== undefined && { appliedOn: changes.appliedOn }),
+            ...(changes.earlierNotes !== undefined && {
+              earlierNotes: changes.earlierNotes?.trim() || null,
+            }),
             ...(changes.questions !== undefined && { questions: changes.questions }),
             ...(changes.archived !== undefined && { archived: changes.archived }),
           };
@@ -146,8 +152,18 @@ export function sampleTracker(jobs: string | null): TrackerApi {
         link: input.link || null,
         location: null,
         source: 'Added by hand',
+        searches: [],
         manual: true,
-        notes: input.notes?.trim() || null,
+        notes: input.notes?.trim()
+          ? [
+              {
+                id: newId('note'),
+                on: today,
+                text: input.notes.trim(),
+                at: new Date().toISOString(),
+              },
+            ]
+          : [],
         firstSeen: today,
         lastActivity: today,
         pay: input.pay
@@ -232,6 +248,40 @@ export function sampleTracker(jobs: string | null): TrackerApi {
             appliedOn: entry?.status === 'applied' ? (applied?.at ?? null) : job.appliedOn,
           };
         },
+      ),
+    addNote: async (jobId, input) => {
+      if (!input.text.trim()) return { ok: false, message: 'Type your note first.' };
+      const note = {
+        id: newId('note'),
+        on: input.on ?? localDate(),
+        text: input.text.trim(),
+        at: new Date().toISOString(),
+      };
+      return change(
+        (job) => job.id === jobId,
+        (job) => ({ ...job, notes: [...job.notes, note] }),
+      );
+    },
+    updateNote: async (noteId, changes) =>
+      change(
+        (job) => job.notes.some((note) => note.id === noteId),
+        (job) => ({
+          ...job,
+          notes: job.notes.map((note) =>
+            note.id === noteId
+              ? {
+                  ...note,
+                  ...(changes.text !== undefined && { text: changes.text.trim() }),
+                  ...(changes.on !== undefined && { on: changes.on }),
+                }
+              : note,
+          ),
+        }),
+      ),
+    deleteNote: async (noteId) =>
+      change(
+        (job) => job.notes.some((note) => note.id === noteId),
+        (job) => ({ ...job, notes: job.notes.filter((note) => note.id !== noteId) }),
       ),
     onJobsChanged: (listener) => {
       listeners.add(listener);

@@ -21,6 +21,8 @@ import type {
   JobList,
   NewCall,
   NewJob,
+  NewNote,
+  NoteChanges,
   ShotFor,
   ShotResult,
 } from '../../shared/api.ts';
@@ -81,7 +83,11 @@ export class JobsService {
   /** Every job, as of the last read. */
   list(): JobList {
     const { tracker } = this.deps;
-    const jobs = jobList(tracker.rows(), this.found, tracker.calls(), tracker.history());
+    const jobs = jobList(tracker.rows(), this.found, {
+      calls: tracker.calls(),
+      history: tracker.history(),
+      notes: tracker.notes(),
+    });
     return { jobs, readAt: this.readAt };
   }
 
@@ -143,6 +149,18 @@ export class JobsService {
 
   undoStatusChange(changeId: string): EditResult {
     return this.saved(this.deps.tracker.undoChange(changeId, this.context().now));
+  }
+
+  addNote(jobId: string, note: NewNote): EditResult {
+    return this.saved(this.deps.tracker.addNote(jobId, note, this.context()));
+  }
+
+  updateNote(noteId: string, changes: NoteChanges): EditResult {
+    return this.saved(this.deps.tracker.updateNote(noteId, changes, this.context()));
+  }
+
+  deleteNote(noteId: string): EditResult {
+    return this.saved(this.deps.tracker.deleteNote(noteId));
   }
 
   /** Keeps what the user actually sent for one of the application's questions. */

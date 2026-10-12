@@ -18,7 +18,7 @@ function page(overrides: Partial<JobsPageProps> = {}) {
     jobs: { state: 'ready', list: { jobs, readAt: null } },
     rows: jobRows(jobs, TODAY),
     today: TODAY,
-    filter: { view: 'active', query: '', needsYou: false, ...NO_FILTERS },
+    filter: { view: 'interviewing', query: '', needsYou: false, ...NO_FILTERS },
     onFilter: vi.fn(),
     selectedId: null,
     onSelect: vi.fn(),
@@ -40,9 +40,13 @@ describe('JobsPage', () => {
     page();
     expect(screen.getByText('12 jobs')).toBeTruthy();
     expect(screen.getByText('In play')).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Active 7' })).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole('radio')
+        .map((radio) => radio.closest('label')?.textContent?.replace(/\s+/g, ' ')),
+    ).toEqual(['To review 2', 'To apply 2', 'Applied 2', 'Interviewing 3', 'Closed 3', 'All 12']);
     const list = screen.getByRole('list', { name: 'Jobs' });
-    expect(within(list).getAllByRole('button')).toHaveLength(7);
+    expect(within(list).getAllByRole('button')).toHaveLength(3);
     expect(
       screen.getByRole('button', { name: /Fernway.*Overdue: Reply to the offer/ }),
     ).toBeTruthy();
@@ -76,16 +80,46 @@ describe('JobsPage', () => {
 
   it('says when nothing matches, with a way back', async () => {
     const props = page({
-      filter: { view: 'active', query: 'zebra', needsYou: false, ...NO_FILTERS },
+      filter: { view: 'applied', query: 'zebra', needsYou: false, ...NO_FILTERS },
     });
     expect(screen.getByText('No jobs match “zebra”')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Show all in Active' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show all in Applied' }));
     expect(props.onFilter).toHaveBeenCalledWith({
-      view: 'active',
+      view: 'applied',
       query: '',
       needsYou: false,
       ...NO_FILTERS,
     });
+  });
+
+  it('shows each interview’s calls so far, and which search found each job to review', () => {
+    page();
+    const northwind = screen.getByRole('button', { name: /^Northwind Labs/ });
+    expect(northwind.textContent).toContain('Screen (done)');
+    expect(northwind.textContent).toContain('Panel');
+    cleanup();
+    page({ filter: { view: 'review', query: '', needsYou: false, ...NO_FILTERS } });
+    expect(screen.getByRole('button', { name: /^Copperleaf Energy/ }).textContent).toContain(
+      'HN October 2026',
+    );
+    expect(screen.getByRole('button', { name: /^Bluewave Staffing/ }).textContent).toMatch(
+      /LinkedIn \w{3} \d+/,
+    );
+  });
+
+  it('narrows the list to one search’s jobs', async () => {
+    const props = page({ filter: { view: 'all', query: '', needsYou: false, ...NO_FILTERS } });
+    const menu = screen.getByRole('combobox', { name: 'Found by' });
+    const options = within(menu)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(options[0]).toBe('Found anywhere');
+    expect(options).toContain('HN October 2026 (10)');
+    expect(options.some((option) => /^LinkedIn \w{3} \d+ \(2\)$/.test(option ?? ''))).toBe(true);
+    await userEvent.selectOptions(menu, 'HN October 2026 (10)');
+    expect(props.onFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ found: 'search:2026-10-hn-whos-hiring' }),
+    );
   });
 
   it('offers to start Claude before there are any jobs', async () => {

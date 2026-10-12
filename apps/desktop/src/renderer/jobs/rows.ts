@@ -8,6 +8,8 @@ import {
   type JobView,
   jobProgress,
   nextStep,
+  shortDate,
+  startingView as viewToOpen,
 } from '@factwright/core';
 import { FIT_TIER_DISPLAY, JOB_STATUS_DISPLAY, MOOD_DISPLAY } from '@factwright/ui';
 
@@ -30,8 +32,11 @@ export interface ListFilter {
   needsYou: boolean;
   /** The fit levels to show. None picked shows every level. */
   tiers: TierFilter[];
-  /** Where the jobs turned up first, such as "HN October 2026". */
-  source: string | null;
+  /**
+   * Where the jobs came from: a job search, as "search:" and its folder, which names the run,
+   * or another way, as "from:" and its name, such as "from:Added by hand".
+   */
+  found: string | null;
   /** The least yearly pay to show, in dollars. */
   minPay: number | null;
   hasResume: boolean;
@@ -41,25 +46,70 @@ export interface ListFilter {
 /** The filters, all off. */
 export const NO_FILTERS: Omit<ListFilter, 'view' | 'query' | 'needsYou'> = {
   tiers: [],
-  source: null,
+  found: null,
   minPay: null,
   hasResume: false,
   showArchived: false,
 };
 
-/** How many filters are on, for the Filters button. */
+/** How many filters are on, for the Filters button. Where jobs came from has its own menu. */
 export function filterCount(filter: ListFilter): number {
   return (
     filter.tiers.length +
-    [filter.source, filter.minPay, filter.hasResume, filter.showArchived].filter(Boolean).length
+    [filter.minPay, filter.hasResume, filter.showArchived].filter(Boolean).length
   );
 }
 
-/** Every place jobs turned up first, for the filters. */
-export function sources(rows: readonly JobRow[]): string[] {
-  return [...new Set(rows.map((row) => row.job.source).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b),
-  );
+/** A place jobs came from, for the "Found by" menu, with how many jobs it holds. */
+export interface FoundOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+/** Whether a job came from where the "Found by" menu says. */
+function cameFrom(job: Job, found: string): boolean {
+  if (found.startsWith('search:')) {
+    const folder = found.slice('search:'.length);
+    return job.searches.some((run) => run.folder === folder);
+  }
+  return job.searches.length === 0 && `from:${job.source}` === found;
+}
+
+/**
+ * Where the jobs came from, for the "Found by" menu: each job search, newest first, by where it
+ * looked and, when two looked in the same place, when; then the other ways jobs came, such as
+ * fit checks of postings the user found and jobs added by hand.
+ */
+export function foundOptions(
+  rows: readonly JobRow[],
+  today: string,
+): { searches: FoundOption[]; others: FoundOption[] } {
+  const runs = new Map<string, { source: string; date: string | null; count: number }>();
+  const others = new Map<string, number>();
+  for (const { job } of rows) {
+    for (const run of job.searches) {
+      const known = runs.get(run.folder) ?? { ...run, count: 0 };
+      runs.set(run.folder, { ...known, count: known.count + 1 });
+    }
+    if (job.searches.length === 0 && job.source) {
+      others.set(job.source, (others.get(job.source) ?? 0) + 1);
+    }
+  }
+  const sources = [...runs.values()].map((run) => run.source);
+  const searches = [...runs.entries()]
+    .sort(([a, x], [b, y]) => (y.date ?? '').localeCompare(x.date ?? '') || b.localeCompare(a))
+    .map(([folder, run]) => {
+      const twice = sources.filter((source) => source === run.source).length > 1;
+      const when = twice && run.date ? ` · ${shortDate(run.date, today)}` : '';
+      return { value: `search:${folder}`, label: `${run.source}${when}`, count: run.count };
+    });
+  return {
+    searches,
+    others: [...others.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([source, count]) => ({ value: `from:${source}`, label: source, count })),
+  };
 }
 
 export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
@@ -68,9 +118,11 @@ export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
     const searchText = [
       job.company,
       job.role,
-      job.notes,
+      job.earlierNotes,
+      ...job.notes.map((note) => note.text),
       job.summary,
       job.source,
+      ...job.searches.map((run) => run.source),
       job.nextAction,
       job.pay?.text,
       job.location,
@@ -94,7 +146,7 @@ function matching(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
     if (job.archived && !filter.showArchived) return false;
     if (filter.needsYou && progress.attention === null) return false;
     if (filter.tiers.length > 0 && !filter.tiers.includes(progress.tier ?? 'none')) return false;
-    if (filter.source && job.source !== filter.source) return false;
+    if (filter.found && !cameFrom(job, filter.found)) return false;
     if (filter.minPay && (job.pay?.max ?? 0) < filter.minPay) return false;
     if (filter.hasResume && job.files.length === 0) return false;
     return words.every((word) => searchText.includes(word));
@@ -125,9 +177,7 @@ export function viewCounts(rows: readonly JobRow[], filter: ListFilter): Record<
   ) as Record<JobView, number>;
 }
 
-/** The view to open on: active jobs, or the ones to review when nothing is active yet. */
+/** The view to open on: the furthest along with jobs in it, where things move fastest. */
 export function startingView(rows: readonly JobRow[]): JobView {
-  const open = rows.filter((row) => !row.job.archived);
-  const active = open.some((row) => isInView('active', row.progress.status));
-  return !active && open.some((row) => row.progress.status === 'new') ? 'review' : 'active';
+  return viewToOpen(rows.filter((row) => !row.job.archived).map((row) => row.progress.status));
 }

@@ -1,20 +1,34 @@
-import { type JobStatus, payLabel, readApplySteps } from '@factwright/core';
-import { FitBadge, IconButton, Markdown, MarkdownLine, Notice, StatusSelect } from '@factwright/ui';
-import { ArrowUpRight, X } from 'lucide-react';
-import { type KeyboardEvent, useState } from 'react';
+import { type Job, type JobStatus, payLabel, readApplySteps } from '@factwright/core';
+import {
+  FIT_TIER_DISPLAY,
+  FitBadge,
+  IconButton,
+  Markdown,
+  MarkdownLine,
+  Notice,
+  StatusSelect,
+} from '@factwright/ui';
+import {
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  Gauge,
+  Maximize2,
+  Minimize2,
+  NotebookPen,
+  Sparkles,
+  X,
+} from 'lucide-react';
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
 import { FilesSection } from './JobFiles.tsx';
+import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
-import {
-  ArchiveFooter,
-  CallsSection,
-  HistorySection,
-  NextStep,
-  NotesSection,
-} from './JobTracking.tsx';
+import { ActivitySection, ArchiveFooter, NextStep, ProgressSection } from './JobTracking.tsx';
+import { PanelSection } from './PanelSection.tsx';
 import { RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
 
@@ -59,6 +73,28 @@ function ApplySection({ markdown }: { markdown: string }) {
   );
 }
 
+/** What Claude has done for the job, in a few words, for its section's heading. */
+function claudeSummary(job: Job): string {
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+  return (
+    [
+      job.fit && 'Fit checked',
+      job.files.length > 0 && 'Resume ready',
+      job.asks.length > 0 && plural(job.asks.length, 'question'),
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'Nothing run yet'
+  );
+}
+
+/** Moving through the jobs in the list while one has the window to itself. */
+export interface PanelNavigation {
+  /** Where the job is in the list, from 1. */
+  index: number;
+  count: number;
+  onStep: (offset: -1 | 1) => void;
+}
+
 export interface JobPanelProps {
   row: JobRow | null;
   api: FactwrightApi;
@@ -66,11 +102,34 @@ export interface JobPanelProps {
   onClose: () => void;
   /** Claude's panel, so the job's Run buttons can start skills. */
   run?: RunControls;
+  /** Whether the job has the window to itself, in place of the list. */
+  expanded?: boolean;
+  /** Gives the job the window to itself, or puts it back beside the list. */
+  onExpand?: (expanded: boolean) => void;
+  navigation?: PanelNavigation;
 }
 
-/** Everything on file for the job picked in the list. */
-export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
+/** Everything on file for the job picked in the list, in sections that open and close. */
+export function JobPanel({
+  row,
+  api,
+  today,
+  onClose,
+  run,
+  expanded = false,
+  onExpand,
+  navigation,
+}: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
+  const panel = useRef<HTMLElement>(null);
+  const jobId = row?.job.id;
+  // A job given the window to itself takes the keyboard's focus too, since the list it was
+  // picked from is gone, so Escape and Tab work in it right away.
+  useEffect(() => {
+    if (expanded && jobId && !panel.current?.contains(document.activeElement)) {
+      panel.current?.focus({ preventScroll: true });
+    }
+  }, [expanded, jobId]);
   if (!row) {
     return (
       <aside className={`${styles.panel} ${styles.empty}`} aria-label="Job details">
@@ -80,23 +139,134 @@ export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
   }
   const { job, progress, next } = row;
   const pay = payLabel(job.pay) ?? job.pay?.text;
-  const meta = [job.location, pay].filter(Boolean).join(' · ');
+  const found = job.searches[0]?.source;
+  const meta = [job.location, pay, found && `Found in ${found}`].filter(Boolean).join(' · ');
   const attention = progress.attention;
+  const fit = progress.tier
+    ? `${FIT_TIER_DISPLAY[progress.tier].label}${progress.score !== null ? ` ${progress.score}` : ''}`
+    : 'Not scored yet';
 
   const changeStatus = async (status: JobStatus) => {
     const result = await api.updateJob(job.id, { status });
     setProblem(result.ok ? null : { jobId: job.id, message: result.message });
   };
-  const closeOnEscape = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && !event.defaultPrevented) onClose();
+  // Escape puts an expanded job back beside the list first, then closes it.
+  const onEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (expanded && onExpand) onExpand(false);
+    else onClose();
   };
 
+  const nextStep = (
+    <div className={styles.top}>
+      {attention && next && (
+        <p className={`${styles.next} ${NEXT_TONE[attention.level]}`}>{next.text}</p>
+      )}
+      <NextStep key={`next-${job.id}`} job={job} api={api} />
+      {job.apply && <ApplySection markdown={job.apply} />}
+    </div>
+  );
+  const tracking: ReactNode[] = [
+    <ProgressSection
+      key={`progress-${job.id}`}
+      job={job}
+      progress={progress}
+      api={api}
+      today={today}
+    />,
+    <PanelSection
+      key="notes"
+      id="notes"
+      title="Notes"
+      icon={<NotebookPen size={15} />}
+      summary={notesSummary(job)}
+    >
+      <JobNotes job={job} api={api} today={today} />
+    </PanelSection>,
+  ];
+  const about: ReactNode[] = [
+    <PanelSection
+      key="claude"
+      id="claude"
+      title="Your Claude"
+      icon={<Sparkles size={15} />}
+      summary={claudeSummary(job)}
+    >
+      {run && <RunActions job={job} status={progress.status} run={run} api={api} />}
+      <AskSection key={`ask-${job.id}`} job={job} api={api} run={run} today={today} />
+    </PanelSection>,
+    <PanelSection key="fit" id="fit" title="Fit" icon={<Gauge size={15} />} summary={fit}>
+      <ScoreSection job={job} today={today} />
+      <SentimentSection job={job} today={today} />
+      <SearchSection job={job} today={today} />
+    </PanelSection>,
+    <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
+    <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} />,
+    <ActivitySection key="activity" job={job} today={today} />,
+  ];
+
   return (
-    <aside className={styles.panel} aria-label="Job details" onKeyDown={closeOnEscape}>
-      <div className={styles.head}>
-        <div className={styles.title}>
-          <p className={styles.company}>{job.company}</p>
-          <h2 className={styles.role}>{job.role || 'Company outreach'}</h2>
+    <aside
+      ref={panel}
+      className={`${styles.panel} ${expanded ? styles.expanded : ''}`}
+      aria-label="Job details"
+      tabIndex={-1}
+      onKeyDown={onEscape}
+    >
+      <div className={styles.inner}>
+        <header className={styles.head}>
+          <div className={styles.headRow}>
+            <div className={styles.title}>
+              <p className={styles.company}>{job.company}</p>
+              <h2 className={styles.role}>{job.role || 'Company outreach'}</h2>
+            </div>
+            <div className={styles.tools}>
+              {expanded && navigation && navigation.count > 1 && (
+                <span className={styles.stepper}>
+                  <IconButton
+                    label="Previous job"
+                    variant="quiet"
+                    size="sm"
+                    icon={<ChevronLeft size={16} aria-hidden="true" />}
+                    disabled={navigation.index <= 1}
+                    onClick={() => navigation.onStep(-1)}
+                  />
+                  <span className={styles.position}>
+                    {navigation.index} of {navigation.count}
+                  </span>
+                  <IconButton
+                    label="Next job"
+                    variant="quiet"
+                    size="sm"
+                    icon={<ChevronRight size={16} aria-hidden="true" />}
+                    disabled={navigation.index >= navigation.count}
+                    onClick={() => navigation.onStep(1)}
+                  />
+                </span>
+              )}
+              {onExpand && (
+                <IconButton
+                  label={expanded ? 'Show beside the list' : 'Expand'}
+                  variant="quiet"
+                  icon={
+                    expanded ? (
+                      <Minimize2 size={15} aria-hidden="true" />
+                    ) : (
+                      <Maximize2 size={15} aria-hidden="true" />
+                    )
+                  }
+                  aria-pressed={expanded}
+                  onClick={() => onExpand(!expanded)}
+                />
+              )}
+              <IconButton
+                label="Close details"
+                variant="quiet"
+                icon={<X size={16} aria-hidden="true" />}
+                onClick={onClose}
+              />
+            </div>
+          </div>
           {(meta || job.link) && (
             <p className={styles.where}>
               {meta}
@@ -109,52 +279,38 @@ export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
               )}
             </p>
           )}
-        </div>
-        <IconButton
-          className={styles.close}
-          label="Close details"
-          variant="quiet"
-          icon={<X size={16} aria-hidden="true" />}
-          onClick={onClose}
-        />
-      </div>
+          <div className={styles.badges}>
+            <StatusSelect
+              status={progress.status}
+              label={`Status for ${job.company}`}
+              onChange={changeStatus}
+            />
+            <FitBadge score={progress.score} tier={progress.tier} />
+          </div>
+          {problem?.jobId === job.id && (
+            <p className={styles.problem} role="alert">
+              {problem.message}
+            </p>
+          )}
+        </header>
 
-      <div className={styles.badges}>
-        <StatusSelect
-          status={progress.status}
-          label={`Status for ${job.company}`}
-          onChange={changeStatus}
-        />
-        <FitBadge score={progress.score} tier={progress.tier} />
+        {expanded ? (
+          <div className={styles.columns}>
+            <div className={styles.column}>
+              {nextStep}
+              {tracking}
+            </div>
+            <div className={styles.column}>{about}</div>
+          </div>
+        ) : (
+          <div className={styles.column}>
+            {nextStep}
+            {tracking}
+            {about}
+          </div>
+        )}
+        <ArchiveFooter job={job} api={api} />
       </div>
-      {problem?.jobId === job.id && (
-        <p className={styles.problem} role="alert">
-          {problem.message}
-        </p>
-      )}
-      {attention && next && (
-        <p className={`${styles.next} ${NEXT_TONE[attention.level]}`}>{next.text}</p>
-      )}
-
-      <NextStep key={`next-${job.id}`} job={job} api={api} />
-      {job.apply && <ApplySection markdown={job.apply} />}
-      {run && <RunActions job={job} status={progress.status} run={run} api={api} />}
-      <AskSection key={`ask-${job.id}`} job={job} api={api} run={run} today={today} />
-      <ScoreSection job={job} today={today} />
-      <SentimentSection job={job} today={today} />
-      <CallsSection
-        key={`calls-${job.id}`}
-        job={job}
-        status={progress.status}
-        api={api}
-        today={today}
-      />
-      <NotesSection key={`notes-${job.id}`} job={job} api={api} />
-      <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />
-      <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} />
-      <SearchSection job={job} today={today} />
-      <HistorySection job={job} api={api} today={today} />
-      <ArchiveFooter job={job} api={api} />
     </aside>
   );
 }

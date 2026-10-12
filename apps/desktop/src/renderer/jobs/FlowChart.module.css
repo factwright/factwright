@@ -1,0 +1,46 @@
+.chart {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+/* The bands sit back, and the one under the pointer comes forward. */
+.band {
+  fill-opacity: 0.32;
+  transition: fill-opacity 120ms ease;
+}
+
+.band:hover {
+  fill-opacity: 0.62;
+}
+
+/* Labels keep a halo in the page's color, so they read over the bands. */
+.label {
+  font-size: 12px;
+  paint-order: stroke;
+  stroke: var(--fw-surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.name {
+  fill: var(--fw-text);
+  font-weight: 600;
+}
+
+.count {
+  fill: var(--fw-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-md);
+}

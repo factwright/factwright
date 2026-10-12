@@ -25,6 +25,10 @@
   width: min(720px, calc(100vw - 64px));
 }
 
+.xl {
+  width: min(1080px, calc(100vw - 64px));
+}
+
 .head {
   display: flex;
   align-items: flex-start;

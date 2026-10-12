@@ -40,6 +40,8 @@ import {
   parseJobChanges,
   parseNewCall,
   parseNewJob,
+  parseNewNote,
+  parseNoteChanges,
 } from './jobs/input.ts';
 import type { JobsService } from './jobs/service.ts';
 import {
@@ -317,6 +319,18 @@ export function registerIpc({
   answer('history:undo', (changeId) =>
     isId(changeId) ? jobs.undoStatusChange(changeId) : REFUSED,
   );
+
+  answer('notes:add', (jobId, note) => {
+    const valid = parseNewNote(note);
+    return isId(jobId) && valid ? jobs.addNote(jobId, valid) : REFUSED;
+  });
+
+  answer('notes:update', (noteId, changes) => {
+    const valid = parseNoteChanges(changes);
+    return isId(noteId) && valid ? jobs.updateNote(noteId, valid) : REFUSED;
+  });
+
+  answer('notes:delete', (noteId) => (isId(noteId) ? jobs.deleteNote(noteId) : REFUSED));
 
   answer('files:open', async (path): Promise<EditResult> => {
     const file = typeof path === 'string' ? openableFile(workspace, path) : null;
