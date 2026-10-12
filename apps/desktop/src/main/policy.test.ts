@@ -1,4 +1,4 @@
-import { join, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   contentSecurityPolicy,
@@ -77,7 +77,8 @@ describe('resolveInside', () => {
 });
 
 describe('previewablePdf', () => {
-  const workspace = join(sep, 'data', 'workspace');
+  // Resolved like the app resolves it, which on Windows adds the drive, such as D:.
+  const workspace = resolve(sep, 'data', 'workspace');
 
   it('previews only PDFs inside the workspace', () => {
     expect(previewablePdf(workspace, 'applications/acme/Resume.PDF')).toBe(
@@ -89,7 +90,8 @@ describe('previewablePdf', () => {
 });
 
 describe('openableFile', () => {
-  const workspace = join(sep, 'data', 'workspace');
+  // Resolved like the app resolves it, which on Windows adds the drive, such as D:.
+  const workspace = resolve(sep, 'data', 'workspace');
 
   it('opens resumes inside the workspace', () => {
     expect(openableFile(workspace, 'applications/acme/resume.pdf')).toBe(
