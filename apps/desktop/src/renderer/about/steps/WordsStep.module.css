@@ -1,0 +1,14 @@
+.prompts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A big box: the point is to write a lot. */
+.box {
+  min-height: max(320px, 42vh);
+  padding: 12px 14px;
+  font-size: var(--fw-text-base);
+  line-height: 1.6;
+}

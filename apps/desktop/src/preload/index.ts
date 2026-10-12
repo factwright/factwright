@@ -49,6 +49,18 @@ const api: FactwrightApi = {
   removeSyncDevice: (id) => ipcRenderer.invoke('sync:remove-device', id),
   signOutOfSync: () => ipcRenderer.invoke('sync:sign-out'),
   openAccountPage: () => ipcRenderer.invoke('sync:account-page'),
+  profile: () => ipcRenderer.invoke('about:profile'),
+  saveAnswers: (changes) => ipcRenderer.invoke('about:save', changes),
+  saveNotes: (text) => ipcRenderer.invoke('about:notes', text),
+  saveConfidential: (names) => ipcRenderer.invoke('about:confidential', names),
+  addFile: (upload) => ipcRenderer.invoke('about:add-file', upload),
+  addLinkedIn: (upload) => ipcRenderer.invoke('about:add-linkedin', upload),
+  removeFile: (path) => ipcRenderer.invoke('about:remove-file', path),
+  startProfile: () => ipcRenderer.invoke('about:start'),
+  useAnswersForCriteria: () => ipcRenderer.invoke('about:use-answers'),
+  templatePreview: (layout, name) => ipcRenderer.invoke('about:preview', layout, name),
+  onProfileChanged: (listener) => subscribe('about:changed', listener),
+  openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
 };
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {

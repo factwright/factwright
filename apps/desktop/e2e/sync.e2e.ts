@@ -81,7 +81,8 @@ test('turns on sync on the first computer, with a recovery key saved', async () 
 
 test('links a second computer with a code, and the job hunt arrives', async () => {
   pc = await computer(true);
-  await expect(pc.window.getByText('No jobs yet', { exact: false })).toBeVisible();
+  // A computer with nothing on it welcomes a new user, who can bring their job hunt instead.
+  await expect(pc.window.getByRole('heading', { name: 'Let’s get you set up' })).toBeVisible();
   await syncCard(pc).getByRole('button', { name: 'Turn on…' }).click();
   await pc.window.getByRole('button', { name: 'Sign in with your browser' }).click();
   await approveInBrowser(pc);

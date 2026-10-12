@@ -27,6 +27,14 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - Once for each new version of Claude Code, the app starts it hidden, with no prompt, to check that its setup still works, then closes it. No prompt means none of your plan is used, and the check runs with the same restrictions as a run.
 - Building a resume runs without asking, since it stays on this computer: Factwright prints it in a hidden window that loads nothing else. Once you've applied to a job, the files you sent stay as they are.
 
+## What you share when you start
+Getting started asks for your resumes, your LinkedIn and anything else that shows your work.
+- **LinkedIn:** Factwright never signs in to LinkedIn, or reads it from a browser. You save your own profile as a PDF, or download LinkedIn's export of your data, and add the file. From the export, the app keeps only your profile's parts and your connections (for finding people to message); your messages, invitations and the rest are never read.
+- **Files are checked twice.** The window, which runs sandboxed with no access to your files, reads the text out of the files you picked. The app then checks each one again: a type it takes, no bigger than sync can carry, and bytes that are what the name says. It keeps them in your workspace, so Claude can read them.
+- **What's in a file is data.** Claude is told never to follow instructions found in a file you shared, the same as with job posts.
+- **Unconfirmed until you say so.** Every fact Claude drafts from your files is marked `unconfirmed`, and nothing goes on a resume until you've confirmed it.
+- **A run for getting started** may save your facts, starting resumes and guide without asking each time, since that's the work you started it for and it reads only your own files. Every other run still asks first.
+
 ## Your data in the cloud
 Sync is off until you turn it on. Once it's on, your Mac, your Windows PC and your phone show the same job hunt, and everything is locked on your device before it leaves.
 

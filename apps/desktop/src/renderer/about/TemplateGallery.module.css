@@ -1,0 +1,126 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: var(--fw-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.card[data-picked] {
+  border-color: var(--fw-accent);
+  box-shadow: 0 0 0 1px var(--fw-accent);
+}
+
+/* The page sits on a backdrop like a PDF app's, cropped to its top half. */
+.thumb {
+  position: relative;
+  display: grid;
+  place-items: start center;
+  height: 210px;
+  padding: var(--fw-space-3) var(--fw-space-3) 0;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-sunken);
+  cursor: zoom-in;
+}
+
+.page {
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+}
+
+.drawing,
+.failed {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--fw-radius-sm) var(--fw-radius-sm) 0 0;
+  background: var(--fw-surface);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.drawing {
+  opacity: 0.6;
+}
+
+.enlarge {
+  position: absolute;
+  right: var(--fw-space-2);
+  bottom: var(--fw-space-2);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-surface);
+  color: var(--fw-muted);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.thumb:hover .enlarge,
+.thumb:focus-visible .enlarge {
+  opacity: 1;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-3);
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+}
+
+.name {
+  margin: 0;
+  font-size: var(--fw-text-base);
+  font-weight: 650;
+}
+
+.look,
+.why {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.look {
+  color: var(--fw-muted);
+}
+
+.why {
+  color: var(--fw-ok);
+  font-weight: 600;
+}
+
+.large {
+  display: grid;
+  justify-items: center;
+  max-height: min(70vh, 900px);
+  min-height: 300px;
+  overflow-y: auto;
+  padding: var(--fw-space-4);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+}

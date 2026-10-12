@@ -410,13 +410,36 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
       'Not built. Fix resume.json first:\n- resume.headline is missing.',
     );
-    expect(await tool('build_resume').run({ folder: '../escape' })).toContain(
-      'isn’t a job folder name',
-    );
+    for (const folder of ['../escape', 'base/../facts', 'base/Startup IC', 'base/']) {
+      expect(await tool('build_resume').run({ folder })).toContain(
+        'isn’t a job folder or a starting resume',
+      );
+    }
     expect(await tool('build_resume').run({ folder: FOLDER, format: 'rtf' })).toBe(
       'The format should be pdf, docx, both.',
     );
     expect(printer.print).not.toHaveBeenCalled();
+  });
+
+  it('builds a starting resume in base/, beside its data', async () => {
+    mkdirSync(join(root, 'base'));
+    const data = { ...resume, layout: 'classic', output_name: 'AlexRiveraResume_Startups' };
+    writeFileSync(join(root, 'base', 'startup-ic.json'), JSON.stringify(data));
+    const answer = await tool('build_resume').run({ folder: 'base/startup-ic', format: 'both' });
+    expect(answer).toContain(
+      'Built base/AlexRiveraResume_Startups.pdf in the classic layout: 2 pages, the last one 84% full.',
+    );
+    expect(answer).toContain('Built base/AlexRiveraResume_Startups.docx.');
+    expect(readFileSync(join(root, 'base', 'AlexRiveraResume_Startups.pdf'), 'utf8')).toBe(
+      '%PDF-1.7 made up',
+    );
+    // Caladea, Cambria's stand-in, sets the classic layout.
+    expect(printer.print.mock.calls[0]?.[0]).toContain(
+      '@font-face{font-family:"Caladea";font-weight:400;',
+    );
+    expect(await tool('build_resume').run({ folder: 'base/big-company-leader' })).toBe(
+      'There’s no base/big-company-leader.json yet. Write the resume there first.',
+    );
   });
 
   it('keeps the files that went out with an application', async () => {

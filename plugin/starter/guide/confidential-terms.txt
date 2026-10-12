@@ -1,0 +1,1 @@
+# Names that must never appear in anything sent to an employer: customers, colleagues, codenames, internal tools and hosts. One per line, matched ignoring case.

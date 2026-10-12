@@ -2,6 +2,7 @@ import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shar
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import type { RunTask } from '../shared/runs.ts';
+import { sampleProfile } from './about/sample-profile.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleSync } from './sync/sample-sync.ts';
 
@@ -82,7 +83,8 @@ function sampleRun(dark: boolean) {
 /**
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
  * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?jobs picks
- * the jobs: none, failed or loading. Starting Claude plays a short made-up run, so every state
+ * the jobs: none, failed or loading. ?profile picks how far the user's profile has come: new,
+ * started or done. Starting Claude plays a short made-up run, so every state
  * of the panel can be seen, and status changes stick until the page reloads.
  */
 export function sampleApi(): FactwrightApi {
@@ -187,6 +189,7 @@ export function sampleApi(): FactwrightApi {
     },
     ...sampleTracker(query.get('jobs')),
     ...sampleSync(query.get('sync')),
+    ...sampleProfile(query.get('profile')),
     // Which model Claude runs on, kept until the page reloads.
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {

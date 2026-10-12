@@ -1,0 +1,87 @@
+/* It takes the width it's given, so the steps can tell how much room they have. */
+.nav {
+  width: 100%;
+  container-type: inline-size;
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: var(--fw-radius-full);
+  background: transparent;
+  color: var(--fw-muted);
+  font: inherit;
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.step:hover:not(:disabled):not(.current) {
+  background: var(--fw-hover);
+  color: var(--fw-text);
+}
+
+.step:disabled {
+  cursor: default;
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-full);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.current {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.current .mark {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent);
+  color: var(--fw-accent-ink);
+}
+
+.done {
+  color: var(--fw-text);
+}
+
+.done .mark {
+  border-color: var(--fw-ok);
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+}
+
+/* In a narrow window only the step showing shows its name. The others still read aloud. */
+@container (max-width: 860px) {
+  .step:not(.current) .name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

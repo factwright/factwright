@@ -10,14 +10,15 @@ The user's input is whatever came with the command or in their next message:
 - **job posting:** a link or text, or a job from the app (`job <id>`). This is the only required input.
 - **company link, notes:** anything else they add
 - **format:** `pdf` (default) | `word`/`docx` | `both`
-- **style:** `startup` | `big-company` (inferred if missing)
-- **track:** `leader` | `builder` | `ic` (inferred if missing)
+- **style:** a style in `guide/styles/README.md`, such as `startup`, `big-company` or `public-sector` (inferred if missing)
+- **track:** `leader` | `builder` | `ic`, as `guide/styles/README.md` defines them (inferred if missing)
 
 If there's no posting, ask for it in one line and stop. Don't ask about anything that has a default. State your inferred picks in one line and keep going.
 
 Before starting, read:
 - `guide/rules.md`: binding rules for every resume.
 - `guide/preferences.md`: the user's soft nudges, learned from their feedback. Defaults, not rules.
+- `guide/templates.md`, if there is one: the templates the user picked, and which kind of company each is for, plus their resume length and files.
 - `facts/README.md`, if there is one: which file holds what.
 
 If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
@@ -52,6 +53,7 @@ Append `## Requirements` to job.md:
 - Use `facts/skills.md` for tech.
 - Respect status and ownership tags.
 - Check `facts/gaps.md` before treating anything as unknown. "Doesn't have" means it's settled: don't ask again.
+- A claim tagged `unconfirmed` counts as `none` until the user confirms it: if the job needs it, ask about it in step 5.
 
 ## 5. Ask the user about gaps (this is how the fact bank grows)
 Ask about the requirements that are `partial` or `none`, that matter for this job, and that aren't already settled in gaps.md.
@@ -59,7 +61,7 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 - Be concrete and give easy answers. For example:
   - Question: "Have you run Kafka (or another event-streaming platform) in production?"
   - Options: "Yes, in production" / "Some (side project, POC, or an earlier role)" / "No"
-- If a claim you want to use for this job is in gaps.md **Needs confirmation**, ask about it here too.
+- If a claim you want to use for this job is in gaps.md **Needs confirmation**, or tagged `unconfirmed`, ask about it here too. Once confirmed, drop the tag and set its Source.
 - Follow up once, briefly, if a "yes" is missing what, where, when, or scale. Don't nag.
 - Skip this step if coverage is strong. Never ask about trivia.
 
@@ -70,8 +72,10 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 - **New tech:** add a row to `facts/skills.md`.
 
 ## 6. Draft `resume.json` in the folder
-- Copy the closest starting point: the style and track's base named in the style file (`base/*.json`), or a past `applications/*/resume.json` for a more similar role.
+- Copy the closest starting point: the style and track's starting resume (`base/<style>-<track>.json`, or the base the style file names), or a past `applications/*/resume.json` for a more similar role.
 - Set `layout`, `format` and `output_name`:
+  - `layout`: the template `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or the one for any job; otherwise the starting point's. If the user names a template, use it.
+  - `format`: what the user asked for, or what `guide/templates.md` says.
   - `output_name` is `<FirstLast>Resume<MMDDYYYY>_<Company>`: the user's name from `facts/profile.md` without spaces, the folder's date, and the company's short name in letters and digits only (e.g. `AlexRiveraResume10072026_Acme`).
   - Leave the role out unless one company gets two resumes on the same date; then add a short role tag (e.g. `_Acme_TL`).
 - Keep the base's `systems_heading` (such as "Key Systems Built at <employer>").
@@ -81,10 +85,10 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
   - **Stats:** the most relevant approved stats (usually 4).
   - **Systems cards:** ranked by relevance, as many as `guide/lint.json` asks (6 when it doesn't say).
   - **Bullets:** choose and re-order the bullets from facts, and re-head the groups to match the job's themes. Mirror the posting's exact terms where they're true.
-  - **Skills:** as many lines as `guide/lint.json` asks (4 when it doesn't say), must-have tech first, only tech that's in `facts/skills.md`.
-  - **Projects:** keep them or drop them per the style.
+  - **Skills:** as many lines as `guide/lint.json` asks (4 when it doesn't say), must-haves first, only what's in `facts/skills.md`. Keep the starting point's `skills_heading`, or name it for the field.
+  - **Projects and education:** keep them or drop them per the style and the posting. Keep `education` whenever the posting asks for a degree, a license or a certification.
 - Apply the nudges in `guide/preferences.md` as defaults. If the job needs something else, skip the nudge and note why in notes.md.
-- Every line must trace to a `facts/` claim. Reuse approved wording and stay inside each claim's Say / don't-say limits.
+- Every line must trace to a confirmed `facts/` claim, never one tagged `unconfirmed`. Reuse approved wording and stay inside each claim's Say / don't-say limits.
 - Address the likely worries through framing (headline, summary, emphasis). Never through untrue claims.
 
 The shape of `resume.json` (leave out what doesn't apply):
@@ -99,13 +103,15 @@ The shape of `resume.json` (leave out what doesn't apply):
   "systems_heading": "", "systems": [{ "name": "", "text": "" }],
   "experience": [{ "title": "", "company": "", "company_note": "", "location": "", "start": "07/2024", "end": "Present",
     "intro": "", "bullet_groups": [{ "heading": "", "bullets": [{ "lead": "", "text": "" }] }] }],
-  "projects": [{ "name": "", "status": "", "url": "", "text": "" }],
-  "skills": [{ "category": "", "items": [""] }],
+  "projects_heading": "", "projects": [{ "name": "", "status": "", "url": "", "text": "" }],
+  "education": [{ "degree": "", "school": "", "location": "", "start": "", "end": "", "note": "" }],
+  "education_first": false,         // early in a career, education leads
+  "skills_heading": "", "skills": [{ "category": "", "items": [""] }],
   "extra_sections": [{ "heading": "", "items": [""] }],
   "change_log": [], "notes": []     // history the resume never shows
 }
 ```
-Layouts: `timeline` (the default), `executive` and `modern`. Any text can hold `**bold**` (one key metric per bullet, at most) and `[[placeholders]]`, which the build refuses while one is left.
+Layouts: `classic`, `timeline` (the default), `executive`, `modern`, `compact`, `minimal`, `elegant` and `banner`; `guide/writing.md` says how each one looks and fits. Any text can hold `**bold**` (one key metric per bullet, at most) and `[[placeholders]]`, which the build refuses while one is left.
 
 ## 7. Build and fit
 Call `build_resume` with the folder's name (and `format: "both"` when the user wants Word). It builds the files and reports the pages, how full the last page is, the lines that run short, and anything that breaks the rules.
@@ -124,7 +130,7 @@ Call `build_resume` with the folder's name (and `format: "both"` when the user w
 Start **one** subagent with this prompt (fill in the folder):
 
 > Adversarially fact-check the resume at `applications/<folder>/resume.json`. The sources of truth are `facts/` (read all of it), `guide/rules.md`, and `applications/<folder>/posting.md` plus `job.md` (older folders keep the posting inside job.md). Check every summary sentence, stat, card, bullet, and skill:
-> - Is it supported by a facts claim?
+> - Is it supported by a facts claim, and not one tagged `unconfirmed`?
 > - Is the verb within that claim's status tag (built/shipped/live/beta)?
 > - Is the ownership within its tag (solo/led-and-built/took-over/led-team)?
 > - Is every number present in facts, with its "~"?

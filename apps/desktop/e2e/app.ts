@@ -15,8 +15,8 @@ export interface Opened {
 
 /**
  * Opens the built app on a data folder, with the stand-in Claude Code first on PATH, so no run
- * reaches the user's own Claude Code or their plan. When the app doesn't reach its jobs screen,
- * the error says how far it got, with what it printed.
+ * reaches the user's own Claude Code or their plan. When the app doesn't reach its jobs, or
+ * getting started for a new user, the error says how far it got, with what it printed.
  */
 export async function openApp(dataDir: string, env: Record<string, string> = {}): Promise<Opened> {
   const app = await _electron.launch({
@@ -37,8 +37,11 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
   let step = 'waiting for its window';
   try {
     const window = await app.firstWindow({ timeout: 20_000 });
-    step = 'waiting for its jobs screen';
-    await window.getByRole('heading', { name: 'Jobs' }).waitFor({ timeout: 20_000 });
+    step = 'waiting for its jobs, or getting started for a new user';
+    await window
+      .getByRole('heading', { name: 'Jobs' })
+      .or(window.getByRole('heading', { name: 'Let’s get you set up' }))
+      .waitFor({ timeout: 20_000 });
     return { app, window };
   } catch (error) {
     const shown = await app

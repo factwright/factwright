@@ -1,0 +1,20 @@
+{
+  "banned": [
+    {
+      "pattern": "results[- ]driven|detail[- ]oriented|team player|go[- ]getter|self[- ]starter|hard[- ]working",
+      "why": "a cliché readers skip; show it with a fact instead"
+    },
+    {
+      "pattern": "think(ing)? outside the box|synerg(y|ies|istic)|proven track record|best[- ]in[- ]class",
+      "why": "a cliché readers skip; show it with a fact instead"
+    },
+    {
+      "pattern": "responsible for",
+      "why": "filler; say what was done"
+    },
+    {
+      "pattern": "references (are )?available",
+      "why": "it goes without saying"
+    }
+  ]
+}

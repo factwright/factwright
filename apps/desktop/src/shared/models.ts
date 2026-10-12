@@ -1,4 +1,4 @@
-import { RUN_SKILLS, type RunTask, SEARCH_SKILL } from './runs.ts';
+import { HUNT_SKILLS, RUN_SKILLS, type RunTask } from './runs.ts';
 
 /**
  * The models a run can use, by Claude Code's names for them. Each name means the newest model
@@ -15,7 +15,7 @@ export const MODEL_NAMES: Readonly<Record<Model, string>> = {
 };
 
 /** The tasks the app starts, each of which can have its own model. */
-export const MODEL_TASKS = [...RUN_SKILLS, SEARCH_SKILL] as const;
+export const MODEL_TASKS = [...RUN_SKILLS, ...HUNT_SKILLS] as const;
 
 export type ModelTask = (typeof MODEL_TASKS)[number];
 

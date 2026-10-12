@@ -1,0 +1,52 @@
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+}
+
+.title {
+  margin: var(--fw-space-2) 0 0;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.point {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+  max-width: 64ch;
+}
+
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.pointTitle {
+  display: block;
+  font-size: var(--fw-text-base);
+}
+
+.pointText {
+  display: block;
+  margin-top: 2px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-md);
+}

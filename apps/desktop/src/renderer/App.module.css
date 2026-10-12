@@ -26,3 +26,9 @@
   min-height: 0;
   container: work / inline-size;
 }
+
+.loading {
+  flex: 1 1 auto;
+  padding: var(--fw-space-6);
+  color: var(--fw-muted);
+}

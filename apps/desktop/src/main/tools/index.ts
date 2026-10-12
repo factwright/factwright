@@ -166,14 +166,14 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'build_resume',
       description:
-        'Builds the resume in a job’s folder from its resume.json: a PDF, a Word file or both, named after its output_name. Says how many pages it runs to, how full the last one is, which lines run short, and what breaks the user’s rules in guide/lint.json. Build again after each change. A job the user applied to keeps the files that were sent.',
+        'Builds a resume from its data: a job’s folder’s resume.json, or a starting resume in base/. Makes a PDF, a Word file or both beside it, named after its output_name. Says how many pages it runs to, how full the last one is, which lines run short, and what breaks the user’s rules in guide/lint.json. Build again after each change. A job the user applied to keeps the files that were sent.',
       inputSchema: {
         type: 'object',
         properties: {
           folder: {
             type: 'string',
             description:
-              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer, or base/<name> for the starting resume in base/<name>.json.',
           },
           format: {
             type: 'string',
@@ -184,7 +184,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         required: ['folder'],
         additionalProperties: false,
       },
-      // It writes only the job's resume files, from what's on this computer.
+      // It writes only resume files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input) =>
         buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
@@ -205,7 +205,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           folder: {
             type: 'string',
             description:
-              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer, or base/<name> for the starting resume in base/<name>.json.',
           },
         },
         required: ['url', 'folder'],

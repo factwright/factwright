@@ -111,6 +111,34 @@ describe('ClaudeSettingsDialog', () => {
     await waitFor(() => expect(box('Read any website').checked).toBe(false));
   });
 
+  it('offers Sonnet for routine tasks on a Pro plan, and keeps Opus for the writing', async () => {
+    const api = apiWith();
+    const { container } = render(<ClaudeSettingsDialog api={api} plan="pro" onClose={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Use Sonnet for those' }));
+    expect(api.setClaudeModels).toHaveBeenLastCalledWith({
+      main: 'opus',
+      tasks: {
+        'fit-check': 'sonnet',
+        'salary-check': 'sonnet',
+        'job-search': 'sonnet',
+        'who-to-message': 'sonnet',
+      },
+    });
+    expect(select('Tailored resume').value).toBe('');
+    expect(select('Getting started').value).toBe('');
+    // Done, so it says no more.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Use Sonnet for those' })).toBeNull(),
+    );
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('says nothing about plans on Max', async () => {
+    render(<ClaudeSettingsDialog api={apiWith()} plan="max" onClose={vi.fn()} />);
+    await waitFor(() => expect(select('For everything').value).toBe('opus'));
+    expect(screen.queryByText(/On a Pro plan/)).toBeNull();
+  });
+
   it('closes with Done', async () => {
     const onClose = vi.fn();
     render(<ClaudeSettingsDialog api={apiWith()} onClose={onClose} />);

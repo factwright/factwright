@@ -16,7 +16,15 @@ import { RUN_ACTIONS } from './jobs/RunActions.tsx';
 const TASKS: readonly { task: ModelTask; label: string }[] = [
   ...RUN_ACTIONS.map(({ skill, label }) => ({ task: skill, label })),
   { task: 'job-search', label: 'Find jobs' },
+  { task: 'get-started', label: 'Getting started' },
+  { task: 'add-facts', label: 'Fact bank interviews' },
 ];
+
+/**
+ * Tasks that do well on Sonnet, which uses less of a plan than Opus: checks and searches, where
+ * the fact-checked writing isn't. Pro plans have the tightest limits.
+ */
+const ROUTINE: readonly ModelTask[] = ['fit-check', 'salary-check', 'job-search', 'who-to-message'];
 
 type SettingsApi = Pick<
   FactwrightApi,
@@ -27,7 +35,16 @@ type SettingsApi = Pick<
  * How Claude works on the job hunt: which model it runs on, for everything and for each task,
  * and what it may do without asking. Each choice saves as it's made.
  */
-export function ClaudeSettingsDialog({ api, onClose }: { api: SettingsApi; onClose: () => void }) {
+export function ClaudeSettingsDialog({
+  api,
+  onClose,
+  plan,
+}: {
+  api: SettingsApi;
+  onClose: () => void;
+  /** The user's Claude plan, such as "pro", when Claude Code says. */
+  plan?: string | undefined;
+}) {
   const [models, setModels] = useState<ModelChoices | null>(null);
   const [permissions, setPermissions] = useState<ClaudePermissions | null>(null);
   const [byTask, setByTask] = useState(false);
@@ -94,6 +111,31 @@ export function ClaudeSettingsDialog({ api, onClose }: { api: SettingsApi; onClo
             Opus is the most careful, and uses the most of your plan. Sonnet is quicker, and Haiku
             is the quickest. Each means the newest model of its kind.
           </p>
+          {plan === 'pro' &&
+            ROUTINE.some((task) => (models.tasks[task] ?? models.main) === 'opus') && (
+              <div className={styles.pro}>
+                <p className={styles.lead}>
+                  <strong>On a Pro plan,</strong> limits are tighter. Running fit checks, salary
+                  checks, job searches and who to message on Sonnet uses less of your plan, while
+                  tailored resumes and getting started keep Opus.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setByTask(true);
+                    void changeModels({
+                      ...models,
+                      tasks: {
+                        ...models.tasks,
+                        ...Object.fromEntries(ROUTINE.map((task) => [task, 'sonnet'])),
+                      },
+                    });
+                  }}
+                >
+                  Use Sonnet for those
+                </Button>
+              </div>
+            )}
           <Field label="For everything" className={styles.field}>
             {(control) => (
               <Select

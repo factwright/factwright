@@ -47,6 +47,27 @@ describe('sessionSettings', () => {
     expect(allow(false, true)).not.toContain('Edit(./**)');
   });
 
+  it('lets a run started to get to know the user save their facts, starting resumes and guide', () => {
+    const allow = sessionSettings({
+      hookUrl: 'http://127.0.0.1:4000/hook',
+      dark: false,
+      scope: 'profile',
+    }).permissions.allow;
+    expect(allow.slice(-8)).toEqual([
+      'Edit(./applications/**)',
+      'Edit(./searches/**)',
+      'Edit(./outreach/**)',
+      'Edit(./guide/confidential-terms.txt)',
+      'Edit(./facts/**)',
+      'Edit(./base/**)',
+      'Edit(./guide/**)',
+      'Edit(./about-me/read.md)',
+    ]);
+    // Every other run asks first, and none may change the user's answers file.
+    expect(settings.permissions.allow).not.toContain('Edit(./facts/**)');
+    expect(allow).not.toContain('Edit(./about-me/answers.json)');
+  });
+
   it('never lets Claude change its own settings or the instructions it loads', () => {
     for (const anyFile of [false, true]) {
       const { deny } = sessionSettings({

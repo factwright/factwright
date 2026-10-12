@@ -6,10 +6,12 @@ import {
   Button,
   Checkbox,
   Chip,
+  ChipGroup,
   DARK,
   Dialog,
   DialogActions,
   Field,
+  FileDrop,
   FitBadge,
   IconButton,
   Input,
@@ -28,6 +30,8 @@ import {
   Stat,
   StatusPill,
   StatusSelect,
+  Steps,
+  TagInput,
   TextArea,
   ThemeStyle,
 } from '../src/index.ts';
@@ -54,6 +58,17 @@ const VIEWS = [
 ] as const;
 
 type View = (typeof VIEWS)[number]['value'];
+
+const LEVELS = [
+  { value: 'mid', label: 'Mid level' },
+  { value: 'senior', label: 'Senior' },
+  { value: 'lead', label: 'Lead or principal' },
+  { value: 'manager', label: 'Manager' },
+] as const;
+
+type Level = (typeof LEVELS)[number]['value'];
+
+const STEPS = ['Welcome', 'About you', 'Your files', 'In your words', 'Ready'];
 
 const SAMPLE_DOCUMENT = `# Staff Engineer, Developer Tools
 
@@ -105,6 +120,9 @@ function Showcase({ name, palette }: { name: string; palette: Palette }) {
   const [status, setStatus] = useState<JobStatus>('applied');
   const [strong, setStrong] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [levels, setLevels] = useState<Level[]>(['senior']);
+  const [titles, setTitles] = useState(['Product Designer', 'UX Designer']);
+  const [step, setStep] = useState(2);
   return (
     <>
       <Section title="Colors">
@@ -241,6 +259,42 @@ function Showcase({ name, palette }: { name: string; palette: Palette }) {
             </DialogActions>
           </Dialog>
         )}
+      </Section>
+
+      <Section title="Getting started">
+        <Steps
+          label={`Getting started, ${name}`}
+          steps={STEPS}
+          current={step}
+          reached={3}
+          onSelect={setStep}
+        />
+        <div className={styles.form}>
+          <ChipGroup
+            label="Levels"
+            hint="Pick every level you’d take."
+            options={LEVELS}
+            value={levels}
+            onChange={setLevels}
+          />
+          <Field label="Job titles" hint="Press Enter after each one.">
+            {(control) => (
+              <TagInput
+                {...control}
+                value={titles}
+                onChange={setTitles}
+                placeholder="Add a title"
+              />
+            )}
+          </Field>
+          <FileDrop
+            title="Drop your resumes here"
+            hint="PDF or Word, as many versions as you have"
+            buttonLabel="Choose files"
+            accept=".pdf,.docx"
+            onFiles={() => {}}
+          />
+        </div>
       </Section>
 
       <Section title="Fit">

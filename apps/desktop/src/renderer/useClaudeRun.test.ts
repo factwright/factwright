@@ -71,7 +71,7 @@ describe('useClaudeRun', () => {
   });
 
   it('makes way for a new run when the task needs another model, without showing the old one stop', async () => {
-    const { api, signal } = fakeApi({ ok: false, reason: 'other-model' });
+    const { api, signal } = fakeApi({ ok: false, reason: 'new-run' });
     const { result } = renderHook(() => useClaudeRun(api));
     act(() => signal('done'));
     const runId = result.current.runId;

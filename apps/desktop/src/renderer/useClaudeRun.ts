@@ -37,7 +37,7 @@ const START_PROBLEMS = {
   busy: 'Claude is already running.',
   failed: 'Claude Code couldn’t start.',
   'not-running': 'Claude Code has closed. Start it again.',
-  'other-model': 'Claude is running on another model. Start it again.',
+  'new-run': 'This needs Claude to start again. Start it again.',
 } as const;
 
 /** Runs the user's Claude Code in the panel and follows its signals. */
@@ -100,8 +100,8 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
       api.runTask(next).then(
         (result) => {
           if (result.ok) return;
-          // The task runs on another model, so this run makes way for a new one on it.
-          if (result.reason === 'other-model') {
+          // The task needs a run of its own, so this run makes way for a new one.
+          if (result.reason === 'new-run') {
             replacing.current = true;
             api.stopClaude();
           }

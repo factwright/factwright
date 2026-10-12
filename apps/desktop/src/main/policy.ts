@@ -1,6 +1,13 @@
 import { join, normalize, resolve, sep } from 'node:path';
 import type { TerminalSize } from '../shared/api.ts';
-import { RUN_SKILLS, type RunSkill, type RunTask, SEARCH_SKILL } from '../shared/runs.ts';
+import {
+  FACTS_SKILL,
+  GET_STARTED_SKILL,
+  RUN_SKILLS,
+  type RunSkill,
+  type RunTask,
+  SEARCH_SKILL,
+} from '../shared/runs.ts';
 
 /** A panel size from the window, if it's whole numbers in a sensible range. */
 export function parseTerminalSize(value: unknown): TerminalSize | null {
@@ -90,23 +97,42 @@ export function resolveInside(root: string, urlPath: string): string | null {
 /** A job's ID, as the app makes them: "acme-robotics--staff-engineer", maybe with "-2". */
 const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
-/** A skill to run on a job, or a job search, in the shape the app takes, or null for anything else. */
+/**
+ * A task from the window, in the shape the app takes: a skill on a job, a job search, getting
+ * started, or more facts. Anything else is null.
+ */
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
-  const { skill, jobId } = value as Record<string, unknown>;
-  if (skill === SEARCH_SKILL) return jobId === undefined ? { skill: SEARCH_SKILL } : null;
+  const { skill, jobId, mode, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) return null;
+  if (skill === SEARCH_SKILL) return jobId === undefined && mode === undefined ? { skill } : null;
+  if (skill === GET_STARTED_SKILL && jobId === undefined) {
+    if (mode === undefined) return { skill };
+    return mode === 'resumes' ? { skill, mode } : null;
+  }
+  if (skill === FACTS_SKILL && jobId === undefined) {
+    return mode === 'interview' || mode === 'new' ? { skill, mode } : null;
+  }
   if (typeof skill !== 'string' || !(RUN_SKILLS as readonly string[]).includes(skill)) return null;
-  if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
+  if (mode !== undefined || typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
   return { skill: skill as RunSkill, jobId };
 }
 
+/** What the app types after a skill's name for each of its modes, word for word. */
+const MODE_WORDS = {
+  resumes: 'starting resumes',
+  interview: 'interview me',
+  new: 'read the new files and notes',
+} as const;
+
 /**
- * What the app types to start a skill on a job, or a job search. It names a job only by its ID,
- * so text from a posting, such as a company's name, never reaches Claude as if the user had
- * typed it. A search starts without a source, so Claude asks the user for one.
+ * What the app types to start a task. It names a job only by its ID, and everything else it
+ * types is its own fixed words, so text from a posting or a file, such as a company's name,
+ * never reaches Claude as if the user had typed it. A search starts without a source, so Claude
+ * asks the user for one.
  */
 export function runPrompt(task: RunTask): string {
-  return 'jobId' in task
-    ? `/factwright:${task.skill} job ${task.jobId}`
-    : `/factwright:${task.skill}`;
+  if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;
+  const mode = 'mode' in task ? task.mode : undefined;
+  return mode ? `/factwright:${task.skill} ${MODE_WORDS[mode]}` : `/factwright:${task.skill}`;
 }

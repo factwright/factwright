@@ -11,7 +11,7 @@ Fast and short. The user should get the verdict at a glance. Don't ask questions
 Input: the listing (a link or pasted text), plus anything the user adds (company site, recruiter, notes). The app's Run buttons name a job instead, as `job <id>`: call `job_details` with that id, and work from its folder's posting or its link. If there's no listing, ask for it in one line and stop.
 
 Before starting, read:
-- `searches/criteria.md`: the user's filters, preferences, scoring and tiers. Job searches use the same bar. If it's missing, use the rubric below with no filters, and say so in one line.
+- `searches/criteria.md`: the user's filters, preferences, scoring and tiers. Job searches use the same bar. If it's missing but `about-me/answers.json` has what they want, judge the filters from that. If neither is there, use the rubric below with no filters, and say so in one line.
 - all of `facts/`. It's cheap. In `facts/gaps.md`, **Doesn't have** is settled. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 
 ## 1. Read the job
@@ -24,7 +24,7 @@ Before starting, read:
 ## 2. Score
 - Check the criteria.md **Filters** first. A failed filter makes the verdict **Skip**, stated first with the reason (e.g. "Skip: hybrid in Austin"). Still give the score, since the user may want it anyway.
 - Score 0–100 against facts/ only, with the criteria.md rubric. Without one, use: work 40 (how much of the job's core work the facts prove, domain included) · role 25 (how well the level and shape fit what the user wants) · stack 20 (overlap with proven tech) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, certification).
-- Respect status and ownership tags: built ≠ live, led-team ≠ solo.
+- Respect status and ownership tags: built ≠ live, led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user confirms it; say so in the gaps.
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61 · **Long shot** < 50.
 - Pay never changes the score.
 

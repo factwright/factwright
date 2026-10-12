@@ -13,7 +13,7 @@ const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
 /** Tells the user when Claude needs them or finishes, if they're looking somewhere else. */
 export function notifyIfAway(window: BrowserWindow, signal: RunSignal): void {
   const message = MESSAGES[signal];
-  if (!message || window.isFocused()) return;
+  if (!message || window.isDestroyed() || window.isFocused()) return;
   const notification = new Notification({ ...message, silent: signal !== 'needs-answer' });
   notification.on('click', () => {
     if (window.isMinimized()) window.restore();
