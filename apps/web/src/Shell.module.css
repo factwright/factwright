@@ -1,0 +1,57 @@
+.shell {
+  min-height: 100dvh;
+  background: var(--fw-bg);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-4);
+  padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-bar);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  color: var(--fw-text);
+  font-size: 15px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  gap: var(--fw-space-1);
+  margin-left: auto;
+}
+
+.navLink {
+  padding: 6px 10px;
+  border-radius: var(--fw-radius-md);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-md);
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.navLink:hover {
+  background: var(--fw-hover);
+  color: var(--fw-text);
+}
+
+.navLink[aria-current="page"] {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.main {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 20px 16px calc(env(safe-area-inset-bottom) + 40px);
+}

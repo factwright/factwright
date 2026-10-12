@@ -28,7 +28,7 @@ More in [architecture](docs/architecture.md) and [security](docs/security.md).
 | Path | What's there |
 |---|---|
 | [`apps/desktop`](apps/desktop) | The app for Mac and Windows |
-| [`apps/web`](apps/web) | The web and phone view of your tracker |
+| [`apps/web`](apps/web) | The web view of your job hunt, for your phone or any browser |
 | [`apps/server`](apps/server) | The sync server |
 | [`packages/core`](packages/core) | Shared logic: reading the workspace, jobs, tracker rules and pay parsing |
 | [`packages/sync`](packages/sync) | End-to-end encryption and the sync protocol |

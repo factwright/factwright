@@ -1,6 +1,6 @@
+import { payLabel } from '@factwright/core';
 import { FitBadge, StatusPill, VisuallyHidden } from '@factwright/ui';
 import type { KeyboardEvent } from 'react';
-import { payLabel } from './format.ts';
 import styles from './JobList.module.css';
 import type { JobRow } from './rows.ts';
 

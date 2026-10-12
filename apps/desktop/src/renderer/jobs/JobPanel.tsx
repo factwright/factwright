@@ -1,9 +1,8 @@
-import { type JobStatus, readApplySteps } from '@factwright/core';
+import { type JobStatus, payLabel, readApplySteps } from '@factwright/core';
 import { FitBadge, IconButton, Markdown, MarkdownLine, Notice, StatusSelect } from '@factwright/ui';
 import { ArrowUpRight, X } from 'lucide-react';
 import { type KeyboardEvent, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { payLabel } from './format.ts';
 import { FilesSection } from './JobFiles.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';

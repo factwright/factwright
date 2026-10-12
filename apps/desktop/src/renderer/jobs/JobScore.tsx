@@ -5,10 +5,10 @@ import {
   SCORE_PARTS,
   type ScorePart,
   type ScorePartKey,
+  shortDate,
 } from '@factwright/core';
 import { MarkdownLine, MoodBadge, ScoreBar } from '@factwright/ui';
 import { Check, Minus, X } from 'lucide-react';
-import { shortDate } from './format.ts';
 import styles from './JobPanel.module.css';
 
 const PART_LABELS: Readonly<Record<ScorePartKey, string>> = {

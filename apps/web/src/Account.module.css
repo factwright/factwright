@@ -1,0 +1,59 @@
+.account {
+  display: grid;
+  gap: var(--fw-space-2);
+}
+
+.devices {
+  margin: 0 0 var(--fw-space-2);
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  list-style: none;
+}
+
+.device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--fw-space-3);
+  min-height: 48px;
+  padding: var(--fw-space-2) var(--fw-space-3);
+}
+
+.device + .device {
+  border-top: 1px solid var(--fw-border);
+}
+
+.deviceName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.deviceWhen {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.danger {
+  display: grid;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-4);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-bad);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bad-soft);
+}
+
+.deleteButton {
+  border-color: var(--fw-bad);
+  background: var(--fw-bad);
+  color: #fff;
+}
+
+.deleteLink {
+  color: var(--fw-bad);
+}

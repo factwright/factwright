@@ -323,6 +323,15 @@ async function listen(request: Request, env: Env, url: URL): Promise<Response> {
   return env.STORES.get(env.STORES.idFromName(account)).fetch(new Request(request, { headers }));
 }
 
+/**
+ * Whether a change a browser sends with its cookie comes from the app's own pages. Browsers
+ * attach the cookie for some requests other sites start, but always say where those came from.
+ */
+function fromAppPages(request: Request, env: Env): boolean {
+  if (request.method === 'GET' || !request.headers.has('cookie')) return true;
+  return request.headers.get('origin') === new URL(env.APP_URL).origin;
+}
+
 /** Answers the API, for the account the request's session belongs to and no other. */
 export async function handleApi(request: Request, env: Env, auth: Auth): Promise<Response> {
   const url = new URL(request.url);
@@ -332,6 +341,9 @@ export async function handleApi(request: Request, env: Env, auth: Auth): Promise
   );
   const known = ROUTES.some(([, pattern]) => pattern.test(url.pathname));
   if (!route) return known ? failure(405, 'method', 'That isn’t allowed here.') : NOT_FOUND();
+  if (!fromAppPages(request, env)) {
+    return failure(403, 'refused', 'That came from another site, so it wasn’t done.');
+  }
   const signedIn = await auth.api.getSession({ headers: request.headers });
   if (!signedIn) return failure(401, 'signed-out', 'Sign in again.');
   const [, pattern, handler] = route;

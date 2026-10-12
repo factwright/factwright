@@ -1,0 +1,116 @@
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-4);
+}
+
+@media (min-width: 640px) {
+  .stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* The views stay on one line, and scroll sideways on a narrow phone. */
+.views {
+  margin: 18px -16px 12px;
+  padding: 0 16px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.views > * {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.list {
+  display: grid;
+  gap: var(--fw-space-2);
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  gap: 4px;
+  padding: 14px var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.row:hover {
+  background: var(--fw-hover);
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+}
+
+.company {
+  min-width: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.role {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+  margin-top: 2px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.rowMeta:empty {
+  display: none;
+}
+
+.next {
+  margin-top: 2px;
+  font-size: var(--fw-text-sm);
+}
+
+.urgent {
+  color: var(--fw-bad);
+  font-weight: 600;
+}
+
+.action {
+  color: var(--fw-need);
+  font-weight: 600;
+}
+
+.none {
+  margin: var(--fw-space-6) 0;
+  color: var(--fw-muted);
+  text-align: center;
+}

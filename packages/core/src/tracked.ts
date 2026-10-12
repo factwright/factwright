@@ -1,0 +1,228 @@
+import type { CollectedJob, Job, JobPay } from './jobs.ts';
+import type { Link } from './links.ts';
+import { parsePay } from './pay.ts';
+import type { JobDocKind } from './records.ts';
+import {
+  CALL_KINDS,
+  CALL_OUTCOMES,
+  CALL_STATES,
+  type Call,
+  JOB_STATUSES,
+  STATUS_RANK,
+  type StatusChange,
+  type TrackerFields,
+} from './tracker.ts';
+
+/** A job's row in the tracker: what it's called, and what the user tracks about it. */
+export interface TrackedRow extends TrackerFields {
+  id: string;
+  company: string;
+  companyKey: string;
+  role: string;
+  /** Every link seen for the job, so later work by the skills finds it. */
+  links: Link[];
+  /** Added by hand, rather than found by a skill. */
+  manual: boolean;
+  /** For a job added by hand, the pay the user typed. */
+  payText: string | null;
+  firstSeen: string | null;
+}
+
+/** A row of the tracker as SQLite keeps it, on this computer or synced from another. */
+export type StoredRow = Record<string, unknown>;
+
+const text = (value: unknown) => (typeof value === 'string' ? value : null);
+const required = (value: unknown) => (typeof value === 'string' ? value : '');
+
+function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && (list as readonly string[]).includes(value);
+}
+
+function linksOf(json: unknown): Link[] {
+  try {
+    const parsed: unknown = JSON.parse(required(json) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((link: StoredRow) =>
+      typeof link?.url === 'string' && typeof link.label === 'string'
+        ? [{ url: link.url, label: link.label }]
+        : [],
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** A JSON list of texts, or none when it isn't one. */
+function textsOf(json: unknown): string[] {
+  try {
+    const parsed: unknown = JSON.parse(required(json) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** A job's row, read from the tracker's jobs table. */
+export function trackedRow(row: StoredRow): TrackedRow {
+  return {
+    id: required(row.id),
+    company: required(row.company),
+    companyKey: required(row.company_key),
+    role: required(row.role),
+    links: linksOf(row.links),
+    manual: row.manual === 1,
+    payText: text(row.pay_text),
+    firstSeen: text(row.first_seen),
+    status: isOneOf(JOB_STATUSES, row.status) ? row.status : null,
+    statusOn: text(row.status_on),
+    appliedOn: text(row.applied_on),
+    nextAction: text(row.next_action),
+    nextOn: text(row.next_on),
+    notes: text(row.notes),
+    questions: textsOf(row.questions),
+    archived: row.archived === 1,
+  };
+}
+
+/** A call, read from the tracker's calls table, or null when it isn't one this version knows. */
+export function trackedCall(row: StoredRow): Call | null {
+  if (!isOneOf(CALL_KINDS, row.kind) || !isOneOf(CALL_STATES, row.state)) return null;
+  return {
+    id: required(row.id),
+    kind: row.kind,
+    onDate: required(row.on_date),
+    atTime: text(row.at_time),
+    state: row.state,
+    outcome: isOneOf(CALL_OUTCOMES, row.outcome) ? row.outcome : null,
+    notes: text(row.notes),
+  };
+}
+
+/** A change of status, read from the tracker's history. */
+export function trackedChange(row: StoredRow): StatusChange | null {
+  return isOneOf(JOB_STATUSES, row.status)
+    ? { id: required(row.id), status: row.status, at: required(row.at) }
+    : null;
+}
+
+/** Each job's items, in the order given. Rows that don't read are left out. */
+export function byJob<T>(rows: readonly StoredRow[], read: (row: StoredRow) => T | null) {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const item = read(row);
+    if (!item) continue;
+    const jobId = required(row.job_id);
+    grouped.set(jobId, [...(grouped.get(jobId) ?? []), item]);
+  }
+  return grouped;
+}
+
+/**
+ * Calls in the order they happen, and changes of status oldest first, for rows that come
+ * without SQLite's order, as from sync. Changes on the same day go by how far along they are.
+ */
+export const callOrder = (a: StoredRow, b: StoredRow) =>
+  `${required(a.on_date)} ${required(a.at_time)} ${required(a.created_at)}`.localeCompare(
+    `${required(b.on_date)} ${required(b.at_time)} ${required(b.created_at)}`,
+  );
+
+export const changeOrder = (a: StoredRow, b: StoredRow) =>
+  required(a.at).localeCompare(required(b.at)) ||
+  (STATUS_RANK[required(a.status) as keyof typeof STATUS_RANK] ?? 0) -
+    (STATUS_RANK[required(b.status) as keyof typeof STATUS_RANK] ?? 0);
+
+const ADDED_BY_HAND = 'Added by hand';
+
+/** Whether the user has tracked anything about a job, so it stays listed after its files go. */
+function isTracked(row: TrackedRow, calls: number): boolean {
+  const { manual, archived, status, appliedOn, nextAction, nextOn, notes, questions } = row;
+  return (
+    manual ||
+    archived ||
+    calls > 0 ||
+    questions.length > 0 ||
+    [status, appliedOn, nextAction, nextOn, notes].some(Boolean)
+  );
+}
+
+/** The pay the user typed for a job they added by hand. */
+function typedPay(row: TrackedRow): JobPay | null {
+  if (!row.payText) return null;
+  const range = parsePay(row.payText);
+  return { text: row.payText, min: range?.min ?? null, max: range?.max ?? null, source: 'listed' };
+}
+
+/** A job as the app shows it: its tracker row, plus what the workspace says when it has files. */
+function assemble(
+  row: TrackedRow,
+  found: CollectedJob | undefined,
+  calls: Call[],
+  statusLog: StatusChange[],
+): Job {
+  const tracking = {
+    status: row.status,
+    statusOn: row.statusOn,
+    appliedOn: row.appliedOn,
+    nextAction: row.nextAction,
+    nextOn: row.nextOn,
+    notes: row.notes,
+    questions: row.questions,
+    archived: row.archived,
+    manual: row.manual,
+    calls,
+    statusLog,
+  };
+  if (found) {
+    const { docs, ...job } = found;
+    return {
+      ...job,
+      ...tracking,
+      pay: job.pay ?? typedPay(row),
+      source: row.manual ? ADDED_BY_HAND : job.source,
+      docKinds: Object.keys(docs) as JobDocKind[],
+    };
+  }
+  return {
+    id: row.id,
+    company: row.company,
+    companyKey: row.companyKey,
+    role: row.role,
+    link: row.links[0]?.url ?? null,
+    links: row.links,
+    location: null,
+    pay: typedPay(row),
+    source: row.manual ? ADDED_BY_HAND : '',
+    fit: null,
+    search: null,
+    folder: null,
+    stage: 'new',
+    firstSeen: row.firstSeen,
+    lastActivity: row.firstSeen,
+    summary: null,
+    events: [],
+    apply: null,
+    fitReport: null,
+    sentiment: null,
+    files: [],
+    docKinds: [],
+    ...tracking,
+  };
+}
+
+/**
+ * Every job to show: each tracker row joined with what the workspace says about it. A job whose
+ * files are gone stays listed only while the user has tracked something about it.
+ */
+export function jobList(
+  rows: readonly TrackedRow[],
+  found: ReadonlyMap<string, CollectedJob>,
+  calls: ReadonlyMap<string, Call[]>,
+  history: ReadonlyMap<string, StatusChange[]>,
+): Job[] {
+  return rows.flatMap((row) => {
+    const job = found.get(row.id);
+    const jobCalls = calls.get(row.id) ?? [];
+    if (!job && !isTracked(row, jobCalls.length)) return [];
+    return [assemble(row, job, jobCalls, history.get(row.id) ?? [])];
+  });
+}

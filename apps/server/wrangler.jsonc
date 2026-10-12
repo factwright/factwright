@@ -8,6 +8,13 @@
   "compatibility_date": "2026-09-30",
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "app.factwright.com", "custom_domain": true }],
+  // The web view, built from apps/web. The API runs first; every other address is the web view.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
   "vars": {
     "APP_URL": "https://app.factwright.com",
     "STORAGE_LIMIT_MB": "1024"

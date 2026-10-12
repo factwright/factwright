@@ -1,16 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import {
-  type Call,
   type CollectedJob,
   collectJobs,
-  type Job,
-  type JobDocKind,
   type JobDocs,
-  type JobPay,
+  jobList,
   localDate,
-  parsePay,
   readRecords,
-  type StatusChange,
 } from '@factwright/core';
 import type {
   AddJobResult,
@@ -21,7 +16,7 @@ import type {
   NewCall,
   NewJob,
 } from '../../shared/api.ts';
-import type { EditContext, TrackedRow, Tracker } from './tracker.ts';
+import type { EditContext, Tracker } from './tracker.ts';
 import { diskWorkspace, watchWorkspace } from './workspace.ts';
 
 export interface JobsDeps {
@@ -32,84 +27,6 @@ export interface JobsDeps {
   onChange: (list: JobList) => void;
   /** The clock. Tests set it. */
   now?: () => Date;
-}
-
-const ADDED_BY_HAND = 'Added by hand';
-
-/** Whether the user has tracked anything about a job, so it stays listed after its files go. */
-function isTracked(row: TrackedRow, calls: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, notes, questions } = row;
-  return (
-    manual ||
-    archived ||
-    calls > 0 ||
-    questions.length > 0 ||
-    [status, appliedOn, nextAction, nextOn, notes].some(Boolean)
-  );
-}
-
-/** The pay the user typed for a job they added by hand. */
-function typedPay(row: TrackedRow): JobPay | null {
-  if (!row.payText) return null;
-  const range = parsePay(row.payText);
-  return { text: row.payText, min: range?.min ?? null, max: range?.max ?? null, source: 'listed' };
-}
-
-/** A job as the app shows it: its tracker row, plus what the workspace says when it has files. */
-function assemble(
-  row: TrackedRow,
-  found: CollectedJob | undefined,
-  calls: Call[],
-  statusLog: StatusChange[],
-): Job {
-  const tracking = {
-    status: row.status,
-    statusOn: row.statusOn,
-    appliedOn: row.appliedOn,
-    nextAction: row.nextAction,
-    nextOn: row.nextOn,
-    notes: row.notes,
-    questions: row.questions,
-    archived: row.archived,
-    manual: row.manual,
-    calls,
-    statusLog,
-  };
-  if (found) {
-    const { docs, ...job } = found;
-    return {
-      ...job,
-      ...tracking,
-      pay: job.pay ?? typedPay(row),
-      source: row.manual ? ADDED_BY_HAND : job.source,
-      docKinds: Object.keys(docs) as JobDocKind[],
-    };
-  }
-  return {
-    id: row.id,
-    company: row.company,
-    companyKey: row.companyKey,
-    role: row.role,
-    link: row.links[0]?.url ?? null,
-    links: row.links,
-    location: null,
-    pay: typedPay(row),
-    source: row.manual ? ADDED_BY_HAND : '',
-    fit: null,
-    search: null,
-    folder: null,
-    stage: 'new',
-    firstSeen: row.firstSeen,
-    lastActivity: row.firstSeen,
-    summary: null,
-    events: [],
-    apply: null,
-    fitReport: null,
-    sentiment: null,
-    files: [],
-    docKinds: [],
-    ...tracking,
-  };
 }
 
 /**
@@ -145,14 +62,7 @@ export class JobsService {
   /** Every job, as of the last read. */
   list(): JobList {
     const { tracker } = this.deps;
-    const calls = tracker.calls();
-    const history = tracker.history();
-    const jobs = tracker.rows().flatMap((row) => {
-      const found = this.found.get(row.id);
-      const jobCalls = calls.get(row.id) ?? [];
-      if (!found && !isTracked(row, jobCalls.length)) return [];
-      return [assemble(row, found, jobCalls, history.get(row.id) ?? [])];
-    });
+    const jobs = jobList(tracker.rows(), this.found, tracker.calls(), tracker.history());
     return { jobs, readAt: this.readAt };
   }
 

@@ -46,12 +46,12 @@ Claude works on plain files in a folder on your computer:
 The app watches this folder, and reads it again whenever something changes. What you track by hand, such as statuses, dates, calls and notes, lives in a small database beside the workspace, where Claude's file tools can't reach it.
 
 ## Sync and storage
-Everything syncs to the cloud, encrypted, so your other computers and your phone see the same job hunt. The sync server ([`apps/server`](../apps/server)) runs on Cloudflare:
-- **One store per account:** a Durable Object with its own database, plus a private folder of encrypted files in R2.
-- **Identity from the session:** the server works out who you are from your verified session only, and no request can name another account.
-- **Version history:** files are stored by content hash, so old versions stay available.
+Once you turn sync on, your other computers and your phone see the same job hunt. Each device locks everything before it leaves, so the server stores only data it can't read. The design is in [security.md](security.md).
 
-The web and phone view ([`apps/web`](../apps/web)) downloads your encrypted data and decrypts it in the browser.
+- **The sync server** ([`apps/server`](../apps/server)) runs on Cloudflare. Each account gets its own store, a Durable Object with its own database, plus a private folder of encrypted files in R2. The server works out who you are from your verified session only, and no request can name another account.
+- **The desktop app** syncs the workspace's files and the tracker's rows a moment after each change, and right away when another device changes something. When two devices change the same thing, nothing is lost: a file keeps both copies, and a tracked job merges.
+- **History:** each record keeps its earlier versions for 90 days, each file's contents are stored once, and every store is backed up daily.
+- **The web view** ([`apps/web`](../apps/web)) downloads your locked data and opens it in the browser, with keys kept there. It builds the job list with the same code as the desktop app.
 
 ## Resumes
 Resume data is JSON. The engine ([`packages/engine`](../packages/engine)) renders it to PDF with the browser built into Electron, and to Word with the `docx` library.

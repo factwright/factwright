@@ -64,6 +64,13 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - The desktop app signs in through your browser with a device code (RFC 8628): the app shows a short code, and you check the browser shows the same one before you allow it. The app keeps its session token in the system's keychain.
 - A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out.
 
+### The web view
+The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.
+- Its pages run only their own scripts and styles, under a strict Content-Security-Policy, and no other site can frame them. Following a link out, such as to a job posting, sends no referrer.
+- It keeps keys made from the account key in IndexedDB, as Web Crypto keys the page can use but can't read back out. Signing out of the browser forgets them.
+- Its session is a cookie the page itself can't read. A change sent with that cookie must come from the app's own pages: sign-in and the sync API both turn away requests another site starts.
+- A copy of your job hunt is put together in the browser, as a ZIP, and never passes through the server opened.
+
 ### What the server sees
 - Your account: the email and name your sign-in shares, and each session's device name, IP address and when it was last used.
 - For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, and which file contents it points to.
@@ -84,7 +91,7 @@ A server that misbehaved couldn't read your data or forge it. It could still del
 - Deleting your account removes your store, your files, your backups and your sign-in records. It needs a fresh sign-in first.
 
 ### The trade-off
-If you lose every device and your recovery key, your data can't be recovered, by you or by us. You can export an unencrypted copy whenever you like.
+If you lose every device and your recovery key, your data can't be recovered, by you or by us. You can download an unencrypted copy whenever you like, from your account in the web view.
 
 ## What still leaves your computer
 Whatever Claude reads goes to Anthropic, under your own account and Anthropic's terms. That's how Claude works, and Factwright doesn't add anyone else to that path.

@@ -1,24 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  CALL_KINDS,
-  CALL_OUTCOMES,
+  byJob,
   CALL_STAGE,
-  CALL_STATES,
   type Call,
   type CallOutcome,
   type CollectedJob,
   companyKey,
-  JOB_STATUSES,
   type JobStatus,
   type KnownJob,
-  type Link,
   roleKey,
   SETTLED_STATUSES,
   STATUS_RANK,
   type StatusChange,
+  type StoredRow,
   slug,
-  type TrackerFields,
+  type TrackedRow,
+  trackedCall,
+  trackedChange,
+  trackedRow,
 } from '@factwright/core';
 import type { RowValues } from '@factwright/sync';
 import type {
@@ -29,21 +29,6 @@ import type {
   NewCall,
   NewJob,
 } from '../../shared/api.ts';
-
-/** A job's row in the tracker: what it's called, and what the user tracks about it. */
-export interface TrackedRow extends TrackerFields {
-  id: string;
-  company: string;
-  companyKey: string;
-  role: string;
-  /** Every link seen for the job, so later work by the skills finds it. */
-  links: Link[];
-  /** Added by hand, rather than found by a skill. */
-  manual: boolean;
-  /** For a job added by hand, the pay the user typed. */
-  payText: string | null;
-  firstSeen: string | null;
-}
 
 /** When an edit happens: the user's date, and the exact time. */
 export interface EditContext {
@@ -109,83 +94,8 @@ const MIGRATIONS = [
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
 const LATEST_FIRST = 'ORDER BY at DESC, rowid DESC';
 
-type Row = Record<string, unknown>;
-
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 const required = (value: unknown) => (typeof value === 'string' ? value : '');
-
-function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
-  return typeof value === 'string' && (list as readonly string[]).includes(value);
-}
-
-function linksOf(json: unknown): Link[] {
-  try {
-    const parsed: unknown = JSON.parse(required(json) || '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((link: Row) =>
-      typeof link?.url === 'string' && typeof link.label === 'string'
-        ? [{ url: link.url, label: link.label }]
-        : [],
-    );
-  } catch {
-    return [];
-  }
-}
-
-/** A JSON list of texts, or none when it isn't one. */
-function textsOf(json: unknown): string[] {
-  try {
-    const parsed: unknown = JSON.parse(required(json) || '[]');
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function trackedRow(row: Row): TrackedRow {
-  return {
-    id: required(row.id),
-    company: required(row.company),
-    companyKey: required(row.company_key),
-    role: required(row.role),
-    links: linksOf(row.links),
-    manual: row.manual === 1,
-    payText: text(row.pay_text),
-    firstSeen: text(row.first_seen),
-    status: isOneOf(JOB_STATUSES, row.status) ? row.status : null,
-    statusOn: text(row.status_on),
-    appliedOn: text(row.applied_on),
-    nextAction: text(row.next_action),
-    nextOn: text(row.next_on),
-    notes: text(row.notes),
-    questions: textsOf(row.questions),
-    archived: row.archived === 1,
-  };
-}
-
-function callOf(row: Row): Call | null {
-  if (!isOneOf(CALL_KINDS, row.kind) || !isOneOf(CALL_STATES, row.state)) return null;
-  return {
-    id: required(row.id),
-    kind: row.kind,
-    onDate: required(row.on_date),
-    atTime: text(row.at_time),
-    state: row.state,
-    outcome: isOneOf(CALL_OUTCOMES, row.outcome) ? row.outcome : null,
-    notes: text(row.notes),
-  };
-}
-
-function byJob<T>(rows: Row[], read: (row: Row) => T | null): Map<string, T[]> {
-  const grouped = new Map<string, T[]>();
-  for (const row of rows) {
-    const item = read(row);
-    if (!item) continue;
-    const jobId = required(row.job_id);
-    grouped.set(jobId, [...(grouped.get(jobId) ?? []), item]);
-  }
-  return grouped;
-}
 
 const failed = (message: string): EditResult => ({ ok: false, message });
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
@@ -238,7 +148,7 @@ export class Tracker {
     return row ? trackedRow(row) : null;
   }
 
-  private latestChange(jobId: string): Row | undefined {
+  private latestChange(jobId: string): StoredRow | undefined {
     return this.db
       .prepare(`SELECT * FROM status_log WHERE job_id = ? ${LATEST_FIRST} LIMIT 1`)
       .get(jobId);
@@ -324,17 +234,13 @@ export class Tracker {
   /** Each job's calls, in the order they happen. */
   calls(): Map<string, Call[]> {
     const rows = this.db.prepare('SELECT * FROM calls ORDER BY on_date, at_time, rowid').all();
-    return byJob(rows, callOf);
+    return byJob(rows, trackedCall);
   }
 
   /** Each job's changes of status, oldest first. */
   history(): Map<string, StatusChange[]> {
     const rows = this.db.prepare('SELECT * FROM status_log ORDER BY at, rowid').all();
-    return byJob(rows, (row) =>
-      isOneOf(JOB_STATUSES, row.status)
-        ? { id: required(row.id), status: row.status, at: required(row.at) }
-        : null,
-    );
+    return byJob(rows, trackedChange);
   }
 
   /**

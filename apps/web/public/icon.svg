@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>Factwright</title>
+  <style>
+    .box { fill: #2f4bd0 }
+    .check { stroke: #fff }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #8ea2ff }
+      .check { stroke: #0d1022 }
+    }
+  </style>
+  <rect class="box" x="2" y="2" width="20" height="20" rx="6"/>
+  <path class="check" d="M7.5 12.5l3 3 6-7" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

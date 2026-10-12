@@ -1,9 +1,9 @@
 import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
+import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText } from 'lucide-react';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { fileSize, shortDate } from './format.ts';
 import styles from './JobPanel.module.css';
 import { ResumePreview } from './ResumePreview.tsx';
 

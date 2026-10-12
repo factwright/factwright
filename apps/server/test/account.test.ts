@@ -85,7 +85,9 @@ describe('deleting the account', () => {
       .bind(hourAgo, sam.sessionId)
       .run();
     const response = await deleteAccount(sam.token);
-    expect(response.ok).toBe(false);
+    expect(response.status).toBe(400);
+    // The web view asks for a fresh sign-in when it sees this.
+    expect(await response.json()).toMatchObject({ code: 'SESSION_EXPIRED' });
     expect((await sam.client.account()).user.id).toBe(sam.id);
   });
 

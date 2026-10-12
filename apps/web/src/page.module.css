@@ -1,0 +1,75 @@
+/* What pages share: a card for one task, its words, and its buttons. */
+.card {
+  display: grid;
+  gap: var(--fw-space-3);
+  width: min(460px, 100%);
+  margin: 8vh auto 0;
+  padding: var(--fw-space-6);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-xl);
+  background: var(--fw-surface);
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.lead {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+}
+
+.hint,
+.problem {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+}
+
+.actions > * {
+  flex: 1 1 auto;
+}
+
+/* A code to compare, large and spaced. */
+.code {
+  margin: var(--fw-space-1) 0;
+  font-family: var(--fw-font-mono);
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+
+.done {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  color: var(--fw-ok);
+  font-weight: 600;
+}
+
+.section {
+  margin-top: 28px;
+}
+
+.heading {
+  margin: 0 0 var(--fw-space-2);
+  font-size: 13px;
+  font-weight: 650;
+}

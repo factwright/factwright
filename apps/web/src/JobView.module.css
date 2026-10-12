@@ -1,0 +1,122 @@
+.job {
+  display: grid;
+  gap: var(--fw-space-4);
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fw-space-1);
+  width: fit-content;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-md);
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.head {
+  display: grid;
+  gap: 4px;
+}
+
+.company {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.role {
+  margin: 0;
+  font-size: var(--fw-text-xl);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.section {
+  padding-top: var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+}
+
+.heading {
+  margin: 0 0 var(--fw-space-2);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.list {
+  display: grid;
+  gap: var(--fw-space-2);
+  margin: 0;
+}
+
+.list > div {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--fw-space-3);
+  font-size: var(--fw-text-md);
+}
+
+.list dt {
+  color: var(--fw-muted);
+}
+
+.list dd {
+  margin: 0;
+}
+
+.notes {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.items {
+  display: grid;
+  gap: var(--fw-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fw-text-md);
+}
+
+.itemNote {
+  display: block;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+  overflow-wrap: anywhere;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fw-accent-text);
+  font-weight: 550;
+}
+
+.problem {
+  margin: var(--fw-space-2) 0 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

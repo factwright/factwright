@@ -5,6 +5,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 - **One private store per account:** a Durable Object with its own database, plus a folder of encrypted files in R2.
 - **Identity from the session:** the account always comes from the verified session, never from the request.
 - **Sign-in:** [Better Auth](https://www.better-auth.com), with GitHub or Google. The desktop app signs in with a device code you approve in your browser. Accounts and sessions live in D1, with GitHub's and Google's tokens encrypted.
+- **The web view too:** it serves [the web view](../web), so the phone, sign-in and the API share one address.
 
 | Part | What it does |
 |---|---|
@@ -18,7 +19,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
 
 ## The API
-Every route answers only the account of the session that calls it. The desktop app sends its session as a bearer token, and the web view as a cookie.
+Every route answers only the account of the session that calls it. The desktop app sends its session as a bearer token, and the web view as a cookie. A change sent with the cookie must come from the app's own pages, so another site can't make a signed-in browser act.
 
 | Route | What it does |
 |---|---|
@@ -31,6 +32,7 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST /api/sync/live/ticket`, `GET /api/sync/live` | Listening for changes, over a WebSocket |
 | `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, and how much you store |
 | `GET /api/account/export` | Everything the server keeps for your account, still locked |
+| `GET /api/sign-in-options` | The ways to sign in this server has set up. Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a sign-in in the last 15 minutes |
 
 ## Limits
@@ -45,6 +47,10 @@ pnpm --filter @factwright/server exec wrangler d1 migrations apply factwright --
 pnpm --filter @factwright/server dev
 ```
 
+It builds the web view, then serves everything at http://localhost:8787. Signing in needs a GitHub OAuth app of your own, with the callback in `.dev.vars.example`. To try the desktop app against it, start the app with `FACTWRIGHT_SERVER_URL=http://localhost:8787`.
+
+`dev` keeps the local address on each request (`--local-upstream`). Without it, Wrangler rewrites requests to the production address in `wrangler.jsonc`, and sign-in turns them away as coming from somewhere else.
+
 The tests run the real Worker in workerd, through Wrangler's test harness, and talk to it with the same client the apps use:
 
 ```bash
@@ -55,7 +61,7 @@ pnpm --filter @factwright/server test
 It runs on Cloudflare's free plan. The first deploy creates the database, the file bucket and the `app.factwright.com` address on its own.
 
 1. Sign in to the Cloudflare account that has factwright.com: `pnpm --filter @factwright/server exec wrangler login`.
-2. Deploy: `pnpm --filter @factwright/server run deploy`.
+2. Deploy: `pnpm --filter @factwright/server run deploy`. It builds the web view first.
 3. Set up the accounts database: `pnpm --filter @factwright/server exec wrangler d1 migrations apply factwright --remote`.
 4. Set the secret that signs sessions: `openssl rand -base64 32 | pnpm --filter @factwright/server exec wrangler secret put BETTER_AUTH_SECRET`.
 5. Make a GitHub OAuth app (in the factwright org's settings, under Developer settings) with the callback `https://app.factwright.com/api/auth/callback/github`, then set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` with `wrangler secret put`.
