@@ -29,7 +29,7 @@ export function TemplatesStep({
   const suggestedPages = pagesFor({ ...answers, pages: null });
 
   // The first time here, the suggested templates start picked.
-  // Only on arrival: once the user has picked, their picks stand, even none.
+  // Arriving with none picked, the suggested templates start picked. Picks the user made stay.
   useEffect(() => {
     if (answers.looks.length === 0) {
       update({ looks: suggestions.map(({ layout, for: kind }) => ({ layout, for: kind })) });

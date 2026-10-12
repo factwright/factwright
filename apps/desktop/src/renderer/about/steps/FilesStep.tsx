@@ -1,7 +1,7 @@
 import { localDate } from '@factwright/core';
 import { FileDrop, IconButton } from '@factwright/ui';
 import { FileSpreadsheet, FileText, Image, X } from 'lucide-react';
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, useId, useRef, useState } from 'react';
 import type { AboutYou, FileKind, SharedFile } from '../../../shared/about.ts';
 import type { FactwrightApi } from '../../../shared/api.ts';
 import { linkedInUpload, readUpload } from '../read-files.ts';
@@ -111,10 +111,10 @@ export function FilesStep({
 }) {
   const titleId = useId();
   const [adding, setAdding] = useState<Adding[]>([]);
-  const counter = useState(() => ({ next: 0 }))[0];
+  const nextId = useRef(0);
 
   const track = (name: string, kind: FileKind) => {
-    const entry = { id: counter.next++, name, kind, problem: null };
+    const entry = { id: nextId.current++, name, kind, problem: null };
     setAdding((current) => [...current, entry]);
     const settle = (problem: string | null) =>
       setAdding((current) =>
