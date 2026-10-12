@@ -44,7 +44,7 @@ A reader skims the top third of the first page before deciding to read on.
 - Mirror the posting's terms, but only where they're true.
 
 ## Templates
-`templates.md` has the user's picks: use the one for the kind of company the job is at, as `layout` in resume.json. Changing the look never changes the words.
+`templates.md` has the user's picks: use the one for the kind of company the job is at, as `layout` in resume.json. When two fit, the one that suits the role. Changing the look never changes the words.
 
 | `layout` | Look | Shows the strengths list (`competencies`) |
 |---|---|---|
