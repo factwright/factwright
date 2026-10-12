@@ -15,6 +15,9 @@ export function createAuth(env: Env) {
       google: provider(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
       beforeDeleteUser: (accountId) =>
         env.STORES.get(env.STORES.idFromName(accountId)).wipe(accountId),
+      ...(Number(env.SIGN_INS_PER_MINUTE) > 0 && {
+        signInsPerMinute: Number(env.SIGN_INS_PER_MINUTE),
+      }),
     }),
   );
 }

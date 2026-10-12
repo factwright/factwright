@@ -45,7 +45,7 @@ describe('signing the desktop app in', () => {
     expect(code.status).toBe(200);
     expect(code.body).toMatchObject({
       user_code: expect.stringMatching(/^[A-Z0-9]{8}$/),
-      verification_uri: 'http://localhost/device',
+      verification_uri: `${server.url.origin}/device`,
       expires_in: 600,
       interval: 5,
     });
@@ -120,7 +120,9 @@ describe('signing in on the web', () => {
     const url = new URL(String(started.body.url));
     expect(url.origin).toBe('https://github.com');
     expect(url.searchParams.get('client_id')).toBe('github-app-id');
-    expect(url.searchParams.get('redirect_uri')).toBe('http://localhost/api/auth/callback/github');
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      `${server.url.origin}/api/auth/callback/github`,
+    );
   });
 
   it('won’t send people anywhere but the app afterward', async () => {

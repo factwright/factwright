@@ -6,8 +6,8 @@ import { createTestHarness } from 'wrangler';
 /** The secret sessions and tickets are signed with, in tests only. */
 export const SECRET = 'test-only-secret-for-signing-sessions-0123456789';
 
-/** Where the app thinks it's served from, in tests. */
-export const APP_URL = 'http://localhost';
+/** Where the app thinks it's served from, until the test server knows its own address. */
+const APP_URL = 'http://localhost';
 
 /** The bindings the tests reach into, typed as loosely as the harness hands them over. */
 interface Bindings {
@@ -42,20 +42,23 @@ export interface Account {
  * Accounts are made straight in the database, as GitHub sign-in would make them.
  */
 export async function startServer(vars: Record<string, string> = {}) {
+  const worker = (appUrl: string) => ({
+    configPath: './wrangler.jsonc',
+    // Tests sign in far more often than a person would.
+    vars: { APP_URL: appUrl, SIGN_INS_PER_MINUTE: '1000', ...vars },
+    secrets: { BETTER_AUTH_SECRET: SECRET, ADMIN_TOKEN: 'test-admin-token' },
+  });
   const server = createTestHarness({
     root: fileURLToPath(new URL('..', import.meta.url)),
-    workers: [
-      {
-        configPath: './wrangler.jsonc',
-        vars: { APP_URL, ...vars },
-        secrets: { BETTER_AUTH_SECRET: SECRET, ADMIN_TOKEN: 'test-admin-token' },
-      },
-    ],
+    workers: [worker(APP_URL)],
   });
+  // The server knows its own address, as it does once deployed, so the pages it names are real.
+  const { url: first } = await server.listen();
+  await server.update((current) => ({ ...current, workers: [worker(first.origin)] }));
   const { url } = await server.listen();
-  const worker = server.getWorker();
-  await worker.applyD1Migrations('DB');
-  const env = (await worker.getEnv()) as unknown as Bindings;
+  const handle = server.getWorker();
+  await handle.applyD1Migrations('DB');
+  const env = (await handle.getEnv()) as unknown as Bindings;
 
   /** A client for a session token, against this server. */
   const clientFor = (token: string | null, userAgent = 'Factwright/0.0.0 (Test Mac)') =>
@@ -102,7 +105,16 @@ export async function startServer(vars: Record<string, string> = {}) {
     return { id, email, ...(await newSession(id)) };
   }
 
-  return { server, url, worker, env, clientFor, signUp, newSession, close: () => server.close() };
+  return {
+    server,
+    url,
+    worker: handle,
+    env,
+    clientFor,
+    signUp,
+    newSession,
+    close: () => server.close(),
+  };
 }
 
 export type TestServer = Awaited<ReturnType<typeof startServer>>;

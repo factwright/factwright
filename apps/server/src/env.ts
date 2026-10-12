@@ -14,6 +14,8 @@ export interface Env {
   APP_URL: string;
   /** How much each account may store, in megabytes. */
   STORAGE_LIMIT_MB?: string;
+  /** Sign-ins each IP address may start in a minute. Ten unless set. */
+  SIGN_INS_PER_MINUTE?: string;
   /** Signs sessions and live tickets. A secret: `wrangler secret put BETTER_AUTH_SECRET`. */
   BETTER_AUTH_SECRET: string;
   /** Sign in with GitHub, once its OAuth app's ID and secret are set. */

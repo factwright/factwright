@@ -20,6 +20,8 @@ export interface AuthSettings {
   google?: Provider | undefined;
   /** Deletes everything an account has, before the account itself goes. */
   beforeDeleteUser: (accountId: string) => Promise<void>;
+  /** Sign-ins each IP address may start in a minute. */
+  signInsPerMinute?: number;
 }
 
 /**
@@ -60,8 +62,12 @@ export function authOptions(settings: AuthSettings) {
       window: 60,
       max: 100,
       customRules: {
-        '/sign-in/*': { window: 60, max: 10 },
-        '/device/code': { window: 60, max: 10 },
+        // Signing in, on the web or for the app, and approving the app's code in the browser.
+        ...Object.fromEntries(
+          ['/sign-in/*', '/device/code', '/device', '/device/approve', '/device/deny'].map(
+            (path) => [path, { window: 60, max: settings.signInsPerMinute ?? 10 }],
+          ),
+        ),
         // The app asks every 5 seconds while the user signs in.
         '/device/token': { window: 60, max: 30 },
       },

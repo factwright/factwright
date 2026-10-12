@@ -5,6 +5,9 @@
   "description": "The sync server: sign-in, and one private store of encrypted data per account, on Cloudflare.",
   "license": "AGPL-3.0-only",
   "type": "module",
+  "exports": {
+    "./testing": "./test/server.ts"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
