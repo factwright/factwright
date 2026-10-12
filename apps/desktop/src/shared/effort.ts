@@ -68,6 +68,13 @@ export function parseEffort(value: unknown): EffortChoices | null {
 export const effortWithout = (choices: EffortChoices, task?: ModelTask): Effort =>
   choices.main ?? (task ? RECOMMENDED_EFFORT[task] : PLAIN_EFFORT);
 
+/**
+ * Whether a task needs more effort than the run that's open gives it. One that needs less runs in
+ * the open run, at its effort, so Claude doesn't start over between tasks.
+ */
+export const needsMore = (open: Effort, wanted: Effort): boolean =>
+  EFFORTS.indexOf(wanted) > EFFORTS.indexOf(open);
+
 /** The effort a run uses: its task's own, the one for everything, or the task's recommended. */
 export const effortFor = (choices: EffortChoices, task?: RunTask | null): Effort =>
   (task && choices.tasks[task.skill]) || effortWithout(choices, task?.skill);

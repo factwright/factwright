@@ -6,6 +6,7 @@ import {
   DEFAULT_EFFORT,
   EFFORTS,
   effortFor,
+  needsMore,
   parseEffort,
   RECOMMENDED_EFFORT,
 } from '../../shared/effort.ts';
@@ -69,6 +70,14 @@ describe('how hard Claude thinks', () => {
     ]) {
       expect(parseEffort(value)).toBeNull();
     }
+  });
+
+  it('starts over only for a task that needs more than the open run gives', () => {
+    expect(needsMore('medium', 'high')).toBe(true);
+    expect(needsMore('high', 'max')).toBe(true);
+    // A salary check after a fit check runs in the same run, at high.
+    expect(needsMore('high', 'medium')).toBe(false);
+    expect(needsMore('high', 'high')).toBe(false);
   });
 
   it('is each task’s recommended level when the file is damaged', async () => {

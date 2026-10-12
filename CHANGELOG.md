@@ -69,4 +69,4 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `build_resume` builds starting resumes in `base/` too.
 - `@factwright/ui`: chip groups, tag lists, file drops and steps.
 - Quitting while Claude runs no longer messages a window that's already closed.
-- How hard Claude thinks, for each task: high for resumes, fit checks, answers, prep, messages and getting started, and medium for salary checks and job searches. **Your Claude → Settings** changes it for everything or one task, beside the model. Until now, runs used Claude Code's default, since restricted mode ignores your own settings.
+- How hard Claude thinks, for each task: high for resumes, fit checks, answers, prep, messages and getting started, and medium for salary checks and job searches. **Your Claude → Settings** changes it for everything or one task, beside the model. Until now, runs used Claude Code's default, since restricted mode ignores your own settings. A task needing more effort than the open run starts Claude afresh; one needing less runs in the open run.
