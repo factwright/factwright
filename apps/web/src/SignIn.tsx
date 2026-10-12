@@ -16,6 +16,16 @@ export function SignIn({
   returnTo: string;
 }) {
   const [going, setGoing] = useState<Provider | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const start = async (provider: Provider) => {
+    setGoing(provider);
+    setProblem(null);
+    const failed = await signIn(provider, returnTo);
+    if (failed) {
+      setProblem(failed);
+      setGoing(null);
+    }
+  };
   return (
     <section className={styles.card} aria-labelledby="sign-in-title">
       <h1 id="sign-in-title" className={styles.title}>
@@ -33,15 +43,17 @@ export function SignIn({
               key={provider}
               variant={provider === providers[0] ? 'primary' : 'secondary'}
               disabled={going !== null}
-              onClick={() => {
-                setGoing(provider);
-                void signIn(provider, returnTo);
-              }}
+              onClick={() => void start(provider)}
             >
               {going === provider ? 'Opening…' : `Continue with ${PROVIDER_NAMES[provider]}`}
             </Button>
           ))}
         </div>
+      )}
+      {problem && (
+        <p className={styles.problem} role="alert">
+          {problem}
+        </p>
       )}
       <p className={styles.hint}>
         Signing in proves who you are. Your job hunt stays locked with a key only your devices hold.

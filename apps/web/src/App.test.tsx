@@ -25,7 +25,7 @@ function server(session: object | null) {
     'GET /api/sign-in-options': () => ({ providers: ['github'] }),
     'GET /api/sync/changes': () => ({ changes: [], cursor: 0, more: false }),
     'GET /api/auth/device': () => ({ user_code: 'WDJBMJHT', status: 'pending' }),
-    'POST /api/auth/sign-in/social': () => ({ redirect: false }),
+    'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
   });
 }
 
@@ -68,7 +68,7 @@ describe('the web view', () => {
     history.replaceState(null, '', '/');
     server(SESSION);
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Link this phone' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Link this browser' })).toBeTruthy();
   });
 
   it('opens the job hunt in a linked browser', async () => {

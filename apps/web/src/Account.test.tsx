@@ -142,7 +142,7 @@ describe('the account page', () => {
           },
           { status: 400 },
         ),
-      'POST /api/auth/sign-in/social': () => ({ redirect: false }),
+      'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
     });
     render(page());
     await userEvent.click(screen.getByRole('button', { name: 'Delete my account…' }));

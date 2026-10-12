@@ -153,11 +153,12 @@ export function LinkBrowser({
   return (
     <section className={styles.card} aria-labelledby="link-title">
       <h1 id="link-title" className={styles.title}>
-        Link this phone
+        Link this browser
       </h1>
       <p className={styles.lead}>
-        On your computer, open <strong>Sync</strong> in Factwright, choose{' '}
-        <strong>Link a phone or computer</strong>, and scan the QR code with this phone’s camera.
+        Your job hunt opens only where you’ve linked it. On your computer, open{' '}
+        <strong>Sync</strong> in Factwright and choose <strong>Link a phone or computer</strong>.
+        Then scan its QR code with your phone’s camera, or type its code here.
       </p>
       {problem && (
         <p className={styles.problem} role="alert">

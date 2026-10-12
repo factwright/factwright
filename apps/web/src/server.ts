@@ -40,11 +40,24 @@ export async function signInOptions(): Promise<Provider[]> {
   return providers;
 }
 
-/** Goes to GitHub or Google to sign in, then comes back to this page. */
-export async function signIn(provider: Provider, returnTo: string): Promise<void> {
-  const response = await post('/api/auth/sign-in/social', { provider, callbackURL: returnTo });
-  const { url } = (await response.json()) as { url?: string };
-  if (url) location.assign(url);
+/**
+ * Goes to GitHub or Google to sign in, then comes back to this page. When it can't start,
+ * says why, for the page to show.
+ */
+export async function signIn(provider: Provider, returnTo: string): Promise<string | null> {
+  try {
+    const response = await post('/api/auth/sign-in/social', { provider, callbackURL: returnTo });
+    const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
+    if (response.ok && typeof url === 'string') {
+      location.assign(url);
+      return null;
+    }
+    return response.status === 429
+      ? 'That’s a lot of tries in a row. Wait a minute, then try again.'
+      : 'Signing in couldn’t start. Try again in a moment.';
+  } catch {
+    return 'Can’t reach Factwright right now. Check your connection.';
+  }
 }
 
 export async function signOut(): Promise<void> {

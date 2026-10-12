@@ -61,7 +61,7 @@ describe('linking a phone', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'That code didn’t work. It lasts 10 minutes: make a new one on your computer.',
     );
-    expect(screen.getByRole('heading', { name: 'Link this phone' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Link this browser' })).toBeTruthy();
     expect(onLinked).not.toHaveBeenCalled();
   });
 
