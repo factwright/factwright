@@ -32,6 +32,8 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
 
+**Pictures:** a picture pasted into the panel, such as a screenshot, is checked like any picture you share, saved in the workspace with the run's job (`screenshots/<job>/pasted-…`, or `screenshots/` without one), and pasted as where it is. Claude Code attaches a pasted picture's path as the picture itself. Screenshots added with the application's questions or a question for Claude are kept in the same folder, named for what they came with, and `job_details` lists each one.
+
 The first run asks a question of its own: Claude Code wants to know whether to trust the workspace, and says it will be able to "execute files". When the app sees that question on screen:
 - The run reads "Needs your answer", and the panel comes back.
 - A note above the terminal says how to answer: use the arrow keys to pick "Yes, I trust this folder", then press Enter.
@@ -52,7 +54,11 @@ That covers the launch flags, the tools and their token, the settings, and the h
 ## Claude's tools
 Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools)), in place of a shell. The server that hears the run's hooks answers them, only for that run's token, and refuses anything a web page sends.
 - **find_job:** whether you've seen a job before: its fit check, job search, folder and status. It matches the company loosely, or the posting's link alone. The skills call it before starting on a job.
-- **job_details:** everything on file for a job, including your notes, calls and history. This is how Claude reads your tracker, without reaching its database.
+- **job_details:** everything on file for a job: where it stands, your notes, calls and history, and a line for each file saved for it, saying what that file holds, so Claude knows it's there and reads what bears on the task. It also gives the application's questions with what you actually sent, and your questions about the job, with which are answered. This is how Claude reads your tracker, without reaching its database.
+- **about_you:** what you told Factwright about yourself when you started, and in Profile since, in words: your contact details, what you're looking for, pay, work authorization and when you can start. Skills check it before asking you anything an application asks.
+- **past_answers:** what you sent on your applications, in your own words, newest first, narrowed to questions like one when asked. Claude reuses what you said, and matches how you sound.
+- **save_answer:** saves Claude's answer to one of your questions about a job in `asked/<job>/<question>.md`, which the job's panel shows under the question.
+- **save_about_you:** saves something you told Claude that applications ask for again, such as your work authorization or notice period, to your profile. It changes your profile, so Claude Code asks you first, unless you let Claude change any file, or the run is for getting to know you.
 - **read_posting:** a posting on Greenhouse, Lever, Ashby or Gem, read from the applicant system's public feed and never the page the link names.
 - **read_page:** any public web page as plain text, such as a posting on another site, a careers page or a team page. It answers with at most 40,000 characters, since Claude Code moves longer answers somewhere Claude can't read.
 - **save_posting:** saves a posting word for word in the job's folder: what read_posting or read_page read from that link in the run, or a posting read from its applicant system's feed. It reaches no other site. A posting already saved there is kept.
@@ -62,7 +68,7 @@ Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools
 
 Reading and saving only fetch public https sites, never this computer or your home network, and give up on pages that are too big or too slow. A whole board can run to 25 MB, since big companies' boards carry every posting in full; a page stops at 5 MB.
 
-The tools that stay on this computer run without asking, as do web searches and Factwright's skills. So do read_posting, save_posting, job_board and hn_jobs: they reach only the applicant systems' and Hacker News's public feeds, and send them nothing but a board's name, a posting's ID or a month. Claude also saves its work in `applications/`, `searches/` and `outreach/` without asking, and adds to `guide/confidential-terms.txt`, which only makes the resume check stricter.
+The tools that stay on this computer run without asking, apart from save_about_you, as do web searches and Factwright's skills. So do read_posting, save_posting, job_board and hn_jobs: they reach only the applicant systems' and Hacker News's public feeds, and send them nothing but a board's name, a posting's ID or a month. Claude also saves its work in `applications/`, `searches/` and `outreach/` without asking, and adds to `guide/confidential-terms.txt`, which only makes the resume check stricter.
 
 Claude runs on Opus unless you choose otherwise: **Your Claude → Settings** picks the model for everything, and for each task the app starts (each Run button, and Find jobs). The app passes it with `--model`. When Claude is open on another model than a task needs, the app starts a new run on that model instead of switching the open one, since `/model` would also change your own Claude Code default.
 
@@ -105,11 +111,13 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - the next step, with a date that puts it in "Needs you" when it's due
   - how to apply, when there are special steps
   - **Run with your Claude:** a tailored resume, a fit check, a salary check, who to message, interview prep, or the application's questions, started on this job in Claude's panel. Each says where it stands (Run, Running, Done, or Ran and Ready for work already on file), and the next step for the job is highlighted. The window sends the app only the skill's name and the job's ID, and the app types the command (`/factwright:fit-check job <id>`), so text from a posting never reaches Claude as if you'd typed it. Claude that's open and done takes the next one; otherwise Claude starts with it.
-  - **Application questions** asks for the form's questions first, one box each, and keeps them with the job however the dialog closes. Answer with Claude starts the run, and Claude reads the questions through `job_details` as questions to answer, never as commands.
+  - **Application questions** asks for the form's questions first, one box each, or screenshots of the form, and keeps them with the job however the dialog closes. Answer with Claude starts the run, and Claude reads the questions through `job_details` as questions to answer, never as commands.
+  - **Ask Claude:** your own questions about the job, such as what to expect from a call, each with Claude's answer once it's in, kept to come back to. A question can come with screenshots, such as an email from the recruiter. Asking keeps the question in your tracker and starts `/factwright:ask job <id>`, and Claude reads the question through `job_details`, the same way as the application's questions.
   - why it scored what it did, part by part, with the evidence
   - what people say about the company
   - calls and interviews: log one, and it moves the job forward
   - your notes, which save as you type
+  - **Application answers:** each of the application's questions with Claude's suggestion, and a box for what you actually sent, which saves as you type. It's there to look back on when the job moves on, and Claude reads it before your interviews.
   - its resumes and documents. Preview shows a resume PDF's pages right there, exactly as an employer will see them, drawn by [pdf.js](https://github.com/mozilla/pdf.js). pdf.js loads only when a preview opens, and draws pages the way it prints, so a preview finishes even with the window in the background. The window can read only PDFs in your workspace, up to 20 MB.
   - its history, where you can fix a date or undo the latest change
   - archiving, which takes it out of your lists without losing anything
@@ -129,7 +137,7 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
 - **Secrets:** the session token and the account key are locked with the system's keychain (Electron's safe storage) before they're written to the data folder. The keychain isn't touched until you turn sync on.
 - **What syncs:** every file in the workspace, and every row of the tracker: jobs, their history and calls. Hidden files, other apps' temporary files, files over 25 MB and names Windows can't hold stay put, and the dialog says how many.
 - **When:** a moment after each change here, right away when another device changes something (the server tells each listening device), and every ten minutes anyway. Offline, it waits and tries again, and your changes stay safe here.
-- **When both changed something,** nothing is lost. A file keeps both: the other device's version in its place, and this computer's beside it, named with the computer and the day, like `notes (Sam’s Mac, Oct 12).md`. A tracked job merges: its links, questions and notes keep both sides, and the later change wins a clash. A note changed elsewhere shows up in the job panel unless you're typing in it.
+- **When both changed something,** nothing is lost. A file keeps both: the other device's version in its place, and this computer's beside it, named with the computer and the day, like `notes (Sam’s Mac, Oct 12).md`. A tracked job merges: its links, questions, the answers you sent, your questions for Claude, and its notes keep both sides, and the later change wins a clash. A note changed elsewhere shows up in the job panel unless you're typing in it.
 - **Managing it:** the Sync dialog lists your signed-in devices, signs any of them out, makes link codes, turns sync off on this computer (its job hunt stays), and opens your account on the web, to download everything or delete the account.
 
 ## Run it

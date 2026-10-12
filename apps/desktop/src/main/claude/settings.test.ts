@@ -22,6 +22,9 @@ describe('sessionSettings', () => {
       'mcp__factwright__find_job',
       'mcp__factwright__job_details',
       'mcp__factwright__build_resume',
+      'mcp__factwright__about_you',
+      'mcp__factwright__past_answers',
+      'mcp__factwright__save_answer',
       'mcp__factwright__read_posting',
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
@@ -45,6 +48,19 @@ describe('sessionSettings', () => {
     expect(allow(true, false)).not.toContain('mcp__factwright__read_page');
     expect(allow(false, true)).toContain('mcp__factwright__read_page');
     expect(allow(false, true)).not.toContain('Edit(./**)');
+  });
+
+  it('asks before saving to the user’s profile, like changing their facts, unless they chose otherwise', () => {
+    const allow = (anyFile: boolean, scope: 'hunt' | 'profile' = 'hunt') =>
+      sessionSettings({
+        hookUrl: 'http://127.0.0.1:4000/hook',
+        dark: false,
+        permissions: { anyFile, anySite: false },
+        scope,
+      }).permissions.allow;
+    expect(allow(false)).not.toContain('mcp__factwright__save_about_you');
+    expect(allow(true)).toContain('mcp__factwright__save_about_you');
+    expect(allow(false, 'profile')).toContain('mcp__factwright__save_about_you');
   });
 
   it('lets a run started to get to know the user save their facts, starting resumes and guide', () => {

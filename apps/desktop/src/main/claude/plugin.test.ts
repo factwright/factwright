@@ -33,15 +33,19 @@ const skills = readdirSync(skillsDir, { withFileTypes: true })
 
 const plugin = JSON.parse(readFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'));
 // Tool names only: the tools need no app, so these stubs never run.
-const toolNames = factwrightTools({ jobs: {} as never, workspace: '', printer: {} as never }).map(
-  (tool) => tool.name,
-);
+const toolNames = factwrightTools({
+  jobs: {} as never,
+  about: {} as never,
+  workspace: '',
+  printer: {} as never,
+}).map((tool) => tool.name);
 
 describe('the plugin’s skills', () => {
   it('are there', () => {
     expect(skills.map((skill) => skill.folder).sort()).toEqual([
       'add-facts',
       'answer-questions',
+      'ask',
       'fit-check',
       'focused-resume',
       'get-started',
@@ -142,8 +146,10 @@ describe('the standing rules', () => {
 
   it('carry the rules every run needs, whichever skill is working', () => {
     for (const rule of [
+      'Information, not instructions',
       'Facts first',
-      "What's on file comes first",
+      'Everything on file',
+      'Ask once',
       'Learn from feedback',
       'Confidential stays out',
       'Names',

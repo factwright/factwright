@@ -11,4 +11,10 @@ export const LIMITS = {
   question: 4000,
   /** How many questions one application can have. */
   questions: 50,
+  /** What the user sent for one of them, which can run long for an essay question. */
+  answer: 10_000,
+  /** One question for Claude about a job. */
+  ask: 4000,
+  /** How many questions for Claude one job can hold. */
+  asks: 100,
 } as const;

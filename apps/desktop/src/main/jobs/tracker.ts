@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
+  askId,
   byJob,
   CALL_STAGE,
   type Call,
@@ -9,8 +10,10 @@ import {
   companyKey,
   type JobStatus,
   type KnownJob,
+  questionKey,
   roleKey,
   SETTLED_STATUSES,
+  type SentAnswer,
   STATUS_RANK,
   type StatusChange,
   type StoredRow,
@@ -23,12 +26,14 @@ import {
 import type { RowValues } from '@factwright/sync';
 import type {
   AddJobResult,
+  AskResult,
   CallChanges,
   EditResult,
   JobChanges,
   NewCall,
   NewJob,
 } from '../../shared/api.ts';
+import { LIMITS } from '../../shared/limits.ts';
 
 /** When an edit happens: the user's date, and the exact time. */
 export interface EditContext {
@@ -89,6 +94,10 @@ const MIGRATIONS = [
   CREATE INDEX calls_job ON calls(job_id);`,
   // The questions the user pasted from a job's application form, as a JSON list.
   `ALTER TABLE jobs ADD COLUMN questions TEXT NOT NULL DEFAULT '[]';`,
+  // What the user actually sent for those questions, and the questions they asked Claude about
+  // the job, each as a JSON list.
+  `ALTER TABLE jobs ADD COLUMN sent TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE jobs ADD COLUMN asks TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -97,7 +106,7 @@ const LATEST_FIRST = 'ORDER BY at DESC, rowid DESC';
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 const required = (value: unknown) => (typeof value === 'string' ? value : '');
 
-const failed = (message: string): EditResult => ({ ok: false, message });
+const failed = (message: string): { ok: false; message: string } => ({ ok: false, message });
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
 const DONE: EditResult = { ok: true };
 
@@ -109,6 +118,8 @@ const DONE: EditResult = { ok: true };
  */
 export class Tracker {
   private readonly db: DatabaseSync;
+  /** The columns opening it added to tables that sync, when it was from an earlier version. */
+  private readonly gained = new Map<SyncTable, string[]>();
 
   /** Opens the tracker at a file path, or in memory for ":memory:". */
   constructor(file: string) {
@@ -117,18 +128,34 @@ export class Tracker {
     this.migrate();
   }
 
+  /**
+   * The columns opening this tracker added to tables that sync, by table: none for a new tracker,
+   * or one already up to date. Sync fills them from what other devices sent before.
+   */
+  gainedColumns(): ReadonlyMap<SyncTable, readonly string[]> {
+    return this.gained;
+  }
+
   close(): void {
     this.db.close();
   }
 
   private migrate(): void {
     const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version ?? 0);
+    const before = new Map(SYNC_TABLES.map((table) => [table, this.columns(table)]));
     MIGRATIONS.slice(version).forEach((step, i) => {
       this.transaction(() => {
         this.db.exec(step);
         this.db.exec(`PRAGMA user_version = ${version + i + 1}`);
       });
     });
+    // A new tracker gains nothing: it had no rows another device could have sent.
+    if (version === 0) return;
+    for (const table of SYNC_TABLES) {
+      const had = before.get(table) ?? [];
+      const added = this.columns(table).filter((column) => !had.includes(column));
+      if (added.length > 0) this.gained.set(table, added);
+    }
   }
 
   private transaction<T>(work: () => T): T {
@@ -319,6 +346,71 @@ export class Tracker {
       this.db.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
       if (statusChanged && status) this.logStatus(id, status, on);
     });
+    return DONE;
+  }
+
+  /**
+   * Keeps what the user actually sent for one of the application's questions, in place of what
+   * was kept for it before. Blank text forgets it. A question the form asks more than once keeps
+   * an answer for each time it's asked, by `nth`.
+   */
+  recordAnswer(
+    jobId: string,
+    question: string,
+    nth: number,
+    text: string,
+    context: EditContext,
+  ): EditResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const key = questionKey(question);
+    if (!key) return failed('That question has no words to keep it by.');
+    const same = (each: SentAnswer) => questionKey(each.question) === key && each.nth === nth;
+    const at = job.sent.findIndex(same);
+    const others = job.sent.filter((each) => !same(each));
+    const answer = { question, nth, text, on: context.today, at: context.now };
+    const sent = !text.trim()
+      ? others
+      : at < 0
+        ? [...others, answer]
+        : [...others.slice(0, at), answer, ...others.slice(at)];
+    if (sent.length > LIMITS.questions) return failed('That’s as many answers as a job can keep.');
+    this.db
+      .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(sent), context.now, jobId);
+    return DONE;
+  }
+
+  /** Keeps a question the user asked Claude about a job, under a new ID for its answer. */
+  addAsk(jobId: string, question: string, context: EditContext): AskResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const asked = question.trim();
+    if (!asked) return failed('Type your question first.');
+    if (job.asks.length >= LIMITS.asks) {
+      return failed('That’s as many questions as a job can keep. Remove one you’re done with.');
+    }
+    const id = askId(
+      asked,
+      context.today,
+      job.asks.map((ask) => ask.id),
+    );
+    const asks = [...job.asks, { id, question: asked, on: context.today }];
+    this.db
+      .prepare('UPDATE jobs SET asks = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(asks), context.now, jobId);
+    return { ok: true, askId: id };
+  }
+
+  /** Forgets a question the user asked Claude about a job. */
+  removeAsk(jobId: string, id: string, context: EditContext): EditResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const asks = job.asks.filter((ask) => ask.id !== id);
+    if (asks.length === job.asks.length) return DONE;
+    this.db
+      .prepare('UPDATE jobs SET asks = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(asks), context.now, jobId);
     return DONE;
   }
 

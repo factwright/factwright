@@ -75,6 +75,7 @@ function start(): void {
     const jobs = new JobsService({
       workspace,
       tracker,
+      trash: (path) => shell.trashItem(path),
       onChange: (list) => {
         toWindow('jobs:changed', list);
         sync.requestSync();
@@ -89,7 +90,7 @@ function start(): void {
     const printer = new ElectronResumePrinter();
     const previews = new TemplatePreviews(printer);
     const server = new RunServer({
-      tools: factwrightTools({ jobs, workspace, printer }),
+      tools: factwrightTools({ jobs, about, workspace, printer }),
       version: app.getVersion(),
     });
     await server.start();

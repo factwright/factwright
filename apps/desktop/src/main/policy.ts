@@ -1,4 +1,5 @@
 import { join, normalize, resolve, sep } from 'node:path';
+import { ASK_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
   FACTS_SKILL,
@@ -103,8 +104,18 @@ const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
  */
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
-  const { skill, jobId, mode, ...rest } = value as Record<string, unknown>;
+  const { skill, jobId, mode, askId, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0) return null;
+  if (askId !== undefined) {
+    const valid =
+      skill === 'ask' &&
+      mode === undefined &&
+      typeof jobId === 'string' &&
+      JOB_ID.test(jobId) &&
+      typeof askId === 'string' &&
+      ASK_ID.test(askId);
+    return valid ? { skill, jobId, askId } : null;
+  }
   if (skill === SEARCH_SKILL) return jobId === undefined && mode === undefined ? { skill } : null;
   if (skill === GET_STARTED_SKILL && jobId === undefined) {
     if (mode === undefined) return { skill };
@@ -132,6 +143,7 @@ const MODE_WORDS = {
  * asks the user for one.
  */
 export function runPrompt(task: RunTask): string {
+  if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;
   const mode = 'mode' in task ? task.mode : undefined;
   return mode ? `/factwright:${task.skill} ${MODE_WORDS[mode]}` : `/factwright:${task.skill}`;

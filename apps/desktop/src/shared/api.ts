@@ -1,4 +1,12 @@
-import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
+import type {
+  CallKind,
+  CallOutcome,
+  CallState,
+  Job,
+  JobDocs,
+  JobShot,
+  JobStatus,
+} from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
 import type { ModelChoices } from './models.ts';
@@ -119,6 +127,30 @@ export type SaveFileResult = { ok: true; saved: boolean } | { ok: false; message
 /** Whether a job was added, and its ID if so. */
 export type AddJobResult = { ok: true; jobId: string } | { ok: false; message: string };
 
+/** A question for Claude about a job, kept under the ID its answer is saved by. */
+export type AskResult = { ok: true; askId: string } | { ok: false; message: string };
+
+/** What a screenshot is added with: the application form, a question for Claude, or Claude's panel. */
+export type ShotFor = { kind: 'form' } | { kind: 'ask'; ask: string } | { kind: 'pasted' };
+
+/** A screenshot saved in the workspace, by its path there, or why it wasn't. */
+export type ShotResult = { ok: true; path: string } | { ok: false; message: string };
+
+/** Claude's answers to the user's questions about a job, by the question's ID, and its screenshots. */
+export interface JobExtras {
+  asked: Record<string, string>;
+  shots: JobShot[];
+}
+
+/** A picture pasted into Claude's panel, saved where Claude can read it, by its full path. */
+export type PasteResult = { ok: true; file: string } | { ok: false; message: string };
+
+/** A screenshot from the window: its name and bytes. */
+export interface ShotUpload {
+  name: string;
+  bytes: Uint8Array;
+}
+
 /** What the app's window may ask of the main process. Nothing else crosses over. */
 export interface FactwrightApi {
   /** The operating system, so the window can make room for its title bar buttons. */
@@ -161,6 +193,25 @@ export interface FactwrightApi {
   undoStatusChange(changeId: string): Promise<EditResult>;
   /** Listens for any change to the jobs. Returns a function that stops listening. */
   onJobsChanged(listener: (list: JobList) => void): () => void;
+  /** Claude's answers to the user's questions about a job, and its screenshots. */
+  jobExtras(jobId: string): Promise<JobExtras | null>;
+  /**
+   * Keeps what the user actually sent for one of the application's questions, the nth time the
+   * form asks it, counting from 0. Blank forgets it.
+   */
+  recordAnswer(jobId: string, question: string, nth: number, text: string): Promise<EditResult>;
+  /** Keeps a question for Claude about a job, ready for a run to answer it. */
+  askAboutJob(jobId: string, question: string): Promise<AskResult>;
+  /** Forgets a question about a job, and puts its answer and screenshots in the trash. */
+  removeAsk(jobId: string, askId: string): Promise<EditResult>;
+  /** Saves a screenshot for a job: of the application form, or with a question for Claude. */
+  addShot(jobId: string, shot: ShotUpload, purpose: ShotFor): Promise<ShotResult>;
+  /** Puts a screenshot in the trash. */
+  removeShot(path: string): Promise<EditResult>;
+  /** A screenshot's bytes, to show it. */
+  readShot(path: string): Promise<Uint8Array | null>;
+  /** Saves a picture pasted into Claude's panel, with the run's job when there is one. */
+  pasteImage(shot: ShotUpload, jobId: string | null): Promise<PasteResult>;
   /** Opens a resume from the workspace in the user's own app for it. */
   openFile(path: string): Promise<EditResult>;
   /** A resume PDF's bytes, to show its pages in the window. */

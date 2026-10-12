@@ -69,4 +69,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `build_resume` builds starting resumes in `base/` too.
 - `@factwright/ui`: chip groups, tag lists, file drops and steps.
 - Quitting while Claude runs no longer messages a window that's already closed.
+- Claude knows everything on file for a job: `job_details` lists each file saved for it with what it holds, the application's questions with what you sent, and your questions about it, so every skill reads what bears on its work, such as a tailored resume reading the fit check and your notes from a call.
+- Application answers: each question with Claude's suggestion and what you actually sent, which you record in the job's panel. It stays there for when the job moves on, Claude reads it before interviews, and the phone shows it too.
+- Ask Claude: your own questions about a job, such as what to expect from a call, answered from everything on file and the web, and kept with the job. `/factwright:ask` answers them, and `save_answer` keeps each answer.
+- Screenshots: of an application form, with a question for Claude, or pasted into Claude's panel, where Claude Code takes them as pictures.
+- `about_you`, `past_answers` and `save_about_you`: application answers use what you told Factwright, such as your work authorization and when you can start, and sound like what you sent before. Something forms ask again is saved to your profile, after you OK it, so nobody asks twice.
 - How hard Claude thinks, for each task, by your plan: extra high on Max, Team and Enterprise (job searches at high), and on Pro, high, with medium for salary checks and job searches. **Your Claude → Settings** changes it for everything or one task, beside the model. Until now, runs used Claude Code's default, since restricted mode ignores your own settings. A task needing more effort than the open run starts Claude afresh; one needing less runs in the open run.

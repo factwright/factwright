@@ -34,6 +34,7 @@ function panel(job: Job | null, api: Partial<FactwrightApi> = {}) {
   const fullApi = {
     updateJob: vi.fn(async () => ({ ok: true as const })),
     jobDocs: vi.fn(async () => (job ? sampleDocs(job) : null)),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
     openFile: vi.fn(async () => ({ ok: true as const })),
     ...api,
   } as unknown as FactwrightApi;

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from 'vitest';
@@ -23,11 +23,40 @@ beforeAll(() => {
 afterEach(cleanup);
 
 /** The window's API, only as far as the questions need it. */
-function apiStub(): FactwrightApi & { updateJob: Mock<FactwrightApi['updateJob']> } {
-  return { updateJob: vi.fn(async () => ({ ok: true }) as const) } as unknown as FactwrightApi & {
+function apiStub() {
+  return {
+    platform: 'darwin',
+    updateJob: vi.fn(async () => ({ ok: true }) as const),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    readShot: vi.fn(async () => null),
+    addShot: vi.fn(async (jobId: string) => ({
+      ok: true as const,
+      path: `screenshots/${jobId}/form-2026-10-12-1.png`,
+    })),
+    removeShot: vi.fn(async () => ({ ok: true }) as const),
+  } as unknown as FactwrightApi & {
     updateJob: Mock<FactwrightApi['updateJob']>;
+    addShot: Mock<FactwrightApi['addShot']>;
+    removeShot: Mock<FactwrightApi['removeShot']>;
   };
 }
+
+/** A picture pasted into the window, as the system's clipboard gives it. */
+function paste(file: File) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      getData: () => '',
+    },
+  });
+  window.dispatchEvent(event);
+  return event;
+}
+
+const PNG = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])], 'image.png', {
+  type: 'image/png',
+});
 
 const job = sampleJob({ id: 'acme--staff-engineer', company: 'Acme', role: 'Staff Engineer' });
 
@@ -156,12 +185,72 @@ describe('the application questions', () => {
     expect(api.updateJob).toHaveBeenCalledTimes(1);
   });
 
-  it('needs at least one question', async () => {
+  it('needs at least one question, or a screenshot of them', async () => {
     const { run, api } = await open();
     await userEvent.click(screen.getByRole('button', { name: 'Answer with Claude' }));
-    expect(screen.getByRole('alert').textContent).toBe('Paste at least one question first.');
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Paste at least one question, or a screenshot of them, first.',
+    );
     expect(api.updateJob).not.toHaveBeenCalled();
     expect(run.start).not.toHaveBeenCalled();
+  });
+
+  it('takes screenshots of the form, kept with the job the moment they’re added', async () => {
+    const { run, api, dialog } = await open();
+    expect(paste(PNG).defaultPrevented).toBe(true);
+    await waitFor(() =>
+      expect(api.addShot).toHaveBeenCalledWith(
+        job.id,
+        { name: 'image.png', bytes: expect.any(Uint8Array) },
+        { kind: 'form' },
+      ),
+    );
+    expect(await screen.findByRole('img', { name: 'Screenshot 1' })).toBeTruthy();
+    expect((await axe.run(dialog)).violations).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Answer with Claude' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'answer-questions', jobId: job.id });
+  });
+
+  it('takes pasted text as text, even when a picture of it comes along', async () => {
+    const { api } = await open();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => PNG }],
+        getData: (type: string) => (type === 'text/plain' ? 'Why Acme?' : ''),
+      },
+    });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(api.addShot).not.toHaveBeenCalled();
+  });
+
+  it('removes a screenshot, and says why one wasn’t kept', async () => {
+    const { api } = await open();
+    paste(PNG);
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove screenshot 1' }));
+    expect(api.removeShot).toHaveBeenCalledWith(`screenshots/${job.id}/form-2026-10-12-1.png`);
+    await waitFor(() => expect(screen.queryByRole('img')).toBeNull());
+    api.addShot.mockResolvedValueOnce({ ok: false, message: 'image.png is empty.' });
+    paste(PNG);
+    expect((await screen.findByRole('alert')).textContent).toBe('image.png is empty.');
+  });
+
+  it('shows screenshots of the form added before', async () => {
+    const run = controls();
+    const api = apiStub();
+    const path = `screenshots/${job.id}/form-2026-10-11-1.png`;
+    vi.mocked(api.jobExtras).mockResolvedValue({
+      asked: {},
+      shots: [
+        { path, name: 'form-2026-10-11-1.png', kind: 'form', ask: null, size: 8, modified: '' },
+      ],
+    });
+    vi.mocked(api.readShot).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    render(<RunActions job={job} status="checked" run={run} api={api} />);
+    await userEvent.click(action(/Application questions/));
+    const picture = (await screen.findByRole('img', { name: 'Screenshot 1' })) as HTMLImageElement;
+    expect(picture.src).toBe('data:image/png;base64,AQID');
   });
 
   it('keeps what was pasted when it closes, and shows it again', async () => {

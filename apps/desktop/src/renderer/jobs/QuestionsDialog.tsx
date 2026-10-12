@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import styles from './QuestionsDialog.module.css';
+import { pictureUrl, readPictures, Screenshots, type ShownShot, typeOf } from './Screenshots.tsx';
 
 /** The questions with text, trimmed. */
 const filled = (questions: readonly string[]) =>
@@ -20,9 +21,11 @@ interface Box {
 }
 
 /**
- * The questions on a job's application form, one box each, for Claude to answer. They're kept
- * with the job however the dialog closes, so nothing pasted is lost. Answer with Claude starts
- * the run that answers them; Claude reads them through job_details, never as typed commands.
+ * The questions on a job's application form, one box each, or screenshots of the form, for
+ * Claude to answer. They're kept with the job however the dialog closes, so nothing pasted is
+ * lost: questions as they're typed, and screenshots the moment they're added. Answer with Claude
+ * starts the run that answers them; Claude reads them through job_details, never as typed
+ * commands.
  */
 export function QuestionsDialog({
   job,
@@ -43,6 +46,7 @@ export function QuestionsDialog({
   );
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [shots, setShots] = useState<ShownShot[]>([]);
   // The box to focus after adding or removing one.
   const [focus, setFocus] = useState<number | null>(null);
   const list = useRef<HTMLOListElement>(null);
@@ -57,6 +61,46 @@ export function QuestionsDialog({
     list.current?.querySelectorAll('textarea')[focus]?.focus();
     setFocus(null);
   }, [focus]);
+
+  // Screenshots of the form added before come back with the questions.
+  useEffect(() => {
+    let live = true;
+    void api.jobExtras(job.id).then(async (extras) => {
+      const form = (extras?.shots ?? []).filter((shot) => shot.kind === 'form');
+      const shown = await Promise.all(
+        form.map(async ({ path }) => {
+          const bytes = await api.readShot(path);
+          return bytes ? [{ key: path, url: pictureUrl(bytes, typeOf(path)) }] : [];
+        }),
+      );
+      if (live) setShots((added) => [...shown.flat(), ...added]);
+    });
+    return () => {
+      live = false;
+    };
+  }, [api, job.id]);
+
+  const addShots = async (files: File[]) => {
+    for (const picked of await readPictures(files)) {
+      const saved = await api.addShot(
+        job.id,
+        { name: picked.name, bytes: picked.bytes },
+        { kind: 'form' },
+      );
+      if (!saved.ok) {
+        setProblem(saved.message);
+        continue;
+      }
+      setProblem(null);
+      setShots((shown) => [...shown, { key: saved.path, url: picked.url }]);
+    }
+  };
+
+  const removeShot = async (path: string) => {
+    const result = await api.removeShot(path);
+    if (result.ok) setShots((shown) => shown.filter((shot) => shot.key !== path));
+    else setProblem(result.message);
+  };
 
   const save = async (): Promise<EditResult> => {
     const kept = filled(latest.current);
@@ -82,8 +126,8 @@ export function QuestionsDialog({
 
   const answer = async (event: FormEvent, close: () => void) => {
     event.preventDefault();
-    if (filled(questions).length === 0) {
-      setProblem('Paste at least one question first.');
+    if (filled(questions).length === 0 && shots.length === 0) {
+      setProblem('Paste at least one question, or a screenshot of them, first.');
       setFocus(0);
       return;
     }
@@ -101,7 +145,7 @@ export function QuestionsDialog({
   return (
     <Dialog
       title="Application questions"
-      description={`Paste each question from ${job.company}’s application, one per box. Your Claude answers them in your own voice, backed by your facts.`}
+      description={`Paste each question from ${job.company}’s application, one per box, or screenshots of the form. Your Claude answers them in your own voice, backed by your facts.`}
       onClose={() => {
         void save();
         onClose();
@@ -145,6 +189,13 @@ export function QuestionsDialog({
           >
             Add question
           </Button>
+          <Screenshots
+            shots={shots}
+            platform={api.platform}
+            label="Add screenshots of the form"
+            onAdd={(files) => void addShots(files)}
+            onRemove={(path) => void removeShot(path)}
+          />
           <p className={styles.hint}>
             They stay with the job, so you can close this and come back to it.
           </p>

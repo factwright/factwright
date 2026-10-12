@@ -1,6 +1,9 @@
 import { localDate } from '@factwright/core';
+import type { AboutStore } from '../about/store.ts';
 import type { JobsService } from '../jobs/service.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
+import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
+import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import type { McpTool } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
@@ -9,6 +12,8 @@ import { hnJobs, jobBoard } from './search.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
+  /** What the user told Factwright about themselves, which save_about_you adds to. */
+  about: Pick<AboutStore, 'answers' | 'saveAnswers'>;
   workspace: string;
   printer: ResumePrinter;
   now?: () => Date;
@@ -24,10 +29,24 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, and building resumes. Use them to read the tracker and the web, and to make resume files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, and building resumes. Use them to read the tracker and the web, and to save answers and make resume files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
-export const LOCAL_TOOLS = ['find_job', 'job_details', 'build_resume'];
+export const LOCAL_TOOLS = [
+  'find_job',
+  'job_details',
+  'build_resume',
+  'about_you',
+  'past_answers',
+  'save_answer',
+];
+
+/**
+ * The tools that change what the user told Factwright about themselves. They stay on this
+ * computer, but like the user's facts, Claude asks before using them unless the user chose
+ * otherwise, or started a run to get to know them.
+ */
+export const PROFILE_TOOLS = ['save_about_you'];
 
 /**
  * The tools that reach only fixed public job APIs: the applicant systems' postings and boards,
@@ -268,6 +287,120 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           ...(deps.fetch && { fetch: deps.fetch }),
           ...(deps.now && { now: deps.now }),
         }),
+    },
+    {
+      name: 'about_you',
+      description:
+        'What the user told Factwright about themselves, when they started and in Profile since: their contact details, the roles, places and companies they want, pay, work authorization, when they can start, must-haves and deal-breakers. Check it before asking the user anything an application or a recruiter asks.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READS,
+      run: async () => aboutYouText(deps.about.answers()),
+    },
+    {
+      name: 'past_answers',
+      description:
+        'What the user actually sent on their applications, in their own words, newest first: the questions and their answers as they submitted them, which may differ from what Claude suggested. Use it to reuse what they said before and to sound like them. Give a question’s words to narrow it, and a job’s id to leave that job out.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          about: { type: 'string', description: 'A question’s words, such as “why this company”.' },
+          job: { type: 'string', description: 'A job’s id to leave out, such as the one at hand.' },
+        },
+        additionalProperties: false,
+      },
+      annotations: READS,
+      run: async (input) =>
+        pastAnswers(
+          deps.jobs.list().jobs,
+          textInput(input, 'about', false),
+          textInput(input, 'job', false),
+        ),
+    },
+    {
+      name: 'save_answer',
+      description:
+        'Saves your answer to one of the user’s questions about a job, which job_details lists under the user’s questions with their ids. The app shows it with the question, for the user to come back to. Give the answer as Markdown, with links to sources. Answering again replaces it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          job: {
+            type: 'string',
+            description: 'The job’s id, such as acme-robotics--staff-engineer.',
+          },
+          question: {
+            type: 'string',
+            description: 'The question’s id, such as 2026-10-12-what-should-i-expect-from.',
+          },
+          answer: { type: 'string', description: 'The answer, as Markdown.' },
+        },
+        required: ['job', 'question', 'answer'],
+        additionalProperties: false,
+      },
+      // It writes only the answer's own file, from what's on this computer.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) => {
+        const id = textInput(input, 'job', true) ?? '';
+        const job = deps.jobs.list().jobs.find((each) => each.id === id);
+        if (!job) throw new Error(`Nothing on file for ${id}.`);
+        const answer = input.answer;
+        if (typeof answer !== 'string' || answer.length > MAX_ANSWER) {
+          throw new Error(`Give the answer as text of ${MAX_ANSWER} characters or fewer.`);
+        }
+        return saveAnswer(
+          job,
+          textInput(input, 'question', true) ?? '',
+          answer,
+          deps.workspace,
+          today(),
+        );
+      },
+    },
+    {
+      name: 'save_about_you',
+      description:
+        'Saves something the user told you that applications and recruiters ask for, so nobody asks again: their work authorization, when they can start (with any notice period), whether they’d relocate, their target or lowest base pay, or a contact detail. Save only what they said, in their words, and only what holds for every job, never one job’s pay.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          authorization: {
+            type: 'string',
+            description:
+              'Whether they can work where the jobs are, such as “US citizen, no sponsorship needed”.',
+          },
+          start: {
+            type: 'string',
+            description: 'When they can start, such as “two weeks’ notice”.',
+          },
+          relocate: {
+            type: 'string',
+            enum: ['no', 'maybe', 'yes'],
+            description: 'Whether they’d move for a job: no, maybe (for the right one) or yes.',
+          },
+          targetPay: {
+            type: 'string',
+            description: 'The base pay they’re aiming for, such as “$180,000”.',
+          },
+          minPay: { type: 'string', description: 'The least base pay they’d take.' },
+          email: { type: 'string' },
+          phone: { type: 'string' },
+          location: { type: 'string', description: 'Where they live, such as “Denver, CO”.' },
+          linkedin: { type: 'string', description: 'Their LinkedIn profile’s link.' },
+          website: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      // It changes the user's profile on this computer, which they OK unless they chose otherwise.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) => {
+        const read = aboutYouChanges(input, deps.about.answers());
+        if (!read) {
+          throw new Error(
+            `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text. relocate is no, maybe or yes.`,
+          );
+        }
+        deps.about.saveAnswers(read.changes);
+        return `Saved to the user’s profile: ${read.saved.join('; ')}.`;
+      },
     },
   ];
 }

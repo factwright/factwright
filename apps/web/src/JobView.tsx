@@ -1,4 +1,6 @@
 import {
+  applicationAnswers,
+  askAnswer,
   CALL_KIND_LABELS,
   CALL_OUTCOME_LABELS,
   callWhen,
@@ -8,6 +10,8 @@ import {
   jobProgress,
   nextStep,
   payLabel,
+  questionKey,
+  readSuggestedAnswers,
   shortDate,
 } from '@factwright/core';
 import type { AccountKeys } from '@factwright/sync';
@@ -62,6 +66,8 @@ export function JobView({
   const pay = payLabel(job.pay);
   const docs = vault.docs.get(job.id) ?? {};
   const documents = DOCUMENTS.filter(({ kind }) => docs[kind]);
+  const answers = applicationAnswers(job.questions, readSuggestedAnswers(docs.answers), job.sent);
+  const asked = vault.asked.get(job.id) ?? {};
 
   const openResume = async (path: string, format: 'pdf' | 'docx', name: string) => {
     setProblem(null);
@@ -173,6 +179,67 @@ export function JobView({
                 {call.notes && <span className={styles.itemNote}>{call.notes}</span>}
               </li>
             ))}
+          </ul>
+        </section>
+      )}
+
+      {answers.length > 0 && (
+        <section className={styles.section} aria-labelledby="answers">
+          <h2 id="answers" className={styles.heading}>
+            Application answers
+          </h2>
+          <ul className={styles.items}>
+            {answers.map((answer) => (
+              <li key={questionKey(answer.question)}>
+                <details className={styles.details}>
+                  <summary className={styles.summary}>{answer.question}</summary>
+                  {answer.sent ? (
+                    <>
+                      <p className={styles.itemNote}>
+                        You sent, {shortDate(answer.sent.on, today)}:
+                      </p>
+                      <p className={styles.notes}>{answer.sent.text}</p>
+                    </>
+                  ) : (
+                    <p className={styles.itemNote}>What you sent isn’t recorded.</p>
+                  )}
+                  {answer.suggested && (
+                    <>
+                      <p className={styles.itemNote}>Claude suggested:</p>
+                      <Markdown text={answer.suggested} />
+                    </>
+                  )}
+                </details>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {job.asks.length > 0 && (
+        <section className={styles.section} aria-labelledby="asked">
+          <h2 id="asked" className={styles.heading}>
+            Your questions
+          </h2>
+          <ul className={styles.items}>
+            {[...job.asks].reverse().map((ask) => {
+              const answer = asked[ask.id];
+              return (
+                <li key={ask.id}>
+                  <details className={styles.details}>
+                    <summary className={styles.summary}>
+                      {ask.question}
+                      <span className={styles.itemNote}>Asked {shortDate(ask.on, today)}</span>
+                    </summary>
+                    {answer ? (
+                      <Markdown text={askAnswer(answer).body} />
+                    ) : (
+                      <p className={styles.itemNote}>Claude hasn’t answered this yet.</p>
+                    )}
+                  </details>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

@@ -115,6 +115,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     fitReport: null,
     sentiment: null,
     files: [],
+    outreach: [],
     status: null,
     statusOn: null,
     appliedOn: null,
@@ -122,6 +123,8 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     nextOn: null,
     notes: null,
     questions: [],
+    sent: [],
+    asks: [],
     archived: false,
     manual: false,
     calls: [],
@@ -197,6 +200,28 @@ export function sampleJobs(): Job[] {
       ],
       files: [resume('Northwind Labs', day(-17))],
       docKinds: ['posting', 'job', 'fit', 'prep', 'answers'],
+      questions: [
+        'Why do you want to work at Northwind?',
+        'Tell us about a system you scaled. What broke first?',
+        'Are you authorized to work in the US without sponsorship?',
+      ],
+      sent: [
+        {
+          question: 'Why do you want to work at Northwind?',
+          text: 'Honestly, the platform team. I’ve run an internal platform for four years and I miss being close to the people using it. Your teams seem to actually talk to each other.',
+          on: day(-16),
+          at: `${day(-16)}T18:00:00.000Z`,
+          nth: 0,
+        },
+      ],
+      asks: [
+        {
+          id: `${day(-3)}-i-have-a-45-minute-panel`,
+          question:
+            'I have a 45 minute panel on Friday. What should I expect, and what should I ask them?',
+          on: day(-3),
+        },
+      ],
       events: [
         {
           id: 'nw-search',
@@ -397,6 +422,26 @@ export function sampleJobs(): Job[] {
 }
 
 /** The documents behind the samples' Open buttons. */
+/** Claude's answers to the sample jobs' application questions. */
+const SAMPLE_ANSWERS = [
+  '# Application questions: Northwind Labs, Senior Software Engineer, Platform',
+  '',
+  'Drafted on the day you applied. Q1 traces to facts/work.md#internal-platform.',
+  '',
+  '## Why do you want to work at Northwind?',
+  '',
+  'I’ve run an internal platform for four years, and the best part is working with the teams that use it. Northwind’s platform group sounds like that, and the posting says you want someone who talks to product teams before building for them.',
+  '',
+  '## Tell us about a system you scaled. What broke first?',
+  '',
+  'Our deploy pipeline. It went from a dozen services to about two hundred, and the queue broke before anything else did. I split it by team and added a fast lane for small changes.',
+  '',
+  '## Checkbox questions',
+  '| Question | Pick | Why |',
+  '|---|---|---|',
+  '| Are you authorized to work in the US without sponsorship? | Yes | From your profile |',
+].join('\n');
+
 export function sampleDocs(job: Job): JobDocs {
   const posting = [
     `# ${job.role}`,
@@ -416,7 +461,11 @@ export function sampleDocs(job: Job): JobDocs {
   return Object.fromEntries(
     job.docKinds.map((kind) => [
       kind,
-      kind === 'posting' ? posting : `# ${job.company}\n\nA sample ${kind} document.`,
+      kind === 'posting'
+        ? posting
+        : kind === 'answers' && job.company === 'Northwind Labs'
+          ? SAMPLE_ANSWERS
+          : `# ${job.company}\n\nA sample ${kind} document.`,
     ]),
   );
 }

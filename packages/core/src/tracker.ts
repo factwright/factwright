@@ -79,6 +79,28 @@ export const CALL_OUTCOMES = ['advanced', 'waiting', 'rejected'] as const;
 
 export type CallOutcome = (typeof CALL_OUTCOMES)[number];
 
+/** What the user actually sent for one of an application's questions, in their own words. */
+export interface SentAnswer {
+  /** The question, as the form asked it. */
+  question: string;
+  /** For a question the form asks more than once, such as "If yes, please explain", which time. */
+  nth: number;
+  text: string;
+  /** When they recorded it, as an ISO date. */
+  on: string;
+  /** When they recorded it, to the moment, so the latest of two devices' changes wins. */
+  at: string;
+}
+
+/** A question the user asked Claude about a job. Claude saves its answer in the job's folder. */
+export interface Ask {
+  /** Unique among the job's questions. Its answer is asked/<id>.md in the job's folder. */
+  id: string;
+  question: string;
+  /** When they asked, as an ISO date. */
+  on: string;
+}
+
 /** What the user tracks about a job by hand. */
 export interface TrackerFields {
   status: JobStatus | null;
@@ -90,6 +112,10 @@ export interface TrackerFields {
   notes: string | null;
   /** Questions from the job's application form, which the user pasted for Claude to answer. */
   questions: string[];
+  /** What the user actually sent for the form's questions, recorded after applying. */
+  sent: SentAnswer[];
+  /** Questions the user asked Claude about the job. */
+  asks: Ask[];
   archived: boolean;
 }
 

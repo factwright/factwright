@@ -1,13 +1,17 @@
+import { ASK_ID, questionKey } from './answers.ts';
+import { isIsoDate } from './dates.ts';
 import type { CollectedJob, Job, JobPay } from './jobs.ts';
 import type { Link } from './links.ts';
 import { parsePay } from './pay.ts';
 import type { JobDocKind } from './records.ts';
 import {
+  type Ask,
   CALL_KINDS,
   CALL_OUTCOMES,
   CALL_STATES,
   type Call,
   JOB_STATUSES,
+  type SentAnswer,
   STATUS_RANK,
   type StatusChange,
   type TrackerFields,
@@ -52,15 +56,54 @@ function linksOf(json: unknown): Link[] {
   }
 }
 
-/** A JSON list of texts, or none when it isn't one. */
-function textsOf(json: unknown): string[] {
+/** A JSON list, or none when it isn't one. */
+function listOf(json: unknown): unknown[] {
   try {
     const parsed: unknown = JSON.parse(required(json) || '[]');
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
+
+/** A JSON list of texts, or none when it isn't one. */
+const textsOf = (json: unknown): string[] =>
+  listOf(json).filter((item): item is string => typeof item === 'string');
+
+/**
+ * The answers the user recorded, leaving out any that don't read. Two devices can each record an
+ * answer to the same question; the later one stands.
+ */
+function sentOf(json: unknown): SentAnswer[] {
+  const kept = new Map<string, SentAnswer>();
+  for (const item of listOf(json)) {
+    const { question, text, on, at, nth } = (item ?? {}) as StoredRow;
+    if (typeof question !== 'string' || typeof text !== 'string' || !isIsoDate(on)) continue;
+    const answer: SentAnswer = {
+      question,
+      nth: Number.isInteger(nth) && (nth as number) >= 0 ? (nth as number) : 0,
+      text,
+      on,
+      at: typeof at === 'string' ? at : on,
+    };
+    const key = `${questionKey(question)}#${answer.nth}`;
+    const known = kept.get(key);
+    if (!known || answer.at >= known.at) kept.set(key, answer);
+  }
+  return [...kept.values()];
+}
+
+/** The questions the user asked Claude, leaving out any that don't read. */
+const asksOf = (json: unknown): Ask[] =>
+  listOf(json).flatMap((item) => {
+    const { id, question, on } = (item ?? {}) as StoredRow;
+    return typeof id === 'string' &&
+      ASK_ID.test(id) &&
+      typeof question === 'string' &&
+      isIsoDate(on)
+      ? [{ id, question, on }]
+      : [];
+  });
 
 /** A job's row, read from the tracker's jobs table. */
 export function trackedRow(row: StoredRow): TrackedRow {
@@ -80,6 +123,8 @@ export function trackedRow(row: StoredRow): TrackedRow {
     nextOn: text(row.next_on),
     notes: text(row.notes),
     questions: textsOf(row.questions),
+    sent: sentOf(row.sent),
+    asks: asksOf(row.asks),
     archived: row.archived === 1,
   };
 }
@@ -135,12 +180,12 @@ const ADDED_BY_HAND = 'Added by hand';
 
 /** Whether the user has tracked anything about a job, so it stays listed after its files go. */
 function isTracked(row: TrackedRow, calls: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, notes, questions } = row;
+  const { manual, archived, status, appliedOn, nextAction, nextOn, notes } = row;
   return (
     manual ||
     archived ||
     calls > 0 ||
-    questions.length > 0 ||
+    [row.questions, row.sent, row.asks].some((list) => list.length > 0) ||
     [status, appliedOn, nextAction, nextOn, notes].some(Boolean)
   );
 }
@@ -167,6 +212,8 @@ function assemble(
     nextOn: row.nextOn,
     notes: row.notes,
     questions: row.questions,
+    sent: row.sent,
+    asks: row.asks,
     archived: row.archived,
     manual: row.manual,
     calls,
@@ -204,6 +251,7 @@ function assemble(
     fitReport: null,
     sentiment: null,
     files: [],
+    outreach: [],
     docKinds: [],
     ...tracking,
   };

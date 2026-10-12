@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import type { CollectedJob } from '@factwright/core';
 import { type Account, startServer, type TestServer } from '@factwright/server/testing';
 import { accountKeys, type Bytes, newAccountKey } from '@factwright/sync';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type EditContext, Tracker } from '../jobs/tracker.ts';
 import { SyncEngine } from './engine.ts';
+import { adoptGainedColumns } from './rows.ts';
 import { SyncState } from './state.ts';
 
 const AT: EditContext = { today: '2026-10-12', now: '2026-10-12T09:00:00.000Z' };
@@ -39,6 +41,7 @@ const job = (id: string): CollectedJob => ({
   summary: null,
   events: [],
   docs: {},
+  outreach: [],
   apply: null,
   fitReport: null,
   sentiment: null,
@@ -50,23 +53,44 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
   const folder = mkdtempSync(join(tmpdir(), 'factwright-sync-'));
   const workspace = join(folder, 'workspace');
   mkdirSync(workspace);
-  const tracker = new Tracker(join(folder, 'tracker.db'));
+  const file = join(folder, 'tracker.db');
+  let tracker = new Tracker(file);
   const state = new SyncState(join(folder, 'sync.db'));
   const session = await server.newSession(account.id);
-  const engine = new SyncEngine({
-    client: session.client,
-    keys: await accountKeys(accountKey),
-    state,
-    tracker,
-    workspace,
-    device: name,
-    now: OCT_12,
-  });
+  const keys = await accountKeys(accountKey);
+  const engineFor = (current: Tracker) =>
+    new SyncEngine({
+      client: session.client,
+      keys,
+      state,
+      tracker: current,
+      workspace,
+      device: name,
+      now: OCT_12,
+    });
+  let engine = engineFor(tracker);
   const at = (path: string) => join(workspace, ...path.split('/'));
   return {
     workspace,
-    tracker,
+    get tracker() {
+      return tracker;
+    },
     sync: () => engine.syncOnce(),
+    /** Goes back to the tracker before the answers sent and questions for Claude. */
+    downgrade() {
+      const old = new DatabaseSync(file);
+      old.exec(
+        'ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
+      );
+      old.close();
+    },
+    /** Updates the app: opens the tracker again, as the new version does, and syncs from there. */
+    update() {
+      tracker.close();
+      tracker = new Tracker(file);
+      adoptGainedColumns(tracker, state);
+      engine = engineFor(tracker);
+    },
     write(path: string, text: string | Uint8Array) {
       mkdirSync(dirname(at(path)), { recursive: true });
       writeFileSync(at(path), text);
@@ -182,6 +206,83 @@ describe('two computers on one account', () => {
       });
     }
     expect(mac.tracker.history()).toEqual(pc.tracker.history());
+  });
+
+  it('keep what one sent when the other updates the app after syncing it', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    mac.tracker.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
+    mac.tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys, mostly.', AT);
+    mac.tracker.addAsk('acme--staff', 'What should I expect?', AT);
+    await mac.sync();
+    // The PC is still on the version before them, so it keeps them only in what it synced.
+    pc.downgrade();
+    await pc.sync();
+    expect(pc.tracker.rows()[0]?.notes).toBeNull();
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({
+      sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.' }],
+      asks: [{ question: 'What should I expect?' }],
+    });
+    expect(await pc.sync()).toMatchObject({ pushed: 0 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]?.sent).toHaveLength(1);
+    expect(mac.tracker.rows()[0]?.asks).toHaveLength(1);
+  });
+
+  it('keep what one sent when the other changed a job before updating', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    mac.tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys, mostly.', AT);
+    await mac.sync();
+    pc.downgrade();
+    await pc.sync();
+    pc.tracker.updateJob('acme--staff', { notes: 'Referred by Priya' }, AT);
+    pc.update();
+    expect(await pc.sync()).toMatchObject({ pushed: 1 });
+    await mac.sync();
+    for (const each of [mac, pc]) {
+      expect(each.tracker.rows()[0]).toMatchObject({
+        notes: 'Referred by Priya',
+        sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.' }],
+      });
+    }
+  });
+
+  it('keep edits to different answers from both computers, and the later of two to one', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    mac.tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys.', AT);
+    mac.tracker.recordAnswer('acme--staff', 'Salary?', 0, '$180k', AT);
+    await mac.sync();
+    await pc.sync();
+    const at = (now: string): EditContext => ({ today: '2026-10-13', now });
+    mac.tracker.recordAnswer(
+      'acme--staff',
+      'Why Acme?',
+      0,
+      'Deploys, mostly.',
+      at('2026-10-13T09:00:00.000Z'),
+    );
+    pc.tracker.recordAnswer('acme--staff', 'Salary?', 0, '$185k', at('2026-10-13T09:05:00.000Z'));
+    await mac.sync();
+    await pc.sync();
+    await mac.sync();
+    for (const each of [mac, pc]) {
+      expect(
+        each.tracker
+          .rows()[0]
+          ?.sent.map((answer) => answer.text)
+          .sort(),
+      ).toEqual(['$185k', 'Deploys, mostly.']);
+    }
+    // Both change the same answer: the later one stands on both.
+    mac.tracker.recordAnswer('acme--staff', 'Salary?', 0, '$190k', at('2026-10-13T10:00:00.000Z'));
+    pc.tracker.recordAnswer('acme--staff', 'Salary?', 0, '$200k', at('2026-10-13T10:30:00.000Z'));
+    await mac.sync();
+    await pc.sync();
+    await mac.sync();
+    for (const each of [mac, pc]) {
+      const salary = each.tracker.rows()[0]?.sent.filter((answer) => answer.question === 'Salary?');
+      expect(salary?.map((answer) => answer.text)).toEqual(['$200k']);
+    }
   });
 
   it('bring back a file deleted on one computer while the other changed it', async () => {

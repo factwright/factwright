@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ASK_ID } from '@factwright/core';
 import {
   app,
   BrowserWindow,
@@ -11,8 +12,16 @@ import {
   ipcMain,
   shell,
 } from 'electron';
-import type { EditResult, PdfResult, SaveFileResult, StartResult } from '../shared/api.ts';
+import type {
+  EditResult,
+  PasteResult,
+  PdfResult,
+  SaveFileResult,
+  ShotFor,
+  StartResult,
+} from '../shared/api.ts';
 import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
+import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
 import { scopeOf } from '../shared/runs.ts';
@@ -54,10 +63,22 @@ const isText = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= MAX_TEXT_LENGTH;
 
 /** The answer to an edit the window sent in a shape the app doesn't take. */
-const REFUSED: EditResult = { ok: false, message: 'That change couldn’t be saved.' };
+const REFUSED = { ok: false, message: 'That change couldn’t be saved.' } as const;
 
 const isId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 300;
+
+const isTextUpTo = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length <= max;
+
+/** What a screenshot from a job's panel is for: the application form, or a question for Claude. */
+function shotFor(value: unknown): ShotFor | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { kind, ask } = value as Record<string, unknown>;
+  if (kind === 'form' && ask === undefined) return { kind };
+  if (kind === 'ask' && typeof ask === 'string' && ASK_ID.test(ask)) return { kind, ask };
+  return null;
+}
 
 export interface IpcDeps {
   /** Whether a page is the app's own, the only page whose requests are answered. */
@@ -216,6 +237,48 @@ export function registerIpc({
   answer('jobs:list', () => jobs.list());
 
   answer('jobs:docs', (jobId) => (isId(jobId) ? jobs.docs(jobId) : null));
+
+  answer('jobs:extras', (jobId) => (isId(jobId) && jobs.has(jobId) ? jobs.extras(jobId) : null));
+
+  answer('jobs:record-answer', (jobId, question, nth, text) =>
+    isId(jobId) &&
+    isTextUpTo(question, LIMITS.question) &&
+    Number.isInteger(nth) &&
+    (nth as number) >= 0 &&
+    (nth as number) < LIMITS.questions &&
+    isTextUpTo(text, LIMITS.answer)
+      ? jobs.recordAnswer(jobId, question, nth as number, text)
+      : REFUSED,
+  );
+
+  answer('jobs:ask', (jobId, question) =>
+    isId(jobId) && isTextUpTo(question, LIMITS.ask) ? jobs.addAsk(jobId, question) : REFUSED,
+  );
+
+  answer('jobs:remove-ask', (jobId, askId) =>
+    isId(jobId) && typeof askId === 'string' ? jobs.removeAsk(jobId, askId) : REFUSED,
+  );
+
+  answer('jobs:add-shot', (jobId, upload, purpose) => {
+    const valid = shotFor(purpose);
+    return isId(jobId) && valid ? jobs.addShot(jobId, upload, valid) : REFUSED;
+  });
+
+  answer('jobs:remove-shot', (path) => jobs.removeShot(path));
+
+  answer('jobs:shot', (path) => jobs.shot(path));
+
+  // A picture pasted into Claude's panel: saved with the run's job, or on its own, and handed
+  // back by where it is on this computer, which Claude Code attaches when it's pasted.
+  answer('claude:paste-image', async (upload, jobId): Promise<PasteResult> => {
+    if (jobId !== null && !(isId(jobId) && jobs.has(jobId))) return REFUSED;
+    const saved = await jobs.addShot(jobId, upload, { kind: 'pasted' });
+    if (!saved.ok) return saved;
+    const file = jobs.shotOnDisk(saved.path);
+    if (!file) return REFUSED;
+    // Claude Code reads a backslash in a pasted path as an escape, and takes forward slashes on Windows too.
+    return { ok: true, file: process.platform === 'win32' ? file.replaceAll('\\', '/') : file };
+  });
 
   answer('jobs:update', (jobId, changes) => {
     const valid = parseJobChanges(changes);

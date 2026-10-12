@@ -1,5 +1,7 @@
 import { Button, Notice, RunStatus } from '@factwright/ui';
+import { useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import { taskJob } from '../shared/runs.ts';
 import styles from './ClaudePanel.module.css';
 import { chipState, isRunning, PanelHeader } from './PanelHeader.tsx';
 import { TerminalView } from './TerminalView.tsx';
@@ -21,6 +23,7 @@ export function ClaudePanel({
   /** What the run is, such as "Fit check · Acme". */
   title?: string;
 }) {
+  const [pasteProblem, setPasteProblem] = useState<string | null>(null);
   if (run.phase === 'idle' && !run.problem) return null;
   const hidden = !run.open && isRunning(run.phase);
   // The question about trust waits on the user like any other.
@@ -47,8 +50,20 @@ export function ClaudePanel({
             </Notice>
           </div>
         )}
+        {pasteProblem && (
+          <p className={styles.problem} role="alert">
+            {pasteProblem}
+          </p>
+        )}
         {run.phase !== 'idle' && (
-          <TerminalView key={run.runId} api={api} onSize={run.onTerminalSize} onTyped={run.typed} />
+          <TerminalView
+            key={run.runId}
+            api={api}
+            onSize={run.onTerminalSize}
+            onTyped={run.typed}
+            jobId={taskJob(run.task)}
+            onPasteProblem={setPasteProblem}
+          />
         )}
       </section>
       {hidden && (

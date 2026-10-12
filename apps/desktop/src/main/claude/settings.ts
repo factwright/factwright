@@ -1,7 +1,7 @@
 import { WORKSPACE_PATHS } from '@factwright/core';
 import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
 import type { RunScope } from '../../shared/runs.ts';
-import { LOCAL_TOOLS, PUBLIC_API_TOOLS, WEB_TOOLS } from '../tools/index.ts';
+import { LOCAL_TOOLS, PROFILE_TOOLS, PUBLIC_API_TOOLS, WEB_TOOLS } from '../tools/index.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
 export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
@@ -56,10 +56,17 @@ const PROFILE_NEVER = [
 
 /** What Claude may do without asking, from the user's choices and what the run is for. */
 function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
+  // Saving to the user's profile is like changing their facts: allowed when those are.
+  const profile = scope === 'profile' || permissions.anyFile ? PROFILE_TOOLS : [];
   const tools =
     scope === 'profile'
-      ? LOCAL_TOOLS
-      : [...LOCAL_TOOLS, ...PUBLIC_API_TOOLS, ...(permissions.anySite ? WEB_TOOLS : [])];
+      ? [...LOCAL_TOOLS, ...profile]
+      : [
+          ...LOCAL_TOOLS,
+          ...profile,
+          ...PUBLIC_API_TOOLS,
+          ...(permissions.anySite ? WEB_TOOLS : []),
+        ];
   const files = [
     ...WORK_FOLDERS.map((folder) => `${folder}/**`),
     CONFIDENTIAL_TERMS,
