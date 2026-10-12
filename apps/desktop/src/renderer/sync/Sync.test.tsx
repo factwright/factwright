@@ -149,7 +149,7 @@ describe('SyncDialog', () => {
     await user.click(screen.getByText('Lost your other devices? Use your recovery key'));
     await user.type(
       screen.getByRole('textbox', { name: 'Recovery key' }),
-      '7KQ2M9XD4RTBHP0EWN3C8YVAG5KS21FJ',
+      '7KQ2-M9XD-4RTB-HP0E-WN3C-8YVA-G5KS-21FJ',
     );
     await user.click(screen.getByRole('button', { name: 'Unlock with recovery key' }));
     expect(await screen.findByRole('heading', { name: 'Sync' })).toBeTruthy();
