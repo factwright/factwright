@@ -168,6 +168,7 @@ function AnswerItem({
                     onClick={async () => {
                       const result = await api.copyText(answer.suggested ?? '');
                       setCopied(result.ok);
+                      if (result.ok) setTimeout(() => setCopied(false), 2000);
                     }}
                   >
                     {copied ? 'Copied' : 'Copy'}
