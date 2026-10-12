@@ -12,7 +12,7 @@ Input: the company (name or link), plus the job posting or `job <id>` if there i
 - **The user sends everything.** Never message, connect, follow, like, comment, endorse, apply, or change anything anywhere. Write drafts only.
 - **Public sources only.** Search results and public pages. Never sign in anywhere, LinkedIn included.
 - **Work info only:** name, title, team, public profile link, public posts and talks. No personal emails, phone numbers, addresses, or family details, and never guess email addresses.
-- Drafts that describe the user's experience follow `guide/rules.md` (if there is one) and trace to `facts/`, the same as a resume.
+- Drafts that describe the user's experience follow `guide/rules.md` (if there is one) and trace to `facts/`, the same as a resume. With no fact bank yet, say so in one line, suggest `/factwright:add-facts`, and write the drafts without proof points.
 
 ## 1. Map who decides
 - Read the job's posting if there is one (`job_details` finds its folder), and research the company briefly: size, stage, team structure.

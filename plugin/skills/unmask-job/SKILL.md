@@ -6,7 +6,7 @@ argument-hint: "[listing link or text, plus the recruiter or site]"
 
 # Unmask job
 
-Input: the listing (a link or pasted text), plus whatever the user has: the recruiter's agency, the site, and **whether they've already talked to the recruiter or sent them a resume**. If that last part isn't clear and it changes the verdict, ask in one line.
+Input: the listing (a link or pasted text), plus whatever the user has: the recruiter's name or agency (a name only helps the search, and never goes in a file), the site, and **whether they've already talked to the recruiter or sent them a resume**. If that last part isn't clear and it changes the verdict, ask in one line.
 
 Research only. Never contact anyone, never apply, never sign in anywhere.
 
@@ -57,7 +57,7 @@ Recommend one, with a one-line reason:
   - `posting.md`: `save_posting` with the employer's own posting link. If there's no direct posting, save the board listing instead, or save the user's pasted text with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
   - `job.md`: `# <Employer>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, and `- **Found via:** <board or agency name>`.
   - `unmask.md`: employer and confidence, the evidence with links, the poster type, direct or recruiter and why, scam flags.
-  - `apply.md`, only when the employer's posting has special application steps (apply by email, an exact subject or phrase, specific attachments). The app shows it as a How to apply alert. Format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
+  - `apply.md`, only when the employer's posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"). Skip it for a plain apply button. The app shows it as a How to apply alert. Format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
   - Name the agency or board only, never the recruiter's personal name or contact details.
 - Log it: append one row to `searches/unmask-checks.md` (create it with this header if it's missing): `| Date | Listing | Employer | Role | Apply | Link |`. **Listing** is the board or agency name only. **Apply** is `direct` or `recruiter`. **Link** is the employer's own posting. Skip the row and the folder if the employer is still unknown.
 

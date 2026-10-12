@@ -14,14 +14,14 @@ Use web searches first: snippets often show posted ranges. `read_posting` reads 
 
 ## 1. Look for a posted range for this exact job (best evidence)
 - **Other copies of the posting:** pay-transparency laws (CA, CO, NY, WA, IL and others) push many employers to post a range in at least one location. Search the exact title + company across other boards and location variants.
-- **The applicant system's public data** sometimes has pay the page doesn't show. Read one job, not the whole board:
+- **The applicant system's public data** sometimes has pay the page doesn't show:
   - Ashby: the posting's own link. `read_posting` asks Ashby for the job, with any pay the board publishes.
-  - Lever: `https://api.lever.co/v0/postings/<org>/<id>` (the `salaryRange` field)
-  - Greenhouse: `https://boards-api.greenhouse.io/v1/boards/<org>/jobs/<id>?pay_transparency=true`
+  - Lever and Ashby: `job_board` lists every open job on the company's board with its pay, without asking. Save it in a `searches/salary-<company>` folder. It also maps the company's bands for step 2.
+  - Greenhouse: `read_page` on `https://boards-api.greenhouse.io/v1/boards/<org>/jobs/<id>?pay_transparency=true`.
 - **Recruiter reposts** of the same role often state a range.
 
 ## 2. Triangulate from the same company
-- Their other postings that list ranges: map the levels (Senior → Staff → Principal) to bands.
+- Their other postings that list ranges: map the levels (Senior → Staff → Principal) to bands. The `job_board` listing from step 1 has them for Lever and Ashby boards.
 - H-1B/LCA filings (h1bdata.info, the DOL disclosure data): real base salaries the company filed for similar titles. Note the year.
 - Levels.fyi for the company and level.
 
@@ -39,7 +39,7 @@ Use web searches first: snippets often show posted ranges. `read_posting` reads 
 ```
 - **High:** a posted range for this job. **Medium:** the company's own bands or filings. **Low:** market data only.
 - Show base and total comp separately when you can. Never present an estimate as a posted number.
-- If a pay-transparency law where the user lives seems to apply to this job, mention it as leverage for asking, not as legal advice.
+- If a pay-transparency law where the user lives seems to apply to this job, mention it as leverage for asking, not as legal advice. For example, Illinois has required employers with 15 or more employees to include pay in postings since 2025.
 - If the job has a folder (`find_job` says so), append the result to its `notes.md` under `## Pay`.
 
 ## 5. Log it

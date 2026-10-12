@@ -1,3 +1,8 @@
+import { join } from 'node:path';
+
+/** The rules every run follows, whichever skill is working, appended to Claude's instructions. */
+export const STANDING_RULES = 'standing-rules.md';
+
 /** The only permission modes the app launches Claude Code with. */
 export const PERMISSION_MODES = ['default', 'acceptEdits'] as const;
 
@@ -20,7 +25,10 @@ const PARENT_SESSION_VARIABLES = new Set([
   'CLAUDE_AGENT_SDK_VERSION',
 ]);
 
-/** Arguments for a session that loads only Factwright's plugin, MCP servers and settings. */
+/**
+ * Arguments for a session that loads only Factwright's plugin, its standing rules, its MCP
+ * servers and its settings.
+ */
 export function buildLaunchArgs(options: LaunchOptions): string[] {
   const { pluginDir, mcpConfig, settings, permissionMode, prompt } = options;
   // Types vanish at runtime, and the mode may arrive in a message from the app's window.
@@ -37,6 +45,8 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
     '--no-chrome',
     '--plugin-dir',
     pluginDir,
+    '--append-system-prompt-file',
+    join(pluginDir, STANDING_RULES),
     // --mcp-config takes several values, so an option must follow it, never the prompt.
     '--mcp-config',
     mcpConfig,

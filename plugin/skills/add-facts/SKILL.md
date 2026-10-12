@@ -13,7 +13,7 @@ There are two modes.
 - **Interview.** The user gave no details, or said "interview me". Pick the 4 most resume-valuable unknowns from `facts/gaps.md` (**Needs confirmation** first, then **Open questions**) and ask them in one AskUserQuestion round. With no fact bank yet, start with the basics instead: their roles (employer, title, dates), what they're proudest of in each, and their main tech.
 
 ## Steps
-1. Read `facts/README.md` if there is one: it says which file holds what. Then read the facts file(s) the change touches, plus `facts/gaps.md`.
+1. Read `facts/README.md` if there is one: it says which file holds what, and may add its own rules. Then read the facts file(s) the change touches, plus `facts/gaps.md`.
 2. Pin down only what a resume-grade claim still needs. Take one follow-up round at most. A claim needs:
    - what they did
    - ownership: solo / led-and-built / took-over / led-team
@@ -30,7 +30,7 @@ There are two modes.
 4. If a status changed (for example, built → live), update wording that's now stale in `base/*.json`, if there are any. Never edit a past application's files.
 5. Reply in 4 lines or fewer: what changed, and where.
 
-Record what the user said, and never upgrade it. Never write confidential details: names of customers or colleagues, hostnames, IDs, incidents, or spend.
+Record what the user said, and never upgrade it. Write claims plainly and in the active voice, with no "I". Never write confidential details: names of customers, prospects or colleagues, contractor firms, internal names and codenames, hostnames, IDs, commit hashes, ticket or PR numbers, incidents, security findings, pricing or spend.
 
 ## Claim format
 Each claim gets its own `###` heading, so it can be cited as `file.md#claim-title`:
@@ -39,7 +39,7 @@ Each claim gets its own `###` heading, so it can be cited as `file.md#claim-titl
 `live` `solo` `high`
 > Resume-ready wording, about 190 characters max.
 - **Short:** a version of about 110 characters or less, for tight fits (optional)
-- **Numbers:** 98 tools; ~390 AI tests (as of 2026-09)
+- **Numbers:** 12 services; deploys ~40% faster (as of 2026-09)
 - **Say / don't say:** "built realtime, re-architected to batch" / never "live realtime"
 - **Keywords:** the job-post terms this claim honestly proves
 - **Source:** <first name> <YYYY-MM-DD>
@@ -54,6 +54,6 @@ If `facts/` doesn't exist yet, make it as you go:
 - one file per job they've held, such as `facts/acme.md`, with an **Overview** at the top, then claims.
 - `facts/projects.md` and `facts/skills.md` (each technology, how deep, and which file proves it).
 - `facts/gaps.md` with three sections: **Doesn't have** (a table: `| Topic | Their answer | Date |`), **Needs confirmation**, and **Open questions**.
-- `facts/README.md`: a short table of these files and what each holds.
+- `facts/README.md`: a short table of these files and what each holds, then the claim format, the tags and the confidentiality rule above, so every skill that reads it has them.
 
 Everything you save here stays in the user's workspace. The app picks it up on its own, so there's nothing to commit or sync.

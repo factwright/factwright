@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildLaunchArgs,
@@ -15,7 +16,7 @@ const OPTIONS: LaunchOptions = {
 };
 
 describe('buildLaunchArgs', () => {
-  it("loads only Factwright's plugin, MCP servers and settings, restricted", () => {
+  it("loads only Factwright's plugin, standing rules, MCP servers and settings, restricted", () => {
     expect(buildLaunchArgs(OPTIONS)).toEqual([
       '--restricted',
       '--permission-mode',
@@ -23,6 +24,8 @@ describe('buildLaunchArgs', () => {
       '--no-chrome',
       '--plugin-dir',
       '/Applications/Factwright.app/Contents/Resources/plugin',
+      '--append-system-prompt-file',
+      join('/Applications/Factwright.app/Contents/Resources/plugin', 'standing-rules.md'),
       '--mcp-config',
       '/Users/someone/Library/Application Support/Factwright/mcp.json',
       '--strict-mcp-config',
