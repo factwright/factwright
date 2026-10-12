@@ -68,8 +68,9 @@ export function authOptions(settings: AuthSettings) {
             (path) => [path, { window: 60, max: settings.signInsPerMinute ?? 10 }],
           ),
         ),
-        // The app asks every 5 seconds while the user signs in.
-        '/device/token': { window: 60, max: 30 },
+        // The app asks every 5 seconds while the user signs in, for up to the code's 10 minutes.
+        // Better Auth only starts counting again after a quiet minute, so this covers all of it.
+        '/device/token': { window: 60, max: 150 },
       },
     },
     advanced: {

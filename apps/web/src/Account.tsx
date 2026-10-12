@@ -199,7 +199,10 @@ export function Account({
                 <p className={page.hint}>To delete your account, sign in again first.</p>
                 <div className={page.actions}>
                   {providers.map((provider) => (
-                    <Button key={provider} onClick={() => signIn(provider, '/account')}>
+                    <Button
+                      key={provider}
+                      onClick={async () => setProblem(await signIn(provider, '/account'))}
+                    >
                       Sign in with {PROVIDER_NAMES[provider]}
                     </Button>
                   ))}

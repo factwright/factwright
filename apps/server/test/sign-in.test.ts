@@ -90,6 +90,16 @@ describe('signing the desktop app in', () => {
     expect((await pollForToken(denied.body.device_code)).body.error).toBe('access_denied');
   });
 
+  it('keeps answering the app for as long as a code lasts', async () => {
+    // Every 5 seconds for the code's 10 minutes, with no quiet minute in between.
+    const waiting = await askForCode();
+    const refused: number[] = [];
+    for (let check = 0; check <= 120; check++) {
+      if ((await pollForToken(waiting.body.device_code)).status === 429) refused.push(check);
+    }
+    expect(refused).toEqual([]);
+  });
+
   it('is only for the Factwright app', async () => {
     const other = await post('/api/auth/device/code', { client_id: 'something-else' });
     expect(other.status).toBe(400);

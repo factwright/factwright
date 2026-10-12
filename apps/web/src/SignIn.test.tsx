@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SignIn } from './SignIn.tsx';
 import { fakeServer } from './testing.ts';
 
@@ -16,8 +16,10 @@ describe('signing in', () => {
   });
 
   it('signs in, to come back to where the person was going', async () => {
-    // No address to go to, so the page stays put for the test.
-    const requests = fakeServer({ 'POST /api/auth/sign-in/social': () => ({ redirect: false }) });
+    // GitHub's address stands in as this page's own, so the test browser stays put.
+    const requests = fakeServer({
+      'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
+    });
     render(<SignIn providers={['github', 'google']} returnTo="/device?user_code=WDJBMJHT" />);
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
 
@@ -30,6 +32,34 @@ describe('signing in', () => {
       ['Opening…', true],
       ['Continue with Google', true],
     ]);
+  });
+
+  it('says why when signing in can’t start, and lets the person try again', async () => {
+    fakeServer({
+      'POST /api/auth/sign-in/social': () =>
+        Response.json({ message: 'Too many requests. Please try again later.' }, { status: 429 }),
+    });
+    render(<SignIn providers={['github']} returnTo="/" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'That’s a lot of tries in a row. Wait a minute, then try again.',
+    );
+    const again = screen.getByRole('button', { name: 'Continue with GitHub' }) as HTMLButtonElement;
+    expect(again.disabled).toBe(false);
+  });
+
+  it('says when Factwright can’t be reached', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    render(<SignIn providers={['github']} returnTo="/" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Can’t reach Factwright right now. Check your connection.',
+    );
   });
 
   it('says when this server has no way to sign in yet', () => {
