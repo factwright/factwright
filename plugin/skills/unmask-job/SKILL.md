@@ -11,7 +11,7 @@ Input: the listing (a link or pasted text), plus whatever the user has: the recr
 Research only. Never contact anyone, never apply, never sign in anywhere.
 
 ## 1. Fingerprint the post
-If it's a link, read it with `read_page` (or ask for the text if it needs a sign-in). Pull out whatever identifies the employer:
+If it's a link, read it with `read_posting` on Greenhouse, Lever, Ashby or Gem, or `read_page` anywhere else (or ask for the text if it needs a sign-in). Pull out whatever identifies the employer:
 - 3–6 distinctive sentences or phrases. Odd wording survives reposting; boilerplate doesn't.
 - the exact title, stack combination, pay band, location and remote rules, benefits, team size
 - company descriptors: industry, stage, funding, size, founding year, HQ region, product, customers
@@ -25,7 +25,7 @@ If it's a link, read it with `read_page` (or ask for the text if it needs a sign
 - **In-house recruiter** (works at the company): that's already applying direct.
 
 ## 3. Hunt
-Search first, and stop once one candidate has strong evidence. `read_page` confirms a match, but the user OKs each page, so read only the most promising.
+Search first, and stop once one candidate has strong evidence. `read_page` confirms a match, but the user may have to OK each page, so read only the most promising.
 - Exact-phrase searches, in quotes, of the distinctive sentences.
 - The same phrases restricted to applicant-system sites: `job-boards.greenhouse.io`, `boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `myworkdayjobs.com`, `apply.workable.com`, `jobs.smartrecruiters.com`, `bamboohr.com`, `jobs.gem.com`, `ats.rippling.com`, `wellfound.com`, `ycombinator.com/companies`.
 - Board listings: read the apply link. It often redirects straight to the employer's applicant system.

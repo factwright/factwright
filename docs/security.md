@@ -17,10 +17,13 @@ Job postings are web pages written by strangers, so a posting could try to give 
 - Its file access stays inside your workspace folder. Your tracker (statuses, notes, calls and pasted application questions) sits outside it.
 - Text from an employer, such as a posting or an application form's questions, reaches Claude only through Factwright's tools, marked as information. The app never types it in as if it were you.
 - Its only extra tools are the ones Factwright provides, each doing one narrow job. They answer only the run Factwright started, and refuse anything a web page sends.
-- The tools that only read what's on file run without asking, as do web searches, whose words go to the search service, never to a site a posting names. Reading a page or saving a posting reaches that site, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link.
-- The job search tools run without asking too. They reach only fixed public APIs (Greenhouse, Lever, Ashby, Gem and Hacker News's), and send them nothing but a board's name or a month.
+- The tools that only read what's on file run without asking, as do web searches, whose words go to the search service, never to a site a posting names.
+- The job tools run without asking too: reading and saving a posting on Greenhouse, Lever, Ashby or Gem, and the job searches. They reach only those systems' and Hacker News's fixed public feeds, never the page a link names, and send them nothing but a board's name, a posting's ID or a month.
+- Reading any other page reaches that site, so Claude Code asks you first, each time: a posting could otherwise steer Claude into sending your details to a site in a link. Saving a page as a job's posting saves what was already read, without fetching it again.
 - Claude's own tool for fetching pages is off. Factwright's tools only fetch public https sites: never this computer, your home network, or a link with a sign-in in it. Each page is capped in size and time.
-- Claude Code asks you before it writes a file, unless you tell it not to for the rest of a run.
+- Claude saves its work without asking in the folders where the skills keep it: the jobs, the job searches and outreach drafts. It asks before it changes any other file, such as your facts, your guide or your base resumes.
+- In the app, **Your Claude → Permissions** can turn off the question before Claude reads other sites, or before it changes your other files. The choice is kept outside the workspace, so Claude can't change it.
+- Whatever you choose, Claude can never change Claude Code's settings or the instructions it loads (`.claude/` and `CLAUDE.md` files), which a posting could otherwise use to steer later runs.
 - Once for each new version of Claude Code, the app starts it hidden, with no prompt, to check that its setup still works, then closes it. No prompt means none of your plan is used, and the check runs with the same restrictions as a run.
 - Building a resume runs without asking, since it stays on this computer: Factwright prints it in a hidden window that loads nothing else. Once you've applied to a job, the files you sent stay as they are.
 

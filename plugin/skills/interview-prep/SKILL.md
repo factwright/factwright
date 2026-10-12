@@ -21,7 +21,7 @@ Before starting, read:
   - `resume.json`: the resume they actually sent. Answers must match it.
 - If the job came from a job search, read its entry in `searches/*/jobs.json` (why, gaps, flags).
 - If `outreach/<YYYY-MM-DD>-<company>.md` exists, read it for context.
-- If nothing is saved and the link still works, save the posting first: `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
+- If nothing is saved and the link still works, save the posting first: read it with `read_posting` or `read_page`, then `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
 
 ## 2. Just talking?
 If the user only wants to talk the job through, stop here and chat from what you loaded. Don't write a file unless they ask for one.

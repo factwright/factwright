@@ -3,7 +3,7 @@ import type { JobsService } from '../jobs/service.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import type { McpTool } from './mcp.ts';
-import { readPage, type SavePostingDeps, savePosting } from './posting.ts';
+import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import { buildResume } from './resume.ts';
 import { hnJobs, jobBoard } from './search.ts';
 
@@ -12,7 +12,9 @@ export interface ToolDeps {
   workspace: string;
   printer: ResumePrinter;
   now?: () => Date;
-  fetch?: SavePostingDeps['fetch'];
+  fetch?: FetchDeps['fetch'];
+  /** What was read, for saving it later. Tests pass their own. */
+  cache?: ReadCache;
 }
 
 const SEARCH_FOLDER = {
@@ -22,17 +24,24 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading web pages, saving postings word for word, reading whole job boards and Hacker News’s hiring thread, and building resumes. Use them to read the tracker and the web, and to make resume files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with their status, notes and calls, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, and building resumes. Use them to read the tracker and the web, and to make resume files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = ['find_job', 'job_details', 'build_resume'];
 
 /**
- * The tools that reach only fixed public job APIs: the applicant systems' boards and Hacker
- * News's. They send nothing but a board's name or a month, never a link a posting gave, so
- * Claude may call them without asking too.
+ * The tools that reach only fixed public job APIs: the applicant systems' postings and boards,
+ * and Hacker News's. They send nothing but a board's name, a posting's ID or a month, never to
+ * a site a link names, so Claude may call them without asking too. save_posting otherwise saves
+ * only what was read already.
  */
-export const PUBLIC_API_TOOLS = ['job_board', 'hn_jobs'];
+export const PUBLIC_API_TOOLS = ['read_posting', 'save_posting', 'job_board', 'hn_jobs'];
+
+/**
+ * The tool that reads any public page. The user OKs each page unless they've chosen otherwise,
+ * since a job post could steer Claude to send the user's details to a site in a link.
+ */
+export const WEB_TOOLS = ['read_page'];
 
 /** Tools that only read, and don't reach past this computer. */
 const READS = { readOnlyHint: true, openWorldHint: false };
@@ -76,6 +85,11 @@ const QUERY_PROPERTIES = {
 /** The tools Factwright gives each Claude Code run, in place of a shell. */
 export function factwrightTools(deps: ToolDeps): McpTool[] {
   const today = () => localDate(deps.now?.() ?? new Date());
+  const reading = {
+    cache: deps.cache ?? new ReadCache(),
+    ...(deps.fetch && { fetch: deps.fetch }),
+    ...(deps.now && { now: deps.now }),
+  };
   return [
     {
       name: 'find_job',
@@ -122,9 +136,23 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
     },
     {
+      name: 'read_posting',
+      description:
+        'Reads a job posting on Greenhouse, Lever, Ashby or Gem straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
+      inputSchema: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'The posting’s https link.' } },
+        required: ['url'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      run: async (input) =>
+        readLink(textInput(input, 'url', true) ?? '', { ...reading, feedsOnly: true }),
+    },
+    {
       name: 'read_page',
       description:
-        'Reads a public web page as plain text: a job posting, a careers page, a company’s about or team page. Postings on Greenhouse, Lever, Ashby and Gem are read from the applicant system itself. Read a posting this way before saving it with save_posting. The user OKs each page, so read only what the task needs.',
+        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. The user may have to OK each page, so read only what the task needs, and use read_posting for postings on Greenhouse, Lever, Ashby or Gem. A posting read this way can then be saved with save_posting, without asking again.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The page’s https link.' } },
@@ -133,10 +161,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
       run: async (input) =>
-        readPage(textInput(input, 'url', true) ?? '', {
-          ...(deps.fetch && { fetch: deps.fetch }),
-          ...(deps.now && { now: deps.now }),
-        }),
+        readLink(textInput(input, 'url', true) ?? '', { ...reading, feedsOnly: false }),
     },
     {
       name: 'build_resume',
@@ -172,7 +197,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, read straight from the applicant system (Greenhouse, Lever, Ashby, Gem) or the page. Use it for every posting with a link, so the posting survives the link going dead. A posting already saved in the folder is kept. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: what read_page or read_posting read from that link in this run, or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -186,13 +211,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         required: ['url', 'folder'],
         additionalProperties: false,
       },
-      // It fetches the link from the internet, and saving twice keeps the first.
+      // It writes what was read, or reads a public feed, and saving twice keeps the first.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
       run: async (input) =>
         savePosting(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
+          ...reading,
           workspace: deps.workspace,
-          ...(deps.fetch && { fetch: deps.fetch }),
-          ...(deps.now && { now: deps.now }),
         }),
     },
     {

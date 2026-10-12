@@ -7,6 +7,7 @@ import { workspaceDir } from '../jobs/workspace.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
+import { loadPermissions } from './permissions.ts';
 import type { RunServer } from './run-server.ts';
 import { TrustWatch } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
@@ -49,7 +50,11 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
   await mkdir(runDir, { recursive: true });
   const settings = join(runDir, `${options.name}-settings.json`);
   const mcpConfig = join(runDir, `${options.name}-mcp.json`);
-  const hookSettings = sessionSettings({ hookUrl: options.server.hookUrl, dark: options.dark });
+  const hookSettings = sessionSettings({
+    hookUrl: options.server.hookUrl,
+    dark: options.dark,
+    permissions: await loadPermissions(options.dataDir),
+  });
   await writeFile(settings, JSON.stringify(hookSettings, null, 2));
   await writeFile(mcpConfig, JSON.stringify(toolsConfig(options.server.toolsUrl), null, 2));
 

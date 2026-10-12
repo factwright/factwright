@@ -14,6 +14,7 @@ export function Sidebar({
   setup,
   sync,
   onOpenSync,
+  onOpenPermissions,
   jobCount,
 }: {
   claude: ClaudeStatusView;
@@ -22,6 +23,8 @@ export function Sidebar({
   setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
   sync: SyncStatus | 'checking';
   onOpenSync: () => void;
+  /** Opens what Claude may do without asking. */
+  onOpenPermissions: () => void;
   /** How many jobs there are, once they've loaded. */
   jobCount?: number | undefined;
 }) {
@@ -43,6 +46,7 @@ export function Sidebar({
           setup={setup.check}
           checkingSetup={setup.checking}
           onCheckSetup={setup.checkAgain}
+          onPermissions={onOpenPermissions}
         />
       </div>
     </aside>
