@@ -1,5 +1,6 @@
 import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
+import type { EffortChoices } from './effort.ts';
 import type { ModelChoices } from './models.ts';
 import type { ClaudePermissions } from './permissions.ts';
 import type {
@@ -172,6 +173,10 @@ export interface FactwrightApi {
   claudeModels(): Promise<ModelChoices>;
   /** Changes which model Claude runs on, from its next start or the next task that needs another. */
   setClaudeModels(models: ModelChoices): Promise<ModelChoices>;
+  /** How hard Claude thinks, for everything and for each task. */
+  claudeEffort(): Promise<EffortChoices>;
+  /** Changes how hard Claude thinks, from its next start or the next task that needs another. */
+  setClaudeEffort(effort: EffortChoices): Promise<EffortChoices>;
   /** What Claude may do without asking. */
   claudePermissions(): Promise<ClaudePermissions>;
   /** Changes what Claude may do without asking, from its next start. */

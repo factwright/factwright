@@ -16,6 +16,7 @@ if (args[0] === 'auth' && args[1] === 'status') {
 }
 
 const after = (flag) => args[args.indexOf(flag) + 1];
+const given = (flag) => (args.includes(flag) ? after(flag) : 'default');
 const settings = JSON.parse(readFileSync(after('--settings'), 'utf8'));
 const tools = JSON.parse(readFileSync(after('--mcp-config'), 'utf8')).mcpServers.factwright;
 const hookUrl = settings.hooks.Stop[0].hooks[0].url;
@@ -43,7 +44,7 @@ async function work(text) {
 }
 
 async function begin() {
-  show('Fake Claude Code 2.1.300\n');
+  show(`Fake Claude Code 2.1.300 · ${given('--model')} · ${given('--effort')} effort\n`);
   await post(tools.url, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
   const listed = await post(tools.url, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
   const { result } = await listed.json();

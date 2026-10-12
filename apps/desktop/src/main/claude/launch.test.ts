@@ -48,6 +48,22 @@ describe('buildLaunchArgs', () => {
     }
   });
 
+  it('thinks as hard as chosen, and only at a level Claude Code knows', () => {
+    const args = buildLaunchArgs({ ...OPTIONS, model: 'opus', effort: 'xhigh' });
+    expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4)).toEqual([
+      '--model',
+      'opus',
+      '--effort',
+      'xhigh',
+    ]);
+    expect(buildLaunchArgs(OPTIONS)).not.toContain('--effort');
+    for (const effort of ['--dangerously-skip-permissions', 'ultra', '']) {
+      expect(() => buildLaunchArgs({ ...OPTIONS, effort: effort as 'high' })).toThrow(
+        'Unsupported effort',
+      );
+    }
+  });
+
   it('passes acceptEdits as the permission mode', () => {
     const args = buildLaunchArgs({ ...OPTIONS, permissionMode: 'acceptEdits' });
     expect(args.slice(0, 3)).toEqual(['--restricted', '--permission-mode', 'acceptEdits']);

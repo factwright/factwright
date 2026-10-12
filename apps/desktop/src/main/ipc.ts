@@ -12,12 +12,14 @@ import {
   shell,
 } from 'electron';
 import type { EditResult, PdfResult, SaveFileResult, StartResult } from '../shared/api.ts';
+import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
 import { scopeOf } from '../shared/runs.ts';
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { AboutStore } from './about/store.ts';
+import { loadEffort, saveEffort } from './claude/effort.ts';
 import { loadModels, saveModels } from './claude/models.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import type { SetupChecker } from './claude/self-test.ts';
@@ -132,6 +134,13 @@ export function registerIpc({
     await saveModels(dataDir, models);
     return models;
   });
+  answer('claude:effort', () => loadEffort(dataDir));
+  answer('claude:set-effort', async (value) => {
+    const effort = parseEffort(value);
+    if (!effort) throw new Error('Refused effort levels Claude Code doesn’t know.');
+    await saveEffort(dataDir, effort);
+    return effort;
+  });
 
   // What Claude may do without asking. A change applies from Claude's next start.
   answer('claude:permissions', () => loadPermissions(dataDir));
@@ -160,20 +169,32 @@ export function registerIpc({
     const valid = parseTerminalSize(size);
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');
-    return loadModels(dataDir).then((models) =>
-      session.start(valid, run && runPrompt(run), modelFor(models, run), scopeOf(run)),
+    return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(([models, effort]) =>
+      session.start(valid, {
+        prompt: run ? runPrompt(run) : undefined,
+        model: modelFor(models, run),
+        effort: (plan) => effortFor(effort, run, plan),
+        scope: scopeOf(run),
+      }),
     );
   });
 
-  // A task for the run that's open. One that needs another model, or may change other files
-  // without asking, starts a new run instead.
+  // A task for the run that's open. One that needs another model or more effort, or may change
+  // other files without asking, starts a new run instead. One that needs less effort runs at the
+  // open run's.
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
-    const open = session.model();
-    const otherModel = open && open !== modelFor(await loadModels(dataDir), run);
-    const otherScope = session.scope() && session.scope() !== scopeOf(run);
-    if (otherModel || otherScope) return { ok: false, reason: 'new-run' };
+    const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
+    const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
+    const thinking = session.effort();
+    if (
+      differs(session.model(), modelFor(models, run)) ||
+      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, session.plan()))) ||
+      differs(session.scope(), scopeOf(run))
+    ) {
+      return { ok: false, reason: 'new-run' };
+    }
     return session.send(runPrompt(run));
   });
 

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
+import type { Effort } from '../../shared/effort.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
@@ -25,6 +26,10 @@ export interface Launch {
   env: NodeJS.ProcessEnv;
   /** The run's own token, which its hooks and tool calls carry. */
   token: string;
+  /** The user's Claude plan, such as "max", when Claude Code says. */
+  plan: string | undefined;
+  /** How hard it thinks, when it was given an effort. */
+  effort: Effort | undefined;
 }
 
 export interface LaunchOptions {
@@ -37,6 +42,11 @@ export interface LaunchOptions {
   name: string;
   /** Which model to run on. Without one, Claude Code picks. */
   model?: Model;
+  /**
+   * How hard it thinks, from the user's plan, which only the check before it starts knows.
+   * Without it, Claude Code's default for the model.
+   */
+  effort?: (plan: string | undefined) => Effort;
   /** What it may change without asking. Every run but getting started is "hunt". */
   scope?: RunScope;
   prompt?: string;
@@ -48,7 +58,10 @@ export interface LaunchOptions {
  */
 export async function prepareLaunch(options: LaunchOptions): Promise<Launch | null> {
   const claude = await findClaude(nodeFindDeps());
-  if (!claude || (await claudeStatus(nodeStatusDeps())).state !== 'ready') return null;
+  const status = claude ? await claudeStatus(nodeStatusDeps()) : null;
+  if (!claude || status?.state !== 'ready') return null;
+  const plan = status.plan;
+  const effort = options.effort?.(plan);
 
   const workspace = workspaceDir(options.dataDir);
   const runDir = join(options.dataDir, 'run');
@@ -71,6 +84,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     settings,
     permissionMode: 'default',
     ...(options.model ? { model: options.model } : {}),
+    ...(effort ? { effort } : {}),
     ...(options.prompt ? { prompt: options.prompt } : {}),
   });
   const command = claudeCommand(claude, args, process.platform);
@@ -83,6 +97,8 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
     env: { ...launchEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
     token,
+    plan,
+    effort,
   };
 }
 
@@ -95,6 +111,15 @@ export const startHidden = (launch: Launch): IPty =>
     cwd: launch.cwd,
     env: launch.env,
   });
+
+/** What a run is for: its first prompt, its model and effort, and what it may change. */
+export interface RunOptions {
+  prompt?: string | undefined;
+  model?: Model | undefined;
+  /** How hard it thinks, from the user's plan. */
+  effort?: ((plan: string | undefined) => Effort) | undefined;
+  scope?: RunScope;
+}
 
 /** What a run needs from the app: where things live, and where its output and signals go. */
 export interface SessionDeps {
@@ -115,8 +140,10 @@ interface Run {
   stopListening: () => void;
   /** Set when the user stops the run, so its exit doesn't read as a failure. */
   stopping: boolean;
-  /** The model it runs on. */
+  /** The model it runs on, how hard it thinks, and the plan it runs on. */
   model: Model | undefined;
+  effort: Effort | undefined;
+  plan: string | undefined;
   scope: RunScope;
   /** Settles once it has exited. */
   exited: Promise<void>;
@@ -142,34 +169,35 @@ export class ClaudeSession {
     return this.run?.model;
   }
 
+  /** How hard the open run thinks, or undefined when none is open. */
+  effort(): Effort | undefined {
+    return this.run?.effort;
+  }
+
+  /** The user's Claude plan, as of the open run's start, or undefined when none is open. */
+  plan(): string | undefined {
+    return this.run?.plan;
+  }
+
   /** What the open run may change without asking, or undefined when none is open. */
   scope(): RunScope | undefined {
     return this.run?.scope;
   }
 
   /** Starts a run, once one that's stopping has closed, such as to change models. */
-  async start(
-    size: TerminalSize,
-    prompt?: string,
-    model?: Model,
-    scope: RunScope = 'hunt',
-  ): Promise<StartResult> {
+  async start(size: TerminalSize, options: RunOptions = {}): Promise<StartResult> {
     if (this.run?.stopping) await this.run.exited;
     if (this.busy()) return { ok: false, reason: 'busy' };
     this.starting = true;
     try {
-      return await this.launch(size, scope, prompt, model);
+      return await this.launch(size, options);
     } finally {
       this.starting = false;
     }
   }
 
-  private async launch(
-    size: TerminalSize,
-    scope: RunScope,
-    prompt?: string,
-    model?: Model,
-  ): Promise<StartResult> {
+  private async launch(size: TerminalSize, options: RunOptions): Promise<StartResult> {
+    const { prompt, model, effort, scope = 'hunt' } = options;
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,
@@ -178,6 +206,7 @@ export class ClaudeSession {
       name: 'panel',
       scope,
       ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
       ...(prompt ? { prompt } : {}),
     });
     if (!launch) return { ok: false, reason: 'not-ready' };
@@ -209,6 +238,8 @@ export class ClaudeSession {
       stopListening,
       stopping: false,
       model,
+      effort: launch.effort,
+      plan: launch.plan,
       scope,
       exited: new Promise((resolve) => {
         exited = resolve;
