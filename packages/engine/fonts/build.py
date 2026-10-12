@@ -44,7 +44,8 @@ def trim(source: Path, target: Path, rename: tuple[str, str] | None = None) -> N
 
 for style, file in (("Regular", "regular"), ("Bold", "bold"), ("Italic", "italic")):
     trim(src / f"Carlito-{style}.ttf", out / f"factwright-sans-{file}.woff2", ("Carlito", "Factwright Sans"))
-trim(src / "Caladea-Bold.ttf", out / "caladea-bold.woff2")
+for style, file in (("Regular", "regular"), ("Bold", "bold"), ("Italic", "italic")):
+    trim(src / f"Caladea-{style}.ttf", out / f"caladea-{file}.woff2")
 trim(src / "Barlow-Bold.ttf", out / "barlow-bold.woff2")
 for name, file in (("selawk", "regular"), ("selawksb", "semibold"), ("selawkb", "bold")):
     shutil.copyfile(src / "selawik" / f"{name}.woff2", out / f"selawik-{file}.woff2")

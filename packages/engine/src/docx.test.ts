@@ -26,7 +26,29 @@ describe('resumeDocument', () => {
     ]) {
       expect(xml).toContain(text);
     }
-    expect(xml).toContain(layout === 'modern' ? 'Alex Rivera' : 'ALEX RIVERA');
+    const caps = ['timeline', 'executive', 'classic', 'banner'].includes(layout);
+    expect(xml).toContain(caps ? 'ALEX RIVERA' : 'Alex Rivera');
+  });
+
+  it.each(LAYOUTS)('writes education in %s, first when the resume asks', async (layout) => {
+    const resume: Resume = {
+      ...sampleResume(),
+      education: [{ degree: 'B.S., Physics', school: 'Lakeside University', end: '2015' }],
+      skills_heading: 'Clinical Skills',
+    };
+    const xml = await documentXml(resume, layout);
+    for (const text of [
+      'EDUCATION',
+      'B.S., Physics',
+      'Lakeside University',
+      '2015',
+      'CLINICAL SKILLS',
+    ]) {
+      expect(xml).toContain(text);
+    }
+    expect(xml.indexOf('B.S., Physics')).toBeGreaterThan(xml.indexOf('Staff Engineer'));
+    const first = await documentXml({ ...resume, education_first: true }, layout);
+    expect(first.indexOf('B.S., Physics')).toBeLessThan(first.indexOf('Staff Engineer'));
   });
 
   it('bolds **text**, and highlights placeholders', async () => {

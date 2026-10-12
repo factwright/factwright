@@ -1,6 +1,8 @@
 import type { FontUrls } from '@factwright/engine';
 import barlowBold from '@factwright/engine/fonts/barlow-bold.woff2?inline';
 import caladeaBold from '@factwright/engine/fonts/caladea-bold.woff2?inline';
+import caladeaItalic from '@factwright/engine/fonts/caladea-italic.woff2?inline';
+import caladeaRegular from '@factwright/engine/fonts/caladea-regular.woff2?inline';
 import sansBold from '@factwright/engine/fonts/factwright-sans-bold.woff2?inline';
 import sansItalic from '@factwright/engine/fonts/factwright-sans-italic.woff2?inline';
 import sansRegular from '@factwright/engine/fonts/factwright-sans-regular.woff2?inline';
@@ -16,7 +18,9 @@ export const RESUME_FONTS: FontUrls = {
   'factwright-sans-regular.woff2': sansRegular,
   'factwright-sans-bold.woff2': sansBold,
   'factwright-sans-italic.woff2': sansItalic,
+  'caladea-regular.woff2': caladeaRegular,
   'caladea-bold.woff2': caladeaBold,
+  'caladea-italic.woff2': caladeaItalic,
   'selawik-regular.woff2': selawikRegular,
   'selawik-semibold.woff2': selawikSemibold,
   'selawik-bold.woff2': selawikBold,

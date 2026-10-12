@@ -1,5 +1,14 @@
-/** The looks a resume can have. Timeline is the default. */
-export const LAYOUTS = ['timeline', 'executive', 'modern'] as const;
+/** The looks a resume can have, its templates. Timeline is the default. */
+export const LAYOUTS = [
+  'timeline',
+  'executive',
+  'modern',
+  'classic',
+  'elegant',
+  'compact',
+  'minimal',
+  'banner',
+] as const;
 export type Layout = (typeof LAYOUTS)[number];
 
 /** The files a build makes. PDF is the default. */
@@ -32,6 +41,19 @@ export interface Experience {
   bullet_groups?: { heading?: string; bullets: Bullet[] }[];
 }
 
+/** A degree, diploma or course of study. */
+export interface Education {
+  /** Such as "B.S., Computer Science" or "MBA". */
+  degree: string;
+  school: string;
+  location?: string;
+  start?: string;
+  /** When it ended, such as "2019", or how it stands, as the user's rules word it. */
+  end?: string;
+  /** Honors, a minor or a thesis, on a line of its own. */
+  note?: string;
+}
+
 /**
  * One resume, as the skills write it in a job's resume.json. Any text can hold **bold** and
  * [[placeholders]], which lint refuses, so none ship by accident.
@@ -52,7 +74,14 @@ export interface Resume {
   systems_heading?: string;
   systems?: { name: string; text: string }[];
   experience: Experience[];
+  /** The heading over the projects. "Independent Projects" when unset. */
+  projects_heading?: string;
   projects?: { name: string; status?: string; url?: string; text: string }[];
+  education?: Education[];
+  /** Education before the experience, as early in a career it says the most. */
+  education_first?: boolean;
+  /** The heading over the skills, such as "Clinical Skills". Each layout has its own default. */
+  skills_heading?: string;
   skills?: { category: string; items: string[] }[];
   extra_sections?: { heading: string; items: string[] }[];
 }
@@ -71,6 +100,12 @@ function text(required: boolean): Check {
     }
   };
 }
+
+const yesOrNo: Check = (value, where, problems) => {
+  if (value !== undefined && value !== null && typeof value !== 'boolean') {
+    problems.push(`${where} should be true or false.`);
+  }
+};
 
 function list(item: Check, required = false): Check {
   return (value, where, problems) => {
@@ -141,9 +176,22 @@ const CHECKS: Record<string, Check> = {
     }),
     true,
   ),
+  projects_heading: text(false),
   projects: list(
     shape({ name: text(true), status: text(false), url: text(false), text: text(true) }),
   ),
+  education: list(
+    shape({
+      degree: text(true),
+      school: text(true),
+      location: text(false),
+      start: text(false),
+      end: text(false),
+      note: text(false),
+    }),
+  ),
+  education_first: yesOrNo,
+  skills_heading: text(false),
   skills: list(shape({ category: text(true), items: list(text(true), true) })),
   extra_sections: list(shape({ heading: text(true), items: list(text(true), true) })),
 };

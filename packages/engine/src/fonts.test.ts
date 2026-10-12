@@ -31,6 +31,21 @@ describe('fontFaceCss', () => {
     expect(families('timeline')).toContain('Barlow 700');
   });
 
+  it('sets the classic and elegant layouts in Cambria’s stand-in', () => {
+    for (const layout of ['classic', 'elegant'] as const) {
+      const faces = [
+        ...fontFaceCss(layout, ALL).matchAll(
+          /font-family:"([^"]+)";font-weight:(\d+);font-style:(\w+)/g,
+        ),
+      ].map(([, family, weight, style]) => `${family} ${weight} ${style}`);
+      expect(faces.slice(0, 3)).toEqual([
+        'Caladea 400 normal',
+        'Caladea 700 normal',
+        'Caladea 400 italic',
+      ]);
+    }
+  });
+
   it('uses every font file, and leaves out the ones it isn’t given', () => {
     const used = new Set(LAYOUTS.flatMap((layout) => fontFaceCss(layout, ALL).split('\n')));
     expect(used.size).toBe(FONT_FILES.length);

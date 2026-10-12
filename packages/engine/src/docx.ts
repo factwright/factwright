@@ -14,9 +14,10 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
-import { DEFAULT_SYSTEMS_HEADING } from './html.ts';
+import { sectionTitles } from './layouts/titles.ts';
 import type { Bullet, Layout, Resume } from './schema.ts';
 
+/** A layout's fonts, colors and sizes in Word: sizes in half points, colors in hex. */
 interface Theme {
   head: string;
   body: string;
@@ -24,6 +25,10 @@ interface Theme {
   accent2: string;
   muted: string;
   tint: string;
+  /** The name's color, the headline's, and the rule under the contact line's. */
+  nameColor: string;
+  headlineColor: string;
+  ruleColor: string;
   nameSize: number;
   nameCaps: boolean;
   center: boolean;
@@ -38,6 +43,9 @@ const THEMES: Record<Layout, Theme> = {
     accent2: '1D2433',
     muted: '5B6474',
     tint: 'F3F5F9',
+    nameColor: '1F3A5F',
+    headlineColor: 'B08D57',
+    ruleColor: '1F3A5F',
     nameSize: 52,
     nameCaps: true,
     center: true,
@@ -50,6 +58,9 @@ const THEMES: Record<Layout, Theme> = {
     accent2: '134E4A',
     muted: '566771',
     tint: 'EEF6F5',
+    nameColor: '0F766E',
+    headlineColor: '0F766E',
+    ruleColor: '0F766E',
     nameSize: 48,
     nameCaps: false,
     center: false,
@@ -62,7 +73,85 @@ const THEMES: Record<Layout, Theme> = {
     accent2: '1B1F24',
     muted: '5F6670',
     tint: 'F6F6F7',
+    nameColor: '1B1F24',
+    headlineColor: 'C2410C',
+    ruleColor: '1B1F24',
     nameSize: 56,
+    nameCaps: true,
+    center: false,
+    size: 19,
+  },
+  classic: {
+    head: 'Cambria',
+    body: 'Cambria',
+    accent: '16181D',
+    accent2: '16181D',
+    muted: '4A4F57',
+    tint: 'F2F3F4',
+    nameColor: '16181D',
+    headlineColor: '16181D',
+    ruleColor: '2B2F36',
+    nameSize: 46,
+    nameCaps: true,
+    center: true,
+    size: 21,
+  },
+  elegant: {
+    head: 'Cambria',
+    body: 'Cambria',
+    accent: '7B2D3B',
+    accent2: '5C2230',
+    muted: '5F575B',
+    tint: 'F8F2F3',
+    nameColor: '7B2D3B',
+    headlineColor: '221D1F',
+    ruleColor: '7B2D3B',
+    nameSize: 56,
+    nameCaps: false,
+    center: false,
+    size: 21,
+  },
+  compact: {
+    head: 'Calibri',
+    body: 'Calibri',
+    accent: '1D4ED8',
+    accent2: '111827',
+    muted: '4B5563',
+    tint: 'EFF4FF',
+    nameColor: '111827',
+    headlineColor: '1D4ED8',
+    ruleColor: '1D4ED8',
+    nameSize: 44,
+    nameCaps: false,
+    center: false,
+    size: 20,
+  },
+  minimal: {
+    head: 'Segoe UI',
+    body: 'Segoe UI',
+    accent: '1F2328',
+    accent2: '1F2328',
+    muted: '656B74',
+    tint: 'F4F5F6',
+    nameColor: '1F2328',
+    headlineColor: '656B74',
+    ruleColor: 'E6E8EB',
+    nameSize: 52,
+    nameCaps: false,
+    center: false,
+    size: 19,
+  },
+  banner: {
+    head: 'Bahnschrift',
+    body: 'Segoe UI',
+    accent: '1E3A8A',
+    accent2: '2563EB',
+    muted: '55607A',
+    tint: 'EEF2FF',
+    nameColor: '1E3A8A',
+    headlineColor: '2563EB',
+    ruleColor: '1E3A8A',
+    nameSize: 54,
     nameCaps: true,
     center: false,
     size: 19,
@@ -185,23 +274,13 @@ function statsTable(stats: NonNullable<Resume['impact_stats']>, t: Theme): Table
   });
 }
 
-const SUMMARY_TITLES: Record<Layout, string> = {
-  executive: 'Executive Summary',
-  modern: 'Profile',
-  timeline: 'Summary',
-};
-const SKILLS_TITLES: Record<Layout, string> = {
-  executive: 'Technical Skills',
-  modern: 'Technology',
-  timeline: 'Technologies',
-};
-
 /**
  * A resume as a single-column Word document that applicant systems read well, in the colors and
  * fonts of its layout.
  */
 export function resumeDocument(r: Resume, layout: Layout): Document {
   const t = THEMES[layout];
+  const titles = sectionTitles(layout, r);
   const c = r.contact ?? {};
   const align = t.center ? AlignmentType.CENTER : AlignmentType.LEFT;
   const kids: (Paragraph | Table)[] = [];
@@ -215,7 +294,7 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
           font: t.head,
           size: t.nameSize,
           bold: true,
-          color: layout === 'timeline' ? t.accent2 : t.accent,
+          color: t.nameColor,
           characterSpacing: t.nameCaps ? 40 : 0,
         }),
       ],
@@ -231,7 +310,7 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
           font: t.body,
           size: 24,
           bold: true,
-          color: layout === 'executive' ? 'B08D57' : t.accent,
+          color: t.headlineColor,
         }),
       ],
     }),
@@ -252,7 +331,7 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
         bottom: {
           style: BorderStyle.SINGLE,
           size: 12,
-          color: layout === 'timeline' ? t.accent2 : t.accent,
+          color: t.ruleColor,
           space: 6,
         },
       },
@@ -264,7 +343,7 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
     }),
   );
 
-  kids.push(heading(SUMMARY_TITLES[layout], t));
+  kids.push(heading(titles.summary, t));
   kids.push(new Paragraph({ spacing: { after: 60 }, children: runs(r.summary, t) }));
 
   if (r.impact_stats?.length) {
@@ -273,16 +352,39 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
   }
 
   if (r.competencies?.length) {
-    kids.push(heading(layout === 'modern' ? 'Expertise' : 'Core Competencies', t));
+    kids.push(heading(titles.competencies, t));
     kids.push(new Paragraph({ children: runs(r.competencies.join('  •  '), t) }));
   }
 
   if (r.systems?.length) {
-    kids.push(heading(r.systems_heading || DEFAULT_SYSTEMS_HEADING, t));
+    kids.push(heading(titles.systems, t));
     for (const s of r.systems) kids.push(bullet({ lead: s.name, text: s.text }, t));
   }
 
-  kids.push(heading(layout === 'executive' ? 'Professional Experience' : 'Experience', t));
+  const education = () => {
+    if (!r.education?.length) return;
+    kids.push(heading(titles.education, t));
+    r.education.forEach((e, i) => {
+      const when = e.start && e.end ? `${e.start} – ${e.end}` : (e.end ?? e.start ?? '');
+      kids.push(
+        new Paragraph({
+          spacing: { before: i ? 100 : 40 },
+          keepNext: true,
+          tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_W }],
+          children: [
+            ...runs(e.degree, t, { bold: true, size: t.size + 1 }),
+            new TextRun({ text: '\t' }),
+            ...runs(when, t, { bold: true, color: t.accent }),
+          ],
+        }),
+      );
+      kids.push(twoSide(e.school, e.location ?? '', t, { italics: true, color: t.muted }));
+      if (e.note) kids.push(new Paragraph({ spacing: { after: 40 }, children: runs(e.note, t) }));
+    });
+  };
+  if (r.education_first) education();
+
+  kids.push(heading(titles.experience, t));
   r.experience.forEach((e, i) => {
     kids.push(
       new Paragraph({
@@ -328,7 +430,7 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
   });
 
   if (r.projects?.length) {
-    kids.push(heading('Independent Projects', t));
+    kids.push(heading(titles.projects, t));
     for (const p of r.projects) {
       const extra = [p.status, p.url]
         .filter(Boolean)
@@ -348,8 +450,10 @@ export function resumeDocument(r: Resume, layout: Layout): Document {
     }
   }
 
+  if (!r.education_first) education();
+
   if (r.skills?.length) {
-    kids.push(heading(SKILLS_TITLES[layout], t));
+    kids.push(heading(titles.skills, t));
     for (const s of r.skills) {
       kids.push(
         new Paragraph({

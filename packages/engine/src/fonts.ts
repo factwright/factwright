@@ -8,7 +8,9 @@ export const FONT_FILES = [
   'factwright-sans-regular.woff2',
   'factwright-sans-bold.woff2',
   'factwright-sans-italic.woff2',
+  'caladea-regular.woff2',
   'caladea-bold.woff2',
+  'caladea-italic.woff2',
   'selawik-regular.woff2',
   'selawik-semibold.woff2',
   'selawik-bold.woff2',
@@ -40,6 +42,18 @@ const SANS = [
   face('Factwright Sans', 700, 'factwright-sans-bold.woff2'),
 ];
 
+const SANS_ITALIC = face('Factwright Sans', 400, 'factwright-sans-italic.woff2', 'italic');
+
+/** Cambria's widths, for the layouts set in a serif. */
+const CALADEA = [
+  face('Caladea', 400, 'caladea-regular.woff2'),
+  face('Caladea', 700, 'caladea-bold.woff2'),
+  face('Caladea', 400, 'caladea-italic.woff2', 'italic'),
+];
+
+/** Bahnschrift's look, for display headings, where it can't move a line break. */
+const BARLOW = face('Barlow', 700, 'barlow-bold.woff2');
+
 /** Segoe UI's widths. */
 const SELAWIK = [
   face('Selawik', 400, 'selawik-regular.woff2'),
@@ -49,13 +63,14 @@ const SELAWIK = [
 
 /** The faces each layout's styles call for. */
 const LAYOUT_FACES: Record<Layout, readonly Face[]> = {
-  executive: [
-    ...SANS,
-    face('Factwright Sans', 400, 'factwright-sans-italic.woff2', 'italic'),
-    face('Caladea', 700, 'caladea-bold.woff2'),
-  ],
+  executive: [...SANS, SANS_ITALIC, face('Caladea', 700, 'caladea-bold.woff2')],
   modern: [...SELAWIK, ...SANS],
-  timeline: [...SELAWIK, face('Barlow', 700, 'barlow-bold.woff2'), ...SANS],
+  timeline: [...SELAWIK, BARLOW, ...SANS],
+  classic: [...CALADEA, ...SANS],
+  elegant: [...CALADEA, ...SANS],
+  compact: [...SANS, SANS_ITALIC],
+  minimal: [...SELAWIK, ...SANS],
+  banner: [...SELAWIK, BARLOW, ...SANS],
 };
 
 const DATA_URL = /^data:font\/woff2;base64,[A-Za-z0-9+/]+=*$/;

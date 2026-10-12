@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FONT_FILES } from './fonts.ts';
 import { renderHtml } from './html.ts';
 import { sampleResume } from './sample.ts';
-import { LAYOUTS } from './schema.ts';
+import { LAYOUTS, type Resume } from './schema.ts';
 
 /** A made-up font, just its WOFF2 signature, as the app passes fonts. */
 const FONT = 'data:font/woff2;base64,d09GMgABAAAA';
@@ -26,6 +26,46 @@ describe('renderHtml', () => {
       expect(html).toContain(text);
     }
     expect(html).toContain('@page{size:Letter');
+  });
+
+  it.each(LAYOUTS)('shows education in %s, first when the resume asks', (layout) => {
+    const resume: Resume = {
+      ...sampleResume(),
+      education: [
+        {
+          degree: 'B.S., Physics',
+          school: 'Lakeside University',
+          start: '2011',
+          end: '2015',
+          note: 'Magna cum laude',
+        },
+      ],
+    };
+    const html = renderHtml(resume, layout);
+    for (const text of [
+      '<h2>Education</h2>',
+      'B.S., Physics',
+      'Lakeside University',
+      '2011 – 2015',
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(html).toContain('Magna cum laude');
+    expect(html.indexOf('B.S., Physics')).toBeGreaterThan(html.indexOf('Staff Engineer'));
+    const first = renderHtml({ ...resume, education_first: true }, layout);
+    expect(first.indexOf('B.S., Physics')).toBeLessThan(first.indexOf('Staff Engineer'));
+  });
+
+  it.each(LAYOUTS)('heads the projects and skills as the resume says in %s', (layout) => {
+    const plain = renderHtml(sampleResume(), layout);
+    expect(plain).toContain('>Independent Projects</h2>');
+    const named = renderHtml(
+      { ...sampleResume(), projects_heading: 'Volunteer Work', skills_heading: 'Clinical Skills' },
+      layout,
+    );
+    expect(named).toContain('>Volunteer Work</h2>');
+    expect(named).toContain('>Clinical Skills</h2>');
+    expect(named).not.toContain('Independent Projects');
   });
 
   it('heads the systems cards as the resume says, or plainly', () => {
