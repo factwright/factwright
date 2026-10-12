@@ -48,6 +48,7 @@ export const vaultOf = (jobs: Job[], more: Partial<Vault> = {}): Vault => ({
   jobs,
   files: new Map(),
   docs: new Map(),
+  asked: new Map(),
   rows: { jobs: [], status_log: [], calls: [] },
   unreadable: 0,
   ...more,

@@ -3,6 +3,8 @@ import { FitBadge, IconButton, Markdown, MarkdownLine, Notice, StatusSelect } fr
 import { ArrowUpRight, X } from 'lucide-react';
 import { type KeyboardEvent, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { ApplicationSection } from './ApplicationSection.tsx';
+import { AskSection } from './AskSection.tsx';
 import { FilesSection } from './JobFiles.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
@@ -137,6 +139,7 @@ export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
       <NextStep key={`next-${job.id}`} job={job} api={api} />
       {job.apply && <ApplySection markdown={job.apply} />}
       {run && <RunActions job={job} status={progress.status} run={run} api={api} />}
+      <AskSection key={`ask-${job.id}`} job={job} api={api} run={run} today={today} />
       <ScoreSection job={job} today={today} />
       <SentimentSection job={job} today={today} />
       <CallsSection
@@ -147,6 +150,7 @@ export function JobPanel({ row, api, today, onClose, run }: JobPanelProps) {
         today={today}
       />
       <NotesSection key={`notes-${job.id}`} job={job} api={api} />
+      <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />
       <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} />
       <SearchSection job={job} today={today} />
       <HistorySection job={job} api={api} today={today} />

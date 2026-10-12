@@ -51,9 +51,13 @@ Claude works on plain files in a folder on your computer:
 | `applications/` | One folder per job: posting, fit check, notes, answers, prep and resumes |
 | `searches/` | Job searches, your search criteria, and logs of fit, salary and employer checks |
 | `outreach/` | Messages drafted for people at a company |
+| `asked/` | Claude's answers to your own questions about a job, one folder per job |
+| `screenshots/` | Screenshots you added for a job, or pasted into Claude's panel, one folder per job |
 | `linkedin/` | The spreadsheets from your LinkedIn data export, such as your connections |
 
-The app watches this folder, and reads it again whenever something changes. What you track by hand, such as statuses, dates, calls and notes, lives in a small database beside the workspace, where Claude's file tools can't reach it.
+The app watches this folder, and reads it again whenever something changes. What you track by hand, such as statuses, dates, calls, notes, the answers you sent and your questions for Claude, lives in a small database beside the workspace, where Claude's file tools can't reach it.
+
+Before Claude works on a job, `job_details` hands it a catalog of everything on file for that job, a line for each file saying what it holds, with what you've tracked about it. Claude reads what bears on the task rather than all of it, and `about_you` and `past_answers` do the same for you: what you told Factwright, and what you sent on applications.
 
 ## Sync and storage
 Once you turn sync on, your other computers and your phone see the same job hunt. Each device locks everything before it leaves, so the server stores only data it can't read. The design is in [security.md](security.md).

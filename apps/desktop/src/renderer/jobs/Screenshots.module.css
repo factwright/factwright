@@ -1,0 +1,65 @@
+/* Screenshots in a dialog, and the place to drop more. */
+.shots {
+  display: grid;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-2);
+  border: 1.5px dashed transparent;
+  border-radius: var(--fw-radius-md);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.over {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent-soft);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shot {
+  position: relative;
+}
+
+.picture {
+  display: block;
+  width: 96px;
+  height: 72px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-sm);
+  background: var(--fw-surface);
+  object-fit: cover;
+  object-position: top left;
+}
+
+/* The remove button sits on the picture's corner. */
+.remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--fw-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+
+.add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--fw-space-2);
+}
+
+.hint {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.picker {
+  display: none;
+}

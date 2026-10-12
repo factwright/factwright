@@ -34,9 +34,33 @@ const hook = (event, fields = {}) =>
   post(hookUrl, { hook_event_name: event, session_id: 'fake', ...fields }).catch(() => {});
 const show = (text) => process.stdout.write(text.replace(/\n/g, '\r\n'));
 
+/** Calls one of Factwright's tools, as Claude Code does, and gives back its text. */
+async function call(name, args) {
+  const response = await post(tools.url, {
+    jsonrpc: '2.0',
+    id: Date.now(),
+    method: 'tools/call',
+    params: { name, arguments: args },
+  });
+  const { result } = await response.json();
+  return result?.content?.[0]?.text ?? '';
+}
+
+/** The answer it gives to every question about a job. */
+const ANSWER = 'A short screen, from the stand-in Claude.';
+
 async function work(text) {
   await hook('UserPromptSubmit', { prompt: text });
   show(`> ${text}\nWorking on it…\n`);
+  // As Claude would for a question about a job: read what's on file, then answer each one
+  // that's waiting, with the tool that keeps the answer with the job.
+  const asked = text.match(/^\/factwright:ask job (\S+)/);
+  if (asked) {
+    const details = await call('job_details', { job: asked[1] });
+    for (const [, id] of details.matchAll(/^- (\S+) \(asked [^)]+\): not answered yet$/gm)) {
+      await call('save_answer', { job: asked[1], question: id, answer: ANSWER });
+    }
+  }
   setTimeout(async () => {
     show('Done.\n> ');
     await hook('Stop');

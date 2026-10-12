@@ -75,6 +75,7 @@ function start(): void {
     const jobs = new JobsService({
       workspace,
       tracker,
+      trash: (path) => shell.trashItem(path),
       onChange: (list) => {
         toWindow('jobs:changed', list);
         sync.requestSync();

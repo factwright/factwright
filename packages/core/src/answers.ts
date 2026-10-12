@@ -5,14 +5,18 @@ import type { SentAnswer } from './tracker.ts';
 /** One of Claude's suggested answers, from a job's answers.md. */
 export interface SuggestedAnswer {
   question: string;
-  /** The answer, as Markdown. */
+  /** The answer, as Markdown: for a choice question, the pick. */
   answer: string;
+  /** For a choice question, why that pick. */
+  why: string | null;
 }
 
 /** One question on an application, with Claude's suggestion and what the user actually sent. */
 export interface ApplicationAnswer {
   question: string;
   suggested: string | null;
+  /** For a choice question, why Claude picked what it did. */
+  why: string | null;
   sent: SentAnswer | null;
 }
 
@@ -51,9 +55,9 @@ function matching(key: string, keys: Iterable<string>): string | undefined {
 export function readSuggestedAnswers(markdown: string | null | undefined): SuggestedAnswer[] {
   if (!markdown) return [];
   const found = new Map<string, SuggestedAnswer>();
-  const add = (question: string, answer: string) => {
+  const add = (question: string, answer: string, why: string | null = null) => {
     const key = questionKey(question);
-    if (key && answer) found.set(matching(key, found.keys()) ?? key, { question, answer });
+    if (key && answer) found.set(matching(key, found.keys()) ?? key, { question, answer, why });
   };
   const sections: { heading: string; lines: string[] }[] = [];
   for (const line of markdown.split(/\r?\n/)) {
@@ -70,8 +74,7 @@ export function readSuggestedAnswers(markdown: string | null | undefined): Sugge
     }
     for (const row of rows) {
       const pick = (row.pick ?? row.answer ?? '').trim();
-      const why = (row.why ?? '').trim();
-      add(row.question?.trim() ?? '', [pick, why].filter(Boolean).join('\n\n'));
+      add(row.question?.trim() ?? '', pick, row.why?.trim() || null);
     }
   }
   return [...found.values()];
@@ -93,14 +96,16 @@ export function applicationAnswers(
     if (!key) return null;
     const known = matching(key, byKey.keys());
     if (known) return byKey.get(known) ?? null;
-    const added: ApplicationAnswer = { question, suggested: null, sent: null };
+    const added: ApplicationAnswer = { question, suggested: null, why: null, sent: null };
     byKey.set(key, added);
     return added;
   };
   for (const question of questions) entry(question);
   for (const each of suggested) {
     const found = entry(each.question);
-    if (found) found.suggested = each.answer;
+    if (!found) continue;
+    found.suggested = each.answer;
+    found.why = each.why;
   }
   for (const each of sent) {
     const found = entry(each.question);

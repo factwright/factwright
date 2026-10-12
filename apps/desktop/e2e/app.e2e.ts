@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp, terminalText } from './app.ts';
@@ -20,6 +20,8 @@ test.afterAll(async () => {
 });
 
 const claudePanel = () => opened.window.locator('section[aria-label="Claude"]');
+const jobPanel = () => opened.window.locator('aside[aria-label="Job details"]');
+const ACME_ID = 'acme-robotics--staff-engineer';
 
 /** Picks a view of the jobs, by its label, as a person clicks it. */
 const pickView = (name: RegExp) =>
@@ -99,6 +101,68 @@ test('asks for an application’s questions, then runs them in Claude’s panel'
   await closeRun();
 });
 
+test('keeps what was actually sent for a question', async () => {
+  const answers = jobPanel().locator('section', {
+    has: opened.window.getByRole('heading', { name: 'Application answers' }),
+  });
+  await answers.getByText('Why Acme?', { exact: true }).click();
+  const box = answers.getByRole('textbox', { name: /What you sent/ });
+  await box.fill('Deploys, mostly.');
+  await box.blur();
+  await expect(answers.getByText('Saved', { exact: true })).toBeVisible();
+  await expect(answers.getByText('Sent', { exact: true })).toBeVisible();
+});
+
+test('answers a question about the job, and keeps the answer with it', async () => {
+  const { window } = opened;
+  await jobPanel().getByRole('button', { name: 'Ask a question' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Ask about Acme Robotics' });
+  await dialog
+    .getByRole('textbox', { name: 'Your question' })
+    .fill('What should I expect from the recruiter screen?');
+  await dialog.getByRole('button', { name: 'Ask Claude' }).click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The app types only the skill and the job; the question reaches Claude through its tools.
+  expect(await terminalText(window)).toContain(`/factwright:ask job ${ACME_ID}`);
+  expect(await terminalText(window)).not.toContain('recruiter screen');
+  const asked = jobPanel().locator('section', {
+    has: window.getByRole('heading', { name: 'Ask Claude' }),
+  });
+  await expect(asked.getByText('Answered')).toBeVisible();
+  await expect(asked.getByText('A short screen, from the stand-in Claude.')).toBeVisible();
+});
+
+test('keeps a picture pasted into Claude’s panel with the run’s job, for Claude to read', async () => {
+  const { window } = opened;
+  // A picture on the clipboard, pasted into the terminal, as the system hands it to the page.
+  await window.evaluate(`(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const blob = await new Promise((done) => canvas.toBlob(done, 'image/png'));
+    const pasted = new DataTransfer();
+    pasted.items.add(new File([blob], 'image.png', { type: 'image/png' }));
+    const input = document.querySelector('section[aria-label="Claude"] .xterm-helper-textarea');
+    input.focus();
+    input.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
+    );
+  })()`);
+  const shots = join(dataDir, 'workspace', 'screenshots', ACME_ID);
+  await expect
+    .poll(() => {
+      try {
+        return readdirSync(shots);
+      } catch {
+        return [];
+      }
+    })
+    .toEqual([expect.stringMatching(/^pasted-\d{4}-\d{2}-\d{2}-\d{6}-1\.png$/)]);
+  await claudePanel().locator('.xterm-helper-textarea').press('Enter');
+  await expect.poll(() => terminalText(window)).toContain('pasted-');
+  await closeRun();
+});
+
 test('finds jobs', async () => {
   const { window } = opened;
   // Done with Acme. In a narrow window, a job's details cover the page's buttons.
@@ -132,6 +196,10 @@ test('keeps everything tracked after a restart', async () => {
   );
   await expect(window.getByPlaceholder('Names, what they asked, anything to remember')).toHaveValue(
     'Recruiter: Sam',
+  );
+  await jobPanel().getByText('Why Acme?', { exact: true }).click();
+  await expect(jobPanel().getByRole('textbox', { name: /What you sent/ })).toHaveValue(
+    'Deploys, mostly.',
   );
 });
 

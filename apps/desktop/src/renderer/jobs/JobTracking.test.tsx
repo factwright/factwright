@@ -32,6 +32,7 @@ function panel(job: Job, result: EditResult = { ok: true }) {
     redateStatusChange: answer,
     undoStatusChange: answer,
     jobDocs: vi.fn(async () => null),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
     openFile: answer,
   } as unknown as FactwrightApi;
   const shown = (each: Job) => (

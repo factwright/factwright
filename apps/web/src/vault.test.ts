@@ -194,6 +194,17 @@ describe('opening the job hunt in the browser', () => {
     expect(downloaded).toHaveLength(3);
   });
 
+  it('reads Claude’s answers to the user’s questions about a job', async () => {
+    const answer =
+      '# What should I expect?\n\nAsked 2026-10-09. Answered 2026-10-09.\n\nA short screen.';
+    await pushFiles(sam.client, keys, {
+      ...FILES,
+      [`asked/${ACME_ID}/2026-10-09-what-should-i-expect.md`]: answer,
+    });
+    const vault = await openVault(sam.client, keys);
+    expect(vault.asked.get(ACME_ID)).toEqual({ '2026-10-09-what-should-i-expect': answer });
+  });
+
   it('lists a job the files show before the tracker has it', async () => {
     await pushFiles(sam.client, keys, FILES);
     const vault = await openVault(sam.client, keys);

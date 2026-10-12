@@ -7,6 +7,7 @@ import {
   type Job,
   type JobDocs,
   jobList,
+  readJobExtras,
   readRecords,
   type StoredRow,
   type TrackedRow,
@@ -45,15 +46,20 @@ export interface Vault {
   files: Map<string, SyncedFile>;
   /** Each job's documents, such as its posting and fit check, as text. */
   docs: Map<string, JobDocs>;
+  /** Claude's answers to the user's questions about each job, by the question's ID. */
+  asked: Map<string, Record<string, string>>;
   /** The tracker's rows as stored, by table, for downloading a copy. */
   rows: Record<string, StoredRow[]>;
   /** Records that wouldn't open: locked with another key, or damaged. */
   unreadable: number;
 }
 
-/** The files the job list is read from: each job's notes, the logs, and job searches. */
+/**
+ * The files the job list is read from: each job's notes, the logs, job searches, and Claude's
+ * answers to the user's questions about a job.
+ */
 const READ_FOR_JOBS =
-  /^(applications\/[^/]+\/[^/]+\.md|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json)$/;
+  /^(applications\/[^/]+\/[^/]+\.md|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json|asked\/[^/]+\/[^/]+\.md)$/;
 
 /** How many files download at once. */
 const AT_ONCE = 6;
@@ -177,12 +183,15 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
     role,
     links,
   }));
-  const collected = collectJobs(readRecords(readerOf(files, texts)), known);
+  const reader = readerOf(files, texts);
+  const collected = collectJobs(readRecords(reader), known);
   const found = new Map(collected.map((job) => [job.id, job]));
   const ids = new Set(tracked.map((row) => row.id));
   const all = [...tracked, ...collected.filter((job) => !ids.has(job.id)).map(untracked)];
   const calls = byJob([...(rows.calls ?? [])].sort(callOrder), trackedCall);
   const history = byJob([...(rows.status_log ?? [])].sort(changeOrder), trackedChange);
   const docs = new Map(collected.map((job) => [job.id, job.docs]));
-  return { jobs: jobList(all, found, calls, history), files, docs, rows, unreadable };
+  const jobs = jobList(all, found, calls, history);
+  const asked = new Map(jobs.map((job) => [job.id, readJobExtras(reader, job.id).asked]));
+  return { jobs, files, docs, asked, rows, unreadable };
 }

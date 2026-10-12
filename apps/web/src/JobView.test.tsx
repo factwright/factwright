@@ -92,6 +92,44 @@ describe('a job on the phone', () => {
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
+  it('shows what the user sent on the application, and their questions with Claude’s answers', async () => {
+    const { keys } = await setUp();
+    const asked = {
+      ...ACME,
+      questions: ['Why Acme?', 'Anything else?'],
+      sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.', on: '2026-10-08' }],
+      asks: [
+        {
+          id: '2026-10-09-what-should-i-expect',
+          question: 'What should I expect?',
+          on: '2026-10-09',
+        },
+      ],
+      docKinds: ['answers' as const],
+    };
+    const vault = vaultOf([asked], {
+      docs: new Map([[asked.id, { answers: '## Anything else?\n\nNope, the resume covers it.' }]]),
+      asked: new Map([
+        [
+          asked.id,
+          {
+            '2026-10-09-what-should-i-expect':
+              '# What should I expect?\n\nAsked 2026-10-09. Answered 2026-10-09.\n\nA short screen with Sam.',
+          },
+        ],
+      ]),
+    });
+    const { container } = render(<JobView job={asked} vault={vault} keys={keys} today={TODAY} />);
+    const answers = section('Application answers');
+    expect(within(answers).getByText('Deploys, mostly.')).toBeTruthy();
+    expect(within(answers).getByText('What you sent isn’t recorded.')).toBeTruthy();
+    expect(within(answers).getByText('Nope, the resume covers it.')).toBeTruthy();
+    const questions = section('Your questions');
+    expect(within(questions).getByText('A short screen with Sam.')).toBeTruthy();
+    expect(within(questions).queryByText(/Answered 2026/)).toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
   it('reads a document right on the page', async () => {
     const { keys, vault } = await setUp();
     render(<JobView job={ACME} vault={vault} keys={keys} today={TODAY} />);

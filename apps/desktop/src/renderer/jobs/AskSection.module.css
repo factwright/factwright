@@ -1,0 +1,145 @@
+.form {
+  display: grid;
+  gap: var(--fw-space-3);
+}
+
+.question {
+  min-height: 5lh;
+  max-height: 16lh;
+  field-sizing: content;
+}
+
+/* Questions to start from, while the box is empty. */
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.starter {
+  padding: 5px 10px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font: inherit;
+  font-size: var(--fw-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.starter:hover {
+  background: var(--fw-hover);
+}
+
+.starter:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 2px;
+}
+
+.problem {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}
+
+.asks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ask {
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+.summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary:hover {
+  background: var(--fw-hover);
+}
+
+.summary:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: -2px;
+}
+
+/* The question, two lines at most until it's open. */
+.asked {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 600;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: pre-line;
+}
+
+.details[open] .asked {
+  display: block;
+}
+
+.meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--fw-space-2);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.body {
+  padding: 0 12px 12px;
+}
+
+.answer {
+  font-size: var(--fw-text-md);
+}
+
+.shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin: 0 0 var(--fw-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.shot {
+  display: block;
+  width: 96px;
+  height: 72px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-sm);
+  object-fit: cover;
+  object-position: top left;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+}
+
+.confirm {
+  font-size: var(--fw-text-sm);
+}

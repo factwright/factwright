@@ -120,3 +120,26 @@
   color: var(--fw-bad);
   font-size: var(--fw-text-sm);
 }
+
+/* An answer or a question, opened with a tap. */
+.details {
+  padding: 10px 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+.details > p {
+  margin: var(--fw-space-2) 0 0;
+}
+
+.summary {
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: pre-line;
+  cursor: pointer;
+}
+
+.summary .itemNote {
+  margin-top: 2px;
+  font-weight: 400;
+}

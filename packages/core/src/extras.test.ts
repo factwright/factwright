@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { askedFile, readJobExtras, shotsFolder } from './extras.ts';
+import { askAnswer, askedFile, readJobExtras, shotsFolder } from './extras.ts';
 import type { WorkspaceEntry, WorkspaceReader } from './records.ts';
 
 const MODIFIED = '2026-10-12T15:00:00.000Z';
@@ -23,6 +23,24 @@ function memoryWorkspace(files: Record<string, string>): WorkspaceReader {
 
 const JOB = 'acme-robotics--staff-engineer';
 const ASK = '2026-10-12-what-should-i-expect';
+
+describe('askAnswer', () => {
+  it('shows an answer without the question and dates on top, and when it was answered', () => {
+    expect(
+      askAnswer(
+        '# What should I expect?\n\nAsked 2026-10-11. Answered 2026-10-12.\n\nA short screen.\n\n## Sources\n- Their blog\n',
+      ),
+    ).toEqual({ body: 'A short screen.\n\n## Sources\n- Their blog', answeredOn: '2026-10-12' });
+  });
+
+  it('shows an answer saved some other way as it is', () => {
+    expect(askAnswer('A short screen.')).toEqual({ body: 'A short screen.', answeredOn: null });
+    expect(askAnswer('# Notes\n\nA short screen.')).toEqual({
+      body: 'A short screen.',
+      answeredOn: null,
+    });
+  });
+});
 
 describe('readJobExtras', () => {
   it('reads Claude’s answers to the user’s questions about a job, by the question’s ID', () => {

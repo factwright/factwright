@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,7 @@ let root: string;
 let tracker: Tracker;
 let changes: JobList[];
 let jobs: JobsService;
+let trashed: string[];
 
 function write(path: string, text: string) {
   const file = join(root, path);
@@ -29,11 +30,16 @@ beforeEach(() => {
   write(`${ACME}/resume.pdf`, 'pdf');
   tracker = new Tracker(':memory:');
   changes = [];
+  trashed = [];
   jobs = new JobsService({
     workspace: root,
     tracker,
     onChange: (list) => changes.push(list),
     now: () => new Date(2026, 9, 10, 9, 30),
+    trash: async (file) => {
+      trashed.push(file);
+      rmSync(file);
+    },
   });
 });
 
@@ -136,5 +142,96 @@ describe('JobsService', () => {
       },
       { timeout: 5000, interval: 500 },
     );
+  });
+});
+
+/** A small picture's bytes, which are what a .png name says. */
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10, 0, 0, 0, 13]);
+
+describe('screenshots and questions for Claude', () => {
+  const id = 'acme-robotics--staff-engineer';
+
+  beforeEach(() => {
+    jobs.read();
+  });
+
+  it('keeps a job’s screenshots in a folder of its own, named for what they came with', async () => {
+    expect(await jobs.addShot(id, { name: 'image.png', bytes: PNG }, { kind: 'form' })).toEqual({
+      ok: true,
+      path: `screenshots/${id}/form-2026-10-10-1.png`,
+    });
+    expect(await jobs.addShot(id, { name: 'Shot.PNG', bytes: PNG }, { kind: 'form' })).toEqual({
+      ok: true,
+      path: `screenshots/${id}/form-2026-10-10-2.png`,
+    });
+    const asked = jobs.addAsk(id, 'What should I expect?');
+    if (!asked.ok) throw new Error(asked.message);
+    expect(
+      await jobs.addShot(id, { name: 'email.png', bytes: PNG }, { kind: 'ask', ask: asked.askId }),
+    ).toEqual({ ok: true, path: `screenshots/${id}/ask-${asked.askId}-1.png` });
+    expect(await jobs.addShot(null, { name: 'image.png', bytes: PNG }, { kind: 'pasted' })).toEqual(
+      {
+        ok: true,
+        path: 'screenshots/pasted-2026-10-10-093000-1.png',
+      },
+    );
+    expect(readFileSync(join(root, 'screenshots', id, 'form-2026-10-10-1.png'))).toEqual(
+      Buffer.from(PNG),
+    );
+    expect(jobs.extras(id).shots.map((shot) => [shot.kind, shot.ask])).toEqual([
+      ['ask', asked.askId],
+      ['form', null],
+      ['form', null],
+    ]);
+    expect(await jobs.shot(`screenshots/${id}/form-2026-10-10-1.png`)).toEqual(PNG);
+  });
+
+  it('refuses what isn’t a picture, or a job it doesn’t have, and paths outside its folder', async () => {
+    expect(
+      await jobs.addShot(
+        id,
+        { name: 'notes.png', bytes: new TextEncoder().encode('hello') },
+        {
+          kind: 'form',
+        },
+      ),
+    ).toMatchObject({
+      ok: false,
+      message: 'notes.png doesn’t look like a .png file inside. Try saving it again.',
+    });
+    expect(
+      await jobs.addShot(id, { name: 'resume.pdf', bytes: PNG }, { kind: 'form' }),
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await jobs.addShot('nope--job', { name: 'a.png', bytes: PNG }, { kind: 'form' }),
+    ).toEqual({
+      ok: false,
+      message: 'That job isn’t in your tracker anymore.',
+    });
+    for (const path of [`${ACME}/resume.pdf`, '../outside.png', 'screenshots/../tracker.png']) {
+      expect(await jobs.shot(path)).toBeNull();
+      expect(await jobs.removeShot(path)).toMatchObject({ ok: false });
+    }
+    expect(trashed).toEqual([]);
+  });
+
+  it('puts a removed question’s answer and screenshots in the trash, and only those', async () => {
+    const asked = jobs.addAsk(id, 'What should I expect?');
+    const other = jobs.addAsk(id, 'What’s their stack?');
+    if (!asked.ok || !other.ok) throw new Error('Not asked');
+    write(`asked/${id}/${asked.askId}.md`, '# What should I expect?\n\nA short screen.');
+    write(`asked/${id}/${other.askId}.md`, '# What’s their stack?\n\nGo.');
+    await jobs.addShot(id, { name: 'a.png', bytes: PNG }, { kind: 'ask', ask: asked.askId });
+    await jobs.addShot(id, { name: 'b.png', bytes: PNG }, { kind: 'form' });
+    expect(await jobs.removeAsk(id, asked.askId)).toEqual({ ok: true });
+    expect(trashed.map((file) => file.slice(root.length + 1))).toEqual([
+      `asked/${id}/${asked.askId}.md`,
+      `screenshots/${id}/ask-${asked.askId}-1.png`,
+    ]);
+    expect(existsSync(join(root, 'asked', id, `${other.askId}.md`))).toBe(true);
+    expect(jobs.list().jobs[0]?.asks.map((ask) => ask.id)).toEqual([other.askId]);
+    expect(await jobs.removeAsk(id, '../../etc')).toMatchObject({ ok: false });
   });
 });

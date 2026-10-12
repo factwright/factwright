@@ -21,6 +21,7 @@ export {
 } from './boards.ts';
 export { daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 export {
+  askAnswer,
   askedFile,
   JOB_EXTRAS,
   type JobShot,

@@ -44,11 +44,11 @@ type TrackerApi = Pick<
 >;
 
 /** What Claude answered about the sample jobs, by job and question. */
-function sampleAnswer(question: string): string {
+function sampleAnswer(question: string, on: string): string {
   return [
-    `# ${question}`,
+    `# ${question.split('\n')[0]}`,
     '',
-    `Asked ${localDate()}.`,
+    `Asked ${on}. Answered ${localDate()}.`,
     '',
     'Expect three people for 45 minutes: the hiring manager, a senior engineer and a product manager. Most panels there start with a walk through your resume, then one system you built, in depth.',
     '',
@@ -78,7 +78,7 @@ export function sampleTracker(jobs: string | null): TrackerApi {
   const shots = new Map<string, { shot: JobShot; bytes: Uint8Array }>();
   const asked = new Map<string, string>(
     list.jobs.flatMap((job) =>
-      job.asks.map((ask) => [askedFile(job.id, ask.id), sampleAnswer(ask.question)]),
+      job.asks.map((ask) => [askedFile(job.id, ask.id), sampleAnswer(ask.question, ask.on)]),
     ),
   );
   let next = 0;
@@ -283,7 +283,7 @@ export function sampleTracker(jobs: string | null): TrackerApi {
       );
       // Claude answers a moment later, as a run would.
       setTimeout(() => {
-        asked.set(askedFile(jobId, id), sampleAnswer(question.trim()));
+        asked.set(askedFile(jobId, id), sampleAnswer(question.trim(), localDate()));
         publish(list.jobs.map((each) => ({ ...each })));
       }, 2500);
       return { ok: true, askId: id };

@@ -20,6 +20,20 @@ export const askedFile = (jobId: string, askId: string) =>
 /** Where a job's screenshots are kept. */
 export const shotsFolder = (jobId: string) => `${JOB_EXTRAS.screenshots}/${jobId}`;
 
+/**
+ * Claude's answer to one of the user's questions, as the app shows it under the question:
+ * without the question and dates save_answer puts on top, and when it was answered.
+ */
+export function askAnswer(text: string): { body: string; answeredOn: string | null } {
+  const lines = text.split(/\r?\n/);
+  let at = 0;
+  if (lines[at]?.startsWith('# ')) at++;
+  while (lines[at]?.trim() === '') at++;
+  const dated = lines[at]?.match(/^Asked \d{4}-\d{2}-\d{2}\. Answered (\d{4}-\d{2}-\d{2})\.$/);
+  if (dated) at++;
+  return { body: lines.slice(at).join('\n').trim(), answeredOn: dated?.[1] ?? null };
+}
+
 /** What a screenshot was added with, from the start of its name. */
 export type ShotKind = 'form' | 'ask' | 'pasted' | 'other';
 

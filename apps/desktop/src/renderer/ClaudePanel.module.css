@@ -87,3 +87,11 @@
 .trust {
   padding: var(--fw-space-2) var(--fw-space-3) 0;
 }
+
+/* Why a picture pasted into the terminal wasn't kept. */
+.problem {
+  margin: 0;
+  padding: 6px 16px;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

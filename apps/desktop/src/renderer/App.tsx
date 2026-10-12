@@ -96,7 +96,10 @@ export function App({ api }: { api: FactwrightApi }) {
   // The run's name in Claude's panel, such as "Fit check · Acme", when a Run button started it.
   const task = run.task;
   const runJob = rows.find((row) => row.job.id === taskJob(task))?.job;
-  const runLabel = task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+  const runLabel =
+    task?.skill === 'ask'
+      ? 'Your question'
+      : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'

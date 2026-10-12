@@ -28,13 +28,19 @@ describe('readSuggestedAnswers', () => {
       {
         question: 'Why do you want to work at Acme?',
         answer: "I've spent three years making deploys boring.\n\nYour robots need that too.",
+        why: null,
       },
       {
         question: 'Which languages have you used in production?',
-        answer: 'Go, Python\n\nBoth daily since 2022',
+        answer: 'Go, Python',
+        why: 'Both daily since 2022',
       },
-      { question: 'Are you open to on-call?', answer: 'Yes' },
-      { question: 'Anything else we should know?', answer: 'Nope, the resume covers it.' },
+      { question: 'Are you open to on-call?', answer: 'Yes', why: null },
+      {
+        question: 'Anything else we should know?',
+        answer: 'Nope, the resume covers it.',
+        why: null,
+      },
     ]);
   });
 
@@ -42,7 +48,7 @@ describe('readSuggestedAnswers', () => {
     const twice = `${ANSWERS}\n## Why do you want to work at Acme?\n\nShorter this time.\n`;
     const found = readSuggestedAnswers(twice);
     expect(found.filter((each) => each.question.startsWith('Why do you'))).toEqual([
-      { question: 'Why do you want to work at Acme?', answer: 'Shorter this time.' },
+      { question: 'Why do you want to work at Acme?', answer: 'Shorter this time.', why: null },
     ]);
   });
 
@@ -96,14 +102,16 @@ describe('applicationAnswers', () => {
     expect(answers[1]).toEqual({
       question: 'What are your salary expectations?',
       suggested: null,
+      why: null,
       sent: null,
     });
+    expect(answers[2]).toMatchObject({ suggested: 'Go, Python', why: 'Both daily since 2022' });
   });
 
   it('matches a question Claude shortened, but not a different one', () => {
     const answers = applicationAnswers(
       ['Why do you want to work at Acme Robotics, and why now?', 'Why Acme?'],
-      [{ question: 'Why do you want to work at Acme Robotics', answer: 'Deploys.' }],
+      [{ question: 'Why do you want to work at Acme Robotics', answer: 'Deploys.', why: null }],
       [],
     );
     expect(answers.map((each) => each.suggested)).toEqual(['Deploys.', null]);
@@ -119,6 +127,7 @@ describe('applicationAnswers', () => {
       {
         question: 'Can you start in two weeks?',
         suggested: null,
+        why: null,
         sent: { question: 'Can you start in two weeks?', text: 'Yes', on: '2026-10-08' },
       },
     ]);
