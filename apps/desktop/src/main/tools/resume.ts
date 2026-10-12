@@ -71,36 +71,56 @@ async function rulesIn(workspace: string): Promise<{ rules: LintConfig; problem:
   }
 }
 
+/** A starting resume's name in base/, such as "startup-ic", for base/startup-ic.json. */
+const BASE_NAME = /^base\/([a-z0-9][a-z0-9-]{0,80})$/;
+
+/** Where a resume's data is and its files go: a job's folder, or a starting resume in base/. */
+function resumeAt(workspace: string, folder: string) {
+  const base = BASE_NAME.exec(folder)?.[1];
+  if (base) {
+    return { where: 'base', dir: join(workspace, 'base'), data: `${base}.json`, isJob: false };
+  }
+  if (!FOLDER_NAME.test(folder)) return null;
+  return {
+    where: `${WORKSPACE_PATHS.jobs}/${folder}`,
+    dir: join(workspace, WORKSPACE_PATHS.jobs, folder),
+    data: 'resume.json',
+    isJob: true,
+  };
+}
+
 /**
- * Builds the resume in a job's folder from its resume.json: a PDF, a Word file, or both, named
- * after its output_name. Checks it against the user's rules and confidential terms, and says how
- * it fits the pages: how many, how full the last one is, and which lines run short. A job that
- * was applied to keeps the files that were sent.
+ * Builds a resume from its data: a job's resume.json, or a starting resume in base/. It makes a
+ * PDF, a Word file, or both, named after its output_name, beside the data. Checks it against the
+ * user's rules and confidential terms, and says how it fits the pages: how many, how full the
+ * last one is, and which lines run short. A job that was applied to keeps the files that were
+ * sent.
  */
 export async function buildResume(
   folder: string,
   format: string | undefined,
   deps: BuildResumeDeps,
 ): Promise<string> {
-  if (!FOLDER_NAME.test(folder)) {
-    return `“${folder}” isn’t a job folder name. Use the folder’s own name, such as 2026-10-11-acme-staff-engineer.`;
+  const at = resumeAt(deps.workspace, folder);
+  if (!at) {
+    return `“${folder}” isn’t a job folder or a starting resume. Use the job folder’s own name, such as 2026-10-11-acme-staff-engineer, or base/<name> for base/<name>.json.`;
   }
   if (format !== undefined && !(FORMATS as readonly string[]).includes(format)) {
     return `The format should be ${FORMATS.join(', ')}.`;
   }
-  const where = `${WORKSPACE_PATHS.jobs}/${folder}`;
-  const dir = join(deps.workspace, WORKSPACE_PATHS.jobs, folder);
-  const text = await readText(join(dir, 'resume.json'));
-  if (text === null) return `There’s no ${where}/resume.json yet. Write the resume there first.`;
+  const { where, dir } = at;
+  const source = `${where}/${at.data}`;
+  const text = await readText(join(dir, at.data));
+  if (text === null) return `There’s no ${source} yet. Write the resume there first.`;
   let data: unknown;
   try {
     data = JSON.parse(text);
   } catch (error) {
-    return `${where}/resume.json isn’t valid JSON: ${error instanceof Error ? error.message : 'it doesn’t parse'}.`;
+    return `${source} isn’t valid JSON: ${error instanceof Error ? error.message : 'it doesn’t parse'}.`;
   }
   const read = readResume(data);
   if (!read.ok)
-    return [`Not built. Fix resume.json first:`, ...read.problems.map((p) => `- ${p}`)].join('\n');
+    return [`Not built. Fix ${at.data} first:`, ...read.problems.map((p) => `- ${p}`)].join('\n');
   const resume = read.resume;
   const layout = (resume.layout ?? 'timeline') as Layout;
   const make = (format ?? resume.format ?? 'pdf') as ResumeFormat;
@@ -110,12 +130,12 @@ export async function buildResume(
     ...(make === 'docx' || make === 'both' ? [`${name}.docx`] : []),
   ];
 
-  const job = deps.jobs().find((each) => each.folder === folder);
+  const job = at.isJob ? deps.jobs().find((each) => each.folder === folder) : undefined;
   if (job && (job.appliedOn || (job.status && SENT.includes(job.status)))) {
     const sent = [];
     for (const file of files) if (await exists(join(dir, file))) sent.push(file);
     if (sent.length > 0) {
-      return `Not built: ${sent.join(' and ')} went out with the application, so it stays as sent. Give resume.json a new output_name to build another.`;
+      return `Not built: ${sent.join(' and ')} went out with the application, so it stays as sent. Give ${at.data} a new output_name to build another.`;
     }
   }
 

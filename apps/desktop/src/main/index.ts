@@ -1,13 +1,15 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, nativeTheme, safeStorage, session, shell } from 'electron';
+import { TemplatePreviews } from './about/previews.ts';
+import { AboutStore } from './about/store.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
 import { registerIpc } from './ipc.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
-import { workspaceDir } from './jobs/workspace.ts';
+import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
 import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
@@ -48,6 +50,11 @@ function start(): void {
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
     denyPermissions(session.defaultSession);
 
+    // Sends to the window, unless it's closed, as when a run ends while the app quits.
+    const toWindow = (channel: string, ...values: unknown[]) => {
+      if (!window.isDestroyed()) window.webContents.send(channel, ...values);
+    };
+
     const dataDir = app.getPath('userData');
     // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
     // Claude reaches it only through Factwright's tools.
@@ -61,20 +68,26 @@ function start(): void {
       tracker,
       workspace,
       openUrl: (url) => shell.openExternal(url),
-      onStatus: (status) => window.webContents.send('sync:status', status),
+      onStatus: (status) => toWindow('sync:status', status),
       // Changes from other devices: read the workspace again, and show the new list.
-      onApplied: () => window.webContents.send('jobs:changed', jobs.read()),
+      onApplied: () => toWindow('jobs:changed', jobs.read()),
     });
     const jobs = new JobsService({
       workspace,
       tracker,
       onChange: (list) => {
-        window.webContents.send('jobs:changed', list);
+        toWindow('jobs:changed', list);
         sync.requestSync();
       },
     });
     jobs.read();
+    const about = new AboutStore({
+      workspace,
+      starterDir: join(pluginDir(), 'starter'),
+      trash: (path) => shell.trashItem(path),
+    });
     const printer = new ElectronResumePrinter();
+    const previews = new TemplatePreviews(printer);
     const server = new RunServer({
       tools: factwrightTools({ jobs, workspace, printer }),
       version: app.getVersion(),
@@ -83,18 +96,27 @@ function start(): void {
 
     let window = createMainWindow(startUrl);
     jobs.watch();
+    // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
+    // so the profile follows the workspace too.
+    const stopWatchingProfile = watchWorkspace(
+      workspace,
+      () => {
+        toWindow('about:changed', about.profile());
+      },
+      500,
+    );
     const claude = new ClaudeSession({
       dataDir,
       pluginDir: pluginDir(),
       server,
       dark: () => nativeTheme.shouldUseDarkColors,
-      onOutput: (data) => window.webContents.send('claude:output', data),
+      onOutput: (data) => toWindow('claude:output', data),
       onSignal: (signal) => {
-        window.webContents.send('claude:signal', signal);
+        toWindow('claude:signal', signal);
         notifyIfAway(window, signal);
       },
       onTrust: () => {
-        window.webContents.send('claude:trust');
+        toWindow('claude:trust');
         notifyIfAway(window, 'needs-answer');
       },
     });
@@ -115,7 +137,7 @@ function start(): void {
           server,
           signal,
         }),
-      onChange: (check) => window.webContents.send('setup:checked', check),
+      onChange: (check) => toWindow('setup:checked', check),
       busy: () => claude.busy(),
       // The end-to-end tests set a shorter wait, to see the check finish.
       ...(process.env.FACTWRIGHT_SETUP_WAIT_MS && {
@@ -125,6 +147,8 @@ function start(): void {
     await setup.load();
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
+      about,
+      previews,
       claude,
       setup,
       jobs,
@@ -143,6 +167,7 @@ function start(): void {
       server.stop();
       printer.close();
       jobs.stop();
+      stopWatchingProfile();
       void sync.stop();
     });
     app.on('quit', () => tracker.close());

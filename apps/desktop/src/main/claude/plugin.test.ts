@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
-import { RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
+import { HUNT_SKILLS, RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
+import { TERMS_HEADER } from '../about/terms.ts';
 import { factwrightTools } from '../tools/index.ts';
 import { buildLaunchArgs, STANDING_RULES } from './launch.ts';
 import { sessionSettings } from './settings.ts';
@@ -43,6 +44,7 @@ describe('the plugin’s skills', () => {
       'answer-questions',
       'fit-check',
       'focused-resume',
+      'get-started',
       'interview-prep',
       'job-search',
       'salary-check',
@@ -98,6 +100,20 @@ describe('the plugin’s skills', () => {
     }
   });
 
+  it('include the skills the app starts on the whole job hunt', () => {
+    for (const skill of HUNT_SKILLS) expect(skills.map(({ folder }) => folder)).toContain(skill);
+    const started = skills.find(({ folder }) => folder === 'get-started');
+    // It reads what the app saved, and never uses a claim the user hasn't confirmed.
+    for (const words of [
+      'about-me/answers.json',
+      'about-me/read.md',
+      'unconfirmed',
+      'base/<style>-<track>',
+    ]) {
+      expect(started?.text).toContain(words);
+    }
+  });
+
   it('include the job search the jobs page runs, which asks for a source when it has none', () => {
     const found = skills.find(({ folder }) => folder === SEARCH_SKILL);
     expect(found?.text).toMatch(/If there's none, ask .*AskUserQuestion/);
@@ -149,5 +165,68 @@ describe('the standing rules', () => {
     ]) {
       expect(rules).not.toMatch(leftover);
     }
+  });
+});
+
+describe('the starter files', () => {
+  const starterDir = join(pluginDir, 'starter');
+  const files: string[] = [];
+  const walk = (dir: string, prefix = '') => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) walk(join(dir, entry.name), `${path}/`);
+      else files.push(path);
+    }
+  };
+  walk(starterDir);
+  const read = (path: string) => readFileSync(join(starterDir, path), 'utf8');
+
+  it('are the guide, the styles and the fact bank’s format, each listed in the folder’s README', () => {
+    expect(files.sort()).toEqual([
+      'README.md',
+      'facts/README.md',
+      'guide/confidential-terms.txt',
+      'guide/lint.json',
+      'guide/preferences.md',
+      'guide/rules.md',
+      'guide/styles/README.md',
+      'guide/styles/big-company.md',
+      'guide/styles/public-sector.md',
+      'guide/styles/startup.md',
+      'guide/writing.md',
+    ]);
+    const readme = read('README.md');
+    for (const path of files.filter(
+      (each) => each !== 'README.md' && !each.startsWith('guide/styles/'),
+    )) {
+      expect(readme).toContain(`(${path})`);
+    }
+  });
+
+  it('name only resume fields and tools that exist', () => {
+    for (const path of files.filter((each) => each.endsWith('.md'))) {
+      for (const [, name] of read(path).matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) {
+        expect([...toolNames, ...RESUME_FIELDS], `${path}: ${name}`).toContain(name);
+      }
+    }
+  });
+
+  it('give every style a starting resume for each track', () => {
+    for (const style of ['startup', 'big-company', 'public-sector']) {
+      const text = read(`guide/styles/${style}.md`);
+      for (const track of ['leader', 'builder', 'ic'])
+        expect(text).toContain(`base/${style}-${track}.json`);
+    }
+  });
+
+  it('start the confidential terms with the line the app writes, and leave the page count to the app', () => {
+    expect(read('guide/confidential-terms.txt')).toBe(`${TERMS_HEADER}\n`);
+    const lint = JSON.parse(read('guide/lint.json'));
+    expect(lint.maxPages).toBeUndefined();
+    for (const rule of lint.banned) expect(() => new RegExp(rule.pattern, 'i')).not.toThrow();
+  });
+
+  it('have nothing personal in them', () => {
+    for (const path of files) expect(read(path)).not.toMatch(/\bSteve\b|\bProven\b|\.private\//);
   });
 });

@@ -1,7 +1,9 @@
 export { Button, type ButtonProps } from './components/Button.tsx';
 export { Chip, type ChipProps } from './components/Chip.tsx';
+export { ChipGroup, type ChipGroupProps } from './components/ChipGroup.tsx';
 export { Dialog, DialogActions, type DialogProps } from './components/Dialog.tsx';
 export { EmptyState, type EmptyStateProps } from './components/EmptyState.tsx';
+export { FileDrop, type FileDropProps } from './components/FileDrop.tsx';
 export { FIT_TIER_DISPLAY, FitBadge, type FitBadgeProps } from './components/FitBadge.tsx';
 export {
   Checkbox,
@@ -31,6 +33,8 @@ export {
 export { Stat, type StatProps } from './components/Stat.tsx';
 export { JOB_STATUS_DISPLAY, StatusPill } from './components/StatusPill.tsx';
 export { StatusSelect, type StatusSelectProps } from './components/StatusSelect.tsx';
+export { Steps, type StepsProps } from './components/Steps.tsx';
+export { TagInput, type TagInputProps } from './components/TagInput.tsx';
 export { VisuallyHidden } from './components/VisuallyHidden.tsx';
 export { CONTROL_CONTRAST, contrastRatio, TEXT_CONTRAST } from './contrast.ts';
 export { ThemeStyle } from './ThemeStyle.tsx';

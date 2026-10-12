@@ -15,6 +15,11 @@ export interface ResumePrinter {
   measure(html: string): Promise<FitRow[]>;
 }
 
+/** Prints a page to PDF and nothing more, such as a template's preview. */
+export interface PdfPrinter {
+  pdf(html: string): Promise<Buffer>;
+}
+
 /** The text's height on a Letter page, less the layouts' half-inch top and bottom margins. */
 const TEXT_HEIGHT_PX = 10 * 96;
 /** How close the last page's free space is measured, in CSS pixels. */
@@ -94,9 +99,16 @@ function isFitRow(value: unknown): value is FitRow {
  * Jobs take turns in that window, since a window made right after another is closed can fail to
  * load.
  */
-export class ElectronResumePrinter implements ResumePrinter {
+export class ElectronResumePrinter implements ResumePrinter, PdfPrinter {
   private window: BrowserWindow | undefined;
   private queue: Promise<unknown> = Promise.resolve();
+
+  pdf(html: string): Promise<Buffer> {
+    return this.inTurn(async (window) => {
+      await loadPage(window, html);
+      return printPdf(window);
+    });
+  }
 
   print(html: string): Promise<PrintedResume> {
     return this.inTurn(async (window) => {

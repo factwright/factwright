@@ -1,5 +1,5 @@
 import { NavItem } from '@factwright/ui';
-import { Briefcase } from 'lucide-react';
+import { Briefcase, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
 import type { SyncStatus } from '../shared/sync.ts';
 import { ClaudeCard } from './ClaudeCard.tsx';
@@ -7,8 +7,14 @@ import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
+/** The app's places: the jobs, and everything about the user. */
+export type Page = 'jobs' | 'profile';
+
 /** The sidebar: the app's places, then sync and the user's Claude at the bottom. */
 export function Sidebar({
+  page,
+  onPage,
+  gettingStarted,
   claude,
   onRecheckClaude,
   setup,
@@ -17,6 +23,10 @@ export function Sidebar({
   onOpenClaudeSettings,
   jobCount,
 }: {
+  page: Page;
+  onPage: (page: Page) => void;
+  /** Whether the user is still getting started, which their profile page walks them through. */
+  gettingStarted: boolean;
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
   /** The latest check of Factwright's setup, and how to run it again. */
@@ -35,7 +45,14 @@ export function Sidebar({
           icon={<Briefcase size={16} aria-hidden="true" />}
           label="Jobs"
           count={jobCount}
-          current
+          current={page === 'jobs'}
+          onClick={() => onPage('jobs')}
+        />
+        <NavItem
+          icon={<UserRound size={16} aria-hidden="true" />}
+          label={gettingStarted ? 'Get started' : 'Profile'}
+          current={page === 'profile'}
+          onClick={() => onPage('profile')}
         />
       </nav>
       <div className={styles.cards}>

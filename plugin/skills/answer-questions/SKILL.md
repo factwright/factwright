@@ -13,7 +13,7 @@ Input: the job (company and role, maybe a link, or `job <id>` from the app), the
 Before starting, read:
 - `guide/rules.md`, if there is one. Every claim traces to `facts/`, with the same status, ownership and confidentiality limits as a resume.
 - `guide/preferences.md`, if there is one. Its application-answer nudges set the voice.
-- all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
+- all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` aren't usable until the user confirms them: ask in step 3 when an answer needs one.
 
 ## 1. Load everything on file
 - Call `job_details` with the job's id, or its company and role: status, the user's notes, calls, history and the folder. Use the notes for context only.

@@ -1,0 +1,238 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { NO_ANSWERS } from '../../shared/about.ts';
+import { AboutStore } from './store.ts';
+import type { CheckedUpload } from './uploads.ts';
+
+let root: string;
+let store: AboutStore;
+let trash: Mock<(path: string) => Promise<void>>;
+const workspace = () => join(root, 'workspace');
+const read = (path: string) => readFileSync(join(workspace(), path), 'utf8');
+const json = (path: string) => JSON.parse(read(path));
+
+const PDF = new TextEncoder().encode('%PDF-1.7 a made-up resume');
+const upload = (
+  name: string,
+  bytes = PDF,
+  text: string | null = 'Jordan Avery',
+): CheckedUpload => ({
+  name,
+  kind: 'resume',
+  extension: name.split('.').at(-1) ?? '',
+  bytes,
+  text,
+});
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'factwright-about-'));
+  const starterDir = join(root, 'starter');
+  mkdirSync(join(starterDir, 'guide'), { recursive: true });
+  writeFileSync(join(starterDir, 'guide', 'rules.md'), '# Binding rules\n');
+  writeFileSync(join(starterDir, 'guide', 'lint.json'), '{ "banned": [] }\n');
+  mkdirSync(workspace());
+  trash = vi.fn(async (path: string) => {
+    rmSync(path);
+  });
+  store = new AboutStore({ workspace: workspace(), starterDir, trash, today: () => '2026-10-12' });
+});
+
+afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+describe('AboutStore', () => {
+  it('saves the answers, and nothing built from them until Claude has them', () => {
+    expect(store.answers()).toEqual(NO_ANSWERS);
+    const answers = store.saveAnswers({ roles: ['Product Designer'], step: 2 });
+    expect(answers.roles).toEqual(['Product Designer']);
+    expect(json('about-me/answers.json').step).toBe(2);
+    expect(existsSync(join(workspace(), 'searches', 'criteria.md'))).toBe(false);
+  });
+
+  it('gets the workspace ready for Claude, then keeps the files built from the answers in step', () => {
+    store.saveAnswers({ levels: ['entry'], looks: [{ layout: 'compact', for: 'any' }] });
+    const started = store.start();
+    expect(started.startedOn).toBe('2026-10-12');
+    expect(read('guide/rules.md')).toBe('# Binding rules\n');
+    expect(read('searches/criteria.md')).toContain('- **Level:** Entry level.');
+    expect(read('guide/templates.md')).toContain('| Compact | `compact` | any job |');
+    // The page count follows the user's level, beside the starter's other rules.
+    expect(json('guide/lint.json')).toEqual({ banned: [], maxPages: 1 });
+
+    store.saveAnswers({ pages: 2, levels: ['senior'] });
+    expect(json('guide/lint.json').maxPages).toBe(2);
+    expect(read('searches/criteria.md')).toContain('- **Level:** Senior.');
+  });
+
+  it('leaves files someone changed by hand as they are, until the user picks their answers', () => {
+    store.start();
+    writeFileSync(join(workspace(), 'searches', 'criteria.md'), '# My own criteria\n');
+    store.saveAnswers({ levels: ['senior'] });
+    expect(read('searches/criteria.md')).toBe('# My own criteria\n');
+    expect(store.profile().status.criteria).toBe('own');
+
+    store.useAnswersForCriteria();
+    expect(read('searches/criteria.md')).toContain('- **Level:** Senior.');
+    expect(read('searches/criteria-before-2026-10-12.md')).toBe('# My own criteria\n');
+    expect(store.profile().status.criteria).toBe('app');
+  });
+
+  it('leaves a page count set by hand alone, until the user picks one or their level says', () => {
+    mkdirSync(join(workspace(), 'guide'));
+    writeFileSync(join(workspace(), 'guide', 'lint.json'), '{ "maxPages": 1 }');
+    store.start();
+    store.saveAnswers({ roles: ['Designer'] });
+    expect(read('guide/lint.json')).toBe('{ "maxPages": 1 }');
+    store.saveAnswers({ levels: ['senior'] });
+    expect(json('guide/lint.json').maxPages).toBe(2);
+  });
+
+  it('writes the user’s own rules again only when the page count changes', () => {
+    mkdirSync(join(workspace(), 'guide'));
+    const own = '{\n  "_comment": "mine",\n  "maxPages": 2,\n  "cardWords": [16, 26]\n}\n';
+    writeFileSync(join(workspace(), 'guide', 'lint.json'), own);
+    store.saveAnswers({ levels: ['senior'] });
+    store.start();
+    expect(read('guide/lint.json')).toBe(own);
+    store.saveAnswers({ pages: 1 });
+    expect(json('guide/lint.json')).toEqual({ _comment: 'mine', maxPages: 1, cardWords: [16, 26] });
+  });
+
+  it('leaves the user’s own rules be when they don’t parse', () => {
+    mkdirSync(join(workspace(), 'guide'));
+    writeFileSync(join(workspace(), 'guide', 'lint.json'), '{ not json');
+    store.start();
+    expect(read('guide/lint.json')).toBe('{ not json');
+  });
+
+  it('keeps the notes, up to their limit', () => {
+    store.saveNotes('I lead the platform team.');
+    expect(store.notes()).toBe('I lead the platform team.');
+    expect(() => store.saveNotes('x'.repeat(200_001))).toThrow();
+  });
+
+  it('keeps each shared file once, with the text read out of it beside it', () => {
+    const first = store.addFile(upload('Resume 2024.pdf'));
+    expect(first).toEqual({
+      ok: true,
+      file: {
+        path: 'about-me/files/2026-10-12-resume-2024.pdf',
+        name: 'Resume 2024.pdf',
+        kind: 'resume',
+        added: '2026-10-12',
+        textFile: 'about-me/files/2026-10-12-resume-2024.pdf.md',
+      },
+    });
+    expect(read('about-me/files/2026-10-12-resume-2024.pdf.md')).toMatch(/Jordan Avery\n$/);
+    // The same file again is the same file.
+    expect(store.addFile(upload('Copy of resume.pdf'))).toEqual(first);
+    // Another file by the same name gets its own.
+    const other = store.addFile(
+      upload('Resume 2024.pdf', new TextEncoder().encode('%PDF-1.7 another'), null),
+    );
+    expect(other).toMatchObject({
+      ok: true,
+      file: { path: 'about-me/files/2026-10-12-resume-2024-2.pdf', textFile: null },
+    });
+    expect(store.answers().files).toHaveLength(2);
+  });
+
+  it('takes a file off the list after the trash, without undoing changes saved meanwhile', async () => {
+    store.addFile(upload('One.pdf'));
+    store.addFile(upload('Two.pdf', new TextEncoder().encode('%PDF-1.7 two'), null));
+    let release = () => {};
+    trash.mockImplementationOnce(
+      (path) =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            rmSync(path);
+            resolve();
+          };
+        }),
+    );
+    const removing = store.removeFile('about-me/files/2026-10-12-one.pdf');
+    store.saveAnswers({ you: { ...NO_ANSWERS.you, name: 'Jordan Avery' } });
+    await vi.waitFor(() => expect(trash).toHaveBeenCalled());
+    release();
+    const answers = await removing;
+    expect(answers.you.name).toBe('Jordan Avery');
+    expect(answers.files.map((file) => file.name)).toEqual(['Two.pdf']);
+  });
+
+  it('takes LinkedIn’s spreadsheets, connections included, along with its data', async () => {
+    store.addLinkedIn({
+      tables: [
+        { name: 'Connections.csv', text: 'First Name,Last Name\nSam,Lee\n' },
+        { name: 'Profile.csv', text: 'Headline\nPM\n' },
+      ],
+      summary: '# LinkedIn data\n',
+    });
+    writeFileSync(join(workspace(), 'linkedin', 'mine.txt'), 'kept');
+    await store.removeFile('about-me/files/linkedin-data.md');
+    expect(existsSync(join(workspace(), 'linkedin', 'Connections.csv'))).toBe(false);
+    expect(existsSync(join(workspace(), 'linkedin', 'Profile.csv'))).toBe(false);
+    expect(read('linkedin/mine.txt')).toBe('kept');
+    expect(store.profile().status.connections).toBeNull();
+  });
+
+  it('keeps as many files as it can carry, and says so after', () => {
+    const many = Array.from({ length: 200 }, (_, n) => ({
+      path: `about-me/files/2026-10-12-file-${n}.pdf`,
+      name: `file-${n}.pdf`,
+      kind: 'resume',
+      added: '2026-10-12',
+      textFile: null,
+    }));
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    writeFileSync(join(workspace(), 'about-me', 'answers.json'), JSON.stringify({ files: many }));
+    expect(store.addFile(upload('One more.pdf'))).toEqual({
+      ok: false,
+      message: 'That’s as many files as Factwright keeps. Remove some first.',
+    });
+    expect(store.answers().files).toHaveLength(200);
+  });
+
+  it('moves a removed file and its text to the trash', async () => {
+    store.addFile(upload('Resume.pdf'));
+    const answers = await store.removeFile('about-me/files/2026-10-12-resume.pdf');
+    expect(answers.files).toEqual([]);
+    expect(trash).toHaveBeenCalledTimes(2);
+    expect(existsSync(join(workspace(), 'about-me', 'files', '2026-10-12-resume.pdf'))).toBe(false);
+    // A file that isn't on the list stays where it is.
+    expect((await store.removeFile('facts/profile.md')).files).toEqual([]);
+    expect(trash).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps LinkedIn’s spreadsheets in linkedin/, and one summary for Claude', () => {
+    store.addLinkedIn({
+      tables: [{ name: 'Connections.csv', text: 'First Name,Last Name\nSam,Lee\n' }],
+      summary: '# LinkedIn data\n',
+    });
+    store.addLinkedIn({
+      tables: [{ name: 'Connections.csv', text: 'First Name,Last Name\nSam,Lee\nAna,Diaz\n' }],
+      summary: '# LinkedIn data, again\n',
+    });
+    expect(read('about-me/files/linkedin-data.md')).toBe('# LinkedIn data, again\n');
+    expect(store.answers().files.filter((file) => file.kind === 'linkedin-data')).toHaveLength(1);
+    expect(store.profile().status.connections).toEqual({ count: 2, added: '2026-10-12' });
+  });
+
+  it('adds and removes the confidential names the user changed, keeping any Claude added', () => {
+    expect(store.changeConfidential({ add: ['Bluebird', 'Acme (US)'], remove: [] })).toEqual([
+      'Bluebird',
+      'Acme (US)',
+    ]);
+    expect(read('guide/confidential-terms.txt')).toMatch(/\nBluebird\nAcme \\\(US\\\)\n$/);
+    // Claude adds one while the user's list on screen is older.
+    writeFileSync(
+      join(workspace(), 'guide', 'confidential-terms.txt'),
+      `${read('guide/confidential-terms.txt')}Project Kite\n`,
+    );
+    expect(store.changeConfidential({ add: ['Tidewater'], remove: ['bluebird'] })).toEqual([
+      'Acme (US)',
+      'Project Kite',
+      'Tidewater',
+    ]);
+  });
+});

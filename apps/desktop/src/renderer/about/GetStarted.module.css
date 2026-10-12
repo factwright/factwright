@@ -1,0 +1,50 @@
+.page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--fw-space-3) var(--fw-space-6);
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-bg);
+  scroll-margin-top: 0;
+}
+
+.body {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--fw-space-4);
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--fw-space-8) var(--fw-space-6);
+}
+
+/* Each step's heading takes focus when the step opens, without a ring. */
+.body h2:focus {
+  outline: none;
+}
+
+.nav {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-3) var(--fw-space-6);
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-bg);
+}
+
+.problem {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

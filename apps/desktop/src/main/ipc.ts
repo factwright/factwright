@@ -14,6 +14,10 @@ import {
 import type { EditResult, PdfResult, SaveFileResult, StartResult } from '../shared/api.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
+import { scopeOf } from '../shared/runs.ts';
+import { registerAboutIpc } from './about/ipc.ts';
+import type { TemplatePreviews } from './about/previews.ts';
+import type { AboutStore } from './about/store.ts';
 import { loadModels, saveModels } from './claude/models.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import type { SetupChecker } from './claude/self-test.ts';
@@ -56,6 +60,9 @@ const isId = (value: unknown): value is string =>
 export interface IpcDeps {
   /** Whether a page is the app's own, the only page whose requests are answered. */
   isAppPage: (url: string) => boolean;
+  /** What the user tells Factwright about themselves, and the templates' previews. */
+  about: AboutStore;
+  previews: TemplatePreviews;
   claude: ClaudeSession;
   /** Checks that Factwright's setup still works with each version of Claude Code. */
   setup: SetupChecker;
@@ -87,6 +94,8 @@ const isFile = (path: string) => {
 /** Answers the window's requests, after checking each one came from the app's own page. */
 export function registerIpc({
   isAppPage,
+  about,
+  previews,
   claude: session,
   setup,
   jobs,
@@ -152,18 +161,19 @@ export function registerIpc({
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');
     return loadModels(dataDir).then((models) =>
-      session.start(valid, run && runPrompt(run), modelFor(models, run)),
+      session.start(valid, run && runPrompt(run), modelFor(models, run), scopeOf(run)),
     );
   });
 
-  // A task for the run that's open. One that needs another model starts a new run instead.
+  // A task for the run that's open. One that needs another model, or may change other files
+  // without asking, starts a new run instead.
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
     const open = session.model();
-    if (open && open !== modelFor(await loadModels(dataDir), run)) {
-      return { ok: false, reason: 'other-model' };
-    }
+    const otherModel = open && open !== modelFor(await loadModels(dataDir), run);
+    const otherScope = session.scope() && session.scope() !== scopeOf(run);
+    if (otherModel || otherScope) return { ok: false, reason: 'new-run' };
     return session.send(runPrompt(run));
   });
 
@@ -290,4 +300,6 @@ export function registerIpc({
   answer('sync:remove-device', (id) => (isId(id) ? sync.removeDevice(id) : REFUSED));
   answer('sync:sign-out', () => sync.signOut());
   answer('sync:account-page', () => sync.openAccountPage());
+
+  registerAboutIpc(answer, { about, previews });
 }

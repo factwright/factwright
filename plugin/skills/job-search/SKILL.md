@@ -12,8 +12,9 @@ One source per search. The input is the source, as a name or a link. If there's 
 - **A careers page or job site:** the user pastes the link.
 
 Before starting, read:
-- `searches/criteria.md`: the user's filters, preferences, pay rule, scoring and tiers. It's binding for searches.
-  - If it's missing, ask the user in one round of AskUserQuestion: where they can work (remote from where, or which cities), the levels they want, and the kinds of role.
+- `searches/criteria.md`: the user's filters, preferences, pay rule, scoring and tiers. It's binding for searches. The app writes it from what the user told it (Profile → What you want); if the user asks to change it, edit it here, and the app leaves it as edited.
+  - If it's missing but `about-me/answers.json` has what they want (`roles`, `levels`, `workplaces`, `companies` and the rest), work from that, and say so in one line.
+  - If neither is there, ask the user in one round of AskUserQuestion: where they can work (remote from where, or which cities), the levels they want, and the kinds of role.
   - Save their answers as `searches/criteria.md`, with **Filters**, **Preferences** and the scoring below, then go on.
 - all of `facts/`. Fit is judged against facts only, the same bar as resumes. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 - the newest `searches/*/jobs.json` and `report.md`, if there are any. Keep their shape.
@@ -47,7 +48,7 @@ For each listing that passed:
   - When the posting and the source disagree, the posting wins. Note the conflict in its flags.
 - Score with the criteria.md rubric, against facts/ only.
   - Without a rubric, use: work 40 (how much of the job's core work the facts prove, domain included) · role 25 (how well the level and shape fit what the user wants) · stack 20 (overlap with proven tech) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, certification).
-  - Respect status and ownership tags: built ≠ live, and led-team ≠ solo.
+  - Respect status and ownership tags: built ≠ live, and led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user confirms it.
   - Pay never changes a score.
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61. Below 50 goes to long shots.
 - With more than ~15 jobs to verify, split this step across subagents, ~8 jobs each, all at once. Give each one:

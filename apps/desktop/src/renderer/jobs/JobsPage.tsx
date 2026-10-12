@@ -40,6 +40,8 @@ export interface JobsPageProps {
   canFindJobs: boolean;
   onFindJobs: () => void;
   onOpenJourney: () => void;
+  /** Opens getting started, for a user who hasn't told Factwright about themselves yet. */
+  onGetStarted?: (() => void) | undefined;
 }
 
 /** The jobs page: the numbers that matter, the views, and the list of jobs. */
@@ -100,7 +102,20 @@ export function JobsPage(props: JobsPageProps) {
         </div>
       </div>
 
-      {open.length === 0 ? (
+      {open.length === 0 && props.onGetStarted ? (
+        <EmptyState
+          title="No jobs yet"
+          icon={<Briefcase size={20} aria-hidden="true" />}
+          action={
+            <Button variant="primary" onClick={props.onGetStarted}>
+              Get started
+            </Button>
+          }
+        >
+          Tell Factwright about yourself first. Your Claude builds your fact bank from it, so it can
+          find jobs that fit and write resumes that are true to you.
+        </EmptyState>
+      ) : open.length === 0 ? (
         <EmptyState
           title="No jobs yet"
           icon={<Briefcase size={20} aria-hidden="true" />}

@@ -48,3 +48,35 @@ export async function drawPages(data: Uint8Array, width: number): Promise<PageIm
     await loading.destroy();
   }
 }
+
+/**
+ * A PDF's text, page by page, with pdf.js, for Claude to read the way the user's PDF reads. It
+ * reads a copy, since pdf.js hands the bytes it's given to its worker.
+ */
+export async function pdfText(data: Uint8Array): Promise<string> {
+  const loading = getDocument({ data: data.slice(), enableXfa: false });
+  const pdf = await loading.promise;
+  try {
+    const pages: string[] = [];
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const page = await pdf.getPage(number);
+      const content = await page.getTextContent();
+      let line = '';
+      const lines: string[] = [];
+      for (const item of content.items) {
+        if (!('str' in item)) continue;
+        line += item.str;
+        if (item.hasEOL) {
+          lines.push(line.trimEnd());
+          line = '';
+        }
+      }
+      if (line.trim()) lines.push(line.trimEnd());
+      pages.push(lines.join('\n'));
+      page.cleanup();
+    }
+    return pages.join('\n\n').trim();
+  } finally {
+    await loading.destroy();
+  }
+}

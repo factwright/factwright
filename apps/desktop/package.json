@@ -34,6 +34,7 @@
     "@xterm/xterm": "catalog:",
     "axe-core": "catalog:",
     "electron": "catalog:",
+    "fflate": "catalog:",
     "jsdom": "catalog:",
     "lucide-react": "catalog:",
     "pdfjs-dist": "catalog:",

@@ -1,5 +1,6 @@
 import { WORKSPACE_PATHS } from '@factwright/core';
 import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
+import type { RunScope } from '../../shared/runs.ts';
 import { LOCAL_TOOLS, PUBLIC_API_TOOLS, WEB_TOOLS } from '../tools/index.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
@@ -20,6 +21,13 @@ const WORK_FOLDERS = [WORKSPACE_PATHS.jobs, WORKSPACE_PATHS.searches, WORKSPACE_
  */
 const CONFIDENTIAL_TERMS = 'guide/confidential-terms.txt';
 
+/**
+ * What a run started to get to know the user, or to add facts, may change without asking too:
+ * their fact bank, starting resumes and guide, and the note of what it has read. That's the work
+ * the user started it for, and it reads only their own files, not job posts.
+ */
+const PROFILE_FILES = ['facts/**', 'base/**', 'guide/**', 'about-me/read.md'];
+
 /** A rule for changing files in the workspace, which is where Claude runs. */
 const edits = (path: string) => `Edit(./${path})`;
 
@@ -35,16 +43,33 @@ const NEVER_CHANGED = [
   '**/CLAUDE.local.md',
 ];
 
-/** What Claude may do without asking, from the user's choices. */
-function allowed(permissions: ClaudePermissions): string[] {
-  const tools = [...LOCAL_TOOLS, ...PUBLIC_API_TOOLS, ...(permissions.anySite ? WEB_TOOLS : [])];
+/**
+ * What a run for getting to know the user may never use: the web, and the tools that read job
+ * posts. That run may change the user's facts and guide without asking, so nothing it reads may
+ * come from a page that could tell it what to write. Job searches and fit checks get runs of
+ * their own.
+ */
+const PROFILE_NEVER = [
+  'WebSearch',
+  ...[...PUBLIC_API_TOOLS, ...WEB_TOOLS].map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
+];
+
+/** What Claude may do without asking, from the user's choices and what the run is for. */
+function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
+  const tools =
+    scope === 'profile'
+      ? LOCAL_TOOLS
+      : [...LOCAL_TOOLS, ...PUBLIC_API_TOOLS, ...(permissions.anySite ? WEB_TOOLS : [])];
+  const files = [
+    ...WORK_FOLDERS.map((folder) => `${folder}/**`),
+    CONFIDENTIAL_TERMS,
+    ...(scope === 'profile' ? PROFILE_FILES : []),
+  ];
   return [
-    'WebSearch',
+    ...(scope === 'profile' ? [] : ['WebSearch']),
     `Skill(${PLUGIN} *)`,
     ...tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
-    ...(permissions.anyFile
-      ? [edits('**')]
-      : [...WORK_FOLDERS.map((folder) => edits(`${folder}/**`)), edits(CONFIDENTIAL_TERMS)]),
+    ...(permissions.anyFile ? [edits('**')] : files.map(edits)),
   ];
 }
 
@@ -59,7 +84,8 @@ function allowed(permissions: ClaudePermissions): string[] {
  *   site a post names.
  * - asking first, unless the user chose otherwise: changing any other file, such as the facts,
  *   and reading any other page, since a job post could steer Claude to send the user's details
- *   to a site in a link
+ *   to a site in a link. A run started to get to know the user, or to add facts, may change their
+ *   facts, starting resumes and guide without asking too, and in return never reads the web.
  * - never: changing Claude Code's settings or the instructions it loads
  * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
  *   session ends, which the self-test listens for
@@ -68,10 +94,12 @@ export function sessionSettings({
   hookUrl,
   dark,
   permissions = ASK_FIRST,
+  scope = 'hunt',
 }: {
   hookUrl: string;
   dark: boolean;
   permissions?: ClaudePermissions;
+  scope?: RunScope;
 }) {
   const hook = [
     {
@@ -86,8 +114,8 @@ export function sessionSettings({
     theme: dark ? 'dark-ansi' : 'light-ansi',
     disableClaudeAiConnectors: true,
     permissions: {
-      allow: allowed(permissions),
-      deny: NEVER_CHANGED.map(edits),
+      allow: allowed(permissions, scope),
+      deny: [...NEVER_CHANGED.map(edits), ...(scope === 'profile' ? PROFILE_NEVER : [])],
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],

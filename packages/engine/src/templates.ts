@@ -1,5 +1,7 @@
 import type { Layout } from './schema.ts';
 
+export { LAYOUTS, type Layout } from './schema.ts';
+
 /** A layout as the app offers it: a look the user picks for their resumes. */
 export interface Template {
   layout: Layout;

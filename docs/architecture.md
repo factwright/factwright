@@ -18,6 +18,13 @@ flowchart LR
 ## The desktop app
 An Electron app for Mac and Windows ([`apps/desktop`](../apps/desktop)). It holds your dashboard and tracker, runs Claude Code in a built-in terminal, and syncs your data.
 
+## Getting started
+A new user's first stop is **Get started**, a few calm steps in the app: who they are, their resumes and LinkedIn (a profile saved as a PDF, or LinkedIn's own data export, since Factwright never signs in to LinkedIn), screenshots, everything they want to say about themselves in their own words, what they're looking for, and which of eight resume templates they like. It's all saved as they go, in the workspace's `about-me/` folder, so they can stop and come back.
+
+The window reads the text out of each PDF and Word file itself, in its sandbox; the app checks every file again (its type, its size, and that its bytes are what its name says) before keeping it. The last step hands everything to the user's Claude with `/factwright:get-started`, which drafts the fact bank with every claim marked `unconfirmed`, interviews the user to confirm it, then builds and fact-checks a starting resume in each template they picked. The **Profile** page follows along, and keeps every answer changeable afterward.
+
+Starting Claude on getting started gets the workspace ready for it first: the app copies in the starter guide ([`plugin/starter`](../plugin/starter)) where files are missing, and writes the files built from the answers: the search criteria, the templates, and the page count. A file someone has changed by hand since the app wrote it is left as it is.
+
 ## Your Claude Code
 Factwright doesn't have an AI of its own. It launches the Claude Code you installed and signed in to, unmodified, in a real terminal you can watch and type into. It loads Factwright's skills and tools for that session only, through Claude Code's own command-line flags, and never changes your Claude settings.
 
@@ -37,11 +44,14 @@ Claude works on plain files in a folder on your computer:
 
 | Folder | What's in it |
 |---|---|
+| `about-me/` | What you told Factwright: your answers, your own words about yourself, and the files you shared |
 | `facts/` | The fact bank: your experience as checkable claims |
-| `guide/` | Your rules and preferences for resumes and answers |
+| `guide/` | Your rules, preferences and resume templates, and how to write and tailor a resume |
+| `base/` | Your starting resumes, one for each kind of company you're aiming at |
 | `applications/` | One folder per job: posting, fit check, notes, answers, prep and resumes |
 | `searches/` | Job searches, your search criteria, and logs of fit, salary and employer checks |
 | `outreach/` | Messages drafted for people at a company |
+| `linkedin/` | The spreadsheets from your LinkedIn data export, such as your connections |
 
 The app watches this folder, and reads it again whenever something changes. What you track by hand, such as statuses, dates, calls and notes, lives in a small database beside the workspace, where Claude's file tools can't reach it.
 
@@ -54,4 +64,4 @@ Once you turn sync on, your other computers and your phone see the same job hunt
 - **The web view** ([`apps/web`](../apps/web)) downloads your locked data and opens it in the browser, with keys kept there. It builds the job list with the same code as the desktop app.
 
 ## Resumes
-Resume data is JSON. The engine ([`packages/engine`](../packages/engine)) renders it to PDF with the browser built into Electron, and to Word with the `docx` library.
+Resume data is JSON. The engine ([`packages/engine`](../packages/engine)) renders it to PDF with the browser built into Electron, and to Word with the `docx` library, in any of eight templates. Every template shows the same parts of a resume, so changing its look never changes its words.

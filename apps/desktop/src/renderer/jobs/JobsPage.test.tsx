@@ -96,6 +96,15 @@ describe('JobsPage', () => {
     expect(props.onStartClaude).toHaveBeenCalled();
   });
 
+  it('points a new user to getting started before there are any jobs', async () => {
+    const onGetStarted = vi.fn();
+    page({ jobs: { state: 'ready', list: { jobs: [], readAt: null } }, rows: [], onGetStarted });
+    expect(screen.getByText(/Tell Factwright about yourself first/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Start Claude' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
+    expect(onGetStarted).toHaveBeenCalledOnce();
+  });
+
   it('starts a job search when Claude can take one', async () => {
     const props = page();
     await userEvent.click(screen.getByRole('button', { name: 'Find jobs' }));

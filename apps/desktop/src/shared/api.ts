@@ -1,6 +1,14 @@
 import type { CallKind, CallOutcome, CallState, Job, JobDocs, JobStatus } from '@factwright/core';
+import type { AboutYou, AnswerChanges } from './about.ts';
 import type { ModelChoices } from './models.ts';
 import type { ClaudePermissions } from './permissions.ts';
+import type {
+  AddFileResult,
+  FileUpload,
+  LinkedInUpload,
+  PreviewResult,
+  Profile,
+} from './profile.ts';
 import type { RunTask } from './runs.ts';
 import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
 
@@ -44,8 +52,11 @@ export type StartResult =
   | { ok: true }
   | {
       ok: false;
-      /** "other-model": the open run is on another model than the task's. */
-      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'other-model';
+      /**
+       * "new-run": the task needs a run of its own, since the open one is on another model, or
+       * may change other files without asking.
+       */
+      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'new-run';
       message?: string;
     };
 
@@ -191,4 +202,31 @@ export interface FactwrightApi {
   signOutOfSync(): Promise<EditResult>;
   /** Opens the account's page on the web, to download everything or delete the account. */
   openAccountPage(): Promise<void>;
+  /** Everything about the user: their answers, notes and confidential names, and how far it's come. */
+  profile(): Promise<Profile>;
+  /** Saves changes to the answers, and answers with all of them. */
+  saveAnswers(changes: AnswerChanges): Promise<AboutYou>;
+  /** Saves the notes the user wrote about themselves. */
+  saveNotes(text: string): Promise<EditResult>;
+  /**
+   * Adds and removes names that must never appear on a resume, keeping any Claude added since,
+   * and answers with them all as kept.
+   */
+  changeConfidential(changes: { add: string[]; remove: string[] }): Promise<string[]>;
+  /** Keeps a file the user shared, such as a resume or a screenshot. */
+  addFile(upload: FileUpload): Promise<AddFileResult>;
+  /** Keeps the useful parts of a LinkedIn data export. */
+  addLinkedIn(upload: LinkedInUpload): Promise<AddFileResult>;
+  /** Moves a shared file to the trash, and answers with the answers as they are then. */
+  removeFile(path: string): Promise<AboutYou>;
+  /** Gets the workspace ready for Claude to get to know the user, and marks the answers in use. */
+  startProfile(): Promise<AboutYou>;
+  /** Replaces a criteria file someone changed by hand with one from the answers, keeping theirs. */
+  useAnswersForCriteria(): Promise<void>;
+  /** A template's look: a made-up resume printed in it, with the user's name if given. */
+  templatePreview(layout: string, name: string): Promise<PreviewResult>;
+  /** Listens for changes to the profile, by Claude or another device. Returns a function that stops listening. */
+  onProfileChanged(listener: (profile: Profile) => void): () => void;
+  /** Opens the system's terminal app, where the user runs Claude Code's own commands. */
+  openTerminal(): Promise<EditResult>;
 }

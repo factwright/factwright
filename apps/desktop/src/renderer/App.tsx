@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
-import { SEARCH_SKILL, taskJob } from '../shared/runs.ts';
+import { FACTS_SKILL, GET_STARTED_SKILL, SEARCH_SKILL, taskJob } from '../shared/runs.ts';
 import styles from './App.module.css';
+import { GetStarted } from './about/GetStarted.tsx';
+import { ProfilePage } from './about/ProfilePage.tsx';
+import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import { ClaudePanel } from './ClaudePanel.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
@@ -14,7 +17,7 @@ import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
-import { Sidebar } from './Sidebar.tsx';
+import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
@@ -29,6 +32,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const sync = useSync(api);
   const run = useClaudeRun(api);
   const { jobs, reload } = useJobs(api);
+  const about = useProfile(api);
   const today = useToday();
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
@@ -46,6 +50,20 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
+  // The page the user picked in the sidebar, or null to let the app choose.
+  const [picked, setPicked] = useState<Page | null>(null);
+  const profile = about.profile;
+  const gettingStarted = profile !== null && needsGettingStarted(profile);
+  // A brand-new user starts on getting started, unless they skipped it. Once there are jobs,
+  // such as when sync brings them from another computer, the app opens on them instead.
+  const page: Page =
+    picked ??
+    (gettingStarted &&
+    !profile?.answers.skipped &&
+    jobs.state === 'ready' &&
+    jobs.list.jobs.length === 0
+      ? 'profile'
+      : 'jobs');
 
   // Open on the jobs to review when nothing is active yet.
   useEffect(() => {
@@ -82,9 +100,13 @@ export function App({ api }: { api: FactwrightApi }) {
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'
-      : runJob && runLabel
-        ? `${runLabel} · ${runJob.company}`
-        : undefined;
+      : task?.skill === GET_STARTED_SKILL
+        ? 'Getting to know you'
+        : task?.skill === FACTS_SKILL
+          ? 'Your fact bank'
+          : runJob && runLabel
+            ? `${runLabel} · ${runJob.company}`
+            : undefined;
 
   return (
     <div className={styles.app}>
@@ -97,6 +119,15 @@ export function App({ api }: { api: FactwrightApi }) {
       />
       <div className={styles.body}>
         <Sidebar
+          page={page}
+          onPage={(next) => {
+            // Leaving getting started for the jobs counts as skipping it for now.
+            if (next === 'jobs' && gettingStarted && profile && !profile.answers.skipped) {
+              about.update({ skipped: true });
+            }
+            setPicked(next);
+          }}
+          gettingStarted={gettingStarted}
           claude={status}
           onRecheckClaude={recheck}
           setup={setup}
@@ -107,22 +138,58 @@ export function App({ api }: { api: FactwrightApi }) {
         />
         <div className={styles.content}>
           <div className={styles.work}>
-            <JobsPage
-              jobs={jobs}
-              rows={rows}
-              today={today}
-              filter={filter}
-              onFilter={setFilter}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onRetry={reload}
-              canStartClaude={ready && !isRunning(run.phase)}
-              onStartClaude={() => run.requestStart()}
-              canFindJobs={ready && !BUSY.includes(run.phase)}
-              onFindJobs={() => run.requestStart({ skill: SEARCH_SKILL })}
-              onOpenJourney={() => setDialog('journey')}
-            />
-            {openJobs > 0 && (
+            {page === 'profile' && profile && gettingStarted && (
+              <GetStarted
+                state={{ ...about, profile }}
+                api={api}
+                claude={status}
+                onRecheckClaude={recheck}
+                canStartClaude={ready && !BUSY.includes(run.phase)}
+                onStart={() => {
+                  // The profile follows Claude as it gets to know the user.
+                  setPicked('profile');
+                  run.requestStart({ skill: GET_STARTED_SKILL });
+                }}
+                onSkip={() => {
+                  about.update({ skipped: true });
+                  setPicked('jobs');
+                }}
+                onOpenSync={() => setDialog('sync')}
+              />
+            )}
+            {page === 'profile' && profile && !gettingStarted && (
+              <ProfilePage
+                state={{ ...about, profile }}
+                api={api}
+                phase={run.phase}
+                ready={ready}
+                onRun={(next) => run.requestStart(next)}
+              />
+            )}
+            {page === 'profile' && !profile && (
+              <main className={styles.loading} role="status">
+                {about.problem ?? 'Loading your profile…'}
+              </main>
+            )}
+            {page === 'jobs' && (
+              <JobsPage
+                jobs={jobs}
+                rows={rows}
+                today={today}
+                filter={filter}
+                onFilter={setFilter}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onRetry={reload}
+                canStartClaude={ready && !isRunning(run.phase)}
+                onStartClaude={() => run.requestStart()}
+                canFindJobs={ready && !BUSY.includes(run.phase)}
+                onFindJobs={() => run.requestStart({ skill: SEARCH_SKILL })}
+                onOpenJourney={() => setDialog('journey')}
+                onGetStarted={gettingStarted ? () => setPicked('profile') : undefined}
+              />
+            )}
+            {page === 'jobs' && openJobs > 0 && (
               <JobPanel
                 row={selected}
                 api={api}
@@ -158,7 +225,11 @@ export function App({ api }: { api: FactwrightApi }) {
         <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
       )}
       {dialog === 'claude-settings' && (
-        <ClaudeSettingsDialog api={api} onClose={() => setDialog(null)} />
+        <ClaudeSettingsDialog
+          api={api}
+          plan={ready ? status.plan : undefined}
+          onClose={() => setDialog(null)}
+        />
       )}
     </div>
   );

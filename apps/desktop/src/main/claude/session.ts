@@ -4,6 +4,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
 import type { Model } from '../../shared/models.ts';
+import type { RunScope } from '../../shared/runs.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -36,6 +37,8 @@ export interface LaunchOptions {
   name: string;
   /** Which model to run on. Without one, Claude Code picks. */
   model?: Model;
+  /** What it may change without asking. Every run but getting started is "hunt". */
+  scope?: RunScope;
   prompt?: string;
 }
 
@@ -57,6 +60,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     hookUrl: options.server.hookUrl,
     dark: options.dark,
     permissions: await loadPermissions(options.dataDir),
+    ...(options.scope ? { scope: options.scope } : {}),
   });
   await writeFile(settings, JSON.stringify(hookSettings, null, 2));
   await writeFile(mcpConfig, JSON.stringify(toolsConfig(options.server.toolsUrl), null, 2));
@@ -113,6 +117,7 @@ interface Run {
   stopping: boolean;
   /** The model it runs on. */
   model: Model | undefined;
+  scope: RunScope;
   /** Settles once it has exited. */
   exited: Promise<void>;
 }
@@ -137,25 +142,41 @@ export class ClaudeSession {
     return this.run?.model;
   }
 
+  /** What the open run may change without asking, or undefined when none is open. */
+  scope(): RunScope | undefined {
+    return this.run?.scope;
+  }
+
   /** Starts a run, once one that's stopping has closed, such as to change models. */
-  async start(size: TerminalSize, prompt?: string, model?: Model): Promise<StartResult> {
+  async start(
+    size: TerminalSize,
+    prompt?: string,
+    model?: Model,
+    scope: RunScope = 'hunt',
+  ): Promise<StartResult> {
     if (this.run?.stopping) await this.run.exited;
     if (this.busy()) return { ok: false, reason: 'busy' };
     this.starting = true;
     try {
-      return await this.launch(size, prompt, model);
+      return await this.launch(size, scope, prompt, model);
     } finally {
       this.starting = false;
     }
   }
 
-  private async launch(size: TerminalSize, prompt?: string, model?: Model): Promise<StartResult> {
+  private async launch(
+    size: TerminalSize,
+    scope: RunScope,
+    prompt?: string,
+    model?: Model,
+  ): Promise<StartResult> {
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,
       server: this.deps.server,
       dark: this.deps.dark(),
       name: 'panel',
+      scope,
       ...(model ? { model } : {}),
       ...(prompt ? { prompt } : {}),
     });
@@ -188,6 +209,7 @@ export class ClaudeSession {
       stopListening,
       stopping: false,
       model,
+      scope,
       exited: new Promise((resolve) => {
         exited = resolve;
       }),

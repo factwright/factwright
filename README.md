@@ -11,9 +11,10 @@ Your job hunt, run by your own Claude. Tailored resumes where every line is back
 Factwright is a desktop app for Mac and Windows that runs your job hunt on top of Claude Code, using your own Claude account. At its center is a **fact bank**: everything you've done, written as claims you can check. Every resume line, application answer and interview story traces back to it, so what you send is tailored to the job and still true.
 
 ## What it does
+- **Getting started.** Share your old resumes, your LinkedIn, screenshots and everything you'd say about yourself, then say what you're looking for. Your Claude drafts your fact bank from it, interviews you to confirm it, and builds your first resumes.
 - **Fact bank.** Your experience as checkable claims: what you did, how far it got, and how to say it. It grows each time an application asks about something new.
 - **Fit check.** Scores a job against your fact bank before you spend time on it, along with what people say about the company.
-- **Tailored resumes.** A resume for each job, then a second pass that fact-checks every line. PDF or Word.
+- **Tailored resumes.** A resume for each job, in the templates you pick from eight, then a second pass that fact-checks every line. PDF or Word.
 - **Answers and interview prep.** Application answers and prep sheets drafted from the same facts, in your voice.
 - **Tracker.** Every job, status, call and interview in one place, on your computer and your phone.
 

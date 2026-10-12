@@ -56,7 +56,7 @@ Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools
 - **read_posting:** a posting on Greenhouse, Lever, Ashby or Gem, read from the applicant system's public feed and never the page the link names.
 - **read_page:** any public web page as plain text, such as a posting on another site, a careers page or a team page. It answers with at most 40,000 characters, since Claude Code moves longer answers somewhere Claude can't read.
 - **save_posting:** saves a posting word for word in the job's folder: what read_posting or read_page read from that link in the run, or a posting read from its applicant system's feed. It reaches no other site. A posting already saved there is kept.
-- **build_resume:** builds a job's resume from its `resume.json` with the [resume engine](../../packages/engine), as a PDF, a Word file or both. It checks the resume against your rules and confidential terms, and says how many pages it runs to, how full the last one is, and which lines run short. Once you've applied to a job, it keeps the files you sent.
+- **build_resume:** builds a job's resume from its `resume.json`, or a starting resume from `base/<name>.json`, with the [resume engine](../../packages/engine), as a PDF, a Word file or both. It checks the resume against your rules and confidential terms, and says how many pages it runs to, how full the last one is, and which lines run short. Once you've applied to a job, it keeps the files you sent.
 - **job_board:** every open job on a company's board on Greenhouse, Lever, Ashby or Gem, saved word for word as one file in a job search's folder, with a list for Claude: where each job is, its pay, when it was posted, and its link. Given a link to one posting, it says whether that posting is still open. Only the board's name goes to the applicant system's API.
 - **hn_jobs:** every job post in Hacker News's monthly "Who is hiring?" thread, saved word for word as `hn-thread.md` in a job search's folder, with each post's first line for Claude. A long thread comes with where each run of 50 posts sits in the file, so Claude can split the reading between helpers.
 
@@ -73,6 +73,20 @@ The main process prints resumes in one hidden window ([`src/main/resume`](src/ma
 - **Locked down:** the window has its own session, kept in memory. It loads only the page it's given, and every other request is refused, so a resume can't reach the network or your files.
 - **The last page:** after printing, it finds how full the last page is by printing again with a growing spacer at the end, until the spacer would start a new page.
 - **Fonts:** every resume carries the [engine's fonts](../../packages/engine/fonts), built into the app, which stand in for the Windows fonts the layouts were designed with. So a resume prints the same on a Mac as on Windows, down to where each line breaks. The window loads each one before it prints or measures.
+
+## Getting started and Profile
+A new user, with no jobs and no fact bank yet, opens on **Get started**: seven short steps, saved as they go (in the workspace's `about-me/` folder), so they can stop and pick up later.
+- **Welcome:** what Factwright does, that it runs their own Claude Code and never sees its login, and their Claude's state. When Claude Code is missing, signed out or too old, the steps to fix it, with the exact command to copy and a button that opens Terminal (PowerShell on Windows). The user runs it themselves; the app checks again when they come back. Someone who already uses Factwright on another computer can turn on sync instead.
+- **About you:** their name and contact details, as resumes should show them.
+- **Your files:** resumes (PDF, Word or text), their LinkedIn profile saved as a PDF, LinkedIn's own export of their data as a ZIP, and screenshots and other documents. The window reads the text out of PDFs (with pdf.js) and Word files, and out of the LinkedIn export it keeps only the profile's spreadsheets and the connections. The app checks each file again before keeping it ([`src/main/about`](src/main/about)).
+- **In your words:** a big box for everything about them, with prompts to start from, and the names to keep off every resume.
+- **What you want:** job titles, kinds of work, levels, where, kinds of company, industries, pay, terms, must-haves and deal-breakers, and a quiet search.
+- **Templates:** all eight resume templates, each a real print of a sample resume with their own name on it, and the ones that suit them picked for each kind of company they're aiming at. Plus the length and the files.
+- **Ready:** a summary, what happens next, and Start with your Claude, which copies in the starter files the workspace lacks, writes the files built from the answers, and starts `/factwright:get-started`.
+
+**Profile** follows Claude as it drafts the fact bank, confirms it with the user and builds their starting resumes, then keeps every answer changeable: the fact bank (with how many facts are left to confirm, and anything shared since Claude last read), the starting resumes (to preview, open, or build again), what they want, their templates, what they've shared and their contact details. The files built from the answers (`searches/criteria.md`, `guide/templates.md` and the page count in `guide/lint.json`) follow each change, unless someone has changed them by hand since.
+
+A run started for getting started or for more facts may save the facts, starting resumes and guide without asking each time, which every other run asks before doing, and it can't reach the web at all. A task that needs other permissions, or another model, starts a run of its own.
 
 ## Your jobs
 Your jobs come from two places, joined into one list:

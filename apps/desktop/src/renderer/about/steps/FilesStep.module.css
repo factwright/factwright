@@ -1,0 +1,65 @@
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--fw-space-3);
+}
+
+.way {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-3);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bar);
+}
+
+.way > :last-child {
+  margin-top: auto;
+}
+
+.wayTitle {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  min-height: 36px;
+  padding: 0 var(--fw-space-1) 0 var(--fw-space-3);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-surface);
+  color: var(--fw-muted);
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-text);
+  font-size: var(--fw-text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state {
+  font-size: var(--fw-text-sm);
+}
+
+.problem {
+  max-width: 50%;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

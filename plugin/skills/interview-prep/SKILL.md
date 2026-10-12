@@ -36,7 +36,7 @@ Header: `# Prep: <Company>, <Role>`, then `- **Date:** <today>`, and `- **Conver
 Sections, short and scannable:
 - **The job in 5 lines:** what they need most, and what they'll probe.
 - **30-second pitch:** tailored to this job, fact-checked.
-- **Likely questions:** 6–10, each with a short answer outline that cites `facts/<file>#<claim>`. Respect the status tags: built ≠ live, led-team ≠ solo.
+- **Likely questions:** 6–10, each with a short answer outline that cites `facts/<file>#<claim>`. Respect the status tags: built ≠ live, led-team ≠ solo. Mark any outline that leans on a claim tagged `unconfirmed`, so the user checks it before saying it.
 - **Stories to have ready:** 3–5 STAR outlines from the fact bank, each mapped to a requirement.
 - **Gaps and how to handle them:** from the fit check and resume notes. Honest framing and adjacent proof, never a stretch.
 - **What's on the resume you sent:** the claims they're most likely to ask about, so answers match it.
