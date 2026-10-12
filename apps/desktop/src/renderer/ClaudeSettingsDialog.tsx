@@ -22,6 +22,7 @@ import { RUN_ACTIONS } from './jobs/RunActions.tsx';
 /** The tasks the app starts, as their buttons name them. */
 const TASKS: readonly { task: ModelTask; label: string }[] = [
   ...RUN_ACTIONS.map(({ skill, label }) => ({ task: skill, label })),
+  { task: 'ask', label: 'Questions about a job' },
   { task: 'job-search', label: 'Find jobs' },
   { task: 'get-started', label: 'Getting started' },
   { task: 'add-facts', label: 'Fact bank interviews' },

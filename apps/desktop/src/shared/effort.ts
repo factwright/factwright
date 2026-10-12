@@ -29,6 +29,7 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'who-to-message': 'high',
   'interview-prep': 'high',
   'answer-questions': 'high',
+  ask: 'high',
   'job-search': 'medium',
   'get-started': 'high',
   'add-facts': 'high',

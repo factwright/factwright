@@ -24,7 +24,8 @@ Before starting, read:
 If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 
 ## 1. Set up the application folder
-- For a job from the app (`job <id>`), call `job_details` with the id: it gives everything on file. Otherwise call `find_job` with what you have (the link alone is fine). If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on.
+- For a job from the app (`job <id>`), call `job_details` with the id: it gives everything on file, with what each file holds. Otherwise call `find_job` with what you have (the link alone is fine), then `job_details` if it's on file. If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on.
+- Read what's on file that bears on tailoring, before anything else: the fit check (what fits, and what's missing that the resume should cover honestly or leave alone), `unmask.md`, the user's notes and calls (what a recruiter said the team cares about), what they sent on the application, and your answers to their questions about the job. A requirement the user's notes say matters most leads the resume.
 - If a fit check (or unmask) already made a folder for this job, reuse it: keep its `posting.md`, `job.md` and `fit-check.md`, and add to them. Otherwise use `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
 - Save the posting word for word as `posting.md`, if the folder doesn't have one yet:
   - From a link: read it with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name.

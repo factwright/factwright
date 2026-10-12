@@ -89,7 +89,7 @@ function start(): void {
     const printer = new ElectronResumePrinter();
     const previews = new TemplatePreviews(printer);
     const server = new RunServer({
-      tools: factwrightTools({ jobs, workspace, printer }),
+      tools: factwrightTools({ jobs, about, workspace, printer }),
       version: app.getVersion(),
     });
     await server.start();

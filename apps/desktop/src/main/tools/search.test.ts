@@ -77,6 +77,7 @@ beforeEach(() => {
   fetch = vi.fn();
   // Neither tool reads the tracker or prints, so these stay stubs.
   tools = factwrightTools({
+    about: {} as never,
     jobs: {} as never,
     printer: {} as never,
     workspace: root,

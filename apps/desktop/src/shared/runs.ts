@@ -1,4 +1,7 @@
-/** The skills a job's panel can run on it, by their names in Factwright's plugin. */
+/**
+ * The skills a job's panel can run on it, by their names in Factwright's plugin: its Run buttons,
+ * then answering the user's own questions about the job.
+ */
 export const RUN_SKILLS = [
   'focused-resume',
   'fit-check',
@@ -6,6 +9,7 @@ export const RUN_SKILLS = [
   'who-to-message',
   'interview-prep',
   'answer-questions',
+  'ask',
 ] as const;
 
 export type RunSkill = (typeof RUN_SKILLS)[number];

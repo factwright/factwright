@@ -15,7 +15,7 @@ Input: the company (name or link), plus the job posting or `job <id>` if there i
 - Drafts that describe the user's experience follow `guide/rules.md` (if there is one) and trace to `facts/`, the same as a resume. With no fact bank yet, say so in one line, suggest `/factwright:add-facts`, and write the drafts without proof points.
 
 ## 1. Map who decides
-- Read the job's posting if there is one (`job_details` finds its folder), and research the company briefly: size, stage, team structure.
+- Call `job_details` for the job: it lists everything on file. Read the posting, and the fit check, whose strengths make the best proof points. If the user applied, read the resume they sent (`job_details` marks it) and what they sent on the application, so the drafts match. Then research the company briefly: size, stage, team structure.
 - Work out who owns this hire:
   - **Startup (up to ~50 people):** the founders and the CTO. Message them directly.
   - **Mid-size:** the VP or Director of Engineering, or the manager of the team.
