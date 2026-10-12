@@ -1,4 +1,5 @@
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
+import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import type { RunTask } from '../shared/runs.ts';
@@ -107,6 +108,7 @@ export function sampleApi(): FactwrightApi {
   let run = sampleRun(false);
   let permissions: ClaudePermissions = ASK_FIRST;
   let models: ModelChoices = DEFAULT_MODELS;
+  let effort: EffortChoices = DEFAULT_EFFORT;
   const playTask = (task: RunTask) => {
     signal('working');
     print(run.task(task));
@@ -194,6 +196,12 @@ export function sampleApi(): FactwrightApi {
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {
       models = chosen;
+      return chosen;
+    },
+    // How hard Claude thinks, kept until the page reloads.
+    claudeEffort: async () => effort,
+    setClaudeEffort: async (chosen) => {
+      effort = chosen;
       return chosen;
     },
     // What Claude may do without asking, kept until the page reloads.

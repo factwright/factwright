@@ -1,6 +1,13 @@
-import { Button, Checkbox, Dialog, DialogActions, Field, Select } from '@factwright/ui';
-import { useEffect, useId, useState } from 'react';
+import { Button, Checkbox, Dialog, DialogActions, Select } from '@factwright/ui';
+import { Fragment, useEffect, useId, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import {
+  EFFORT_NAMES,
+  EFFORTS,
+  type Effort,
+  type EffortChoices,
+  effortWithout,
+} from '../shared/effort.ts';
 import {
   MODEL_NAMES,
   MODELS,
@@ -28,12 +35,28 @@ const ROUTINE: readonly ModelTask[] = ['fit-check', 'salary-check', 'job-search'
 
 type SettingsApi = Pick<
   FactwrightApi,
-  'claudeModels' | 'setClaudeModels' | 'claudePermissions' | 'setClaudePermissions'
+  | 'claudeModels'
+  | 'setClaudeModels'
+  | 'claudeEffort'
+  | 'setClaudeEffort'
+  | 'claudePermissions'
+  | 'setClaudePermissions'
 >;
 
+/** A task's own choice, or none to go back to what everything uses. */
+function choose<T extends string>(
+  tasks: Partial<Record<ModelTask, T>>,
+  task: ModelTask,
+  value: T | '',
+) {
+  const others = Object.fromEntries(Object.entries(tasks).filter(([each]) => each !== task));
+  return (value ? { ...others, [task]: value } : others) as Partial<Record<ModelTask, T>>;
+}
+
 /**
- * How Claude works on the job hunt: which model it runs on, for everything and for each task,
- * and what it may do without asking. Each choice saves as it's made.
+ * How Claude works on the job hunt: which model it runs on and how hard it thinks, for
+ * everything and for each task, and what it may do without asking. Each choice saves as it's
+ * made.
  */
 export function ClaudeSettingsDialog({
   api,
@@ -46,6 +69,7 @@ export function ClaudeSettingsDialog({
   plan?: string | undefined;
 }) {
   const [models, setModels] = useState<ModelChoices | null>(null);
+  const [effort, setEffort] = useState<EffortChoices | null>(null);
   const [permissions, setPermissions] = useState<ClaudePermissions | null>(null);
   const [byTask, setByTask] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -55,11 +79,14 @@ export function ClaudeSettingsDialog({
   const sitesHint = useId();
 
   useEffect(() => {
-    void Promise.all([api.claudeModels(), api.claudePermissions()]).then(([chosen, allowed]) => {
-      setModels(chosen);
-      setPermissions(allowed);
-      setByTask(Object.keys(chosen.tasks).length > 0);
-    });
+    void Promise.all([api.claudeModels(), api.claudeEffort(), api.claudePermissions()]).then(
+      ([chosen, levels, allowed]) => {
+        setModels(chosen);
+        setEffort(levels);
+        setPermissions(allowed);
+        setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
+      },
+    );
   }, [api]);
 
   const failed = () => setProblem('That didn’t save. Try again.');
@@ -75,6 +102,17 @@ export function ClaudeSettingsDialog({
     }
   };
 
+  const changeEffort = async (next: EffortChoices) => {
+    setEffort(next);
+    try {
+      setEffort(await api.setClaudeEffort(next));
+      setProblem(null);
+    } catch {
+      failed();
+      setEffort(await api.claudeEffort());
+    }
+  };
+
   const changePermissions = async (next: ClaudePermissions) => {
     setPermissions(next);
     try {
@@ -86,30 +124,28 @@ export function ClaudeSettingsDialog({
     }
   };
 
-  /** A task's own model, or none to use the one for everything. */
-  const chooseFor = (current: ModelChoices, task: ModelTask, model: Model | '') => {
-    const tasks = Object.fromEntries(
-      Object.entries(current.tasks).filter(([each]) => each !== task),
-    ) as ModelChoices['tasks'];
-    void changeModels({ ...current, tasks: model ? { ...tasks, [task]: model } : tasks });
-  };
-
   const options = MODELS.map((model) => (
     <option key={model} value={model}>
       {MODEL_NAMES[model]}
     </option>
   ));
+  const levels = EFFORTS.map((level) => (
+    <option key={level} value={level}>
+      {EFFORT_NAMES[level]}
+    </option>
+  ));
 
   return (
-    <Dialog title="Claude settings" onClose={onClose}>
-      {models && (
+    <Dialog title="Claude settings" size="lg" onClose={onClose}>
+      {models && effort && (
         <section aria-labelledby={modelsHeading}>
           <h3 id={modelsHeading} className={styles.heading}>
-            Model
+            Model and effort
           </h3>
           <p className={styles.lead}>
             Opus is the most careful, and uses the most of your plan. Sonnet is quicker, and Haiku
-            is the quickest. Each means the newest model of its kind.
+            is the quickest. Each means the newest model of its kind. Effort is how long Claude
+            thinks before it acts: more is more careful, and uses more of your plan.
           </p>
           {plan === 'pro' &&
             ROUTINE.some((task) => (models.tasks[task] ?? models.main) === 'opus') && (
@@ -136,41 +172,74 @@ export function ClaudeSettingsDialog({
                 </Button>
               </div>
             )}
-          <Field label="For everything" className={styles.field}>
-            {(control) => (
-              <Select
-                {...control}
-                value={models.main}
-                onChange={(event) =>
-                  void changeModels({ ...models, main: event.target.value as Model })
-                }
-              >
-                {options}
-              </Select>
-            )}
-          </Field>
+          <div className={styles.grid}>
+            <span aria-hidden="true" />
+            <span className={styles.column} aria-hidden="true">
+              Model
+            </span>
+            <span className={styles.column} aria-hidden="true">
+              Effort
+            </span>
+            <span className={styles.row}>For everything</span>
+            <Select
+              aria-label="Model for everything"
+              value={models.main}
+              onChange={(event) =>
+                void changeModels({ ...models, main: event.target.value as Model })
+              }
+            >
+              {options}
+            </Select>
+            <Select
+              aria-label="Effort for everything"
+              value={effort.main ?? ''}
+              onChange={(event) =>
+                void changeEffort({ ...effort, main: (event.target.value as Effort) || null })
+              }
+            >
+              <option value="">Recommended</option>
+              {levels}
+            </Select>
+          </div>
           <details
             className={styles.byTask}
             open={byTask}
             onToggle={(event) => setByTask(event.currentTarget.open)}
           >
             <summary>Choose by task</summary>
-            <div className={styles.tasks}>
+            <div className={styles.grid}>
               {TASKS.map(({ task, label }) => (
-                <Field key={task} label={label}>
-                  {(control) => (
-                    <Select
-                      {...control}
-                      value={models.tasks[task] ?? ''}
-                      onChange={(event) =>
-                        chooseFor(models, task, event.target.value as Model | '')
-                      }
-                    >
-                      <option value="">Same as everything ({MODEL_NAMES[models.main]})</option>
-                      {options}
-                    </Select>
-                  )}
-                </Field>
+                <Fragment key={task}>
+                  <span className={styles.row}>{label}</span>
+                  <Select
+                    aria-label={`Model for ${label}`}
+                    value={models.tasks[task] ?? ''}
+                    onChange={(event) =>
+                      void changeModels({
+                        ...models,
+                        tasks: choose(models.tasks, task, event.target.value as Model | ''),
+                      })
+                    }
+                  >
+                    <option value="">Same as everything ({MODEL_NAMES[models.main]})</option>
+                    {options}
+                  </Select>
+                  <Select
+                    aria-label={`Effort for ${label}`}
+                    value={effort.tasks[task] ?? ''}
+                    onChange={(event) =>
+                      void changeEffort({
+                        ...effort,
+                        tasks: choose(effort.tasks, task, event.target.value as Effort | ''),
+                      })
+                    }
+                  >
+                    <option value="">
+                      {`${effort.main ? 'Same as everything' : 'Recommended'} (${EFFORT_NAMES[effortWithout(effort, task)]})`}
+                    </option>
+                    {levels}
+                  </Select>
+                </Fragment>
               ))}
             </div>
           </details>
@@ -225,7 +294,8 @@ export function ClaudeSettingsDialog({
         </p>
       )}
       <p className={styles.note}>
-        Changes apply the next time Claude starts, or when it starts a task on another model.
+        Changes apply the next time Claude starts, or when it starts a task on another model or
+        effort.
       </p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { EFFORTS, type Effort } from '../../shared/effort.ts';
 import { MODELS, type Model } from '../../shared/models.ts';
 
 /** The rules every run follows, whichever skill is working, appended to Claude's instructions. */
@@ -10,8 +11,8 @@ export const PERMISSION_MODES = ['default', 'acceptEdits'] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 /**
- * Paths to Factwright's plugin, MCP config and settings, the permission mode, the model, and a
- * prompt.
+ * Paths to Factwright's plugin, MCP config and settings, the permission mode, the model, how hard
+ * it thinks, and a prompt.
  */
 export interface LaunchOptions {
   pluginDir: string;
@@ -20,6 +21,8 @@ export interface LaunchOptions {
   permissionMode: PermissionMode;
   /** Which model to run on. Without one, Claude Code picks. */
   model?: Model;
+  /** How hard it thinks. Without one, Claude Code's default for the model. */
+  effort?: Effort;
   prompt?: string;
 }
 
@@ -36,13 +39,17 @@ const PARENT_SESSION_VARIABLES = new Set([
  * servers and its settings.
  */
 export function buildLaunchArgs(options: LaunchOptions): string[] {
-  const { pluginDir, mcpConfig, settings, permissionMode, model, prompt } = options;
-  // Types vanish at runtime, and the mode and the model may come from a message or a file.
+  const { pluginDir, mcpConfig, settings, permissionMode, model, effort, prompt } = options;
+  // Types vanish at runtime, and the mode, the model and the effort may come from a message or a
+  // file.
   if (!PERMISSION_MODES.includes(permissionMode)) {
     throw new Error(`Unsupported permission mode: ${permissionMode}`);
   }
   if (model !== undefined && !MODELS.includes(model)) {
     throw new Error(`Unsupported model: ${model}`);
+  }
+  if (effort !== undefined && !EFFORTS.includes(effort)) {
+    throw new Error(`Unsupported effort: ${effort}`);
   }
   // Claude Code would read a prompt like "--dangerously-skip-permissions" as an option.
   if (prompt?.startsWith('-')) throw new Error('A prompt cannot start with "-".');
@@ -52,6 +59,7 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
     '--permission-mode',
     permissionMode,
     ...(model ? ['--model', model] : []),
+    ...(effort ? ['--effort', effort] : []),
     '--no-chrome',
     '--plugin-dir',
     pluginDir,
