@@ -1,0 +1,260 @@
+.lead {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+}
+
+.hint,
+.problem {
+  margin: var(--fw-space-2) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+/* A text link that's a button, inside a sentence. */
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.points {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.points li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+}
+
+.points svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--fw-accent-text);
+}
+
+/* A code to compare or type, large and spaced. */
+.code {
+  margin: 14px 0 0;
+  font-family: var(--fw-font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
+
+.key {
+  display: grid;
+  gap: var(--fw-space-3);
+  margin-top: var(--fw-space-4);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-sunken);
+}
+
+/* A long code in two rows of four groups. */
+.groups {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 2px 0.9em;
+  font-family: var(--fw-font-mono);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  user-select: all;
+}
+
+.keyText {
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.linkCode {
+  margin: var(--fw-space-1) 0 var(--fw-space-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+}
+
+.key + .hint {
+  margin-bottom: var(--fw-space-4);
+}
+
+.codeForm {
+  margin-top: var(--fw-space-4);
+}
+
+.codeInput {
+  font-family: var(--fw-font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.other {
+  margin-top: var(--fw-space-4);
+  padding-top: var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+}
+
+.other summary {
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.standing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+  margin: 0;
+  font-size: var(--fw-text-md);
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dotIdle {
+  background: var(--fw-ok);
+}
+
+.dotSyncing {
+  background: var(--fw-muted);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.dotOffline {
+  background: var(--fw-need);
+}
+
+.dotProblem {
+  background: var(--fw-bad);
+}
+
+.section {
+  margin-top: 22px;
+}
+
+.heading {
+  margin: 0 0 var(--fw-space-2);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.devices {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  list-style: none;
+}
+
+.device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--fw-space-3);
+  min-height: 44px;
+  padding: var(--fw-space-2) var(--fw-space-3);
+}
+
+.device + .device {
+  border-top: 1px solid var(--fw-border);
+}
+
+.deviceName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.deviceWhen {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.linkButton {
+  margin-top: var(--fw-space-3);
+}
+
+.linkPanel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--fw-space-4);
+}
+
+.qr {
+  flex: 0 0 auto;
+  width: 168px;
+  height: 168px;
+  border-radius: var(--fw-radius-md);
+}
+
+.linkWords {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.linkWords p {
+  margin: 0 0 var(--fw-space-2);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.confirm {
+  margin-top: 22px;
+  padding: var(--fw-space-3) var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-sunken);
+}
+
+.confirm p {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.confirm > div {
+  margin-top: var(--fw-space-3);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

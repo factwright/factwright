@@ -32,6 +32,7 @@ import {
   runPrompt,
   saveableFileName,
 } from './policy.ts';
+import type { SyncAccount } from './sync/account.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
@@ -56,6 +57,7 @@ export interface IpcDeps {
   setup: SetupChecker;
   jobs: JobsService;
   workspace: string;
+  sync: SyncAccount;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -77,7 +79,14 @@ const isFile = (path: string) => {
 };
 
 /** Answers the window's requests, after checking each one came from the app's own page. */
-export function registerIpc({ isAppPage, claude: session, setup, jobs, workspace }: IpcDeps): void {
+export function registerIpc({
+  isAppPage,
+  claude: session,
+  setup,
+  jobs,
+  workspace,
+  sync,
+}: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
 
@@ -223,4 +232,29 @@ export function registerIpc({ isAppPage, claude: session, setup, jobs, workspace
       }
     },
   );
+
+  /** Codes and keys people type: 32 letters and numbers, with spaces or dashes. */
+  const isTyped = (value: unknown): value is string =>
+    typeof value === 'string' && value.length <= 100;
+
+  answer('sync:status', () => sync.status());
+  answer('sync:sign-in', () => sync.signInWithBrowser());
+  ipcMain.on('sync:cancel-sign-in', (event) => {
+    if (fromApp(event)) sync.cancelSignIn();
+  });
+  answer('sync:recovery-key', () => sync.newRecoveryKey());
+  answer('sync:turn-on', () => sync.turnOn());
+  answer('sync:link', (code) => (isTyped(code) ? sync.linkWithCode(code) : REFUSED));
+  answer('sync:recover', (key) => (isTyped(key) ? sync.useRecoveryKey(key) : REFUSED));
+  answer('sync:link-code', () => sync.makeLinkCode());
+  ipcMain.on('sync:cancel-link-code', (event, id: unknown) => {
+    if (fromApp(event) && isId(id)) void sync.cancelLinkCode(id);
+  });
+  ipcMain.on('sync:now', (event) => {
+    if (fromApp(event)) sync.requestSync();
+  });
+  answer('sync:account', () => sync.account());
+  answer('sync:remove-device', (id) => (isId(id) ? sync.removeDevice(id) : REFUSED));
+  answer('sync:sign-out', () => sync.signOut());
+  answer('sync:account-page', () => sync.openAccountPage());
 }

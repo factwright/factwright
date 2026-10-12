@@ -5,12 +5,12 @@ The Factwright app for Mac and Windows, built with Electron and TypeScript.
 It will:
 - run your own installed Claude Code in a built-in terminal you can watch, without touching your login
 - give Claude the tools it needs over MCP, from saving postings to rendering resumes
-- keep your workspace and tracker on your computer, and sync them encrypted
+- keep your workspace and tracker on your computer, and sync them, locked, to your other computers and your phone
 
 ## How it's put together
 | Folder | What's there |
 |---|---|
-| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), Claude's tools ([`src/main/tools`](src/main/tools)), and your jobs ([`src/main/jobs`](src/main/jobs)) |
+| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), Claude's tools ([`src/main/tools`](src/main/tools)), your jobs ([`src/main/jobs`](src/main/jobs)), and sync ([`src/main/sync`](src/main/sync)) |
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
@@ -100,19 +100,33 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
 - **Opening files:** documents open formatted, in the app. Resumes open in your own PDF or Word app, and only PDF and Word files inside the workspace can open that way.
 - **Copying and saving:** the window asks the main process. Saving a file always goes through the system's save dialog, so you pick where it goes.
 
+## Sync
+Sync keeps your workspace and tracker the same on each of your computers, and your phone, locked before they leave ([`src/main/sync`](src/main/sync)). It's off until you turn it on, from the sidebar's Sync card. The design is in [docs/security.md](../../docs/security.md).
+- **Signing in:** your browser opens Factwright's sign-in page, where you sign in with GitHub or Google, check it shows the code the app shows, and allow it. The app gets its own session, and opens only the sync server's own pages.
+- **The first computer** makes the account key, and shows your recovery key once, to copy or save as a file before sync turns on.
+- **Every other computer** links with a code from one that's set up, or with the recovery key. Link a phone or computer shows the code, with a QR code for a phone's camera.
+- **Secrets:** the session token and the account key are locked with the system's keychain (Electron's safe storage) before they're written to the data folder. The keychain isn't touched until you turn sync on.
+- **What syncs:** every file in the workspace, and every row of the tracker: jobs, their history and calls. Hidden files, other apps' temporary files, files over 25 MB and names Windows can't hold stay put, and the dialog says how many.
+- **When:** a moment after each change here, right away when another device changes something (the server tells each listening device), and every ten minutes anyway. Offline, it waits and tries again, and your changes stay safe here.
+- **When both changed something,** nothing is lost. A file keeps both: the other device's version in its place, and this computer's beside it, named with the computer and the day, like `notes (Sam’s Mac, Oct 12).md`. A tracked job merges: its links, questions and notes keep both sides, and the later change wins a clash. A note changed elsewhere shows up in the job panel unless you're typing in it.
+- **Managing it:** the Sync dialog lists your signed-in devices, signs any of them out, makes link codes, turns sync off on this computer (its job hunt stays), and opens your account on the web, to download everything or delete the account.
+
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`).
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
+  - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out` and `unavailable`). Turning it on plays through each step.
   - Start Claude plays a short made-up run, including a question.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
+- **Sync against a server on this computer:** set `FACTWRIGHT_SERVER_URL`, such as `http://localhost:8787` for the [sync server](../server) run with `pnpm --filter @factwright/server dev`.
 - **End-to-end tests:** after a build, `e2e` drives the built app with [Playwright](https://playwright.dev) through its main flows ([`e2e`](e2e)):
   - It runs on a made-up job hunt in a fresh data folder.
   - A stand-in for Claude Code ([`e2e/fake-claude`](e2e/fake-claude)) comes first on PATH. It answers the version and sign-in checks, and in a run reaches Factwright's tools and sends its hooks as Claude Code does. It never reaches Anthropic, so the tests use no plan.
   - `FACTWRIGHT_SETUP_WAIT_MS` shortens the setup check's wait, so the tests see it finish.
+  - Sync's tests run two copies of the app against the [sync server](../server), run locally in workerd, with a stand-in keychain: one turns sync on, the other links with a code, and a change on one shows up on the other.
   - CI runs the tests on every change, on Linux, with a virtual display.
   - A [Windows workflow](../../.github/workflows/windows.yml) runs the unit and end-to-end tests on Windows: weekly, by hand, and when its file changes. It doesn't run on every change, because Windows minutes cost twice as much on GitHub's free plan. Its stand-in is `claude.cmd`.
 
-**Status:** in progress, in phase 3 of the [roadmap](../../docs/roadmap.md). The window checks your Claude Code and runs it in Claude's panel with Factwright's tools and skills, shows your jobs with their Run buttons, runs job searches, and keeps your tracker. Pasting an application's questions before a run comes next.
+**Status:** Phase 3's code is done, and phase 4 of the [roadmap](../../docs/roadmap.md) is in progress. Sync works end to end against the sync server running locally, and goes live once the server is deployed.

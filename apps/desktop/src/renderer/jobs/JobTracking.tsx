@@ -324,12 +324,16 @@ const SAVE_LABELS: Readonly<Record<SaveState, string>> = {
 
 /**
  * The user's own notes on a job. They save a moment after typing stops, when the box loses
- * focus, and when the panel moves on to another job.
+ * focus, and when the panel moves on to another job. Notes changed elsewhere, such as on
+ * another computer, show up here too, unless the user is in the box.
  */
 export function NotesSection({ job, api }: { job: Job; api: FactwrightApi }) {
   const [text, setText] = useState(job.notes ?? '');
   const [state, setState] = useState<SaveState>('idle');
   const pending = useRef<string | null>(null);
+  const focused = useRef(false);
+  /** Notes that changed elsewhere while the user was in the box, to show once they leave it. */
+  const outside = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const id = useId();
   const jobId = job.id;
@@ -346,6 +350,12 @@ export function NotesSection({ job, api }: { job: Job; api: FactwrightApi }) {
 
   // Whatever is still waiting saves when the panel closes or moves to another job.
   useEffect(() => () => void save(), [save]);
+
+  useEffect(() => {
+    const latest = job.notes ?? '';
+    if (focused.current || pending.current !== null) outside.current = latest;
+    else setText(latest);
+  }, [job.notes]);
 
   return (
     <section className={panel.section}>
@@ -370,7 +380,16 @@ export function NotesSection({ job, api }: { job: Job; api: FactwrightApi }) {
           clearTimeout(timer.current);
           timer.current = setTimeout(() => void save(), 800);
         }}
-        onBlur={() => void save()}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={() => {
+          focused.current = false;
+          // Untouched since a change came from elsewhere: show that change.
+          if (pending.current === null && outside.current !== null) setText(outside.current);
+          outside.current = null;
+          void save();
+        }}
       />
     </section>
   );
