@@ -12,7 +12,10 @@ function theme(): Plugin {
   };
 }
 
-/** factwright.com: a static page, plus its "not found" page, built on the app's design system. */
+/**
+ * factwright.com: a static page, its download pages and its "not found" page, built on the app's
+ * design system.
+ */
 export default defineConfig({
   plugins: [theme()],
   build: {
@@ -21,7 +24,13 @@ export default defineConfig({
     // One small script, loaded by every page, so there's nothing to preload.
     modulePreload: { polyfill: false },
     rolldownOptions: {
-      input: { index: 'index.html', notFound: '404.html' },
+      input: {
+        index: 'index.html',
+        download: 'download.html',
+        downloadMac: 'download/mac.html',
+        downloadWindows: 'download/windows.html',
+        notFound: '404.html',
+      },
     },
   },
 });

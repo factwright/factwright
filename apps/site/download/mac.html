@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Download Factwright for Mac</title>
+    <meta
+      name="description"
+      content="Download Factwright for Mac: one app for Apple silicon and Intel, on macOS 12 or later. Free during the beta."
+    />
+    <link rel="canonical" href="https://factwright.com/download/mac" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-logo" viewBox="19 20 80 80"><path d="M31 43.5V48.5M31 71.5V76.5" fill="none" stroke="currentColor" stroke-width="6" /><circle cx="31" cy="32" r="8" fill="none" stroke="currentColor" stroke-width="7" /><circle cx="31" cy="60" r="8" fill="none" stroke="currentColor" stroke-width="7" /><circle cx="31" cy="88" r="11.5" fill="currentColor" /><rect x="49" y="23.5" width="49" height="17" rx="8.5" fill="currentColor" /><rect x="49" y="51.5" width="31" height="17" rx="8.5" fill="currentColor" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" /></symbol>
+    </svg>
+
+    <header class="site-header" data-header>
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Factwright, home">
+          <svg class="logo" aria-hidden="true"><use href="#i-logo" /></svg>
+          <span>Factwright</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- The Worker fills in the newest version, and points the link at its own installer. -->
+    <main class="wrap get" data-get="mac">
+      <span class="get-badge"><svg class="icon" aria-hidden="true"><use href="#i-download" /></svg></span>
+      <h1>Downloading Factwright for Mac</h1>
+      <p class="get-meta" data-release="mac"></p>
+      <p class="lede">Your download starts in a moment, into your Downloads folder.</p>
+      <p class="get-again">
+        Didn’t start?
+        <a class="button button-secondary button-sm" href="https://downloads.factwright.com/Factwright.dmg" data-direct>
+          <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+          Download for Mac
+        </a>
+      </p>
+
+      <section class="get-steps" aria-labelledby="steps-title">
+        <h2 id="steps-title">Then, to install it</h2>
+        <ol>
+          <li><span><strong>Open the disk image</strong> from your Downloads.</span></li>
+          <li><span><strong>Drag Factwright to Applications,</strong> and open it from there.</span></li>
+          <li><span><strong>Choose Open</strong> if your Mac checks that you meant to open an app from the internet.</span></li>
+        </ol>
+        <p class="get-after">
+          Factwright keeps itself up to date. It runs your own Claude Code: if that isn’t on your Mac
+          yet, the app shows you how to get it.
+        </p>
+      </section>
+
+      <p class="get-other">
+        For Apple silicon and Intel Macs, on macOS 12 or later.
+        <a href="/download/windows">Need it for Windows?</a>
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <p class="footer-legal">
+          © 2026 Neatifai LLC. Factwright isn’t affiliated with Anthropic. It uses your own Claude
+          account, and its runs count against your plan. Claude and Claude Code are trademarks of
+          Anthropic, PBC.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

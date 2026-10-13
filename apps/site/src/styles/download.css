@@ -1,0 +1,184 @@
+/*
+ * The download pages: one for each computer, which starts its download and says how to install
+ * it, and one that picks, which shows both.
+ */
+
+.get {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: calc(100vh - var(--header) - 160px);
+  padding-block: clamp(56px, 9vw, 104px);
+  text-align: center;
+}
+
+.get-badge {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 24px;
+  border-radius: 16px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.get-badge .icon {
+  width: 26px;
+  height: 26px;
+}
+
+.get h1 {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5.4vw, 56px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+/* The version, its size and when it came out, as the Worker fills them in. */
+.get-meta {
+  margin-top: 14px;
+  color: var(--fw-muted);
+  font-family: var(--fw-font-mono);
+  font-size: 13.5px;
+}
+
+.get-meta:empty {
+  display: none;
+}
+
+.get .lede {
+  max-width: 520px;
+}
+
+.get-again {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  margin-top: 28px;
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.get-steps {
+  width: 100%;
+  max-width: 560px;
+  margin-top: clamp(44px, 6vw, 64px);
+  padding: 28px clamp(20px, 4vw, 32px) 26px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+  text-align: left;
+}
+
+.get-steps h2 {
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.get-steps ol {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.get-steps li {
+  display: flex;
+  gap: 14px;
+  color: var(--fw-muted);
+  line-height: 1.5;
+  counter-increment: step;
+}
+
+.get-steps li::before {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: 13.5px;
+  font-weight: 650;
+  content: counter(step);
+}
+
+.get-steps li > span {
+  padding-top: 1px;
+}
+
+.get-steps strong {
+  color: var(--fw-text);
+  font-weight: 600;
+}
+
+.get-after {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--fw-border);
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.get-other {
+  max-width: 560px;
+  margin-top: 28px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.get-other a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+/* The page that picks: a card for each computer. */
+.get-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 20px;
+  width: 100%;
+  max-width: 640px;
+  margin-top: clamp(40px, 6vw, 56px);
+}
+
+.get-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 24px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.get-choice h2 {
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.get-choice .get-meta {
+  margin-top: 8px;
+}
+
+.get-fit {
+  margin-top: 8px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.get-choice .button {
+  margin-top: 20px;
+}

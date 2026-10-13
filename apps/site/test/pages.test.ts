@@ -21,16 +21,31 @@ function open(page: string): Document {
   return document;
 }
 
-/** The installers, on the download site: the newest of each, under names that never change. */
+/**
+ * The installers, on the download site: the newest of each, under names that never change. The
+ * download pages offer these, and the Worker points them at the newest version's own file.
+ */
 const DOWNLOADS = [
   'https://downloads.factwright.com/Factwright.dmg',
   'https://downloads.factwright.com/Factwright-Setup.exe',
 ];
 
+/** The download pages: the one that picks, and one for each computer. */
+const DOWNLOAD_PAGES = ['/download', '/download/mac', '/download/windows'];
+
+/** Where a download page says which version it offers, as the Worker's releaseLine fills it in. */
+const releaseLine = (computer: string) => `<p class="get-meta" data-release="${computer}"></p>`;
+
 /** Whether a file the page asks for, such as /templates/modern.webp, is in the site's public folder. */
 const published = (path: string) => existsSync(join(SITE, 'public', path));
 
-describe.each(['index.html', '404.html'])('%s', (page) => {
+describe.each([
+  'index.html',
+  'download.html',
+  'download/mac.html',
+  'download/windows.html',
+  '404.html',
+])('%s', (page) => {
   it('passes an accessibility check', async () => {
     const doc = open(page);
     // jsdom can't lay out a page, so contrast is checked from the tokens in @factwright/ui.
@@ -54,7 +69,7 @@ describe.each(['index.html', '404.html'])('%s', (page) => {
     for (const link of doc.querySelectorAll('a[href]')) {
       const href = link.getAttribute('href') ?? '';
       if (href.startsWith('#')) expect(doc.getElementById(href.slice(1)), href).not.toBeNull();
-      else expect(['/', ...DOWNLOADS]).toContain(href);
+      else expect(['/', ...DOWNLOAD_PAGES, ...DOWNLOADS]).toContain(href);
     }
   });
 
@@ -104,5 +119,44 @@ describe('the home page', () => {
     for (const line of lines) {
       expect(doc.querySelector(`[data-fact-card="${line.dataset.fact}"]`)).not.toBeNull();
     }
+  });
+});
+
+describe('the download pages', () => {
+  it('each start their computer’s download, with a link in case it doesn’t', () => {
+    for (const [computer, installer] of [
+      ['mac', DOWNLOADS[0]],
+      ['windows', DOWNLOADS[1]],
+    ] as const) {
+      const doc = open(`download/${computer}.html`);
+      expect(doc.querySelector(`main[data-get="${computer}"]`)).not.toBeNull();
+      const links = [...doc.querySelectorAll<HTMLAnchorElement>('a[data-direct]')];
+      expect(links.map((link) => link.getAttribute('href'))).toEqual([installer]);
+      expect(links[0]?.closest('.get-again')?.textContent).toContain('Didn’t start?');
+    }
+  });
+
+  it('mark where the Worker says which version each offers', () => {
+    const source = (page: string) => readFileSync(join(SITE, page), 'utf8');
+    expect(source('download/mac.html')).toContain(releaseLine('mac'));
+    expect(source('download/windows.html')).toContain(releaseLine('windows'));
+    expect(source('download.html')).toContain(releaseLine('mac'));
+    expect(source('download.html')).toContain(releaseLine('windows'));
+  });
+
+  it('pick between computers on the page for a phone or Linux, with each one’s page a click away', () => {
+    const doc = open('download.html');
+    expect(doc.querySelector('main[data-get="choose"]')).not.toBeNull();
+    expect(
+      [...doc.querySelectorAll('.get-choice a')].map((link) => link.getAttribute('href')),
+    ).toEqual(['/download/mac', '/download/windows']);
+  });
+
+  it('are where the home page’s download buttons go', () => {
+    const doc = open('index.html');
+    const hrefs = [...doc.querySelectorAll('[data-downloads] a')].map((link) =>
+      link.getAttribute('href'),
+    );
+    expect(new Set(hrefs)).toEqual(new Set(['/download/mac', '/download/windows']));
   });
 });
