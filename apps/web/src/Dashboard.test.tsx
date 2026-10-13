@@ -71,7 +71,9 @@ describe('the jobs page on the phone', () => {
     render(<Dashboard vault={VAULT} today={TODAY} refreshing={false} onRefresh={vi.fn()} />);
     await userEvent.click(screen.getByRole('radio', { name: 'Applied 1' }));
     await userEvent.click(screen.getByRole('link', { name: /Acme Robotics/ }));
-    expect(location.pathname).toBe('/jobs/acme--staff');
+    // The address names the job by a code, never by its company and role.
+    expect(location.pathname).toBe(`/jobs/${VAULT.pages.get('acme--staff')}`);
+    expect(location.pathname).not.toContain('acme');
   });
 
   it('updates when asked, and says so while it does', async () => {

@@ -53,11 +53,14 @@ export function JobView({
   vault,
   keys,
   today,
+  onSignedOut = () => {},
 }: {
   job: Job;
   vault: Vault;
   keys: AccountKeys;
   today: string;
+  /** The server said this browser isn't signed in any more. */
+  onSignedOut?: () => void;
 }) {
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -75,7 +78,15 @@ export function JobView({
     const tab = format === 'pdf' ? window.open('', '_blank') : null;
     if (tab) tab.opener = null;
     const file = vault.files.get(path);
-    const contents = file && (await fileContents(client, keys, file.id));
+    let contents: Awaited<ReturnType<typeof fileContents>> | undefined;
+    try {
+      contents = file && (await fileContents(client, keys, file.id));
+    } catch (error) {
+      tab?.close();
+      if (error instanceof Error && 'kind' in error && error.kind === 'signed-out') onSignedOut();
+      else setProblem('That file couldn’t be opened. Try again in a moment.');
+      return;
+    }
     if (!contents) {
       tab?.close();
       setProblem('That file couldn’t be opened. Try again once your computer has synced.');

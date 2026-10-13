@@ -24,19 +24,25 @@ async function post(path: string, body: object = {}): Promise<Response> {
   });
 }
 
-/** Who's signed in on this browser, or null. */
-export async function getSession(): Promise<Session | null> {
-  const response = await fetch('/api/auth/get-session');
-  if (!response.ok) return null;
-  const answer = (await response.json()) as Session | null;
+/**
+ * Who's signed in on this browser: null when the server says no one is, or undefined when it
+ * couldn't say, such as when it's busy.
+ */
+export async function getSession(): Promise<Session | null | undefined> {
+  const response = await fetch('/api/auth/get-session').catch(() => null);
+  if (!response?.ok) return undefined;
+  const answer = (await response.json().catch(() => undefined)) as Session | null | undefined;
+  if (answer === undefined) return undefined;
   return answer?.user ? answer : null;
 }
 
 /** The ways to sign in that the server has set up. */
 export async function signInOptions(): Promise<Provider[]> {
-  const response = await fetch('/api/sign-in-options');
-  if (!response.ok) return [];
-  const { providers } = (await response.json()) as { providers: Provider[] };
+  const response = await fetch('/api/sign-in-options').catch(() => null);
+  if (!response?.ok) return [];
+  const { providers = [] } = (await response.json().catch(() => ({}))) as {
+    providers?: Provider[];
+  };
   return providers;
 }
 
