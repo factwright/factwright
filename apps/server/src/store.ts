@@ -364,11 +364,19 @@ export class UserStore extends DurableObject<Env> {
     if (deleted === null) {
       this.claim(owner);
       this.deleting = true;
-      for (const socket of this.ctx.getWebSockets()) socket.close(1000, 'The account was deleted.');
-      await this.ctx.storage.deleteAlarm();
-      await this.ctx.storage.deleteAll();
-      this.sql.exec(SCHEMA);
-      this.meta.set('deleted', owner);
+      try {
+        for (const socket of this.ctx.getWebSockets()) {
+          socket.close(1000, 'The account was deleted.');
+        }
+        await this.ctx.storage.deleteAlarm();
+        await this.ctx.storage.deleteAll();
+        this.sql.exec(SCHEMA);
+        this.meta.set('deleted', owner);
+      } catch (error) {
+        // Not deleted after all: it can be tried again.
+        this.deleting = false;
+        throw error;
+      }
     } else if (deleted !== owner) {
       throw new Error('This store belongs to another account.');
     }
@@ -394,6 +402,7 @@ export class UserStore extends DurableObject<Env> {
     this.claim(owner);
     // The backup is read from R2 first: an account deleted meanwhile gets nothing written back.
     const restored = await restore(this.upkeep, owner, day, () => this.isDeleted());
+    if (!restored && this.isDeleted()) throw new Error(DELETED);
     if (restored) this.notify();
     return restored;
   }

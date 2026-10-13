@@ -82,7 +82,9 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out. Signing out deletes the session's record at once, and one that runs out is deleted within a day.
 - A session keeps the name of the device that signed in, such as "Safari on iPhone" or "Factwright on Sam's Mac", in place of everything the browser or app sent, and no IP address. GitHub's and Google's tokens, and the link to your profile picture, aren't kept, and sign-in's ways to hand out or refresh a provider's token are off.
 - The account key's locked copy is saved once, by the first device, and no session can replace it. So someone who tricks you into approving their device code can't spoil your recovery key.
-- Each session says how it signed in: in a browser with GitHub or Google, or with a device code. Only a browser's session can delete the account or approve a device's code, and deleting also needs it to be from the last 15 minutes. So someone who tricks you into approving their code gets a session that can sync, but can't delete your account, or approve codes of their own to stay signed in.
+- Each session says how it signed in: in a browser with GitHub or Google, or with a device code. Only a browser's session can delete the account or approve a device's code, and deleting also needs it to be from the last 15 minutes. Sessions from before this count as a device's, so a browser signs in again first.
+- Sign-in's own ways to list sessions, which would hand out their tokens, or to sign other sessions out are off. The account page lists devices without tokens, and signs one out by its ID.
+- So someone who tricks you into approving their code gets a session that can sync and sign devices out from the account page, where it shows up as a device of its own. It can't delete your account, approve codes of its own to stay signed in, or take another session's sign-in.
 
 ### The web view
 The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.

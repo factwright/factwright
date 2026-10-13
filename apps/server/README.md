@@ -37,6 +37,8 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
 | `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
 
+Better Auth's routes that list sessions (with their tokens), sign other sessions out, or hand out a provider's token are off.
+
 ## Limits
 - 1 GB per account (`STORAGE_LIMIT_MB`) and 25 MB per file.
 - Bursts of 600 requests per account, refilling at 10 a second.

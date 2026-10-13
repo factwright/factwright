@@ -249,6 +249,53 @@ describe('what sign-in keeps', () => {
     }
   });
 
+  it('marks a session from a browser’s sign-in with GitHub or Google, and no other', async () => {
+    const session = {
+      id: 's',
+      userId: 'u',
+      token: 't',
+      expiresAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',
+      ipAddress: '203.0.113.7',
+    };
+    const via = async (path?: string) => {
+      const context = path === undefined ? null : ({ path } as never);
+      const made = (await hooks.session.create.before(session, context)) as {
+        data: { via: string; ipAddress: unknown; userAgent: string };
+      };
+      return made.data;
+    };
+    expect((await via('/callback/:id')).via).toBe('web');
+    for (const path of ['/device/token', '/sign-in/social', '/sign-in/anonymous', undefined]) {
+      expect((await via(path)).via, String(path)).toBe('device');
+    }
+    expect(await via('/callback/:id')).toMatchObject({
+      ipAddress: null,
+      userAgent: 'Safari on iPhone',
+    });
+  });
+
+  it('won’t list sessions, or sign other sessions out, by sign-in’s own routes', async () => {
+    const sam = await server.signUp();
+    const device = await server.newSession(sam.id, 'Factwright/0.0.0 (Someone’s PC)', 'device');
+    for (const [method, path] of [
+      ['GET', '/list-sessions'],
+      ['POST', '/revoke-session'],
+      ['POST', '/revoke-sessions'],
+      ['POST', '/revoke-other-sessions'],
+    ] as const) {
+      const response = await fetch(new URL(`/api/auth${path}`, server.url), {
+        method,
+        headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+        ...(method === 'POST' ? { body: JSON.stringify({ token: sam.token }) } : {}),
+      });
+      expect(response.status, path).toBe(404);
+    }
+    expect((await sam.client.account()).user.id).toBe(sam.id);
+  });
+
   it('keeps no link to the profile picture', async () => {
     const user = {
       id: 'u',

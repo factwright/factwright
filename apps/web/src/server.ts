@@ -89,11 +89,16 @@ export async function openDeviceCode(userCode: string): Promise<DeviceCode> {
 }
 
 /** Lets the app sign in, or turns it away. */
-export async function answerDeviceCode(userCode: string, allow: boolean): Promise<boolean> {
+export async function answerDeviceCode(
+  userCode: string,
+  allow: boolean,
+): Promise<'answered' | 'sign-in' | 'failed'> {
   const response = await post(allow ? '/api/auth/device/approve' : '/api/auth/device/deny', {
     userCode,
   });
-  return response.ok;
+  if (response.ok) return 'answered';
+  // Only a session from signing in here, in the browser, may let a computer in.
+  return response.status === 403 ? 'sign-in' : 'failed';
 }
 
 /** Deletes the account and everything in it. "sign-in" means it needs a fresh sign-in first. */

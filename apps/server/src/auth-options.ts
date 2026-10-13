@@ -35,7 +35,7 @@ function deviceOnly<T extends { userAgent?: string | null; ipAddress?: string | 
 }
 
 /** Where sign-in makes a session after GitHub or Google says who it is, in a browser. */
-const WEB_SIGN_IN = /^\/(callback\/|sign-in\/social$)/;
+const WEB_SIGN_IN = /^\/callback\//;
 
 /**
  * How a session signed in: "web" after GitHub or Google, in a browser, or "device" with a code
@@ -54,7 +54,7 @@ export interface AuthSettings {
   github?: Provider | undefined;
   google?: Provider | undefined;
   /** Deletes everything an account has, before the account itself goes. */
-  beforeDeleteUser: (accountId: string) => Promise<void>;
+  beforeDeleteUser: (accountId: string, request?: Request) => Promise<void>;
   /** Sign-ins each IP address may start in a minute. */
   signInsPerMinute?: number;
 }
@@ -89,9 +89,20 @@ export function authOptions(settings: AuthSettings) {
     // GitHub's and Google's tokens are never kept (see databaseHooks), and are encrypted while
     // sign-in still holds them.
     account: { encryptOAuthTokens: true },
-    // Sign-in's ways to hand out or refresh a provider's token, or read its profile again. With no
-    // tokens kept, there's nothing for them to do.
-    disabledPaths: ['/get-access-token', '/refresh-token', '/account-info'],
+    disabledPaths: [
+      // Sign-in's ways to hand out or refresh a provider's token, or read its profile again. With
+      // no tokens kept, there's nothing for them to do.
+      '/get-access-token',
+      '/refresh-token',
+      '/account-info',
+      // Listing sessions hands out every session's token, so a device's session could take a
+      // browser's and do what only a browser's may. The account page lists devices without them.
+      '/list-sessions',
+      // Signing out other sessions goes through the account page, which names each device.
+      '/revoke-session',
+      '/revoke-sessions',
+      '/revoke-other-sessions',
+    ],
     databaseHooks: {
       // The account page shows a name and an email. A link to the profile picture isn't kept.
       user: {
@@ -115,7 +126,8 @@ export function authOptions(settings: AuthSettings) {
     user: {
       deleteUser: {
         enabled: true,
-        beforeDelete: async (user: { id: string }) => settings.beforeDeleteUser(user.id),
+        beforeDelete: async (user: { id: string }, request?: Request) =>
+          settings.beforeDeleteUser(user.id, request),
       },
     },
     rateLimit: {

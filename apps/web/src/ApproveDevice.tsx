@@ -2,9 +2,15 @@ import { Button } from '@factwright/ui';
 import { CircleCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import styles from './page.module.css';
-import { answerDeviceCode, openDeviceCode } from './server.ts';
+import {
+  answerDeviceCode,
+  openDeviceCode,
+  PROVIDER_NAMES,
+  type Provider,
+  signIn,
+} from './server.ts';
 
-type Step = 'opening' | 'asking' | 'allowed' | 'declined' | { problem: string };
+type Step = 'opening' | 'asking' | 'allowed' | 'declined' | 'sign-in' | { problem: string };
 
 /** "WDJBMJHT" as "WDJB-MJHT", easier to compare with what the app shows. */
 const spaced = (code: string) =>
@@ -14,7 +20,13 @@ const spaced = (code: string) =>
  * The page the desktop app opens to sign in: the person checks the code matches the one the
  * app shows, then lets it sign in to their account, or turns it away.
  */
-export function ApproveDevice({ userCode }: { userCode: string }) {
+export function ApproveDevice({
+  userCode,
+  providers = [],
+}: {
+  userCode: string;
+  providers?: Provider[];
+}) {
   const [step, setStep] = useState<Step>('opening');
   const [busy, setBusy] = useState(false);
 
@@ -33,10 +45,21 @@ export function ApproveDevice({ userCode }: { userCode: string }) {
 
   const answer = async (allow: boolean) => {
     setBusy(true);
-    const ok = await answerDeviceCode(userCode, allow);
+    const result = await answerDeviceCode(userCode, allow);
     setBusy(false);
-    if (ok) setStep(allow ? 'allowed' : 'declined');
+    if (result === 'answered') setStep(allow ? 'allowed' : 'declined');
+    else if (result === 'sign-in') setStep('sign-in');
     else setStep({ problem: 'That didn’t go through. In Factwright, start signing in again.' });
+  };
+
+  // Signing in here makes this browser's own session, then comes back to the code.
+  const signInAgain = async (provider: Provider) => {
+    setBusy(true);
+    const failed = await signIn(provider, location.pathname + location.search);
+    if (failed) {
+      setBusy(false);
+      setStep({ problem: failed });
+    }
   };
 
   return (
@@ -76,6 +99,25 @@ export function ApproveDevice({ userCode }: { userCode: string }) {
         <p className={styles.lead}>
           Turned away. The computer that showed this code won’t sign in with it.
         </p>
+      )}
+      {step === 'sign-in' && (
+        <>
+          <p className={styles.lead}>
+            To let a computer in, sign in again here first. Then you’ll see the code again.
+          </p>
+          <div className={styles.actions}>
+            {providers.map((provider) => (
+              <Button
+                key={provider}
+                variant={provider === providers[0] ? 'primary' : 'secondary'}
+                disabled={busy}
+                onClick={() => void signInAgain(provider)}
+              >
+                Sign in with {PROVIDER_NAMES[provider]}
+              </Button>
+            ))}
+          </div>
+        </>
       )}
       {typeof step === 'object' && (
         <p className={styles.problem} role="alert">

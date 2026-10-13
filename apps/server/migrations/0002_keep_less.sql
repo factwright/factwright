@@ -3,8 +3,9 @@
 -- The column, as Better Auth's own migration tool writes it (`pnpm schema`).
 alter table "session" add column "via" text;
 
--- Sessions from before this: the desktop app's say "Factwright/" first, and the rest are browsers.
-UPDATE "session" SET via = CASE WHEN userAgent LIKE 'Factwright/%' THEN 'device' ELSE 'web' END;
+-- A session from before this can't show how it signed in, so it counts as a device's: it keeps
+-- syncing, and a browser signs in again before it deletes the account or approves a code.
+UPDATE "session" SET via = 'device';
 
 -- What sign-in kept before it stopped: each session's IP address, GitHub's and Google's tokens,
 -- and the link to a profile picture. The daily cleanup shortens each session's device to its name.

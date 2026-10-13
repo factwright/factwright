@@ -1,5 +1,8 @@
 import { deviceName } from './auth-options.ts';
 
+/** Sessions shortened to their device's name at once, so no batch grows too big. */
+const SHORTEN_AT_ONCE = 50;
+
 /** How long a sign-in limit's count is kept after its last request. Each limit lasts a minute. */
 const LIMIT_COUNT_MS = 60 * 60 * 1000;
 
@@ -23,10 +26,17 @@ export async function forgetOldSignIns(db: D1Database, now: Date): Promise<void>
     db
       .prepare('DELETE FROM "rateLimit" WHERE lastRequest < ?')
       .bind(now.getTime() - LIMIT_COUNT_MS),
-    ...longer.map((each) =>
-      db
-        .prepare('UPDATE "session" SET userAgent = ? WHERE id = ?')
-        .bind(deviceName(each.userAgent), each.id),
-    ),
   ]);
+  // Apart from the deleting, so one that fails can't hold the rest back.
+  for (let i = 0; i < longer.length; i += SHORTEN_AT_ONCE) {
+    await db.batch(
+      longer
+        .slice(i, i + SHORTEN_AT_ONCE)
+        .map((each) =>
+          db
+            .prepare('UPDATE "session" SET userAgent = ? WHERE id = ?')
+            .bind(deviceName(each.userAgent), each.id),
+        ),
+    );
+  }
 }

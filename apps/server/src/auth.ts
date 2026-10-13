@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { authOptions, type Provider, type SignedInVia } from './auth-options.ts';
 import type { Env } from './env.ts';
 
@@ -26,7 +27,17 @@ export function createAuth(env: Env) {
       database: env.DB,
       github: provider(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET),
       google: provider(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
-      beforeDeleteUser: (accountId) => deleteEverything(env, accountId),
+      // The Worker lets only a browser's session ask to delete the account. Checked again here,
+      // for any other way sign-in might come to delete it.
+      beforeDeleteUser: async (accountId, request) => {
+        if (!request || (await signedInVia(env, request)) !== 'web') {
+          throw new APIError('BAD_REQUEST', {
+            code: 'SESSION_NOT_FRESH',
+            message: 'Sign in again with GitHub or Google, then delete the account.',
+          });
+        }
+        await deleteEverything(env, accountId);
+      },
       ...(Number(env.SIGN_INS_PER_MINUTE) > 0 && {
         signInsPerMinute: Number(env.SIGN_INS_PER_MINUTE),
       }),
