@@ -29,13 +29,19 @@ describe('the locked account key', () => {
     expect(await other.client.keys()).toMatchObject({ keyId, recovery: 'locked-with-recovery' });
   });
 
-  it('takes a new recovery key for the same account key, when named', async () => {
-    const { client } = await server.signUp();
+  it('can’t be changed once saved, so no session can spoil recovery', async () => {
+    const { client, token } = await server.signUp();
     const keyId = someId().slice(0, 22);
     await client.saveKeys(keyId, 'first');
     expect(await client.saveKeys(keyId, 'second')).toBe('taken');
-    expect(await client.saveKeys(keyId, 'second', keyId)).toBe('saved');
-    expect((await client.keys())?.recovery).toBe('second');
+    // The old way to name the key being replaced does nothing now.
+    const response = await fetch(new URL('/api/sync/keys', server.url), {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ keyId, recovery: 'second', replacing: keyId }),
+    });
+    expect(response.status).toBe(409);
+    expect((await client.keys())?.recovery).toBe('first');
   });
 });
 

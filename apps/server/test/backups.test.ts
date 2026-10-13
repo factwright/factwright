@@ -68,6 +68,35 @@ describe('daily backups', () => {
   });
 });
 
+describe('deleting an account for someone who asked', () => {
+  const remove = (body: object, token = 'test-admin-token') =>
+    fetch(new URL('/api/admin/delete', server.url), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('is only for the operator', async () => {
+    const sam = await server.signUp();
+    expect((await remove({ email: sam.email }, 'a-guess')).status).toBe(404);
+    expect((await sam.client.account()).user.id).toBe(sam.id);
+  });
+
+  it('removes the account and everything it has, found by its email', async () => {
+    const sam = await server.signUp();
+    await sam.client.push([change(someId(), 0, 'locked')]);
+    await server.env.FILES.put(`backups/${sam.id}/2026-10-01.json.gz`, 'backup');
+    expect((await remove({ email: sam.email })).status).toBe(204);
+    await expect(sam.client.account()).rejects.toMatchObject({ kind: 'signed-out' });
+    expect((await server.env.FILES.list({ prefix: `backups/${sam.id}/` })).objects).toEqual([]);
+    const user = await server.env.DB.prepare('SELECT id FROM "user" WHERE id = ?')
+      .bind(sam.id)
+      .first();
+    expect(user).toBeNull();
+    expect((await remove({ email: sam.email })).status).toBe(404);
+  });
+});
+
 describe('the daily cleanup', () => {
   it('drops old versions and unused files, but keeps every record’s current version', async () => {
     const sam = await server.signUp();

@@ -10,6 +10,30 @@ const DAY_SECONDS = 24 * 60 * 60;
 /** An OAuth app's ID and secret, at GitHub or Google. */
 export type Provider = { clientId: string; clientSecret: string };
 
+/** The token fields sign-in's providers hand over. Nothing uses them after sign-in, so none are kept. */
+const PROVIDER_TOKENS = {
+  accessToken: null,
+  refreshToken: null,
+  idToken: null,
+  accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
+};
+
+/**
+ * What a session keeps about the device that signed in: the name the account page shows, such
+ * as "Safari on iPhone", in place of the browser's whole description, and no IP address. Sign-in's
+ * limits read the address from each request instead.
+ */
+function deviceOnly<T extends { userAgent?: string | null; ipAddress?: string | null }>(
+  session: T,
+) {
+  return {
+    ...session,
+    ...('userAgent' in session && { userAgent: deviceName(session.userAgent) }),
+    ...('ipAddress' in session && { ipAddress: null }),
+  };
+}
+
 /** What sign-in needs, apart from where it runs. */
 export interface AuthSettings {
   /** Where the app is served, such as "https://app.factwright.com". */
@@ -48,8 +72,27 @@ export function authOptions(settings: AuthSettings) {
       // Deleting the account needs a sign-in in the last 15 minutes.
       freshAge: 15 * 60,
     },
-    // GitHub's and Google's tokens are kept encrypted, in case the database ever leaks.
+    // GitHub's and Google's tokens are never kept (see databaseHooks), and are encrypted while
+    // sign-in still holds them.
     account: { encryptOAuthTokens: true },
+    // Sign-in's ways to hand out or refresh a provider's token, or read its profile again. With no
+    // tokens kept, there's nothing for them to do.
+    disabledPaths: ['/get-access-token', '/refresh-token', '/account-info'],
+    databaseHooks: {
+      // The account page shows a name and an email. A link to the profile picture isn't kept.
+      user: {
+        create: { before: async (user) => ({ data: { ...user, image: null } }) },
+        update: { before: async (user) => ({ data: { ...user, image: null } }) },
+      },
+      session: {
+        create: { before: async (session) => ({ data: deviceOnly(session) }) },
+        update: { before: async (session) => ({ data: deviceOnly(session) }) },
+      },
+      account: {
+        create: { before: async (account) => ({ data: { ...account, ...PROVIDER_TOKENS } }) },
+        update: { before: async (account) => ({ data: { ...account, ...PROVIDER_TOKENS } }) },
+      },
+    },
     user: {
       deleteUser: {
         enabled: true,
@@ -99,12 +142,18 @@ function decoded(text: string): string {
   }
 }
 
+/** A name deviceName gives, which sessions keep in place of what the device sent. */
+const DEVICE_NAME =
+  /^(Factwright on .{1,100}|(Edge|Firefox|Chrome|Safari|A browser)( on (iPhone|iPad|Android|Mac|Windows|Linux))?)$/;
+
 /**
  * A device's name, from what it sent when it signed in, such as "Safari on iPhone". The app
- * sends its computer's name percent-encoded, as "Factwright/1.0 (Sam%E2%80%99s Mac)".
+ * sends its computer's name percent-encoded, as "Factwright/1.0 (Sam%E2%80%99s Mac)". A name it
+ * already gave comes back as it is.
  */
 export function deviceName(userAgent: string | null | undefined): string {
   const agent = userAgent ?? '';
+  if (DEVICE_NAME.test(agent)) return agent;
   const app = /^Factwright\/\S+ \((.{1,300})\)$/.exec(agent);
   if (app?.[1]) return `Factwright on ${decoded(app[1]).slice(0, 100)}`;
   const browser = /Edg\//.test(agent)

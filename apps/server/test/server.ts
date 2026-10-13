@@ -105,6 +105,12 @@ export async function startServer(vars: Record<string, string> = {}) {
     )
       .bind(id, name, email, now, now)
       .run();
+    await env.DB.prepare(
+      `INSERT INTO "account" (id, accountId, providerId, userId, createdAt, updatedAt)
+       VALUES (?, ?, 'github', ?, ?, ?)`,
+    )
+      .bind(randomUUID(), randomBytes(4).readUInt32BE().toString(), id, now, now)
+      .run();
     return { id, email, ...(await newSession(id)) };
   }
 

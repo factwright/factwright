@@ -1,12 +1,13 @@
 import { utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
-import { authFor } from './auth.ts';
+import { authFor, deleteEverything } from './auth.ts';
 import type { Env } from './env.ts';
 
 export { UserStore } from './store.ts';
 
 const ADMIN_RESTORE = '/api/admin/restore';
+const ADMIN_DELETE = '/api/admin/delete';
 const SIGN_IN_OPTIONS = '/api/sign-in-options';
 
 /** The ways to sign in this server has set up, for the web view's buttons. */
@@ -46,6 +47,31 @@ async function restore(request: Request, env: Env): Promise<Response> {
     : failure(404, 'not-found', 'There’s no backup of that account from that day.');
 }
 
+/**
+ * Deletes an account and everything it has, found by its ID or its email, for someone who asked
+ * by email and can't sign in. Only the operator can.
+ */
+async function deleteForOperator(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST' || !(await isOperator(request, env))) {
+    return failure(404, 'not-found', 'There’s nothing here.');
+  }
+  const { account, email } = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const byId = typeof account === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(account);
+  if (!byId && !(typeof email === 'string' && email.includes('@') && email.length <= 320)) {
+    return failure(400, 'refused', 'Name the account, or its email.');
+  }
+  const found = await env.DB.prepare(`SELECT id FROM "user" WHERE ${byId ? 'id' : 'email'} = ?`)
+    .bind(byId ? account : email)
+    .first<{ id: string }>();
+  if (!found) return failure(404, 'not-found', 'There’s no such account.');
+  await deleteEverything(env, found.id);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM "account" WHERE userId = ?').bind(found.id),
+    env.DB.prepare('DELETE FROM "user" WHERE id = ?').bind(found.id),
+  ]);
+  return new Response(null, { status: 204 });
+}
+
 /** Backs up every account's store, one at a time, as the day's snapshot. */
 async function backUpAll(env: Env, when: Date): Promise<void> {
   const day = when.toISOString().slice(0, 10);
@@ -70,6 +96,7 @@ export default {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith('/api/auth/')) return authFor(env).handler(request);
     if (pathname === ADMIN_RESTORE) return restore(request, env);
+    if (pathname === ADMIN_DELETE) return deleteForOperator(request, env);
     if (pathname === SIGN_IN_OPTIONS) return signInOptions(env);
     if (pathname.startsWith('/api/')) return handleApi(request, env, authFor(env));
     return env.ASSETS

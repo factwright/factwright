@@ -30,6 +30,12 @@ const REFILL_PER_SECOND = 10;
 /** Thrown when an account sends requests faster than its allowance. */
 export const SLOW_DOWN = 'slow-down';
 
+/** Thrown for any call to the store of an account that was deleted. */
+export const DELETED = 'deleted';
+
+/** When a deleted account's files are swept once more, for an upload that was on its way. */
+const SWEEP_AGAIN_MS = 10 * 60 * 1000;
+
 /**
  * One account's store: its locked records with their history, which file contents they point
  * to, its locked account key, and links waiting for new devices. Each account gets its own,
@@ -55,8 +61,15 @@ export class UserStore extends DurableObject<Env> {
     return { sql: this.sql, storage: this.ctx.storage, files: this.env.FILES, meta: this.meta };
   }
 
-  /** The account this store is for. The first call claims it, and no other account gets in. */
+  /** Set when the account is being deleted, so calls that arrive in the meantime are turned away. */
+  private deleting = false;
+
+  /**
+   * The account this store is for. The first call claims it, and no other account gets in. Once
+   * the account is deleted, nothing does.
+   */
   private claim(owner: string): void {
+    if (this.deleting || this.meta.get('deleted') !== null) throw new Error(DELETED);
     const current = this.meta.get('owner');
     if (current === null) this.meta.set('owner', owner);
     else if (current !== owner) throw new Error('This store belongs to another account.');
@@ -97,14 +110,13 @@ export class UserStore extends DurableObject<Env> {
   }
 
   /**
-   * Keeps the account key, locked with the recovery key. Only the first device sets it. Later,
-   * a device may save a new recovery key for the same account key by naming it.
+   * Keeps the account key, locked with the recovery key. Only the first device sets it, and no
+   * session can change it after, so one that signed in by a device code can't spoil recovery.
    */
-  saveKeys(owner: string, keyId: string, recovery: string, replacing?: string): 'saved' | 'taken' {
+  saveKeys(owner: string, keyId: string, recovery: string): 'saved' | 'taken' {
     this.claim(owner);
     this.spend();
-    const current = this.meta.keys();
-    if (current && (current.keyId !== keyId || replacing !== keyId)) return 'taken';
+    if (this.meta.keys()) return 'taken';
     const record: KeyRecord = { keyId, recovery, savedAt: new Date().toISOString() };
     this.meta.set('keys', JSON.stringify(record));
     return 'saved';
@@ -340,17 +352,29 @@ export class UserStore extends DurableObject<Env> {
     return { keys: this.meta.keys(), records, files };
   }
 
-  /** Deletes everything the account has: its files and backups in R2, then the store itself. */
+  /**
+   * Deletes everything the account has: the store, then its files and backups in R2. From the
+   * start, the store turns every other call away, and it remembers the account was deleted, so
+   * nothing can fill it again. An upload already on its way when the files went is caught by one
+   * more sweep, a few minutes later.
+   */
   async wipe(owner: string): Promise<void> {
     this.claim(owner);
-    for (const prefix of [filesPrefix(owner), backupsPrefix(owner)]) {
-      await deletePrefix(this.env.FILES, prefix);
-    }
+    this.deleting = true;
     for (const socket of this.ctx.getWebSockets()) socket.close(1000, 'The account was deleted.');
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
-    // Empty, as a new account's store starts.
     this.sql.exec(SCHEMA);
+    this.meta.set('deleted', owner);
+    await this.sweep(owner);
+    await this.ctx.storage.setAlarm(Date.now() + SWEEP_AGAIN_MS);
+  }
+
+  /** Deletes an account's files and backups from R2. */
+  private async sweep(owner: string): Promise<void> {
+    for (const prefix of [filesPrefix(owner), backupsPrefix(owner)]) {
+      await deletePrefix(this.env.FILES, prefix);
+    }
   }
 
   /** Saves the day's backup of the store to R2. False when there's nothing to back up. */
@@ -373,6 +397,9 @@ export class UserStore extends DurableObject<Env> {
   }
 
   override async alarm(): Promise<void> {
+    // A deleted account's last sweep, and nothing after it.
+    const deleted = this.meta.get('deleted');
+    if (deleted !== null) return this.sweep(deleted);
     if (this.meta.get('owner') === null) return;
     await this.cleanup();
     await this.ctx.storage.setAlarm(Date.now() + DAY_MS);

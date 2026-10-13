@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { deviceName } from '../src/auth-options.ts';
+import { authOptions, deviceName } from '../src/auth-options.ts';
 import { startServer, type TestServer } from './server.ts';
 
 let server: TestServer;
@@ -73,6 +73,26 @@ describe('signing the desktop app in', () => {
     const account = await desktop.account();
     expect(account.user.id).toBe(sam.id);
     expect(account.devices.find((device) => device.current)?.name).toBe('Factwright on Sam’s Mac');
+  });
+
+  it('keeps the device’s name for the session, and no IP address', async () => {
+    const code = await askForCode();
+    const sam = await server.signUp();
+    await openCode(code.body.user_code, sam.token);
+    await post(
+      '/api/auth/device/approve',
+      { userCode: code.body.user_code },
+      {
+        authorization: `Bearer ${sam.token}`,
+      },
+    );
+    const token = String((await pollForToken(code.body.device_code)).body.access_token);
+    const session = await server.env.DB.prepare(
+      'SELECT userAgent, ipAddress FROM "session" WHERE token = ?',
+    )
+      .bind(token)
+      .first<{ userAgent: string; ipAddress: string | null }>();
+    expect(session).toEqual({ userAgent: 'Factwright on Sam’s Mac', ipAddress: null });
   });
 
   it('waits until the user approves, and stops if they deny it', async () => {
@@ -157,7 +177,73 @@ describe('signing in on the web', () => {
   });
 });
 
+describe('what sign-in keeps', () => {
+  const options = authOptions({
+    appUrl: 'https://app.factwright.com',
+    secret: 'test-only-secret',
+    database: undefined,
+    beforeDeleteUser: async () => {},
+  });
+  const hooks = options.databaseHooks;
+
+  it('keeps none of GitHub’s or Google’s tokens', async () => {
+    const given = {
+      id: 'a',
+      userId: 'u',
+      accountId: '42',
+      providerId: 'google',
+      accessToken: 'gho-access',
+      refreshToken: 'refresh',
+      idToken: 'eyJ-id-token-with-name-and-email',
+      accessTokenExpiresAt: new Date(),
+      refreshTokenExpiresAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    for (const hook of [hooks.account.create.before, hooks.account.update.before]) {
+      const { data } = (await hook(given)) as { data: Record<string, unknown> };
+      expect(data).toMatchObject({ providerId: 'google', accountId: '42' });
+      for (const field of ['accessToken', 'refreshToken', 'idToken'])
+        expect(data[field]).toBeNull();
+    }
+  });
+
+  it('keeps no link to the profile picture', async () => {
+    const user = {
+      id: 'u',
+      name: 'Sam Rivera',
+      email: 'sam@example.com',
+      emailVerified: true,
+      image: 'https://avatars.githubusercontent.com/u/1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    for (const hook of [hooks.user.create.before, hooks.user.update.before]) {
+      const { data } = (await hook(user)) as { data: Record<string, unknown> };
+      expect(data).toMatchObject({ name: 'Sam Rivera', email: 'sam@example.com', image: null });
+    }
+  });
+
+  it('can’t hand out, refresh or read a provider’s token or profile', async () => {
+    const sam = await server.signUp();
+    for (const path of ['/get-access-token', '/refresh-token', '/account-info']) {
+      const response = await fetch(new URL(`/api/auth${path}`, server.url), {
+        method: path === '/account-info' ? 'GET' : 'POST',
+        headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
+        ...(path === '/account-info' ? {} : { body: JSON.stringify({ providerId: 'github' }) }),
+      });
+      expect(response.status, path).toBe(404);
+    }
+  });
+});
+
 describe('device names', () => {
+  it('come back as they are, once a session keeps one', () => {
+    for (const name of ['Factwright on Sam’s Mac', 'Safari on iPhone', 'Chrome', 'A browser']) {
+      expect(deviceName(name)).toBe(name);
+    }
+  });
+
   it('read what kind of device signed in', () => {
     expect(deviceName('Factwright/1.2.0 (Sam%E2%80%99s%20MacBook%20Pro)')).toBe(
       'Factwright on Sam’s MacBook Pro',

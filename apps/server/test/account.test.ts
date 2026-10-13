@@ -61,21 +61,68 @@ describe('deleting the account', () => {
 
   it('removes its store, its files, its backups and its sign-in', async () => {
     const sam = await server.signUp();
+    const phone = await server.newSession(sam.id, IPHONE);
     const file = someId();
     await sam.client.putFile(file, new TextEncoder().encode('locked'));
     await sam.client.push([{ record: someId(), base: 0, data: 'locked', file, deleted: false }]);
     await server.env.FILES.put(`backups/${sam.id}/2026-10-01.json.gz`, 'backup');
+    // A device code Sam approved, which the computer never picked up.
+    await server.env.DB.prepare(
+      `INSERT INTO "deviceCode" (id, deviceCode, userCode, userId, expiresAt, status)
+       VALUES (?, ?, ?, ?, ?, 'approved')`,
+    )
+      .bind(someId(), someId(), 'WDJBMJHT', sam.id, new Date(Date.now() + 600_000).toISOString())
+      .run();
     const response = await deleteAccount(sam.token);
     expect(response.status).toBe(200);
     expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
     expect((await server.env.FILES.list({ prefix: `backups/${sam.id}/` })).objects).toEqual([]);
+    // The store keeps only that the account was deleted, so nothing can fill it again.
     const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
-    expect(await storage.exec('SELECT * FROM meta')).toEqual([]);
+    expect(await storage.exec('SELECT key FROM meta')).toEqual([{ key: 'deleted' }]);
     await expect(sam.client.account()).rejects.toMatchObject({ kind: 'signed-out' });
-    const user = await server.env.DB.prepare('SELECT id FROM "user" WHERE id = ?')
-      .bind(sam.id)
-      .first();
-    expect(user).toBeNull();
+    await expect(phone.client.changes(0)).rejects.toMatchObject({ kind: 'signed-out' });
+    for (const table of ['user', 'account', 'session', 'deviceCode']) {
+      const left = await server.env.DB.prepare(
+        `SELECT count(*) AS n FROM "${table}" WHERE ${table === 'user' ? 'id' : 'userId'} = ?`,
+      )
+        .bind(sam.id)
+        .first<{ n: number }>();
+      expect(left?.n, table).toBe(0);
+    }
+  });
+
+  it('needs a sign-in with GitHub or Google in the last 15 minutes, which a device code can’t give', async () => {
+    const sam = await server.signUp();
+    await sam.client.push([
+      { record: someId(), base: 0, data: 'locked', file: null, deleted: false },
+    ]);
+    // Sam last signed in with GitHub an hour ago; this session came from a device code just now.
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await server.env.DB.prepare('UPDATE "account" SET updatedAt = ? WHERE userId = ?')
+      .bind(hourAgo, sam.id)
+      .run();
+    const response = await deleteAccount(sam.token);
+    expect(response.status).toBe(400);
+    // The web view asks for a fresh sign-in when it sees this.
+    expect(await response.json()).toMatchObject({ code: 'SESSION_NOT_FRESH' });
+    expect((await sam.client.changes(0)).changes).toHaveLength(1);
+
+    // Signing in with GitHub again updates the account's link, and then it can go.
+    await server.env.DB.prepare('UPDATE "account" SET updatedAt = ? WHERE userId = ?')
+      .bind(new Date().toISOString(), sam.id)
+      .run();
+    expect((await deleteAccount(sam.token)).status).toBe(200);
+  });
+
+  it('turns away an upload that lands while the store is deleted, and keeps no copy of it', async () => {
+    const sam = await server.signUp();
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec("INSERT INTO meta (key, value) VALUES ('deleted', ?)", sam.id);
+    await expect(
+      sam.client.putFile(someId(), new TextEncoder().encode('locked')),
+    ).rejects.toMatchObject({ kind: 'signed-out' });
+    expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
   });
 
   it('needs a fresh sign-in', async () => {

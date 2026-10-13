@@ -3,7 +3,7 @@
 Factwright holds the most personal parts of a job hunt: your career history, your pay, the companies you're talking to, and the people you're reaching out to. It also runs an AI agent on your computer. This is how it protects both.
 
 > [!NOTE]
-> The cloud part below is written up in full so it can be reviewed. Until someone outside the project has checked it, Factwright doesn't claim in public that nobody else can read your data.
+> The cloud part below is written up in full so it can be reviewed. On 2026-10-13 a separate Claude agent with no part in the design reviewed it against the code, as a second opinion rather than an outside expert's audit. What it found is fixed or written up here, including what the web view can't promise.
 
 ## Your Claude login
 - Factwright never reads, stores or passes Claude credentials, tokens or API keys.
@@ -80,6 +80,9 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - Signing in is separate from the keys: it proves who you are to the server, and the keys never touch it. You sign in with GitHub or Google, through [Better Auth](https://www.better-auth.com) running in the sync server.
 - The desktop app signs in through your browser with a device code (RFC 8628): the app shows a short code, and you check the browser shows the same one before you allow it. The app keeps its session token in the system's keychain.
 - A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out. Signing out deletes the session's record at once, and one that runs out is deleted within a day.
+- A session keeps the name of the device that signed in, such as "Safari on iPhone" or "Factwright on Sam's Mac", in place of everything the browser or app sent, and no IP address. GitHub's and Google's tokens, and the link to your profile picture, aren't kept, and sign-in's ways to hand out or refresh a provider's token are off.
+- The account key's locked copy is saved once, by the first device, and no session can replace it. So someone who tricks you into approving their device code can't spoil your recovery key.
+- Deleting the account needs a sign-in with GitHub or Google in the last 15 minutes. A session from a device code doesn't count, however new, so the same trick can't delete your account either.
 
 ### The web view
 The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.
@@ -87,16 +90,20 @@ The web view opens your job hunt in the browser, so the page that holds your key
 - It keeps keys made from the account key in IndexedDB, as Web Crypto keys the page can use but can't read back out. Signing out of the browser forgets them.
 - Its session is a cookie the page itself can't read. A change sent with that cookie must come from the app's own pages: sign-in and the sync API both turn away requests another site starts.
 - A copy of your job hunt is put together in the browser, as a ZIP, and never passes through the server opened.
+- **What it can't promise:** the web view's code comes from the server each time it opens. A server that misbehaved, or someone who took over the account it runs on, could send code that reads what you open there, or the account key when you link a browser or type your recovery key into it. The desktop app is different: its code changes only through updates signed by Neatifai and checked before they install.
 
 ### What the server sees
-- Your account: the email, name and profile picture link your sign-in shares, and each session's device name, IP address and when it was last used.
-- Sign-in's limits on attempts, which count each IP address's recent requests. Those counts are deleted each day.
-- For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, and which file contents it points to.
-- For each file: an opaque ID and its size.
+- Your account: the email and name your sign-in shares, and which GitHub or Google account it is.
+- Each session: the device's name (for the app, your computer's name), and when it signed in and was last used.
+- Sign-in's limits, which count each IP address's requests to sign in or check a sign-in. Those counts are deleted within a day.
+- For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, which file contents it points to, and which session made each version.
+- For each file: an opaque ID, its size and when it was uploaded.
 - Never your file names, the files' contents, what you track, or any key that opens them.
+- Its own logs keep only what it writes itself, such as a backup that failed. Cloudflare's log of every request is off, and a ticket to listen for changes says nothing about the account. Cloudflare, which runs the server, still sees each request's IP address and address as it passes through, as any host does.
+- Sizes and times aren't padded, so they show roughly how much you keep and when you change it.
 
 ### What it can't prevent
-A server that misbehaved couldn't read your data or forge it. It could still delete it, hold back new changes, or keep serving an old version of a record.
+A server that misbehaved couldn't read or forge what the desktop app syncs. It could still delete it, hold back new changes, or keep serving an old version of a record. And because it sends the web view's code, it could change that code to read what you open there.
 
 ### Separate accounts
 - The server takes your account from your verified session only, never from the request.
@@ -105,8 +112,10 @@ A server that misbehaved couldn't read your data or forge it. It could still del
 - Each account has limits on storage, file size and requests, since a free service invites abuse.
 
 ### Backups and deleting
-- Each account's store is snapshotted to R2 every day and kept for 14 days. Cloudflare also keeps 30 days of point-in-time recovery for each store.
-- Deleting your account removes your store, your files, your backups and your sign-in records. It needs a fresh sign-in first.
+- Each account's store is snapshotted to R2 every day and kept for 14 days. Cloudflare also keeps 30 days of point-in-time recovery for each store, and 7 days for the accounts database (30 on a paid plan).
+- Something you delete in the app stays on the server, locked, while an earlier version holds it (90 days), then in backups (up to 14 days more) and Cloudflare's recovery (up to 30 days more).
+- Deleting your account signs out every device first, then removes your store, your files, your backups and your sign-in records. The store remembers it was deleted, so nothing can fill it again, and a last sweep a few minutes later catches an upload that was on its way.
+- Someone who can't sign in any more can ask by email, and the operator can delete their account with a token only the operator has.
 
 ### The trade-off
 If you lose every device and your recovery key, your data can't be recovered, by you or by us. You can download an unencrypted copy whenever you like, from your account in the web view.
@@ -138,7 +147,9 @@ If you lose every device and your recovery key, your data can't be recovered, by
 ## What still leaves your computer
 Whatever Claude reads goes to Anthropic, under your own account and Anthropic's terms. That's how Claude works, and Factwright doesn't add anyone else to that path.
 
-Factwright sends no crash reports, analytics or usage data.
+Factwright sends no crash reports, analytics or usage data. Claude Code sends Anthropic its own, under your Claude Code settings.
+
+Factwright's tools read job boards and pages straight from your computer, so each site sees your IP address and that Factwright is asking. Hacker News's "Who is hiring?" threads come through Algolia's Hacker News search. On Windows, the spell checker built into Chromium downloads its dictionary from Google once; it never sends what you type.
 
 ## Reporting a problem
 See [SECURITY.md](../SECURITY.md).
