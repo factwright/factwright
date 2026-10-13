@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import axe from 'axe-core';
@@ -217,17 +217,12 @@ describe('the site’s build', () => {
   it('builds every page, and lists the ones to find in the sitemap', () => {
     const config = readFileSync(join(SITE, 'vite.config.ts'), 'utf8');
     const sitemap = readFileSync(join(SITE, 'public', 'sitemap.xml'), 'utf8');
-    for (const page of [
-      'index.html',
-      'download.html',
-      'download/mac.html',
-      'download/windows.html',
-      'privacy.html',
-      'terms.html',
-      '404.html',
-    ]) {
-      expect(config, page).toContain(`'${page}'`);
-    }
+    // Every page in the site's folder, however many there come to be.
+    const pages = readdirSync(SITE, { recursive: true, encoding: 'utf8' }).filter(
+      (path) => path.endsWith('.html') && !/^(node_modules|dist|public)\b/.test(path),
+    );
+    expect(pages.length).toBeGreaterThan(6);
+    for (const page of pages) expect(config, page).toContain(`'${page.replaceAll('\\', '/')}'`);
     for (const path of ['/', '/download', '/privacy', '/terms']) {
       expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
     }
