@@ -1,13 +1,7 @@
-import { delimiter, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { delimiter } from 'node:path';
 import { _electron, type ElectronApplication, type Page } from '@playwright/test';
 import electronPath from 'electron';
-
-// Without a trailing separator: on Windows, Playwright quotes each argument, and a trailing
-// backslash would escape the closing quote.
-export const desktop = resolve(fileURLToPath(new URL('..', import.meta.url)));
-/** The stand-in Claude Code, which runs put first on PATH, so no run reaches the user's own. */
-export const fakeClaude = join(desktop, 'e2e', 'fake-claude');
+import { desktop, fakeClaude } from './paths.ts';
 
 export interface Opened {
   app: ElectronApplication;

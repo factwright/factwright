@@ -1,12 +1,12 @@
 // The app as its installers build it, with its own plugin, node-pty unpacked beside its archive,
 // and its fuses on. Those fuses turn off the debugger Playwright's Electron launcher drives, so
 // this starts the app itself and drives its window over Chromium's debugging port instead.
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { delimiter, join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
-import { desktop, fakeClaude } from './app.ts';
+import { desktop, fakeClaude } from './paths.ts';
 import { newDataFolder } from './workspace.ts';
 
 /** Where the installers leave the app, unpacked, for each kind of computer. */
@@ -71,14 +71,23 @@ test.beforeAll(async () => {
     (await context.waitForEvent('page', { predicate: (page) => page.url().startsWith('app://') }));
 });
 
-test.afterAll(async () => {
-  await browser?.close();
-  if (app && app.exitCode === null) {
-    const exited = new Promise((resolve) => app.once('exit', resolve));
+/** Stops the app and every process it started, which Windows needs before its files can go. */
+async function stop(): Promise<void> {
+  if (!app || app.exitCode !== null) return;
+  const exited = new Promise((resolve) => app.once('exit', resolve));
+  if (process.platform === 'win32' && app.pid) {
+    spawnSync('taskkill', ['/pid', String(app.pid), '/t', '/f']);
+  } else {
     app.kill();
-    await exited;
   }
-  rmSync(dataDir, { recursive: true, force: true });
+  await exited;
+}
+
+test.afterAll(async () => {
+  await browser?.close().catch(() => {});
+  await stop();
+  // Windows can hold a file a moment after the process that had it open has gone.
+  rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 });
 
 test('opens on the jobs on file, with its Claude ready', async () => {
