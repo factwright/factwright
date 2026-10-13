@@ -14,10 +14,15 @@ export interface MacInstaller {
   on(event: 'update-downloaded', listener: () => void): unknown;
 }
 
-/** How often an installed copy looks for an update. */
-export const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+/** How often an installed copy looks for an update, so a new version shows within minutes. */
+export const CHECK_EVERY_MS = 10 * 60 * 1000;
 /** How long after starting it first looks, so looking never slows the start. */
 export const FIRST_CHECK_AFTER_MS = 30 * 1000;
+/**
+ * The least time between looks when the user comes back to the app or the computer wakes, so
+ * switching between windows doesn't look each time.
+ */
+export const LOOK_AGAIN_AFTER_MS = 60 * 1000;
 
 /**
  * electron-updater sends an ID of its own, kept on the computer, with each look for an update,
@@ -56,10 +61,10 @@ export interface UpdateWatcherDeps {
 }
 
 /**
- * Keeps an installed copy of Factwright up to date: it looks for a new version now and then
- * (from the download site, as the installers set it up), downloads one in the background, and
- * installs it when the user restarts, or the next time they quit. A problem looking is kept
- * quiet: the next look tries again.
+ * Keeps an installed copy of Factwright up to date: it looks for a new version every few minutes
+ * and when the user comes back to it (from the download site, as the installers set it up),
+ * downloads one in the background, and installs it when the user restarts, or the next time they
+ * quit. A problem looking is kept quiet: the next look tries again.
  */
 export class UpdateWatcher {
   private readonly deps: UpdateWatcherDeps;
@@ -67,6 +72,9 @@ export class UpdateWatcher {
   /** A download the Mac is still checking, before it can install it. */
   private downloaded: UpdateInfo | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
+  private running = false;
+  /** When it last looked, or started, as coming back to the app looks only if that was a while ago. */
+  private lastLook = 0;
 
   constructor(deps: UpdateWatcherDeps) {
     this.deps = deps;
@@ -99,13 +107,25 @@ export class UpdateWatcher {
       this.downloaded = null;
       if (this.status.state !== 'none') this.set({ state: 'none' });
     });
+    this.running = true;
+    this.lastLook = Date.now();
     this.timers.push(setTimeout(() => this.check(), FIRST_CHECK_AFTER_MS));
     this.timers.push(setInterval(() => this.check(), CHECK_EVERY_MS));
   }
 
   stop(): void {
+    this.running = false;
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
+  }
+
+  /**
+   * Looks now, unless it did within the last minute: for when the user comes back to the app or
+   * the computer wakes, so an update that came out meanwhile shows straight away.
+   */
+  lookAgain(): void {
+    if (!this.running || Date.now() - this.lastLook < LOOK_AGAIN_AFTER_MS) return;
+    this.check();
   }
 
   current(): UpdateStatus {
@@ -126,6 +146,7 @@ export class UpdateWatcher {
   /** Looks for an update, unless one is downloading or waiting to be installed. */
   check(): void {
     if (this.status.state !== 'none') return;
+    this.lastLook = Date.now();
     const failed = (error: unknown) =>
       this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
     this.deps.updater.checkForUpdates().then(

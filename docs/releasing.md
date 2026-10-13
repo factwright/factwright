@@ -27,8 +27,10 @@ How a version of Factwright reaches people: installers built and signed by GitHu
   - `Factwright.dmg` and `Factwright-Setup.exe` are always the newest. The website links to them.
   - `latest-mac.yml` and `latest.yml` say which version is newest, with each file's checksum.
     They're uploaded last, so nothing finds a version before its files are there.
-- **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every four
-  hours ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)).
+- **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
+  minutes, and straight away when the user comes back to it or the computer wakes, at most once a
+  minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new
+  version reaches a running copy within minutes of its release.
   - It downloads a new version in the background, and checks it against the feed's checksum.
     On a Mac, the system then checks the developer's signature; on Windows, the updater checks
     the publisher's name.
