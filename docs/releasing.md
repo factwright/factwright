@@ -61,7 +61,7 @@ the value; nobody else ever sees them.
 | Variable | What it is |
 |---|---|
 | `AZURE_SIGNING_ENDPOINT` | The signing account's URI, such as `https://ncus.codesigning.azure.net/` |
-| `AZURE_CERTIFICATE_PROFILE` | The Public Trust certificate profile, `factwright` |
+| `AZURE_CERTIFICATE_PROFILE` | The Public Trust certificate profile, `neatifai`: the only one the Basic plan allows, so any Neatifai app signs with it |
 | `AZURE_PUBLISHER_NAME` | The certificate's common name alone, exactly as it reads, such as `NEATIFAI LLC`: installed copies check every update against it, so a wrong one would stop their updates for good. The build stops if it's blank, and a release checks the app is signed by it |
 
 The app registration needs the **Artifact Signing Certificate Profile Signer** role on
@@ -84,7 +84,8 @@ validation on 2029-01-12. Releases stop until each is renewed.
 
    Then it builds, signs and notarizes on a Mac and on Windows. It checks:
    - the app's archive holds only the app
-   - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name
+   - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name, and Apple's
+     ticket is stapled to the Mac app
    - each built app starts with a stand-in Claude Code
 
    Only then does it upload, refusing to replace a version that's out already. A release that
@@ -92,9 +93,10 @@ validation on 2029-01-12. Releases stop until each is renewed.
 5. **Check it:** `https://downloads.factwright.com/latest-mac.yml` and `latest.yml` name the new
    version, and the two downloads open.
 
-Running the workflow by hand on a branch builds and tests the installers without publishing them,
-signed if signing is set up: run it before a release that changes how the installers are made,
-as that's the only run that tries signing and notarizing. A pull request that changes the
+Running the workflow by hand on a branch builds and tests the installers without publishing them.
+If signing is set up, they're signed, notarized and checked as a release's are: run it before a
+release that changes how the installers are made, as that's the only run that tries signing and
+notarizing. A pull request that changes the
 workflow or the build settings runs it too, but never gets the signing keys, so its Mac build is
 signed for that machine alone and its Windows build isn't signed. The installers come back as the
 run's artifacts. A run by hand on a tag is a release.
