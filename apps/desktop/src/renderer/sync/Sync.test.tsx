@@ -125,6 +125,39 @@ describe('SyncDialog', () => {
     vi.useRealTimers();
   });
 
+  it('says why a computer that synced before saves a new recovery key', async () => {
+    const api = apiFor('off');
+    render(
+      <SyncDialog
+        api={api}
+        status={{ state: 'setting-up', email: 'sam@example.com', firstDevice: true, again: true }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Save a new recovery key' })).toBeTruthy();
+    expect(screen.getByText(/a key you saved before won’t open it/)).toBeTruthy();
+  });
+
+  it('ends a sign-in with the wrong account, from either step', async () => {
+    const user = userEvent.setup();
+    for (const firstDevice of [true, false]) {
+      const api = {
+        ...apiFor('off'),
+        useDifferentSyncAccount: vi.fn(async () => ({ ok: true as const })),
+      };
+      const { unmount } = render(
+        <SyncDialog
+          api={api}
+          status={{ state: 'setting-up', email: 'work@example.com', firstDevice }}
+          onClose={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole('button', { name: 'Use a different account' }));
+      expect(api.useDifferentSyncAccount).toHaveBeenCalledOnce();
+      unmount();
+    }
+  });
+
   it('links a second computer with a code, and says what’s wrong with a bad one', async () => {
     const api = apiFor('link');
     const user = userEvent.setup();

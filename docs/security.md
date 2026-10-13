@@ -69,6 +69,9 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - When you turn on sync, your first device shows a **recovery key** once: 160 random bits, written as 32 characters to print or keep in a password manager.
 - The server keeps the account key locked with a key made from the recovery key (HKDF, then AES-256-GCM). It can't open it.
 - With the recovery key, any device you sign in on can unlock the account key. Since the recovery key is random and long, guessing it is out of reach, so it needs no slow key derivation.
+- A computer that signs in again checks the account's key on the server before it syncs anything, and asks again after a restart until it has.
+  - If the account has none, such as after it was deleted and made again, the computer makes a new account key and recovery key, as a first device does. The old ones, which a lost or stolen device may still hold, open nothing of it, and the computer's other devices link again.
+  - If the account uses another key, the computer asks to be linked to it and sends nothing until it is. Linking adds this computer's job hunt to that account, so signing in with the wrong one can be undone with **Use a different account**, which ends only that sign-in.
 
 ### Adding a device
 - On a device that's set up, **Link a phone or computer** makes a link code: 160 random bits, shown as a QR code and as 32 characters to type.

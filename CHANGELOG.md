@@ -15,6 +15,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - The operator can delete an account for someone who asked by email, with a token only the operator has.
 
+### Fixed
+- Signing in to sync again checks the account's key before anything syncs, and asks again after a restart until it has. An account deleted and made again gets a new account key and recovery key, which the old ones and any lost device can't open. Another account that uses another key is linked to only when asked, with **Use a different account** to end that sign-in instead.
+
 ## 0.1.0 - 2026-10-13
 
 The first release, for Mac and Windows.
