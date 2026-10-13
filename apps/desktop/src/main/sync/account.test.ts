@@ -229,6 +229,77 @@ describe('a computer with sync on', () => {
     expect(mac.sync.status()).toMatchObject({ state: 'on' });
   });
 
+  it('sets up a new recovery key when the account was deleted and made again, so recovery still works', async () => {
+    const mac = computer('Sam’s Mac');
+    mac.write('facts/skills.md', 'Kept on the Mac');
+    await setUpFirst(mac);
+    await mac.synced();
+    // Sam deletes the account on the web, then signs up again with the same GitHub login.
+    const deleted = await fetch(new URL('/api/auth/delete-user', server.url), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${person.token}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(deleted.status).toBe(200);
+    person = await server.signUp('Sam Rivera');
+    mac.sync.requestSync();
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
+      timeout: 10_000,
+    });
+
+    // Signing in again finds no key for the account: a recovery key comes first, for the key the
+    // Mac already has, and only then does the job hunt go up again.
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: true,
+    });
+    expect((await person.client.changes(0)).changes).toEqual([]);
+    const made = await mac.sync.newRecoveryKey();
+    if (!made.ok) throw new Error(made.message);
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    await mac.synced();
+
+    // A new computer gets in with that recovery key, and finds the job hunt.
+    const pc = computer('Sam’s PC');
+    await pc.sync.start();
+    expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(await pc.sync.useRecoveryKey(made.recoveryKey)).toEqual({ ok: true });
+    await pc.synced();
+    expect(pc.read('facts/skills.md')).toBe('Kept on the Mac');
+  });
+
+  it('won’t sync into another account that uses another key, and links to it instead', async () => {
+    const mac = computer('Sam’s Mac');
+    mac.write('facts/skills.md', 'Sam’s');
+    await setUpFirst(mac);
+    await mac.synced();
+    const listed = await mac.sync.account();
+    if (!listed.ok) throw new Error(listed.message);
+    const own = listed.account.devices.find((device) => device.current);
+    const other = await server.newSession(person.id);
+    await other.client.removeDevice(own?.id ?? '');
+    mac.sync.requestSync();
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
+      timeout: 10_000,
+    });
+
+    // Someone else's account, with its own key, signs in on the Mac.
+    person = await server.signUp('Alex Kim');
+    const alexPc = computer('Alex’s PC');
+    await setUpFirst(alexPc);
+    await alexPc.synced();
+    const before = (await person.client.changes(0)).changes.length;
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: false,
+    });
+    expect((await person.client.changes(0)).changes).toHaveLength(before);
+  });
+
   it('turns off on this computer, keeping the job hunt here', async () => {
     const mac = computer('Sam’s Mac');
     mac.write('facts/skills.md', 'Stays');

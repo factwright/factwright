@@ -85,8 +85,11 @@ export class SyncAccount {
   private accountKey: Bytes | null = null;
   private runner: SyncRunner | null = null;
   private signIn: DeviceSignIn | null = null;
-  /** The account key made for a first device, kept until its recovery key is saved. */
-  private pending: { accountKey: Bytes; recovery: Bytes } | null = null;
+  /**
+   * The account key for a first device, kept until its recovery key is saved: a new one, or the
+   * one this computer already had, for an account with no key on the server yet.
+   */
+  private pending: { accountKey: Bytes; recovery: Bytes | null } | null = null;
   private device = 'This computer';
   /** Once the app is closing, nothing more happens. */
   private closed = false;
@@ -158,6 +161,7 @@ export class SyncAccount {
     if (!this.client) return;
     try {
       const account = await this.client.account();
+      this.state.setMeta('account', account.user.id);
       this.state.setMeta('email', account.user.email);
       const keys = await this.client.keys();
       this.set({ state: 'setting-up', email: account.user.email, firstDevice: keys === null });
@@ -211,9 +215,55 @@ export class SyncAccount {
     this.client = this.clientFor(result.token);
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
-    if (accountKey) await this.turnOnWith(accountKey);
+    if (accountKey) await this.resume(accountKey);
     else await this.checkSetup();
     return { ok: true };
+  }
+
+  /**
+   * After signing in again with the account key this computer kept: carries on only once the
+   * account still uses that key. An account with no key on the server, such as one deleted and
+   * made again, sets up a recovery key for it first, as a first device does, so recovery still
+   * works. An account that uses another key isn't this computer's to sync with: it links to it
+   * instead, and nothing from here goes up.
+   */
+  private async resume(accountKey: Bytes): Promise<void> {
+    if (!this.client) return;
+    let account: Awaited<ReturnType<SyncClient['account']>>;
+    let saved: Awaited<ReturnType<SyncClient['keys']>>;
+    try {
+      [account, saved] = await Promise.all([this.client.account(), this.client.keys()]);
+    } catch (error) {
+      if (error instanceof SyncError && error.kind === 'signed-out') await this.forget();
+      else this.set({ state: 'setting-up', email: this.email(), firstDevice: false });
+      return;
+    }
+    // Another account than the one this computer synced with: what it knows of that one's
+    // history doesn't carry over.
+    const before = this.state.meta('account');
+    if (before !== null && before !== account.user.id) this.startOver();
+    this.state.setMeta('account', account.user.id);
+    this.state.setMeta('email', account.user.email);
+    const keyId = (await accountKeys(accountKey)).id;
+    if (saved === null) {
+      // Nothing is stored for the account yet, so everything here goes up again.
+      this.startOver();
+      this.pending = { accountKey, recovery: null };
+      this.set({ state: 'setting-up', email: account.user.email, firstDevice: true });
+    } else if (saved.keyId !== keyId) {
+      this.set({ state: 'setting-up', email: account.user.email, firstDevice: false });
+    } else {
+      await this.turnOnWith(accountKey);
+    }
+  }
+
+  /** Forgets what sync knew of the account's history, keeping who's signed in. */
+  private startOver(): void {
+    const email = this.email();
+    const account = this.state.meta('account');
+    this.state.clear();
+    this.state.setMeta('email', email);
+    if (account !== null) this.state.setMeta('account', account);
   }
 
   /** Stops waiting for the browser. Sync goes back to where it stood. */
@@ -234,7 +284,7 @@ export class SyncAccount {
 
   /** On the first device, once the recovery key is saved: turns sync on. */
   async turnOn(): Promise<EditResult> {
-    if (!this.client || !this.pending) return failed('Make your recovery key first.');
+    if (!this.client || !this.pending?.recovery) return failed('Make your recovery key first.');
     const { accountKey, recovery } = this.pending;
     try {
       const keys = await accountKeys(accountKey);
@@ -304,11 +354,7 @@ export class SyncAccount {
     if (!this.client) return;
     const keys = await accountKeys(accountKey);
     // Another account's data must never mix in: a different key starts over.
-    if (this.state.meta('keyId') !== keys.id) {
-      const email = this.email();
-      this.state.clear();
-      this.state.setMeta('email', email);
-    }
+    if (this.state.meta('keyId') !== keys.id) this.startOver();
     this.state.setMeta('keyId', keys.id);
     this.secrets.set('accountKey', toBase64Url(accountKey));
     this.accountKey = accountKey;
@@ -357,6 +403,7 @@ export class SyncAccount {
       .then((account) => {
         if (this.closed) return;
         this.state.setMeta('email', account.user.email);
+        if (this.state.meta('account') === null) this.state.setMeta('account', account.user.id);
         if (this.current.state === 'on') this.set({ ...this.current, email: account.user.email });
       })
       .catch(() => {});
