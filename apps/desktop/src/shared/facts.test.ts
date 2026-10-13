@@ -10,6 +10,10 @@ import {
   parseFactTarget,
   parseNewFact,
   stopped,
+  withChange,
+  withClaim,
+  withConfirmed,
+  withoutClaim,
 } from './facts.ts';
 
 describe('isFactPath', () => {
@@ -46,11 +50,15 @@ describe('parseFactTarget, parseFactChange and parseNewFact', () => {
   const target = { path: 'facts/acme.md', index: 3, text: '### A\n`live`\n' };
 
   it('takes a block as the window read it, and its new text', () => {
-    expect(parseFactTarget(target)).toEqual(target);
+    expect(parseFactTarget(target)).toEqual({ ...target, unique: false });
+    expect(parseFactTarget({ ...target, unique: true })).toEqual({ ...target, unique: true });
     expect(parseFactChange({ ...target, next: '### A\n`built`' })).toEqual({
       ...target,
+      unique: false,
       next: '### A\n`built`',
     });
+    // Empty, to clear the text before a file's first heading.
+    expect(parseFactChange({ ...target, next: '' })).toMatchObject({ next: '' });
     expect(parseNewFact({ path: 'facts/acme.md', text: '### B\n`live`' })).toEqual({
       path: 'facts/acme.md',
       text: '### B\n`live`',
@@ -63,7 +71,8 @@ describe('parseFactTarget, parseFactChange and parseNewFact', () => {
     expect(parseFactTarget({ ...target, path: '../secret.md' })).toBeNull();
     expect(parseFactTarget({ ...target, text: 'nul\u0000' })).toBeNull();
     expect(parseFactTarget([target])).toBeNull();
-    expect(parseFactChange({ ...target, next: '  ' })).toBeNull();
+    expect(parseFactTarget({ ...target, unique: 'yes' })).toBeNull();
+    expect(parseFactChange({ ...target })).toBeNull();
     expect(parseFactChange({ ...target, next: 'x'.repeat(FACT_LIMITS.block + 1) })).toBeNull();
     expect(parseNewFact({ path: 'facts/acme.md', text: 42 })).toBeNull();
   });
@@ -124,5 +133,40 @@ describe('stopped', () => {
   it('marks a change refused because the block changed since', () => {
     expect(stopped(CHANGED_SINCE)).toEqual({ ok: false, message: CHANGED_SINCE, changed: true });
     expect(stopped('Nope.')).toEqual({ ok: false, message: 'Nope.' });
+  });
+});
+
+describe('withChange, withClaim, withoutClaim and withConfirmed', () => {
+  const open =
+    '# Acme\n\n### A\n`unconfirmed` `live`\n> Did A.\n- steps:\n```\nrun\n\n### B\n`live`\n> Did B.\n';
+  const blocks = (text: string) => factFile('facts/acme.md', text).blocks;
+
+  it('keeps a fact whose code block runs on into what follows, rather than delete what it took in', () => {
+    const [, a] = blocks(open);
+    if (!a) throw new Error('missing block');
+    const target = { path: 'facts/acme.md', index: a.index, text: a.text };
+    expect(withoutClaim(open, 'claims', target)).toEqual({
+      problem: expect.stringMatching(/isn’t closed/),
+    });
+    expect(withConfirmed(open, 'claims', target, 'Alex 2026-10-12')).toEqual({
+      problem: expect.stringMatching(/isn’t closed/),
+    });
+    expect(withClaim(open, 'claims', '### C\n`live`\n> Did C.')).toEqual({
+      problem: expect.stringMatching(/isn’t closed/),
+    });
+  });
+
+  it('clears the text before a file’s first heading, and nothing else', () => {
+    const file = 'Notes first.\n\n# Acme\n';
+    const [before, title] = blocks(file);
+    if (!before || !title) throw new Error('missing block');
+    expect(
+      withChange(file, 'claims', { path: 'facts/acme.md', index: 0, text: before.text, next: '' }),
+    ).toBe('# Acme\n');
+    expect(
+      withChange(file, 'claims', { path: 'facts/acme.md', index: 1, text: title.text, next: ' ' }),
+    ).toEqual({
+      problem: 'It can’t be empty.',
+    });
   });
 });

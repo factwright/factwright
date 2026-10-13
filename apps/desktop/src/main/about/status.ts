@@ -3,7 +3,7 @@ import { join, relative, sep } from 'node:path';
 import { factBlocks, localDate, UNCONFIRMED } from '@factwright/core';
 import { DEFAULT_TEMPLATE } from '@factwright/engine';
 import type { AboutYou } from '../../shared/about.ts';
-import { factFileKind } from '../../shared/facts.ts';
+import { FACT_LIMITS, factFileKind } from '../../shared/facts.ts';
 import type { ProfileStatus, StartingResume } from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
 
@@ -23,6 +23,15 @@ export const ABOUT = {
 function readText(file: string): string | null {
   try {
     return readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** A file's size in bytes, or null when it isn't there. */
+function sizeOf(file: string): number | null {
+  try {
+    return statSync(file).size;
   } catch {
     return null;
   }
@@ -63,6 +72,8 @@ export function countFacts(workspace: string): ProfileStatus['facts'] {
   let unconfirmed = 0;
   const files = markdownUnder(workspace, 'facts').filter((path) => factFileKind(path) === 'claims');
   for (const path of files) {
+    // A file too big for the fact bank page isn't read here either, as it runs on every change.
+    if ((sizeOf(join(workspace, path)) ?? 0) > FACT_LIMITS.file) continue;
     for (const { tags } of factBlocks(readText(join(workspace, path)) ?? '')) {
       if (!tags) continue;
       claims += 1;

@@ -1,4 +1,4 @@
-import { claimParts, type FactBlock } from '@factwright/core';
+import { claimParts, type FactBlock, findBlock, sameBlock } from '@factwright/core';
 import {
   Button,
   EmptyState,
@@ -11,10 +11,10 @@ import {
 } from '@factwright/ui';
 import { BookCheck, Check, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
-import type { FactBank, FactResult } from '../../shared/facts.ts';
+import type { FactBank, FactResult, FactTarget, SkipReason } from '../../shared/facts.ts';
 import { usePref } from '../prefs.ts';
 import styles from './FactBankPage.module.css';
-import { ClaimForm, type EditNotice, SectionForm } from './FactEditor.tsx';
+import { ClaimForm, type EditNotice, forgetDraft, SectionForm } from './FactEditor.tsx';
 import {
   bankCounts,
   blockKey,
@@ -30,39 +30,97 @@ import { type FactBankApi, useFactBank } from './useFactBank.ts';
 const isPath = (value: unknown): value is string | null =>
   value === null || typeof value === 'string';
 
-/** A block being changed, as it was when its form opened, or a new claim. */
+/**
+ * A block as it was when the user acted on it, with how it can be told apart in its file, to
+ * find it again however the file has changed since.
+ */
+interface Held {
+  path: string;
+  block: FactBlock;
+  /** Whether no other block in the file read the same, so it can be found by its text if it moved. */
+  unique: boolean;
+  /** Whether no other block in the file had its heading, so it can be found by that once changed. */
+  titled: boolean;
+}
+
+/** A block being changed, held as it was when its form opened, or a new claim. */
 type Editing =
-  | {
+  | (Held & {
       kind: 'change';
-      path: string;
-      block: FactBlock;
       notice: EditNotice | null;
-      /** What the form keeps its words under, from when it opened. */
+      /** The edit's own key, which its form keeps the words typed under. */
       draft: string;
-    }
+    })
   | { kind: 'add'; path: string; draft: string };
 
 type Changing = Extract<Editing, { kind: 'change' }>;
 
-const CHANGED_NOTICE: EditNotice = {
-  title: 'This changed while you had it open',
-  text: 'Your Claude or another computer changed it. Save again to replace that version with yours, or cancel to keep it.',
+/** Each edit's key: never the same twice, so what's typed for one never shows in another. */
+let edits = 0;
+const nextDraft = () => `edit-${++edits}`;
+
+const sameHeading = (a: FactBlock, b: FactBlock) => a.level === b.level && a.title === b.title;
+
+/** A block held as it is now, with how it can be told apart among its file's blocks. */
+function hold(path: string, block: FactBlock, blocks: readonly FactBlock[]): Held {
+  return {
+    path,
+    block,
+    unique: blocks.filter((each) => sameBlock(each.text, block.text)).length === 1,
+    titled: blocks.filter((each) => sameHeading(each, block)).length === 1,
+  };
+}
+
+/** A held block, as the main process looks for it. */
+const targetOf = ({ path, block, unique }: Held): FactTarget => ({
+  path,
+  index: block.index,
+  text: block.text,
+  unique,
+});
+
+/** Where a held block is now, if it reads as it did: -1 when it changed, or went. */
+function placeOf(blocks: readonly FactBlock[], held: Held): number {
+  return findBlock(blocks, targetOf(held))?.index ?? -1;
+}
+
+/**
+ * Where a held block is now, even if someone else changed it: where it was, if it reads the same
+ * or still has its heading there, or else the one block with its heading, if no other had it.
+ * -1 when it's gone.
+ */
+function changedPlaceOf(blocks: readonly FactBlock[], held: Held): number {
+  const same = placeOf(blocks, held);
+  if (same >= 0) return same;
+  const there = blocks[held.block.index];
+  if (there && sameHeading(there, held.block)) return held.block.index;
+  if (!held.titled) return -1;
+  const titled = blocks.filter((each) => sameHeading(each, held.block));
+  return titled.length === 1 ? (titled[0]?.index ?? -1) : -1;
+}
+
+/** What to say about a block someone changed while the user had it open. */
+function changedNotice(now: FactBlock): EditNotice {
+  const wording = now.tags ? claimParts(now).wording.replace(/\s+/g, ' ').trim() : '';
+  const shown = wording.length > 200 ? `${wording.slice(0, 199)}…` : wording;
+  return {
+    title: 'This changed while you had it open',
+    text: `Your Claude or another computer changed it.${
+      shown ? ` It now says: “${shown}”` : ''
+    } Save again to replace that version with yours, or cancel to keep it.`,
+  };
+}
+
+const SKIPPED: Readonly<Record<SkipReason, string>> = {
+  big: 'too big to show here',
+  name: 'a name some computers can’t hold',
+  many: 'past the first 500 files',
+  unreadable: 'couldn’t be read',
 };
 
 /** A button of a block, by the block's key and what the button does, to give it the focus. */
 const toolOf = (key: string, tool: 'change' | 'delete' | 'confirm') =>
   `[data-key="${key.replace(/["\\]/g, '\\$&')}"] [data-tool="${tool}"]`;
-
-/**
- * Where a block being changed is now: the block that reads the same, or else the one with its
- * heading where it was, or anywhere. -1 when it's gone.
- */
-function placeOf(blocks: readonly FactBlock[], block: FactBlock): number {
-  const same = blocks.findIndex((each) => each.text.trimEnd() === block.text.trimEnd());
-  if (same >= 0) return same;
-  if (blocks[block.index]?.title === block.title) return block.index;
-  return blocks.findIndex((each) => each.title === block.title && each.level === block.level);
-}
 
 /**
  * Each block with its heading's level on the page, under the file's title: a section is one
@@ -73,7 +131,7 @@ function headingsOf(blocks: readonly FactBlock[]): [FactBlock, number][] {
   let section = 2;
   return blocks.map((block) => {
     const level = Math.min(block.level + 1, section + 1);
-    if (!block.tags) section = level;
+    if (!block.tags && block.level > 0) section = level;
     return [block, level];
   });
 }
@@ -107,6 +165,7 @@ function BlockView({
   onConfirm: () => void;
 }) {
   const id = useId();
+  const asked = useId();
   const key = blockKey(path, block);
   const problem = trouble && (
     <p className={styles.problem} role="alert">
@@ -171,7 +230,7 @@ function BlockView({
         {details && <Markdown className={styles.details} text={details} />}
         {deleting && (
           <div className={styles.confirmDelete}>
-            <span>
+            <span id={asked}>
               Delete this fact? Resumes you’ve made keep it, but your Claude won’t use it again.
             </span>
             <Button size="sm" onClick={onKeep}>
@@ -180,6 +239,7 @@ function BlockView({
             <Button
               size="sm"
               variant="primary"
+              aria-describedby={asked}
               // The user just asked to delete it, so the choice to make takes the focus.
               autoFocus
               onClick={onRemove}
@@ -251,11 +311,21 @@ export function FactBankPage({
   const [toConfirm, setToConfirm] = useState(false);
   const [openPath, setOpenPath] = usePref<string | null>('facts.file', null, isPath);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [trouble, setTrouble] = useState<{ key: string; message: string } | null>(null);
+  const [deleting, setDeleting] = useState<Held | null>(null);
+  const [trouble, setTrouble] = useState<(Held & { message: string }) | null>(null);
   // What just happened, for screen readers, as the focus moves on.
   const [said, setSaid] = useState('');
   const page = useRef<HTMLElement>(null);
+
+  // An edit that's still open when the page goes keeps nothing typed for later.
+  const open = useRef(editing);
+  open.current = editing;
+  useEffect(
+    () => () => {
+      if (open.current) forgetDraft(open.current.draft);
+    },
+    [],
+  );
 
   // Where the focus goes once the page shows a change: the first of these that's there.
   const focusing = useRef<{ selectors: string[]; until: number } | null>(null);
@@ -279,6 +349,27 @@ export function FactBankPage({
     }
   });
 
+  const blocksOf = (path: string) => bank?.files.find((each) => each.path === path)?.blocks ?? [];
+  const deletingAt = deleting ? placeOf(blocksOf(deleting.path), deleting) : -1;
+
+  // A fact that changed while the user was asked about deleting it isn't deleted: they're told.
+  useEffect(() => {
+    if (!deleting || deletingAt >= 0) return;
+    setDeleting(null);
+    setSaid(`“${deleting.block.title}” changed, so it wasn’t deleted.`);
+    focusSoon('#facts-search');
+  });
+
+  // With nothing left to confirm, the page shows the files again, and stays there.
+  const unconfirmed = bank ? bankCounts(bank).unconfirmed : 0;
+  useEffect(() => {
+    if (toConfirm && bank && unconfirmed === 0) setToConfirm(false);
+  }, [toConfirm, bank, unconfirmed]);
+
+  /** Says something to screen readers, even the same thing twice. */
+  const announce = (text: string) =>
+    setSaid((before) => (before === text ? `${text}\u00a0` : text));
+
   if (!bank) {
     return (
       <main className={styles.page} ref={page}>
@@ -296,7 +387,7 @@ export function FactBankPage({
     );
   }
 
-  if (bank.files.length === 0) {
+  if (bank.files.length === 0 && bank.skipped.length === 0) {
     return (
       <main className={styles.page} ref={page}>
         <h1 className={styles.title}>Fact bank</h1>
@@ -330,14 +421,17 @@ export function FactBankPage({
   const source = `${bank.firstName ?? 'confirmed'} ${today}`;
 
   // Where the block being changed is now, so its form shows in its place.
-  const editingFile =
-    editing?.kind === 'change' ? bank.files.find((each) => each.path === editing.path) : undefined;
   const editingAt =
-    editing?.kind === 'change' && editingFile ? placeOf(editingFile.blocks, editing.block) : -1;
+    editing?.kind === 'change' ? changedPlaceOf(blocksOf(editing.path), editing) : -1;
   const editingKey =
     editing?.kind === 'change' && editingAt >= 0
       ? blockKey(editing.path, { index: editingAt })
       : null;
+  const deletingKey =
+    deleting && deletingAt >= 0 ? blockKey(deleting.path, { index: deletingAt }) : null;
+  const troubleAt = trouble ? changedPlaceOf(blocksOf(trouble.path), trouble) : -1;
+  const troubleKey =
+    trouble && troubleAt >= 0 ? blockKey(trouble.path, { index: troubleAt }) : null;
   const found = searching
     ? findFacts(bank, {
         query,
@@ -346,16 +440,29 @@ export function FactBankPage({
       })
     : [];
 
+  /** Ends the edit that's open, dropping what was typed for it. */
+  const finish = () => {
+    if (editing) forgetDraft(editing.draft);
+    setEditing(null);
+  };
+
   const startChange = (path: string, block: FactBlock) => {
+    if (editing) forgetDraft(editing.draft);
     setDeleting(null);
     setTrouble(null);
-    setEditing({ kind: 'change', path, block, notice: null, draft: blockKey(path, block) });
+    setEditing({
+      ...hold(path, block, blocksOf(path)),
+      kind: 'change',
+      notice: null,
+      draft: nextDraft(),
+    });
   };
 
   const startAdd = (path: string) => {
+    if (editing) forgetDraft(editing.draft);
     setDeleting(null);
     setTrouble(null);
-    setEditing({ kind: 'add', path, draft: `new:${path}` });
+    setEditing({ kind: 'add', path, draft: nextDraft() });
   };
 
   const openFile = (path: string) => {
@@ -369,17 +476,22 @@ export function FactBankPage({
 
   const saveChange = async (changing: Changing, next: string): Promise<string | null> => {
     const { path, block } = changing;
-    const result = await api.changeFact({ path, index: block.index, text: block.text, next });
+    const result = await api.changeFact({ ...targetOf(changing), next });
     if (result.ok) {
       take(result.bank);
+      forgetDraft(changing.draft);
       setEditing(null);
       const now = result.bank.files.find((each) => each.path === path)?.blocks[block.index];
       focusSoon(toolOf(blockKey(path, block), 'change'), '#facts-search');
-      setSaid(`Saved “${now?.title || block.title || 'the opening text'}”.`);
+      announce(
+        next.trim()
+          ? `Saved “${now?.title || block.title || 'the opening text'}”.`
+          : 'Cleared the opening text.',
+      );
       return null;
     }
     if (!result.changed) return result.message;
-    // It changed while the form was open. The form stays, with the user's words, set against
+    // It changed while the form was open. The form stays, with what the user typed, set against
     // the block as it is now, so saving again replaces that version.
     let latest: FactBank | null = null;
     try {
@@ -389,10 +501,11 @@ export function FactBankPage({
     }
     if (latest) take(latest);
     const blocks = latest?.files.find((each) => each.path === path)?.blocks ?? [];
-    const now = blocks[placeOf(blocks, block)];
-    if (!now)
+    const now = blocks[changedPlaceOf(blocks, changing)];
+    if (!now || (now.tags === null) !== (block.tags === null)) {
       return 'This was deleted while you had it open. Copy your words if you want them, then cancel.';
-    setEditing({ ...changing, block: now, notice: CHANGED_NOTICE });
+    }
+    setEditing({ ...changing, ...hold(path, now, blocks), notice: changedNotice(now) });
     return null;
   };
 
@@ -400,7 +513,7 @@ export function FactBankPage({
     const result = await api.addFact({ path, text });
     if (!result.ok) return result.message;
     take(result.bank);
-    setEditing(null);
+    finish();
     setOpenPath(path);
     setQuery('');
     setToConfirm(false);
@@ -408,30 +521,29 @@ export function FactBankPage({
       .find((each) => each.path === path)
       ?.blocks.find((each) => each.text.replace(/\r\n/g, '\n').trimEnd() === text.trimEnd());
     focusSoon(...(added ? [toolOf(blockKey(path, added), 'change')] : []), '#facts-file-title');
-    setSaid(`Added “${added?.title ?? 'your fact'}”.`);
+    announce(`Added “${added?.title ?? 'your fact'}”.`);
     return null;
   };
 
   /** Runs a change to one block, showing what stopped it beside the block. */
-  const act = async (path: string, block: FactBlock, action: Promise<FactResult>) => {
-    const key = blockKey(path, block);
+  const act = async (held: Held, action: Promise<FactResult>) => {
     setTrouble(null);
     const result = await action;
     if (result.ok) {
       take(result.bank);
       return result.bank;
     }
-    setTrouble({ key, message: result.message });
+    setTrouble({ ...held, message: result.message });
     if (result.changed) void reload();
     return null;
   };
 
-  const remove = async (path: string, block: FactBlock) => {
-    const target = { path, index: block.index, text: block.text };
-    const after = await act(path, block, api.removeFact(target));
+  const remove = async (held: Held) => {
+    const { path, block } = held;
     setDeleting(null);
+    const after = await act(held, api.removeFact(targetOf(held)));
     if (!after) {
-      focusSoon(toolOf(blockKey(path, block), 'delete'));
+      focusSoon(toolOf(blockKey(path, block), 'delete'), '#facts-search');
       return;
     }
     // The focus goes to what took its place, or the one before it.
@@ -440,15 +552,15 @@ export function FactBankPage({
       blocks.slice(block.index).find(hasContent) ??
       blocks.slice(0, block.index).reverse().find(hasContent);
     focusSoon(...(next ? [toolOf(blockKey(path, next), 'change')] : []), '#facts-search');
-    setSaid(`Deleted “${block.title}”.`);
+    announce(`Deleted “${block.title}”.`);
   };
 
   const confirm = async (path: string, block: FactBlock) => {
-    const target = { path, index: block.index, text: block.text };
-    if (!(await act(path, block, api.confirmFact(target)))) return;
+    const held = hold(path, block, blocksOf(path));
+    if (!(await act(held, api.confirmFact(targetOf(held))))) return;
     // Among the facts still to confirm, it leaves the list, so the focus goes to the next one.
     focusSoon(toolOf(blockKey(path, block), 'change'), '[data-tool="confirm"]', '#facts-search');
-    setSaid(`Confirmed “${block.title}”.`);
+    announce(`Confirmed “${block.title}”.`);
   };
 
   const changeForm = (changing: Changing) => {
@@ -458,25 +570,16 @@ export function FactBankPage({
       block: changing.block,
       notice: changing.notice,
       onCancel: () => {
-        setEditing(null);
+        finish();
         focusSoon(toolOf(key, 'change'), '#facts-search');
       },
     };
     return (
-      <div className={styles.editing} data-key={key}>
+      <div key={changing.draft} className={styles.editing} data-key={key}>
         {changing.block.tags ? (
-          <ClaimForm
-            key={changing.draft}
-            {...common}
-            source={source}
-            onSave={(text) => saveChange(changing, text)}
-          />
+          <ClaimForm {...common} source={source} onSave={(text) => saveChange(changing, text)} />
         ) : (
-          <SectionForm
-            key={changing.draft}
-            {...common}
-            onSave={(text) => saveChange(changing, text)}
-          />
+          <SectionForm {...common} onSave={(text) => saveChange(changing, text)} />
         )}
       </div>
     );
@@ -484,9 +587,7 @@ export function FactBankPage({
 
   const renderBlock = (path: string, block: FactBlock, heading: number, opening = false) => {
     const key = blockKey(path, block);
-    if (key === editingKey && editing?.kind === 'change') {
-      return <div key={key}>{changeForm(editing)}</div>;
-    }
+    if (key === editingKey && editing?.kind === 'change') return changeForm(editing);
     return (
       <BlockView
         key={key}
@@ -494,26 +595,30 @@ export function FactBankPage({
         block={block}
         heading={heading}
         opening={opening}
-        deleting={deleting === key}
-        trouble={trouble?.key === key ? trouble.message : null}
+        deleting={key === deletingKey}
+        trouble={key === troubleKey ? (trouble?.message ?? null) : null}
         onChange={() => startChange(path, block)}
         onDelete={() => {
           setTrouble(null);
-          setDeleting(key);
+          setDeleting(hold(path, block, blocksOf(path)));
         }}
         onKeep={() => {
           setDeleting(null);
           focusSoon(toolOf(key, 'delete'));
         }}
-        onRemove={() => void remove(path, block)}
+        onRemove={() => {
+          if (deleting) void remove(deleting);
+        }}
         onConfirm={() => void confirm(path, block)}
       />
     );
   };
 
-  // A file's first heading is its title, so what's under it shows under the file's name.
+  // A file's first heading is its title, so what's under it shows under the file's name, after
+  // any text that comes before it.
   const opening = file?.blocks.find((block) => block.level === 1);
   const openingKey = file && opening ? blockKey(file.path, opening) : null;
+  const before = file?.blocks.find((block) => block.level === 0 && hasContent(block));
   const fileClaims = file?.blocks.filter(isClaim).length ?? 0;
   const firstAside = bank.files.find((each) => each.kind !== 'claims');
   const matches = (path: string) =>
@@ -559,7 +664,8 @@ export function FactBankPage({
       </div>
       {bank.skipped.length > 0 && (
         <p className={styles.quiet}>
-          Too big to show here, so left as they are: {bank.skipped.join(', ')}.
+          Not shown here, and left as they are:{' '}
+          {bank.skipped.map(({ path, why }) => `${path} (${SKIPPED[why]})`).join(', ')}.
         </p>
       )}
 
@@ -590,6 +696,11 @@ export function FactBankPage({
 
         <div className={styles.content}>
           {editing?.kind === 'change' && editingAt < 0 && changeForm(editing)}
+          {trouble && troubleAt < 0 && (
+            <p className={styles.problem} role="alert">
+              {trouble.message}
+            </p>
+          )}
           {searching ? (
             <>
               <p className={styles.quiet} role="status">
@@ -622,7 +733,7 @@ export function FactBankPage({
                         {each.title}
                       </button>
                     </h2>
-                    {blocks.map((block) => renderBlock(each.path, block, 3, block.level === 1))}
+                    {blocks.map((block) => renderBlock(each.path, block, 3, block.level <= 1))}
                   </section>
                 ))
               )}
@@ -662,14 +773,15 @@ export function FactBankPage({
                     )}
                   </div>
                 </div>
+                {before && renderBlock(file.path, before, 3)}
                 {editing?.kind === 'change' && openingKey !== null && openingKey === editingKey
                   ? changeForm(editing)
                   : opening?.body && (
                       <Markdown className={styles.openingText} text={opening.body} />
                     )}
-                {openingKey && trouble?.key === openingKey && (
+                {openingKey && openingKey === troubleKey && (
                   <p className={styles.problem} role="alert">
-                    {trouble.message}
+                    {trouble?.message}
                   </p>
                 )}
                 {editing?.kind === 'add' && editing.path === file.path && (
@@ -683,14 +795,16 @@ export function FactBankPage({
                       path={editing.path}
                       onSave={saveNew}
                       onCancel={() => {
-                        setEditing(null);
+                        finish();
                         focusSoon('#facts-file-title');
                       }}
                     />
                   </div>
                 )}
                 {headingsOf(
-                  file.blocks.filter((block) => block !== opening && hasContent(block)),
+                  file.blocks.filter(
+                    (block) => block !== opening && block !== before && hasContent(block),
+                  ),
                 ).map(([block, heading]) => renderBlock(file.path, block, heading))}
               </section>
             )

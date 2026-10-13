@@ -117,8 +117,12 @@ describe('findBlock', () => {
     expect(findBlock(blocks, { index: 3, text: platform?.text.trimEnd() ?? '' })).toBe(platform);
   });
 
-  it('finds a block that moved, when only one block reads the same', () => {
-    expect(findBlock(blocks, { index: 0, text: platform?.text ?? '' })).toBe(platform);
+  it('finds a block that moved, when the window saw only one that read the same', () => {
+    expect(findBlock(blocks, { index: 0, text: platform?.text ?? '', unique: true })).toBe(
+      platform,
+    );
+    // Without knowing that, a block that moved could be the wrong one of two copies.
+    expect(findBlock(blocks, { index: 0, text: platform?.text ?? '' })).toBeNull();
   });
 
   it('finds nothing for a block that changed since', () => {
@@ -127,8 +131,14 @@ describe('findBlock', () => {
 
   it('finds nothing when two blocks read the same and neither is where it was', () => {
     const twice = factBlocks('## A\nsame\n\n## A\nsame\n\n## B\n');
-    expect(findBlock(twice, { index: 2, text: '## A\nsame\n' })).toBeNull();
+    expect(findBlock(twice, { index: 2, text: '## A\nsame\n', unique: true })).toBeNull();
     expect(findBlock(twice, { index: 1, text: '## A\nsame\n' })).toBe(twice[1]);
+  });
+
+  it('never moves a change to the other of two copies once the one it was for changed', () => {
+    // The window read the first of two copies; Claude then filled that one in.
+    const now = factBlocks('### Notes\n- filled in\n\n### Notes\n- tbd\n');
+    expect(findBlock(now, { index: 0, text: '### Notes\n- tbd\n', unique: false })).toBeNull();
   });
 });
 
@@ -199,6 +209,11 @@ describe('addClaim', () => {
     expect(addClaim('', claim)).toBe(`${claim}\n`);
   });
 
+  it('writes in the line endings a file mostly uses', () => {
+    const file = '# Projects\n\n### A\n`live`\r\n> Built A.\n';
+    expect(addClaim(file, claim)).toBe(`${file}\n${claim}\n`);
+  });
+
   it('keeps the file’s Windows line endings', () => {
     expect(addClaim('# Projects\r\n', claim)).toBe(
       `# Projects\r\n\r\n${claim.replaceAll('\n', '\r\n')}\r\n`,
@@ -236,6 +251,18 @@ describe('confirmClaim', () => {
     );
   });
 
+  it('drops `unconfirmed` wherever it is among the tags, however often', () => {
+    expect(
+      confirmClaim('### A\n`unconfirmed` `live` `unconfirmed`\n> a\n', 'Alex 2026-10-12'),
+    ).toBe('### A\n`live`\n> a\n- **Source:** Alex 2026-10-12\n');
+  });
+
+  it('takes a name as it is, even one with a $ in it', () => {
+    expect(confirmClaim(reminders?.text ?? '', 'Ke$&ha 2026-10-12')).toContain(
+      '- **Source:** Ke$&ha 2026-10-12\n',
+    );
+  });
+
   it('leaves alone a claim that is already confirmed, or text that is not one claim', () => {
     expect(confirmClaim(platform?.text ?? '', 'Alex 2026-10-12')).toBeNull();
     expect(confirmClaim('## Overview\n`unconfirmed`\n', 'Alex 2026-10-12')).toBeNull();
@@ -253,6 +280,7 @@ describe('claimParts and claimText', () => {
       tags: ['live', 'led-and-built', 'high'],
       tagNote: '',
       wording: 'Built a scheduling platform used by 40 clinics, cutting wait times ~30%.',
+      spaced: false,
       details: [
         '- **Short:** Built scheduling for 40 clinics.',
         '- **Numbers:** 40 clinics; wait times down ~30% (as of 2026-05)',
@@ -288,6 +316,22 @@ describe('claimParts and claimText', () => {
     });
   });
 
+  it('keeps a blank line the details had, and adds one before words that would join the quote', () => {
+    const [spaced] = factBlocks('### A\n`live`\n> One.\n\n> Two.\n');
+    if (!spaced) throw new Error('missing block');
+    expect(claimText(claimParts(spaced))).toBe('### A\n`live`\n> One.\n\n> Two.');
+    expect(
+      claimText({
+        title: 'A',
+        tags: ['live'],
+        tagNote: '',
+        wording: 'One.',
+        spaced: false,
+        details: 'A note.',
+      }),
+    ).toBe('### A\n`live`\n> One.\n\nA note.');
+  });
+
   it('writes a new claim in the format', () => {
     expect(
       claimText({
@@ -295,6 +339,7 @@ describe('claimParts and claimText', () => {
         tags: ['live', 'led-team', 'high'],
         tagNote: '',
         wording: 'Led an on-call rotation.\n',
+        spaced: false,
         details: '\n- **Source:** Alex 2026-10-12\n\n',
       }),
     ).toBe(
@@ -326,6 +371,47 @@ describe('sectionParts and sectionText', () => {
       '## Overview\n\nChanged.',
     );
     expect(sectionText(0, sectionParts(intro))).toBe('Intro.');
+  });
+});
+
+describe('reading a file however it was written', () => {
+  it('reads a heading of any length in about the same time', () => {
+    const started = Date.now();
+    const [block] = factBlocks(`### a${' '.repeat(100_000)}b \n`);
+    expect(block?.title).toBe(`a${' '.repeat(100_000)}b`);
+    expect(factBlocks(`# ${' '.repeat(100_000)}\n`)[0]?.level).toBe(0);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('changes a block with many blank lines in it in about the same time', () => {
+    const text = `## A\n${'\n'.repeat(100_000)}x\n\n## B\n`;
+    const started = Date.now();
+    const [a] = factBlocks(text);
+    expect(replaceBlock(text, { index: 0, text: a?.text ?? '' }, '## A\ny')).toBe(
+      '## A\ny\n\n## B\n',
+    );
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('takes a line that starts with code in backticks for words, not a code block', () => {
+    const text = '### A\n`live`\n```inline``` code\n\n### B\n`live`\n';
+    expect(factBlocks(text).map((block) => block.title)).toEqual(['A', 'B']);
+    expect(leavesCodeOpen(text)).toBe(false);
+  });
+
+  it('ends a code block indented under a list item at a heading at the margin', () => {
+    const text = '### A\n`live`\n- steps:\n  ```\n  run it\n### B\n`live`\n';
+    expect(factBlocks(text).map((block) => block.title)).toEqual(['A', 'B']);
+  });
+
+  it('reads the first heading after a byte-order mark, and keeps the mark', () => {
+    const text = '\uFEFF# Acme\n\n## Overview\nSaid.\n';
+    const blocks = factBlocks(text);
+    expect(blocks.map((block) => [block.level, block.title])).toEqual([
+      [1, 'Acme'],
+      [2, 'Overview'],
+    ]);
+    expect(blocks.map((block) => block.text).join('')).toBe(text);
   });
 });
 

@@ -15,7 +15,10 @@ import { picksOf, type TagPicks, tagInfo, tagsWith } from './factView.ts';
 /** How long a resume line runs before it wraps: about two lines in most templates. */
 const WORDING_FITS = 190;
 
-/** Saves the new text, answering with what stopped it, or null once it's saved. */
+/**
+ * Saves the new text, answering with what stopped it, or null with nothing to say: it saved, or
+ * a notice above the form says why it didn't.
+ */
 type Save = (text: string) => Promise<string | null>;
 
 /** Something to know before saving, such as that the block changed while it was open. */
@@ -32,38 +35,42 @@ function EditNoticeLine({ notice }: { notice: EditNotice | null | undefined }) {
   ) : null;
 }
 
-/** What's typed in a form and not saved yet, by what it's for, so going to another file and back keeps it. */
-const drafts = new Map<string, unknown>();
+/**
+ * What's typed in a form and not saved yet, by the edit it's for, so going to another file and
+ * back keeps it. Each edit has a key of its own, which the page drops once the edit is over, so
+ * what's typed for one block never turns up in another.
+ */
+const drafts = new Map<string, { form: 'claim' | 'section'; draft: unknown }>();
 
-/** A form's words, kept in `drafts` under `key` until they're saved or cancelled. */
-function useDraft<T>(key: string, start: () => T) {
-  const [draft, setDraft] = useState<T>(() => (drafts.get(key) as T | undefined) ?? start());
+/** Drops what was typed for an edit, once it's saved, cancelled or left. */
+export const forgetDraft = (key: string) => drafts.delete(key);
+
+/** A form's words, kept in `drafts` under the edit's key while it lasts. */
+function useDraft<T>(key: string, form: 'claim' | 'section', start: () => T) {
+  const [draft, setDraft] = useState<T>(() => {
+    const kept = drafts.get(key);
+    return kept?.form === form ? (kept.draft as T) : start();
+  });
   const change = (next: T) => {
-    drafts.set(key, next);
+    drafts.set(key, { form, draft: next });
     setDraft(next);
   };
-  return [draft, change, () => drafts.delete(key)] as const;
+  return [draft, change] as const;
 }
 
-/**
- * The buttons and keys every form here shares: ⌘ Enter saves, and Escape cancels. Once it's
- * saved or cancelled, its draft goes.
- */
-function useForm(save: () => Promise<string | null>, cancel: () => void, forget: () => void) {
+/** The buttons and keys every form here shares: ⌘ Enter saves, and Escape cancels. */
+function useForm(save: () => Promise<string | null>, onCancel: () => void) {
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const onCancel = () => {
-    forget();
-    cancel();
-  };
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (saving) return;
     setSaving(true);
-    const stopped = await save();
-    setSaving(false);
-    setProblem(stopped);
-    if (stopped === null) forget();
+    try {
+      setProblem(await save());
+    } finally {
+      setSaving(false);
+    }
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
@@ -161,8 +168,15 @@ export function ClaimForm({
 }) {
   const parts = block
     ? claimParts(block)
-    : { title: '', tags: [], tagNote: '', wording: '', details: `- **Source:** ${source}` };
-  const [draft, setDraft, forget] = useDraft(draftKey, () => ({
+    : {
+        title: '',
+        tags: [],
+        tagNote: '',
+        wording: '',
+        spaced: false,
+        details: `- **Source:** ${source}`,
+      };
+  const [draft, setDraft] = useDraft(draftKey, 'claim', () => ({
     title: parts.title,
     wording: parts.wording,
     details: parts.details,
@@ -172,17 +186,13 @@ export function ClaimForm({
   const { title, wording, details, picks, path } = draft;
   const set = (changes: Partial<typeof draft>) => setDraft({ ...draft, ...changes });
   const pick = (kind: keyof TagPicks) => (tag: string) => set({ picks: { ...picks, [kind]: tag } });
-  const form = useForm(
-    async () => {
-      if (!title.trim()) return 'Give it a title.';
-      if (!block && !picks.status) return 'Pick its status, such as live or shipped.';
-      const tags = tagsWith(parts.tags, picks);
-      if (tags.length === 0) return 'Pick its status, such as live or shipped.';
-      return onSave(claimText({ ...parts, title, tags, wording, details }), path);
-    },
-    onCancel,
-    forget,
-  );
+  const form = useForm(async () => {
+    if (!title.trim()) return 'Give it a title.';
+    if (!block && !picks.status) return 'Pick its status, such as live or shipped.';
+    const tags = tagsWith(parts.tags, picks);
+    if (tags.length === 0) return 'Pick its status, such as live or shipped.';
+    return onSave(claimText({ ...parts, title, tags, wording, details }), path);
+  }, onCancel);
   const length = wording.trim().length;
 
   return (
@@ -302,19 +312,15 @@ export function SectionForm({
   onCancel: () => void;
 }) {
   const parts = sectionParts(block);
-  const [draft, setDraft, forget] = useDraft(draftKey, () => ({
+  const [draft, setDraft] = useDraft(draftKey, 'section', () => ({
     title: parts.title,
     body: parts.body,
   }));
   const { title, body } = draft;
-  const form = useForm(
-    async () => {
-      if (block.level > 0 && !title.trim()) return 'Give it a heading.';
-      return onSave(sectionText(block.level, { ...parts, title, body }));
-    },
-    onCancel,
-    forget,
-  );
+  const form = useForm(async () => {
+    if (block.level > 0 && !title.trim()) return 'Give it a heading.';
+    return onSave(sectionText(block.level, { ...parts, title, body }));
+  }, onCancel);
 
   return (
     <form

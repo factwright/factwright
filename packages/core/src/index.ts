@@ -45,6 +45,7 @@ export {
   removeBlock,
   replaceBlock,
   type SectionParts,
+  sameBlock,
   sectionParts,
   sectionText,
   UNCONFIRMED,

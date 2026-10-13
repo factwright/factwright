@@ -42,11 +42,17 @@ export interface FactFile {
   blocks: FactBlock[];
 }
 
+/**
+ * Why a file in facts/ isn't on the page: too big, a name some computers can't hold, one too
+ * many, or one that can't be read.
+ */
+export type SkipReason = 'big' | 'name' | 'many' | 'unreadable';
+
 /** The fact bank, file by file. */
 export interface FactBank {
   files: FactFile[];
-  /** Files left out, too big to show or past how many the page shows. */
-  skipped: string[];
+  /** Files left out, and why, which stay as they are. */
+  skipped: { path: string; why: SkipReason }[];
   /** The user's first name, which a fact they add or confirm gives as its source. */
   firstName: string | null;
 }
@@ -56,6 +62,8 @@ export interface FactTarget {
   path: string;
   index: number;
   text: string;
+  /** Whether it was the only block in its file that read that way, so it can be found if it moved. */
+  unique?: boolean;
 }
 
 /** New text for a block. */
@@ -111,20 +119,22 @@ export function isFactPath(value: unknown): value is string {
 
 export function parseFactTarget(value: unknown): FactTarget | null {
   if (!isRecord(value)) return null;
-  const { path, index, text } = value;
+  const { path, index, text, unique } = value;
   return isFactPath(path) &&
     typeof index === 'number' &&
     Number.isInteger(index) &&
     index >= 0 &&
-    isText(text, FACT_LIMITS.file)
-    ? { path, index, text }
+    isText(text, FACT_LIMITS.file) &&
+    (unique === undefined || typeof unique === 'boolean')
+    ? { path, index, text, unique: unique === true }
     : null;
 }
 
+/** New text for a block. It can be empty only for text before a file's first heading, to clear it. */
 export function parseFactChange(value: unknown): FactChange | null {
   const target = parseFactTarget(value);
   const next = isRecord(value) ? value.next : undefined;
-  return target && isText(next, FACT_LIMITS.block) && next.trim() ? { ...target, next } : null;
+  return target && isText(next, FACT_LIMITS.block) ? { ...target, next } : null;
 }
 
 export function parseNewFact(value: unknown): NewFact | null {
@@ -142,8 +152,10 @@ export function blockProblem(
   level: FactBlock['level'],
   { claim }: { claim: boolean },
 ): string | null {
-  if (leavesCodeOpen(next))
+  if (!next.trim()) return 'It can’t be empty.';
+  if (leavesCodeOpen(next)) {
     return 'A code block (```) is left open. Close it on a line of its own.';
+  }
   const [first, ...more] = factBlocks(next);
   if (!first) return 'It can’t be empty.';
   if (first.level !== level) {
@@ -191,6 +203,10 @@ export const firstNameOf = (name: string): string | null => name.trim().split(/\
 export const CHANGED_SINCE =
   'This changed since you opened it, maybe by your Claude or another computer. It shows as it is now: make your change again.';
 
+/** A claim with a code block it never closes runs on into what follows, so it stays as it is. */
+const RUNS_ON =
+  'This fact has a code block (```) that isn’t closed, so it runs on into what follows. Close it in the fact’s details first.';
+
 /** A file's new text after a change, or what stopped it. */
 export type FactEdit = string | { problem: string };
 
@@ -199,10 +215,16 @@ function blockFor(file: string, kind: FactFileKind, at: { index: number; text: s
   return findBlock(factBlocks(file, { claims: kind === 'claims' }), at);
 }
 
-/** A file with a block given new text: a claim or a section, at its own heading's level. */
+/**
+ * A file with a block given new text: a claim or a section, at its own heading's level. Text
+ * before the file's first heading can be cleared.
+ */
 export function withChange(file: string, kind: FactFileKind, change: FactChange): FactEdit {
   const block = blockFor(file, kind, change);
   if (!block) return { problem: CHANGED_SINCE };
+  if (block.level === 0 && !change.next.trim()) {
+    return removeBlock(file, block) ?? { problem: CHANGED_SINCE };
+  }
   const problem = blockProblem(change.next, block.level, { claim: block.tags !== null });
   return problem
     ? { problem }
@@ -212,6 +234,12 @@ export function withChange(file: string, kind: FactFileKind, change: FactChange)
 /** A file of claims with a new one after its last. */
 export function withClaim(file: string, kind: FactFileKind, text: string): FactEdit {
   if (kind !== 'claims') return { problem: 'Facts go in one of your files of facts.' };
+  if (leavesCodeOpen(file)) {
+    return {
+      problem:
+        'A code block (```) in this file isn’t closed, so a new fact would land inside it. Close it first.',
+    };
+  }
   const problem = blockProblem(text, 3, { claim: true });
   return problem ? { problem } : addClaim(file, text);
 }
@@ -221,6 +249,7 @@ export function withoutClaim(file: string, kind: FactFileKind, target: FactTarge
   const block = blockFor(file, kind, target);
   if (!block) return { problem: CHANGED_SINCE };
   if (!block.tags) return { problem: 'Only a fact can be deleted here.' };
+  if (leavesCodeOpen(block.text)) return { problem: RUNS_ON };
   return removeBlock(file, block) ?? { problem: CHANGED_SINCE };
 }
 
@@ -236,6 +265,7 @@ export function withConfirmed(
 ): FactEdit {
   const block = blockFor(file, kind, target);
   if (!block) return { problem: CHANGED_SINCE };
+  if (leavesCodeOpen(block.text)) return { problem: RUNS_ON };
   const confirmed = confirmClaim(block.text, source);
   if (!confirmed) return { problem: 'That fact is already confirmed.' };
   return replaceBlock(file, block, confirmed) ?? { problem: CHANGED_SINCE };

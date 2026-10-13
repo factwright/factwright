@@ -115,9 +115,14 @@ describe('read', () => {
     expect(facts.read()).toEqual({ files: [], skipped: [], firstName: 'Alex' });
   });
 
-  it('skips a file too big to show, and says so', () => {
+  it('skips a file too big to show, or with a name some computers can’t hold, and says so', () => {
     write('facts/huge.md', `# Huge\n${'x'.repeat(2_000_001)}`);
-    expect(facts.read().skipped).toEqual(['facts/huge.md']);
+    // A name with a space in front, which every computer can hold but Windows trims elsewhere.
+    write('facts/ notes.md', '# Notes\n');
+    expect(facts.read().skipped).toEqual([
+      { path: 'facts/ notes.md', why: 'name' },
+      { path: 'facts/huge.md', why: 'big' },
+    ]);
   });
 });
 
@@ -215,6 +220,16 @@ describe('change', () => {
     expect(read('guide/rules.md')).toBe('## Rules\nOld.\n');
     expect(readFileSync(join(outside, 'elsewhere.md'), 'utf8')).toBe('## Rules\nOld.\n');
     expect(readFileSync(join(outside, 'folder', 'deep.md'), 'utf8')).toBe('## Rules\nOld.\n');
+  });
+
+  it('reaches a file only by the name the folder gives it', () => {
+    // On a Mac or Windows, "facts/GAPS.md" would otherwise open gaps.md as a file of facts.
+    write('facts/gaps.md', '# Gaps\n');
+    expect(facts.add({ path: 'facts/GAPS.md', text: '### C\n`live`\n> Did C.' })).toEqual({
+      ok: false,
+      message: 'That file isn’t in your fact bank anymore.',
+    });
+    expect(read('facts/gaps.md')).toBe('# Gaps\n');
   });
 
   it('leaves no half-saved file behind', () => {

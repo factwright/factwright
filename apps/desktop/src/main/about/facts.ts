@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  CHANGED_SINCE,
   FACT_LIMITS,
   type FactBank,
   type FactChange,
@@ -49,12 +50,21 @@ export class FactBankFiles {
 
   read(): FactBank {
     const files: FactFile[] = [];
-    const skipped: string[] = [];
-    for (const path of inFactOrder(markdownUnder(this.deps.workspace, 'facts'))) {
-      const full = files.length < FACT_LIMITS.files ? this.file(path) : null;
-      const text = full === null ? null : this.readText(full);
-      if (text === null) skipped.push(path);
-      else files.push(factFile(path, text));
+    const skipped: FactBank['skipped'] = [];
+    const listed = markdownUnder(this.deps.workspace, 'facts');
+    for (const path of inFactOrder(listed)) {
+      if (files.length >= FACT_LIMITS.files) {
+        skipped.push({ path, why: 'many' });
+        continue;
+      }
+      const full = this.file(path, listed);
+      if (full === null) {
+        skipped.push({ path, why: isFactPath(path) ? 'unreadable' : 'name' });
+        continue;
+      }
+      const text = this.readText(full);
+      if (typeof text === 'string') files.push(factFile(path, text));
+      else skipped.push({ path, why: text.why });
     }
     return { files, skipped, firstName: firstNameOf(this.deps.name()) };
   }
@@ -80,15 +90,22 @@ export class FactBankFiles {
     return this.edit(target.path, (file, kind) => withConfirmed(file, kind, target, source));
   }
 
-  /** Reads a fact bank file, changes it, and saves it whole, answering with the bank as it is then. */
+  /**
+   * Reads a fact bank file, changes it, and saves it whole, answering with the bank as it is
+   * then. Just before saving, it reads the file once more: a change made meanwhile, such as by
+   * Claude, is never written over.
+   */
   private edit(path: string, apply: (file: string, kind: FactFileKind) => FactEdit): FactResult {
     const full = this.file(path);
     const file = full === null ? null : this.readText(full);
-    if (full === null || file === null) return { ok: false, message: GONE };
+    if (full === null || typeof file !== 'string') return { ok: false, message: GONE };
     const next = apply(file, factFileKind(path));
     if (typeof next !== 'string') return stopped(next.problem);
-    if (next.length > FACT_LIMITS.file) return stopped('That file would get too big.');
+    if (Buffer.byteLength(next, 'utf8') > FACT_LIMITS.file) {
+      return stopped('That file would get too big.');
+    }
     if (next !== file) {
+      if (this.readText(full) !== file) return stopped(CHANGED_SINCE);
       try {
         this.write(full, next);
       } catch {
@@ -100,10 +117,11 @@ export class FactBankFiles {
 
   /**
    * The file a path names, when it's one the app may read and change: a Markdown file already in
-   * facts/, with no link along the way, which could lead outside the workspace.
+   * facts/, named exactly as the folder lists it, so a name in other letters can't reach it as
+   * another kind of file, and with no link along the way, which could lead outside the workspace.
    */
-  private file(path: string): string | null {
-    if (!isFactPath(path)) return null;
+  private file(path: string, listed = markdownUnder(this.deps.workspace, 'facts')): string | null {
+    if (!isFactPath(path) || !listed.includes(path)) return null;
     const parts = path.split('/');
     const full = join(this.deps.workspace, ...parts);
     try {
@@ -114,13 +132,13 @@ export class FactBankFiles {
     }
   }
 
-  /** A file's text, or null when it's too big to show or can't be read. */
-  private readText(full: string): string | null {
+  /** A file's text, or why it can't be shown: too big, or it can't be read. */
+  private readText(full: string): string | { why: 'big' | 'unreadable' } {
     try {
-      if (lstatSync(full).size > FACT_LIMITS.file) return null;
+      if (lstatSync(full).size > FACT_LIMITS.file) return { why: 'big' };
       return readFileSync(full, 'utf8');
     } catch {
-      return null;
+      return { why: 'unreadable' };
     }
   }
 

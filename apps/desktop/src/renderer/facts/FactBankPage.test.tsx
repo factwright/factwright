@@ -129,6 +129,7 @@ describe('FactBankPage', () => {
       path: 'facts/acme.md',
       index: 2,
       text: expect.stringMatching(/^### Scheduling platform\n/),
+      unique: true,
       next: [
         '### Scheduling platform',
         '`shipped` `led-and-built` `high`',
@@ -342,6 +343,148 @@ describe('FactBankPage', () => {
       'value',
       'Half-written',
     );
+  });
+
+  it('never shows what was typed for one block in another’s form', async () => {
+    const user = userEvent.setup();
+    open();
+    // Typed into the overview, then left for a new fact, which lands where the overview's words
+    // could otherwise turn up.
+    await user.click(await screen.findByRole('button', { name: 'Change “Overview”' }));
+    await user.type(screen.getByRole('textbox', { name: 'Text' }), ' More.');
+    await user.click(screen.getByRole('button', { name: 'Add a fact' }));
+    const form = screen.getByRole('form', { name: 'New fact' });
+    await user.type(within(form).getByRole('textbox', { name: 'Title' }), 'Kiosk');
+    await user.selectOptions(within(form).getByRole('combobox', { name: 'Status' }), 'live');
+    await user.click(within(form).getByRole('button', { name: 'Save' }));
+    await user.click(await screen.findByRole('button', { name: 'Change “Kiosk”' }));
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveProperty('value', 'Kiosk');
+    await user.keyboard('{Escape}');
+    // Typed into one fact, then on to another: each form has its own words.
+    await user.click(screen.getByRole('button', { name: 'Change “Waitlist”' }));
+    await user.type(screen.getByRole('textbox', { name: 'What resumes say' }), ' Typed.');
+    await user.click(screen.getByRole('button', { name: 'Change “Reminder texts”' }));
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Shipped appointment reminder texts.',
+    );
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Change “Waitlist”' }));
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Built a waitlist that fills cancelled visits.',
+    );
+  });
+
+  it('keeps what was typed when the fact moved and changed while it was open, and saves it there', async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Change “Waitlist”' }));
+    const wording = screen.getByRole('textbox', { name: 'What resumes say' });
+    await user.clear(wording);
+    await user.type(wording, 'Mine.');
+    // Claude adds a fact above it and changes it, before the page has read the file again.
+    files.set(
+      'facts/acme.md',
+      ACME.replace(
+        '## Overview',
+        '### Lab inbox\n`live`\n> Built a lab inbox.\n\n## Overview',
+      ).replace('fills cancelled visits.', 'fills cancelled visits, by Claude.'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('This changed while you had it open')).toBeTruthy();
+    expect(
+      screen.getByText(/It now says: “Built a waitlist that fills cancelled visits, by Claude\.”/),
+    ).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Mine.',
+    );
+    // Going to another file and back keeps it too.
+    const list = screen.getByRole('navigation', { name: 'Your fact files' });
+    await user.click(within(list).getByRole('button', { name: /^Beta Labs/ }));
+    await user.click(within(list).getByRole('button', { name: /^Acme Health/ }));
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Mine.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('form')).toBeNull());
+    const saved = files.get('facts/acme.md') ?? '';
+    expect(saved).toContain('### Waitlist\n`unconfirmed` `built` `solo` `high`\n> Mine.\n');
+    expect(saved).toContain('### Lab inbox');
+    expect(saved).toContain(
+      '### Reminder texts\n`unconfirmed` `shipped` `solo` `medium`\n> Shipped appointment reminder texts.',
+    );
+  });
+
+  it('never puts a change into the other of two facts that read the same', async () => {
+    const user = userEvent.setup();
+    const twice = '# Notes\n\n### Follow-up\n`live`\n> tbd\n\n### Follow-up\n`live`\n> tbd\n';
+    files.set('facts/acme.md', twice);
+    open();
+    const [first] = await screen.findAllByRole('button', { name: 'Change “Follow-up”' });
+    if (!first) throw new Error('missing button');
+    await user.click(first);
+    const wording = screen.getByRole('textbox', { name: 'What resumes say' });
+    await user.clear(wording);
+    await user.type(wording, 'Mine.');
+    files.set('facts/acme.md', twice.replace('> tbd', '> Filled in by Claude.'));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('This changed while you had it open')).toBeTruthy();
+    // The second copy is as it was.
+    expect(files.get('facts/acme.md')).toBe(twice.replace('> tbd', '> Filled in by Claude.'));
+  });
+
+  it('keeps the question about deleting with its fact as the file changes', async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Delete “Waitlist”' }));
+    // Claude adds a fact above it while the question is open.
+    changeOnDisk(
+      'facts/acme.md',
+      ACME.replace('## Overview', '### Lab inbox\n`live`\n> Built a lab inbox.\n\n## Overview'),
+    );
+    expect(await screen.findByRole('article', { name: 'Lab inbox' })).toBeTruthy();
+    expect(fact('Waitlist').textContent).toContain('Delete this fact?');
+    expect(fact('Reminder texts').textContent).not.toContain('Delete this fact?');
+    await user.click(within(fact('Waitlist')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Waitlist' })).toBeNull());
+    expect(files.get('facts/acme.md')).toContain('### Reminder texts');
+    expect(files.get('facts/acme.md')).not.toContain('Waitlist');
+  });
+
+  it('drops the question about deleting a fact that changed, and says so', async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Delete “Waitlist”' }));
+    changeOnDisk(
+      'facts/acme.md',
+      ACME.replace('fills cancelled visits.', 'fills cancelled visits fast.'),
+    );
+    expect(await screen.findByText('“Waitlist” changed, so it wasn’t deleted.')).toBeTruthy();
+    expect(fact('Waitlist').textContent).not.toContain('Delete this fact?');
+    expect(files.get('facts/acme.md')).toContain('fills cancelled visits fast.');
+  });
+
+  it('leaves the facts to confirm once none are left, even when more come later', async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(await screen.findByRole('button', { name: 'To confirm · 2' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm “Reminder texts”' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm “Waitlist”' }));
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy(),
+    );
+    changeOnDisk(
+      'facts/beta.md',
+      `${BETA}\n### Drafted\n\`unconfirmed\` \`live\`\n> From a resume.\n`,
+    );
+    expect(await screen.findByRole('button', { name: 'To confirm · 1' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'To confirm · 1' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+    expect(screen.getByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy();
   });
 
   it('says when there’s no fact bank yet, and goes to getting started', async () => {
