@@ -5,9 +5,10 @@ name: Release
 # find them as an update. A run by hand on a tag does the same, and like any release refuses to
 # replace a version already published. Run by hand on a branch, or on a pull request that changes
 # how the installers are made, it builds and tests them without publishing them, as the run's
-# artifacts: signed on a branch if signing is set up, and on a pull request, which never gets the
-# signing keys, signed only for the computer it's on. Mac minutes cost ten times as much on the
-# free plan, so it runs only for these. docs/releasing.md has the steps.
+# artifacts: on a branch, signed and checked as a release is if signing is set up, and on a pull
+# request, which never gets the signing keys, signed only for the computer it's on. Mac minutes
+# cost ten times as much on the free plan, so it runs only for these. docs/releasing.md has the
+# steps.
 on:
   push:
     tags: ['v*']
@@ -92,6 +93,10 @@ jobs:
             echo "::error::A release needs the Developer ID certificate and the notarization key: see docs/releasing.md."
             exit 1
           fi
+          # A build signed and notarized, as every release is, gets Gatekeeper's check below.
+          if [ -n "$CSC_LINK" ] && [ -n "$APPLE_API_KEY_P8" ]; then
+            echo "NOTARIZED=true" >> "$GITHUB_ENV"
+          fi
       - run: pnpm --filter @factwright/desktop build
       - name: Build, sign and notarize
         env:
@@ -105,11 +110,21 @@ jobs:
         run: pnpm --filter @factwright/desktop dist:mac
       - name: Check what's in the app
         run: pnpm --filter @factwright/desktop check-package
+      # Apple's ticket is stapled to the app, so a Mac opens it without going online. The
+      # certificate is from Apple's G2 authority: one from the previous authority can't sign after
+      # 2027-02-01.
       - name: Check Gatekeeper accepts it
-        if: env.RELEASING == 'true'
+        if: env.NOTARIZED == 'true'
         run: |
-          codesign --verify --deep --strict apps/desktop/dist/mac-universal/Factwright.app
-          spctl --assess --type execute --verbose=4 apps/desktop/dist/mac-universal/Factwright.app
+          app=apps/desktop/dist/mac-universal/Factwright.app
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          codesign --display --extract-certificates="$RUNNER_TEMP/signer" "$app"
+          if ! openssl x509 -inform DER -in "$RUNNER_TEMP/signer0" -noout -issuer | grep -q 'OU=G2'; then
+            echo "::error::The Developer ID certificate isn't from Apple's G2 authority: see docs/releasing.md."
+            exit 1
+          fi
       # The built app, started as a user would, with a stand-in Claude Code.
       - run: pnpm --filter @factwright/desktop e2e:packaged
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -136,12 +151,14 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # A signed build, as every release is, gets the signature check below.
       - name: Signing credentials
-        if: env.RELEASING == 'true'
         env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_ID: ${{ env.SIGNING == 'true' && secrets.AZURE_CLIENT_ID || '' }}
         run: |
-          if (-not $env:AZURE_CLIENT_ID) {
+          if ($env:AZURE_CLIENT_ID) {
+            "SIGNED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ($env:RELEASING -eq 'true') {
             Write-Output "::error::A release needs Azure Artifact Signing: see docs/releasing.md."
             exit 1
           }
@@ -164,7 +181,7 @@ jobs:
       # signed by the publisher installed copies check each update against, which their update
       # settings name.
       - name: Check everything is signed
-        if: env.RELEASING == 'true'
+        if: env.SIGNED == 'true'
         shell: pwsh
         env:
           AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}

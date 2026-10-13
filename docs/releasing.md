@@ -48,7 +48,7 @@ the value; nobody else ever sees them.
 
 | Secret | What it is | From |
 |---|---|---|
-| `CSC_LINK` | The Developer ID Application certificate, as a base64 `.p12` | Xcode → Settings → Accounts → Manage Certificates, then exported from Keychain Access |
+| `CSC_LINK` | The Developer ID Application certificate from Apple's G2 authority, as a base64 `.p12` | Certificates, Identifiers & Profiles → + → Developer ID Application → G2 Sub-CA, with a request from Keychain Access → Certificate Assistant; then exported from Keychain Access |
 | `CSC_KEY_PASSWORD` | The password the `.p12` was exported with | — |
 | `APPLE_API_KEY_P8` | The App Store Connect API key for notarizing: the `.p8` file's contents | App Store Connect → Users and Access → Integrations → Team Keys, with Developer access |
 | `APPLE_API_KEY_ID` | That key's ID | The same page |
@@ -61,12 +61,20 @@ the value; nobody else ever sees them.
 | Variable | What it is |
 |---|---|
 | `AZURE_SIGNING_ENDPOINT` | The signing account's URI, such as `https://ncus.codesigning.azure.net/` |
-| `AZURE_CERTIFICATE_PROFILE` | The Public Trust certificate profile, `factwright` |
+| `AZURE_CERTIFICATE_PROFILE` | The Public Trust certificate profile, `neatifai`: the only one the Basic plan allows, so any Neatifai app signs with it |
 | `AZURE_PUBLISHER_NAME` | The certificate's common name alone, exactly as it reads, such as `NEATIFAI LLC`: installed copies check every update against it, so a wrong one would stop their updates for good. The build stops if it's blank, and a release checks the app is signed by it |
 
 The app registration needs the **Artifact Signing Certificate Profile Signer** role on
-`asa-neatifaisigning`. The client secret expires after 24 months, and the Azure identity
-validation on 2029-01-12. Releases stop until each is renewed.
+`asa-neatifaisigning`.
+
+Only the Account Holder can make the Developer ID certificate. Make it on Apple's website, as the
+table says, choosing G2 Sub-CA: a certificate from Apple's previous authority can't sign after
+2027-02-01. To tell the two apart, open the certificate in Keychain Access: under Issuer Name, the
+Organizational Unit reads `G2` for the current authority, and Apple Certification Authority for the
+previous one.
+
+The client secret expires after 24 months, the Developer ID certificate after five years, and the
+Azure identity validation on 2029-01-12. Releases stop until each is renewed.
 
 ## Releasing a version
 1. **Say what's new.** Write `apps/desktop/release-notes/<version>.md`: a few lines for users,
@@ -85,6 +93,7 @@ validation on 2029-01-12. Releases stop until each is renewed.
    Then it builds, signs and notarizes on a Mac and on Windows. It checks:
    - the app's archive holds only the app
    - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name
+   - the Mac app's certificate is from Apple's G2 authority, and Apple's ticket is stapled to it
    - each built app starts with a stand-in Claude Code
 
    Only then does it upload, refusing to replace a version that's out already. A release that
@@ -92,9 +101,10 @@ validation on 2029-01-12. Releases stop until each is renewed.
 5. **Check it:** `https://downloads.factwright.com/latest-mac.yml` and `latest.yml` name the new
    version, and the two downloads open.
 
-Running the workflow by hand on a branch builds and tests the installers without publishing them,
-signed if signing is set up: run it before a release that changes how the installers are made,
-as that's the only run that tries signing and notarizing. A pull request that changes the
+Running the workflow by hand on a branch builds and tests the installers without publishing them.
+If signing is set up, they're signed, notarized and checked as a release's are: run it before a
+release that changes how the installers are made, as that's the only run that tries signing and
+notarizing. A pull request that changes the
 workflow or the build settings runs it too, but never gets the signing keys, so its Mac build is
 signed for that machine alone and its Windows build isn't signed. The installers come back as the
 run's artifacts. A run by hand on a tag is a release.
