@@ -1,7 +1,8 @@
 # The web view decrypts a job hunt in the browser, so nothing else may run on its pages.
 # Links out, such as to a job posting, carry no referrer. Its own requests keep their origin,
-# which sign-in checks.
+# which sign-in checks. Browsers keep to https for a year once they've been here.
 /*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
   Referrer-Policy: same-origin
   X-Content-Type-Options: nosniff
