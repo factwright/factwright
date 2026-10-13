@@ -98,3 +98,79 @@ describe('deleting the account', () => {
     expect(text).not.toContain(sam.token);
   });
 });
+
+describe('sign-in records', () => {
+  const DAY = 86_400_000;
+  const insert = (sql: string, ...values: unknown[]) =>
+    server.env.DB.prepare(sql)
+      .bind(...values)
+      .run();
+  const ids = async (table: string) =>
+    (await server.env.DB.prepare(`SELECT id FROM "${table}"`).bind().all<{ id: string }>()).results
+      .map((row) => row.id)
+      .sort();
+
+  it('are forgotten once a day, when they’ve ended or run out', async () => {
+    const now = Date.now();
+    const iso = (offset: number) => new Date(now + offset).toISOString();
+    const sam = await server.signUp();
+    // A session from a device Sam stopped using, which ran out yesterday.
+    await insert(
+      `INSERT INTO "session" (id, expiresAt, token, createdAt, updatedAt, ipAddress, userAgent, userId)
+       VALUES ('ended', ?, 'ended-token', ?, ?, '203.0.113.7', 'Factwright/0.0.0 (Old Mac)', ?)`,
+      iso(-DAY),
+      iso(-61 * DAY),
+      iso(-61 * DAY),
+      sam.id,
+    );
+    for (const [id, offset] of [
+      ['verification-old', -DAY],
+      ['verification-new', 10 * 60_000],
+    ] as const) {
+      await insert(
+        `INSERT INTO "verification" (id, identifier, value, expiresAt, createdAt, updatedAt)
+         VALUES (?, ?, 'state', ?, ?, ?)`,
+        id,
+        id,
+        iso(offset),
+        iso(-DAY),
+        iso(-DAY),
+      );
+    }
+    for (const [id, offset] of [
+      ['code-old', -DAY],
+      ['code-new', 10 * 60_000],
+    ] as const) {
+      await insert(
+        `INSERT INTO "deviceCode" (id, deviceCode, userCode, expiresAt, status)
+         VALUES (?, ?, ?, ?, 'pending')`,
+        id,
+        `${id}-device`,
+        `${id}-user`,
+        iso(offset),
+      );
+    }
+    for (const [id, last] of [
+      ['limit-old', now - 2 * 60 * 60_000],
+      ['limit-new', now - 30_000],
+    ] as const) {
+      await insert(
+        `INSERT INTO "rateLimit" (id, key, count, lastRequest) VALUES (?, ?, 1, ?)`,
+        id,
+        `198.51.100.${id.length}|/sign-in/social|${id}`,
+        last,
+      );
+    }
+
+    await server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date(now) });
+
+    expect(await ids('session')).not.toContain('ended');
+    expect(await ids('session')).toContain(sam.sessionId);
+    expect(await ids('verification')).toEqual(['verification-new']);
+    expect(await ids('deviceCode')).toEqual(['code-new']);
+    expect(await ids('rateLimit')).not.toContain('limit-old');
+    expect(await ids('rateLimit')).toContain('limit-new');
+    // Sam's own session still works.
+    expect((await sam.client.account()).user.id).toBe(sam.id);
+  });
+});
