@@ -8,6 +8,23 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const env = process.env;
 
+// The release workflow passes each signing key, empty where there's none, as on a pull request,
+// which never gets them. electron-builder would take an empty one for a key to use, such as a
+// certificate at no path at all, so empty ones are cleared.
+for (const name of [
+  'CSC_LINK',
+  'CSC_KEY_PASSWORD',
+  'CSC_NAME',
+  'APPLE_API_KEY',
+  'APPLE_API_KEY_ID',
+  'APPLE_API_ISSUER',
+  'AZURE_TENANT_ID',
+  'AZURE_CLIENT_ID',
+  'AZURE_CLIENT_SECRET',
+]) {
+  if (env[name] === '') delete env[name];
+}
+
 /** The version being built, and what's new in it, which installed copies show as they update. */
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 const notes = `release-notes/${version}.md`;
