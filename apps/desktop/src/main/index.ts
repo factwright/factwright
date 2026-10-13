@@ -1,6 +1,16 @@
-import { join } from 'node:path';
+import { appendFileSync, existsSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, nativeTheme, safeStorage, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  autoUpdater as macInstaller,
+  nativeTheme,
+  safeStorage,
+  session,
+  shell,
+} from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { TemplatePreviews } from './about/previews.ts';
 import { AboutStore } from './about/store.ts';
 import { RunServer } from './claude/run-server.ts';
@@ -18,16 +28,68 @@ import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
 import { factwrightTools } from './tools/index.ts';
+import { UpdateWatcher } from './updates.ts';
 import { createMainWindow, DEV_ICON } from './window.ts';
 
+/**
+ * Settings for development and tests, from the environment. An installed copy ignores them, so
+ * nothing that can set a variable can point its window at other screens, or its sync elsewhere.
+ */
+const develop = (name: string) => (app.isPackaged ? undefined : process.env[name]);
+
 // Set by `pnpm dev`: the screens come from Vite's dev server instead of the built files.
-const devUrl = process.env.FACTWRIGHT_DEV_URL;
+const devUrl = develop('FACTWRIGHT_DEV_URL');
 const startUrl = devUrl ?? `${APP_ORIGIN}/index.html`;
 
 /** The sync server. Development and tests point it at one running locally. */
-const syncServer = process.env.FACTWRIGHT_SERVER_URL ?? 'https://app.factwright.com';
+const syncServer = develop('FACTWRIGHT_SERVER_URL') ?? 'https://app.factwright.com';
 
-if (app.requestSingleInstanceLock()) {
+/** The most an update's log keeps before it starts again, as it only helps with the latest problem. */
+const UPDATE_LOG_BYTES = 200_000;
+
+/** Notes a problem with an update in the data folder, where it can help when an update won't come. */
+function logUpdate(dataDir: string, message: string): void {
+  const file = join(dataDir, 'updates.log');
+  const line = `${new Date().toISOString()} ${message}\n`;
+  try {
+    if (existsSync(file) && statSync(file).size > UPDATE_LOG_BYTES) writeFileSync(file, line);
+    else appendFileSync(file, line);
+  } catch {
+    // A log that can't be written changes nothing for the user.
+  }
+}
+
+/** A folder's real path, through any links, in one case, to compare with another. */
+function realFolder(folder: string): string {
+  let real = resolve(folder);
+  try {
+    real = realpathSync(real);
+  } catch {
+    // A folder that isn't there yet is compared as it's written.
+  }
+  return process.platform === 'linux' ? real : real.toLowerCase();
+}
+
+/**
+ * Whether the app was asked to let another program drive it, through Chromium's debugging port,
+ * while using the user's own data folder. Like Chrome, an installed copy then won't start: with a
+ * folder of its own, as the tests give it, it's an empty app, with no job hunt and no sync to reach.
+ */
+function debuggingTheUsersData(): boolean {
+  const debugging = ['remote-debugging-port', 'remote-debugging-pipe'].some((name) =>
+    app.commandLine.hasSwitch(name),
+  );
+  if (!app.isPackaged || !debugging) return false;
+  const usersOwn = join(app.getPath('appData'), app.getName());
+  return realFolder(app.getPath('userData')) === realFolder(usersOwn);
+}
+
+// On Windows, the installer's shortcuts carry this ID, and notifications need the app to match it.
+if (process.platform === 'win32') app.setAppUserModelId('com.factwright.app');
+
+if (debuggingTheUsersData()) {
+  app.exit(1);
+} else if (app.requestSingleInstanceLock()) {
   start();
 } else {
   // Factwright is already open, and that copy brings its window forward.
@@ -150,6 +212,22 @@ function start(): void {
       }),
     });
     await setup.load();
+    // A copy installed from GitHub's build keeps itself up to date. One being developed, or
+    // built on this computer, has no update settings and doesn't, and the end-to-end tests turn
+    // it off.
+    const updates =
+      app.isPackaged &&
+      existsSync(join(process.resourcesPath, 'app-update.yml')) &&
+      process.env.FACTWRIGHT_UPDATES !== 'off'
+        ? new UpdateWatcher({
+            updater: autoUpdater,
+            macInstaller: process.platform === 'darwin' ? macInstaller : null,
+            busy: () => claude.busy(),
+            onStatus: (status) => toWindow('updates:changed', status),
+            log: (message) => logUpdate(dataDir, message),
+          })
+        : null;
+    updates?.start();
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
       about,
@@ -161,6 +239,7 @@ function start(): void {
       workspace,
       sync,
       dataDir,
+      updates,
     });
     void sync.start();
 
@@ -168,6 +247,7 @@ function start(): void {
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
     stopWithWindow(window);
     app.on('before-quit', () => {
+      updates?.stop();
       claude.stop();
       setup.stop();
       server.stop();

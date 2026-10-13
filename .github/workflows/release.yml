@@ -1,0 +1,248 @@
+name: Release
+
+# Builds, signs and publishes Factwright's installers. Pushing a tag such as v0.1.0 on main
+# releases that version: the installers go to downloads.factwright.com, where installed copies
+# find them as an update. A run by hand on a tag does the same, and like any release refuses to
+# replace a version already published. Run by hand on a branch, or on a pull request that changes
+# how the installers are made, it builds and tests them without publishing them, as the run's
+# artifacts: signed on a branch if signing is set up, and on a pull request, which never gets the
+# signing keys, signed only for the computer it's on. Mac minutes cost ten times as much on the
+# free plan, so it runs only for these. docs/releasing.md has the steps.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - apps/desktop/electron-builder.config.mjs
+      - apps/desktop/build/**
+      - pnpm-workspace.yaml
+
+permissions:
+  contents: read
+
+# Releases go one at a time, whatever their tag, so an older one can't land after a newer one.
+# A pull request's run gives way to its next push.
+concurrency:
+  group: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-publish' || format('release-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RELEASING: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  # Signing keys never reach a pull request's run.
+  SIGNING: ${{ github.event_name != 'pull_request' }}
+
+jobs:
+  check:
+    name: Check the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: The tag is on main, names the app's version, and has its notes
+        if: env.RELEASING == 'true'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release tags go on main, and $GITHUB_REF_NAME isn't."
+            exit 1
+          fi
+          node apps/desktop/scripts/release-check.ts "$GITHUB_REF_NAME"
+      - name: It's newer than the version out now
+        if: env.RELEASING == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          live=$(curl --silent --fail https://downloads.factwright.com/latest-mac.yml | sed -n 's/^version: //p' || true)
+          newest=$(printf '%s\n%s\n' "$live" "$version" | sort -V | tail -1)
+          if [ -n "$live" ] && { [ "$live" = "$version" ] || [ "$newest" != "$version" ]; }; then
+            echo "::error::Factwright $live is out already, so $version can't be released after it."
+            exit 1
+          fi
+
+  mac:
+    name: Mac installers
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # A release is always signed and notarized. A run by hand may not be, to try the build.
+      - name: Signing credentials
+        env:
+          CSC_LINK: ${{ env.SIGNING == 'true' && secrets.CSC_LINK || '' }}
+          APPLE_API_KEY_P8: ${{ env.SIGNING == 'true' && secrets.APPLE_API_KEY_P8 || '' }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notarize.p8"
+            echo "APPLE_API_KEY=$RUNNER_TEMP/notarize.p8" >> "$GITHUB_ENV"
+          fi
+          if [ "$RELEASING" = true ] && { [ -z "$CSC_LINK" ] || [ -z "$APPLE_API_KEY_P8" ]; }; then
+            echo "::error::A release needs the Developer ID certificate and the notarization key: see docs/releasing.md."
+            exit 1
+          fi
+      - run: pnpm --filter @factwright/desktop build
+      - name: Build, sign and notarize
+        env:
+          CSC_LINK: ${{ env.SIGNING == 'true' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ env.SIGNING == 'true' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ env.SIGNING == 'true' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ env.SIGNING == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          # electron-builder skips signing on a pull request unless asked: there, with no
+          # certificate, it signs for this computer alone, so the build is still a real one.
+          CSC_FOR_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+        run: pnpm --filter @factwright/desktop dist:mac
+      - name: Check what's in the app
+        run: pnpm --filter @factwright/desktop check-package
+      - name: Check Gatekeeper accepts it
+        if: env.RELEASING == 'true'
+        run: |
+          codesign --verify --deep --strict apps/desktop/dist/mac-universal/Factwright.app
+          spctl --assess --type execute --verbose=4 apps/desktop/dist/mac-universal/Factwright.app
+      # The built app, started as a user would, with a stand-in Claude Code.
+      - run: pnpm --filter @factwright/desktop e2e:packaged
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mac
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.blockmap
+            apps/desktop/dist/latest-mac.yml
+
+  windows:
+    name: Windows installer
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Signing credentials
+        if: env.RELEASING == 'true'
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          if (-not $env:AZURE_CLIENT_ID) {
+            Write-Output "::error::A release needs Azure Artifact Signing: see docs/releasing.md."
+            exit 1
+          }
+      - run: pnpm --filter @factwright/desktop build
+      # The build stops if signing is set up but the publisher's name, which installed copies check
+      # every update against, isn't.
+      - name: Build and sign
+        env:
+          AZURE_TENANT_ID: ${{ env.SIGNING == 'true' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ env.SIGNING == 'true' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ env.SIGNING == 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: asa-neatifaisigning
+          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: pnpm --filter @factwright/desktop dist:win
+      - name: Check what's in the app
+        run: pnpm --filter @factwright/desktop check-package
+      # Every program and module signed, so Windows runs each one. The app and its installer are
+      # signed by the publisher installed copies check each update against, which their update
+      # settings name.
+      - name: Check everything is signed
+        if: env.RELEASING == 'true'
+        shell: pwsh
+        env:
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: |
+          $expected = $env:AZURE_PUBLISHER_NAME
+          $ours = @(Get-ChildItem apps/desktop/dist/*.exe) + @(Get-Item apps/desktop/dist/win-unpacked/Factwright.exe)
+          $all = $ours + @(Get-ChildItem apps/desktop/dist/win-unpacked -Recurse -Include *.exe, *.node, *.dll)
+          foreach ($file in $all) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') { throw "$($file.FullName) isn't signed: $($signature.Status)" }
+          }
+          foreach ($file in $ours) {
+            $name = (Get-AuthenticodeSignature $file.FullName).SignerCertificate.GetNameInfo('SimpleName', $false)
+            if ($name -ne $expected) { throw "$($file.Name) is signed by $name, not $expected" }
+          }
+          Write-Output "$($all.Count) files signed; the app and its installer by $expected."
+          $settings = Get-Content apps/desktop/dist/win-unpacked/resources/app-update.yml -Raw
+          if (-not $settings.Contains($expected)) { throw "Installed copies wouldn't check updates against $expected" }
+      # The built app, started as a user would, with a stand-in Claude Code (claude.cmd).
+      - run: pnpm --filter @factwright/desktop e2e:packaged
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.blockmap
+            apps/desktop/dist/latest.yml
+
+  publish:
+    name: Publish to downloads.factwright.com
+    needs: [mac, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # R2 doesn't take the checksums newer AWS tools add to every upload unless asked.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      BUCKET: factwright-downloads
+      ENDPOINT: https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+      # A version's files never change once out, as browsers and Cloudflare keep them for good.
+      - name: This version isn't out already
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for file in "Factwright-$version.dmg" "Factwright-Setup-$version.exe"; do
+            if aws s3api head-object --bucket "$BUCKET" --key "$file" --endpoint-url "$ENDPOINT" > /dev/null 2>&1; then
+              echo "::error::$file is out already. Release the next version instead."
+              exit 1
+            fi
+          done
+      - name: Upload the installers
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          upload() { aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" --no-progress "${@:3}"; }
+          # Each version's files never change, so they're kept by browsers and Cloudflare for good.
+          for file in dist/*.dmg dist/*.zip dist/*.exe dist/*.blockmap; do
+            upload "$file" "$(basename "$file")" --cache-control "public, max-age=31536000, immutable"
+          done
+          # Each version's update feeds, kept, to put back if a later version has to be taken back.
+          upload dist/latest-mac.yml "feeds/$version/latest-mac.yml" --cache-control no-cache --content-type text/yaml
+          upload dist/latest.yml "feeds/$version/latest.yml" --cache-control no-cache --content-type text/yaml
+          # The website's links: the newest of each, under one name that never changes.
+          upload "dist/Factwright-$version.dmg" Factwright.dmg --cache-control no-cache
+          upload "dist/Factwright-Setup-$version.exe" Factwright-Setup.exe --cache-control no-cache
+          # The update feeds go last, so an installed copy finds a version only once its files are there.
+          upload dist/latest-mac.yml latest-mac.yml --cache-control no-cache --content-type text/yaml
+          upload dist/latest.yml latest.yml --cache-control no-cache --content-type text/yaml
+      - name: Check the feeds name this version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for feed in latest-mac.yml latest.yml; do
+            curl --fail --silent "https://downloads.factwright.com/$feed?check=$GITHUB_RUN_ID" | grep -q "^version: $version$"
+          done

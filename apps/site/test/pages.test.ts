@@ -21,6 +21,12 @@ function open(page: string): Document {
   return document;
 }
 
+/** The installers, on the download site: the newest of each, under names that never change. */
+const DOWNLOADS = [
+  'https://downloads.factwright.com/Factwright.dmg',
+  'https://downloads.factwright.com/Factwright-Setup.exe',
+];
+
 /** Whether a file the page asks for, such as /templates/modern.webp, is in the site's public folder. */
 const published = (path: string) => existsSync(join(SITE, 'public', path));
 
@@ -43,12 +49,12 @@ describe.each(['index.html', '404.html'])('%s', (page) => {
     }
   });
 
-  it('links only to its own sections and the home page', () => {
+  it('links only to its own sections, the home page and the downloads', () => {
     const doc = open(page);
     for (const link of doc.querySelectorAll('a[href]')) {
       const href = link.getAttribute('href') ?? '';
       if (href.startsWith('#')) expect(doc.getElementById(href.slice(1)), href).not.toBeNull();
-      else expect(href).toBe('/');
+      else expect(['/', ...DOWNLOADS]).toContain(href);
     }
   });
 

@@ -2,7 +2,7 @@
 // sign-in checks, and in a run it talks to the app the way Claude Code does: it reaches
 // Factwright's tools with the run's token, and sends the prompt, Stop and session-end hooks. It
 // never reaches Anthropic. FAKE_CLAUDE_TRUST=ask makes it ask whether to trust the folder first.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -18,6 +18,18 @@ if (args[0] === 'auth' && args[1] === 'status') {
 
 const after = (flag) => args[args.indexOf(flag) + 1];
 const given = (flag) => (args.includes(flag) ? after(flag) : 'default');
+
+// Like Claude Code, it can't start a run without the plugin and standing rules the app hands it,
+// so a built app that leaves them out fails its tests.
+for (const file of [
+  join(after('--plugin-dir'), '.claude-plugin', 'plugin.json'),
+  after('--append-system-prompt-file'),
+]) {
+  if (!existsSync(file)) {
+    console.error(`Factwright's plugin is missing: ${file}`);
+    process.exit(1);
+  }
+}
 const settings = JSON.parse(readFileSync(after('--settings'), 'utf8'));
 const tools = JSON.parse(readFileSync(after('--mcp-config'), 'utf8')).mcpServers.factwright;
 const hookUrl = settings.hooks.Stop[0].hooks[0].url;

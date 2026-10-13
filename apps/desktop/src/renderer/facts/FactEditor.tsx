@@ -9,6 +9,7 @@ import {
 import { Button, Field, Input, Notice, Select, TextArea } from '@factwright/ui';
 import { type FormEvent, type KeyboardEvent, useState } from 'react';
 import { FACT_LIMITS } from '../../shared/facts.ts';
+import { keepsDrafts } from '../unsaved.ts';
 import styles from './FactEditor.module.css';
 import { picksOf, type TagPicks, tagInfo, tagsWith } from './factView.ts';
 
@@ -41,6 +42,8 @@ function EditNoticeLine({ notice }: { notice: EditNotice | null | undefined }) {
  * what's typed for one block never turns up in another.
  */
 const drafts = new Map<string, { form: 'claim' | 'section'; draft: unknown }>();
+
+keepsDrafts(() => drafts.size > 0);
 
 /** Drops what was typed for an edit, once it's saved, cancelled or left. */
 export const forgetDraft = (key: string) => drafts.delete(key);
