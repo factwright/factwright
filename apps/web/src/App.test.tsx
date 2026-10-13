@@ -51,6 +51,45 @@ describe('the web view', () => {
     expect(forgetKeys).toHaveBeenCalledOnce();
   });
 
+  it('forgets what a page left open shows and keeps, once it’s signed out from elsewhere', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(forgetKeys).mockClear();
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    fakeServer({
+      'GET /api/auth/get-session': () => SESSION,
+      'GET /api/sign-in-options': () => ({ providers: ['github'] }),
+      'GET /api/sync/changes': () =>
+        Response.json({ error: 'signed-out', message: 'Sign in again.' }, { status: 401 }),
+    });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(forgetKeys).toHaveBeenCalledOnce();
+  });
+
+  it('takes an address that names a company out of the history, once it matches no job', async () => {
+    history.replaceState(null, '', '/jobs/acme--staff-engineer');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    server(SESSION);
+    render(<App />);
+    expect(await screen.findByText('No jobs yet')).toBeTruthy();
+    expect(location.pathname).toBe('/');
+  });
+
+  it('shows the sign-in page when Factwright can’t be reached, instead of waiting', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(forgetKeys).mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(forgetKeys).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('keeps the keys when the server can’t say who’s signed in', async () => {
     history.replaceState(null, '', '/');
     vi.mocked(forgetKeys).mockClear();

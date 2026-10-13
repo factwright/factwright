@@ -107,9 +107,10 @@ export function Account({
     );
   };
 
+  // The keys go first, so they're gone even if signing out can't reach the server.
   const leave = async () => {
-    await signOut();
-    await forgetKeys();
+    await forgetKeys().catch(() => {});
+    await signOut().catch(() => {});
     location.assign('/');
   };
 

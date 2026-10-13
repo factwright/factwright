@@ -8,7 +8,7 @@ import { JobView } from './JobView.tsx';
 import { forgetKeys, savedKeys } from './keys.ts';
 import { LinkBrowser } from './LinkBrowser.tsx';
 import page from './page.module.css';
-import { navigate, usePath } from './route.ts';
+import { navigate, replace, usePath } from './route.ts';
 import { PageLink, Shell } from './Shell.tsx';
 import { SignIn } from './SignIn.tsx';
 import { client, getSession, type Provider, type Session, signInOptions } from './server.ts';
@@ -37,6 +37,10 @@ function takeLinkCode(): string | null {
 /** How long the job hunt stays as loaded before coming back to the page updates it. */
 const STALE_MS = 30_000;
 
+/** Whether the server said this browser isn't signed in any more. */
+const signedOut = (error: unknown) =>
+  error instanceof Error && 'kind' in error && error.kind === 'signed-out';
+
 /** The web view: signing in, linking this browser, and the job hunt, opened right here. */
 export function App() {
   const path = usePath();
@@ -53,8 +57,9 @@ export function App() {
       const [session, providers] = await Promise.all([getSession(), signInOptions()]);
       if (!session) {
         // Signed out from another device, run out, or the account deleted: this browser's keys
-        // go too, as signing out here forgets them. Not when the server just couldn't say.
-        if (session === null) await forgetKeys().catch(() => {});
+        // go too, as signing out here forgets them. Not when the server just couldn't say. The
+        // sign-in page doesn't wait for them to go.
+        if (session === null) void forgetKeys().catch(() => {});
         setState({ stage: 'signed-out', providers });
         return;
       }
@@ -66,6 +71,17 @@ export function App() {
 
   const keys = state.stage === 'signed-in' ? state.keys : null;
 
+  // Signed out from elsewhere while the page was open, such as from a computer after this phone
+  // was lost: the job hunt it shows and the keys it keeps go at once, not at the next reload.
+  const forgetHere = useCallback(() => {
+    setVault(null);
+    void forgetKeys().catch(() => {});
+    setState((current) => ({
+      stage: 'signed-out',
+      providers: current.stage === 'loading' ? [] : current.providers,
+    }));
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!keys) return;
     setRefreshing(true);
@@ -74,6 +90,10 @@ export function App() {
       setLoadedAt(Date.now());
       setProblem(null);
     } catch (error) {
+      if (signedOut(error)) {
+        forgetHere();
+        return;
+      }
       setProblem(
         error instanceof Error && 'kind' in error && error.kind === 'offline'
           ? 'Can’t reach Factwright right now. Check your connection.'
@@ -82,11 +102,19 @@ export function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [keys]);
+  }, [keys, forgetHere]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // An address from before pages had codes names the company: once the job hunt is open and
+  // it matches no job, it's replaced, so it doesn't stay in the history either.
+  useEffect(() => {
+    if (!vault || !path.startsWith('/jobs/')) return;
+    const code = path.slice('/jobs/'.length);
+    if (![...vault.pages.values()].includes(code)) replace('/');
+  }, [vault, path]);
 
   // Coming back to the page brings the job hunt up to date.
   useEffect(() => {
@@ -191,7 +219,7 @@ export function App() {
       {!vault ? (
         <p className={page.hint}>{problem ? '' : 'Unlocking your job hunt…'}</p>
       ) : job ? (
-        <JobView job={job} vault={vault} keys={keys} today={today} />
+        <JobView job={job} vault={vault} keys={keys} today={today} onSignedOut={forgetHere} />
       ) : (
         <Dashboard vault={vault} today={today} refreshing={refreshing} onRefresh={refresh} />
       )}

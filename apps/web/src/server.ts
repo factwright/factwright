@@ -29,8 +29,8 @@ async function post(path: string, body: object = {}): Promise<Response> {
  * couldn't say, such as when it's busy.
  */
 export async function getSession(): Promise<Session | null | undefined> {
-  const response = await fetch('/api/auth/get-session');
-  if (!response.ok) return undefined;
+  const response = await fetch('/api/auth/get-session').catch(() => null);
+  if (!response?.ok) return undefined;
   const answer = (await response.json().catch(() => undefined)) as Session | null | undefined;
   if (answer === undefined) return undefined;
   return answer?.user ? answer : null;
@@ -38,8 +38,8 @@ export async function getSession(): Promise<Session | null | undefined> {
 
 /** The ways to sign in that the server has set up. */
 export async function signInOptions(): Promise<Provider[]> {
-  const response = await fetch('/api/sign-in-options');
-  if (!response.ok) return [];
+  const response = await fetch('/api/sign-in-options').catch(() => null);
+  if (!response?.ok) return [];
   const { providers } = (await response.json()) as { providers: Provider[] };
   return providers;
 }
