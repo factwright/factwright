@@ -71,14 +71,21 @@ export async function startServer(vars: Record<string, string> = {}) {
       headers: { 'user-agent': userAgent },
     });
 
-  /** Signs a new session in for an account, as signing in again would. */
-  async function newSession(userId: string, userAgent = 'Factwright/0.0.0 (Test Mac)') {
+  /**
+   * Signs a new session in for an account, as signing in again would: in a browser with GitHub
+   * ("web"), unless it's a device's, from a code ("device").
+   */
+  async function newSession(
+    userId: string,
+    userAgent = 'Factwright/0.0.0 (Test Mac)',
+    via: 'web' | 'device' = 'web',
+  ) {
     const token = randomBytes(24).toString('base64url');
     const sessionId = randomUUID();
     const now = new Date();
     await env.DB.prepare(
-      `INSERT INTO "session" (id, expiresAt, token, createdAt, updatedAt, ipAddress, userAgent, userId)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO "session" (id, expiresAt, token, createdAt, updatedAt, ipAddress, userAgent, userId, via)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         sessionId,
@@ -86,9 +93,10 @@ export async function startServer(vars: Record<string, string> = {}) {
         token,
         now.toISOString(),
         now.toISOString(),
-        '127.0.0.1',
+        null,
         userAgent,
         userId,
+        via,
       )
       .run();
     return { token, sessionId, client: clientFor(token, userAgent) };

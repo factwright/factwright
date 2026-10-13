@@ -93,6 +93,47 @@ describe('signing the desktop app in', () => {
       .bind(token)
       .first<{ userAgent: string; ipAddress: string | null }>();
     expect(session).toEqual({ userAgent: 'Factwright on Sam’s Mac', ipAddress: null });
+    const via = await server.env.DB.prepare('SELECT via FROM "session" WHERE token = ?')
+      .bind(token)
+      .first<{ via: string }>();
+    expect(via?.via).toBe('device');
+  });
+
+  it('won’t let a device code’s session approve another code', async () => {
+    const sam = await server.signUp();
+    const first = await askForCode();
+    await openCode(first.body.user_code, sam.token);
+    await post(
+      '/api/auth/device/approve',
+      { userCode: first.body.user_code },
+      {
+        authorization: `Bearer ${sam.token}`,
+      },
+    );
+    const device = String((await pollForToken(first.body.device_code)).body.access_token);
+
+    // With that session, someone tries to approve a code of their own, to stay signed in.
+    const second = await askForCode();
+    await openCode(second.body.user_code, device);
+    const refused = await post(
+      '/api/auth/device/approve',
+      { userCode: second.body.user_code },
+      {
+        authorization: `Bearer ${device}`,
+      },
+    );
+    expect(refused.status).toBe(403);
+    expect((await pollForToken(second.body.device_code)).body.error).toBe('authorization_pending');
+
+    // Sam, in the browser, still can.
+    const approved = await post(
+      '/api/auth/device/approve',
+      { userCode: second.body.user_code },
+      {
+        authorization: `Bearer ${sam.token}`,
+      },
+    );
+    expect(approved.status).toBe(200);
   });
 
   it('waits until the user approves, and stops if they deny it', async () => {

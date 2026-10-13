@@ -92,27 +92,35 @@ describe('deleting the account', () => {
     }
   });
 
-  it('needs a sign-in with GitHub or Google in the last 15 minutes, which a device code can’t give', async () => {
+  it('needs a browser’s sign-in with GitHub or Google, which a device code’s session can’t give', async () => {
     const sam = await server.signUp();
     await sam.client.push([
       { record: someId(), base: 0, data: 'locked', file: null, deleted: false },
     ]);
-    // Sam last signed in with GitHub an hour ago; this session came from a device code just now.
-    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    await server.env.DB.prepare('UPDATE "account" SET updatedAt = ? WHERE userId = ?')
-      .bind(hourAgo, sam.id)
-      .run();
-    const response = await deleteAccount(sam.token);
+    // A session from a device code, made just now: fresh, but not a browser's.
+    const device = await server.newSession(sam.id, 'Factwright/0.0.0 (Someone’s PC)', 'device');
+    const response = await deleteAccount(device.token);
     expect(response.status).toBe(400);
     // The web view asks for a fresh sign-in when it sees this.
     expect(await response.json()).toMatchObject({ code: 'SESSION_NOT_FRESH' });
     expect((await sam.client.changes(0)).changes).toHaveLength(1);
 
-    // Signing in with GitHub again updates the account's link, and then it can go.
-    await server.env.DB.prepare('UPDATE "account" SET updatedAt = ? WHERE userId = ?')
-      .bind(new Date().toISOString(), sam.id)
-      .run();
+    // Sam's own sign-in in the browser can.
     expect((await deleteAccount(sam.token)).status).toBe(200);
+  });
+
+  it('can be finished after it failed partway', async () => {
+    const sam = await server.signUp();
+    await server.env.FILES.put(`users/${sam.id}/files/left-behind`, 'locked');
+    // The store was emptied, but the sweep or the account's own deletion didn't finish.
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec("INSERT INTO meta (key, value) VALUES ('deleted', ?)", sam.id);
+    expect((await deleteAccount(sam.token)).status).toBe(200);
+    expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
+    const user = await server.env.DB.prepare('SELECT id FROM "user" WHERE id = ?')
+      .bind(sam.id)
+      .first();
+    expect(user).toBeNull();
   });
 
   it('turns away an upload that lands while the store is deleted, and keeps no copy of it', async () => {
@@ -209,8 +217,15 @@ describe('sign-in records', () => {
       );
     }
 
+    // A session from before sessions kept only a device's name.
+    const phone = await server.newSession(sam.id, IPHONE);
+
     await server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date(now) });
 
+    const shortened = await server.env.DB.prepare('SELECT userAgent FROM "session" WHERE id = ?')
+      .bind(phone.sessionId)
+      .first<{ userAgent: string }>();
+    expect(shortened?.userAgent).toBe('Safari on iPhone');
     expect(await ids('session')).not.toContain('ended');
     expect(await ids('session')).toContain(sam.sessionId);
     expect(await ids('verification')).toEqual(['verification-new']);

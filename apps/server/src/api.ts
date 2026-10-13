@@ -15,6 +15,10 @@ import { deviceName } from './auth-options.ts';
 import type { Env } from './env.ts';
 import { checkTicket, makeTicket } from './live.ts';
 import { DELETED, SLOW_DOWN, type UserStore } from './store.ts';
+
+/** What the store throws before it writes anything, after which an upload's copy can go. */
+const REFUSED_BEFORE_WRITING = new Set([DELETED, SLOW_DOWN]);
+
 import { filesPrefix } from './store-tables.ts';
 
 const BASE_HEADERS = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
@@ -167,9 +171,12 @@ const putFile: Handler = async ({ request, env, store, account }, [id]) => {
     await env.FILES.delete(key);
     throw new Refused('The upload was cut short.');
   }
-  // Whatever the store says, even an error, a copy it didn't take is deleted at once.
+  // A copy the store didn't take is deleted at once: refused, or a duplicate. After any other
+  // error the store may have kept it, so it stays.
   const result = await store.fileStored(account, id, key, size).catch(async (error: unknown) => {
-    await env.FILES.delete(key);
+    if (error instanceof Error && REFUSED_BEFORE_WRITING.has(error.message)) {
+      await env.FILES.delete(key);
+    }
     throw error;
   });
   if (result !== 'stored') await env.FILES.delete(key);
@@ -319,7 +326,14 @@ async function listen(request: Request, env: Env, url: URL): Promise<Response> {
   }
   const headers = new Headers(request.headers);
   headers.set('x-factwright-account', account);
-  return env.STORES.get(env.STORES.idFromName(account)).fetch(new Request(request, { headers }));
+  return env.STORES.get(env.STORES.idFromName(account))
+    .fetch(new Request(request, { headers }))
+    .catch((error: unknown) => {
+      if (error instanceof Error && error.message === DELETED) {
+        return failure(401, 'signed-out', 'This account was deleted.');
+      }
+      throw error;
+    });
 }
 
 /**

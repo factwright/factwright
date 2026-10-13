@@ -34,6 +34,17 @@ function deviceOnly<T extends { userAgent?: string | null; ipAddress?: string | 
   };
 }
 
+/** Where sign-in makes a session after GitHub or Google says who it is, in a browser. */
+const WEB_SIGN_IN = /^\/(callback\/|sign-in\/social$)/;
+
+/**
+ * How a session signed in: "web" after GitHub or Google, in a browser, or "device" with a code
+ * the person approved. Only a web session can delete the account or approve a device's code, so
+ * someone who tricks a person into approving their code gets a session that can sync, but can't
+ * do either.
+ */
+export type SignedInVia = 'web' | 'device';
+
 /** What sign-in needs, apart from where it runs. */
 export interface AuthSettings {
   /** Where the app is served, such as "https://app.factwright.com". */
@@ -66,6 +77,9 @@ export function authOptions(settings: AuthSettings) {
       ...(settings.google && { google: settings.google }),
     },
     session: {
+      additionalFields: {
+        via: { type: 'string', required: false, input: false },
+      },
       // A session lasts 60 days, and renews at most once a day while it's used.
       expiresIn: 60 * DAY_SECONDS,
       updateAge: DAY_SECONDS,
@@ -85,7 +99,12 @@ export function authOptions(settings: AuthSettings) {
         update: { before: async (user) => ({ data: { ...user, image: null } }) },
       },
       session: {
-        create: { before: async (session) => ({ data: deviceOnly(session) }) },
+        create: {
+          before: async (session, context) => {
+            const via: SignedInVia = WEB_SIGN_IN.test(context?.path ?? '') ? 'web' : 'device';
+            return { data: { ...deviceOnly(session), via } };
+          },
+        },
         update: { before: async (session) => ({ data: deviceOnly(session) }) },
       },
       account: {

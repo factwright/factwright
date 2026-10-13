@@ -34,7 +34,8 @@ Every route answers only the account of the session that calls it. The desktop a
 | `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, and how much you store |
 | `GET /api/account/export` | Everything the server keeps for your account, still locked |
 | `GET /api/sign-in-options` | The ways to sign in this server has set up. Anyone can ask |
-| `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a sign-in with GitHub or Google in the last 15 minutes: a session from a device code doesn't count |
+| `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
+| `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
 
 ## Limits
 - 1 GB per account (`STORAGE_LIMIT_MB`) and 25 MB per file.
@@ -63,7 +64,7 @@ It runs on Cloudflare's free plan. The first deploy creates the database, the fi
 
 1. Sign in to the Cloudflare account that has factwright.com: `pnpm --filter @factwright/server exec wrangler login`.
 2. Deploy: `pnpm --filter @factwright/server run deploy`. It builds the web view first.
-3. Set up the accounts database: `pnpm --filter @factwright/server exec wrangler d1 migrations apply factwright --remote`.
+3. Set up the accounts database: `pnpm --filter @factwright/server exec wrangler d1 migrations apply factwright --remote`. Run it again after an update that adds a migration, before deploying it.
 4. Set the secret that signs sessions: `openssl rand -base64 32 | pnpm --filter @factwright/server exec wrangler secret put BETTER_AUTH_SECRET`.
 5. Make a GitHub OAuth app (in the factwright org's settings, under Developer settings) with the callback `https://app.factwright.com/api/auth/callback/github`, then set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` with `wrangler secret put`.
 6. Optional: a Google OAuth client, with the callback `https://app.factwright.com/api/auth/callback/google`, as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.

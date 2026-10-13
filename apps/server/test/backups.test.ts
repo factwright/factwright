@@ -95,6 +95,18 @@ describe('deleting an account for someone who asked', () => {
     expect(user).toBeNull();
     expect((await remove({ email: sam.email })).status).toBe(404);
   });
+
+  it('finds the account however its email is typed, and says what it needs', async () => {
+    const sam = await server.signUp();
+    expect((await remove({ email: ` ${sam.email.toUpperCase()} ` })).status).toBe(204);
+    await expect(sam.client.account()).rejects.toMatchObject({ kind: 'signed-out' });
+    const nothing = await fetch(new URL('/api/admin/delete', server.url), {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+      body: 'null',
+    });
+    expect(nothing.status).toBe(400);
+  });
 });
 
 describe('the daily cleanup', () => {

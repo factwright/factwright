@@ -69,7 +69,7 @@ export class UserStore extends DurableObject<Env> {
    * the account is deleted, nothing does.
    */
   private claim(owner: string): void {
-    if (this.deleting || this.meta.get('deleted') !== null) throw new Error(DELETED);
+    if (this.isDeleted()) throw new Error(DELETED);
     const current = this.meta.get('owner');
     if (current === null) this.meta.set('owner', owner);
     else if (current !== owner) throw new Error('This store belongs to another account.');
@@ -355,19 +355,25 @@ export class UserStore extends DurableObject<Env> {
   /**
    * Deletes everything the account has: the store, then its files and backups in R2. From the
    * start, the store turns every other call away, and it remembers the account was deleted, so
-   * nothing can fill it again. An upload already on its way when the files went is caught by one
-   * more sweep, a few minutes later.
+   * nothing can fill it again. One more sweep, a few minutes later, catches an upload that was on
+   * its way, or files a sweep that failed left behind. Asked again after it failed partway, it
+   * sweeps once more and finishes, so the account's deletion can always be done.
    */
   async wipe(owner: string): Promise<void> {
-    this.claim(owner);
-    this.deleting = true;
-    for (const socket of this.ctx.getWebSockets()) socket.close(1000, 'The account was deleted.');
-    await this.ctx.storage.deleteAlarm();
-    await this.ctx.storage.deleteAll();
-    this.sql.exec(SCHEMA);
-    this.meta.set('deleted', owner);
-    await this.sweep(owner);
+    const deleted = this.meta.get('deleted');
+    if (deleted === null) {
+      this.claim(owner);
+      this.deleting = true;
+      for (const socket of this.ctx.getWebSockets()) socket.close(1000, 'The account was deleted.');
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      this.sql.exec(SCHEMA);
+      this.meta.set('deleted', owner);
+    } else if (deleted !== owner) {
+      throw new Error('This store belongs to another account.');
+    }
     await this.ctx.storage.setAlarm(Date.now() + SWEEP_AGAIN_MS);
+    await this.sweep(owner);
   }
 
   /** Deletes an account's files and backups from R2. */
@@ -386,7 +392,8 @@ export class UserStore extends DurableObject<Env> {
   /** Puts the store back as a day's backup left it. False when there's no such backup. */
   async restore(owner: string, day: string): Promise<boolean> {
     this.claim(owner);
-    const restored = await restore(this.upkeep, owner, day);
+    // The backup is read from R2 first: an account deleted meanwhile gets nothing written back.
+    const restored = await restore(this.upkeep, owner, day, () => this.isDeleted());
     if (restored) this.notify();
     return restored;
   }
@@ -402,7 +409,14 @@ export class UserStore extends DurableObject<Env> {
     if (deleted !== null) return this.sweep(deleted);
     if (this.meta.get('owner') === null) return;
     await this.cleanup();
+    // Deleted while the cleanup waited on R2: its sweep's alarm stays as it is.
+    if (this.isDeleted()) return;
     await this.ctx.storage.setAlarm(Date.now() + DAY_MS);
+  }
+
+  /** Whether the account is deleted, or being deleted. */
+  private isDeleted(): boolean {
+    return this.deleting || this.meta.get('deleted') !== null;
   }
 
   /** A device listening for changes as they happen. The Worker checked its ticket. */

@@ -82,7 +82,7 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out. Signing out deletes the session's record at once, and one that runs out is deleted within a day.
 - A session keeps the name of the device that signed in, such as "Safari on iPhone" or "Factwright on Sam's Mac", in place of everything the browser or app sent, and no IP address. GitHub's and Google's tokens, and the link to your profile picture, aren't kept, and sign-in's ways to hand out or refresh a provider's token are off.
 - The account key's locked copy is saved once, by the first device, and no session can replace it. So someone who tricks you into approving their device code can't spoil your recovery key.
-- Deleting the account needs a sign-in with GitHub or Google in the last 15 minutes. A session from a device code doesn't count, however new, so the same trick can't delete your account either.
+- Each session says how it signed in: in a browser with GitHub or Google, or with a device code. Only a browser's session can delete the account or approve a device's code, and deleting also needs it to be from the last 15 minutes. So someone who tricks you into approving their code gets a session that can sync, but can't delete your account, or approve codes of their own to stay signed in.
 
 ### The web view
 The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.
@@ -114,7 +114,7 @@ A server that misbehaved couldn't read or forge what the desktop app syncs. It c
 ### Backups and deleting
 - Each account's store is snapshotted to R2 every day and kept for 14 days. Cloudflare also keeps 30 days of point-in-time recovery for each store, and 7 days for the accounts database (30 on a paid plan).
 - Something you delete in the app stays on the server, locked, while an earlier version holds it (90 days), then in backups (up to 14 days more) and Cloudflare's recovery (up to 30 days more).
-- Deleting your account signs out every device first, then removes your store, your files, your backups and your sign-in records. The store remembers it was deleted, so nothing can fill it again, and a last sweep a few minutes later catches an upload that was on its way.
+- Deleting your account signs out every device first, then removes your store, your files, your backups and your sign-in records. The store remembers it was deleted, so nothing can fill it again, and a last sweep a few minutes later catches an upload that was on its way. If deleting fails partway, trying again finishes it.
 - Someone who can't sign in any more can ask by email, and the operator can delete their account with a token only the operator has.
 
 ### The trade-off

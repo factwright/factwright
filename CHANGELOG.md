@@ -7,8 +7,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
 - The sync server keeps less: a session keeps its device's name in place of everything the browser or app sent, and no IP address. GitHub's and Google's tokens and the profile picture link aren't kept, and Cloudflare's log of every request is off for the sync server and the website. A ticket to listen for changes no longer shows which account it's for.
-- Deleting an account needs a sign-in with GitHub or Google in the last 15 minutes, which a device code can't give, and the account key's locked copy can't be replaced once saved. So someone who tricks you into approving their device code can't delete your account or spoil your recovery key.
-- Deleting an account signs out every device first, and the account's store then turns everything away, so nothing can fill it again. An upload the store turns away is deleted at once.
+- Deleting an account, or approving a device's code, needs a session from a browser's sign-in with GitHub or Google, and the account key's locked copy can't be replaced once saved. So someone who tricks you into approving their device code can't delete your account, approve codes of their own, or spoil your recovery key.
+- Deleting an account signs out every device first, and the account's store then turns everything away, so nothing can fill it again. An upload the store turns away is deleted at once, and a deletion that failed partway finishes when tried again.
 - app.factwright.com tells browsers to keep to https.
 
 ### Added
