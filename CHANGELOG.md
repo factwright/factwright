@@ -6,6 +6,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Added
 - A privacy policy and terms of service, at factwright.com/privacy and factwright.com/terms. Every page of the site links to them, and signing in to sync, in the app or the web view, says it means agreeing to them.
+- The operator can delete an account for someone who asked by email, with a token only the operator has.
 
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
@@ -13,9 +14,6 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Deleting an account, or approving a device's code, needs a session from a browser's sign-in with GitHub or Google, sign-in's routes that list sessions or sign others out are off, and the account key's locked copy can't be replaced once saved. So someone who tricks you into approving their device code can't delete your account, approve codes of their own, take another session's sign-in, or spoil your recovery key. Sessions from before this sign in again in the browser before deleting or approving.
 - Deleting an account signs out every device first, and the account's store then turns everything away, so nothing can fill it again. An upload the store turns away is deleted at once, and a deletion that failed partway finishes when tried again.
 - app.factwright.com tells browsers to keep to https.
-
-### Added
-- The operator can delete an account for someone who asked by email, with a token only the operator has.
 
 ## 0.1.0 - 2026-10-13
 
