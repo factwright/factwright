@@ -22,5 +22,10 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/*", "!/assets/*", "!/templates/*"]
   },
-  "observability": { "enabled": true }
+  // Logs keep only what the Worker writes itself. Cloudflare's log of every request is off.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  }
 }

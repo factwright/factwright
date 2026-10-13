@@ -75,12 +75,17 @@ export async function backUp({ sql, files, meta }: Upkeep, owner: string, day: s
  * anything a device saw, so every device pulls it, and finds out which of its own changes the
  * store no longer has. Null when there's no backup from that day.
  */
-export async function restore({ sql, storage, files, meta }: Upkeep, owner: string, day: string) {
+export async function restore(
+  { sql, storage, files, meta }: Upkeep,
+  owner: string,
+  day: string,
+  gone: () => boolean = () => false,
+) {
   const object = await files.get(`${backupsPrefix(owner)}${day}.json.gz`);
   if (!object) return false;
   const text = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).text();
   const snapshot = JSON.parse(text) as Snapshot;
-  if (snapshot.owner !== owner) return false;
+  if (snapshot.owner !== owner || gone()) return false;
   storage.transactionSync(() => {
     for (const table of ['versions', 'heads', 'files', 'links']) sql.exec(`DELETE FROM ${table}`);
     for (const row of snapshot.versions) {

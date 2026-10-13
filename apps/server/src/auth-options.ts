@@ -10,6 +10,41 @@ const DAY_SECONDS = 24 * 60 * 60;
 /** An OAuth app's ID and secret, at GitHub or Google. */
 export type Provider = { clientId: string; clientSecret: string };
 
+/** The token fields sign-in's providers hand over. Nothing uses them after sign-in, so none are kept. */
+const PROVIDER_TOKENS = {
+  accessToken: null,
+  refreshToken: null,
+  idToken: null,
+  accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
+};
+
+/**
+ * What a session keeps about the device that signed in: the name the account page shows, such
+ * as "Safari on iPhone", in place of the browser's whole description, and no IP address. Sign-in's
+ * limits read the address from each request instead.
+ */
+function deviceOnly<T extends { userAgent?: string | null; ipAddress?: string | null }>(
+  session: T,
+) {
+  return {
+    ...session,
+    ...('userAgent' in session && { userAgent: deviceName(session.userAgent) }),
+    ...('ipAddress' in session && { ipAddress: null }),
+  };
+}
+
+/** Where sign-in makes a session after GitHub or Google says who it is, in a browser. */
+const WEB_SIGN_IN = /^\/callback\//;
+
+/**
+ * How a session signed in: "web" after GitHub or Google, in a browser, or "device" with a code
+ * the person approved. Only a web session can delete the account or approve a device's code, so
+ * someone who tricks a person into approving their code gets a session that can sync, but can't
+ * do either.
+ */
+export type SignedInVia = 'web' | 'device';
+
 /** What sign-in needs, apart from where it runs. */
 export interface AuthSettings {
   /** Where the app is served, such as "https://app.factwright.com". */
@@ -19,7 +54,7 @@ export interface AuthSettings {
   github?: Provider | undefined;
   google?: Provider | undefined;
   /** Deletes everything an account has, before the account itself goes. */
-  beforeDeleteUser: (accountId: string) => Promise<void>;
+  beforeDeleteUser: (accountId: string, request?: Request) => Promise<void>;
   /** Sign-ins each IP address may start in a minute. */
   signInsPerMinute?: number;
 }
@@ -42,18 +77,57 @@ export function authOptions(settings: AuthSettings) {
       ...(settings.google && { google: settings.google }),
     },
     session: {
+      additionalFields: {
+        via: { type: 'string', required: false, input: false },
+      },
       // A session lasts 60 days, and renews at most once a day while it's used.
       expiresIn: 60 * DAY_SECONDS,
       updateAge: DAY_SECONDS,
       // Deleting the account needs a sign-in in the last 15 minutes.
       freshAge: 15 * 60,
     },
-    // GitHub's and Google's tokens are kept encrypted, in case the database ever leaks.
+    // GitHub's and Google's tokens are never kept (see databaseHooks), and are encrypted while
+    // sign-in still holds them.
     account: { encryptOAuthTokens: true },
+    disabledPaths: [
+      // Sign-in's ways to hand out or refresh a provider's token, or read its profile again. With
+      // no tokens kept, there's nothing for them to do.
+      '/get-access-token',
+      '/refresh-token',
+      '/account-info',
+      // Listing sessions hands out every session's token, so a device's session could take a
+      // browser's and do what only a browser's may. The account page lists devices without them.
+      '/list-sessions',
+      // Signing out other sessions goes through the account page, which names each device.
+      '/revoke-session',
+      '/revoke-sessions',
+      '/revoke-other-sessions',
+    ],
+    databaseHooks: {
+      // The account page shows a name and an email. A link to the profile picture isn't kept.
+      user: {
+        create: { before: async (user) => ({ data: { ...user, image: null } }) },
+        update: { before: async (user) => ({ data: { ...user, image: null } }) },
+      },
+      session: {
+        create: {
+          before: async (session, context) => {
+            const via: SignedInVia = WEB_SIGN_IN.test(context?.path ?? '') ? 'web' : 'device';
+            return { data: { ...deviceOnly(session), via } };
+          },
+        },
+        update: { before: async (session) => ({ data: deviceOnly(session) }) },
+      },
+      account: {
+        create: { before: async (account) => ({ data: { ...account, ...PROVIDER_TOKENS } }) },
+        update: { before: async (account) => ({ data: { ...account, ...PROVIDER_TOKENS } }) },
+      },
+    },
     user: {
       deleteUser: {
         enabled: true,
-        beforeDelete: async (user: { id: string }) => settings.beforeDeleteUser(user.id),
+        beforeDelete: async (user: { id: string }, request?: Request) =>
+          settings.beforeDeleteUser(user.id, request),
       },
     },
     rateLimit: {
@@ -99,12 +173,18 @@ function decoded(text: string): string {
   }
 }
 
+/** A name deviceName gives, which sessions keep in place of what the device sent. */
+const DEVICE_NAME =
+  /^(Factwright on .{1,100}|(Edge|Firefox|Chrome|Safari|A browser)( on (iPhone|iPad|Android|Mac|Windows|Linux))?)$/;
+
 /**
  * A device's name, from what it sent when it signed in, such as "Safari on iPhone". The app
- * sends its computer's name percent-encoded, as "Factwright/1.0 (Sam%E2%80%99s Mac)".
+ * sends its computer's name percent-encoded, as "Factwright/1.0 (Sam%E2%80%99s Mac)". A name it
+ * already gave comes back as it is.
  */
 export function deviceName(userAgent: string | null | undefined): string {
   const agent = userAgent ?? '';
+  if (DEVICE_NAME.test(agent)) return agent;
   const app = /^Factwright\/\S+ \((.{1,300})\)$/.exec(agent);
   if (app?.[1]) return `Factwright on ${decoded(app[1]).slice(0, 100)}`;
   const browser = /Edg\//.test(agent)

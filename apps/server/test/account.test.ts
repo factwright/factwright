@@ -61,21 +61,76 @@ describe('deleting the account', () => {
 
   it('removes its store, its files, its backups and its sign-in', async () => {
     const sam = await server.signUp();
+    const phone = await server.newSession(sam.id, IPHONE);
     const file = someId();
     await sam.client.putFile(file, new TextEncoder().encode('locked'));
     await sam.client.push([{ record: someId(), base: 0, data: 'locked', file, deleted: false }]);
     await server.env.FILES.put(`backups/${sam.id}/2026-10-01.json.gz`, 'backup');
+    // A device code Sam approved, which the computer never picked up.
+    await server.env.DB.prepare(
+      `INSERT INTO "deviceCode" (id, deviceCode, userCode, userId, expiresAt, status)
+       VALUES (?, ?, ?, ?, ?, 'approved')`,
+    )
+      .bind(someId(), someId(), 'WDJBMJHT', sam.id, new Date(Date.now() + 600_000).toISOString())
+      .run();
     const response = await deleteAccount(sam.token);
     expect(response.status).toBe(200);
     expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
     expect((await server.env.FILES.list({ prefix: `backups/${sam.id}/` })).objects).toEqual([]);
+    // The store keeps only that the account was deleted, so nothing can fill it again.
     const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
-    expect(await storage.exec('SELECT * FROM meta')).toEqual([]);
+    expect(await storage.exec('SELECT key FROM meta')).toEqual([{ key: 'deleted' }]);
     await expect(sam.client.account()).rejects.toMatchObject({ kind: 'signed-out' });
+    await expect(phone.client.changes(0)).rejects.toMatchObject({ kind: 'signed-out' });
+    for (const table of ['user', 'account', 'session', 'deviceCode']) {
+      const left = await server.env.DB.prepare(
+        `SELECT count(*) AS n FROM "${table}" WHERE ${table === 'user' ? 'id' : 'userId'} = ?`,
+      )
+        .bind(sam.id)
+        .first<{ n: number }>();
+      expect(left?.n, table).toBe(0);
+    }
+  });
+
+  it('needs a browser’s sign-in with GitHub or Google, which a device code’s session can’t give', async () => {
+    const sam = await server.signUp();
+    await sam.client.push([
+      { record: someId(), base: 0, data: 'locked', file: null, deleted: false },
+    ]);
+    // A session from a device code, made just now: fresh, but not a browser's.
+    const device = await server.newSession(sam.id, 'Factwright/0.0.0 (Someone’s PC)', 'device');
+    const response = await deleteAccount(device.token);
+    expect(response.status).toBe(400);
+    // The web view asks for a fresh sign-in when it sees this.
+    expect(await response.json()).toMatchObject({ code: 'SESSION_NOT_FRESH' });
+    expect((await sam.client.changes(0)).changes).toHaveLength(1);
+
+    // Sam's own sign-in in the browser can.
+    expect((await deleteAccount(sam.token)).status).toBe(200);
+  });
+
+  it('can be finished after it failed partway', async () => {
+    const sam = await server.signUp();
+    await server.env.FILES.put(`users/${sam.id}/files/left-behind`, 'locked');
+    // The store was emptied, but the sweep or the account's own deletion didn't finish.
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec("INSERT INTO meta (key, value) VALUES ('deleted', ?)", sam.id);
+    expect((await deleteAccount(sam.token)).status).toBe(200);
+    expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
     const user = await server.env.DB.prepare('SELECT id FROM "user" WHERE id = ?')
       .bind(sam.id)
       .first();
     expect(user).toBeNull();
+  });
+
+  it('turns away an upload that lands while the store is deleted, and keeps no copy of it', async () => {
+    const sam = await server.signUp();
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec("INSERT INTO meta (key, value) VALUES ('deleted', ?)", sam.id);
+    await expect(
+      sam.client.putFile(someId(), new TextEncoder().encode('locked')),
+    ).rejects.toMatchObject({ kind: 'signed-out' });
+    expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
   });
 
   it('needs a fresh sign-in', async () => {
@@ -162,8 +217,15 @@ describe('sign-in records', () => {
       );
     }
 
+    // A session from before sessions kept only a device's name.
+    const phone = await server.newSession(sam.id, IPHONE);
+
     await server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date(now) });
 
+    const shortened = await server.env.DB.prepare('SELECT userAgent FROM "session" WHERE id = ?')
+      .bind(phone.sessionId)
+      .first<{ userAgent: string }>();
+    expect(shortened?.userAgent).toBe('Safari on iPhone');
     expect(await ids('session')).not.toContain('ended');
     expect(await ids('session')).toContain(sam.sessionId);
     expect(await ids('verification')).toEqual(['verification-new']);

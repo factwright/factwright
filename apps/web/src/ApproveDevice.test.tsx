@@ -67,6 +67,28 @@ describe('letting the desktop app sign in', () => {
     expect(await screen.findByText('Your computer is signed in.')).toBeTruthy();
   });
 
+  it('asks for a sign-in here first, when this browser’s session can’t let a computer in', async () => {
+    const requests = fakeServer({
+      'GET /api/auth/device': pending,
+      'POST /api/auth/device/approve': () =>
+        Response.json(
+          { error: 'refused', message: 'Approve a code from a browser.' },
+          { status: 403 },
+        ),
+      'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
+    });
+    history.replaceState(null, '', '/device?user_code=WDJBMJHT');
+    render(<ApproveDevice userCode="WDJBMJHT" providers={['github']} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText(/sign in again here first/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
+    // GitHub brings the browser back to the same code.
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/device?user_code=WDJBMJHT',
+    });
+  });
+
   it('says when an answer didn’t go through', async () => {
     fakeServer({
       'GET /api/auth/device': pending,
