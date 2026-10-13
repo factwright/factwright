@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
 import type { AccountInfo } from '@factwright/sync';
 import { Button, DialogActions } from '@factwright/ui';
 import { Smartphone } from 'lucide-react';
@@ -180,6 +181,18 @@ export function ManageSync({
           {problem}
         </p>
       )}
+
+      <p className={styles.hint}>
+        What sync keeps, and for how long, is in Factwright’s{' '}
+        <a className={styles.link} href={PRIVACY_URL} target="_blank" rel="noreferrer">
+          privacy policy
+        </a>
+        . Using it means you agree to the{' '}
+        <a className={styles.link} href={TERMS_URL} target="_blank" rel="noreferrer">
+          terms of service
+        </a>
+        .
+      </p>
 
       {confirmOff ? (
         <div className={styles.confirm}>

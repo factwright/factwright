@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- A privacy policy and terms of service, at factwright.com/privacy and factwright.com/terms. Every page of the site links to them, and signing in to sync, in the app or the web view, says it means agreeing to them.
+
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
 

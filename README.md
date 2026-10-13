@@ -22,7 +22,7 @@ Factwright is a desktop app for Mac and Windows that runs your job hunt on top o
 ## How it's built
 - **Your Claude, untouched.** Factwright launches the Claude Code you've already installed and signed in to. It never sees, stores or passes your login, and runs use your own plan or API key.
 - **Your files, on your computer.** Claude works on plain files in a folder on your machine, using tools Factwright provides instead of a shell.
-- **Your data, encrypted.** Sync between your devices is end-to-end encrypted. The server stores data it can't read.
+- **Your data, encrypted.** Sync is encrypted on your computer before it's uploaded, with a key the server never sees, so the server stores only data it can't read. The web view on your phone runs code the server sends, which [docs/security.md](docs/security.md) explains.
 
 More in [architecture](docs/architecture.md) and [security](docs/security.md).
 

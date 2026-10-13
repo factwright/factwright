@@ -111,6 +111,7 @@ export {
   journeys,
 } from './journey.ts';
 export { companyKey, roleKey, slug } from './keys.ts';
+export { PRIVACY_URL, TERMS_URL } from './legal.ts';
 export { hostOf, isJobLink, type Link, linksFrom, normalizeUrl } from './links.ts';
 export {
   type ListItem,

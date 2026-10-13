@@ -1,6 +1,6 @@
 # Website
 
-factwright.com: one page that explains Factwright and shows how it works, its download pages, and a "not found" page. It's static: the page reads fine without its script, which only adds the motion.
+factwright.com: one page that explains Factwright and shows how it works, its download pages, its privacy policy and terms, and a "not found" page. It's static: the page reads fine without its script, which only adds the motion.
 
 It's built on the design system in [`@factwright/ui`](../../packages/ui): its colors and fonts come from the same tokens as the app, in light and dark, so the drawings of the app's screens match the app itself.
 
@@ -8,6 +8,7 @@ It's built on the design system in [`@factwright/ui`](../../packages/ui): its co
 |---|---|
 | `index.html` | The page: what Factwright is, how it works in five steps, the fact bank, the Run buttons, the templates, whose Claude does the work, and questions |
 | `download.html`, `download/` | The download pages. `/download/mac` and `/download/windows` start that computer's download and say how to install it, with a link in case it doesn't start. `/download` goes on to the one for the visitor's computer, or shows both on a phone or Linux |
+| `privacy.html`, `terms.html` | The privacy policy and the terms of service, at `/privacy` and `/terms`. Every page's footer links to both, and so does signing in to sync, in the app and the web view |
 | `404.html` | The page for an address that doesn't exist |
 | `src/main.ts` | The motion: the app drawing plays a run in Claude's panel, a claim gets confirmed, the score bars fill, and each resume line opens the fact behind it |
 | `src/styles` | The site's layout and type, and the drawings of the app, in a few files that `index.css` imports in order |

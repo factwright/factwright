@@ -15,6 +15,16 @@ describe('signing in', () => {
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
+  it('says signing in agrees to the terms and privacy policy, with a link to each', () => {
+    render(<SignIn providers={['github']} returnTo="/" />);
+    expect(screen.getByRole('link', { name: 'terms of service' }).getAttribute('href')).toBe(
+      'https://factwright.com/terms',
+    );
+    expect(screen.getByRole('link', { name: 'privacy policy' }).getAttribute('href')).toBe(
+      'https://factwright.com/privacy',
+    );
+  });
+
   it('signs in, to come back to where the person was going', async () => {
     // GitHub's address stands in as this page's own, so the test browser stays put.
     const requests = fakeServer({

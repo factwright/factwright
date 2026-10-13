@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
 import { Button, DialogActions } from '@factwright/ui';
 import { Laptop, Lock, LogIn } from 'lucide-react';
 import { useState } from 'react';
@@ -101,6 +102,17 @@ export function SignInStep({
           {problem}
         </p>
       )}
+      <p className={styles.hint}>
+        Signing in means you agree to Factwright’s{' '}
+        <a className={styles.link} href={TERMS_URL} target="_blank" rel="noreferrer">
+          terms of service
+        </a>{' '}
+        and{' '}
+        <a className={styles.link} href={PRIVACY_URL} target="_blank" rel="noreferrer">
+          privacy policy
+        </a>
+        .
+      </p>
       <DialogActions>
         <Button onClick={close}>Not now</Button>
         <Button variant="primary" data-autofocus onClick={signIn}>
