@@ -48,7 +48,7 @@ the value; nobody else ever sees them.
 
 | Secret | What it is | From |
 |---|---|---|
-| `CSC_LINK` | The Developer ID Application certificate, as a base64 `.p12` | Xcode → Settings → Accounts → Manage Certificates, then exported from Keychain Access |
+| `CSC_LINK` | The Developer ID Application certificate from Apple's G2 authority, as a base64 `.p12` | Certificates, Identifiers & Profiles → + → Developer ID Application → G2 Sub-CA, with a request from Keychain Access → Certificate Assistant; then exported from Keychain Access |
 | `CSC_KEY_PASSWORD` | The password the `.p12` was exported with | — |
 | `APPLE_API_KEY_P8` | The App Store Connect API key for notarizing: the `.p8` file's contents | App Store Connect → Users and Access → Integrations → Team Keys, with Developer access |
 | `APPLE_API_KEY_ID` | That key's ID | The same page |
@@ -65,8 +65,16 @@ the value; nobody else ever sees them.
 | `AZURE_PUBLISHER_NAME` | The certificate's common name alone, exactly as it reads, such as `NEATIFAI LLC`: installed copies check every update against it, so a wrong one would stop their updates for good. The build stops if it's blank, and a release checks the app is signed by it |
 
 The app registration needs the **Artifact Signing Certificate Profile Signer** role on
-`asa-neatifaisigning`. The client secret expires after 24 months, and the Azure identity
-validation on 2029-01-12. Releases stop until each is renewed.
+`asa-neatifaisigning`.
+
+Only the Account Holder can make the Developer ID certificate. Make it on Apple's website, as the
+table says, choosing G2 Sub-CA: a certificate from Apple's previous authority can't sign after
+2027-02-01. To tell the two apart, open the certificate in Keychain Access: under Issuer Name, the
+Organizational Unit reads `G2` for the current authority, and Apple Certification Authority for the
+previous one.
+
+The client secret expires after 24 months, the Developer ID certificate after five years, and the
+Azure identity validation on 2029-01-12. Releases stop until each is renewed.
 
 ## Releasing a version
 1. **Say what's new.** Write `apps/desktop/release-notes/<version>.md`: a few lines for users,
