@@ -40,7 +40,9 @@ export async function getSession(): Promise<Session | null | undefined> {
 export async function signInOptions(): Promise<Provider[]> {
   const response = await fetch('/api/sign-in-options').catch(() => null);
   if (!response?.ok) return [];
-  const { providers } = (await response.json()) as { providers: Provider[] };
+  const { providers = [] } = (await response.json().catch(() => ({}))) as {
+    providers?: Provider[];
+  };
   return providers;
 }
 

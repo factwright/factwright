@@ -1,5 +1,6 @@
 import { localDate } from '@factwright/core';
 import type { AccountKeys } from '@factwright/sync';
+import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
 import { ApproveDevice } from './ApproveDevice.tsx';
@@ -16,6 +17,8 @@ import { openVault, type Vault } from './vault.ts';
 
 type State =
   | { stage: 'loading' }
+  /** The server couldn't say who's signed in: offline, or busy. */
+  | { stage: 'unreachable' }
   | { stage: 'signed-out'; providers: Provider[] }
   | { stage: 'signed-in'; session: Session; providers: Provider[]; keys: AccountKeys | null };
 
@@ -55,11 +58,14 @@ export function App() {
   useEffect(() => {
     void (async () => {
       const [session, providers] = await Promise.all([getSession(), signInOptions()]);
+      if (session === undefined) {
+        setState({ stage: 'unreachable' });
+        return;
+      }
       if (!session) {
         // Signed out from another device, run out, or the account deleted: this browser's keys
-        // go too, as signing out here forgets them. Not when the server just couldn't say. The
-        // sign-in page doesn't wait for them to go.
-        if (session === null) void forgetKeys().catch(() => {});
+        // go too, as signing out here forgets them. The sign-in page doesn't wait for them to go.
+        void forgetKeys().catch(() => {});
         setState({ stage: 'signed-out', providers });
         return;
       }
@@ -78,7 +84,7 @@ export function App() {
     void forgetKeys().catch(() => {});
     setState((current) => ({
       stage: 'signed-out',
-      providers: current.stage === 'loading' ? [] : current.providers,
+      providers: 'providers' in current ? current.providers : [],
     }));
   }, []);
 
@@ -109,7 +115,7 @@ export function App() {
   }, [refresh]);
 
   // An address from before pages had codes names the company: once the job hunt is open and
-  // it matches no job, it's replaced, so it doesn't stay in the history either.
+  // it matches no job, it's replaced, so it isn't left in the address bar or the tab's back list.
   useEffect(() => {
     if (!vault || !path.startsWith('/jobs/')) return;
     const code = path.slice('/jobs/'.length);
@@ -130,6 +136,24 @@ export function App() {
     return (
       <Shell>
         <p className={page.hint}>Opening…</p>
+      </Shell>
+    );
+  }
+
+  if (state.stage === 'unreachable') {
+    return (
+      <Shell>
+        <section className={page.card} aria-labelledby="unreachable-title">
+          <h1 id="unreachable-title" className={page.title}>
+            Can’t reach Factwright right now
+          </h1>
+          <p className={page.lead}>Check your connection, then try again.</p>
+          <div className={page.actions}>
+            <Button variant="primary" onClick={() => location.reload()}>
+              Try again
+            </Button>
+          </div>
+        </section>
       </Shell>
     );
   }
@@ -186,7 +210,13 @@ export function App() {
   if (path === '/account') {
     return (
       <Shell nav={nav}>
-        <Account email={session.user.email} vault={vault} keys={keys} providers={providers} />
+        <Account
+          email={session.user.email}
+          vault={vault}
+          keys={keys}
+          providers={providers}
+          onSignedOut={forgetHere}
+        />
       </Shell>
     );
   }

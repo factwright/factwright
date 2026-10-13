@@ -75,7 +75,7 @@ describe('the web view', () => {
     expect(location.pathname).toBe('/');
   });
 
-  it('shows the sign-in page when Factwright can’t be reached, instead of waiting', async () => {
+  it('says when Factwright can’t be reached, instead of waiting, with a way to try again', async () => {
     history.replaceState(null, '', '/');
     vi.mocked(forgetKeys).mockClear();
     vi.stubGlobal(
@@ -85,7 +85,10 @@ describe('the web view', () => {
       }),
     );
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Can’t reach Factwright right now' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
     expect(forgetKeys).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
@@ -98,7 +101,9 @@ describe('the web view', () => {
       'GET /api/sign-in-options': () => ({ providers: ['github'] }),
     });
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Can’t reach Factwright right now' }),
+    ).toBeTruthy();
     expect(forgetKeys).not.toHaveBeenCalled();
   });
 
