@@ -1,10 +1,11 @@
 import 'virtual:theme.css';
 import './styles/index.css';
-import { offerDownloads, platform } from './downloads.ts';
+import { downloadPage, offerDownloads, platform, startDownload } from './downloads.ts';
 
 /**
  * The page reads fine without this script. It adds the motion: the app drawing plays a run, the
- * fact bank answers the line you pick, and each part eases in as it scrolls into view.
+ * fact bank answers the line you pick, and each part eases in as it scrolls into view. On the
+ * download pages, it starts the download, and the page that picks goes on to this computer's.
  */
 
 const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -266,6 +267,16 @@ if (computer) {
   for (const root of document.querySelectorAll<HTMLElement>('[data-downloads]')) {
     offerDownloads(root, computer);
   }
+}
+// The download page that picks goes straight on to this computer's, which starts the download.
+// A phone, a tablet or Linux stays on it, to see both.
+if (computer && document.querySelector('[data-get="choose"]')) {
+  window.location.replace(downloadPage(computer));
+}
+for (const page of document.querySelectorAll<HTMLElement>(
+  '[data-get="mac"], [data-get="windows"]',
+)) {
+  startDownload(page, (url) => window.location.assign(url));
 }
 for (const root of document.querySelectorAll<HTMLElement>('[data-demo]')) heroRun(root);
 for (const root of document.querySelectorAll<HTMLElement>('[data-confirm]')) confirmClaim(root);

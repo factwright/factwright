@@ -2,8 +2,15 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import { type Browser, offerDownloads, platform } from '../src/downloads.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  type Browser,
+  downloadPage,
+  offerDownloads,
+  platform,
+  START_AFTER_MS,
+  startDownload,
+} from '../src/downloads.ts';
 
 const browser = (userAgent: string, more: Partial<Browser> = {}): Browser => ({
   userAgent,
@@ -54,11 +61,12 @@ describe('platform', () => {
   });
 });
 
+/** One of the site's pages, as written. */
+const source = (page: string) =>
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', page), 'utf8');
+
 describe('offerDownloads', () => {
-  const page = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'),
-    'utf8',
-  );
+  const page = source('index.html');
   const hero = () => {
     document.body.innerHTML =
       new DOMParser().parseFromString(page, 'text/html').querySelector('[data-downloads]')
@@ -98,5 +106,65 @@ describe('offerDownloads', () => {
       'Download for Mac',
       'Download for Windows',
     ]);
+  });
+});
+
+describe('a download page', () => {
+  /** A computer's download page in this test's document, with its script's download not started. */
+  const open = (computer: 'mac' | 'windows') => {
+    const parsed = new DOMParser().parseFromString(
+      source(`download/${computer}.html`),
+      'text/html',
+    );
+    document.body.innerHTML = parsed.body.innerHTML;
+    const page = document.querySelector<HTMLElement>(`[data-get="${computer}"]`);
+    if (!page) throw new Error(`no ${computer} page`);
+    return page;
+  };
+  let started: string[];
+  const go = (url: string) => started.push(url);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    started = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('starts its download a moment after it shows', () => {
+    startDownload(open('mac'), go);
+    vi.advanceTimersByTime(START_AFTER_MS - 1);
+    expect(started).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(started).toEqual(['https://downloads.factwright.com/Factwright.dmg']);
+  });
+
+  it('downloads the installer its link offers, as the Worker fills it in', () => {
+    const page = open('windows');
+    page
+      .querySelector('a[data-direct]')
+      ?.setAttribute('href', 'https://downloads.factwright.com/Factwright-Setup-0.1.0.exe');
+    startDownload(page, go);
+    vi.advanceTimersByTime(START_AFTER_MS);
+    expect(started).toEqual(['https://downloads.factwright.com/Factwright-Setup-0.1.0.exe']);
+  });
+
+  it('doesn’t start by itself once a link is followed, its own or one away', () => {
+    for (const link of ['a[data-direct]', 'a[href="/download/windows"]', 'a.brand']) {
+      const page = open('mac');
+      startDownload(page, go);
+      const anchor = document.querySelector<HTMLAnchorElement>(link) ?? page;
+      anchor.addEventListener('click', (event) => event.preventDefault());
+      anchor.click();
+      vi.advanceTimersByTime(START_AFTER_MS);
+      expect(started, link).toEqual([]);
+    }
+  });
+
+  it('names each computer’s page', () => {
+    expect(downloadPage('mac')).toBe('/download/mac');
+    expect(downloadPage('windows')).toBe('/download/windows');
   });
 });

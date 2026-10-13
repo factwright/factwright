@@ -136,5 +136,10 @@ over `Factwright.dmg` and `Factwright-Setup.exe` with `--cache-control no-cache`
 haven't updated yet stay where they are.
 
 ## The website
-The site links to `Factwright.dmg` and `Factwright-Setup.exe`, which don't exist until the first
-release. Publish 0.1.0 before the site goes online.
+The download pages, `factwright.com/download/mac` and `/download/windows`, offer the newest
+version. The site's Worker reads it from `latest-mac.yml` and `latest.yml`, kept for a minute, and
+links to that version's own installer, so the pages are current within a minute of a release.
+`/download` goes on to the page for the visitor's computer, and the home page's buttons go to them.
+
+Until the first release there's no feed, so the pages link to `Factwright.dmg` and
+`Factwright-Setup.exe`, which don't exist yet. Publish 0.1.0 before the site goes online.

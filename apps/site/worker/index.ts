@@ -1,3 +1,4 @@
+import { newestRelease } from './releases.ts';
 import { respond } from './respond.ts';
 
 interface Env {
@@ -6,5 +7,5 @@ interface Env {
 
 // Workers read every export of this file as an entry point, so the logic lives in respond.ts.
 export default {
-  fetch: (request, env) => respond(request, env.ASSETS),
+  fetch: (request, env) => respond(request, env.ASSETS, (computer) => newestRelease(computer)),
 } satisfies ExportedHandler<Env>;
