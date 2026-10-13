@@ -54,21 +54,28 @@ jobs:
             exit 1
           fi
           node apps/desktop/scripts/release-check.ts "$GITHUB_REF_NAME"
+      # Each computer's version is checked, as each goes out on its own.
       - name: It's newer than the version out now
         if: env.RELEASING == 'true'
         run: |
           version="${GITHUB_REF_NAME#v}"
-          live=$(curl --silent --fail https://downloads.factwright.com/latest-mac.yml | sed -n 's/^version: //p' || true)
-          newest=$(printf '%s\n%s\n' "$live" "$version" | sort -V | tail -1)
-          if [ -n "$live" ] && { [ "$live" = "$version" ] || [ "$newest" != "$version" ]; }; then
-            echo "::error::Factwright $live is out already, so $version can't be released after it."
-            exit 1
-          fi
+          for feed in latest-mac.yml latest.yml; do
+            live=$(curl --silent --fail "https://downloads.factwright.com/$feed" | sed -n 's/^version: //p' || true)
+            newest=$(printf '%s\n%s\n' "$live" "$version" | sort -V | tail -1)
+            if [ -n "$live" ] && { [ "$live" = "$version" ] || [ "$newest" != "$version" ]; }; then
+              echo "::error::Factwright $live is out already, so $version can't be released after it."
+              exit 1
+            fi
+          done
 
   mac:
     name: Mac installers
     needs: check
     runs-on: macos-latest
+    # Apple usually notarizes in minutes, but can hold an app for hours, and Mac minutes count ten
+    # times. A slow notarization stops here instead of using up the month's free minutes. Apple
+    # carries on, and re-running the job sends the app again, which then usually goes quickly.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -141,6 +148,7 @@ jobs:
     name: Windows installer
     needs: check
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -211,12 +219,14 @@ jobs:
             apps/desktop/dist/*.blockmap
             apps/desktop/dist/latest.yml
 
-  publish:
-    name: Publish to downloads.factwright.com
-    needs: [mac, windows]
+  # Each computer's installers go out as soon as its own build passes, so Windows never waits on
+  # Apple's notarization. If one fails, re-running the run's failed jobs sends it out after.
+  publish-mac:
+    name: Publish the Mac installers
+    needs: mac
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    env:
+    env: &r2
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
@@ -226,40 +236,27 @@ jobs:
       BUCKET: factwright-downloads
       ENDPOINT: https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          name: mac
           path: dist
-          merge-multiple: true
-      # A version's files never change once out, as browsers and Cloudflare keep them for good.
-      - name: This version isn't out already
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          for file in "Factwright-$version.dmg" "Factwright-Setup-$version.exe"; do
-            if aws s3api head-object --bucket "$BUCKET" --key "$file" --endpoint-url "$ENDPOINT" > /dev/null 2>&1; then
-              echo "::error::$file is out already. Release the next version instead."
-              exit 1
-            fi
-          done
-      - name: Upload the installers
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          upload() { aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" --no-progress "${@:3}"; }
-          # Each version's files never change, so they're kept by browsers and Cloudflare for good.
-          for file in dist/*.dmg dist/*.zip dist/*.exe dist/*.blockmap; do
-            upload "$file" "$(basename "$file")" --cache-control "public, max-age=31536000, immutable"
-          done
-          # Each version's update feeds, kept, to put back if a later version has to be taken back.
-          upload dist/latest-mac.yml "feeds/$version/latest-mac.yml" --cache-control no-cache --content-type text/yaml
-          upload dist/latest.yml "feeds/$version/latest.yml" --cache-control no-cache --content-type text/yaml
-          # The website's links: the newest of each, under one name that never changes.
-          upload "dist/Factwright-$version.dmg" Factwright.dmg --cache-control no-cache
-          upload "dist/Factwright-Setup-$version.exe" Factwright-Setup.exe --cache-control no-cache
-          # The update feeds go last, so an installed copy finds a version only once its files are there.
-          upload dist/latest-mac.yml latest-mac.yml --cache-control no-cache --content-type text/yaml
-          upload dist/latest.yml latest.yml --cache-control no-cache --content-type text/yaml
-      - name: Check the feeds name this version
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          for feed in latest-mac.yml latest.yml; do
-            curl --fail --silent "https://downloads.factwright.com/$feed?check=$GITHUB_RUN_ID" | grep -q "^version: $version$"
-          done
+      - run: apps/desktop/scripts/publish.sh mac "${GITHUB_REF_NAME#v}" dist
+
+  publish-windows:
+    name: Publish the Windows installer
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    env: *r2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows
+          path: dist
+      - run: apps/desktop/scripts/publish.sh windows "${GITHUB_REF_NAME#v}" dist
