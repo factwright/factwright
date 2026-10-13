@@ -6,6 +6,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
+- The web view names each job's page by a code made with the account's key, so its address no longer shows the company and role to the server or the browser's history. It forgets its keys when it finds it was signed out from another device, by running out, or by the account being deleted.
 
 ## 0.1.0 - 2026-10-13
 

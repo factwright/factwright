@@ -24,11 +24,15 @@ async function post(path: string, body: object = {}): Promise<Response> {
   });
 }
 
-/** Who's signed in on this browser, or null. */
-export async function getSession(): Promise<Session | null> {
+/**
+ * Who's signed in on this browser: null when the server says no one is, or undefined when it
+ * couldn't say, such as when it's busy.
+ */
+export async function getSession(): Promise<Session | null | undefined> {
   const response = await fetch('/api/auth/get-session');
-  if (!response.ok) return null;
-  const answer = (await response.json()) as Session | null;
+  if (!response.ok) return undefined;
+  const answer = (await response.json().catch(() => undefined)) as Session | null | undefined;
+  if (answer === undefined) return undefined;
   return answer?.user ? answer : null;
 }
 

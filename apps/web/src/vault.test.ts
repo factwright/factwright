@@ -201,6 +201,21 @@ describe('opening the job hunt in the browser', () => {
     expect(vault.rows.notes).toHaveLength(2);
   });
 
+  it('names each job’s page by a code its company and role can’t be read from', async () => {
+    await pushFiles(sam.client, keys, FILES);
+    await pushRecords(sam.client, keys, ROWS);
+    const page = (await openVault(sam.client, keys)).pages.get(ACME_ID) ?? '';
+    expect(page).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(page.toLowerCase()).not.toContain('acme');
+    // The same code each time it opens, so a page can be reloaded, and another account's differs.
+    expect((await openVault(sam.client, keys)).pages.get(ACME_ID)).toBe(page);
+    const other = await accountKeys(newAccountKey());
+    const bob = await server.signUp();
+    await pushFiles(bob.client, other, FILES);
+    await pushRecords(bob.client, other, ROWS);
+    expect((await openVault(bob.client, other)).pages.get(ACME_ID)).not.toBe(page);
+  });
+
   it('downloads only the files the job list is read from, and the rest when asked', async () => {
     await pushFiles(sam.client, keys, FILES);
     const downloaded: string[] = [];

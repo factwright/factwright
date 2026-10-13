@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.tsx';
-import { savedKeys } from './keys.ts';
+import { forgetKeys, savedKeys } from './keys.ts';
 import { fakeServer } from './testing.ts';
 
 // The test browser has no IndexedDB, and what's kept there is the page's own business.
@@ -40,6 +40,27 @@ describe('the web view', () => {
     server(null);
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+  });
+
+  it('forgets this browser’s keys once the server says it’s signed out', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(forgetKeys).mockClear();
+    server(null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(forgetKeys).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the keys when the server can’t say who’s signed in', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(forgetKeys).mockClear();
+    fakeServer({
+      'GET /api/auth/get-session': () => new Response('Busy', { status: 503 }),
+      'GET /api/sign-in-options': () => ({ providers: ['github'] }),
+    });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(forgetKeys).not.toHaveBeenCalled();
   });
 
   it('takes a QR code’s link code out of the address at once, and keeps it through signing in', async () => {

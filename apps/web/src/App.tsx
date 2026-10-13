@@ -5,7 +5,7 @@ import { Account } from './Account.tsx';
 import { ApproveDevice } from './ApproveDevice.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { JobView } from './JobView.tsx';
-import { savedKeys } from './keys.ts';
+import { forgetKeys, savedKeys } from './keys.ts';
 import { LinkBrowser } from './LinkBrowser.tsx';
 import page from './page.module.css';
 import { navigate, usePath } from './route.ts';
@@ -52,6 +52,9 @@ export function App() {
     void (async () => {
       const [session, providers] = await Promise.all([getSession(), signInOptions()]);
       if (!session) {
+        // Signed out from another device, run out, or the account deleted: this browser's keys
+        // go too, as signing out here forgets them. Not when the server just couldn't say.
+        if (session === null) await forgetKeys().catch(() => {});
         setState({ stage: 'signed-out', providers });
         return;
       }
@@ -175,8 +178,9 @@ export function App() {
     );
   }
 
-  const jobId = path.startsWith('/jobs/') ? decodeURIComponent(path.slice('/jobs/'.length)) : null;
-  const job = jobId ? vault?.jobs.find((each) => each.id === jobId) : undefined;
+  // A job's page is named by a code, never by its ID, which names its company and role.
+  const code = path.startsWith('/jobs/') ? path.slice('/jobs/'.length) : null;
+  const job = code ? vault?.jobs.find((each) => vault.pages.get(each.id) === code) : undefined;
   return (
     <Shell nav={nav}>
       {problem && (
