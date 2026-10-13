@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { deviceName } from '../src/auth-options.ts';
+import { authOptions, deviceName } from '../src/auth-options.ts';
 import { startServer, type TestServer } from './server.ts';
 
 let server: TestServer;
@@ -73,6 +73,67 @@ describe('signing the desktop app in', () => {
     const account = await desktop.account();
     expect(account.user.id).toBe(sam.id);
     expect(account.devices.find((device) => device.current)?.name).toBe('Factwright on Sam’s Mac');
+  });
+
+  it('keeps the device’s name for the session, and no IP address', async () => {
+    const code = await askForCode();
+    const sam = await server.signUp();
+    await openCode(code.body.user_code, sam.token);
+    await post(
+      '/api/auth/device/approve',
+      { userCode: code.body.user_code },
+      {
+        authorization: `Bearer ${sam.token}`,
+      },
+    );
+    const token = String((await pollForToken(code.body.device_code)).body.access_token);
+    const session = await server.env.DB.prepare(
+      'SELECT userAgent, ipAddress FROM "session" WHERE token = ?',
+    )
+      .bind(token)
+      .first<{ userAgent: string; ipAddress: string | null }>();
+    expect(session).toEqual({ userAgent: 'Factwright on Sam’s Mac', ipAddress: null });
+    const via = await server.env.DB.prepare('SELECT via FROM "session" WHERE token = ?')
+      .bind(token)
+      .first<{ via: string }>();
+    expect(via?.via).toBe('device');
+  });
+
+  it('won’t let a device code’s session approve another code', async () => {
+    const sam = await server.signUp();
+    const first = await askForCode();
+    await openCode(first.body.user_code, sam.token);
+    await post(
+      '/api/auth/device/approve',
+      { userCode: first.body.user_code },
+      {
+        authorization: `Bearer ${sam.token}`,
+      },
+    );
+    const device = String((await pollForToken(first.body.device_code)).body.access_token);
+
+    // With that session, someone tries to approve a code of their own, to stay signed in.
+    const second = await askForCode();
+    await openCode(second.body.user_code, device);
+    const refused = await post(
+      '/api/auth/device/approve',
+      { userCode: second.body.user_code },
+      {
+        authorization: `Bearer ${device}`,
+      },
+    );
+    expect(refused.status).toBe(403);
+    expect((await pollForToken(second.body.device_code)).body.error).toBe('authorization_pending');
+
+    // Sam, in the browser, still can.
+    const approved = await post(
+      '/api/auth/device/approve',
+      { userCode: second.body.user_code },
+      {
+        authorization: `Bearer ${sam.token}`,
+      },
+    );
+    expect(approved.status).toBe(200);
   });
 
   it('waits until the user approves, and stops if they deny it', async () => {
@@ -157,7 +218,120 @@ describe('signing in on the web', () => {
   });
 });
 
+describe('what sign-in keeps', () => {
+  const options = authOptions({
+    appUrl: 'https://app.factwright.com',
+    secret: 'test-only-secret',
+    database: undefined,
+    beforeDeleteUser: async () => {},
+  });
+  const hooks = options.databaseHooks;
+
+  it('keeps none of GitHub’s or Google’s tokens', async () => {
+    const given = {
+      id: 'a',
+      userId: 'u',
+      accountId: '42',
+      providerId: 'google',
+      accessToken: 'gho-access',
+      refreshToken: 'refresh',
+      idToken: 'eyJ-id-token-with-name-and-email',
+      accessTokenExpiresAt: new Date(),
+      refreshTokenExpiresAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    for (const hook of [hooks.account.create.before, hooks.account.update.before]) {
+      const { data } = (await hook(given)) as { data: Record<string, unknown> };
+      expect(data).toMatchObject({ providerId: 'google', accountId: '42' });
+      for (const field of ['accessToken', 'refreshToken', 'idToken'])
+        expect(data[field]).toBeNull();
+    }
+  });
+
+  it('marks a session from a browser’s sign-in with GitHub or Google, and no other', async () => {
+    const session = {
+      id: 's',
+      userId: 'u',
+      token: 't',
+      expiresAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',
+      ipAddress: '203.0.113.7',
+    };
+    const via = async (path?: string) => {
+      const context = path === undefined ? null : ({ path } as never);
+      const made = (await hooks.session.create.before(session, context)) as {
+        data: { via: string; ipAddress: unknown; userAgent: string };
+      };
+      return made.data;
+    };
+    expect((await via('/callback/:id')).via).toBe('web');
+    for (const path of ['/device/token', '/sign-in/social', '/sign-in/anonymous', undefined]) {
+      expect((await via(path)).via, String(path)).toBe('device');
+    }
+    expect(await via('/callback/:id')).toMatchObject({
+      ipAddress: null,
+      userAgent: 'Safari on iPhone',
+    });
+  });
+
+  it('won’t list sessions, or sign other sessions out, by sign-in’s own routes', async () => {
+    const sam = await server.signUp();
+    const device = await server.newSession(sam.id, 'Factwright/0.0.0 (Someone’s PC)', 'device');
+    for (const [method, path] of [
+      ['GET', '/list-sessions'],
+      ['POST', '/revoke-session'],
+      ['POST', '/revoke-sessions'],
+      ['POST', '/revoke-other-sessions'],
+    ] as const) {
+      const response = await fetch(new URL(`/api/auth${path}`, server.url), {
+        method,
+        headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+        ...(method === 'POST' ? { body: JSON.stringify({ token: sam.token }) } : {}),
+      });
+      expect(response.status, path).toBe(404);
+    }
+    expect((await sam.client.account()).user.id).toBe(sam.id);
+  });
+
+  it('keeps no link to the profile picture', async () => {
+    const user = {
+      id: 'u',
+      name: 'Sam Rivera',
+      email: 'sam@example.com',
+      emailVerified: true,
+      image: 'https://avatars.githubusercontent.com/u/1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    for (const hook of [hooks.user.create.before, hooks.user.update.before]) {
+      const { data } = (await hook(user)) as { data: Record<string, unknown> };
+      expect(data).toMatchObject({ name: 'Sam Rivera', email: 'sam@example.com', image: null });
+    }
+  });
+
+  it('can’t hand out, refresh or read a provider’s token or profile', async () => {
+    const sam = await server.signUp();
+    for (const path of ['/get-access-token', '/refresh-token', '/account-info']) {
+      const response = await fetch(new URL(`/api/auth${path}`, server.url), {
+        method: path === '/account-info' ? 'GET' : 'POST',
+        headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
+        ...(path === '/account-info' ? {} : { body: JSON.stringify({ providerId: 'github' }) }),
+      });
+      expect(response.status, path).toBe(404);
+    }
+  });
+});
+
 describe('device names', () => {
+  it('come back as they are, once a session keeps one', () => {
+    for (const name of ['Factwright on Sam’s Mac', 'Safari on iPhone', 'Chrome', 'A browser']) {
+      expect(deviceName(name)).toBe(name);
+    }
+  });
+
   it('read what kind of device signed in', () => {
     expect(deviceName('Factwright/1.2.0 (Sam%E2%80%99s%20MacBook%20Pro)')).toBe(
       'Factwright on Sam’s MacBook Pro',

@@ -31,15 +31,28 @@ describe('listening for changes', () => {
     socket.close();
   });
 
-  it('needs a ticket that’s signed and still good', async () => {
-    const secret = 'a-secret-for-signing-tickets';
+  it('needs a ticket that’s locked with the server’s secret and still good', async () => {
+    const secret = 'a-secret-for-locking-tickets';
     const ticket = await makeTicket(secret, 'account-1', 1_000);
     expect(await checkTicket(secret, ticket, 1_000)).toBe('account-1');
     expect(await checkTicket(secret, ticket, 1_000 + 61_000)).toBeNull();
     expect(await checkTicket('another-secret', ticket, 1_000)).toBeNull();
-    const [payload, signature] = ticket.split('.');
-    const changed = `${payload?.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'))}.${signature}`;
+    const changed = ticket.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'));
     expect(await checkTicket(secret, changed, 1_000)).toBeNull();
     expect(await checkTicket(secret, 'not.a.ticket', 1_000)).toBeNull();
+    expect(await checkTicket(secret, '', 1_000)).toBeNull();
+  });
+
+  it('puts nothing readable about the account in the address it’s sent in', async () => {
+    const account = 'kvP3dWq8ZtYb6RmN0aLx2FhE';
+    const ticket = await makeTicket('a-secret', account, 1_000);
+    const decoded = new TextDecoder().decode(
+      Uint8Array.from(atob(ticket.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)),
+    );
+    expect(ticket).not.toContain(account);
+    expect(decoded).not.toContain(account);
+    expect(decoded).not.toContain('expires');
+    // Each ticket is different, even for the same account at the same moment.
+    expect(await makeTicket('a-secret', account, 1_000)).not.toBe(ticket);
   });
 });

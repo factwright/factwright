@@ -30,5 +30,12 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStore"] }],
   // The daily backup, at a quiet hour.
   "triggers": { "crons": ["17 4 * * *"] },
-  "observability": { "enabled": true }
+  // Logs keep only what the Worker writes itself, such as a backup that failed. Cloudflare's log
+  // of every request is off, and any address it does record loses its query, which can carry a
+  // sign-in code.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  }
 }
