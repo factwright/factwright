@@ -1,14 +1,15 @@
 import { localDate } from '@factwright/core';
 import type { AccountKeys } from '@factwright/sync';
+import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
 import { ApproveDevice } from './ApproveDevice.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { JobView } from './JobView.tsx';
-import { savedKeys } from './keys.ts';
+import { forgetKeys, savedKeys } from './keys.ts';
 import { LinkBrowser } from './LinkBrowser.tsx';
 import page from './page.module.css';
-import { navigate, usePath } from './route.ts';
+import { navigate, replace, usePath } from './route.ts';
 import { PageLink, Shell } from './Shell.tsx';
 import { SignIn } from './SignIn.tsx';
 import { client, getSession, type Provider, type Session, signInOptions } from './server.ts';
@@ -16,6 +17,8 @@ import { openVault, type Vault } from './vault.ts';
 
 type State =
   | { stage: 'loading' }
+  /** The server couldn't say who's signed in: offline, or busy. */
+  | { stage: 'unreachable' }
   | { stage: 'signed-out'; providers: Provider[] }
   | { stage: 'signed-in'; session: Session; providers: Provider[]; keys: AccountKeys | null };
 
@@ -37,6 +40,10 @@ function takeLinkCode(): string | null {
 /** How long the job hunt stays as loaded before coming back to the page updates it. */
 const STALE_MS = 30_000;
 
+/** Whether the server said this browser isn't signed in any more. */
+const signedOut = (error: unknown) =>
+  error instanceof Error && 'kind' in error && error.kind === 'signed-out';
+
 /** The web view: signing in, linking this browser, and the job hunt, opened right here. */
 export function App() {
   const path = usePath();
@@ -51,7 +58,14 @@ export function App() {
   useEffect(() => {
     void (async () => {
       const [session, providers] = await Promise.all([getSession(), signInOptions()]);
+      if (session === undefined) {
+        setState({ stage: 'unreachable' });
+        return;
+      }
       if (!session) {
+        // Signed out from another device, run out, or the account deleted: this browser's keys
+        // go too, as signing out here forgets them. The sign-in page doesn't wait for them to go.
+        void forgetKeys().catch(() => {});
         setState({ stage: 'signed-out', providers });
         return;
       }
@@ -63,6 +77,17 @@ export function App() {
 
   const keys = state.stage === 'signed-in' ? state.keys : null;
 
+  // Signed out from elsewhere while the page was open, such as from a computer after this phone
+  // was lost: the job hunt it shows and the keys it keeps go at once, not at the next reload.
+  const forgetHere = useCallback(() => {
+    setVault(null);
+    void forgetKeys().catch(() => {});
+    setState((current) => ({
+      stage: 'signed-out',
+      providers: 'providers' in current ? current.providers : [],
+    }));
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!keys) return;
     setRefreshing(true);
@@ -71,6 +96,10 @@ export function App() {
       setLoadedAt(Date.now());
       setProblem(null);
     } catch (error) {
+      if (signedOut(error)) {
+        forgetHere();
+        return;
+      }
       setProblem(
         error instanceof Error && 'kind' in error && error.kind === 'offline'
           ? 'Can’t reach Factwright right now. Check your connection.'
@@ -79,11 +108,19 @@ export function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [keys]);
+  }, [keys, forgetHere]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // An address from before pages had codes names the company: once the job hunt is open and
+  // it matches no job, it's replaced, so it isn't left in the address bar or the tab's back list.
+  useEffect(() => {
+    if (!vault || !path.startsWith('/jobs/')) return;
+    const code = path.slice('/jobs/'.length);
+    if (![...vault.pages.values()].includes(code)) replace('/');
+  }, [vault, path]);
 
   // Coming back to the page brings the job hunt up to date.
   useEffect(() => {
@@ -99,6 +136,24 @@ export function App() {
     return (
       <Shell>
         <p className={page.hint}>Opening…</p>
+      </Shell>
+    );
+  }
+
+  if (state.stage === 'unreachable') {
+    return (
+      <Shell>
+        <section className={page.card} aria-labelledby="unreachable-title">
+          <h1 id="unreachable-title" className={page.title}>
+            Can’t reach Factwright right now
+          </h1>
+          <p className={page.lead}>Check your connection, then try again.</p>
+          <div className={page.actions}>
+            <Button variant="primary" onClick={() => location.reload()}>
+              Try again
+            </Button>
+          </div>
+        </section>
       </Shell>
     );
   }
@@ -155,7 +210,13 @@ export function App() {
   if (path === '/account') {
     return (
       <Shell nav={nav}>
-        <Account email={session.user.email} vault={vault} keys={keys} providers={providers} />
+        <Account
+          email={session.user.email}
+          vault={vault}
+          keys={keys}
+          providers={providers}
+          onSignedOut={forgetHere}
+        />
       </Shell>
     );
   }
@@ -175,8 +236,9 @@ export function App() {
     );
   }
 
-  const jobId = path.startsWith('/jobs/') ? decodeURIComponent(path.slice('/jobs/'.length)) : null;
-  const job = jobId ? vault?.jobs.find((each) => each.id === jobId) : undefined;
+  // A job's page is named by a code, never by its ID, which names its company and role.
+  const code = path.startsWith('/jobs/') ? path.slice('/jobs/'.length) : null;
+  const job = code ? vault?.jobs.find((each) => vault.pages.get(each.id) === code) : undefined;
   return (
     <Shell nav={nav}>
       {problem && (
@@ -187,7 +249,7 @@ export function App() {
       {!vault ? (
         <p className={page.hint}>{problem ? '' : 'Unlocking your job hunt…'}</p>
       ) : job ? (
-        <JobView job={job} vault={vault} keys={keys} today={today} />
+        <JobView job={job} vault={vault} keys={keys} today={today} onSignedOut={forgetHere} />
       ) : (
         <Dashboard vault={vault} today={today} refreshing={refreshing} onRefresh={refresh} />
       )}

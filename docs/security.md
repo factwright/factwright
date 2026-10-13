@@ -89,7 +89,8 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 ### The web view
 The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.
 - Its pages run only their own scripts and styles, under a strict Content-Security-Policy, and no other site can frame them. Following a link out, such as to a job posting, sends no referrer.
-- It keeps keys made from the account key in IndexedDB, as Web Crypto keys the page can use but can't read back out. Signing out of the browser forgets them.
+- It keeps keys made from the account key in IndexedDB, as Web Crypto keys the page can use but can't read back out. Signing out of the browser forgets them, and so does finding it was signed out another way: from another device, by running out, or by the account being deleted. A page left open, such as on a lost phone, forgets them and what it shows the next time it hears from the server.
+- A job's page address names it by a code made from its ID with the account's key, never by its company and role. Addresses go to the server and into the browser's history, which the browser may sync.
 - Its session is a cookie the page itself can't read. A change sent with that cookie must come from the app's own pages: sign-in and the sync API both turn away requests another site starts.
 - A copy of your job hunt is put together in the browser, as a ZIP, and never passes through the server opened.
 - **What it can't promise:** the web view's code comes from the server each time it opens. A server that misbehaved, or someone who took over the account it runs on, could send code that reads what you open there, or the account key when you link a browser or type your recovery key into it. The desktop app is different: its code changes only through updates signed by Neatifai and checked before they install.

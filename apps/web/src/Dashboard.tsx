@@ -19,17 +19,18 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: undefined } as const;
 
-function JobRow({ row }: { row: PhoneRow }) {
+function JobRow({ row, page }: { row: PhoneRow; page: string }) {
   const { job, progress, next } = row;
   const pay = payLabel(job.pay);
+  const address = `/jobs/${page}`;
   return (
     <li>
       <a
         className={styles.row}
-        href={`/jobs/${encodeURIComponent(job.id)}`}
+        href={address}
         onClick={(event) => {
           event.preventDefault();
-          navigate(`/jobs/${encodeURIComponent(job.id)}`);
+          navigate(address);
         }}
       >
         <span className={styles.rowHead}>
@@ -157,7 +158,7 @@ export function Dashboard({
       ) : (
         <ul className={styles.list} aria-label="Jobs">
           {shown.map((row) => (
-            <JobRow key={row.job.id} row={row} />
+            <JobRow key={row.job.id} row={row} page={vault.pages.get(row.job.id) ?? ''} />
           ))}
         </ul>
       )}

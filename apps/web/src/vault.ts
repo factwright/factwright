@@ -54,7 +54,16 @@ export interface Vault {
   rows: Record<string, StoredRow[]>;
   /** Records that wouldn't open: locked with another key, or damaged. */
   unreadable: number;
+  /**
+   * Each job's page address, by job ID: a code made from the job's ID with the account's key.
+   * A job's ID names its company and role, and an address goes to the server, into the browser's
+   * history and wherever that history syncs, so the address shows only the code.
+   */
+  pages: Map<string, string>;
 }
+
+/** How much of the code a job's page address keeps: 96 bits, plenty within one job hunt. */
+const PAGE_CODE_LENGTH = 16;
 
 /**
  * The files the job list is read from: each job's notes, the logs, job searches, and Claude's
@@ -196,5 +205,13 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
   const docs = new Map(collected.map((job) => [job.id, job.docs]));
   const jobs = jobList(all, found, { calls, history, notes });
   const asked = new Map(jobs.map((job) => [job.id, readJobExtras(reader, job.id).asked]));
-  return { jobs, files, docs, asked, rows, unreadable };
+  const pages = new Map(
+    await Promise.all(
+      jobs.map(
+        async (job) =>
+          [job.id, (await recordId(keys, `page/${job.id}`)).slice(0, PAGE_CODE_LENGTH)] as const,
+      ),
+    ),
+  );
+  return { jobs, files, docs, asked, rows, unreadable, pages };
 }
