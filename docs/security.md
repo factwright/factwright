@@ -69,6 +69,9 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - When you turn on sync, your first device shows a **recovery key** once: 160 random bits, written as 32 characters to print or keep in a password manager.
 - The server keeps the account key locked with a key made from the recovery key (HKDF, then AES-256-GCM). It can't open it.
 - With the recovery key, any device you sign in on can unlock the account key. Since the recovery key is random and long, guessing it is out of reach, so it needs no slow key derivation.
+- A computer that signs in again checks the account's key on the server before it syncs anything, and asks again after a restart until it has.
+  - If the account has none, such as after it was deleted and made again, the computer makes a new account key and recovery key, as a first device does. The old ones, which a lost or stolen device may still hold, open nothing of it, and the computer's other devices link again.
+  - If the account uses another key, the computer asks to be linked to it and sends nothing until it is. Linking adds this computer's job hunt to that account, so signing in with the wrong one can be undone with **Use a different account**, which ends only that sign-in.
 
 ### Adding a device
 - On a device that's set up, **Link a phone or computer** makes a link code: 160 random bits, shown as a QR code and as 32 characters to type.
@@ -89,7 +92,8 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 ### The web view
 The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.
 - Its pages run only their own scripts and styles, under a strict Content-Security-Policy, and no other site can frame them. Following a link out, such as to a job posting, sends no referrer.
-- It keeps keys made from the account key in IndexedDB, as Web Crypto keys the page can use but can't read back out. Signing out of the browser forgets them.
+- It keeps keys made from the account key in IndexedDB, as Web Crypto keys the page can use but can't read back out. Signing out of the browser forgets them, and so does finding it was signed out another way: from another device, by running out, or by the account being deleted. A page left open, such as on a lost phone, forgets them and what it shows the next time it hears from the server.
+- A job's page address names it by a code made from its ID with the account's key, never by its company and role. Addresses go to the server and into the browser's history, which the browser may sync.
 - Its session is a cookie the page itself can't read. A change sent with that cookie must come from the app's own pages: sign-in and the sync API both turn away requests another site starts.
 - A copy of your job hunt is put together in the browser, as a ZIP, and never passes through the server opened.
 - **What it can't promise:** the web view's code comes from the server each time it opens. A server that misbehaved, or someone who took over the account it runs on, could send code that reads what you open there, or the account key when you link a browser or type your recovery key into it. The desktop app is different: its code changes only through updates signed by Neatifai and checked before they install.

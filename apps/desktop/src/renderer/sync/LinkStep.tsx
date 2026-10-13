@@ -86,6 +86,16 @@ export function LinkStep({ api }: { api: FactwrightApi }) {
           submit={(key) => api.useRecoveryKey(key)}
         />
       </details>
+      <p className={styles.hint}>
+        Linking adds this computer’s job hunt to the account. Not the account you meant?{' '}
+        <button
+          type="button"
+          className={styles.link}
+          onClick={() => void api.useDifferentSyncAccount()}
+        >
+          Use a different account
+        </button>
+      </p>
     </>
   );
 }

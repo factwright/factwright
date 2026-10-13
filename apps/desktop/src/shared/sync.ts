@@ -14,7 +14,17 @@ export type SyncStatus =
    * Signed in, but this computer doesn't have the account key yet. The first device makes it,
    * with a recovery key; any other gets it from a device that's set up, or the recovery key.
    */
-  | { state: 'setting-up'; email: string; firstDevice: boolean }
+  | {
+      state: 'setting-up';
+      email: string;
+      firstDevice: boolean;
+      /**
+       * This computer synced before, but the account has no key on the server, such as after it
+       * was deleted and made again: a new account key and recovery key, which the old ones won't
+       * open.
+       */
+      again?: boolean;
+    }
   | {
       state: 'on';
       email: string;

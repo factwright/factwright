@@ -3,7 +3,7 @@ import type { AccountInfo, AccountKeys } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { strToU8, zipSync } from 'fflate';
 import { Download } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import styles from './Account.module.css';
 import { forgetKeys } from './keys.ts';
 import page from './page.module.css';
@@ -61,11 +61,14 @@ export function Account({
   vault,
   keys,
   providers,
+  onSignedOut = () => {},
 }: {
   email: string;
   vault: Vault | null;
   keys: AccountKeys | null;
   providers: Provider[];
+  /** The server said this browser isn't signed in any more. */
+  onSignedOut?: () => void;
 }) {
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -73,13 +76,23 @@ export function Account({
   const [confirming, setConfirming] = useState(false);
   const [freshSignIn, setFreshSignIn] = useState(false);
 
+  // Signed out from elsewhere hands over to the page, which forgets what it keeps. Held in a
+  // ref, so a new handler on each render doesn't load the account again.
+  const signedOut = useRef(onSignedOut);
+  signedOut.current = onSignedOut;
+  const failedWith = useCallback((error: unknown) => {
+    if (error instanceof Error && 'kind' in error && error.kind === 'signed-out') {
+      signedOut.current();
+    } else setProblem(error instanceof Error ? error.message : String(error));
+  }, []);
+
   const load = useCallback(async () => {
     try {
       setInfo(await client.account());
     } catch (error) {
-      setProblem(error instanceof Error ? error.message : String(error));
+      failedWith(error);
     }
-  }, []);
+  }, [failedWith]);
 
   useEffect(() => {
     void load();
@@ -90,14 +103,21 @@ export function Account({
       await client.removeDevice(id);
       await load();
     } catch (error) {
-      setProblem(error instanceof Error ? error.message : String(error));
+      failedWith(error);
     }
   };
 
   const download = async () => {
     if (!vault || !keys) return;
     setDownloading(true);
-    const missing = await downloadCopy(vault, keys);
+    let missing: number;
+    try {
+      missing = await downloadCopy(vault, keys);
+    } catch (error) {
+      setDownloading(false);
+      failedWith(error);
+      return;
+    }
     setDownloading(false);
     setProblem(
       missing === 0
@@ -108,9 +128,10 @@ export function Account({
     );
   };
 
+  // The keys go first, so they're gone even if signing out can't reach the server.
   const leave = async () => {
-    await signOut();
-    await forgetKeys();
+    await forgetKeys().catch(() => {});
+    await signOut().catch(() => {});
     location.assign('/');
   };
 
