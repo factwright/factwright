@@ -91,6 +91,7 @@ export function ProfilePage({
   phase,
   ready,
   onRun,
+  onOpenFacts,
 }: {
   state: ProfileState & { profile: NonNullable<ProfileState['profile']> };
   api: FactwrightApi;
@@ -99,6 +100,8 @@ export function ProfilePage({
   /** Whether Claude Code is ready to run. */
   ready: boolean;
   onRun: (task: RunTask) => void;
+  /** Opens the fact bank, to read and change each fact. */
+  onOpenFacts: () => void;
 }) {
   const { profile } = state;
   const { answers, status } = profile;
@@ -203,6 +206,11 @@ export function ProfilePage({
                   {status.notesChanged && 'Your notes changed since Claude last read them.'}
                 </p>
               )}
+              <div>
+                <Button size="sm" variant="quiet" onClick={onOpenFacts}>
+                  See and change them
+                </Button>
+              </div>
             </>
           ) : (
             <p className={styles.quiet}>

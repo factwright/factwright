@@ -30,6 +30,26 @@ export {
   type ShotKind,
   shotsFolder,
 } from './extras.ts';
+export {
+  addClaim,
+  type BlockAt,
+  type ClaimParts,
+  claimParts,
+  claimText,
+  confirmClaim,
+  FACT_TAGS,
+  type FactBlock,
+  factBlocks,
+  findBlock,
+  leavesCodeOpen,
+  removeBlock,
+  replaceBlock,
+  type SectionParts,
+  sameBlock,
+  sectionParts,
+  sectionText,
+  UNCONFIRMED,
+} from './facts.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
 export {
   type Evidence,

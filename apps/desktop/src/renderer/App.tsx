@@ -14,6 +14,7 @@ import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import { ClaudePanel } from './ClaudePanel.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
+import { FactBankPage } from './facts/FactBankPage.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { FindJobsDialog } from './jobs/FindJobsDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
@@ -189,6 +190,7 @@ export function App({ api }: { api: FactwrightApi }) {
           onOpenSync={() => setDialog('sync')}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
+          factCount={profile?.status.facts.claims || undefined}
         />
         <div className={styles.content}>
           <div className={styles.work}>
@@ -219,7 +221,11 @@ export function App({ api }: { api: FactwrightApi }) {
                 phase={run.phase}
                 ready={ready}
                 onRun={(next) => run.requestStart(next)}
+                onOpenFacts={() => setPicked('facts')}
               />
+            )}
+            {page === 'facts' && (
+              <FactBankPage api={api} today={today} onGetStarted={() => setPicked('profile')} />
             )}
             {page === 'profile' && !profile && (
               <main className={styles.loading} role="status">

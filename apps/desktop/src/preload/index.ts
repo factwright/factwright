@@ -76,6 +76,11 @@ const api: FactwrightApi = {
   addTemplate: (upload) => ipcRenderer.invoke('templates:add', upload),
   removeTemplate: (id) => ipcRenderer.invoke('templates:remove', id),
   onProfileChanged: (listener) => subscribe('about:changed', listener),
+  factBank: () => ipcRenderer.invoke('facts:read'),
+  changeFact: (change) => ipcRenderer.invoke('facts:change', change),
+  addFact: (fact) => ipcRenderer.invoke('facts:add', fact),
+  removeFact: (target) => ipcRenderer.invoke('facts:remove', target),
+  confirmFact: (target) => ipcRenderer.invoke('facts:confirm', target),
   openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
 };
 

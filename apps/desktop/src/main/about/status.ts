@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { localDate } from '@factwright/core';
+import { factBlocks, localDate, UNCONFIRMED } from '@factwright/core';
 import { DEFAULT_TEMPLATE } from '@factwright/engine';
 import type { AboutYou } from '../../shared/about.ts';
+import { FACT_LIMITS, factFileKind } from '../../shared/facts.ts';
 import type { ProfileStatus, StartingResume } from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
 
@@ -27,8 +28,17 @@ function readText(file: string): string | null {
   }
 }
 
+/** A file's size in bytes, or null when it isn't there. */
+function sizeOf(file: string): number | null {
+  try {
+    return statSync(file).size;
+  } catch {
+    return null;
+  }
+}
+
 /** Every Markdown file under a folder, as paths from the workspace. Links are skipped. */
-function markdownUnder(workspace: string, folder: string): string[] {
+export function markdownUnder(workspace: string, folder: string): string[] {
   const found: string[] = [];
   const walk = (dir: string) => {
     let entries: import('node:fs').Dirent[];
@@ -50,32 +60,25 @@ function markdownUnder(workspace: string, folder: string): string[] {
   return found.sort();
 }
 
-/** Files in facts/ that explain the bank or list what's missing, rather than holding claims. */
-const NOT_CLAIMS = new Set(['facts/README.md', 'facts/gaps.md']);
-
 /**
  * The claims in the fact bank, as the skills write them: a "### " heading whose next line with
  * text is its tags in backticks, such as `live` `solo` `high`. Other headings, such as a skills
- * file's sections, aren't claims. One tagged `unconfirmed` came from the user's files, and waits
+ * file's sections, aren't claims, and neither is anything in the files that explain the bank or
+ * list what the user doesn't have. One tagged `unconfirmed` came from the user's files, and waits
  * for them to confirm it.
  */
 export function countFacts(workspace: string): ProfileStatus['facts'] {
   let claims = 0;
   let unconfirmed = 0;
-  const files = markdownUnder(workspace, 'facts').filter((path) => !NOT_CLAIMS.has(path));
+  const files = markdownUnder(workspace, 'facts').filter((path) => factFileKind(path) === 'claims');
   for (const path of files) {
-    const lines = (readText(join(workspace, path)) ?? '').split(/\r?\n/);
-    lines.forEach((line, index) => {
-      if (!/^###\s+\S/.test(line)) return;
-      const tags =
-        lines
-          .slice(index + 1, index + 4)
-          .find((next) => next.trim())
-          ?.trim() ?? '';
-      if (!/^`[a-z-]+`/.test(tags)) return;
+    // A file too big for the fact bank page isn't read here either, as it runs on every change.
+    if ((sizeOf(join(workspace, path)) ?? 0) > FACT_LIMITS.file) continue;
+    for (const { tags } of factBlocks(readText(join(workspace, path)) ?? '')) {
+      if (!tags) continue;
       claims += 1;
-      if (/`unconfirmed`/.test(tags)) unconfirmed += 1;
-    });
+      if (tags.includes(UNCONFIRMED)) unconfirmed += 1;
+    }
   }
   return { claims, unconfirmed, files: files.length };
 }

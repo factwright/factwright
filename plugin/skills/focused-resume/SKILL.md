@@ -75,7 +75,7 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 ## 6. Draft `resume.json` in the folder
 - Copy the closest starting point: the style and track's starting resume (`base/<style>-<track>.json`, or the base the style file names), or a past `applications/*/resume.json` for a more similar role.
 - Set `layout`, `format` and `output_name`:
-  - `layout`: the template `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or the one for any job; otherwise the starting point's. If the user names a template, use it: `list_templates` gives each one's ID, built in or their own.
+  - `layout`: if the user names a template, use it: `list_templates` gives each one's ID, built in or their own. Otherwise, the one `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or, with none for that kind, the one for any job. Without `guide/templates.md`, the starting point's. When it gives more than one for the job's kind, or none for its kind and more than one for any job, pick the one of those that suits the role, by what the user's guide says each is for (such as a layouts table in `guide/writing.md`, or a layout a style file names for the track). With nothing said, use the one the starting point uses if it's among them, otherwise the first listed.
   - `format`: what the user asked for, or what `guide/templates.md` says.
   - `output_name` is `<FirstLast>Resume<MMDDYYYY>_<Company>`: the user's name from `facts/profile.md` without spaces, the folder's date, and the company's short name in letters and digits only (e.g. `AlexRiveraResume10072026_Acme`).
   - Leave the role out unless one company gets two resumes on the same date; then add a short role tag (e.g. `_Acme_TL`).
@@ -143,13 +143,13 @@ Apply the fixes and build again. Skip this step only if the user asks for speed.
 
 ## 9. Deliver
 - Finish `notes.md`:
-  - the style and track, and why
+  - the style, track and template, and why
   - the top tailoring choices
   - the evidence-map summary
   - the questions asked and where each answer was filed
   - anything the user should double-check before sending
 - The app shows the resume in the job's panel, ready to open.
-- Reply in 6 lines or fewer: the file, the style and track, the 2–3 biggest tailoring choices, the facts added, and anything to confirm.
+- Reply in 6 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, the facts added, and anything to confirm.
 
 ## 10. Feedback (now or in a later session)
 When the user reacts to the resume:

@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { shell } from 'electron';
 import { ANSWER_LIMITS, parseAnswerChanges } from '../../shared/about.ts';
 import type { EditResult } from '../../shared/api.ts';
+import { parseFactChange, parseFactTarget, parseNewFact } from '../../shared/facts.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import type { TemplatePreviews } from './previews.ts';
@@ -30,8 +31,8 @@ function terminalApp(platform: NodeJS.Platform): string | null {
 
 /**
  * The window's requests about the user: their answers, notes, confidential names and shared
- * files, their templates and the templates' previews, and getting the workspace ready for
- * Claude. Each input is checked here, whatever the window checked first.
+ * files, their fact bank, their templates and the templates' previews, and getting the workspace
+ * ready for Claude. Each input is checked here, whatever the window checked first.
  */
 export function registerAboutIpc(
   answer: Answer,
@@ -83,6 +84,25 @@ export function registerAboutIpc(
   answer('about:remove-file', (path) => {
     if (typeof path !== 'string' || path.length > 300) throw new Error('Refused a file to remove.');
     return about.removeFile(path);
+  });
+
+  // The fact bank, a block at a time, each checked against the file as it is now.
+  answer('facts:read', () => about.facts.read());
+  answer('facts:change', (change) => {
+    const valid = parseFactChange(change);
+    return valid ? about.facts.change(valid) : REFUSED;
+  });
+  answer('facts:add', (fact) => {
+    const valid = parseNewFact(fact);
+    return valid ? about.facts.add(valid) : REFUSED;
+  });
+  answer('facts:remove', (target) => {
+    const valid = parseFactTarget(target);
+    return valid ? about.facts.remove(valid) : REFUSED;
+  });
+  answer('facts:confirm', (target) => {
+    const valid = parseFactTarget(target);
+    return valid ? about.facts.confirm(valid) : REFUSED;
   });
 
   answer('about:start', () => about.start());

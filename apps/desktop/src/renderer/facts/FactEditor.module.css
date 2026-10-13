@@ -1,0 +1,47 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+}
+
+.wording,
+.details {
+  font-size: 13px;
+  line-height: 1.5;
+  field-sizing: content;
+}
+
+.wording {
+  min-height: 2lh;
+  max-height: 8lh;
+}
+
+.details {
+  min-height: 4lh;
+  max-height: 24lh;
+  font-family: var(--fw-font-mono);
+  font-size: 12px;
+}
+
+/* Status, ownership and confidence side by side, as many as fit. */
+.tags {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--fw-space-3);
+}
+
+.tag {
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+}
+
+.problem {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}
