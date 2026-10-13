@@ -59,6 +59,9 @@ export interface SyncAccountDeps {
 
 const failed = (message: string) => ({ ok: false as const, message });
 
+/** Notes a sign-in that hasn't been checked against the account's key on the server yet. */
+const UNCHECKED = 'unchecked';
+
 /** What to tell the user when a request to the server fails. */
 function reason(error: unknown): string {
   if (error instanceof SyncError) {
@@ -85,11 +88,8 @@ export class SyncAccount {
   private accountKey: Bytes | null = null;
   private runner: SyncRunner | null = null;
   private signIn: DeviceSignIn | null = null;
-  /**
-   * The account key for a first device, kept until its recovery key is saved: a new one, or the
-   * one this computer already had, for an account with no key on the server yet.
-   */
-  private pending: { accountKey: Bytes; recovery: Bytes | null } | null = null;
+  /** The account key made for a first device, kept until its recovery key is saved. */
+  private pending: { accountKey: Bytes; recovery: Bytes } | null = null;
   private device = 'This computer';
   /** Once the app is closing, nothing more happens. */
   private closed = false;
@@ -150,7 +150,10 @@ export class SyncAccount {
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
     if (accountKey) {
-      await this.turnOnWith(accountKey);
+      // Signed in again, but not yet checked against the account, such as when the app quit
+      // while asking for a new recovery key: it's checked before anything syncs.
+      if (this.state.meta(UNCHECKED) === '1') await this.resume(accountKey);
+      else await this.turnOnWith(accountKey);
       return;
     }
     await this.checkSetup();
@@ -215,55 +218,85 @@ export class SyncAccount {
     this.client = this.clientFor(result.token);
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
-    if (accountKey) await this.resume(accountKey);
-    else await this.checkSetup();
-    return { ok: true };
+    if (!accountKey) {
+      await this.checkSetup();
+      return { ok: true };
+    }
+    this.state.setMeta(UNCHECKED, '1');
+    return this.resume(accountKey);
   }
 
   /**
-   * After signing in again with the account key this computer kept: carries on only once the
-   * account still uses that key. An account with no key on the server, such as one deleted and
-   * made again, sets up a recovery key for it first, as a first device does, so recovery still
-   * works. An account that uses another key isn't this computer's to sync with: it links to it
-   * instead, and nothing from here goes up.
+   * After signing in again with the account key this computer kept: nothing syncs until the
+   * account's key on the server says what to do. Until then the sign-in stays unchecked, so a
+   * restart asks again.
+   * - The same key: sync carries on.
+   * - No key: the account is new, or was deleted and made again. This computer makes a new
+   *   account key and recovery key, as a first device does, so the old ones, which a lost or
+   *   stolen device may still hold, open nothing of it.
+   * - Another key: the account isn't this computer's to sync with until it links, and linking
+   *   adds this computer's job hunt to it. Nothing goes up before that.
+   * When the server can't be asked, sign-in says why, and nothing syncs.
    */
-  private async resume(accountKey: Bytes): Promise<void> {
-    if (!this.client) return;
+  private async resume(accountKey: Bytes): Promise<EditResult> {
+    if (!this.client) return failed('Sign in first.');
     let account: Awaited<ReturnType<SyncClient['account']>>;
     let saved: Awaited<ReturnType<SyncClient['keys']>>;
     try {
       [account, saved] = await Promise.all([this.client.account(), this.client.keys()]);
     } catch (error) {
-      if (error instanceof SyncError && error.kind === 'signed-out') await this.forget();
-      else this.set({ state: 'setting-up', email: this.email(), firstDevice: false });
-      return;
+      if (error instanceof SyncError && error.kind === 'signed-out') {
+        this.secrets.delete('session');
+        this.client = null;
+      }
+      this.set({ state: 'signed-out', email: this.email() });
+      return failed(reason(error));
     }
-    // Another account than the one this computer synced with: what it knows of that one's
-    // history doesn't carry over.
-    const before = this.state.meta('account');
-    if (before !== null && before !== account.user.id) this.startOver();
+    this.pending = null;
+    if (saved === null) {
+      this.set({ state: 'setting-up', email: account.user.email, firstDevice: true, again: true });
+      return { ok: true };
+    }
+    if (saved.keyId !== (await accountKeys(accountKey)).id) {
+      this.set({ state: 'setting-up', email: account.user.email, firstDevice: false });
+      return { ok: true };
+    }
+    // The same key. What sync knows here is for the account it last synced with: for any other,
+    // or when it never noted which, it starts over.
+    if (this.state.meta('account') !== account.user.id) this.startOver();
     this.state.setMeta('account', account.user.id);
     this.state.setMeta('email', account.user.email);
-    const keyId = (await accountKeys(accountKey)).id;
-    if (saved === null) {
-      // Nothing is stored for the account yet, so everything here goes up again.
-      this.startOver();
-      this.pending = { accountKey, recovery: null };
-      this.set({ state: 'setting-up', email: account.user.email, firstDevice: true });
-    } else if (saved.keyId !== keyId) {
-      this.set({ state: 'setting-up', email: account.user.email, firstDevice: false });
-    } else {
-      await this.turnOnWith(accountKey);
-    }
+    await this.turnOnWith(accountKey);
+    return { ok: true };
   }
 
   /** Forgets what sync knew of the account's history, keeping who's signed in. */
   private startOver(): void {
     const email = this.email();
     const account = this.state.meta('account');
+    const unchecked = this.state.meta(UNCHECKED);
     this.state.clear();
     this.state.setMeta('email', email);
     if (account !== null) this.state.setMeta('account', account);
+    if (unchecked !== null) this.state.setMeta(UNCHECKED, unchecked);
+  }
+
+  /**
+   * Signed in with an account this computer shouldn't sync with: ends that sign-in only. The
+   * account key this computer has, and what sync knows, stay for the right account.
+   */
+  async useDifferentAccount(): Promise<EditResult> {
+    const token = this.secrets.get('session');
+    if (token) await this.signOutOnServer(token);
+    this.secrets.delete('session');
+    this.client = null;
+    this.pending = null;
+    this.set(
+      this.secrets.get('accountKey')
+        ? { state: 'signed-out', email: this.email() }
+        : { state: 'off' },
+    );
+    return { ok: true };
   }
 
   /** Stops waiting for the browser. Sync goes back to where it stood. */
@@ -284,7 +317,7 @@ export class SyncAccount {
 
   /** On the first device, once the recovery key is saved: turns sync on. */
   async turnOn(): Promise<EditResult> {
-    if (!this.client || !this.pending?.recovery) return failed('Make your recovery key first.');
+    if (!this.client || !this.pending) return failed('Make your recovery key first.');
     const { accountKey, recovery } = this.pending;
     try {
       const keys = await accountKeys(accountKey);
@@ -356,6 +389,7 @@ export class SyncAccount {
     // Another account's data must never mix in: a different key starts over.
     if (this.state.meta('keyId') !== keys.id) this.startOver();
     this.state.setMeta('keyId', keys.id);
+    this.state.setMeta(UNCHECKED, '0');
     this.secrets.set('accountKey', toBase64Url(accountKey));
     this.accountKey = accountKey;
     this.keys = keys;
@@ -403,7 +437,7 @@ export class SyncAccount {
       .then((account) => {
         if (this.closed) return;
         this.state.setMeta('email', account.user.email);
-        if (this.state.meta('account') === null) this.state.setMeta('account', account.user.id);
+        this.state.setMeta('account', account.user.id);
         if (this.current.state === 'on') this.set({ ...this.current, email: account.user.email });
       })
       .catch(() => {});
@@ -471,15 +505,18 @@ export class SyncAccount {
    */
   async signOut(): Promise<EditResult> {
     const token = this.secrets.get('session');
-    if (token) {
-      await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', this.deps.server), {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: '{}',
-      }).catch(() => {});
-    }
+    if (token) await this.signOutOnServer(token);
     await this.forget();
     return { ok: true };
+  }
+
+  /** Ends a session on the server, as far as it can be reached. */
+  private async signOutOnServer(token: string): Promise<void> {
+    await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', this.deps.server), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: '{}',
+    }).catch(() => {});
   }
 
   private async forget(): Promise<void> {

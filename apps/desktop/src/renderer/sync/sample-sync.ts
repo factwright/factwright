@@ -18,6 +18,7 @@ type SyncApi = Pick<
   | 'syncAccount'
   | 'removeSyncDevice'
   | 'signOutOfSync'
+  | 'useDifferentSyncAccount'
   | 'openAccountPage'
 >;
 
@@ -161,6 +162,10 @@ export function sampleSync(start: string | null): SyncApi {
       return { ok: true };
     },
     signOutOfSync: async () => {
+      set({ state: 'off' });
+      return { ok: true };
+    },
+    useDifferentSyncAccount: async () => {
       set({ state: 'off' });
       return { ok: true };
     },

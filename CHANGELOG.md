@@ -14,10 +14,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - The operator can delete an account for someone who asked by email, with a token only the operator has.
 
-## Unreleased
-
 ### Fixed
-- Signing in to sync again after the account was deleted and made again shows a new recovery key before anything syncs. Before, the computer synced everything up with no recovery key on the server, so the old recovery key couldn't get anyone back in. Signing in to another account that uses another key now links to it, instead of syncing this computer's job hunt into it.
+- Signing in to sync again checks the account's key before anything syncs, and asks again after a restart until it has. An account deleted and made again gets a new account key and recovery key, which the old ones and any lost device can't open. Another account that uses another key is linked to only when asked, with **Use a different account** to end that sign-in instead.
 
 ## 0.1.0 - 2026-10-13
 

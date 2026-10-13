@@ -30,7 +30,16 @@ function keyFile(recoveryKey: string, email: string): string {
  * On the account's first device: shows the recovery key, once, to save before sync turns on.
  * It's the only way back in if every device is lost.
  */
-export function RecoveryKeyStep({ api, email }: { api: FactwrightApi; email: string }) {
+export function RecoveryKeyStep({
+  api,
+  email,
+  again = false,
+}: {
+  api: FactwrightApi;
+  email: string;
+  /** The account has no key on the server though this computer synced before. */
+  again?: boolean;
+}) {
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -72,6 +81,13 @@ export function RecoveryKeyStep({ api, email }: { api: FactwrightApi; email: str
 
   return (
     <>
+      {again && (
+        <p className={styles.lead}>
+          This account has no recovery key yet, such as after it was deleted and made again, so a
+          key you saved before won’t open it. This computer makes a new one, and your other devices
+          link again once it’s on.
+        </p>
+      )}
       <p className={styles.lead}>
         If you ever lose all your devices, this key is the only way back into your synced job hunt.
         Nobody else has a copy, us included.
@@ -119,10 +135,20 @@ export function RecoveryKeyStep({ api, email }: { api: FactwrightApi; email: str
         </p>
       )}
       <DialogActions>
+        <DifferentAccount api={api} />
         <Button variant="primary" disabled={!recoveryKey || !saved || busy} onClick={turnOn}>
           {busy ? 'Turning on…' : 'Turn on sync'}
         </Button>
       </DialogActions>
     </>
+  );
+}
+
+/** Signed in with the wrong account, such as a work GitHub: ends that sign-in, and nothing else. */
+export function DifferentAccount({ api }: { api: FactwrightApi }) {
+  return (
+    <Button variant="quiet" onClick={() => void api.useDifferentSyncAccount()}>
+      Use a different account
+    </Button>
   );
 }
