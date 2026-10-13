@@ -214,15 +214,16 @@ export class SyncAccount {
       this.set(before);
       return failed(result.message);
     }
-    this.secrets.set('session', result.token);
-    this.client = this.clientFor(result.token);
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
+    // Noted before the new sign-in is kept, so it's never kept unchecked.
+    if (accountKey) this.state.setMeta(UNCHECKED, '1');
+    this.secrets.set('session', result.token);
+    this.client = this.clientFor(result.token);
     if (!accountKey) {
       await this.checkSetup();
       return { ok: true };
     }
-    this.state.setMeta(UNCHECKED, '1');
     return this.resume(accountKey);
   }
 
@@ -261,9 +262,11 @@ export class SyncAccount {
       this.set({ state: 'setting-up', email: account.user.email, firstDevice: false });
       return { ok: true };
     }
-    // The same key. What sync knows here is for the account it last synced with: for any other,
-    // or when it never noted which, it starts over.
-    if (this.state.meta('account') !== account.user.id) this.startOver();
+    // The same key. A key belongs to the one account it was made for, so this is the account
+    // sync knows, unless it noted another, which starts over. One that never noted its account
+    // just notes it, so edits made while signed out sync as edits, not as conflicts.
+    const before = this.state.meta('account');
+    if (before !== null && before !== account.user.id) this.startOver();
     this.state.setMeta('account', account.user.id);
     this.state.setMeta('email', account.user.email);
     await this.turnOnWith(accountKey);
