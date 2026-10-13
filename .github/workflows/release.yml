@@ -110,13 +110,21 @@ jobs:
         run: pnpm --filter @factwright/desktop dist:mac
       - name: Check what's in the app
         run: pnpm --filter @factwright/desktop check-package
-      # Apple's ticket is stapled to the app, so a Mac opens it without going online.
+      # Apple's ticket is stapled to the app, so a Mac opens it without going online. The
+      # certificate is from Apple's G2 authority: one from the previous authority can't sign after
+      # 2027-02-01.
       - name: Check Gatekeeper accepts it
         if: env.NOTARIZED == 'true'
         run: |
-          codesign --verify --deep --strict apps/desktop/dist/mac-universal/Factwright.app
-          spctl --assess --type execute --verbose=4 apps/desktop/dist/mac-universal/Factwright.app
-          xcrun stapler validate apps/desktop/dist/mac-universal/Factwright.app
+          app=apps/desktop/dist/mac-universal/Factwright.app
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          codesign --display --extract-certificates="$RUNNER_TEMP/signer" "$app"
+          if ! openssl x509 -inform DER -in "$RUNNER_TEMP/signer0" -noout -issuer | grep -q 'OU=G2'; then
+            echo "::error::The Developer ID certificate isn't from Apple's G2 authority: see docs/releasing.md."
+            exit 1
+          fi
       # The built app, started as a user would, with a stand-in Claude Code.
       - run: pnpm --filter @factwright/desktop e2e:packaged
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

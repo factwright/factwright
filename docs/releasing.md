@@ -92,8 +92,8 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
 
    Then it builds, signs and notarizes on a Mac and on Windows. It checks:
    - the app's archive holds only the app
-   - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name, and Apple's
-     ticket is stapled to the Mac app
+   - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name
+   - the Mac app's certificate is from Apple's G2 authority, and Apple's ticket is stapled to it
    - each built app starts with a stand-in Claude Code
 
    Only then does it upload, refusing to replace a version that's out already. A release that
