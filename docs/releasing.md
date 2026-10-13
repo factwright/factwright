@@ -90,7 +90,7 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
 4. **The workflow does the rest.** First it checks:
    - the tag is on `main`
    - it names the app's version, and that version has its notes
-   - it's newer than the version out now
+   - it's newer than the version out now, for the Mac and for Windows
 
    Then it builds, signs and notarizes on a Mac and on Windows. It checks:
    - the app's archive holds only the app
@@ -99,7 +99,13 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
    - each built app starts with a stand-in Claude Code
 
    Only then does it upload, refusing to replace a version that's out already. A release that
-   isn't signed is never published.
+   isn't signed is never published. Each computer's installers go out as soon as its own build
+   passes, so Windows never waits on Apple, and for a while the two can be on different versions.
+
+   Apple usually notarizes in minutes, but can hold an app for hours, especially the first time.
+   The Mac job gives up after an hour, so a slow Apple can't use up the month's free GitHub minutes
+   (Mac minutes count ten times). Apple carries on checking. Once it's done (`xcrun notarytool
+   history` says Accepted), choose **Re-run failed jobs** on the run, and the Mac installers go out.
 5. **Check it:** `https://downloads.factwright.com/latest-mac.yml` and `latest.yml` name the new
    version, and the two downloads open.
 
