@@ -1,8 +1,10 @@
 # Changelog
 
-Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions will follow [Semantic Versioning](https://semver.org/) once releases begin.
+Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.0 - 2026-10-13
+
+The first release, for Mac and Windows.
 
 ### Added
 - Project skeleton: workspace layout, tooling, CI and project docs.
@@ -96,5 +98,5 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - `@factwright/core`: reading the fact bank's files a heading at a time, and changing, adding, deleting or confirming a claim while the rest of its file stays as written.
 - When more than one of your templates fits a job, such as two for any job, a tailored resume uses the one that suits the role, by what your guide says each is for, and says which it picked.
 - Installers: one Mac disk image for Apple silicon and Intel, and a Windows installer that needs no administrator. Releases are signed and notarized, then published to downloads.factwright.com by a workflow when a version is tagged. The installed app is locked down with Electron's fuses, and keeps the same data folder as before. Factwright's first version is 0.1.0.
-- Updates: an installed copy looks for a new version every few hours, downloads it in the background, and shows **Update ready** at the bottom of the sidebar, with what's new. It installs when you restart, or the next time you quit, and asks first if you're writing a fact or a note you haven't saved.
+- Updates: an installed copy looks for a new version every ten minutes, and as soon as you come back to it, downloads it in the background, and shows **Update ready** at the bottom of the sidebar, with what's new. It installs when you restart, or the next time you quit, and asks first if you're writing a fact or a note you haven't saved.
 - The website offers the download for your computer, with the other one a link under it.

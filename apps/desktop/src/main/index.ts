@@ -6,6 +6,7 @@ import {
   BrowserWindow,
   autoUpdater as macInstaller,
   nativeTheme,
+  powerMonitor,
   safeStorage,
   session,
   shell,
@@ -227,7 +228,14 @@ function start(): void {
             log: (message) => logUpdate(dataDir, message),
           })
         : null;
-    updates?.start();
+    if (updates) {
+      updates.start();
+      // Coming back to the app, or the computer waking, looks straight away, so an update that
+      // came out meanwhile doesn't wait for the next look.
+      app.on('browser-window-focus', () => updates.lookAgain());
+      powerMonitor.on('resume', () => updates.lookAgain());
+      powerMonitor.on('unlock-screen', () => updates.lookAgain());
+    }
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
       about,

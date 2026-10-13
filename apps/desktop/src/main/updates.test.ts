@@ -4,6 +4,7 @@ import type { UpdateStatus } from '../shared/updates.ts';
 import {
   CHECK_EVERY_MS,
   FIRST_CHECK_AFTER_MS,
+  LOOK_AGAIN_AFTER_MS,
   NO_INSTALL_ID,
   type Updater,
   UpdateWatcher,
@@ -71,12 +72,41 @@ describe('UpdateWatcher', () => {
       process.off('unhandledRejection', unanswered);
     }
   });
-  it('looks a little after starting, then every few hours', () => {
+  it('looks a little after starting, then every few minutes', () => {
+    expect(CHECK_EVERY_MS).toBeLessThanOrEqual(10 * 60 * 1000);
     expect(updater.checkForUpdates).not.toHaveBeenCalled();
     vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS);
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(CHECK_EVERY_MS);
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  it('looks again when the user comes back, at most once a minute', () => {
+    // Just started: the first look, a little later, is still to come.
+    watcher.lookAgain();
+    expect(updater.checkForUpdates).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS);
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(LOOK_AGAIN_AFTER_MS - 1);
+    watcher.lookAgain();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    watcher.lookAgain();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  it('doesn’t look again once stopped', () => {
+    vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS + LOOK_AGAIN_AFTER_MS);
+    watcher.stop();
+    watcher.lookAgain();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('doesn’t look again while an update is on its way', () => {
+    updater.emit('update-available', { version: '0.2.0' });
+    vi.advanceTimersByTime(LOOK_AGAIN_AFTER_MS);
+    watcher.lookAgain();
+    expect(updater.checkForUpdates).not.toHaveBeenCalled();
   });
 
   it('follows an update from found to downloaded, with its notes', () => {
