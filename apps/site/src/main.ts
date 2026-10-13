@@ -1,5 +1,6 @@
 import 'virtual:theme.css';
 import './styles/index.css';
+import { offerDownloads, platform } from './downloads.ts';
 
 /**
  * The page reads fine without this script. It adds the motion: the app drawing plays a run, the
@@ -260,6 +261,12 @@ function reveal(): void {
 
 header();
 reveal();
+const computer = platform(navigator);
+if (computer) {
+  for (const root of document.querySelectorAll<HTMLElement>('[data-downloads]')) {
+    offerDownloads(root, computer);
+  }
+}
 for (const root of document.querySelectorAll<HTMLElement>('[data-demo]')) heroRun(root);
 for (const root of document.querySelectorAll<HTMLElement>('[data-confirm]')) confirmClaim(root);
 for (const root of document.querySelectorAll<HTMLElement>('.fit')) fillScores(root);

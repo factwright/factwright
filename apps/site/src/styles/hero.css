@@ -104,6 +104,29 @@
   font-size: 14.5px;
 }
 
+.hero-note:empty {
+  display: none;
+}
+
+.hero-note a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+/* Both downloads, until the page knows which computer it's on, or when it's neither. */
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* A button's own display would otherwise show the download for the other computer. */
+.downloads [hidden] {
+  display: none;
+}
+
 .hero-shot {
   position: relative;
   max-width: 1140px;

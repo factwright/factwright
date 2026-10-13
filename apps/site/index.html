@@ -87,19 +87,27 @@
       <!-- Hero -->
       <section class="hero" aria-labelledby="hero-title">
         <div class="wrap hero-copy">
-          <p class="eyebrow-pill"><span class="pulse-dot" aria-hidden="true"></span>Coming soon for Mac and Windows</p>
+          <p class="eyebrow-pill"><span class="pulse-dot" aria-hidden="true"></span>Now in beta for Mac and Windows</p>
           <h1 id="hero-title">Tailored to the job.<br /><span class="soft">True to the facts.</span></h1>
           <p class="lede hero-lede">
             A job hunt app for people putting their real experience forward. Your own Claude finds
             jobs that fit, tailors each resume to the job from facts you’ve confirmed, and gets you
             ready for the interview.
           </p>
-          <div class="hero-actions">
-            <a class="button button-primary button-lg" href="#how">
-              See how it works
-              <svg class="icon" aria-hidden="true"><use href="#i-arrow-down" /></svg>
-            </a>
-            <p class="hero-note">Free during the beta · Uses your own Claude plan</p>
+          <div class="hero-actions" data-downloads>
+            <div class="downloads">
+              <a class="button button-primary button-lg" href="https://downloads.factwright.com/Factwright.dmg" data-download="mac">
+                <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                Download for Mac
+              </a>
+              <a class="button button-secondary button-lg" href="https://downloads.factwright.com/Factwright-Setup.exe" data-download="windows">
+                <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                Download for Windows
+              </a>
+            </div>
+            <p class="hero-note">
+              <span data-for="mac" hidden>Apple silicon and Intel · </span>Free during the beta · Uses your own Claude plan<span data-for="mac" hidden> · <a href="https://downloads.factwright.com/Factwright-Setup.exe">Also for Windows</a></span><span data-for="windows" hidden> · <a href="https://downloads.factwright.com/Factwright.dmg">Also for Mac</a></span>
+            </p>
           </div>
         </div>
 
@@ -1016,8 +1024,23 @@
           </svg>
           <h2 id="closing-title">Start with what’s true.</h2>
           <p class="lede">
-            Factwright is coming soon for Mac and Windows, free during the beta.
+            Factwright is free during the beta, for Mac and Windows.
           </p>
+          <div class="hero-actions" data-downloads>
+            <div class="downloads">
+              <a class="button button-primary button-lg" href="https://downloads.factwright.com/Factwright.dmg" data-download="mac">
+                <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                Download for Mac
+              </a>
+              <a class="button button-secondary button-lg" href="https://downloads.factwright.com/Factwright-Setup.exe" data-download="windows">
+                <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                Download for Windows
+              </a>
+            </div>
+            <p class="hero-note">
+              <span data-for="mac" hidden><a href="https://downloads.factwright.com/Factwright-Setup.exe">Also for Windows</a></span><span data-for="windows" hidden><a href="https://downloads.factwright.com/Factwright.dmg">Also for Mac</a></span>
+            </p>
+          </div>
         </div>
       </section>
     </main>

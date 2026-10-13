@@ -97,3 +97,4 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - When more than one of your templates fits a job, such as two for any job, a tailored resume uses the one that suits the role, by what your guide says each is for, and says which it picked.
 - Installers: one Mac disk image for Apple silicon and Intel, and a Windows installer that needs no administrator. Releases are signed and notarized, then published to downloads.factwright.com by a workflow when a version is tagged. The installed app is locked down with Electron's fuses, and keeps the same data folder as before. Factwright's first version is 0.1.0.
 - Updates: an installed copy looks for a new version every few hours, downloads it in the background, and shows **Update ready** at the bottom of the sidebar, with what's new. It installs when you restart, or the next time you quit.
+- The website offers the download for your computer, with the other one a link under it.
