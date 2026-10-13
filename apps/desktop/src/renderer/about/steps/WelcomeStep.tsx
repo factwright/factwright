@@ -58,12 +58,12 @@ export function WelcomeStep({ claude, onOpenSync }: { claude: ReactNode; onOpenS
         Using Factwright means you agree to its{' '}
         <a href={TERMS_URL} target="_blank" rel="noreferrer">
           terms of service
-        </a>{' '}
-        and{' '}
+        </a>
+        . Its{' '}
         <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
           privacy policy
-        </a>
-        .
+        </a>{' '}
+        says what it collects.
       </p>
       <p className={styles.note}>
         Already use Factwright on another computer?{' '}

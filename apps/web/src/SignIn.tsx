@@ -63,12 +63,12 @@ export function SignIn({
         By continuing, you agree to Factwright’s{' '}
         <a href={TERMS_URL} target="_blank" rel="noreferrer">
           terms of service
-        </a>{' '}
-        and{' '}
+        </a>
+        . Its{' '}
         <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
           privacy policy
-        </a>
-        .
+        </a>{' '}
+        says what sync keeps.
       </p>
     </section>
   );

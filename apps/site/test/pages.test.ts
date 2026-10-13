@@ -212,3 +212,24 @@ describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
     expect(listed).toEqual(sections);
   });
 });
+
+describe('the site’s build', () => {
+  it('builds every page, and lists the ones to find in the sitemap', () => {
+    const config = readFileSync(join(SITE, 'vite.config.ts'), 'utf8');
+    const sitemap = readFileSync(join(SITE, 'public', 'sitemap.xml'), 'utf8');
+    for (const page of [
+      'index.html',
+      'download.html',
+      'download/mac.html',
+      'download/windows.html',
+      'privacy.html',
+      'terms.html',
+      '404.html',
+    ]) {
+      expect(config, page).toContain(`'${page}'`);
+    }
+    for (const path of ['/', '/download', '/privacy', '/terms']) {
+      expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
+    }
+  });
+});

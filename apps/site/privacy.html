@@ -81,11 +81,14 @@
               </li>
               <li>
                 <b>Sync is optional.</b> If you turn it on, your job hunt is encrypted on your
-                computer before it’s sent, with a key we never see, so our servers can’t read it.
+                computer before it’s sent, with a key we never see, so our servers store it only in a
+                form they can’t read. The web view on your phone works differently, as
+                <a href="#sync">Sync and the web view</a> explains.
               </li>
               <li>
-                <b>We keep only what sync needs:</b> your name and email from the account you sign in
-                with, and the devices you sign in on.
+                <b>We keep only what sync needs:</b> your name, email and account ID from the account
+                you sign in with, the devices you sign in on, and your encrypted job hunt with its
+                sizes and times.
               </li>
               <li>
                 <b>We never sell your data</b> or share it for advertising. You can download or delete
@@ -123,8 +126,9 @@
               sent.
             </p>
             <p>
-              Uninstalling Factwright leaves your job hunt folder where it is. Delete it yourself if
-              you want it gone.
+              Uninstalling Factwright leaves its data folder where it is: your job hunt, its tracker
+              and sync’s settings. To remove them, delete the Factwright folder in
+              ~/Library/Application Support on a Mac, or in %APPDATA% on Windows.
             </p>
           </section>
 
@@ -213,14 +217,15 @@
               Your job hunt itself: your files and their names, your facts, resumes and notes, and
               everything you track. Your computer encrypts it before it’s uploaded, with a key we
               never see, so our servers store it only in a form they can’t read. We hold that key only
-              locked: with your recovery key, which we never receive, and for a few minutes with a
-              link code when you add a device.
+              locked: with your recovery key, which we never receive, and with a link code when you
+              add a device. A link code works for 10 minutes, and its locked copy is deleted once
+              it’s used or cancelled, or within a day.
             </p>
             <p>
               The web view works differently. It opens your job hunt in your browser with code our
-              server sends each time you open it, so anyone who controlled that server could change
-              the code to read what you open there. The desktop app’s code changes only through
-              updates we sign.
+              server sends each time you open it. Anyone who controlled that server could change that
+              code to read everything you’ve synced, in any browser you’ve linked, and your recovery
+              key if you type it there. The desktop app’s code changes only through updates we sign.
             </p>
 
             <h3>How long we keep it</h3>
@@ -233,6 +238,10 @@
                 60 days without use.
               </li>
               <li>Counts of requests from your IP address: about a day.</li>
+              <li>
+                Errors our servers note, such as a request that failed, with its address but none of
+                your data: up to 7 days, at Cloudflare.
+              </li>
             </ul>
             <p>
               Deleting your account removes your account, your job hunt, your backups and your
@@ -244,9 +253,9 @@
             <p>
               The web view uses cookies only to sign you in and keep you signed in, and keeps your
               keys in your browser’s storage so it can open your job hunt there. It has no analytics
-              or tracking. Signing out forgets the keys in that browser, and so does opening it after
-              it’s been signed out another way. Your browser may also keep locked copies of files in
-              its cache.
+              or tracking. Signing out forgets the keys in that browser, and so does finding it’s been
+              signed out another way. Your browser may also keep locked copies of files in its cache,
+              and files you download or open there are saved by your browser as they are, unlocked.
             </p>
           </section>
 

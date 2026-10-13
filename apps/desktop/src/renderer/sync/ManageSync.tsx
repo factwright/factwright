@@ -187,7 +187,7 @@ export function ManageSync({
         <a className={styles.link} href={PRIVACY_URL} target="_blank" rel="noreferrer">
           privacy policy
         </a>
-        . Using it means you agree to the{' '}
+        . Using sync means you agree to the{' '}
         <a className={styles.link} href={TERMS_URL} target="_blank" rel="noreferrer">
           terms of service
         </a>

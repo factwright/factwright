@@ -106,12 +106,12 @@ export function SignInStep({
         Signing in means you agree to Factwright’s{' '}
         <a className={styles.link} href={TERMS_URL} target="_blank" rel="noreferrer">
           terms of service
-        </a>{' '}
-        and{' '}
+        </a>
+        . Its{' '}
         <a className={styles.link} href={PRIVACY_URL} target="_blank" rel="noreferrer">
           privacy policy
-        </a>
-        .
+        </a>{' '}
+        says what sync keeps.
       </p>
       <DialogActions>
         <Button onClick={close}>Not now</Button>
