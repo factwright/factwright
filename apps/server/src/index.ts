@@ -1,4 +1,5 @@
 import { utf8 } from '@factwright/sync';
+import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
 import { authFor } from './auth.ts';
 import type { Env } from './env.ts';
@@ -77,6 +78,7 @@ export default {
   },
 
   async scheduled(controller, env, context): Promise<void> {
-    context.waitUntil(backUpAll(env, new Date(controller.scheduledTime)));
+    const when = new Date(controller.scheduledTime);
+    context.waitUntil(Promise.all([forgetOldSignIns(env.DB, when), backUpAll(env, when)]));
   },
 } satisfies ExportedHandler<Env>;

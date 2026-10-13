@@ -2,6 +2,11 @@
 
 Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+- The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
+
 ## 0.1.0 - 2026-10-13
 
 The first release, for Mac and Windows.

@@ -79,7 +79,7 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 ### Signing in
 - Signing in is separate from the keys: it proves who you are to the server, and the keys never touch it. You sign in with GitHub or Google, through [Better Auth](https://www.better-auth.com) running in the sync server.
 - The desktop app signs in through your browser with a device code (RFC 8628): the app shows a short code, and you check the browser shows the same one before you allow it. The app keeps its session token in the system's keychain.
-- A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out.
+- A session lasts 60 days and renews while it's used. You can see each signed-in device, and sign any of them out. Signing out deletes the session's record at once, and one that runs out is deleted within a day.
 
 ### The web view
 The web view opens your job hunt in the browser, so the page that holds your keys has to be the only thing running there.
@@ -89,7 +89,8 @@ The web view opens your job hunt in the browser, so the page that holds your key
 - A copy of your job hunt is put together in the browser, as a ZIP, and never passes through the server opened.
 
 ### What the server sees
-- Your account: the email and name your sign-in shares, and each session's device name, IP address and when it was last used.
+- Your account: the email, name and profile picture link your sign-in shares, and each session's device name, IP address and when it was last used.
+- Sign-in's limits on attempts, which count each IP address's recent requests. Those counts are deleted each day.
 - For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, and which file contents it points to.
 - For each file: an opaque ID and its size.
 - Never your file names, the files' contents, what you track, or any key that opens them.
@@ -137,7 +138,7 @@ If you lose every device and your recovery key, your data can't be recovered, by
 ## What still leaves your computer
 Whatever Claude reads goes to Anthropic, under your own account and Anthropic's terms. That's how Claude works, and Factwright doesn't add anyone else to that path.
 
-Crash reports never include your content.
+Factwright sends no crash reports, analytics or usage data.
 
 ## Reporting a problem
 See [SECURITY.md](../SECURITY.md).

@@ -15,6 +15,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `src/store.ts` | One account's store: records with their history, files, the locked account key and link codes |
 | `src/store-tables.ts` | The store's tables |
 | `src/store-upkeep.ts` | Daily backups, restoring one, and the daily cleanup |
+| `src/accounts-upkeep.ts` | The daily cleanup of sign-in's own records: sessions that ended, sign-in steps that ran out, and the limits' counts by IP address |
 | `src/live.ts` | Tickets for listening to changes as they happen |
 | `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
 
@@ -38,7 +39,7 @@ Every route answers only the account of the session that calls it. The desktop a
 ## Limits
 - 1 GB per account (`STORAGE_LIMIT_MB`) and 25 MB per file.
 - Bursts of 600 requests per account, refilling at 10 a second.
-- Sign-in requests are limited per IP address, more tightly for signing in.
+- Sign-in requests are limited per IP address, more tightly for signing in. The counts are deleted each day.
 
 ## Running it locally
 ```bash
