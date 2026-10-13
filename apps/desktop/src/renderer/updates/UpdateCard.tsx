@@ -12,16 +12,38 @@ import styles from './UpdateCard.module.css';
 export function UpdateCard({
   status,
   busy,
+  unsaved,
   onRestart,
 }: {
   status: UpdateStatus;
   /** Whether Claude is working, which a restart would stop. */
   busy: boolean;
+  /** Whether the user is writing something they haven't saved, which a restart would lose. */
+  unsaved: () => boolean;
   onRestart: () => void;
 }) {
   const [reading, setReading] = useState(false);
+  const [asking, setAsking] = useState(false);
   if (status.state !== 'ready') return null;
   const { version, notes } = status;
+  const link = (label: string, onClick: () => void) => (
+    <button type="button" className={styles.link} onClick={onClick}>
+      {label}
+    </button>
+  );
+  if (asking && !busy) {
+    return (
+      <SidebarCard
+        title="Update ready"
+        tone="need"
+        line="Something you’re writing isn’t saved"
+        help={
+          <>Save it first, or restart now and lose it. {link('Not now', () => setAsking(false))}</>
+        }
+        action={{ label: 'Restart anyway', onClick: onRestart }}
+      />
+    );
+  }
   return (
     <>
       <SidebarCard
@@ -33,17 +55,17 @@ export function UpdateCard({
             {busy
               ? 'It installs the next time you quit, once your Claude is done.'
               : 'It installs when you restart, or the next time you quit.'}
-            {notes && (
-              <>
-                {' '}
-                <button type="button" className={styles.link} onClick={() => setReading(true)}>
-                  What’s new
-                </button>
-              </>
-            )}
+            {notes && <> {link('What’s new', () => setReading(true))}</>}
           </>
         }
-        action={busy ? null : { label: 'Restart now', onClick: onRestart }}
+        action={
+          busy
+            ? null
+            : {
+                label: 'Restart now',
+                onClick: () => (unsaved() ? setAsking(true) : onRestart()),
+              }
+        }
       />
       {reading && notes && (
         <Dialog

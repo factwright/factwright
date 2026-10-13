@@ -111,17 +111,28 @@ A server that misbehaved couldn't read your data or forge it. It could still del
 If you lose every device and your recovery key, your data can't be recovered, by you or by us. You can download an unencrypted copy whenever you like, from your account in the web view.
 
 ## Installing and updating
-- **Signed.** The Mac app is signed with Neatifai's Developer ID and notarized by Apple. The
-  Windows installer is signed through Azure Artifact Signing. A release that isn't signed is
-  never published.
-- **Locked down.** The installed app can't be started as plain Node, take Node's options from the
-  environment, open a debugger from the command line, or load code from anywhere but its own
-  archive, which it checks.
+- **Signed.** The Mac app is signed with Neatifai's Developer ID and notarized by Apple. On
+  Windows, the installer, the app and every module it loads are signed through Azure Artifact
+  Signing. A release that isn't signed is never published.
+- **Locked down.** The installed app can't take Node's options from the environment, open Node's
+  debugger from the command line, or load code from anywhere but its own archive, which it
+  checks. On a Mac it can't be started as plain Node either. On Windows it can, because the
+  terminal library stops a run through a helper started that way.
+- **Settings for testing are ignored.** The variables that point the app at other screens or
+  another sync server, for development and tests, do nothing in an installed copy.
+- **No debugging the user's data.** Chromium, which the app is built on, can let another program
+  drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
+  user's own data folder: only with a folder of its own, as the tests give it, where there's no
+  job hunt and no sync to reach.
 - **Updates are checked.** An installed copy downloads updates only from downloads.factwright.com,
-  over https. It installs one only if it matches the checksum in the update feed and carries the
-  same signature: Apple's check on a Mac, and the publisher's name on Windows.
+  over https, and only if it was built by the release workflow: a copy built on someone's own
+  computer never updates itself. An update must match the checksum in the update feed. On a Mac,
+  it must also pass Apple's check that it's signed by the same developer as the app. On Windows,
+  it must be signed by a certificate issued to the same publisher name, Neatifai's.
 - **Asking for updates says little.** Looking for an update asks for the feed, which tells the
-  download site your IP address and that a copy of Factwright is looking, like any download.
+  download site your IP address and that a copy of Factwright is looking, like any download. The
+  updater can send an ID of each install too, to roll a version out to some installs at a time.
+  Factwright sends the same ID for everyone instead.
 
 ## What still leaves your computer
 Whatever Claude reads goes to Anthropic, under your own account and Anthropic's terms. That's how Claude works, and Factwright doesn't add anyone else to that path.

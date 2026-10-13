@@ -28,13 +28,19 @@ const READY: UpdateStatus = {
 describe('UpdateCard', () => {
   it('shows nothing until an update has downloaded', () => {
     const { container, rerender } = render(
-      <UpdateCard status={{ state: 'none' }} busy={false} onRestart={() => {}} />,
+      <UpdateCard
+        status={{ state: 'none' }}
+        busy={false}
+        unsaved={() => false}
+        onRestart={() => {}}
+      />,
     );
     expect(container.textContent).toBe('');
     rerender(
       <UpdateCard
         status={{ state: 'downloading', version: '0.2.0', percent: 40 }}
         busy={false}
+        unsaved={() => false}
         onRestart={() => {}}
       />,
     );
@@ -44,7 +50,9 @@ describe('UpdateCard', () => {
   it('offers to restart into a downloaded update', async () => {
     const user = userEvent.setup();
     const onRestart = vi.fn();
-    const { container } = render(<UpdateCard status={READY} busy={false} onRestart={onRestart} />);
+    const { container } = render(
+      <UpdateCard status={READY} busy={false} unsaved={() => false} onRestart={onRestart} />,
+    );
     expect(screen.getByRole('heading', { name: 'Update ready' })).toBeTruthy();
     expect(container.textContent).toContain('Factwright 0.2.0');
     expect(container.textContent).toContain(
@@ -57,20 +65,45 @@ describe('UpdateCard', () => {
 
   it('shows what’s new', async () => {
     const user = userEvent.setup();
-    render(<UpdateCard status={READY} busy={false} onRestart={() => {}} />);
+    render(<UpdateCard status={READY} busy={false} unsaved={() => false} onRestart={() => {}} />);
     await user.click(screen.getByRole('button', { name: 'What’s new' }));
     const dialog = screen.getByRole('dialog', { name: 'What’s new in Factwright 0.2.0' });
     expect(dialog.textContent).toContain('Faster resumes.');
   });
 
   it('waits for quitting while Claude is working, which a restart would stop', () => {
-    const { container } = render(<UpdateCard status={READY} busy onRestart={() => {}} />);
+    const { container } = render(
+      <UpdateCard status={READY} busy unsaved={() => false} onRestart={() => {}} />,
+    );
     expect(screen.queryByRole('button', { name: 'Restart now' })).toBeNull();
     expect(container.textContent).toContain('once your Claude is done');
   });
 
   it('leaves out what’s new when there are no notes', () => {
-    render(<UpdateCard status={{ ...READY, notes: null }} busy={false} onRestart={() => {}} />);
+    render(
+      <UpdateCard
+        status={{ ...READY, notes: null }}
+        busy={false}
+        unsaved={() => false}
+        onRestart={() => {}}
+      />,
+    );
     expect(screen.queryByRole('button', { name: 'What’s new' })).toBeNull();
+  });
+
+  it('asks before restarting over something the user is writing', async () => {
+    const user = userEvent.setup();
+    const onRestart = vi.fn();
+    const { container } = render(
+      <UpdateCard status={READY} busy={false} unsaved={() => true} onRestart={onRestart} />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Restart now' }));
+    expect(onRestart).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Something you’re writing isn’t saved');
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+    await user.click(screen.getByRole('button', { name: 'Restart now' }));
+    await user.click(screen.getByRole('button', { name: 'Restart anyway' }));
+    expect(onRestart).toHaveBeenCalledTimes(1);
   });
 });

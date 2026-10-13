@@ -38,6 +38,7 @@ import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
+import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
@@ -196,8 +197,10 @@ export function App({ api }: { api: FactwrightApi }) {
           update={{
             status: update,
             busy: isRunning(run.phase),
+            unsaved: hasUnsaved,
             onRestart: () => {
-              // What's typed and not saved yet is saved first.
+              // The profile saves as the user types, so what's waiting to save goes first. Facts and
+              // notes have Save buttons: the card asks before restarting over them.
               void about.flush().finally(() => api.installUpdate());
             },
           }}

@@ -104,7 +104,8 @@
   font-size: 14.5px;
 }
 
-.hero-note:empty {
+/* A line of links to the other download, with none to show until the page knows the computer. */
+.hero-note[data-links]:not(:has(> :not([hidden]))) {
   display: none;
 }
 

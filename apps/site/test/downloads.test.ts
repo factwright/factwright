@@ -26,6 +26,17 @@ describe('platform', () => {
     expect(platform(browser('', { userAgentData: { platform: 'Windows' } }))).toBe('windows');
   });
 
+  it('knows a Windows PC with a touch screen', () => {
+    expect(
+      platform(
+        browser('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', {
+          platform: 'Win32',
+          maxTouchPoints: 10,
+        }),
+      ),
+    ).toBe('windows');
+  });
+
   it('gives neither for a phone, a tablet, an iPad that calls itself a Mac, or Linux', () => {
     expect(platform(browser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'))).toBeNull();
     expect(platform(browser('Mozilla/5.0 (Linux; Android 15; Pixel 9)'))).toBeNull();

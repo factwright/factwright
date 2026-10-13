@@ -44,7 +44,7 @@ export function Sidebar({
   /** How many facts the fact bank holds, once there are some. */
   factCount?: number | undefined;
   /** An update to Factwright that's ready to install, and restarting into it. */
-  update: { status: UpdateStatus; busy: boolean; onRestart: () => void };
+  update: { status: UpdateStatus; busy: boolean; unsaved: () => boolean; onRestart: () => void };
 }) {
   return (
     <aside className={styles.sidebar}>
@@ -71,7 +71,12 @@ export function Sidebar({
         />
       </nav>
       <div className={styles.cards}>
-        <UpdateCard status={update.status} busy={update.busy} onRestart={update.onRestart} />
+        <UpdateCard
+          status={update.status}
+          busy={update.busy}
+          unsaved={update.unsaved}
+          onRestart={update.onRestart}
+        />
         <SyncCard status={sync} onOpen={onOpenSync} />
         <ClaudeCard
           status={claude}

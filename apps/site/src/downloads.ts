@@ -9,13 +9,13 @@ export type Browser = Pick<Navigator, 'userAgent' | 'platform' | 'maxTouchPoints
 /**
  * The computer the page is on, as the browser says, which picks the download to offer first.
  * A phone or tablet can't run Factwright, so it gets null and sees both, to send to its computer.
- * An iPad calls itself a Mac, but has a touch screen.
+ * An iPad calls itself a Mac, but has a touch screen, which no Mac has. Plenty of Windows PCs do.
  */
 export function platform(browser: Browser): Computer | null {
   const agent = browser.userAgent.toLowerCase();
-  if (/iphone|ipad|ipod|android/.test(agent) || browser.maxTouchPoints > 1) return null;
+  if (/iphone|ipad|ipod|android/.test(agent)) return null;
   const name = (browser.userAgentData?.platform || browser.platform || agent).toLowerCase();
-  if (name.includes('mac')) return 'mac';
+  if (name.includes('mac')) return browser.maxTouchPoints > 1 ? null : 'mac';
   if (name.includes('win')) return 'windows';
   return null;
 }

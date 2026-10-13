@@ -19,7 +19,13 @@ const executable =
   process.env.FACTWRIGHT_PACKAGED_APP ?? join(desktop, BUILT[process.platform] ?? 'none');
 
 test.describe.configure({ mode: 'serial' });
-test.skip(!existsSync(executable), `No built app at ${executable}: run pnpm dist:mac or dist:win.`);
+// On this computer, these wait for a build. In a release, a missing build fails them, so a build
+// that went somewhere else can't pass for one that works.
+const built = existsSync(executable);
+test.skip(
+  !built && !process.env.CI,
+  `No built app at ${executable}: run pnpm dist:mac or dist:win.`,
+);
 
 let dataDir: string;
 let app: ChildProcess;
@@ -40,6 +46,7 @@ function freePort(): Promise<number> {
 }
 
 test.beforeAll(async () => {
+  if (!built) throw new Error(`No built app at ${executable}.`);
   dataDir = newDataFolder();
   const port = await freePort();
   const printed: string[] = [];
@@ -95,7 +102,7 @@ test('opens on the jobs on file, with its Claude ready', async () => {
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
 });
 
-test('reaches Claude Code through its own plugin, and the setup check passes', async () => {
+test('reaches Claude Code with its own plugin, and the setup check passes', async () => {
   await expect
     .poll(
       () => {
@@ -108,6 +115,16 @@ test('reaches Claude Code through its own plugin, and the setup check passes', a
       { timeout: 30_000 },
     )
     .toBe('passed');
+});
+
+// Never on this computer, where it would start on the user's own data folder.
+test('won’t open with a debugging port on the user’s own data folder', async () => {
+  test.skip(!process.env.CI, 'Only on a build machine, which has no one’s data.');
+  const started = spawn(executable, ['--remote-debugging-port=0'], {
+    env: { ...process.env, FACTWRIGHT_UPDATES: 'off' },
+  });
+  const code = await new Promise((resolve) => started.once('exit', resolve));
+  expect(code).toBe(1);
 });
 
 test('reads and shows the fact bank', async () => {

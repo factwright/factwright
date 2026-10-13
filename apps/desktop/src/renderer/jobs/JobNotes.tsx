@@ -4,11 +4,13 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
+import { keepsDrafts } from '../unsaved.ts';
 import { DateEdit, longDate } from './DateEdit.tsx';
 import styles from './JobNotes.module.css';
 
 /** Notes typed but not added yet, by job, so moving to another job and back keeps them. */
 const drafts = new Map<string, string>();
+keepsDrafts(() => drafts.size > 0);
 
 /** The newest first: by the day they're about, then when they were written. */
 const newestFirst = (a: Note, b: Note) => b.on.localeCompare(a.on) || b.at.localeCompare(a.at);

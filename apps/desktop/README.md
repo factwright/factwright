@@ -31,7 +31,7 @@ them, notarizes the Mac app and puts them on downloads.factwright.com
 ([docs/releasing.md](../../docs/releasing.md)). An installed copy looks there every few hours,
 downloads a new version in the background, and shows **Update ready** at the bottom of the
 sidebar ([`src/main/updates.ts`](src/main/updates.ts)). It installs on restart, or the next time
-the user quits. A copy being developed never updates itself.
+the user quits. A copy being developed, or built on this computer, never updates itself.
 
 ## Claude's panel
 Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.js), in the workspace folder inside the app's data folder. Each run is locked down too:
