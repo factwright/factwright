@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import axe from 'axe-core';
@@ -33,6 +33,20 @@ const DOWNLOADS = [
 /** The download pages: the one that picks, and one for each computer. */
 const DOWNLOAD_PAGES = ['/download', '/download/mac', '/download/windows'];
 
+/** The privacy policy and the terms, which every page's footer links to. */
+const LEGAL_PAGES = ['/privacy', '/terms'];
+
+/** The one address the privacy policy and terms give for questions. */
+const CONTACT = 'mailto:privacy@factwright.com';
+
+/** Anthropic's own terms and privacy policy, which the privacy policy and terms point to. */
+const ANTHROPIC_LEGAL = [
+  'https://www.anthropic.com/legal/privacy',
+  'https://www.anthropic.com/legal/consumer-terms',
+  'https://www.anthropic.com/legal/commercial-terms',
+  'https://www.anthropic.com/legal/aup',
+];
+
 /** Where a download page says which version it offers, as the Worker's releaseLine fills it in. */
 const releaseLine = (computer: string) => `<p class="get-meta" data-release="${computer}"></p>`;
 
@@ -44,6 +58,8 @@ describe.each([
   'download.html',
   'download/mac.html',
   'download/windows.html',
+  'privacy.html',
+  'terms.html',
   '404.html',
 ])('%s', (page) => {
   it('passes an accessibility check', async () => {
@@ -64,13 +80,29 @@ describe.each([
     }
   });
 
-  it('links only to its own sections, the home page and the downloads', () => {
+  it('links only to its own sections, the site’s pages, the downloads and Anthropic’s terms', () => {
     const doc = open(page);
+    const legal = LEGAL_PAGES.includes(`/${page.replace('.html', '')}`);
+    const allowed = [
+      '/',
+      ...DOWNLOAD_PAGES,
+      ...DOWNLOADS,
+      ...LEGAL_PAGES,
+      ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL] : []),
+    ];
     for (const link of doc.querySelectorAll('a[href]')) {
       const href = link.getAttribute('href') ?? '';
       if (href.startsWith('#')) expect(doc.getElementById(href.slice(1)), href).not.toBeNull();
-      else expect(['/', ...DOWNLOAD_PAGES, ...DOWNLOADS]).toContain(href);
+      else expect(allowed).toContain(href);
     }
+  });
+
+  it('links to the privacy policy and the terms from its footer', () => {
+    const footer = open(page).querySelector('footer');
+    const hrefs = [...(footer?.querySelectorAll('a[href]') ?? [])].map((link) =>
+      link.getAttribute('href'),
+    );
+    expect(hrefs).toEqual(expect.arrayContaining(LEGAL_PAGES));
   });
 
   it('describes every picture, or hides it from screen readers', () => {
@@ -158,5 +190,41 @@ describe('the download pages', () => {
       link.getAttribute('href'),
     );
     expect(new Set(hrefs)).toEqual(new Set(['/download/mac', '/download/windows']));
+  });
+});
+
+describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
+  it('says when it took effect', () => {
+    const date = open(page).querySelector('.legal-date time')?.getAttribute('datetime') ?? '';
+    expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('gives the address for questions', () => {
+    expect(open(page).querySelector(`main a[href="${CONTACT}"]`)).not.toBeNull();
+  });
+
+  it('lists every section it has, in order', () => {
+    const doc = open(page);
+    const listed = [...doc.querySelectorAll('.legal-toc a')].map((link) =>
+      link.getAttribute('href')?.slice(1),
+    );
+    const sections = [...doc.querySelectorAll('.legal-text > section')].map((each) => each.id);
+    expect(listed).toEqual(sections);
+  });
+});
+
+describe('the site’s build', () => {
+  it('builds every page, and lists the ones to find in the sitemap', () => {
+    const config = readFileSync(join(SITE, 'vite.config.ts'), 'utf8');
+    const sitemap = readFileSync(join(SITE, 'public', 'sitemap.xml'), 'utf8');
+    // Every page in the site's folder, however many there come to be.
+    const pages = readdirSync(SITE, { recursive: true, encoding: 'utf8' }).filter(
+      (path) => path.endsWith('.html') && !/^(node_modules|dist|public)\b/.test(path),
+    );
+    expect(pages.length).toBeGreaterThan(6);
+    for (const page of pages) expect(config, page).toContain(`'${page.replaceAll('\\', '/')}'`);
+    for (const path of ['/', '/download', '/privacy', '/terms']) {
+      expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
+    }
   });
 });

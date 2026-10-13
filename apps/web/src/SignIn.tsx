@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
 import { Button } from '@factwright/ui';
 import { useState } from 'react';
 import styles from './page.module.css';
@@ -57,6 +58,17 @@ export function SignIn({
       )}
       <p className={styles.hint}>
         Signing in proves who you are. Your job hunt stays locked with a key only your devices hold.
+      </p>
+      <p className={styles.hint}>
+        By continuing, you agree to Factwright’s{' '}
+        <a href={TERMS_URL} target="_blank" rel="noreferrer">
+          terms of service
+        </a>
+        . Its{' '}
+        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
+          privacy policy
+        </a>{' '}
+        says what sync keeps.
       </p>
     </section>
   );

@@ -35,6 +35,11 @@
   color: var(--fw-bad);
 }
 
+.hint a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

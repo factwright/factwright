@@ -13,8 +13,8 @@ function theme(): Plugin {
 }
 
 /**
- * factwright.com: a static page, its download pages and its "not found" page, built on the app's
- * design system.
+ * factwright.com: a static page, its download pages, its privacy policy and terms, and its "not
+ * found" page, built on the app's design system.
  */
 export default defineConfig({
   plugins: [theme()],
@@ -29,6 +29,8 @@ export default defineConfig({
         download: 'download.html',
         downloadMac: 'download/mac.html',
         downloadWindows: 'download/windows.html',
+        privacy: 'privacy.html',
+        terms: 'terms.html',
         notFound: '404.html',
       },
     },

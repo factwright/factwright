@@ -53,3 +53,8 @@
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
 }
+
+.note a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+}

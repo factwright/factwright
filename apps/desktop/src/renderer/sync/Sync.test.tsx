@@ -125,6 +125,19 @@ describe('SyncDialog', () => {
     vi.useRealTimers();
   });
 
+  it('says signing in agrees to the terms and privacy policy, with a link to each', async () => {
+    await openDialog(apiFor('off'));
+    const terms = screen.getByRole('link', { name: 'terms of service' });
+    const privacy = screen.getByRole('link', { name: 'privacy policy' });
+    expect(terms.getAttribute('href')).toBe('https://factwright.com/terms');
+    expect(privacy.getAttribute('href')).toBe('https://factwright.com/privacy');
+    // The window opens links in the browser, so neither leaves the app.
+    expect([terms, privacy].map((link) => link.getAttribute('target'))).toEqual([
+      '_blank',
+      '_blank',
+    ]);
+  });
+
   it('says why a computer that synced before saves a new recovery key', async () => {
     const api = apiFor('off');
     render(

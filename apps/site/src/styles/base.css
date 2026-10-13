@@ -376,6 +376,31 @@ img {
   font-size: 13.5px;
 }
 
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  font-size: 14px;
+}
+
+.footer-top + .footer-links {
+  margin-top: 20px;
+}
+
+.footer-links a {
+  color: var(--fw-muted);
+  text-decoration: none;
+}
+
+.footer-links a:hover,
+.footer-links a[aria-current="page"] {
+  color: var(--fw-text);
+}
+
+.footer-links + .footer-legal {
+  margin-top: 16px;
+}
+
 .lost {
   display: flex;
   flex-direction: column;

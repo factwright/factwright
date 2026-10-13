@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
 import type { AccountInfo, AccountKeys } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { strToU8, zipSync } from 'fflate';
@@ -256,6 +257,18 @@ export function Account({
           {problem}
         </p>
       )}
+
+      <p className={page.hint}>
+        What sync keeps, and for how long, is in Factwright’s{' '}
+        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
+          privacy policy
+        </a>
+        . Using sync means you agree to the{' '}
+        <a href={TERMS_URL} target="_blank" rel="noreferrer">
+          terms of service
+        </a>
+        .
+      </p>
     </div>
   );
 }

@@ -1,0 +1,165 @@
+/*
+ * The privacy policy and the terms: long reading at a comfortable measure, the short version up
+ * top, and a list of sections that stays in view beside the text on wide screens.
+ */
+
+.legal {
+  padding-block: clamp(48px, 8vw, 96px) clamp(72px, 10vw, 128px);
+}
+
+.legal-head {
+  max-width: 760px;
+}
+
+.legal h1 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5.4vw, 56px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+}
+
+.legal-date {
+  margin-top: 14px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.legal-body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 720px);
+  gap: clamp(40px, 6vw, 88px);
+  margin-top: clamp(40px, 6vw, 64px);
+}
+
+.legal-toc {
+  position: sticky;
+  top: calc(var(--header) + 28px);
+  align-self: start;
+  font-size: 14px;
+}
+
+.legal-toc-title {
+  margin-bottom: 10px;
+  color: var(--fw-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.legal-toc ol {
+  display: grid;
+  gap: 1px;
+}
+
+.legal-toc a {
+  display: block;
+  margin-left: -10px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  color: var(--fw-muted);
+  text-decoration: none;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.legal-toc a:hover {
+  background: var(--fw-hover);
+  color: var(--fw-text);
+}
+
+.legal-text {
+  display: grid;
+  gap: 44px;
+}
+
+.legal-text h2 {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 2.4vw, 26px);
+  font-weight: 680;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.legal-text h3 {
+  margin-top: 28px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.legal-text p,
+.legal-text ul {
+  margin-top: 12px;
+  text-wrap: pretty;
+}
+
+.legal-text ul {
+  padding-left: 1.25em;
+  list-style: disc;
+}
+
+.legal-text li + li {
+  margin-top: 8px;
+}
+
+.legal-text li::marker {
+  color: var(--fw-muted);
+}
+
+.legal-text a {
+  color: var(--fw-accent-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.legal-text b {
+  font-weight: 650;
+}
+
+/* The disclaimers, which the law asks to stand out. */
+.legal-strong {
+  padding: 16px 18px;
+  border-left: 3px solid var(--fw-text);
+  border-radius: 0 10px 10px 0;
+  background: var(--fw-surface);
+  font-weight: 700;
+}
+
+.legal-summary {
+  padding: 26px 30px 28px;
+  border: 1px solid var(--fw-border);
+  border-radius: 16px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.legal-summary h2 {
+  font-size: 20px;
+}
+
+.legal-summary ul {
+  margin-top: 14px;
+}
+
+.legal-note {
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+@media (max-width: 900px) {
+  .legal-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .legal-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .legal-summary {
+    padding: 20px 20px 22px;
+  }
+}

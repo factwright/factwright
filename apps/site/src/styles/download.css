@@ -182,3 +182,15 @@
 .get-choice .button {
   margin-top: 20px;
 }
+
+/* What downloading agrees to, under the download. */
+.get-legal {
+  max-width: 520px;
+  margin-top: 18px;
+  color: var(--fw-muted);
+  font-size: 13.5px;
+}
+
+.get-legal a {
+  color: inherit;
+}

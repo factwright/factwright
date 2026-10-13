@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
 import { Button, Logo } from '@factwright/ui';
 import { CircleCheck, Laptop, LockKeyhole } from 'lucide-react';
 import { type ReactNode, useId } from 'react';
@@ -53,6 +54,17 @@ export function WelcomeStep({ claude, onOpenSync }: { claude: ReactNode; onOpenS
         ))}
       </ul>
       {claude}
+      <p className={styles.note}>
+        Using Factwright means you agree to its{' '}
+        <a href={TERMS_URL} target="_blank" rel="noreferrer">
+          terms of service
+        </a>
+        . Its{' '}
+        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
+          privacy policy
+        </a>{' '}
+        says what it collects.
+      </p>
       <p className={styles.note}>
         Already use Factwright on another computer?{' '}
         <Button variant="quiet" size="sm" onClick={onOpenSync}>

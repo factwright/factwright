@@ -49,6 +49,12 @@ describe('the account page', () => {
     expect(await screen.findByText('Factwright on Sam’s MacBook Pro')).toBeTruthy();
     expect(screen.getByText('This browser')).toBeTruthy();
     expect(screen.getByText('3.4 MB of 1 GB used, across 42 files.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'privacy policy' }).getAttribute('href')).toBe(
+      'https://factwright.com/privacy',
+    );
+    expect(screen.getByRole('link', { name: 'terms of service' }).getAttribute('href')).toBe(
+      'https://factwright.com/terms',
+    );
     expect((await axe.run(container)).violations).toEqual([]);
   });
 

@@ -4,6 +4,10 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- A privacy policy and terms of service, at factwright.com/privacy and factwright.com/terms. Every page of the site links to them. Downloading, the app's first step and signing in to sync each say they mean agreeing to the terms, and the privacy policy says what's collected.
+- The operator can delete an account for someone who asked by email, with a token only the operator has.
+
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
 - The sync server keeps less: a session keeps its device's name in place of everything the browser or app sent, and no IP address. GitHub's and Google's tokens and the profile picture link aren't kept, and Cloudflare's log of every request is off for the sync server and the website. A ticket to listen for changes no longer shows which account it's for.
@@ -11,9 +15,6 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Deleting an account signs out every device first, and the account's store then turns everything away, so nothing can fill it again. An upload the store turns away is deleted at once, and a deletion that failed partway finishes when tried again.
 - app.factwright.com tells browsers to keep to https.
 - The web view names each job's page by a code made with the account's key, so its address no longer shows the company and role to the server or the browser's history. It forgets its keys when it finds it was signed out from another device, by running out, or by the account being deleted, and a page left open forgets them and what it shows the next time it hears from the server. An older address that named a company is replaced once the job hunt opens, so it isn't left in the address bar or the tab's back list. When Factwright can't be reached, the web view says so, with a way to try again.
-
-### Added
-- The operator can delete an account for someone who asked by email, with a token only the operator has.
 
 ### Fixed
 - Signing in to sync again checks the account's key before anything syncs, and asks again after a restart until it has. An account deleted and made again gets a new account key and recovery key, which the old ones and any lost device can't open. Another account that uses another key is linked to only when asked, with **Use a different account** to end that sign-in instead.

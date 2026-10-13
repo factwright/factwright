@@ -140,6 +140,13 @@ describe('GetStarted', () => {
     const { container } = render(<Harness api={profileApi()} onSkip={onSkip} />);
     expect(await screen.findByRole('heading', { name: 'Let’s get you set up' })).toBeTruthy();
     expect(screen.getByText(/It never sees your Claude login/)).toBeTruthy();
+    // Using the app agrees to its terms, with both a click away in the browser.
+    expect(screen.getByRole('link', { name: 'terms of service' }).getAttribute('href')).toBe(
+      'https://factwright.com/terms',
+    );
+    expect(screen.getByRole('link', { name: 'privacy policy' }).getAttribute('href')).toBe(
+      'https://factwright.com/privacy',
+    );
     expect(screen.getByRole('status').textContent).toContain('Your Claude is ready · Pro plan.');
     expect((await axe.run(container)).violations).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
