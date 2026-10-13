@@ -150,7 +150,7 @@ export function App() {
     const userCode = new URLSearchParams(location.search).get('user_code') ?? '';
     return (
       <Shell nav={nav}>
-        <ApproveDevice userCode={userCode} />
+        <ApproveDevice userCode={userCode} providers={providers} />
       </Shell>
     );
   }

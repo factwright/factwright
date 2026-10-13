@@ -121,15 +121,11 @@ export class SyncClient {
 
   /**
    * Saves the locked account key. The first device saves it. "taken" means another device got
-   * there first, so this one should link to it instead. Pass the key ID being replaced to save a
-   * new recovery key.
+   * there first, so this one should link to it instead.
    */
-  async saveKeys(keyId: string, recovery: string, replacing?: string): Promise<'saved' | 'taken'> {
+  async saveKeys(keyId: string, recovery: string): Promise<'saved' | 'taken'> {
     try {
-      await this.request(API.keys, {
-        method: 'PUT',
-        json: { keyId, recovery, ...(replacing && { replacing }) },
-      });
+      await this.request(API.keys, { method: 'PUT', json: { keyId, recovery } });
       return 'saved';
     } catch (error) {
       if (error instanceof SyncError && error.kind === 'conflict') return 'taken';

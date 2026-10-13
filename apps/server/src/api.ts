@@ -14,7 +14,11 @@ import type { Auth } from './auth.ts';
 import { deviceName } from './auth-options.ts';
 import type { Env } from './env.ts';
 import { checkTicket, makeTicket } from './live.ts';
-import { SLOW_DOWN, type UserStore } from './store.ts';
+import { DELETED, SLOW_DOWN, type UserStore } from './store.ts';
+
+/** What the store throws before it writes anything, after which an upload's copy can go. */
+const REFUSED_BEFORE_WRITING = new Set([DELETED, SLOW_DOWN]);
+
 import { filesPrefix } from './store-tables.ts';
 
 const BASE_HEADERS = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
@@ -105,16 +109,11 @@ type Handler = (caller: Caller, params: string[]) => Promise<Response> | Respons
 const getKeys: Handler = async ({ store, account }) => json({ keys: await store.keys(account) });
 
 const putKeys: Handler = async ({ request, store, account }) => {
-  const { keyId, recovery, replacing } = await readJson(request, SMALL_BODY);
-  if (
-    !isKeyId(keyId) ||
-    typeof recovery !== 'string' ||
-    recovery.length > 200 ||
-    !(replacing === undefined || isKeyId(replacing))
-  ) {
+  const { keyId, recovery } = await readJson(request, SMALL_BODY);
+  if (!isKeyId(keyId) || typeof recovery !== 'string' || recovery.length > 200) {
     throw new Refused('The keys weren’t in the shape the server takes.');
   }
-  const saved = await store.saveKeys(account, keyId, recovery, replacing);
+  const saved = await store.saveKeys(account, keyId, recovery);
   return saved === 'saved'
     ? empty()
     : failure(409, 'taken', 'Another device already set up sync for this account.');
@@ -172,7 +171,14 @@ const putFile: Handler = async ({ request, env, store, account }, [id]) => {
     await env.FILES.delete(key);
     throw new Refused('The upload was cut short.');
   }
-  const result = await store.fileStored(account, id, key, size);
+  // A copy the store didn't take is deleted at once: refused, or a duplicate. After any other
+  // error the store may have kept it, so it stays.
+  const result = await store.fileStored(account, id, key, size).catch(async (error: unknown) => {
+    if (error instanceof Error && REFUSED_BEFORE_WRITING.has(error.message)) {
+      await env.FILES.delete(key);
+    }
+    throw error;
+  });
   if (result !== 'stored') await env.FILES.delete(key);
   if (result === 'full') return failure(507, 'full', 'Your account is out of space.');
   return empty(result === 'stored' ? 201 : 200);
@@ -320,7 +326,14 @@ async function listen(request: Request, env: Env, url: URL): Promise<Response> {
   }
   const headers = new Headers(request.headers);
   headers.set('x-factwright-account', account);
-  return env.STORES.get(env.STORES.idFromName(account)).fetch(new Request(request, { headers }));
+  return env.STORES.get(env.STORES.idFromName(account))
+    .fetch(new Request(request, { headers }))
+    .catch((error: unknown) => {
+      if (error instanceof Error && error.message === DELETED) {
+        return failure(401, 'signed-out', 'This account was deleted.');
+      }
+      throw error;
+    });
 }
 
 /**
@@ -364,6 +377,9 @@ export async function handleApi(request: Request, env: Env, auth: Auth): Promise
   } catch (error) {
     if (error instanceof Refused) return failure(400, 'refused', error.message);
     if (error instanceof TooBig) return failure(413, 'too-big', 'That request is too big.');
+    if (error instanceof Error && error.message === DELETED) {
+      return failure(401, 'signed-out', 'This account was deleted.');
+    }
     if (error instanceof Error && error.message === SLOW_DOWN) {
       return failure(429, 'slow-down', 'Too many requests. Wait a moment, then try again.', {
         'retry-after': '10',
