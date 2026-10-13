@@ -81,6 +81,9 @@ const api: FactwrightApi = {
   addFact: (fact) => ipcRenderer.invoke('facts:add', fact),
   removeFact: (target) => ipcRenderer.invoke('facts:remove', target),
   confirmFact: (target) => ipcRenderer.invoke('facts:confirm', target),
+  updateStatus: () => ipcRenderer.invoke('updates:status'),
+  onUpdateChanged: (listener) => subscribe('updates:changed', listener),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
   openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
 };
 

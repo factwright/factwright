@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, nativeTheme, safeStorage, session, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { TemplatePreviews } from './about/previews.ts';
 import { AboutStore } from './about/store.ts';
 import { RunServer } from './claude/run-server.ts';
@@ -18,6 +19,7 @@ import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
 import { factwrightTools } from './tools/index.ts';
+import { UpdateWatcher } from './updates.ts';
 import { createMainWindow, DEV_ICON } from './window.ts';
 
 // Set by `pnpm dev`: the screens come from Vite's dev server instead of the built files.
@@ -26,6 +28,9 @@ const startUrl = devUrl ?? `${APP_ORIGIN}/index.html`;
 
 /** The sync server. Development and tests point it at one running locally. */
 const syncServer = process.env.FACTWRIGHT_SERVER_URL ?? 'https://app.factwright.com';
+
+// On Windows, the installer's shortcuts carry this ID, and notifications need the app to match it.
+if (process.platform === 'win32') app.setAppUserModelId('com.factwright.app');
 
 if (app.requestSingleInstanceLock()) {
   start();
@@ -150,6 +155,17 @@ function start(): void {
       }),
     });
     await setup.load();
+    // An installed copy keeps itself up to date. One being developed doesn't, and the end-to-end
+    // tests turn it off.
+    const updates =
+      app.isPackaged && process.env.FACTWRIGHT_UPDATES !== 'off'
+        ? new UpdateWatcher({
+            updater: autoUpdater,
+            onStatus: (status) => toWindow('updates:changed', status),
+            log: (message) => console.warn(message),
+          })
+        : null;
+    updates?.start();
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
       about,
@@ -161,6 +177,7 @@ function start(): void {
       workspace,
       sync,
       dataDir,
+      updates,
     });
     void sync.start();
 
@@ -168,6 +185,7 @@ function start(): void {
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
     stopWithWindow(window);
     app.on('before-quit', () => {
+      updates?.stop();
       claude.stop();
       setup.stop();
       server.stop();

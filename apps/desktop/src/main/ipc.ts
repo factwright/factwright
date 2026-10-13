@@ -25,6 +25,7 @@ import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
 import { scopeOf } from '../shared/runs.ts';
+import type { UpdateStatus } from '../shared/updates.ts';
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { AboutStore } from './about/store.ts';
@@ -55,6 +56,7 @@ import {
 } from './policy.ts';
 import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
+import type { UpdateWatcher } from './updates.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
@@ -98,6 +100,8 @@ export interface IpcDeps {
   sync: SyncAccount;
   /** The app's own data folder, which holds what Claude may do without asking. */
   dataDir: string;
+  /** Keeps an installed copy up to date, or null for one that doesn't update itself. */
+  updates: UpdateWatcher | null;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -130,6 +134,7 @@ export function registerIpc({
   workspace,
   sync,
   dataDir,
+  updates,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -150,6 +155,10 @@ export function registerIpc({
   });
 
   answer('setup:latest', () => setup.current());
+
+  // Where an update stands, and restarting into one that's downloaded.
+  answer('updates:status', (): UpdateStatus => updates?.current() ?? { state: 'none' });
+  answer('updates:install', () => updates?.install() ?? false);
 
   // Which model Claude runs on, for everything and for each task. A change applies from the next
   // start, or the next task that needs another model.

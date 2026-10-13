@@ -49,6 +49,9 @@ pnpm check   # format, lint, typecheck and test
 pnpm fix     # apply formatting and safe lint fixes
 ```
 
+Releases are built, signed and published by GitHub when a version is tagged: see
+[docs/releasing.md](docs/releasing.md).
+
 ## Contributing
 Pull requests aren't open yet, but bug reports and ideas are welcome as issues. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

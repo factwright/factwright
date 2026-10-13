@@ -194,6 +194,18 @@ export function sampleApi(): FactwrightApi {
     ...sampleSync(query.get('sync')),
     ...sampleProfile(query.get('profile')),
     ...sampleFacts(query.get('profile')),
+    // ?update=ready shows an update waiting to be installed.
+    updateStatus: async () =>
+      query.get('update') === 'ready'
+        ? {
+            state: 'ready',
+            version: '0.2.0',
+            notes:
+              '- **Fact bank:** search reads what each tag means.\n- Resumes build faster on Windows.',
+          }
+        : { state: 'none' },
+    onUpdateChanged: () => () => {},
+    installUpdate: async () => true,
     // Which model Claude runs on, kept until the page reloads.
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {

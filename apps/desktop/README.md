@@ -14,14 +14,24 @@ It will:
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
-| [`scripts`](scripts) | The development runner, the app icon's drawing, and a fix node-pty needs after every install |
-| [`build`](build) | The app icon, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`). Installers will build it in, and the app shows it in the Dock while you develop |
+| [`scripts`](scripts) | The development runner, the app icons' drawing, a fix node-pty needs after every install, and a release's check |
+| [`build`](build) | The app icons, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`), and what the Mac's hardened runtime allows. The installers build them in, and the app shows the icon in the Dock while you develop |
+| [`release-notes`](release-notes) | What's new in each version, which installed copies show as they update |
 
 The window is locked down:
 - It runs sandboxed, with no Node and no access to files.
 - It loads only the app's own files, from an `app://` address, under a strict content security policy.
 - It can't navigate away or open other windows. Links to https sites open in your browser.
 - The main process checks that every request comes from the app's own page.
+
+## Installers and updates
+[`electron-builder.config.mjs`](electron-builder.config.mjs) makes the installers: a Mac disk image
+for Apple silicon and Intel, and a Windows installer that needs no administrator. A release signs
+them, notarizes the Mac app and puts them on downloads.factwright.com
+([docs/releasing.md](../../docs/releasing.md)). An installed copy looks there every few hours,
+downloads a new version in the background, and shows **Update ready** at the bottom of the
+sidebar ([`src/main/updates.ts`](src/main/updates.ts)). It installs on restart, or the next time
+the user quits. A copy being developed never updates itself.
 
 ## Claude's panel
 Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.js), in the workspace folder inside the app's data folder. Each run is locked down too:

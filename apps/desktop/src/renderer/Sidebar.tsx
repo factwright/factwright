@@ -2,15 +2,17 @@ import { NavItem } from '@factwright/ui';
 import { BookCheck, Briefcase, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
 import type { SyncStatus } from '../shared/sync.ts';
+import type { UpdateStatus } from '../shared/updates.ts';
 import { ClaudeCard } from './ClaudeCard.tsx';
 import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
+import { UpdateCard } from './updates/UpdateCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
 /** The app's places: the jobs, the fact bank, and everything else about the user. */
 export type Page = 'jobs' | 'facts' | 'profile';
 
-/** The sidebar: the app's places, then sync and the user's Claude at the bottom. */
+/** The sidebar: the app's places, then an update when there's one, sync and the user's Claude. */
 export function Sidebar({
   page,
   onPage,
@@ -23,6 +25,7 @@ export function Sidebar({
   onOpenClaudeSettings,
   jobCount,
   factCount,
+  update,
 }: {
   page: Page;
   onPage: (page: Page) => void;
@@ -40,6 +43,8 @@ export function Sidebar({
   jobCount?: number | undefined;
   /** How many facts the fact bank holds, once there are some. */
   factCount?: number | undefined;
+  /** An update to Factwright that's ready to install, and restarting into it. */
+  update: { status: UpdateStatus; busy: boolean; onRestart: () => void };
 }) {
   return (
     <aside className={styles.sidebar}>
@@ -66,6 +71,7 @@ export function Sidebar({
         />
       </nav>
       <div className={styles.cards}>
+        <UpdateCard status={update.status} busy={update.busy} onRestart={update.onRestart} />
         <SyncCard status={sync} onOpen={onOpenSync} />
         <ClaudeCard
           status={claude}

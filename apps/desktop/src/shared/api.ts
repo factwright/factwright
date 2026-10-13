@@ -23,6 +23,7 @@ import type {
 } from './profile.ts';
 import type { RunTask } from './runs.ts';
 import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
+import type { UpdateStatus } from './updates.ts';
 
 /** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
 export type ClaudeStatus =
@@ -323,4 +324,10 @@ export interface FactwrightApi {
   confirmFact(target: FactTarget): Promise<FactResult>;
   /** Opens the system's terminal app, where the user runs Claude Code's own commands. */
   openTerminal(): Promise<EditResult>;
+  /** Where an update to Factwright stands. */
+  updateStatus(): Promise<UpdateStatus>;
+  /** Listens for changes to where an update stands. Returns a function that stops listening. */
+  onUpdateChanged(listener: (status: UpdateStatus) => void): () => void;
+  /** Restarts into a downloaded update. Answers whether there was one to install. */
+  installUpdate(): Promise<boolean>;
 }

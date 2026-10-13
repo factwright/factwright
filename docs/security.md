@@ -110,6 +110,19 @@ A server that misbehaved couldn't read your data or forge it. It could still del
 ### The trade-off
 If you lose every device and your recovery key, your data can't be recovered, by you or by us. You can download an unencrypted copy whenever you like, from your account in the web view.
 
+## Installing and updating
+- **Signed.** The Mac app is signed with Neatifai's Developer ID and notarized by Apple. The
+  Windows installer is signed through Azure Artifact Signing. A release that isn't signed is
+  never published.
+- **Locked down.** The installed app can't be started as plain Node, take Node's options from the
+  environment, open a debugger from the command line, or load code from anywhere but its own
+  archive, which it checks.
+- **Updates are checked.** An installed copy downloads updates only from downloads.factwright.com,
+  over https. It installs one only if it matches the checksum in the update feed and carries the
+  same signature: Apple's check on a Mac, and the publisher's name on Windows.
+- **Asking for updates says little.** Looking for an update asks for the feed, which tells the
+  download site your IP address and that a copy of Factwright is looking, like any download.
+
 ## What still leaves your computer
 Whatever Claude reads goes to Anthropic, under your own account and Anthropic's terms. That's how Claude works, and Factwright doesn't add anyone else to that path.
 

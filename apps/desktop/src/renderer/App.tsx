@@ -38,6 +38,7 @@ import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
+import { useUpdates } from './updates/useUpdates.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
@@ -54,6 +55,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
   const today = useToday();
+  const update = useUpdates(api);
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
     [jobs, today],
@@ -191,6 +193,14 @@ export function App({ api }: { api: FactwrightApi }) {
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
+          update={{
+            status: update,
+            busy: isRunning(run.phase),
+            onRestart: () => {
+              // What's typed and not saved yet is saved first.
+              void about.flush().finally(() => api.installUpdate());
+            },
+          }}
         />
         <div className={styles.content}>
           <div className={styles.work}>
