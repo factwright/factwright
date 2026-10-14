@@ -108,15 +108,15 @@ export function renameKind(answers: AboutYou, id: string, name: string): KindEdi
 
 /**
  * The changes that set some of one kind of job's own answers. The first kind's are the answers'
- * own, as they were before there was a second. Another kind's change goes by its id, alone.
+ * own, as they were before there was a second. Another kind's change goes by its id, alone, and
+ * does nothing once that kind is gone.
  */
 export function changeKind(
   answers: AboutYou,
   id: string,
   changes: Partial<KindAnswers>,
 ): AnswerChanges {
-  const other = answers.otherKinds.some((kind) => kind.id === id);
-  return other ? { kindChanges: [{ id, ...changes }] } : changes;
+  return id === kindsOf(answers)[0]?.id ? changes : { kindChanges: [{ id, ...changes }] };
 }
 
 /**

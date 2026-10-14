@@ -3,8 +3,10 @@ import {
   type AboutYou,
   ANSWER_LIMITS,
   applyChanges,
+  type JobKind,
   mergeChanges,
   NO_ANSWERS,
+  parseAnswerChanges,
   readAnswers,
 } from './about.ts';
 import {
@@ -136,6 +138,115 @@ describe('kinds of job', () => {
     expect(renameKind(TWO, 'developer', 'project  MANAGER')).toMatchObject({ ok: false });
   });
 
+  it('come out the same however the changes were batched, as after a save that failed', () => {
+    const three = apply(
+      apply(TWO, addKind(TWO, 'Alpha')),
+      addKind(apply(TWO, addKind(TWO, 'Alpha')), 'Beta'),
+    );
+    const names = (answers: AboutYou) => kindsOf(answers).map((kind) => kind.name);
+    expect(names(three)).toEqual(['Developer', 'Project manager', 'Alpha', 'Beta']);
+    // Beta's name goes to Gamma and Alpha takes Beta's, in either order, in one go.
+    for (const kindChanges of [
+      [
+        { id: 'beta', name: 'Gamma' },
+        { id: 'alpha', name: 'Beta' },
+      ],
+      [
+        { id: 'alpha', name: 'Beta' },
+        { id: 'beta', name: 'Gamma' },
+      ],
+    ]) {
+      expect(names(applyChanges(three, { kindChanges }))).toEqual([
+        'Developer',
+        'Project manager',
+        'Beta',
+        'Gamma',
+      ]);
+    }
+    // Two kinds trading names keep their own.
+    expect(
+      names(
+        applyChanges(three, {
+          kindChanges: [
+            { id: 'alpha', name: 'Beta' },
+            { id: 'beta', name: 'Alpha' },
+          ],
+        }),
+      ),
+    ).toEqual(['Developer', 'Project manager', 'Alpha', 'Beta']);
+    // A kind renamed and a new one given its old name, in one go.
+    const designer = addKind(three, 'Designer');
+    if (!designer.ok) throw new Error(designer.message);
+    const batch = mergeChanges(
+      { kindChanges: [{ id: 'alpha', name: 'Lead' }] },
+      {
+        addedKinds: [{ ...(designer.changes.addedKinds?.[0] as JobKind), name: 'Alpha' }],
+      },
+    );
+    expect(names(applyChanges(three, batch))).toContain('Alpha');
+    expect(names(applyChanges(three, batch))).toContain('Lead');
+    // A kind added and given its titles in one go keeps them.
+    expect(
+      applyChanges(
+        three,
+        mergeChanges(designer.changes, changeKind(three, 'designer', { roles: ['UX'] })),
+      ).otherKinds.at(-1),
+    ).toMatchObject({ id: 'designer', roles: ['UX'] });
+    // A kind that's gone, as on a screen not yet up to date, changes nothing, the first included.
+    expect(applyChanges(three, changeKind(three, 'gone', { roles: ['UX'] }))).toEqual(three);
+  });
+
+  it('never let the first kind and another share a name or an id', () => {
+    const names = (answers: AboutYou) => kindsOf(answers).map((kind) => kind.name);
+    // The first takes a name another kind holds, while that kind takes the first's: neither lands.
+    const crossed = applyChanges(TWO, {
+      firstKind: { id: 'developer', name: 'Project manager' },
+      kindChanges: [{ id: 'project-manager', name: 'Developer' }],
+    });
+    expect(names(crossed)).toEqual(['Developer', 'Project manager']);
+    expect(
+      applyChanges(TWO, { firstKind: { id: 'project-manager', name: 'Lead' } }).firstKind,
+    ).toEqual(TWO.firstKind);
+  });
+
+  it('leave out adds that clash or run past the limit, without refusing the rest', () => {
+    // Another computer added a kind with this one's id meanwhile, so this add is left out, and
+    // the same name added again under a new id lands.
+    const synced = applyChanges(TWO, {
+      addedKinds: [{ ...(TWO.otherKinds[0] as JobKind), id: 'designer', name: 'UX' }],
+    });
+    const first = addKind(TWO, 'Designer');
+    const again = addKind(applyChanges(TWO, first.ok ? first.changes : {}), 'Designer');
+    expect(again).toMatchObject({ ok: false });
+    const batch = mergeChanges(first.ok ? first.changes : {}, {
+      addedKinds: [{ ...(TWO.otherKinds[0] as JobKind), id: 'designer-2', name: 'Designer' }],
+    });
+    expect(parseAnswerChanges(batch)).not.toBeNull();
+    expect(kindsOf(applyChanges(synced, batch)).map((kind) => kind.id)).toEqual([
+      'developer',
+      'project-manager',
+      'designer',
+      'designer-2',
+    ]);
+    expect(
+      applyChanges(synced, batch).otherKinds.find((kind) => kind.id === 'designer')?.name,
+    ).toBe('UX');
+    // Removing the kind that came from elsewhere still removes it.
+    const removing = mergeChanges(first.ok ? first.changes : {}, { removedKinds: ['designer'] });
+    expect(applyChanges(synced, removing).otherKinds.map((kind) => kind.id)).toEqual([
+      'project-manager',
+    ]);
+    // No more than the app keeps.
+    const many = Array.from({ length: 8 }, (_, n) => ({
+      ...(TWO.otherKinds[0] as JobKind),
+      id: `kind-${n}`,
+      name: `Kind ${n}`,
+    }));
+    expect(applyChanges(TWO, { addedKinds: many }).otherKinds).toHaveLength(
+      ANSWER_LIMITS.kinds - 1,
+    );
+  });
+
   it('join changes made one after another, dropping what a later removal undid', () => {
     const adding = addKind(TWO, 'Designer');
     if (!adding.ok) throw new Error(adding.message);
@@ -143,9 +254,10 @@ describe('kinds of job', () => {
       adding.changes,
       changeKind(TWO, 'project-manager', { roles: ['TPM'] }),
     );
-    // Added and removed again before saving: as if it never was.
+    // Added and removed again before saving: the add goes, and removing nothing does nothing.
     expect(mergeChanges(adding.changes, { removedKinds: ['designer'] })).toEqual({
       firstKind: TWO.firstKind,
+      removedKinds: ['designer'],
     });
     // A removed kind's changes go with it.
     expect(mergeChanges(typed, removeKind(TWO, 'project-manager'))).toEqual({

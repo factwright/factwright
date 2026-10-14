@@ -138,7 +138,8 @@ describe('parseAnswerChanges', () => {
     const tooMany = Array.from({ length: 31 }, (_, n) => `Title ${n}`);
     expect(parseAnswerChanges({ roles: tooMany })).toBeNull();
     expect(parseAnswerChanges({ addedKinds: [{ ...kind, roles: tooMany }] })).toBeNull();
-    expect(parseAnswerChanges({ addedKinds: [kind, { ...kind, id: 'pm-2' }] })).toBeNull();
+    // Two by one name can come together after a save that failed: adding leaves one out.
+    expect(parseAnswerChanges({ addedKinds: [kind, { ...kind, id: 'pm-2' }] })).not.toBeNull();
     // The whole list of kinds never comes from the window: it could undo changes made meanwhile.
     expect(parseAnswerChanges({ otherKinds: [kind] })).toBeNull();
   });

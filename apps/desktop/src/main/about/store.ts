@@ -177,24 +177,34 @@ export class AboutStore {
     // Kinds this version read from the file: one of those left out was removed.
     const read = new Set(before.otherKinds.map((kind) => kind.id));
     const ours = new Set(otherKinds.map((kind) => kind.id));
+    // What changed of a kind since it was read, all of it for a kind that's new.
+    const changes = (kind: object, was: object | null | undefined) =>
+      Object.fromEntries(
+        Object.entries(kind).filter(
+          ([key, value]) => !was || !same(value, (was as Record<string, unknown>)[key]),
+        ),
+      );
     const others = [
-      ...otherKinds.map((kind) => {
-        const was = before.otherKinds.find((each) => each.id === kind.id);
-        const changed = Object.entries(kind).filter(
-          ([key, value]) => !was || !same(value, was[key as keyof JobKind]),
-        );
-        return {
-          ...fieldsOf(rawOthers.find((entry) => fieldsOf(entry).id === kind.id)),
-          ...Object.fromEntries(changed),
-          id: kind.id,
-        };
-      }),
+      ...otherKinds.map((kind) => ({
+        ...fieldsOf(rawOthers.find((entry) => fieldsOf(entry).id === kind.id)),
+        ...changes(
+          kind,
+          before.otherKinds.find((each) => each.id === kind.id),
+        ),
+        id: kind.id,
+      })),
       ...rawOthers.filter((entry) => {
         const { id } = fieldsOf(entry);
         return !(typeof id === 'string' && (read.has(id) || ours.has(id)));
       }),
     ];
-    const first = firstKind ? { ...fieldsOf(kept.first), ...firstKind } : (kept.first ?? null);
+    // The first kind is left as the file has it unless it changed, as one this version can't
+    // read stands in for while it reads the file.
+    const first = !firstKind
+      ? (kept.first ?? null)
+      : same(before.firstKind, firstKind)
+        ? (kept.first ?? firstKind)
+        : { ...fieldsOf(kept.first), ...changes(firstKind, before.firstKind) };
     this.write(KINDS_FILE, `${JSON.stringify({ ...kept, first, others }, null, 2)}\n`);
   }
 

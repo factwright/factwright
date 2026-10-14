@@ -435,13 +435,17 @@ function kinds(value: unknown): JobKind[] | undefined {
   return kept;
 }
 
-/** Kinds of job the window adds, each whole and its own, or none. */
+/**
+ * Kinds of job the window adds, each whole, or none when any doesn't hold up. Two by one name,
+ * or more than the app keeps, can come together after a save that failed, and the changes
+ * leave those out as they're made, rather than refusing them and every save after.
+ */
 function addedKinds(value: unknown): JobKind[] | undefined {
-  if (!Array.isArray(value) || value.length >= ANSWER_LIMITS.kinds) return undefined;
+  if (!Array.isArray(value) || value.length > ANSWER_LIMITS.entries) return undefined;
   const kept: JobKind[] = [];
   for (const each of value) {
     const kind = jobKind(each, true);
-    if (!kind || kept.some((other) => sameKind(other, kind))) return undefined;
+    if (!kind) return undefined;
     kept.push(kind);
   }
   return kept;
@@ -607,10 +611,11 @@ export function parseAnswerChanges(value: unknown): AnswerChanges | null {
 }
 
 /**
- * The answers with changes made: each answer replaced, the kinds of job removed and added, and
- * each kind changed by its id. A change that would give two kinds one name or id, as when
- * another computer named a kind the same meanwhile, is left out, so the kinds always stand
- * together. A change to a kind that's gone does nothing.
+ * The answers with changes made: each answer replaced, and the kinds of job removed, renamed,
+ * added and changed by their ids. A change that would give two kinds one name or id, as when
+ * another computer named a kind the same meanwhile, is left out, and so is a kind added past as
+ * many as the app keeps, so the kinds always stand together. A change to a kind that's gone
+ * does nothing.
  */
 export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYou {
   const {
@@ -620,41 +625,58 @@ export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYo
     firstKind,
     ...rest
   } = changes;
+  let first = answers.firstKind;
   const others = answers.otherKinds.filter((kind) => !removed.includes(kind.id));
-  const first = firstKind ?? answers.firstKind;
   const clashes = (kind: KindName, except?: string) =>
     (first !== null && first.id !== except && sameKind(first, kind)) ||
     others.some((other) => other.id !== except && sameKind(other, kind));
-  for (const kind of added) if (!clashes(kind)) others.push(kind);
-  const kinds = others.map((kind) => {
-    const { name, ...own } = changed.find((each) => each.id === kind.id) ?? { id: kind.id };
-    const renamed = name && !clashes({ id: kind.id, name }, kind.id) ? { name } : {};
-    return { ...kind, ...own, ...renamed, id: kind.id };
-  });
-  // The first kind keeps its name when another kind already has the one it's given.
-  const firstClashes =
-    firstKind && kinds.some((kind) => kind.id !== firstKind.id && sameKind(kind, firstKind));
-  return {
-    ...answers,
-    ...rest,
-    firstKind: firstKind && !firstClashes ? firstKind : answers.firstKind,
-    otherKinds: kinds,
+  // The first kind named for the first time, as when the second kind is added.
+  if (firstKind && firstKind.id !== first?.id && !clashes(firstKind)) first = firstKind;
+  const renames: KindName[] = [
+    ...(firstKind && firstKind.id === first?.id ? [firstKind] : []),
+    ...changed.flatMap(({ id, name }) => (name ? [{ id, name }] : [])),
+  ];
+  // A name lands once its kind is there and no other kind has the name, so names handed along
+  // in one go, such as A's to B while B's went to C, all land. Two kinds trading names keep
+  // their own.
+  const land = () => {
+    for (let landed = true; landed; ) {
+      landed = false;
+      for (const rename of [...renames]) {
+        const at = others.findIndex((kind) => kind.id === rename.id);
+        if ((at < 0 && first?.id !== rename.id) || clashes(rename, rename.id)) continue;
+        renames.splice(renames.indexOf(rename), 1);
+        landed = true;
+        if (at >= 0) others[at] = { ...(others[at] as JobKind), name: rename.name };
+        else if (first) first = { ...first, name: rename.name };
+      }
+    }
   };
+  land();
+  for (const kind of added) {
+    if (others.length < ANSWER_LIMITS.kinds - 1 && !clashes(kind)) others.push(kind);
+  }
+  // Names given to kinds just added, or freed by them.
+  land();
+  for (const { id, name: _, ...own } of changed) {
+    const at = others.findIndex((kind) => kind.id === id);
+    if (at >= 0) others[at] = { ...(others[at] as JobKind), ...own };
+  }
+  return { ...answers, ...rest, firstKind: first, otherKinds: others };
 }
 
 /**
  * Changes made one after another, as one: the later wins, changes to one kind join, and a kind
- * added and then removed again is as if it never was.
+ * removed takes its earlier changes with it, and its add, when it was added since the last save.
  */
 export function mergeChanges(earlier: AnswerChanges, later: AnswerChanges): AnswerChanges {
   const removed = later.removedKinds ?? [];
-  const added = earlier.addedKinds ?? [];
-  // A kind added and removed again before either saved needs neither saving.
-  const undone = added.filter((kind) => removed.includes(kind.id)).map((kind) => kind.id);
-  const kept = [...added.filter((kind) => !undone.includes(kind.id)), ...(later.addedKinds ?? [])];
-  const gone = [
-    ...new Set([...(earlier.removedKinds ?? []), ...removed.filter((id) => !undone.includes(id))]),
+  const added = [
+    ...(earlier.addedKinds ?? []).filter((kind) => !removed.includes(kind.id)),
+    ...(later.addedKinds ?? []),
   ];
+  // Every removal stays: one of a kind that isn't there does nothing.
+  const gone = [...new Set([...(earlier.removedKinds ?? []), ...removed])];
   const changed = (earlier.kindChanges ?? []).filter((change) => !removed.includes(change.id));
   for (const change of later.kindChanges ?? []) {
     const at = changed.findIndex((each) => each.id === change.id);
@@ -666,7 +688,7 @@ export function mergeChanges(earlier: AnswerChanges, later: AnswerChanges): Answ
   ) as AnswerChanges;
   return {
     ...rest,
-    ...(kept.length > 0 && { addedKinds: kept }),
+    ...(added.length > 0 && { addedKinds: added }),
     ...(gone.length > 0 && { removedKinds: gone }),
     ...(changed.length > 0 && { kindChanges: changed }),
   };

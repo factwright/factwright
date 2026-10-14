@@ -188,6 +188,18 @@ describe('AboutStore', () => {
     ]);
   });
 
+  it('leaves a first kind it can’t read as it is, while another kind changes', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    const long = 'A name far longer than this version keeps for a kind of job, from a later one';
+    writeFileSync(
+      join(workspace(), KINDS_FILE),
+      JSON.stringify({ first: { id: 'lead', name: long }, others: [{ id: 'pm', name: 'PM' }] }),
+    );
+    store.saveAnswers(changeKind(store.answers(), 'pm', { levels: ['senior'] }));
+    expect(json(KINDS_FILE).first).toEqual({ id: 'lead', name: long });
+    expect(json(KINDS_FILE).others).toEqual([{ id: 'pm', name: 'PM', levels: ['senior'] }]);
+  });
+
   it('keeps a kinds file that doesn’t read, and puts it aside only once there are kinds to save', () => {
     mkdirSync(join(workspace(), 'about-me'), { recursive: true });
     writeFileSync(join(workspace(), KINDS_FILE), '{ "first": oops');
