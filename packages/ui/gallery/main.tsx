@@ -1,5 +1,14 @@
 import { FIT_TIERS, JOB_STATUSES, type JobStatus } from '@factwright/core';
-import { BookOpen, Briefcase, FileText, Plus, Search, SlidersHorizontal } from 'lucide-react';
+import {
+  BookOpen,
+  Briefcase,
+  FileText,
+  Gauge,
+  Info,
+  Plus,
+  Search,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { type ReactNode, StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -34,6 +43,7 @@ import {
   TagInput,
   TextArea,
   ThemeStyle,
+  Tooltip,
 } from '../src/index.ts';
 import styles from './gallery.module.css';
 
@@ -333,6 +343,43 @@ function Showcase({ name, palette }: { name: string; palette: Palette }) {
           {RUN_STATES.map((state) => (
             <RunStatus key={state} state={state} />
           ))}
+        </div>
+      </Section>
+
+      <Section title="Tooltips">
+        <p className={styles.small}>Rest the pointer on one, or reach it with Tab.</p>
+        <div className={styles.row}>
+          <Tooltip
+            content={
+              <>
+                <p>
+                  <strong>Best overall:</strong> Opus at Extra high.
+                </p>
+                <p>
+                  Results can vary with the level. Lower levels are quicker and use less of your
+                  plan, but can miss what a higher one would catch.
+                </p>
+              </>
+            }
+          >
+            {(trigger) => (
+              <Button size="sm" icon={<Gauge size={14} aria-hidden="true" />} {...trigger}>
+                Opus · Extra high
+              </Button>
+            )}
+          </Tooltip>
+          <Tooltip side="right" content="Factwright never sees your Claude login.">
+            {(trigger) => (
+              <Button
+                size="sm"
+                variant="quiet"
+                icon={<Info size={14} aria-hidden="true" />}
+                {...trigger}
+              >
+                Your login
+              </Button>
+            )}
+          </Tooltip>
         </div>
       </Section>
 

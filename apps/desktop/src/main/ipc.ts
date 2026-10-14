@@ -211,8 +211,10 @@ export function registerIpc({
     return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(([models, effort]) =>
       session.start(valid, {
         prompt: run ? runPrompt(run) : undefined,
-        model: modelFor(models, run),
-        effort: (plan) => effortFor(effort, run, plan),
+        choose: (levels) => ({
+          model: modelFor(models, run, levels),
+          effort: effortFor(effort, run, levels),
+        }),
         scope: scopeOf(run),
       }),
     );
@@ -220,16 +222,18 @@ export function registerIpc({
 
   // A task for the run that's open. One that needs another model or more effort, or may change
   // other files without asking, starts a new run instead. One that needs less effort runs at the
-  // open run's.
+  // open run's. A lighter model still gets a run of its own, as that's what saves the most of a
+  // plan, such as Sonnet for a job search on Pro.
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
     const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
     const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
     const thinking = session.effort();
+    const levels = session.levels();
     if (
-      differs(session.model(), modelFor(models, run)) ||
-      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, session.plan()))) ||
+      differs(session.model(), modelFor(models, run, levels)) ||
+      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, levels))) ||
       differs(session.scope(), scopeOf(run))
     ) {
       return { ok: false, reason: 'new-run' };

@@ -43,6 +43,7 @@ import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
+import { useLevelChoices } from './useLevelChoices.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
 
 const isView = (value: unknown): value is JobView =>
@@ -58,6 +59,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const about = useProfile(api);
   const today = useToday();
   const update = useUpdates(api);
+  const levels = useLevelChoices(api);
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
     [jobs, today],
@@ -193,6 +195,7 @@ export function App({ api }: { api: FactwrightApi }) {
           sync={sync}
           onOpenSync={() => setDialog('sync')}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
+          levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
           update={{
@@ -317,6 +320,9 @@ export function App({ api }: { api: FactwrightApi }) {
         <ClaudeSettingsDialog
           api={api}
           plan={ready ? status.plan : undefined}
+          method={ready ? status.method : undefined}
+          // The levels under Your Claude show each choice as it's saved.
+          onSaved={levels.saved}
           onClose={() => setDialog(null)}
         />
       )}
