@@ -92,17 +92,18 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 ### Adding a device
 A new device signs in to the same account, then gets the account key in one of three ways. In none of them can the server open it.
 
-**Approved from a device that's set up.** Nothing to type. It works as Matrix's emoji check (`m.sas.v1`) and Bluetooth's number comparison do:
+**Approved from a computer that's set up.** Nothing to type. It works as Matrix's emoji check (`m.sas.v1`) and Bluetooth's number comparison do:
 1. The new device asks to link. It makes a one-time key pair for this request alone (ECDH on P-256), and sends the server only a hash of its public key (SHA-256, with a random ID for the request). The hash fixes the key before anyone sees it.
-2. A device that's set up shows the request, with the name of the device asking, such as "Chrome on Windows". When the person chooses **Approve…**, it sends a one-time public key of its own.
+2. The desktop app on a computer that's set up shows the request, with the name of the device asking, such as "Chrome on Windows". When the person chooses **Approve…**, it sends a one-time public key of its own.
 3. Only then does the new device send its public key. The approving device checks it matches the hash, and stops if it doesn't.
 4. Each device works out the same secret from its own private key and the other's public key, and shows six emoji made from it, from Matrix's list. The person checks both screens show the same six, in the same order, and says so on each.
 5. Once they say so on the device that's set up, it seals the account key with a key made from the secret (HKDF, then AES-256-GCM, bound to the request and both public keys) and leaves it on the server. Once they say so on the new device, it picks the sealed key up, once, and opens it. A request runs out 10 minutes after it's made.
 
 What stops a server in the middle: to get the account key, or to slip the new device a key of its own, it would have to swap its own keys in for both devices' and still make both screens show the same emoji. The hash fixes the key it shows the approving device before it sees that device's key, and the new device shows its key only after the server has passed one along. So whatever it swaps in, the emoji on the two screens are each down to chance, and match once in 2^36 (about 69 billion) tries. Each try needs the person to start linking, and a miss shows them two different sets of emoji. That's why both screens ask: the approving device seals the key only once the person says they match there, and the new device takes a key only once they say so there.
 
+- Only the desktop app approves. A browser can ask, and gets the account key once, as with a code, but it never approves: the web view keeps only keys it can't read back out, so it has no account key to hand over, and it stays that way. A browser that could approve would have to keep the account key where the page can read it, and a server that was taken over could copy it whenever the web view opens, not only while a browser links.
 - Any device signed in to the account can ask, including one signed in by tricking someone into approving its sign-in code. So the approving device names the device asking, and says to approve only a device you're using right now. The server keeps one request per device at a time, five waiting per account, and ten an hour.
-- A device that's set up hears of a request as it's made, and shows it on its Sync card, with a notification if Factwright isn't in front.
+- A computer that's set up hears of a request as it's made, and shows it on its Sync card, with a notification if Factwright isn't in front.
 - A sync server from before this doesn't offer it, so the app and the web view offer it only when the server says it can.
 
 **With a link code.**
