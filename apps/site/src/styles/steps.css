@@ -286,35 +286,74 @@
   background: color-mix(in srgb, var(--term-pick) 14%, transparent);
 }
 
-/* Step 3: a fit check */
+/* Step 3: a job to review, its quick choices, and its fit check */
 .fit {
-  padding: 20px;
+  overflow: hidden;
 }
 
-.fit-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+.fit-top {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--fw-border);
 }
 
 .fit-company {
   color: var(--fw-muted);
-  font-size: var(--fw-text-sm);
+  font-size: 13px;
   font-weight: 550;
 }
 
 .fit-role {
+  margin-top: 2px;
   font-size: 17px;
   font-weight: 650;
+  line-height: 1.3;
   letter-spacing: -0.01em;
+}
+
+.fit-badges,
+.fit-moves {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.fit-badges {
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fit-moves {
+  gap: 6px;
+  padding: 16px 20px;
+}
+
+.fit .psec {
+  margin: 0;
+  padding: 0 20px;
+}
+
+.fit-body {
+  padding-bottom: 18px;
+}
+
+.fit-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.fit-from {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
 }
 
 .scores {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 20px;
-  margin-top: 18px;
+  margin-top: 10px;
 }
 
 .score-head {
@@ -382,9 +421,7 @@
 .fit-marks {
   display: grid;
   gap: 6px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--fw-border);
+  margin-top: 14px;
 }
 
 .fit-marks li {
@@ -417,25 +454,16 @@
 }
 
 .mood {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--fw-border);
+  margin-top: 20px;
 }
 
-.mood-head {
+.mood-text {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.mood-head b {
-  font-weight: 650;
-}
-
-.mood > p:last-child {
-  margin-top: 6px;
-  color: var(--fw-muted);
+  gap: 6px 8px;
+  margin-top: 8px;
+  font-size: 13px;
 }
 
 /* Step 4: Run buttons and Claude's panel */
@@ -463,8 +491,9 @@
   padding: 16px;
 }
 
-.run-card .panel-heading {
-  margin-top: 0;
+.run-card .psec-head {
+  min-height: 0;
+  margin: -2px 0 12px;
 }
 
 .mini-claude {
@@ -587,32 +616,58 @@
 }
 
 .phone-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
   padding-inline: 0.35em;
+}
+
+.phone-title b {
   font-size: 1.55em;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
+.phone-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--fw-muted);
+  font-size: 0.9em;
+  font-weight: 550;
+}
+
+.phone-update .icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+
 .phone-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.55em;
+  gap: 0.5em;
   margin-top: 0.7em;
 }
 
 .phone-stats span {
   display: flex;
   flex-direction: column;
-  padding: 0.55em 0.7em;
+  padding: 0.45em 0.7em;
   border: 1px solid var(--fw-border);
   border-radius: 0.8em;
   background: var(--fw-surface);
+}
+
+.phone-stats i {
   color: var(--fw-muted);
+  font-size: 0.85em;
+  font-style: normal;
+  font-weight: 550;
 }
 
 .phone-stats b {
-  color: var(--fw-text);
-  font-size: 1.36em;
+  font-size: 1.3em;
   font-weight: 650;
 }
 
@@ -620,30 +675,112 @@
   color: var(--fw-need);
 }
 
-.phone-row {
+/* The views scroll sideways on a phone, under its edge. These are scrolled to the end. */
+.phone-views {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  justify-content: flex-end;
+  margin: 0.8em -0.9em 0;
+  padding-right: 0.9em;
+  overflow: hidden;
+}
+
+.phone-seg {
+  display: inline-flex;
+  flex: none;
   gap: 0.1em;
+  padding: 0.2em;
+  border: 1px solid var(--fw-border);
+  border-radius: 0.7em;
+  background: var(--fw-sunken);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.phone-seg > span {
+  padding: 0.3em 0.55em;
+  border-radius: 0.55em;
+  font-weight: 500;
+}
+
+.phone-seg b {
+  color: var(--fw-muted);
+  font-weight: 500;
+}
+
+.phone-seg .is-selected {
+  background: var(--fw-surface);
+  box-shadow: 0 1px 2px rgb(20 20 10 / 0.1);
+  font-weight: 600;
+}
+
+.phone-search {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  height: 2.3em;
+  margin-top: 0.7em;
+  padding: 0 0.7em;
+  overflow: hidden;
+  border: 1px solid var(--fw-control-border);
+  border-radius: 0.7em;
+  background: var(--fw-surface);
+  color: var(--fw-muted);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.phone-search .icon {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.phone-search span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone-row {
+  display: grid;
+  gap: 0.15em;
   margin-top: 0.55em;
-  padding: 0.7em;
+  padding: 0.7em 0.8em;
   border: 1px solid var(--fw-border);
   border-radius: 0.9em;
   background: var(--fw-surface);
 }
 
-.phone-row b {
-  font-weight: 650;
+.phone-row-head,
+.phone-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
 }
 
-.phone-row span,
+.phone-row-head {
+  justify-content: space-between;
+}
+
+.phone-row-head b {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-role,
+.phone-meta,
 .phone-row em {
-  max-width: 100%;
   overflow: hidden;
   color: var(--fw-muted);
+  font-size: 0.95em;
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.phone-meta {
+  margin-top: 0.1em;
 }
 
 .phone-row .is-need {
@@ -652,10 +789,10 @@
 }
 
 .phone-row .pill {
-  height: 1.7em;
-  margin-top: 0.35em;
-  padding: 0 0.65em;
-  font-size: 0.9em;
+  flex: none;
+  height: 1.65em;
+  padding: 0 0.6em;
+  font-size: 0.85em;
 }
 
 @media (max-width: 520px) {

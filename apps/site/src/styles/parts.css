@@ -80,10 +80,29 @@
   height: 14px;
 }
 
-.pill-lg {
-  height: 28px;
-  padding: 0 12px;
-  font-size: 13px;
+/* A job's status as its menu shows it: a taller pill with a chevron. */
+.pill-select {
+  gap: 10px;
+  height: 30px;
+  padding: 0 11px 0 12px;
+  font-size: var(--fw-text-sm);
+  font-weight: 650;
+}
+
+.pill-select .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.4;
+}
+
+.tone-gray {
+  background: var(--fw-tone-gray-bg);
+  color: var(--fw-tone-gray-fg);
+}
+
+.tone-slate {
+  background: var(--fw-tone-slate-bg);
+  color: var(--fw-tone-slate-fg);
 }
 
 .tone-violet {
@@ -111,35 +130,31 @@
   color: var(--fw-tone-green-fg);
 }
 
-.tone-amber {
-  background: var(--fw-tone-amber-bg);
-  color: var(--fw-tone-amber-fg);
-}
-
-.panel-heading {
-  margin: 18px 0 8px;
-  font-size: var(--fw-text-md);
-  font-weight: 650;
-}
-
 .runs {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
+/* While Claude works, a job's other runs wait, as they do in the app. */
+.is-busy .run:not(.is-suggested),
+.is-waiting {
+  opacity: 0.6;
+}
+
 .run {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 9px 12px;
   border: 1px solid var(--fw-border);
   border-radius: 10px;
   background: var(--fw-surface);
   transition:
     transform 160ms ease,
     border-color 160ms ease,
-    background-color 160ms ease;
+    background-color 160ms ease,
+    opacity 240ms ease;
 }
 
 .run.is-suggested {
@@ -165,11 +180,8 @@
 }
 
 .run-text span {
-  overflow: hidden;
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .run-state {
@@ -201,6 +213,107 @@
 .run-state.is-running .run-dot {
   display: inline-block;
   animation: blink 1.6s ease-in-out infinite;
+}
+
+/* One part of a job's panel, under a heading that opens and closes it, with a few words on it. */
+.psec {
+  margin: 0 -24px;
+  padding: 0 24px;
+  border-top: 1px solid var(--fw-border);
+}
+
+.psec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  white-space: nowrap;
+}
+
+.psec-head .icon {
+  width: 15px;
+  height: 15px;
+  color: var(--fw-muted);
+}
+
+.psec-chevron {
+  margin-left: -3px;
+  stroke-width: 2.2;
+  transition: transform 120ms ease;
+}
+
+.psec.is-closed .psec-chevron {
+  transform: rotate(-90deg);
+}
+
+.psec-head b {
+  font-weight: 650;
+}
+
+.psec-sum {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  text-align: right;
+  text-overflow: ellipsis;
+}
+
+.psec > :last-child:not(.psec-head) {
+  padding-bottom: 18px;
+}
+
+.subheading {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.quiet {
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+/* A checkbox, as the system draws one, and a menu, as the app's own controls draw it. */
+.box {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: 4px;
+  background: var(--fw-surface);
+}
+
+.ui-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ui-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-surface);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ui-select .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--fw-muted);
 }
 
 .claude-head {

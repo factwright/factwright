@@ -131,7 +131,6 @@
 
 .hero-shot {
   position: relative;
-  max-width: 1140px;
   margin-top: clamp(48px, 6vw, 72px);
   container: shot / inline-size;
 }
