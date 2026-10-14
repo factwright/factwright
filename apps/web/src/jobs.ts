@@ -1,6 +1,7 @@
 import {
   type Attention,
   isInView,
+  isSetAside,
   JOB_VIEWS,
   type Job,
   type JobProgress,
@@ -41,27 +42,48 @@ export function phoneRows(jobs: readonly Job[], today: string): PhoneRow[] {
     .sort(byUrgency);
 }
 
-/** The rows in a view, narrowed to those matching what was typed in search. */
-export function visible(rows: readonly PhoneRow[], view: JobView, query: string): PhoneRow[] {
+/** Whether a row is in a view's list, leaving out To review's jobs set aside for later. */
+const listed = (view: JobView, row: PhoneRow) =>
+  isInView(view, row.progress.status) && !(view === 'review' && isSetAside(row.progress));
+
+/** The rows matching what was typed in search. */
+function matching(rows: readonly PhoneRow[], query: string): PhoneRow[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return rows.filter(({ job, progress }) => {
-    if (!isInView(view, progress.status)) return false;
+  return rows.filter(({ job }) => {
     const notes = [job.earlierNotes ?? '', ...job.notes.map((note) => note.text)].join(' ');
     const text = `${job.company} ${job.role} ${notes}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }
 
-/** How many jobs each view has. */
+/** The rows in a view, narrowed to those matching what was typed in search. */
+export function visible(rows: readonly PhoneRow[], view: JobView, query: string): PhoneRow[] {
+  return matching(rows, query).filter((row) => listed(view, row));
+}
+
+/** The jobs set aside for later, at the bottom of To review, the soonest back first. */
+export function setAside(rows: readonly PhoneRow[], view: JobView, query: string): PhoneRow[] {
+  if (view !== 'review') return [];
+  const back = (row: PhoneRow) => row.job.backOn ?? '9999';
+  return matching(rows, query)
+    .filter((row) => isSetAside(row.progress))
+    .sort((a, b) => back(a).localeCompare(back(b)));
+}
+
+/** How many jobs each view has. To review doesn't count the jobs set aside. */
 export function viewCounts(rows: readonly PhoneRow[]): Record<JobView, number> {
   return Object.fromEntries(
-    JOB_VIEWS.map((view) => [
-      view,
-      rows.filter((row) => isInView(view, row.progress.status)).length,
-    ]),
+    JOB_VIEWS.map((view) => [view, rows.filter((row) => listed(view, row)).length]),
   ) as Record<JobView, number>;
 }
 
-/** Opens on the furthest view with jobs in it, such as the interviews. */
-export const startingView = (rows: readonly PhoneRow[]): JobView =>
-  viewToOpen(rows.map((row) => row.progress.status));
+/**
+ * Opens on the furthest view with jobs in it, such as the interviews. Jobs set aside for later
+ * count only when they're all there is, so it opens on To review, which folds them away, only
+ * then.
+ */
+export function startingView(rows: readonly PhoneRow[]): JobView {
+  const counted = rows.filter((row) => !isSetAside(row.progress));
+  if (counted.length === 0 && rows.length > 0) return 'review';
+  return viewToOpen(counted.map((row) => row.progress.status));
+}

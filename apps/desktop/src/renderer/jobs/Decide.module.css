@@ -1,0 +1,95 @@
+/* A job's quick choices: a row of small buttons, wrapping when the panel is narrow. */
+.sort {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
+  margin: 0 0 var(--fw-space-4);
+  padding: 0;
+  border: 0;
+}
+
+.moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Named for screen readers; the buttons say what they do. */
+.legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* What goes with a status before or instead of applying, such as when a job comes back. */
+.box {
+  margin: 0 0 var(--fw-space-4);
+  padding: 12px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bar);
+}
+
+.boxHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+  min-height: 24px;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.undo {
+  height: 24px;
+  margin: -4px -8px -4px 0;
+}
+
+.line {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* The day it comes back, with a way to clear it at the end of the line. */
+.backOn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: var(--fw-space-2);
+}
+
+.noDay {
+  height: 26px;
+  margin-right: -6px;
+  padding: 0 6px;
+}
+
+/* A day to come back, a click away: a small button, as round as the chips beside it. */
+.backIn {
+  height: 28px;
+  border-radius: var(--fw-radius-full);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--fw-space-2);
+}
+
+.hint {
+  margin: var(--fw-space-2) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}

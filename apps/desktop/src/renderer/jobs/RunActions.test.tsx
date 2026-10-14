@@ -85,10 +85,11 @@ describe('RunActions', () => {
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
-  it('starts a skill on this job', async () => {
+  it('suggests a resume once the user will apply, and starts a skill on this job', async () => {
     const run = controls();
-    render(<RunActions job={job} status="checked" run={run} api={apiStub()} />);
+    render(<RunActions job={job} status="apply" run={run} api={apiStub()} />);
     expect(action(/Tailored resume/).className).toMatch(/suggested/);
+    expect(action(/Fit check/).className).not.toMatch(/suggested/);
     await userEvent.click(action(/Interview prep/));
     expect(run.start).toHaveBeenCalledWith({
       skill: 'interview-prep',
@@ -110,7 +111,7 @@ describe('RunActions', () => {
         },
       ],
     };
-    render(<RunActions job={withResume} status="resume" run={controls()} api={apiStub()} />);
+    render(<RunActions job={withResume} status="review" run={controls()} api={apiStub()} />);
     expect(action(/Fit check/).textContent).toMatch(/Ran$/);
     expect(action(/Tailored resume/).textContent).toMatch(/Ready$/);
     cleanup();
@@ -160,7 +161,7 @@ describe('the application questions', () => {
   const open = async (on = job) => {
     const run = controls();
     const api = apiStub();
-    render(<RunActions job={on} status="checked" run={run} api={api} />);
+    render(<RunActions job={on} status="review" run={run} api={api} />);
     await userEvent.click(action(/Application questions/));
     return { run, api, dialog: screen.getByRole('dialog', { name: 'Application questions' }) };
   };
@@ -247,7 +248,7 @@ describe('the application questions', () => {
       ],
     });
     vi.mocked(api.readShot).mockResolvedValue(new Uint8Array([1, 2, 3]));
-    render(<RunActions job={job} status="checked" run={run} api={api} />);
+    render(<RunActions job={job} status="review" run={run} api={api} />);
     await userEvent.click(action(/Application questions/));
     const picture = (await screen.findByRole('img', { name: 'Screenshot 1' })) as HTMLImageElement;
     expect(picture.src).toBe('data:image/png;base64,AQID');

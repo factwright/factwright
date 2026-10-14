@@ -30,6 +30,7 @@ const OUTCOME_TONES: Readonly<Record<JourneyOutcome, Tone>> = {
   Rejected: 'red',
   Withdrew: 'amber',
   'No response': 'gray',
+  'Role closed': 'slate',
   Passed: 'gray',
   'Not applied': 'gray',
 };

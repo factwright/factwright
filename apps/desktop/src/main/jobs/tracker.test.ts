@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { CollectedJob } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { trackerAsOf } from './testing.ts';
 import { type EditContext, Tracker } from './tracker.ts';
 
 const TODAY = '2026-10-10';
@@ -25,7 +26,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     search: null,
     searches: [],
     folder: null,
-    stage: 'checked',
+    stage: 'review',
     firstSeen: '2026-10-07',
     lastActivity: '2026-10-07',
     summary: null,
@@ -156,6 +157,97 @@ describe('updateJob', () => {
   it('says so when the job is gone', () => {
     expect(tracker.updateJob('gone', { earlierNotes: 'x' }, AT)).toMatchObject({ ok: false });
   });
+
+  it('keeps the day a job set aside comes back, and changes or clears it', () => {
+    tracker.updateJob('acme--staff', { status: 'later', backOn: '2026-11-02' }, AT);
+    expect(row()).toMatchObject({ status: 'later', statusOn: TODAY, backOn: '2026-11-02' });
+    tracker.updateJob('acme--staff', { backOn: '2026-11-09' }, AT);
+    expect(row()?.backOn).toBe('2026-11-09');
+    tracker.updateJob('acme--staff', { backOn: null }, AT);
+    expect(row()?.backOn).toBeNull();
+    expect(history()).toEqual([['later', TODAY]]);
+  });
+
+  it('keeps why the user passed, and a new pass replaces it', () => {
+    tracker.updateJob('acme--staff', { status: 'passed', passReason: 'pay' }, AT);
+    expect(row()).toMatchObject({ status: 'passed', passReason: 'pay' });
+    // The reason can come a moment after passing, from the chips that follow.
+    tracker.updateJob('acme--staff', { passReason: 'location' }, AT);
+    expect(row()?.passReason).toBe('location');
+    tracker.updateJob('acme--staff', { status: 'review' }, AT);
+    tracker.updateJob('acme--staff', { status: 'passed' }, AT);
+    expect(row()).toMatchObject({ status: 'passed', passReason: null });
+  });
+
+  it('keeps a set-aside job’s day when it moves on, so undoing the move brings both back', () => {
+    tracker.updateJob('acme--staff', { status: 'later', backOn: '2026-11-02' }, AT);
+    tracker.updateJob('acme--staff', { status: 'apply' }, AT);
+    expect(row()).toMatchObject({ status: 'apply', backOn: '2026-11-02' });
+    const [, moved] = tracker.history().get('acme--staff') ?? [];
+    tracker.undoChange(moved?.id ?? '', NOW);
+    expect(row()).toMatchObject({ status: 'later', backOn: '2026-11-02' });
+    // Setting it aside again starts over: no day, unless one is given.
+    tracker.updateJob('acme--staff', { status: 'review' }, AT);
+    tracker.updateJob('acme--staff', { status: 'later' }, AT);
+    expect(row()?.backOn).toBeNull();
+  });
+
+  it('reads the statuses Claude’s work used to set as To review, and undoes them', () => {
+    const old = (status: string, at: string) =>
+      tracker.applySyncRow('status_log', `old-${status}`, {
+        id: `old-${status}`,
+        job_id: 'acme--staff',
+        status,
+        at,
+      });
+    old('checked', '2026-10-01');
+    old('resume', '2026-10-02');
+    // As an earlier version left them: a status Claude's work set, and its history.
+    tracker.applySyncRow('jobs', 'acme--staff', {
+      ...tracker.syncRow('jobs', 'acme--staff'),
+      status: 'resume',
+      status_on: '2026-10-02',
+    });
+    expect(row()).toMatchObject({ status: 'review', statusOn: '2026-10-02' });
+    expect(history()).toEqual([
+      ['review', '2026-10-01'],
+      ['review', '2026-10-02'],
+    ]);
+    tracker.undoChange('old-resume', NOW);
+    expect(row()).toMatchObject({ status: 'review', statusOn: '2026-10-01' });
+    expect(tracker.syncRow('jobs', 'acme--staff')?.status).toBe('checked');
+  });
+});
+
+describe('updateJobs', () => {
+  beforeEach(() => {
+    tracker.saveCollected(
+      [collected('globex--staff', { company: 'Globex', companyKey: 'globex' })],
+      NOW,
+    );
+  });
+
+  it('makes the same change to each job, logging each, in one go', () => {
+    const moved = tracker.updateJobs(['acme--staff', 'globex--staff'], { status: 'passed' }, AT);
+    expect(moved).toEqual({ ok: true });
+    for (const id of ['acme--staff', 'globex--staff']) {
+      expect(row(id)).toMatchObject({ status: 'passed', statusOn: TODAY });
+      expect(history(id)).toEqual([['passed', TODAY]]);
+    }
+    tracker.updateJobs(['acme--staff', 'globex--staff'], { passReason: 'level' }, AT);
+    expect([row('acme--staff')?.passReason, row('globex--staff')?.passReason]).toEqual([
+      'level',
+      'level',
+    ]);
+  });
+
+  it('passes over jobs that are gone, and logs nothing for one already there', () => {
+    tracker.updateJob('acme--staff', { status: 'review' }, AT);
+    tracker.updateJobs(['acme--staff', 'gone', 'globex--staff'], { status: 'review' }, AT);
+    expect(history('acme--staff')).toHaveLength(1);
+    expect(row('globex--staff')?.status).toBe('review');
+    expect(tracker.updateJobs(['gone'], { status: 'review' }, AT)).toMatchObject({ ok: false });
+  });
 });
 
 describe('addJob', () => {
@@ -232,6 +324,15 @@ describe('calls', () => {
     tracker.updateJob('acme--staff', { status: 'rejected' }, AT);
     tracker.addCall('acme--staff', { kind: 'offer', onDate: TODAY }, AT);
     expect(row()?.status).toBe('rejected');
+    tracker.updateJob('acme--staff', { status: 'role-closed' }, AT);
+    tracker.addCall('acme--staff', { kind: 'final', onDate: '2026-10-01' }, AT);
+    expect(row()?.status).toBe('role-closed');
+  });
+
+  it('moves a job set aside, or passed on, forward when a call is booked', () => {
+    tracker.updateJob('acme--staff', { status: 'later' }, AT);
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-14' }, AT);
+    expect(row()?.status).toBe('screen');
   });
 
   it('leaves the status alone for other kinds of calls', () => {
@@ -314,11 +415,7 @@ describe('the database file', () => {
     first.updateJob('acme--staff', { earlierNotes: 'Kept' }, AT);
     first.close();
     // Back to the first version: no questions yet, nor anything since.
-    const old = new DatabaseSync(file);
-    old.exec(
-      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN questions; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 1;',
-    );
-    old.close();
+    trackerAsOf(file, 1);
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ earlierNotes: 'Kept', questions: [] });
     second.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
@@ -332,11 +429,7 @@ describe('the database file', () => {
     first.saveCollected([collected('acme--staff')], NOW);
     first.updateJob('acme--staff', { questions: ['Why Acme?'] }, AT);
     first.close();
-    const old = new DatabaseSync(file);
-    old.exec(
-      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
-    );
-    old.close();
+    trackerAsOf(file, 2);
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ questions: ['Why Acme?'], sent: [], asks: [] });
     second.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys, mostly.', AT);
@@ -345,7 +438,9 @@ describe('the database file', () => {
     ]);
     // Sync fills the columns it gained from what other devices sent before, and reads every
     // change again for a table it made, such as notes.
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['sent', 'asks']]]));
+    expect(second.gainedColumns()).toEqual(
+      new Map([['jobs', ['sent', 'asks', 'back_on', 'pass_reason']]]),
+    );
     expect(second.gainedTables()).toEqual(['notes']);
     second.close();
   });
@@ -356,9 +451,7 @@ describe('the database file', () => {
     first.saveCollected([collected('acme--staff')], NOW);
     first.updateJob('acme--staff', { earlierNotes: 'From the old box' }, AT);
     first.close();
-    const old = new DatabaseSync(file);
-    old.exec('DROP TABLE notes; PRAGMA user_version = 3;');
-    old.close();
+    trackerAsOf(file, 3);
     const second = new Tracker(file);
     expect(second.notes()).toEqual(new Map());
     expect(second.addNote('acme--staff', { text: 'Screen went well' }, AT)).toEqual({ ok: true });
@@ -369,7 +462,7 @@ describe('the database file', () => {
         .get('acme--staff')
         ?.map((note) => note.text),
     ).toEqual(['Screen went well']);
-    expect(second.gainedColumns().size).toBe(0);
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason']]]));
     expect(second.gainedTables()).toEqual(['notes']);
     second.close();
     // A tracker that's up to date, or new, made nothing.
@@ -377,6 +470,27 @@ describe('the database file', () => {
     expect(third.gainedTables()).toEqual([]);
     third.close();
     expect(new Tracker(':memory:').gainedTables()).toEqual([]);
+  });
+
+  it('adds the day a job comes back and why it was passed to a tracker from before them', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { status: 'passed', earlierNotes: 'Kept' }, AT);
+    first.close();
+    trackerAsOf(file, 4);
+    const before = new DatabaseSync(file);
+    expect(before.prepare('SELECT status, notes FROM jobs').get()).toEqual({
+      status: 'passed',
+      notes: 'Kept',
+    });
+    before.close();
+    const second = new Tracker(file);
+    expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason']]]));
+    second.updateJob('acme--staff', { passReason: 'company' }, AT);
+    expect(second.rows()[0]?.passReason).toBe('company');
+    second.close();
   });
 });
 

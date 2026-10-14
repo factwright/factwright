@@ -266,6 +266,31 @@ describe('progress', () => {
   it('ends a closed job with how it ended', () => {
     panel(byCompany('Meridian Freight'));
     expect(steps()).toEqual(['Found', 'Fit check', 'Applied', 'Rejected']);
+    cleanup();
+    panel(byCompany('Kestrel Robotics'));
+    expect(steps()).toEqual(['Found', 'Fit check', 'Applied', 'Role closed']);
+  });
+
+  it('shows what the user decided before applying, dated, to fix or undo', async () => {
+    const { api } = panel(byCompany('Quarry Labs'));
+    expect(steps()).toEqual(['Found', 'Fit check', 'To apply', 'Applied']);
+    expect(screen.getByRole('button', { name: /^When it moved to To apply/ })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Undo “Marked To apply”' }));
+    expect(api.undoStatusChange).toHaveBeenCalledWith('quarry-0');
+    cleanup();
+    // A job set aside says when it comes back.
+    panel(byCompany('Ridgeline Analytics'));
+    expect(steps()).toEqual(['Found', 'Later', 'Applied']);
+    const track = screen.getByRole('list', { name: 'Where it’s been' });
+    expect(within(track).getByText(/^Back \w{3} \d+$/)).toBeTruthy();
+    cleanup();
+    // Claude's work alone puts a job in To review, which isn't a step the user took.
+    panel(byCompany('Acme Robotics'));
+    expect(steps()).toEqual(['Found', 'Fit check', 'Applied']);
+    cleanup();
+    // Taken on by the user with no work of Claude's, it wasn't checked first.
+    panel(byCompany('Wavelength Audio'));
+    expect(steps()).toEqual(['Found', 'To review', 'Applied']);
   });
 
   it('fixes a step’s date once the whole date is in, and undoes the latest change', async () => {

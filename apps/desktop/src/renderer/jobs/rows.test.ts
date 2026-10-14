@@ -4,10 +4,12 @@ import {
   filterCount,
   foundOptions,
   jobRows,
+  laterRows,
   NO_FILTERS,
   startingView,
   stepFrom,
   viewCounts,
+  viewNow,
   visibleRows,
 } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
@@ -20,19 +22,27 @@ const companies = (list: readonly { job: { company: string } }[]) =>
 
 describe('visibleRows', () => {
   it('shows each view’s jobs, most recent activity first', () => {
-    expect(companies(visibleRows(rows, { ...ALL, view: 'review' }))).toEqual([
+    expect(companies(visibleRows(rows, { ...ALL, view: 'new' }))).toEqual([
       'Bluewave Staffing',
       'Copperleaf Energy',
+      'Granite Health',
     ]);
-    // Meridian and Orchard last changed on the same day, so they go by name.
+    // A job set aside comes back up into To review on its day, at the top.
+    expect(companies(visibleRows(rows, { ...ALL, view: 'review' }))).toEqual([
+      'Pinecrest Software',
+      'Acme Robotics',
+      'Wavelength Audio',
+    ]);
+    // Kestrel, Meridian and Orchard last changed on the same day, so they go by name.
     expect(companies(visibleRows(rows, { ...ALL, view: 'closed' }))).toEqual([
       'Sable Systems',
+      'Kestrel Robotics',
       'Meridian Freight',
       'Orchard Health',
     ]);
     expect(companies(visibleRows(rows, { ...ALL, view: 'apply' }))).toEqual([
-      'Acme Robotics',
       'Brightpath Learning',
+      'Quarry Labs',
     ]);
     const all = visibleRows(rows, ALL);
     const dates = all.map((row) => row.progress.lastActivity ?? '');
@@ -55,6 +65,24 @@ describe('visibleRows', () => {
       'Acme Robotics',
       'Bluewave Staffing',
       'Brightpath Learning',
+      'Granite Health',
+    ]);
+    expect(companies(visibleRows(rows, { ...ALL, query: 'role closed' }))).toEqual([
+      'Kestrel Robotics',
+    ]);
+  });
+
+  it('folds the jobs set aside at the bottom of To review, the soonest back first', () => {
+    expect(companies(laterRows(rows, { ...ALL, view: 'review' }))).toEqual([
+      'Ridgeline Analytics',
+      'Saltmarsh Games',
+    ]);
+    expect(laterRows(rows, { ...ALL, view: 'all' })).toEqual([]);
+    // Every job is in All, set aside or not.
+    expect(companies(visibleRows(rows, { ...ALL, query: 'later' }))).toEqual([
+      'Pinecrest Software',
+      'Ridgeline Analytics',
+      'Saltmarsh Games',
     ]);
   });
 
@@ -70,25 +98,32 @@ describe('visibleRows', () => {
       TODAY,
     );
     expect(visibleRows(archived, ALL)).toEqual([]);
-    expect(visibleRows(archived, { ...ALL, showArchived: true })).toHaveLength(12);
+    expect(visibleRows(archived, { ...ALL, showArchived: true })).toHaveLength(19);
   });
 
   it('filters by fit, source, pay and resumes', () => {
     expect(companies(visibleRows(rows, { ...ALL, tiers: ['strong'] }))).toEqual([
       'Fernway',
+      'Quarry Labs',
       'Northwind Labs',
       'Tidewater Analytics',
     ]);
     expect(companies(visibleRows(rows, { ...ALL, tiers: ['none'] }))).toEqual([
       'Bluewave Staffing',
+      'Wavelength Audio',
+      'Ridgeline Analytics',
       'Sable Systems',
+      'Saltmarsh Games',
     ]);
     // The top of the range counts: Lumen's $160k–$190k pays at least $190k.
     expect(companies(visibleRows(rows, { ...ALL, minPay: 190_000 }))).toEqual([
+      'Pinecrest Software',
       'Acme Robotics',
       'Fernway',
+      'Quarry Labs',
       'Copperleaf Energy',
       'Northwind Labs',
+      'Granite Health',
       'Lumen Health',
     ]);
     expect(visibleRows(rows, { ...ALL, hasResume: true })).toHaveLength(5);
@@ -101,8 +136,9 @@ describe('visibleRows', () => {
     expect(companies(visibleRows(rows, { ...ALL, found: `search:${linkedIn?.folder}` }))).toEqual([
       'Bluewave Staffing',
       'Brightpath Learning',
+      'Granite Health',
     ]);
-    expect(visibleRows(rows, { ...ALL, found: 'search:2026-10-hn-whos-hiring' })).toHaveLength(10);
+    expect(visibleRows(rows, { ...ALL, found: 'search:2026-10-hn-whos-hiring' })).toHaveLength(16);
     expect(visibleRows(rows, { ...ALL, found: 'from:Added by hand' })).toEqual([]);
     const byHand = jobRows(
       sampleJobs().map((job, i) =>
@@ -128,8 +164,8 @@ describe('filterCount and foundOptions', () => {
     expect(
       searches.map(({ label, count }) => [label.replace(/^LinkedIn .+/, 'LinkedIn'), count]),
     ).toEqual([
-      ['LinkedIn', 2],
-      ['HN October 2026', 10],
+      ['LinkedIn', 3],
+      ['HN October 2026', 16],
     ]);
     expect(others).toEqual([]);
     // Two searches of the same place say when each was.
@@ -153,25 +189,44 @@ describe('filterCount and foundOptions', () => {
 });
 
 describe('viewCounts', () => {
-  it('counts each view with the same search', () => {
+  it('counts each view with the same search, To review without the jobs set aside', () => {
     expect(viewCounts(rows, ALL)).toEqual({
-      review: 2,
+      new: 3,
+      review: 3,
       apply: 2,
       applied: 2,
       interviewing: 3,
-      closed: 3,
-      all: 12,
+      closed: 4,
+      all: 19,
     });
     expect(viewCounts(rows, { ...ALL, query: 'payments' })).toMatchObject({ applied: 1, all: 1 });
   });
 });
 
+describe('viewNow', () => {
+  it('opens a view kept before New on the view that holds those jobs now', () => {
+    expect(viewNow('review')).toBe('new');
+    expect(viewNow('apply')).toBe('review');
+    expect(viewNow('interviewing')).toBe('interviewing');
+    expect(viewNow(null)).toBeNull();
+  });
+});
+
 describe('startingView', () => {
-  it('opens on the furthest view with jobs in it, or on the ones to review', () => {
+  it('opens on the furthest view with jobs in it, or on the new ones', () => {
     expect(startingView(rows)).toBe('interviewing');
     const fresh = rows.filter((row) => row.progress.status === 'new');
-    expect(startingView(fresh)).toBe('review');
-    expect(startingView([])).toBe('review');
+    expect(startingView(fresh)).toBe('new');
+    expect(startingView([])).toBe('new');
+    // Jobs set aside, folded away, don't make it open on an empty To review.
+    const aside = rows.filter((row) => ['new', 'later'].includes(row.progress.status));
+    expect(startingView(aside.filter((row) => !row.progress.backFromLater))).toBe('new');
+    expect(startingView(aside)).toBe('review');
+    // With only jobs set aside, To review shows them, folded.
+    const onlyAside = aside.filter(
+      (row) => row.progress.status === 'later' && !row.progress.backFromLater,
+    );
+    expect(startingView(onlyAside)).toBe('review');
   });
 });
 

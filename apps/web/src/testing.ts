@@ -28,6 +28,8 @@ export function job(base: Partial<Job> & Pick<Job, 'id' | 'company'>): Job {
     outreach: [],
     status: null,
     statusOn: null,
+    backOn: null,
+    passReason: null,
     appliedOn: null,
     nextAction: null,
     nextOn: null,

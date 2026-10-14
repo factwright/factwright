@@ -73,6 +73,12 @@ const REFUSED = { ok: false, message: 'That change couldn’t be saved.' } as co
 const isId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 300;
 
+/** The most jobs the window may change at once: every job in a long list, but not a flood. */
+const MAX_JOBS_AT_ONCE = 5000;
+
+const isIds = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.length > 0 && value.length <= MAX_JOBS_AT_ONCE && value.every(isId);
+
 const isTextUpTo = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length <= max;
 
@@ -305,6 +311,13 @@ export function registerIpc({
   answer('jobs:update', (jobId, changes) => {
     const valid = parseJobChanges(changes);
     return isId(jobId) && valid ? jobs.updateJob(jobId, valid) : REFUSED;
+  });
+
+  // Several jobs at once take a new status, not a new date for the one they have.
+  answer('jobs:update-many', (jobIds, changes) => {
+    const valid = parseJobChanges(changes);
+    const redates = valid?.statusOn !== undefined && valid.status === undefined;
+    return isIds(jobIds) && valid && !redates ? jobs.updateJobs(jobIds, valid) : REFUSED;
   });
 
   answer('jobs:add', (job) => {

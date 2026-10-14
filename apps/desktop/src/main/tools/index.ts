@@ -129,7 +129,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'find_job',
       description:
-        'Checks whether the user has seen a job before, and how it went: the fit check, the job search, its folder and status. Give the company, or just the posting’s link when that’s all you have. Call it before starting work on any job, and start the reply with what it found.',
+        'Checks whether the user has seen a job before, and how it went: the fit check, the job search, its folder and status, with why they passed on it if they did. It also says why the user passed on jobs before, when they gave a reason more than once. Give the company, or just the posting’s link when that’s all you have. Call it before starting work on any job, and start the reply with what it found.',
       inputSchema: {
         type: 'object',
         properties: QUERY_PROPERTIES,
