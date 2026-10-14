@@ -29,7 +29,9 @@ repository's Releases page.
     (`asa-neatifaisigning`), so SmartScreen knows who made it.
 - **Published.** The installers go to the R2 bucket `factwright-downloads`, which serves
   `downloads.factwright.com`.
-  - Each version's files keep their version in the name, and never change.
+  - Each version's files keep their version in the name, and never change. Each goes up with its
+    sha256, so a publish that stopped partway can be finished: running it again leaves the files
+    that are up as they are, and puts up the rest.
   - `Factwright.dmg` and `Factwright-Setup.exe` are always the newest. The website links to them.
   - `latest-mac.yml` and `latest.yml` say which version is newest, with each file's checksum.
     They're uploaded last, so nothing finds a version before its files are there.
@@ -156,17 +158,50 @@ These builds are for trying out only: macOS and Windows warn about apps that are
 they have no update settings, so they never update themselves.
 
 ## If a release goes wrong
-An installed copy only moves forward, so a bad version is fixed by releasing the next one. To stop
-a bad version spreading first, put the previous version's files back where the newest go. Each
-release keeps its update feeds under `feeds/<version>/`:
+**If publishing stops partway,** such as an upload failing, choose **Re-run failed jobs** on the
+run. It leaves the files already up, uploads the rest, and puts the update feed up last. It
+refuses if a file that's up has other contents, as after **Re-run all jobs**, which builds new
+files: then release the next version. Publishing reads the update feed from R2 before it uploads
+anything, and stops if it can't tell what's out.
+
+**To take a bad version back:** an installed copy only moves forward, so a bad version is fixed by
+releasing the next one. To stop it spreading first, put the previous version's files back where the
+newest go, mark the bad one as taken back, so that neither publishing nor its release on GitHub can
+ever put it out again, and take its release off GitHub.
+
+If the bad version's release run is still going, cancel it first. You need the AWS CLI, an R2 API
+token with Object Read & Write on `factwright-downloads` (Cloudflare → R2 → Manage API tokens) as
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=auto`, and the CLI's classic
+transfer client, as its newer one can fail R2's signature checks:
+`aws configure set default.s3.preferred_transfer_client classic`.
+
+Each release keeps its update feeds under `feeds/<version>/`. To take 0.1.1 back to 0.1.0:
 
 ```bash
-aws s3 cp s3://factwright-downloads/feeds/0.1.0/latest-mac.yml s3://factwright-downloads/latest-mac.yml --endpoint-url https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com --cache-control no-cache --content-type text/yaml
+(
+  set -euo pipefail
+  endpoint=https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
+  echo "taken back" | aws s3 cp - s3://factwright-downloads/feeds/0.1.1/withdrawn --endpoint-url "$endpoint"
+  for feed in latest-mac.yml latest.yml; do
+    aws s3 cp "s3://factwright-downloads/feeds/0.1.0/$feed" "s3://factwright-downloads/$feed" \
+      --endpoint-url "$endpoint" --metadata-directive REPLACE --cache-control no-cache --content-type text/yaml
+  done
+  work=$(mktemp -d)
+  for pair in Factwright-0.1.0.dmg:Factwright.dmg Factwright-Setup-0.1.0.exe:Factwright-Setup.exe; do
+    aws s3 cp "s3://factwright-downloads/${pair%%:*}" "$work/${pair##*:}" --endpoint-url "$endpoint"
+    aws s3 cp "$work/${pair##*:}" "s3://factwright-downloads/${pair##*:}" --endpoint-url "$endpoint" --cache-control no-cache
+  done
+  if gh release view v0.1.1 --repo factwright/factwright > /dev/null 2>&1; then
+    gh release delete v0.1.1 --repo factwright/factwright --yes
+  fi
+  gh release edit v0.1.0 --repo factwright/factwright --latest
+)
 ```
 
-Do the same for `latest.yml`, and copy `Factwright-0.1.0.dmg` and `Factwright-Setup-0.1.0.exe`
-over `Factwright.dmg` and `Factwright-Setup.exe` with `--cache-control no-cache`. Copies that
-haven't updated yet stay where they are.
+It stops at the first step that fails, and can be run again. The feeds are copied with
+`--metadata-directive REPLACE`, which sets their headers without the tag handling R2 doesn't
+support. The installers are downloaded and uploaded again for the same reason, as a large copy
+within R2 asks for the source's tags. Copies that haven't updated yet stay where they are.
 
 ## The website
 The download pages, `factwright.com/download/mac` and `/download/windows`, offer the newest

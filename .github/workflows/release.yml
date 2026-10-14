@@ -57,11 +57,16 @@ jobs:
             exit 1
           fi
           node apps/desktop/scripts/release-check.ts "$GITHUB_REF_NAME"
-      # Each computer's version is checked, as each goes out on its own.
-      - name: It's newer than the version out now
+      # Each computer's version is checked, as each goes out on its own. A version taken back stops
+      # here, before any build, as publishing would refuse it anyway.
+      - name: It's newer than the version out now, and wasn't taken back
         if: env.RELEASING == 'true'
         run: |
           version="${GITHUB_REF_NAME#v}"
+          if curl --silent --fail --output /dev/null "https://downloads.factwright.com/feeds/$version/withdrawn"; then
+            echo "::error::Factwright $version was taken back, so it can't go out again. Release the next version instead."
+            exit 1
+          fi
           for feed in latest-mac.yml latest.yml; do
             live=$(curl --silent --fail "https://downloads.factwright.com/$feed" | sed -n 's/^version: //p' || true)
             newest=$(printf '%s\n%s\n' "$live" "$version" | sort -V | tail -1)
@@ -311,6 +316,11 @@ jobs:
           ATTESTED: ${{ !github.event.repository.private }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # A version taken back gets no release, even from a re-run of this job alone.
+          if curl --silent --fail --output /dev/null "https://downloads.factwright.com/feeds/$version/withdrawn"; then
+            echo "::notice::Factwright $version was taken back, so it gets no release on GitHub."
+            exit 0
+          fi
           notes="$RUNNER_TEMP/notes.md"
           cp "apps/desktop/release-notes/$version.md" "$notes"
           cat >> "$notes" <<NOTES
