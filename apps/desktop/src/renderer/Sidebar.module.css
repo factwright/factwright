@@ -23,3 +23,10 @@
   gap: var(--fw-space-3);
   margin-top: auto;
 }
+
+.version {
+  margin: 0;
+  padding: 0 var(--fw-space-1);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+}

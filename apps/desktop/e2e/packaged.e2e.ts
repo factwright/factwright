@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { createServer } from 'node:net';
 import { delimiter, join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
-import { desktop, fakeClaude } from './paths.ts';
+import { desktop, fakeClaude, version } from './paths.ts';
 import { newDataFolder } from './workspace.ts';
 
 /** Where the installers leave the app, unpacked, for each kind of computer. */
@@ -97,9 +97,10 @@ test.afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 });
 
-test('opens on the jobs on file, with its Claude ready', async () => {
+test('opens on the jobs on file, with its Claude ready and its version', async () => {
   await expect(window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
+  await expect(window.getByText(`Factwright ${version}`)).toBeVisible();
 });
 
 test('reaches Claude Code with its own plugin, and the setup check passes', async () => {
