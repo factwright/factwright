@@ -127,6 +127,10 @@ export class JobsService {
     return this.saved(this.deps.tracker.updateJob(jobId, changes, this.context()));
   }
 
+  updateJobs(jobIds: readonly string[], changes: JobChanges): EditResult {
+    return this.saved(this.deps.tracker.updateJobs(jobIds, changes, this.context()));
+  }
+
   addJob(job: NewJob): AddJobResult {
     return this.saved(this.deps.tracker.addJob(job, this.context()));
   }

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { type AboutYou, type AnswerChanges, NO_ANSWERS } from '../../shared/about.ts';
+import { type AboutYou, type AnswerChanges, applyChanges, NO_ANSWERS } from '../../shared/about.ts';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
@@ -28,7 +28,7 @@ let answers: AboutYou;
 const about = {
   answers: () => answers,
   saveAnswers: vi.fn((changes: AnswerChanges) => {
-    answers = { ...answers, ...changes };
+    answers = applyChanges(answers, changes);
     return answers;
   }),
 };
@@ -89,7 +89,7 @@ describe('find_job', () => {
     expect(answer).toBe(
       [
         'Seen before:',
-        `- Acme Robotics, Staff Engineer (job acme-robotics--staff-engineer): fit check Strong 82 on 2026-10-07; folder applications/${FOLDER}; status applied since 2026-10-08; applied 2026-10-08`,
+        `- Acme Robotics, Staff Engineer (job acme-robotics--staff-engineer): fit check Strong 82 on 2026-10-07; folder applications/${FOLDER}; status Applied since 2026-10-08; applied 2026-10-08`,
         'For everything on file, call job_details with the job’s id.',
       ].join('\n'),
     );
@@ -116,6 +116,36 @@ describe('find_job', () => {
     );
   });
 
+  it('says why the user passed, and when a reason for passing repeats', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.updateJob(id, { status: 'passed', passReason: 'pay' });
+    const found = await tool('find_job').run({ company: 'Acme Robotics' });
+    expect(found).toContain('status Passed since 2026-10-11, why: pay');
+    expect(found).not.toContain('Why the user passed');
+    for (const company of ['Globex', 'Initech', 'Stark', 'Hooli', 'Umbrella']) {
+      jobs.addJob({ company, role: 'Staff Engineer', status: 'passed' });
+    }
+    const [globex, initech, stark, hooli, umbrella] = jobs.list().jobs.filter((job) => job.manual);
+    const ids = [globex, initech, stark].map((job) => job?.id ?? '');
+    jobs.updateJobs(ids, { passReason: 'location' });
+    jobs.updateJob(hooli?.id ?? '', { passReason: 'company' });
+    jobs.updateJob(umbrella?.id ?? '', { passReason: 'pay' });
+    // Most given first. A reason given once isn't a pattern yet.
+    expect(await tool('find_job').run({ company: 'Tidewater Analytics' })).toBe(
+      [
+        'Not seen before: Tidewater Analytics.',
+        'Why the user passed on jobs before: location 3, pay 2.',
+      ].join('\n'),
+    );
+  });
+
+  it('says when a job set aside comes back', async () => {
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'later', backOn: '2026-11-02' });
+    expect(await tool('find_job').run({ company: 'Acme Robotics' })).toContain(
+      'status Later since 2026-10-11, back 2026-11-02',
+    );
+  });
+
   it('asks for a company or a link', async () => {
     await expect(tool('find_job').run({})).rejects.toThrow(
       'Give the company, or a link to the posting.',
@@ -136,7 +166,7 @@ describe('job_details', () => {
     jobs.addCall(id, { kind: 'screen', onDate: '2026-10-14', atTime: '10:30' });
     const answer = await tool('job_details').run({ job: id });
     expect(answer).toContain('## Acme Robotics, Staff Engineer');
-    expect(answer).toContain('- Status: screen since 2026-10-11');
+    expect(answer).toContain('- Status: Screen since 2026-10-11');
     expect(answer).toContain('- Fit check: Strong 82 (2026-10-07)');
     expect(answer).toContain('- Next step: Prepare by 2026-10-13');
     expect(answer).toContain(`- Folder: applications/${FOLDER}/`);
@@ -160,7 +190,7 @@ describe('job_details', () => {
       ].join('\n'),
     );
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled');
-    expect(answer).toContain('    2026-10-11  The user marked it screen');
+    expect(answer).toContain('    2026-10-11  The user marked it Screen');
   });
 
   it('gives the application’s questions, numbered, as questions to answer, with what was sent', async () => {
@@ -256,6 +286,47 @@ describe('job_details', () => {
     ).rejects.toThrow('Nothing on file for nope.');
   });
 
+  it('says which kind of job a job is under, when the user wants more than one', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    expect(await tool('job_details').run({ job: id })).not.toContain('Kind of job');
+    answers = {
+      ...answers,
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    // Nobody has said which it is yet, so it only counts as the first kind.
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Kind of job: not set yet, so it counts as Developer (`developer`) until a fit check or the user decides',
+    );
+    expect(await tool('find_job').run({ company: 'Acme' })).toContain('kind of job not set yet');
+    writeFileSync(
+      join(root, 'applications', FOLDER, 'job.md'),
+      `${readFileSync(join(root, 'applications', FOLDER, 'job.md'), 'utf8')}\n- **Kind of job:** developer`,
+    );
+    jobs.read();
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Kind of job: Developer (`developer`), from its fit check or job search',
+    );
+    jobs.updateJob(id, { kind: 'project-manager' });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Kind of job: Project manager (`project-manager`), as the user put it',
+    );
+    expect(await tool('find_job').run({ company: 'Acme' })).toContain(
+      'kind of job Project manager (`project-manager`)',
+    );
+  });
+
   it('finds a job by company, and says when nothing’s on file', async () => {
     expect(await tool('job_details').run({ company: 'Acme' })).toContain(
       'Job id: acme-robotics--staff-engineer',
@@ -300,6 +371,50 @@ describe('about_you', () => {
     expect(answer).not.toContain('Email');
   });
 
+  it('lists each kind of job with its own roles, levels and pay', async () => {
+    answers = {
+      ...answers,
+      roles: ['Staff Engineer'],
+      targetPay: '$200,000',
+      authorization: 'US citizen',
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: ['Program Manager'],
+          fields: ['product'],
+          levels: ['senior'],
+          minPay: '$140,000',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    const answer = await tool('about_you').run({});
+    expect(answer).toContain(
+      '- Kinds of job they want: Developer (`developer`), Project manager (`project-manager`).',
+    );
+    expect(answer).toContain(
+      [
+        '- Developer (`developer`):',
+        '    - Roles they want: Staff Engineer',
+        '    - Target base pay: $200,000',
+        '- Project manager (`project-manager`):',
+        '    - Roles they want: Program Manager',
+        '    - Kinds of work: Product management',
+        '    - Levels: Senior',
+        '    - Lowest base pay they’d take: $140,000',
+        '- Work authorization: US citizen',
+      ].join('\n'),
+    );
+    // A kind with nothing told yet says so, rather than a heading with nothing under it.
+    answers = { ...answers, roles: [], targetPay: '' };
+    expect(await tool('about_you').run({})).toContain(
+      '- Developer (`developer`):\n    - Nothing told yet.\n- Project manager',
+    );
+  });
+
   it('says where else to look when the user hasn’t told it anything', async () => {
     expect(await tool('about_you').run({})).toContain(
       'The user hasn’t told Factwright about themselves yet.',
@@ -328,6 +443,51 @@ describe('save_about_you', () => {
     });
   });
 
+  it('saves pay for the kind of job it’s for, and the rest for every kind', async () => {
+    answers = {
+      ...answers,
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    expect(
+      await tool('save_about_you').run({
+        kind: 'project-manager',
+        targetPay: '$170,000',
+        start: 'Right away',
+      }),
+    ).toBe(
+      'Saved to the user’s profile: Target base pay for Project manager: $170,000; When they can start: Right away.',
+    );
+    expect(answers).toMatchObject({
+      targetPay: '',
+      start: 'Right away',
+      otherKinds: [{ id: 'project-manager', targetPay: '$170,000' }],
+    });
+    // Pay without the kind it's for is refused, saying which kinds there are.
+    await expect(tool('save_about_you').run({ minPay: '$150,000' })).rejects.toThrow(
+      'With pay, give kind too, the kind of job it’s for: developer, project-manager.',
+    );
+    await tool('save_about_you').run({ kind: 'developer', minPay: '$150,000' });
+    expect(answers.minPay).toBe('$150,000');
+    for (const input of [
+      { kind: 'designer', targetPay: '$1' },
+      { kind: 'project-manager', start: 'Now' },
+    ]) {
+      await expect(tool('save_about_you').run(input)).rejects.toThrow('Give one or more of');
+    }
+  });
+
   it('refuses anything else, and saves nothing then', async () => {
     for (const input of [
       {},
@@ -336,6 +496,7 @@ describe('save_about_you', () => {
       { start: 42 },
       { start: 'x'.repeat(500) },
       { authorization: 'US citizen', files: '[]' },
+      { kind: 'developer', targetPay: '$200,000' },
     ]) {
       await expect(tool('save_about_you').run(input)).rejects.toThrow('Give one or more of');
     }
@@ -631,7 +792,14 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
       'Not built. Fix resume.json first:\n- resume.headline is missing.',
     );
-    for (const folder of ['../escape', 'base/../facts', 'base/Startup IC', 'base/']) {
+    for (const folder of [
+      '../escape',
+      'base/../facts',
+      'base/Startup IC',
+      'base/',
+      'base/pm/../../facts',
+      'base/a/b/c',
+    ]) {
       expect(await tool('build_resume').run({ folder })).toContain(
         'isn’t a job folder or a starting resume',
       );
@@ -661,6 +829,22 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: 'base/big-company-leader' })).toBe(
       'There’s no base/big-company-leader.json yet. Write the resume there first.',
     );
+  });
+
+  it('builds a kind of job’s starting resume in its own folder in base/', async () => {
+    mkdirSync(join(root, 'base', 'project-manager'), { recursive: true });
+    const data = { ...resume, layout: 'classic', output_name: 'AlexRiveraResume_PM' };
+    writeFileSync(
+      join(root, 'base', 'project-manager', 'startup-leader.json'),
+      JSON.stringify(data),
+    );
+    const answer = await tool('build_resume').run({
+      folder: 'base/project-manager/startup-leader',
+    });
+    expect(answer).toContain('Built base/project-manager/AlexRiveraResume_PM.pdf');
+    expect(
+      readFileSync(join(root, 'base', 'project-manager', 'AlexRiveraResume_PM.pdf'), 'utf8'),
+    ).toBe('%PDF-1.7 made up');
   });
 
   it('builds in a template of the user’s own, in the workspace’s templates folder', async () => {
@@ -700,6 +884,15 @@ describe('build_resume', () => {
     expect(readFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'utf8')).toBe('as sent');
     writeResume({ ...resume, output_name: 'AlexRiveraResume10112026_Acme_v2' });
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('_v2.pdf');
+  });
+
+  it('keeps them once the user withdrew, but not for a role that closed before applying', async () => {
+    writeResume(resume);
+    writeFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'as sent');
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'withdrawn' });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('stays as sent');
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'role-closed' });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Built applications/');
   });
 });
 

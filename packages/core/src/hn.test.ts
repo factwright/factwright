@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { hiringThread, hnItemUrl, hnThreadMarkdown, readHnThread } from './hn.ts';
 
+/** How long something takes, in milliseconds. */
+function timed(work: () => unknown): number {
+  const start = Date.now();
+  work();
+  return Date.now() - start;
+}
+
 const THREADS = {
   hits: [
     { objectID: '200', title: 'Ask HN: Who wants to be hired? (October 2026)' },
@@ -84,6 +91,30 @@ describe('readHnThread', () => {
         'Build robots.',
         '',
       ].join('\n'),
+    );
+  });
+});
+
+describe('a post made to keep the app busy', () => {
+  const post = (text: string) => readHnThread({ title: 't', children: [{ id: 1, text }] });
+
+  it('is read in a moment, however many links it leaves open', () => {
+    expect(timed(() => post('<a\t'.repeat(40_000)))).toBeLessThan(1000);
+    expect(timed(() => post('<a href="https://acme.com">x'.repeat(30_000)))).toBeLessThan(1000);
+    // Every "<a " here shares one ">", so each is read only up to it once.
+    expect(timed(() => post(`${'<a '.repeat(50_000)}>x</a>`))).toBeLessThan(1000);
+  });
+
+  it('gives its links as before', () => {
+    expect(
+      post(
+        'Acme <a href="https://acme.com/jobs">Jobs <a href="https://x.com">X</a>, ' +
+          '<a name="top">top</a> and <a href="https://acme.com/a-very-long-path">https://acme.com/a-very…</a>',
+      )?.posts[0]?.text,
+    ).toBe('Acme Jobs X (https://acme.com/jobs), top and https://acme.com/a-very-long-path');
+    // The address is the tag's last href="…", even after another attribute that mentions one.
+    expect(post('<a title="href=" href="https://acme.com/">Acme</a>')?.posts[0]?.text).toBe(
+      'Acme (https://acme.com/)',
     );
   });
 });

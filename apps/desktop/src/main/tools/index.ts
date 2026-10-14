@@ -1,4 +1,5 @@
 import { localDate } from '@factwright/core';
+import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import type { AboutStore } from '../about/store.ts';
 import type { JobsService } from '../jobs/service.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
@@ -120,6 +121,11 @@ const QUERY_PROPERTIES = {
 /** The tools Factwright gives each Claude Code run, in place of a shell. */
 export function factwrightTools(deps: ToolDeps): McpTool[] {
   const today = () => localDate(deps.now?.() ?? new Date());
+  // The user's kinds of job, when they want more than one, so each job says which it's under.
+  const kinds = () => {
+    const answers = deps.about.answers();
+    return hasKinds(answers) ? kindsOf(answers) : [];
+  };
   const reading = {
     cache: deps.cache ?? new ReadCache(),
     ...(deps.fetch && { fetch: deps.fetch }),
@@ -129,14 +135,14 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'find_job',
       description:
-        'Checks whether the user has seen a job before, and how it went: the fit check, the job search, its folder and status. Give the company, or just the posting’s link when that’s all you have. Call it before starting work on any job, and start the reply with what it found.',
+        'Checks whether the user has seen a job before, and how it went: the fit check, the job search, its folder and status, with why they passed on it if they did. It also says why the user passed on jobs before, when they gave a reason more than once. Give the company, or just the posting’s link when that’s all you have. Call it before starting work on any job, and start the reply with what it found.',
       inputSchema: {
         type: 'object',
         properties: QUERY_PROPERTIES,
         additionalProperties: false,
       },
       annotations: READS,
-      run: async (input) => findJob(deps.jobs.list().jobs, queryFrom(input), today()),
+      run: async (input) => findJob(deps.jobs.list().jobs, queryFrom(input), today(), kinds()),
     },
     {
       name: 'job_details',
@@ -165,7 +171,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           return `Nothing on file for ${id ?? (query?.company || query?.link)}.`;
         }
         const details = await Promise.all(
-          found.map((job) => jobDetails(job, deps.workspace, today())),
+          found.map((job) => jobDetails(job, deps.workspace, today(), kinds())),
         );
         return details.join('\n\n');
       },
@@ -208,7 +214,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           folder: {
             type: 'string',
             description:
-              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer, or base/<name> for the starting resume in base/<name>.json.',
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer, or base/<name> for the starting resume in base/<name>.json, or base/<kind>/<name> for one of a kind of job’s in base/<kind>/<name>.json.',
           },
           format: {
             type: 'string',
@@ -440,7 +446,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_about_you',
       description:
-        'Saves something the user told you that applications and recruiters ask for, so nobody asks again: their work authorization, when they can start (with any notice period), whether they’d relocate, their target or lowest base pay, or a contact detail. Save only what they said, in their words, and only what holds for every job, never one job’s pay.',
+        'Saves something the user told you that applications and recruiters ask for, so nobody asks again: their work authorization, when they can start (with any notice period), whether they’d relocate, their target or lowest base pay, or a contact detail. Save only what they said, in their words, and only what holds for every job, never one job’s pay. When they want more than one kind of job, pay is each kind’s own: name the kind it’s for.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -463,6 +469,11 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             description: 'The base pay they’re aiming for, such as “$180,000”.',
           },
           minPay: { type: 'string', description: 'The least base pay they’d take.' },
+          kind: {
+            type: 'string',
+            description:
+              'Which kind of job the pay is for, by its id from about_you, such as project-manager, when they want more than one. Without it, the first kind.',
+          },
           email: { type: 'string' },
           phone: { type: 'string' },
           location: { type: 'string', description: 'Where they live, such as “Denver, CO”.' },
@@ -474,10 +485,19 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which they OK unless they chose otherwise.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input) => {
-        const read = aboutYouChanges(input, deps.about.answers());
+        const current = deps.about.answers();
+        const read = aboutYouChanges(input, current);
         if (!read) {
+          const ids = hasKinds(current) ? kindsOf(current).map((kind) => kind.id) : [];
           throw new Error(
-            `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text. relocate is no, maybe or yes.`,
+            [
+              `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text. relocate is no, maybe or yes.`,
+              ids.length > 0
+                ? `With pay, give kind too, the kind of job it’s for: ${ids.join(', ')}.`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' '),
           );
         }
         deps.about.saveAnswers(read.changes);

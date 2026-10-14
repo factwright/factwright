@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { NO_ANSWERS } from '../../shared/about.ts';
+import { KINDS_FILE, NO_ANSWERS } from '../../shared/about.ts';
+import { addKind, changeKind, removeKind } from '../../shared/kinds.ts';
 import { AboutStore } from './store.ts';
 import type { CheckedUpload } from './uploads.ts';
 
@@ -100,6 +101,144 @@ describe('AboutStore', () => {
     expect(read('searches/criteria.md')).toContain('- **Level:** Senior.');
     expect(read('searches/criteria-before-2026-10-12.md')).toBe('# My own criteria\n');
     expect(store.profile().status.criteria).toBe('app');
+  });
+
+  it('keeps the kinds of job in their own file, which an older app’s answers never drop', () => {
+    store.saveAnswers({ roles: ['Staff Engineer'], levels: ['senior'] });
+    // With one kind, nothing new is written.
+    expect(existsSync(join(workspace(), KINDS_FILE))).toBe(false);
+    const added = addKind(store.answers(), 'Project manager', 'Developer');
+    if (!added.ok) throw new Error(added.message);
+    store.saveAnswers(added.changes);
+    store.saveAnswers(
+      changeKind(store.answers(), 'project-manager', { roles: ['Program Manager'] }),
+    );
+    expect(json(KINDS_FILE)).toEqual({
+      first: { id: 'developer', name: 'Developer' },
+      others: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: ['Program Manager'],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    });
+    // answers.json stays as it was, with the first kind's answers.
+    const saved = json('about-me/answers.json');
+    expect(saved.roles).toEqual(['Staff Engineer']);
+    expect(saved).not.toHaveProperty('otherKinds');
+    expect(saved).not.toHaveProperty('firstKind');
+    // An older app rewrites answers.json with only what it knows, and the kinds stay.
+    writeFileSync(
+      join(workspace(), 'about-me', 'answers.json'),
+      JSON.stringify({ ...saved, roles: ['Principal Engineer'] }),
+    );
+    expect(store.answers()).toMatchObject({
+      roles: ['Principal Engineer'],
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [{ id: 'project-manager', roles: ['Program Manager'] }],
+    });
+    // Back to one kind, the first keeps its name and id for next time.
+    store.saveAnswers(removeKind(store.answers(), 'project-manager'));
+    expect(json(KINDS_FILE)).toEqual({ first: { id: 'developer', name: 'Developer' }, others: [] });
+    expect(store.answers().otherKinds).toEqual([]);
+  });
+
+  it('keeps what it doesn’t know in the kinds file, as a later version or a hand edit left it', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    const file = {
+      first: { id: 'developer', name: 'Developer', color: 'blue' },
+      others: [
+        { id: 'pm', name: 'Project manager', roles: ['TPM'], rate: 'hourly' },
+        { id: 'qa', name: 'QA lead', levels: ['principal-plus'] },
+        { id: 'Bad Id', name: 'Broken' },
+        { id: 'pm-2', name: 'project manager' },
+      ],
+      version: 2,
+    };
+    writeFileSync(join(workspace(), KINDS_FILE), JSON.stringify(file));
+    expect(store.answers().otherKinds.map((kind) => kind.id)).toEqual(['pm', 'qa']);
+    // Saving another answer leaves the file as it was.
+    const before = read(KINDS_FILE);
+    store.saveAnswers({ quiet: true });
+    expect(read(KINDS_FILE)).toBe(before);
+    // Changing one kind writes only what changed, over what was there.
+    store.saveAnswers(changeKind(store.answers(), 'pm', { levels: ['senior'] }));
+    expect(json(KINDS_FILE)).toEqual({
+      first: { id: 'developer', name: 'Developer', color: 'blue' },
+      others: [
+        { id: 'pm', name: 'Project manager', roles: ['TPM'], rate: 'hourly', levels: ['senior'] },
+        { id: 'qa', name: 'QA lead', levels: ['principal-plus'] },
+        { id: 'Bad Id', name: 'Broken' },
+        { id: 'pm-2', name: 'project manager' },
+      ],
+      version: 2,
+    });
+    // Removing a kind it read takes it out, and leaves the rest.
+    store.saveAnswers(removeKind(store.answers(), 'pm'));
+    expect(json(KINDS_FILE).others).toEqual([
+      { id: 'qa', name: 'QA lead', levels: ['principal-plus'] },
+      { id: 'Bad Id', name: 'Broken' },
+      { id: 'pm-2', name: 'project manager' },
+    ]);
+  });
+
+  it('leaves a first kind it can’t read as it is, while another kind changes', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    const long = 'A name far longer than this version keeps for a kind of job, from a later one';
+    writeFileSync(
+      join(workspace(), KINDS_FILE),
+      JSON.stringify({ first: { id: 'lead', name: long }, others: [{ id: 'pm', name: 'PM' }] }),
+    );
+    store.saveAnswers(changeKind(store.answers(), 'pm', { levels: ['senior'] }));
+    expect(json(KINDS_FILE).first).toEqual({ id: 'lead', name: long });
+    expect(json(KINDS_FILE).others).toEqual([{ id: 'pm', name: 'PM', levels: ['senior'] }]);
+  });
+
+  it('keeps a kinds file that doesn’t read, and puts it aside only once there are kinds to save', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    writeFileSync(join(workspace(), KINDS_FILE), '{ "first": oops');
+    store.saveAnswers({ roles: ['Staff Engineer'] });
+    expect(read(KINDS_FILE)).toBe('{ "first": oops');
+    const added = addKind(store.answers(), 'Project manager', 'Developer');
+    if (!added.ok) throw new Error(added.message);
+    store.saveAnswers(added.changes);
+    expect(read('about-me/kinds-of-job-before-2026-10-12.json')).toBe('{ "first": oops');
+    expect(json(KINDS_FILE).first).toEqual({ id: 'developer', name: 'Developer' });
+  });
+
+  it('sets the page count by every kind of job’s levels', () => {
+    store.start();
+    const added = addKind(store.answers(), 'Analyst', 'Engineer');
+    if (!added.ok) throw new Error(added.message);
+    store.saveAnswers(added.changes);
+    store.saveAnswers(changeKind(store.answers(), 'analyst', { levels: ['entry'] }));
+    expect(json('guide/lint.json').maxPages).toBe(1);
+  });
+
+  it('gives criteria.md a section for each kind of job', () => {
+    store.start();
+    store.saveAnswers({ roles: ['Staff Engineer'], levels: ['senior'], workplaces: ['remote'] });
+    const added = addKind(store.answers(), 'Project manager', 'Developer');
+    if (!added.ok) throw new Error(added.message);
+    store.saveAnswers(added.changes);
+    store.saveAnswers(
+      changeKind(store.answers(), 'project-manager', {
+        roles: ['Program Manager'],
+        levels: ['lead'],
+      }),
+    );
+    const criteria = read('searches/criteria.md');
+    expect(criteria).toContain('### Developer (`developer`)\n- **Level:** Senior.');
+    expect(criteria).toContain(
+      '### Project manager (`project-manager`)\n- **Level:** Lead or principal.',
+    );
+    expect(criteria).toContain('- **Where:** Remote.');
   });
 
   it('leaves a page count set by hand alone, until the user picks one or their level says', () => {

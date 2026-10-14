@@ -22,6 +22,7 @@ const api: FactwrightApi = {
   listJobs: () => ipcRenderer.invoke('jobs:list'),
   jobDocs: (jobId) => ipcRenderer.invoke('jobs:docs', jobId),
   updateJob: (jobId, changes) => ipcRenderer.invoke('jobs:update', jobId, changes),
+  updateJobs: (jobIds, changes) => ipcRenderer.invoke('jobs:update-many', jobIds, changes),
   addJob: (job) => ipcRenderer.invoke('jobs:add', job),
   addCall: (jobId, call) => ipcRenderer.invoke('calls:add', jobId, call),
   updateCall: (callId, changes) => ipcRenderer.invoke('calls:update', callId, changes),

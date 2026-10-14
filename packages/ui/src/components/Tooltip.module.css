@@ -1,0 +1,84 @@
+/*
+ * Fixed to the window, at the place the component works out. As a popover it sits above
+ * everything; these undo the browser's own popover look, which centers it with a border.
+ */
+.tooltip {
+  position: fixed;
+  inset: auto;
+  z-index: 1000;
+  /* Its own width, so it measures the same wherever it was last. */
+  width: max-content;
+  max-width: min(300px, calc(100vw - 16px));
+  margin: 0;
+  padding: 10px 12px;
+  overflow: visible;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+  font-size: var(--fw-text-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  animation: appear 120ms ease-out;
+}
+
+.tooltip[hidden] {
+  display: none;
+}
+
+/* A bridge over the gap to its trigger, so the pointer can cross onto it without it closing. */
+.tooltip::before {
+  position: absolute;
+  content: "";
+}
+
+.tooltip[data-side="top"]::before {
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--tooltip-gap);
+}
+
+.tooltip[data-side="bottom"]::before {
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: var(--tooltip-gap);
+}
+
+.tooltip[data-side="left"]::before {
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: var(--tooltip-gap);
+}
+
+.tooltip[data-side="right"]::before {
+  top: 0;
+  right: 100%;
+  bottom: 0;
+  width: var(--tooltip-gap);
+}
+
+.tooltip > p {
+  margin: 0;
+}
+
+.tooltip > p + p {
+  margin-top: var(--fw-space-2);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    translate: 0 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    animation: none;
+  }
+}

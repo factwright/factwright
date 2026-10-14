@@ -12,6 +12,7 @@ import { FindJobsDialog } from './FindJobsDialog.tsx';
 import { JourneyDialog } from './JourneyDialog.tsx';
 import { jobRows, type ListFilter, NO_FILTERS } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
+import { WithdrawDialog } from './WithdrawDialog.tsx';
 
 const TODAY = localDate();
 
@@ -133,6 +134,20 @@ describe('AddJobDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('starts a job at New, or wherever the user already is with it', () => {
+    render(<AddJobDialog api={{} as FactwrightApi} onAdded={() => {}} onClose={() => {}} />);
+    const menu = screen.getByRole('combobox', { name: 'Status' }) as HTMLSelectElement;
+    expect(menu.value).toBe('new');
+    expect([...menu.options].map((option) => option.textContent)).toEqual([
+      'New',
+      'To review',
+      'To apply',
+      'Applied',
+      'Screen',
+      'Interview',
+    ]);
+  });
+
   it('says why a job couldn’t be added, and stays open', async () => {
     const addJob = vi.fn(async () => ({
       ok: false as const,
@@ -168,16 +183,17 @@ describe('JourneyDialog', () => {
         .getAllByRole('listitem')
         .map((item) => item.textContent),
     ).toEqual([
-      'Found12',
-      'Checked10',
+      'Found19',
+      'Checked14',
       'Resume built5',
-      'Applied7',
+      'Applied8',
       'Heard back4',
       'Interviewed2',
       'Offer1',
     ]);
     expect(screen.getByText('5 still in play')).toBeTruthy();
     expect(screen.getByText('1 rejected')).toBeTruthy();
+    expect(screen.getByText('1 role closed')).toBeTruthy();
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
   });
@@ -213,7 +229,7 @@ describe('JourneyDialog', () => {
       name: 'How your jobs moved, from finding them to how they ended',
     });
     // Each step and ending a bar with its count, each path a band that says how many went.
-    expect(chart.textContent).toContain('Found12');
+    expect(chart.textContent).toContain('Found19');
     expect(chart.textContent).toContain('Not applied');
     expect(chart.querySelector('desc')?.textContent).toContain('Applied to Rejected: 1 job.');
     expect(chart.querySelectorAll('path').length).toBeGreaterThan(8);
@@ -240,6 +256,61 @@ describe('JourneyDialog', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Download as a spreadsheet' }));
     expect(screen.getByRole('button', { name: 'Download as a spreadsheet' })).toBeTruthy();
+  });
+});
+
+describe('WithdrawDialog', () => {
+  const inPlay = jobRows(sampleJobs(), TODAY).filter((row) =>
+    ['Northwind Labs', 'Tidewater Analytics', 'Lumen Health'].includes(row.job.company),
+  );
+
+  it('withdraws from every other job in play in one step, but those left out', async () => {
+    const updateJobs = vi.fn(async () => ({ ok: true as const }));
+    const onClose = vi.fn();
+    const { container } = render(
+      <WithdrawDialog
+        company="Fernway"
+        rows={inPlay}
+        api={{ updateJobs } as unknown as FactwrightApi}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Withdraw from your other jobs?' });
+    expect(dialog.textContent).toContain('You accepted the offer from Fernway.');
+    expect(dialog.textContent).toContain('let each company know yourself');
+    const list = within(dialog).getByRole('list', { name: 'Jobs still in play' });
+    const boxes = within(list).getAllByRole('checkbox') as HTMLInputElement[];
+    expect(boxes.map((box) => box.checked)).toEqual([true, true, true]);
+    await userEvent.click(within(list).getByRole('checkbox', { name: /^Tidewater Analytics/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw from 2 jobs' }));
+    expect(updateJobs).toHaveBeenCalledWith(
+      [
+        'northwind-labs--senior-software-engineer-platform',
+        'lumen-health--senior-full-stack-engineer',
+      ],
+      { status: 'withdrawn' },
+    );
+    expect(onClose).toHaveBeenCalled();
+    const results = await axe.run(container.parentElement ?? document.body, {
+      rules: { 'color-contrast': { enabled: false } },
+    });
+    expect(results.violations).toEqual([]);
+  });
+
+  it('can be left for later, withdrawing from nothing', async () => {
+    const updateJobs = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <WithdrawDialog
+        company="Fernway"
+        rows={inPlay}
+        api={{ updateJobs } as unknown as FactwrightApi}
+        onClose={onClose}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(updateJobs).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 });
 
@@ -294,6 +365,40 @@ describe('FindJobsDialog', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
+  });
+
+  it('looks for one kind of job, or every kind, when the user wants more than one', async () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const onStart = vi.fn();
+    const { container, unmount } = render(
+      <FindJobsDialog today="2026-10-12" kinds={kinds} onStart={onStart} onClose={() => {}} />,
+    );
+    const lookFor = screen.getByRole('group', { name: 'Look for' });
+    expect(
+      (within(lookFor).getByRole('radio', { name: 'Every kind' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    await userEvent.click(within(lookFor).getByRole('radio', { name: 'Project manager' }));
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(onStart).toHaveBeenCalledWith({ sites: ['hn'], kind: 'project-manager' });
+    unmount();
+    // Kept for next time, while the kind is still there.
+    render(
+      <FindJobsDialog today="2026-10-12" kinds={kinds} onStart={onStart} onClose={() => {}} />,
+    );
+    expect(
+      (screen.getByRole('radio', { name: 'Project manager' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    cleanup();
+    // With one kind of job, there's nothing to pick.
+    render(<FindJobsDialog today="2026-10-12" onStart={onStart} onClose={() => {}} />);
+    expect(screen.queryByRole('group', { name: 'Look for' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(onStart).toHaveBeenLastCalledWith({ sites: ['hn'] });
   });
 
   it('remembers the places picked for next time', async () => {

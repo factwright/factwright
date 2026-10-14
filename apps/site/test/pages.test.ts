@@ -66,6 +66,36 @@ const releaseLine = (computer: string) => `<p class="get-meta" data-release="${c
 /** Whether a file the page asks for, such as /templates/modern.webp, is in the site's public folder. */
 const published = (path: string) => existsSync(join(SITE, 'public', path));
 
+/** The companies and the person the drawings of the app make up. Search results mustn't quote them. */
+const MADE_UP = [
+  'Lumen Health',
+  'Fernway',
+  'Harbor & Pine',
+  'Tidewater Analytics',
+  'Brightpath Learning',
+  'Northwind',
+  'Jordan Avery',
+];
+
+/** The start of an element's markup, for a failing test to show. */
+const markup = (element: Element) => element.outerHTML.replace(/\s+/g, ' ').slice(0, 80);
+
+/** Whether some text has a made-up name in it. */
+const namesMadeUp = (text: string) =>
+  MADE_UP.some((name) => text.replace(/\s+/g, ' ').includes(name));
+
+/**
+ * The elements that hold a made-up name, in an attribute or in their text. For text, only the
+ * innermost element counts, so a name split by markup, such as `<b>Harbor</b> & Pine`, is found too.
+ */
+const holdingMadeUp = (doc: Document) =>
+  [...doc.querySelectorAll('*')].filter(
+    (element) =>
+      [...element.attributes].some((attribute) => namesMadeUp(attribute.value)) ||
+      (namesMadeUp(element.textContent ?? '') &&
+        ![...element.children].some((child) => namesMadeUp(child.textContent ?? ''))),
+  );
+
 describe.each([
   'index.html',
   'download.html',
@@ -148,6 +178,20 @@ describe.each([
     expect(footer).toContain('Factwright isn’t affiliated with Anthropic.');
     expect(footer).toContain('Claude and Claude Code are trademarks of Anthropic, PBC.');
   });
+
+  it('keeps made-up names out of anything a search result could quote', () => {
+    // The title and the descriptions can't be marked, so a name there is never allowed.
+    for (const element of holdingMadeUp(open(page))) {
+      expect(element.closest('[data-nosnippet]'), markup(element)).not.toBeNull();
+    }
+  });
+
+  it('puts data-nosnippet only on the elements search engines read it on', () => {
+    // Google supports it on div, span and section elements, so it only goes on those.
+    for (const marked of open(page).querySelectorAll('[data-nosnippet]')) {
+      expect(['DIV', 'SPAN', 'SECTION']).toContain(marked.tagName);
+    }
+  });
 });
 
 describe('the home page', () => {
@@ -164,6 +208,43 @@ describe('the home page', () => {
     expect(header.map((link) => link.getAttribute('href'))).toContain(SOURCE);
     expect(doc.querySelector('#open-source')?.textContent).toContain('fully open source');
     expect(doc.querySelector('.hero-note a')?.getAttribute('href')).toBe(SOURCE);
+  });
+
+  it('has “resume” in its title', () => {
+    expect(open('index.html').title).toMatch(/resume/i);
+  });
+
+  it('tells search engines, as data and not a script, that Factwright is free for macOS and Windows, from Neatifai LLC', () => {
+    const doc = open('index.html');
+    const blocks = doc.querySelectorAll('script[type="application/ld+json"]');
+    expect(blocks).toHaveLength(1);
+    expect(JSON.parse(blocks[0]?.textContent ?? '')).toMatchObject({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'Factwright',
+      // The same address and words as the rest of the head gives.
+      url: doc.querySelector('link[rel="canonical"]')?.getAttribute('href'),
+      description: doc.querySelector('meta[name="description"]')?.getAttribute('content'),
+      operatingSystem: 'macOS, Windows',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      author: { '@type': 'Organization', name: 'Neatifai LLC' },
+    });
+  });
+
+  it('keeps each drawing of the app out of search snippets', () => {
+    // The picture in each figure, and the resume and fact cards that trace a line.
+    const drawings = [
+      ...open('index.html').querySelectorAll('figure > :not(figcaption), [data-trace]'),
+    ];
+    expect(drawings.length).toBeGreaterThan(0);
+    for (const drawing of drawings) {
+      expect(drawing.hasAttribute('data-nosnippet'), markup(drawing)).toBe(true);
+    }
+  });
+
+  it('still shows every name on the made-up list, so the list can’t go stale', () => {
+    const text = open('index.html').body.textContent?.replace(/\s+/g, ' ') ?? '';
+    for (const name of MADE_UP) expect(text, name).toContain(name);
   });
 
   it('shows the fact behind each resume line it offers', () => {

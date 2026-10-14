@@ -6,6 +6,7 @@ import type { CollectedJob } from '@factwright/core';
 import { type Account, startServer, type TestServer } from '@factwright/server/testing';
 import { accountKeys, type Bytes, newAccountKey } from '@factwright/sync';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { trackerAsOf } from '../jobs/testing.ts';
 import { type EditContext, Tracker } from '../jobs/tracker.ts';
 import { SyncEngine } from './engine.ts';
 import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
@@ -35,8 +36,9 @@ const job = (id: string): CollectedJob => ({
   fit: null,
   search: null,
   searches: [],
+  kindFound: null,
   folder: null,
-  stage: 'checked',
+  stage: 'review',
   firstSeen: '2026-10-07',
   lastActivity: '2026-10-07',
   summary: null,
@@ -78,13 +80,14 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
       return tracker;
     },
     sync: () => engine.syncOnce(),
-    /** Goes back to the tracker before the answers sent and questions for Claude. */
-    downgrade() {
-      const old = new DatabaseSync(file);
-      old.exec(
-        'ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
-      );
-      old.close();
+    /**
+     * Goes back to an earlier version's tracker, such as 2, before the answers sent and questions
+     * for Claude, or 4, before the day a job set aside comes back and why a job was passed on, or 5, before kinds
+     * of job.
+     * The tables made since stay, as this version's sync needs them.
+     */
+    goBackTo(version: number) {
+      trackerAsOf(file, version, { keepTables: true });
     },
     /** Updates the app: opens the tracker again, as the new version does, and syncs from there. */
     update() {
@@ -100,9 +103,7 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
      */
     updateFromBeforeNotes() {
       tracker.close();
-      const old = new DatabaseSync(file);
-      old.exec('DROP TABLE notes; PRAGMA user_version = 3;');
-      old.close();
+      trackerAsOf(file, 3);
       const synced = new DatabaseSync(join(folder, 'sync.db'));
       synced.exec("DELETE FROM synced WHERE name LIKE 'row:notes:%'");
       synced.close();
@@ -309,7 +310,7 @@ describe('two computers on one account', () => {
     mac.tracker.addAsk('acme--staff', 'What should I expect?', AT);
     await mac.sync();
     // The PC is still on the version before them, so it keeps them only in what it synced.
-    pc.downgrade();
+    pc.goBackTo(2);
     await pc.sync();
     expect(pc.tracker.rows()[0]?.earlierNotes).toBeNull();
     pc.update();
@@ -327,7 +328,7 @@ describe('two computers on one account', () => {
     mac.tracker.saveCollected([job('acme--staff')], AT.now);
     mac.tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys, mostly.', AT);
     await mac.sync();
-    pc.downgrade();
+    pc.goBackTo(2);
     await pc.sync();
     pc.tracker.updateJob('acme--staff', { earlierNotes: 'Referred by Priya' }, AT);
     pc.update();
@@ -339,6 +340,94 @@ describe('two computers on one account', () => {
         sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.' }],
       });
     }
+  });
+
+  it('keep a job’s kind through a computer from before kinds, which gets it once it updates', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    // The PC is still on a version without kinds of job, as 0.1.x is.
+    pc.goBackTo(5);
+    mac.tracker.updateJob('acme--staff', { kind: 'project-manager' }, AT);
+    await mac.sync();
+    await pc.sync();
+    // It changes the job without knowing its kind, and what it sends keeps the kind.
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    pc.tracker.updateJob('acme--staff', { status: 'applied' }, later);
+    expect(await pc.sync()).toMatchObject({ pushed: 2 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'applied', kind: 'project-manager' });
+    // Once it updates, it has the kind too, from what it synced, with nothing to send.
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'applied', kind: 'project-manager' });
+    expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
+  });
+
+  it('keep a job’s kind when a computer from before kinds changed the job at the same time', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    pc.goBackTo(5);
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    mac.tracker.updateJob('acme--staff', { kind: 'project-manager' }, AT);
+    pc.tracker.updateJob('acme--staff', { status: 'interview' }, later);
+    await mac.sync();
+    expect(await pc.sync()).toMatchObject({ conflicts: 1 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'interview', kind: 'project-manager' });
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'interview', kind: 'project-manager' });
+    expect(await pc.sync()).toMatchObject({ pushed: 0 });
+  });
+
+  it('keep the statuses a newer version sets through a computer still on an earlier one', async () => {
+    const globex = { ...job('globex--staff'), company: 'Globex', companyKey: 'globex' };
+    mac.tracker.saveCollected([job('acme--staff'), globex], AT.now);
+    mac.tracker.updateJob('acme--staff', { status: 'later', backOn: '2026-11-02' }, AT);
+    mac.tracker.updateJob('globex--staff', { status: 'passed', passReason: 'pay' }, AT);
+    await mac.sync();
+    // The PC is on the version before them: it keeps each status as it came, and the new
+    // columns only in what it synced. (An earlier version reads a status it doesn't know as
+    // none, but its edits write only the columns they change, as these do.)
+    pc.goBackTo(4);
+    await pc.sync();
+    const stored = (id: string) => pc.tracker.syncRow('jobs', id);
+    expect(stored('acme--staff')).toMatchObject({ status: 'later' });
+    expect(stored('acme--staff')).not.toHaveProperty('back_on');
+    expect(stored('globex--staff')).toMatchObject({ status: 'passed' });
+    // It changes both jobs, as an older app does: a next step on one, a note on the other.
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    pc.tracker.updateJob('acme--staff', { nextAction: 'Ask Sam about the team' }, later);
+    pc.tracker.updateJob('globex--staff', { earlierNotes: 'Pay tops out at $150k' }, later);
+    // Meanwhile the Mac moves the day Acme comes back, so both changed that job.
+    mac.tracker.updateJob('acme--staff', { backOn: '2026-11-09' }, later);
+    await pc.sync();
+    expect(await mac.sync()).toMatchObject({ conflicts: 1 });
+    await pc.sync();
+    expect(mac.tracker.rows()).toEqual([
+      expect.objectContaining({
+        id: 'acme--staff',
+        status: 'later',
+        backOn: '2026-11-09',
+        nextAction: 'Ask Sam about the team',
+      }),
+      expect.objectContaining({
+        id: 'globex--staff',
+        status: 'passed',
+        passReason: 'pay',
+        earlierNotes: 'Pay tops out at $150k',
+      }),
+    ]);
+    expect(
+      mac.tracker
+        .history()
+        .get('acme--staff')
+        ?.map((change) => change.status),
+    ).toEqual(['later']);
+    // Once the PC updates, it has them all too, and nothing more to send.
+    pc.update();
+    expect(pc.tracker.rows()).toEqual(mac.tracker.rows());
+    expect(await pc.sync()).toMatchObject({ pushed: 0 });
   });
 
   it('keep edits to different answers from both computers, and the later of two to one', async () => {

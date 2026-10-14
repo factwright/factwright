@@ -8,7 +8,7 @@ import {
   type StatusChange,
   shortDate,
 } from '@factwright/core';
-import { Button, JOB_STATUS_DISPLAY } from '@factwright/ui';
+import { Button, JOB_STATUS_DISPLAY, type Tone } from '@factwright/ui';
 import type { CSSProperties } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { DateEdit } from './DateEdit.tsx';
@@ -21,8 +21,10 @@ type Fix = { kind: 'change'; change: StatusChange } | { kind: 'applied' };
 export interface TrackStep {
   key: string;
   label: string;
-  /** The status whose tint it takes. */
-  tone: JobStatus;
+  /** Its tint. */
+  tone: Tone;
+  /** How far along it is, as a status rank. */
+  rank: number;
   /** When the job got there, or null when that isn't known. */
   date: string | null;
   state: 'done' | 'now' | 'next';
@@ -39,15 +41,23 @@ const AHEAD: readonly { status: JobStatus; label: string }[] = [
   { status: 'offer', label: 'Offer' },
 ];
 
+/** Where a job can be before applying, once the user has said: dated, and theirs to undo. */
+const DECIDED: readonly JobStatus[] = ['review', 'apply', 'later'];
+
 const rank = (status: JobStatus) => STATUS_RANK[status] ?? 0;
+const tone = (status: JobStatus) => JOB_STATUS_DISPLAY[status].tone;
 
 /**
  * The steps a job has taken, from being found to where it is now, each dated, then the step
  * ahead. A closed job ends with how it ended instead. A step a change of status marked can have
  * its date fixed, and so can the applied date.
  */
-export function trackSteps(job: Job, progress: JobProgress): TrackStep[] {
+export function trackSteps(job: Job, progress: JobProgress, today: string): TrackStep[] {
   const { dates } = journeyOf(job, progress);
+  const { status } = progress;
+  // What the user decided before applying shows while it's where the job is. With no work of
+  // Claude's on the job, that step says it all, with no check of its own before it.
+  const decided = DECIDED.includes(status) && job.status === status;
   const first = (statuses: readonly JobStatus[]) =>
     job.statusLog.find((change) => statuses.includes(change.status));
   const steps: TrackStep[] = [];
@@ -58,75 +68,87 @@ export function trackSteps(job: Job, progress: JobProgress): TrackStep[] {
    * it shows the date the job's story gives it, such as a call's, and can't be fixed here.
    */
   const marked = (
-    step: Omit<TrackStep, 'state' | 'date' | 'fix'>,
-    change: StatusChange | undefined,
+    step: Omit<TrackStep, 'state' | 'date' | 'fix' | 'tone' | 'rank'>,
+    status: JobStatus,
     otherwise: string | undefined,
-  ) =>
+  ) => {
+    const change = first([status]);
+    const known = { ...step, tone: tone(status), rank: rank(status) };
     add(
       change
-        ? { ...step, date: change.at, fix: { kind: 'change', change } }
-        : { ...step, date: when(otherwise) },
+        ? { ...known, date: change.at, fix: { kind: 'change', change } }
+        : { ...known, date: when(otherwise) },
     );
+  };
 
-  add({ key: 'found', label: 'Found', tone: 'new', date: when(dates.found), detail: job.source });
-  if (dates.checked !== undefined) {
+  add({
+    key: 'found',
+    label: 'Found',
+    tone: tone('new'),
+    rank: 0,
+    date: when(dates.found),
+    detail: job.source,
+  });
+  if (dates.checked !== undefined && !(decided && job.stage === 'new')) {
     const verdict = [job.fit?.verdict, job.fit?.score].filter((part) => part != null).join(' ');
     add({
       key: 'checked',
       label: job.fit ? 'Fit check' : 'Checked',
-      tone: 'checked',
+      tone: 'slate',
+      rank: rank('review'),
       date: when(dates.checked),
       ...(verdict && { detail: verdict }),
     });
   }
   if (dates.resume !== undefined) {
-    add({ key: 'resume', label: 'Resume built', tone: 'resume', date: when(dates.resume) });
+    const built = { tone: 'violet', rank: rank('review') } as const;
+    add({ key: 'resume', label: 'Resume built', ...built, date: when(dates.resume) });
+  }
+  // Dated by the latest change, as it's where the job is now.
+  if (decided) {
+    const change = job.statusLog.findLast((each) => each.status === status);
+    const back = status === 'later' && job.backOn ? `Back ${shortDate(job.backOn, today)}` : null;
+    add({
+      key: status,
+      label: JOB_STATUS_DISPLAY[status].label,
+      tone: tone(status),
+      rank: rank(status),
+      date: change?.at ?? job.statusOn,
+      ...(back && { detail: back }),
+      ...(change && { fix: { kind: 'change', change } }),
+    });
   }
   if (dates.applied !== undefined) {
     const change = first(['applied']);
+    const applied = { key: 'applied', label: 'Applied', tone: tone('applied'), rank: 3 };
     add(
       change
-        ? {
-            key: 'applied',
-            label: 'Applied',
-            tone: 'applied',
-            date: change.at,
-            fix: { kind: 'change', change },
-          }
+        ? { ...applied, date: change.at, fix: { kind: 'change', change } }
         : // An applied date with no change behind it, or none yet, is fixed as the applied date.
-          {
-            key: 'applied',
-            label: 'Applied',
-            tone: 'applied',
-            date: job.appliedOn,
-            fix: { kind: 'applied' },
-          },
+          { ...applied, date: job.appliedOn, fix: { kind: 'applied' } },
     );
   }
   if (dates.screen !== undefined) {
-    marked({ key: 'screen', label: 'Screen', tone: 'screen' }, first(['screen']), dates.screen);
+    marked({ key: 'screen', label: 'Screen' }, 'screen', dates.screen);
   }
   if (dates.interview !== undefined) {
-    marked(
-      { key: 'interview', label: 'Interview', tone: 'interview' },
-      first(['interview']),
-      dates.interview,
-    );
+    marked({ key: 'interview', label: 'Interview' }, 'interview', dates.interview);
   }
   if (dates.final !== undefined) {
-    add({ key: 'final', label: 'Final round', tone: 'interview', date: when(dates.final) });
+    const final = { tone: tone('interview'), rank: rank('interview') };
+    add({ key: 'final', label: 'Final round', ...final, date: when(dates.final) });
   }
   if (dates.offer !== undefined) {
-    marked({ key: 'offer', label: 'Offer', tone: 'offer' }, first(['offer']), dates.offer);
+    marked({ key: 'offer', label: 'Offer' }, 'offer', dates.offer);
   }
 
-  const { status } = progress;
   if (CLOSED_STATUSES.includes(status)) {
     const change = job.statusLog.findLast((each) => each.status === status);
     steps.push({
       key: status,
       label: JOB_STATUS_DISPLAY[status].label,
-      tone: status,
+      tone: tone(status),
+      rank: rank(status),
       date: change?.at ?? job.statusOn,
       state: 'now',
       ...(change && { fix: { kind: 'change', change } }),
@@ -135,13 +157,14 @@ export function trackSteps(job: Job, progress: JobProgress): TrackStep[] {
   }
   const last = steps.at(-1);
   if (last) last.state = 'now';
-  const reached = Math.max(rank(status), ...steps.map((step) => rank(step.tone)));
+  const reached = Math.max(rank(status), ...steps.map((step) => step.rank));
   const ahead = AHEAD.find((step) => rank(step.status) > reached);
   if (ahead) {
     steps.push({
       key: `next-${ahead.status}`,
-      ...ahead,
-      tone: ahead.status,
+      label: ahead.label,
+      tone: tone(ahead.status),
+      rank: rank(ahead.status),
       date: null,
       state: 'next',
     });
@@ -173,7 +196,7 @@ export function StageTrack({
   /** Saves an edit, and shows its problem if it didn't save. */
   run: (edit: Promise<EditResult>) => Promise<boolean>;
 }) {
-  const steps = trackSteps(job, progress);
+  const steps = trackSteps(job, progress, today);
   const latest = job.statusLog.at(-1);
   const undoable = latest && latest.status === job.status ? latest : null;
   const redate = (fix: Fix, date: string) =>
@@ -185,12 +208,11 @@ export function StageTrack({
   return (
     <ol className={styles.track} aria-label="Where it’s been">
       {steps.map((step) => {
-        const tone = JOB_STATUS_DISPLAY[step.tone].tone;
         return (
           <li
             key={step.key}
             className={`${styles.step} ${step.state === 'done' ? '' : styles[step.state]}`}
-            style={{ '--step-tone': `var(--fw-tone-${tone}-fg)` } as CSSProperties}
+            style={{ '--step-tone': `var(--fw-tone-${step.tone}-fg)` } as CSSProperties}
           >
             <span className={styles.dot} role="img" aria-label={STATE_WORDS[step.state]} />
             <span className={styles.label}>

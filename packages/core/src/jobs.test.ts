@@ -7,6 +7,7 @@ import type {
   SalaryRecord,
   SearchDetail,
   SearchRecord,
+  ToolRecord,
   UnmaskRecord,
 } from './records.ts';
 
@@ -41,6 +42,7 @@ function search(company: string, role: string, extra: Partial<SearchRecord> = {}
     location: null,
     tier: 'good',
     score: 70,
+    kind: null,
     detail: NO_DETAIL,
     ...extra,
   };
@@ -78,6 +80,7 @@ function folder(company: string, role: string, extra: Partial<FolderRecord> = {}
     foundVia: null,
     format: null,
     style: null,
+    kind: null,
     files: [],
     docs: {},
     ...extra,
@@ -169,7 +172,7 @@ describe('collectJobs', () => {
       search: { tier: 'good', score: 85, source: 'HN October 2026' },
       searches: [{ folder: '2026-10-hn', source: 'HN October 2026', date: '2026-10-05' }],
       folder: '2026-10-07-Acme Robotics',
-      stage: 'resume',
+      stage: 'review',
       firstSeen: '2026-10-05',
       lastActivity: '2026-10-07',
       summary: 'Build tooling',
@@ -182,6 +185,21 @@ describe('collectJobs', () => {
     ]);
   });
 
+  it('takes a job’s kind from its fit check, or else the search that rated it highest', () => {
+    const [found] = collectJobs([
+      search('Acme Robotics', 'Program Manager', { key: 'a', score: 60, kind: 'developer' }),
+      search('Acme Robotics', 'Program Manager', { key: 'b', score: 80, kind: 'project-manager' }),
+      search('Acme Robotics', 'Program Manager', { key: 'c', score: 90 }),
+    ]);
+    expect(found?.kindFound).toBe('project-manager');
+    const [checked] = collectJobs([
+      search('Acme Robotics', 'Program Manager', { kind: 'project-manager' }),
+      folder('Acme Robotics', 'Program Manager', { kind: 'developer' }),
+    ]);
+    expect(checked?.kindFound).toBe('developer');
+    expect(collectJobs([search('Acme Robotics', 'Program Manager')])[0]?.kindFound).toBeNull();
+  });
+
   it('matches roles worded differently at the same company', () => {
     const jobs = collectJobs([
       search('Northwind Labs', 'Senior Software Engineer, Platform'),
@@ -191,7 +209,20 @@ describe('collectJobs', () => {
     expect(jobs.map((job) => job.id)).toEqual([
       'northwind-labs--senior-software-engineer-platform',
     ]);
-    expect(jobs[0]?.stage).toBe('checked');
+    expect(jobs[0]?.stage).toBe('review');
+  });
+
+  it('takes a job out of New for any of Claude’s work, but not for finding it', () => {
+    const stage = (...records: ToolRecord[]) => collectJobs(records)[0]?.stage;
+    expect(stage(search('Acme Robotics', 'Staff Engineer'))).toBe('new');
+    expect(
+      stage(
+        search('Acme Robotics', 'Staff Engineer'),
+        salary('Acme Robotics', 'Staff Engineer', '$190k'),
+      ),
+    ).toBe('review');
+    expect(stage(unmask('Acme Robotics', 'Staff Engineer', 'Bluewave Staffing'))).toBe('review');
+    expect(stage(fitCheck('Acme Robotics', 'Staff Engineer'))).toBe('review');
   });
 
   it('keeps different roles at one company apart', () => {
@@ -314,7 +345,7 @@ describe('collectJobs', () => {
     expect(jobs.map((job) => [job.id, job.events.at(-1)?.title, job.stage])).toEqual([
       ['acme-robotics--staff-engineer', 'Drafted messages to people there', 'new'],
       ['acme-robotics--engineering-manager', 'Drafted messages to people there', 'new'],
-      ['ibm--general', 'Drafted messages to people there', 'checked'],
+      ['ibm--general', 'Drafted messages to people there', 'review'],
     ]);
     expect(jobs[0]?.events.at(-1)?.id).not.toBe(jobs[1]?.events.at(-1)?.id);
   });

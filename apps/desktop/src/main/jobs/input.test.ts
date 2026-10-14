@@ -40,8 +40,31 @@ describe('parseJobChanges', () => {
     expect(parseJobChanges({ questions: [] })).toEqual({ questions: [] });
   });
 
+  it('takes a kind of job by its id, or null to go by the search or fit check', () => {
+    expect(parseJobChanges({ kind: 'project-manager' })).toEqual({ kind: 'project-manager' });
+    expect(parseJobChanges({ kind: null })).toEqual({ kind: null });
+  });
+
+  it('takes the day a job set aside comes back, and why the user passed', () => {
+    expect(parseJobChanges({ status: 'later', backOn: '2026-11-02' })).toEqual({
+      status: 'later',
+      backOn: '2026-11-02',
+    });
+    expect(parseJobChanges({ status: 'passed', passReason: 'work' })).toEqual({
+      status: 'passed',
+      passReason: 'work',
+    });
+    expect(parseJobChanges({ backOn: null, passReason: null })).toEqual({
+      backOn: null,
+      passReason: null,
+    });
+  });
+
   it.each([
     { status: 'hired' },
+    { status: 'checked' },
+    { backOn: 'next week' },
+    { passReason: 'vibes' },
     { statusOn: null },
     { statusOn: '2026-02-30' },
     { appliedOn: 'yesterday' },
@@ -52,6 +75,8 @@ describe('parseJobChanges', () => {
     { questions: Array.from({ length: LIMITS.questions + 1 }, () => 'Why?') },
     { nextAction: 42 },
     { archived: 'yes' },
+    { kind: 'Project manager' },
+    { kind: '../base' },
     'not an object',
     null,
     [],
@@ -69,14 +94,19 @@ describe('parseNewJob', () => {
       status: 'applied',
     });
     expect(parseNewJob({})).toEqual({ company: '' });
+    expect(parseNewJob({ company: 'Acme', kind: 'developer' })).toEqual({
+      company: 'Acme',
+      kind: 'developer',
+    });
   });
 
-  it.each([{ company: 42 }, { company: 'Acme', pay: 'x'.repeat(LIMITS.pay + 1) }])(
-    'refuses %j',
-    (value) => {
-      expect(parseNewJob(value)).toBeNull();
-    },
-  );
+  it.each([
+    { company: 42 },
+    { company: 'Acme', pay: 'x'.repeat(LIMITS.pay + 1) },
+    { company: 'Acme', kind: 'Developer' },
+  ])('refuses %j', (value) => {
+    expect(parseNewJob(value)).toBeNull();
+  });
 });
 
 describe('parseNewCall', () => {

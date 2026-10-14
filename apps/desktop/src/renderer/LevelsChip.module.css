@@ -1,0 +1,43 @@
+/* In the same quiet style as the cards above it, a little smaller, and a button as a whole. */
+.chip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+  width: 100%;
+  padding: var(--fw-space-2) var(--fw-space-3);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.chip:hover {
+  background: var(--fw-hover);
+}
+
+.icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fw-muted);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.level {
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.others {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+}

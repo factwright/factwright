@@ -1,0 +1,62 @@
+.jobs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  list-style: none;
+}
+
+.jobs li + li {
+  border-top: 1px solid var(--fw-border);
+}
+
+.job {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.job input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--fw-accent);
+  cursor: pointer;
+}
+
+.name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.company {
+  font-weight: 600;
+}
+
+.role {
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint,
+.problem {
+  margin: var(--fw-space-3) 0 0;
+  font-size: var(--fw-text-sm);
+}
+
+.hint {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}

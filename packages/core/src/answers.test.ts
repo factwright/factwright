@@ -9,6 +9,13 @@ import {
 } from './answers.ts';
 import type { SentAnswer } from './tracker.ts';
 
+/** How long something takes, in milliseconds. */
+function timed(work: () => unknown): number {
+  const start = Date.now();
+  work();
+  return Date.now() - start;
+}
+
 const ANSWERS = `# Application questions: Acme Robotics, Staff Engineer
 
 Drafted 2026-10-07. Q1 traces to facts/work.md#deploys.
@@ -80,6 +87,12 @@ describe('readSuggestedAnswers', () => {
         batch: 2,
       },
     ]);
+  });
+
+  it('reads a file in a moment, however many spaces a heading holds', () => {
+    // A lone carriage return stops the line matching, which made the old pattern try every way
+    // to split the tabs: this took seconds.
+    expect(timed(() => readSuggestedAnswers(`##\t${'\t'.repeat(2_500)}\rx\ry`))).toBeLessThan(1000);
   });
 
   it('reads nothing from no file, or one with no questions yet', () => {

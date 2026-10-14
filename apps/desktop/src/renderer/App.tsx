@@ -1,7 +1,8 @@
-import { JOB_VIEWS, type JobView, viewOf } from '@factwright/core';
+import { JOB_VIEWS, type JobView, LIVE_STATUSES, viewOf } from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import {
   FACTS_SKILL,
@@ -24,15 +25,18 @@ import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
+  type JobRow,
   jobRows,
   type ListFilter,
   NO_FILTERS,
   startingView,
   stepFrom,
+  viewNow,
   visibleRows,
 } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
+import { WithdrawDialog } from './jobs/WithdrawDialog.tsx';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
 import { isBoolean, readPref, usePref, writePref } from './prefs.ts';
@@ -47,10 +51,19 @@ import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
+import { useLevelChoices } from './useLevelChoices.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
 
 const isView = (value: unknown): value is JobView =>
   (JOB_VIEWS as readonly unknown[]).includes(value);
+
+/** Where the view the user last picked is kept. Earlier versions kept theirs as jobs.view. */
+const VIEW_PREF = 'jobs.lastView';
+
+/** The view the user last picked, in this version's views, or null the first time. */
+const keptView = () =>
+  readPref<JobView | null>(VIEW_PREF, null, isView) ??
+  viewNow(readPref<JobView | null>('jobs.view', null, isView));
 
 /** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 export function App({ api }: { api: FactwrightApi }) {
@@ -62,6 +75,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const about = useProfile(api);
   const today = useToday();
   const update = useUpdates(api);
+  const levels = useLevelChoices(api);
   const profiles = useProfiles(api);
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
@@ -69,13 +83,13 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   // The view the user last picked, or, the first time, one chosen once the jobs load.
   const [filter, setFilter] = useState<ListFilter>(() => ({
-    view: readPref<JobView>('jobs.view', 'review', isView),
+    view: keptView() ?? 'new',
     query: '',
     needsYou: false,
     ...NO_FILTERS,
   }));
   const changeFilter = (next: ListFilter) => {
-    if (next.view !== filter.view) writePref('jobs.view', next.view);
+    if (next.view !== filter.view) writePref(VIEW_PREF, next.view);
     setFilter(next);
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -91,6 +105,8 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'profiles'
     | null
   >(null);
+  // Once the user accepts an offer, the company and the other jobs still in play, to withdraw from.
+  const [withdraw, setWithdraw] = useState<{ company: string; rows: JobRow[] } | null>(null);
   // A profile to switch to, once the user says what they're writing can go unsaved.
   const [switching, setSwitching] = useState<ProfileEntry | null>(null);
   const [profileProblem, setProfileProblem] = useState<string | null>(null);
@@ -118,7 +134,7 @@ export function App({ api }: { api: FactwrightApi }) {
   useEffect(() => {
     if (viewChosen.current || jobs.state !== 'ready' || rows.length === 0) return;
     viewChosen.current = true;
-    if (readPref<JobView | null>('jobs.view', null, isView) !== null) return;
+    if (keptView() !== null) return;
     setFilter((current) => ({ ...current, view: startingView(rows) }));
   }, [jobs.state, rows]);
 
@@ -136,6 +152,14 @@ export function App({ api }: { api: FactwrightApi }) {
   }, []);
 
   const ready = status !== 'checking' && status.state === 'ready';
+  const offerAccepted = (jobId: string) => {
+    const inPlay = rows.filter(
+      (row) =>
+        row.job.id !== jobId && !row.job.archived && LIVE_STATUSES.includes(row.progress.status),
+    );
+    const company = rows.find((row) => row.job.id === jobId)?.job.company ?? 'the company';
+    if (inPlay.length > 0) setWithdraw({ company, rows: inPlay });
+  };
   const plan = ready ? planName(status.plan) : undefined;
 
   const profileList = profiles.list?.profiles ?? [];
@@ -245,6 +269,7 @@ export function App({ api }: { api: FactwrightApi }) {
           sync={sync}
           onOpenSync={() => setDialog('sync')}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
+          levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
           update={{
@@ -314,6 +339,7 @@ export function App({ api }: { api: FactwrightApi }) {
             {page === 'jobs' && !alone && (
               <JobsPage
                 jobs={jobs}
+                api={api}
                 rows={rows}
                 today={today}
                 filter={filter}
@@ -343,6 +369,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 {...(alone &&
                   at >= 0 && { navigation: { index: at + 1, count: order.length, onStep: step } })}
                 {...(ready && { run: runControls })}
+                onAccepted={offerAccepted}
               />
             )}
           </div>
@@ -363,6 +390,7 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'find-jobs' && (
         <FindJobsDialog
           today={today}
+          kinds={profile && hasKinds(profile.answers) ? kindsOf(profile.answers) : []}
           onStart={(sources) => run.requestStart({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
@@ -373,10 +401,21 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'sync' && sync !== 'checking' && (
         <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
       )}
+      {withdraw && (
+        <WithdrawDialog
+          company={withdraw.company}
+          rows={withdraw.rows}
+          api={api}
+          onClose={() => setWithdraw(null)}
+        />
+      )}
       {dialog === 'claude-settings' && (
         <ClaudeSettingsDialog
           api={api}
           plan={ready ? status.plan : undefined}
+          method={ready ? status.method : undefined}
+          // The levels under Your Claude show each choice as it's saved.
+          onSaved={levels.saved}
           onClose={() => setDialog(null)}
         />
       )}

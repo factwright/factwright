@@ -6,11 +6,13 @@ describe('StatusPill', () => {
   it('shows the status in plain words', () => {
     render(
       <>
-        <StatusPill status="resume" />
+        <StatusPill status="apply" />
         <StatusPill status="ghosted" />
+        <StatusPill status="role-closed" />
       </>,
     );
-    expect(screen.getByText('Resume ready')).toBeTruthy();
+    expect(screen.getByText('To apply')).toBeTruthy();
     expect(screen.getByText('No reply')).toBeTruthy();
+    expect(screen.getByText('Role closed')).toBeTruthy();
   });
 });

@@ -20,6 +20,7 @@ import { SegmentedControl } from './components/SegmentedControl.tsx';
 import { Stat } from './components/Stat.tsx';
 import { StatusPill } from './components/StatusPill.tsx';
 import { StatusSelect } from './components/StatusSelect.tsx';
+import { Tooltip } from './components/Tooltip.tsx';
 import { VisuallyHidden } from './components/VisuallyHidden.tsx';
 
 describe('accessibility', () => {
@@ -81,6 +82,13 @@ describe('accessibility', () => {
             '# Posting\n\nBuild **tools**. See [the team](https://acme.example).\n\n- One\n  - Two'
           }
         />
+        <Tooltip content="Opus at Extra high is the best overall.">
+          {(trigger) => (
+            <button type="button" {...trigger}>
+              Opus · Extra high
+            </button>
+          )}
+        </Tooltip>
         <VisuallyHidden>Only for screen readers</VisuallyHidden>
         <Logo />
         <EmptyState title="No jobs yet" icon={<svg aria-hidden="true" />}>

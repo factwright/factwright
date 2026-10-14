@@ -6,6 +6,7 @@ import type {
   JobDocs,
   JobShot,
   JobStatus,
+  PassReason,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
@@ -28,7 +29,17 @@ import type { UpdateStatus } from './updates.ts';
 
 /** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
 export type ClaudeStatus =
-  | { state: 'ready'; version: string; plan?: string | undefined }
+  | {
+      state: 'ready';
+      version: string;
+      /** The user's Claude plan, such as "pro" or "max", when they sign in with one. */
+      plan?: string | undefined;
+      /**
+       * How Claude Code signs in: "subscription" for a Claude plan, or its name for another way,
+       * such as "api_key".
+       */
+      method?: string | undefined;
+    }
   | { state: 'signed-out'; version: string }
   | { state: 'too-old'; version: string; minimum: string }
   | { state: 'missing' }
@@ -86,6 +97,10 @@ export interface JobChanges {
   status?: JobStatus | null;
   /** With a status, when it happened. On its own, when the current status started. */
   statusOn?: string;
+  /** For a job set aside for later, the day it comes back to review, or null for none. */
+  backOn?: string | null;
+  /** Why the user passed on the job, or null for no reason given. */
+  passReason?: PassReason | null;
   appliedOn?: string | null;
   nextAction?: string | null;
   nextOn?: string | null;
@@ -94,6 +109,8 @@ export interface JobChanges {
   /** All of the application's questions, in order, replacing those saved before. */
   questions?: string[];
   archived?: boolean;
+  /** The kind of job it's under, by its id, or null to go by the job search or fit check. */
+  kind?: string | null;
 }
 
 /** A job the user adds by hand. */
@@ -105,6 +122,8 @@ export interface NewJob {
   status?: JobStatus | null;
   /** A first note, dated today. */
   notes?: string | null;
+  /** The kind of job it's under, by its id, when the user wants more than one kind. */
+  kind?: string | null;
 }
 
 /** A note the user jots about a job: its words, and the day it's about if not today. */
@@ -207,6 +226,8 @@ export interface FactwrightApi {
   /** The text of a job's documents, such as its posting and fit check. */
   jobDocs(jobId: string): Promise<JobDocs | null>;
   updateJob(jobId: string, changes: JobChanges): Promise<EditResult>;
+  /** Makes the same change to several jobs at once, such as moving them all to To review. */
+  updateJobs(jobIds: string[], changes: JobChanges): Promise<EditResult>;
   addJob(job: NewJob): Promise<AddJobResult>;
   addCall(jobId: string, call: NewCall): Promise<EditResult>;
   updateCall(callId: string, changes: CallChanges): Promise<EditResult>;

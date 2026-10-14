@@ -31,7 +31,10 @@ export interface BuildResumeDeps {
   now?: () => Date;
 }
 
-/** Statuses a job only reaches once the user has applied, and sent its resume. */
+/**
+ * Statuses a job only reaches once the user has applied, and sent its resume. Passed and Role
+ * closed can come before applying, so they go by the applied date alone.
+ */
 const SENT: readonly JobStatus[] = [
   'applied',
   'screen',
@@ -41,6 +44,7 @@ const SENT: readonly JobStatus[] = [
   'declined',
   'rejected',
   'ghosted',
+  'withdrawn',
 ];
 
 async function readText(path: string): Promise<string | null> {
@@ -74,14 +78,18 @@ async function rulesIn(workspace: string): Promise<{ rules: LintConfig; problem:
   }
 }
 
-/** A starting resume's name in base/, such as "startup-ic", for base/startup-ic.json. */
-const BASE_NAME = /^base\/([a-z0-9][a-z0-9-]{0,80})$/;
+/**
+ * A starting resume's name in base/, such as "startup-ic" for base/startup-ic.json, or with a
+ * kind of job's folder after the first, "project-manager/startup-ic".
+ */
+const BASE_NAME = /^base\/(?:([a-z0-9][a-z0-9-]{0,39})\/)?([a-z0-9][a-z0-9-]{0,80})$/;
 
 /** Where a resume's data is and its files go: a job's folder, or a starting resume in base/. */
 export function resumeAt(workspace: string, folder: string) {
-  const base = BASE_NAME.exec(folder)?.[1];
+  const [, kind, base] = BASE_NAME.exec(folder) ?? [];
   if (base) {
-    return { where: 'base', dir: join(workspace, 'base'), data: `${base}.json`, isJob: false };
+    const where = kind ? `base/${kind}` : 'base';
+    return { where, dir: join(workspace, ...where.split('/')), data: `${base}.json`, isJob: false };
   }
   if (!FOLDER_NAME.test(folder)) return null;
   return {
@@ -106,7 +114,7 @@ export async function buildResume(
 ): Promise<string> {
   const at = resumeAt(deps.workspace, folder);
   if (!at) {
-    return `“${folder}” isn’t a job folder or a starting resume. Use the job folder’s own name, such as 2026-10-11-acme-staff-engineer, or base/<name> for base/<name>.json.`;
+    return `“${folder}” isn’t a job folder or a starting resume. Use the job folder’s own name, such as 2026-10-11-acme-staff-engineer, or base/<name> for base/<name>.json, or base/<kind>/<name> for a kind of job’s.`;
   }
   if (format !== undefined && !(FORMATS as readonly string[]).includes(format)) {
     return `The format should be ${FORMATS.join(', ')}.`;

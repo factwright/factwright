@@ -1,5 +1,7 @@
+/* Its rows' tints stay inside its rounded corners. */
 .table {
   margin-top: 14px;
+  overflow: hidden;
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   background: var(--fw-surface);
@@ -72,13 +74,37 @@
   }
 }
 
+.headRow {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--fw-border);
+}
+
 .head {
+  flex: 1 1 auto;
+  min-width: 0;
   padding-top: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--fw-border);
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
   font-weight: 550;
+}
+
+/* The box that selects a job, or every job, ahead of each row. */
+.pick {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: stretch;
+  padding-left: var(--fw-space-4);
+}
+
+.pick input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--fw-accent);
+  cursor: pointer;
 }
 
 .rows {
@@ -91,25 +117,19 @@
   border-top: 1px solid var(--fw-border);
 }
 
-.row {
-  width: 100%;
-  min-height: 58px;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  border: 0;
+.item {
+  display: flex;
   background: var(--fw-surface);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
-.row:hover {
+.item:hover {
   background: var(--fw-hover);
 }
 
-.row:focus-visible {
-  outline-offset: -2px;
+/* Picked to move with others: a light tint. Open in the panel: the accent's. */
+.picked,
+.picked:hover {
+  background: color-mix(in srgb, var(--fw-accent-soft) 55%, var(--fw-surface));
 }
 
 .selected,
@@ -117,8 +137,28 @@
   background: var(--fw-accent-soft);
 }
 
-.rows li:last-child .row {
-  border-radius: 0 0 var(--fw-radius-lg) var(--fw-radius-lg);
+.row {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 58px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
+/* With the boxes, the row's own padding starts after them. */
+.pickable .head,
+.pickable .row {
+  padding-left: var(--fw-space-3);
 }
 
 .row .job {
@@ -221,4 +261,75 @@
 .row .action {
   color: var(--fw-need);
   font-weight: 600;
+}
+
+/* The jobs set aside for later, folded under a line of their own at the bottom of To review. */
+.later {
+  border-top: 1px solid var(--fw-border);
+}
+
+.laterOnly {
+  border-top: 0;
+}
+
+.laterToggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  width: 100%;
+  padding: 12px var(--fw-space-4);
+  border: 0;
+  background: var(--fw-bar);
+  color: var(--fw-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.laterToggle[aria-expanded="true"] {
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.laterToggle:hover {
+  background: var(--fw-hover);
+}
+
+.laterToggle:focus-visible {
+  outline-offset: -2px;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--fw-muted);
+  transition: transform 120ms ease;
+}
+
+.laterToggle[aria-expanded="true"] .chevron {
+  transform: rotate(90deg);
+}
+
+.laterName {
+  font-weight: 600;
+}
+
+.laterCount {
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.laterHint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
 }

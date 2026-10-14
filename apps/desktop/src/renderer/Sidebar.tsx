@@ -5,11 +5,13 @@ import type { ProfileEntry } from '../shared/profiles.ts';
 import type { SyncStatus } from '../shared/sync.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
 import { ClaudeCard, type OwnSignIn } from './ClaudeCard.tsx';
+import { LevelsChip } from './LevelsChip.tsx';
 import { ProfileSwitcher } from './profiles/ProfileSwitcher.tsx';
 import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
 import { UpdateCard } from './updates/UpdateCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
+import type { LevelChoices } from './useLevelChoices.ts';
 
 /** The app's places: the jobs, the fact bank, and everything else about the user. */
 export type Page = 'jobs' | 'facts' | 'profile';
@@ -19,8 +21,8 @@ const COFFEE_URL = 'https://buymeacoffee.com/stevehillyer';
 
 /**
  * The sidebar: the open profile when there's more than one, the app's places, then an update when
- * there's one, sync, the user's Claude, a way to support Factwright, and Factwright's version, so
- * an update shows it landed.
+ * there's one, sync, the user's Claude and the levels it runs at, a way to support Factwright, and
+ * Factwright's version, so an update shows it landed.
  */
 export function Sidebar({
   profiles,
@@ -35,6 +37,7 @@ export function Sidebar({
   sync,
   onOpenSync,
   onOpenClaudeSettings,
+  levels,
   jobCount,
   factCount,
   update,
@@ -64,6 +67,8 @@ export function Sidebar({
   onOpenSync: () => void;
   /** Opens Claude's settings: its model, and what it may do without asking. */
   onOpenClaudeSettings: () => void;
+  /** The user's choices of model and effort, once they've loaded. */
+  levels: LevelChoices | null;
   /** How many jobs there are, once they've loaded. */
   jobCount?: number | undefined;
   /** How many facts the fact bank holds, once there are some. */
@@ -114,16 +119,27 @@ export function Sidebar({
           onRestart={update.onRestart}
         />
         <SyncCard status={sync} onOpen={onOpenSync} />
-        <ClaudeCard
-          status={claude}
-          onRecheck={onRecheckClaude}
-          signIn={claudeSignIn}
-          {...(terminal && { terminal })}
-          setup={setup.check}
-          checkingSetup={setup.checking}
-          onCheckSetup={setup.checkAgain}
-          onSettings={onOpenClaudeSettings}
-        />
+        <div className={styles.claude}>
+          <ClaudeCard
+            status={claude}
+            onRecheck={onRecheckClaude}
+            signIn={claudeSignIn}
+            {...(terminal && { terminal })}
+            setup={setup.check}
+            checkingSetup={setup.checking}
+            onCheckSetup={setup.checkAgain}
+            onSettings={onOpenClaudeSettings}
+          />
+          {claude !== 'checking' && claude.state === 'ready' && levels && (
+            <LevelsChip
+              plan={claude.plan}
+              method={claude.method}
+              models={levels.models}
+              effort={levels.effort}
+              onOpen={onOpenClaudeSettings}
+            />
+          )}
+        </div>
         <div className={styles.footer}>
           <a className={styles.support} href={COFFEE_URL} target="_blank" rel="noreferrer">
             <Heart size={14} aria-hidden="true" />

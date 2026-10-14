@@ -13,6 +13,8 @@ export interface TagInputProps extends FieldControl {
   max?: number;
   /** The longest an entry can be, in characters. */
   maxLength?: number;
+  /** Takes the focus when it appears, as when it's the next thing to fill in. */
+  autoFocus?: boolean;
   className?: string;
 }
 
@@ -34,6 +36,7 @@ export function TagInput({
   placeholder,
   max = 30,
   maxLength = 120,
+  autoFocus,
   className,
   ...control
 }: TagInputProps) {
@@ -86,6 +89,8 @@ export function TagInput({
       )}
       <input
         {...control}
+        // biome-ignore lint/a11y/noAutofocus: only when asked, as for the next thing to fill in.
+        autoFocus={autoFocus}
         className={styles.input}
         value={draft}
         placeholder={value.length >= max ? undefined : placeholder}

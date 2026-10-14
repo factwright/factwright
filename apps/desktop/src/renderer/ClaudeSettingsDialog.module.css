@@ -14,11 +14,8 @@
   line-height: 1.5;
 }
 
+/* What recommended means on a plan that suits lighter levels. */
 .pro {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--fw-space-2);
   margin-top: var(--fw-space-3);
   padding: var(--fw-space-3);
   border-radius: var(--fw-radius-md);

@@ -19,5 +19,7 @@ If the user doesn't name a style, infer it from the company and say which you pi
 ## Starting resumes
 `base/<style>-<track>.json` is the starting resume for that style and track, in the template `templates.md` gives that kind of company. Tailored resumes start from the closest one.
 
+When the user wants more than one kind of job, such as Developer and Project manager, those are the first kind's. Each other kind has its own in a folder named for it, `base/<kind>/<style>-<track>.json`, and a job's tailored resume starts from its own kind's.
+
 ## Adding a style
 Copy a style file to `<name>.md`, fill in its sections (Reader, Tracks, Emphasize, Avoid, Tone, Sections), and add it to the table above.

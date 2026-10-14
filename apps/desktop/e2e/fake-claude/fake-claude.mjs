@@ -1,7 +1,8 @@
 // A stand-in for Claude Code, for the end-to-end tests. It answers the app's version and
 // sign-in checks, and in a run it talks to the app the way Claude Code does: it reaches
 // Factwright's tools with the run's token, and sends the prompt, Stop and session-end hooks. It
-// never reaches Anthropic. FAKE_CLAUDE_TRUST=ask makes it ask whether to trust the folder first.
+// never reaches Anthropic. FAKE_CLAUDE_TRUST=ask makes it ask whether to trust the folder first,
+// and FAKE_CLAUDE_PLAN=pro signs it in on a Pro plan rather than Max.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -19,7 +20,8 @@ if (args[0] === 'auth' && args[1] === 'status') {
     console.log(JSON.stringify({ loggedIn: false, authMethod: 'none' }));
     process.exit(1);
   }
-  console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' }));
+  const plan = process.env.FAKE_CLAUDE_PLAN ?? 'max';
+  console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: plan }));
   process.exit(0);
 }
 

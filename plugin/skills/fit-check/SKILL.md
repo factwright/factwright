@@ -11,7 +11,10 @@ Fast and short. The user should get the verdict at a glance. Don't ask questions
 Input: the listing (a link or pasted text), plus anything the user adds (company site, recruiter, notes). The app's Run buttons name a job instead, as `job <id>`: call `job_details` with that id, and work from its folder's posting or its link. If there's no listing, ask for it in one line and stop.
 
 Before starting, read:
-- `searches/criteria.md`: the user's filters, preferences, scoring and tiers. Job searches use the same bar. If it's missing but `about-me/answers.json` has what they want, judge the filters from that. If neither is there, use the rubric below with no filters, and say so in one line.
+- `searches/criteria.md`: the user's filters, preferences, scoring and tiers. Job searches use the same bar. If it's missing but `about_you` has what they want, judge the filters from that. If neither is there, use the rubric below with no filters, and say so in one line.
+  - **More than one kind of job:** `about_you` lists them, such as Developer and Project manager, and criteria.md's **Kinds of job** section has a section for each. A section for a kind `about_you` doesn't list is left over from before: skip it.
+  - Judge the job as its kind: the one `job_details` gives for a job on file, as the user or an earlier check set it. When it says the kind isn't set yet, or the job isn't on file, judge it as the kind the posting fits best, and say which in one line. Its kind's Level, Kind of work and Pay lines count as filters too, and its role is scored against them.
+  - If the file has no section for the job's kind, as when the user edited it by hand before adding that kind: its filters and scoring are the first kind's. For another kind, use its own roles, levels and pay from `about_you` in place of the file's, and the rest of the file as written.
 - all of `facts/`. It's cheap. In `facts/gaps.md`, **Doesn't have** is settled. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 
 ## 1. Read the job
@@ -22,7 +25,7 @@ Before starting, read:
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.
 
 ## 2. Score
-- Check the criteria.md **Filters** first. A failed filter makes the verdict **Skip**, stated first with the reason (e.g. "Skip: hybrid in Austin"). Still give the score, since the user may want it anyway.
+- Check the criteria.md **Filters** first, and the job's kind's lines when there's more than one kind. A failed filter makes the verdict **Skip**, stated first with the reason (e.g. "Skip: hybrid in Austin"). Still give the score, since the user may want it anyway.
 - Score 0–100 against facts/ only, with the criteria.md rubric. Without one, use: work 40 (how much of the job's core work the facts prove, domain included) · role 25 (how well the level and shape fit what the user wants) · stack 20 (overlap with proven tech) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, certification).
 - Respect status and ownership tags: built ≠ live, led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user confirms it; say so in the gaps.
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61 · **Long shot** < 50.
@@ -37,6 +40,7 @@ Before starting, read:
 - Sum it up as one mood: **Loved**, **Liked**, **Mixed**, **Disliked**, **Hated**, or **Thin data**. Ratings are a guide (4.3+ loved, 3.9–4.2 liked, 3.3–3.8 mixed, 2.7–3.2 disliked, lower hated); themes and recent news can move it a notch.
 
 ## 4. Reply (10 lines or fewer)
+With more than one kind of job, name the job's kind in the first line, such as **Good fit as Project manager, 68/100**.
 ```
 **Good fit, 68/100**: work 30/40 · role 18/25 · stack 12/20 · reqs 8/15
 - Why: <2–3 strongest matches, each tied to a fact>
@@ -53,7 +57,7 @@ Every job checked gets a folder, so its posting and this write-up survive dead l
 - `posting.md`, the posting word for word:
   - From a link: call `save_posting` with the link and the folder's name. It saves what you read, word for word, without asking.
   - Pasted text, or save_posting couldn't read it: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
-- `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, `- **Fit check:** <Verdict>, <score>/100 (fit-check.md)`, then `## Job description` with one line: "Saved word for word in posting.md."
+- `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, `- **Fit check:** <Verdict>, <score>/100 (fit-check.md)`, and with more than one kind of job, `- **Kind of job:** <its id>`, which the app files the job under. Then `## Job description` with one line: "Saved word for word in posting.md."
 - `fit-check.md`: the full write-up, in the shape below. The app reads the parts, the work list and the mood out of it.
 - `apply.md`, only when the posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"). Skip it for a plain apply button. The app shows it as a How to apply alert. Format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
 

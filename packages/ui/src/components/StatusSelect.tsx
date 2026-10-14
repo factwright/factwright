@@ -1,4 +1,4 @@
-import { JOB_STATUSES, type JobStatus } from '@factwright/core';
+import { type JobStatus, STATUS_GROUPS } from '@factwright/core';
 import { ChevronDown } from 'lucide-react';
 import { cx } from '../cx.ts';
 import pill from './Pill.module.css';
@@ -14,8 +14,9 @@ export interface StatusSelectProps {
 }
 
 /**
- * A job's status as a tinted pill that opens a menu of every status. It's the system's own
- * menu, so it works with the keyboard and screen readers and looks at home on each platform.
+ * A job's status as a tinted pill that opens a menu of every status, grouped into before
+ * applying, after applying and closed. It's the system's own menu, so it works with the keyboard
+ * and screen readers and looks at home on each platform.
  */
 export function StatusSelect({ status, label, onChange, disabled }: StatusSelectProps) {
   return (
@@ -27,10 +28,14 @@ export function StatusSelect({ status, label, onChange, disabled }: StatusSelect
         disabled={disabled}
         onChange={(event) => onChange(event.target.value as JobStatus)}
       >
-        {JOB_STATUSES.map((each) => (
-          <option key={each} value={each}>
-            {JOB_STATUS_DISPLAY[each].label}
-          </option>
+        {STATUS_GROUPS.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.statuses.map((each) => (
+              <option key={each} value={each}>
+                {JOB_STATUS_DISPLAY[each].label}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       <ChevronDown className={styles.chevron} size={12} strokeWidth={2.4} aria-hidden="true" />

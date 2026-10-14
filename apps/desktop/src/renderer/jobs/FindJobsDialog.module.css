@@ -4,6 +4,19 @@
   gap: var(--fw-space-3);
 }
 
+/* With more than one kind of job: which kind to look for. */
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-3);
+}
+
+.kindsLabel {
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+}
+
 .places {
   display: flex;
   flex-direction: column;

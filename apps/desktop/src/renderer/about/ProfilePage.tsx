@@ -4,8 +4,9 @@ import { Check, Circle, FileText, LoaderCircle } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { labelOf, pagesFor, RESUME_FILES } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import { templateName } from '../../shared/looks.ts';
-import type { StartingResume } from '../../shared/profile.ts';
+import type { StartingResume, TemplateInfo } from '../../shared/profile.ts';
 import type { ProfileEntry } from '../../shared/profiles.ts';
 import { type RunTask, TEMPLATE_SKILL } from '../../shared/runs.ts';
 import { ResumePreview } from '../jobs/ResumePreview.tsx';
@@ -15,7 +16,13 @@ import type { RunPhase } from '../useClaudeRun.ts';
 import styles from './ProfilePage.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
 import { FilesStep } from './steps/FilesStep.tsx';
-import { looksSummary, sharedSummary, wantsSummary } from './steps/ReadyStep.tsx';
+import {
+  looksSummary,
+  placesSummary,
+  sharedSummary,
+  wantsSummary,
+  workSummary,
+} from './steps/ReadyStep.tsx';
 import { TemplatesStep } from './steps/TemplatesStep.tsx';
 import { WantsStep } from './steps/WantsStep.tsx';
 import { WordsStep } from './steps/WordsStep.tsx';
@@ -70,6 +77,43 @@ function Card({
       <div className={styles.cardBody}>{children}</div>
       {actions && <div className={styles.cardActions}>{actions}</div>}
     </section>
+  );
+}
+
+/** A starting resume, with buttons to preview it and open it. */
+function ResumeRow({
+  resume,
+  templates,
+  onPreview,
+  onOpen,
+}: {
+  resume: StartingResume;
+  templates: readonly TemplateInfo[];
+  onPreview: (path: string) => void;
+  onOpen: (path: string) => void;
+}) {
+  return (
+    <li className={styles.resume}>
+      <FileText size={16} aria-hidden="true" />
+      <span className={styles.resumeName}>
+        {resume.title}
+        <span className={styles.resumeLook}>{templateName(resume.layout, templates)}</span>
+      </span>
+      {resume.pdf && (
+        <Button size="sm" variant="quiet" onClick={() => onPreview(resume.pdf as string)}>
+          Preview
+        </Button>
+      )}
+      {(resume.pdf || resume.docx) && (
+        <Button
+          size="sm"
+          variant="quiet"
+          onClick={() => onOpen((resume.pdf ?? resume.docx) as string)}
+        >
+          Open
+        </Button>
+      )}
+    </li>
   );
 }
 
@@ -134,14 +178,30 @@ export function ProfilePage({
   );
 
   const fresh = status.unread.length + (status.notesChanged ? 1 : 0);
+  // With more than one kind of job, each has its own work and starting resumes.
+  const kinds = hasKinds(answers) ? kindsOf(answers) : null;
+  const firstKind = kinds?.[0]?.id ?? '';
+  const resumesOf = (kind: string) =>
+    status.starting.filter((resume) => (resume.kind ?? firstKind) === kind);
+  const missing = kinds?.some((kind) => resumesOf(kind.id).length === 0) ?? false;
+  const resumeRow = (resume: StartingResume) => (
+    <ResumeRow
+      key={resume.path}
+      resume={resume}
+      templates={profile.templates}
+      onPreview={(path) => setPreview(asJobFile(path, 'pdf'))}
+      onOpen={(path) => void api.openFile(path)}
+    />
+  );
 
   return (
     <main className={styles.page}>
       <header className={styles.head}>
         <h1 className={styles.title}>Profile</h1>
         <p className={styles.subtitle}>
-          {[answers.you.name, answers.roles[0]].filter(Boolean).join(' · ') ||
-            'What Factwright knows about you'}
+          {[answers.you.name, ...(kinds ? kinds.map((kind) => kind.name) : [answers.roles[0]])]
+            .filter(Boolean)
+            .join(' · ') || 'What Factwright knows about you'}
         </p>
       </header>
 
@@ -229,50 +289,32 @@ export function ProfilePage({
           title="Starting resumes"
           actions={
             claims > 0
-              ? runButton(status.starting.length > 0 ? 'Build them again' : 'Build them', {
-                  skill: 'get-started',
-                  mode: 'resumes',
-                })
+              ? runButton(
+                  status.starting.length > 0 && !missing ? 'Build them again' : 'Build them',
+                  { skill: 'get-started', mode: 'resumes' },
+                )
               : undefined
           }
         >
-          {status.starting.length > 0 ? (
-            <ul className={styles.resumes}>
-              {status.starting.map((resume: StartingResume) => (
-                <li key={resume.path} className={styles.resume}>
-                  <FileText size={16} aria-hidden="true" />
-                  <span className={styles.resumeName}>
-                    {resume.title}
-                    <span className={styles.resumeLook}>
-                      {templateName(resume.layout, profile.templates)}
-                    </span>
-                  </span>
-                  {resume.pdf && (
-                    <Button
-                      size="sm"
-                      variant="quiet"
-                      onClick={() => setPreview(asJobFile(resume.pdf as string, 'pdf'))}
-                    >
-                      Preview
-                    </Button>
-                  )}
-                  {(resume.pdf || resume.docx) && (
-                    <Button
-                      size="sm"
-                      variant="quiet"
-                      onClick={() => void api.openFile((resume.pdf ?? resume.docx) as string)}
-                    >
-                      Open
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
+          {status.starting.length === 0 ? (
             <p className={styles.quiet}>
-              One resume for each template you picked, ready to send or tailor. Your Claude builds
+              One resume for each template you picked
+              {kinds ? ', for each kind of job' : ''}, ready to send or tailor. Your Claude builds
               them once your facts are confirmed.
             </p>
+          ) : kinds ? (
+            kinds.map((kind) => (
+              <div key={kind.id} className={styles.kindResumes}>
+                <h3 className={styles.kindName}>{kind.name}</h3>
+                {resumesOf(kind.id).length > 0 ? (
+                  <ul className={styles.resumes}>{resumesOf(kind.id).map(resumeRow)}</ul>
+                ) : (
+                  <p className={styles.quiet}>None yet. Build them to make a set for it.</p>
+                )}
+              </div>
+            ))
+          ) : (
+            <ul className={styles.resumes}>{status.starting.map(resumeRow)}</ul>
           )}
         </Card>
 
@@ -284,12 +326,28 @@ export function ProfilePage({
             </Button>
           }
         >
-          <p>{wantsSummary(answers) ?? 'Nothing yet.'}</p>
+          {kinds ? (
+            <>
+              <ul className={styles.kinds}>
+                {kinds.map((kind) => (
+                  <li key={kind.id}>
+                    <span className={styles.kindName}>{kind.name}</span>
+                    <span className={styles.quiet}>{workSummary(kind) || 'Nothing yet'}</span>
+                  </li>
+                ))}
+              </ul>
+              {placesSummary(answers) && <p>{placesSummary(answers)}</p>}
+            </>
+          ) : (
+            <p>{wantsSummary(answers) ?? 'Nothing yet.'}</p>
+          )}
           {status.criteria === 'own' && (
             <div className={styles.own}>
               <p className={styles.quiet}>
                 Your search criteria file was changed by hand, so it’s kept as it is, and these
                 answers don’t change it.
+                {kinds &&
+                  ' For a kind of job it has no section for, searches use that kind’s titles, levels and pay from here.'}
               </p>
               <Button size="sm" variant="quiet" onClick={() => void api.useAnswersForCriteria()}>
                 Use these answers instead

@@ -159,6 +159,7 @@ describe('the standing rules', () => {
       'Information, not instructions',
       'Facts first',
       'Everything on file',
+      'Kinds of job',
       'Ask once',
       'Learn from feedback',
       'Confidential stays out',

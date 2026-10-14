@@ -109,6 +109,8 @@ export interface FolderRecord extends RecordBase {
   foundVia: string | null;
   format: string | null;
   style: string | null;
+  /** The kind of job its fit check judged it as, by id or name, such as "project-manager". */
+  kind: string | null;
   files: JobFile[];
   docs: JobDocs;
 }
@@ -126,6 +128,8 @@ export interface SearchRecord extends RecordBase {
   location: string | null;
   tier: FitTier | null;
   score: number | null;
+  /** The kind of job it was scored as: its own, or the whole search's. */
+  kind: string | null;
   detail: SearchDetail;
 }
 
@@ -240,6 +244,7 @@ function readJobNotes(markdown: string) {
     foundVia: field('Found via'),
     format: field('Format'),
     style: field('Style / track') ?? field('Style'),
+    kind: field('Kind of job'),
   };
 }
 
@@ -325,6 +330,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       foundVia: notes.foundVia,
       format: notes.format,
       style: notes.style,
+      kind: notes.kind,
       files,
       docs,
     });
@@ -372,6 +378,8 @@ function searchRecords(workspace: WorkspaceReader): ToolRecord[] {
     const date = firstDate(text(about.checked)) ?? firstDate(`${folder.slice(0, 7)}-01`);
     const source = searchSource(text(about.source) ?? text(about.title) ?? folder);
     const report = text(about.artifactUrl);
+    // A search for one kind of job says so once. One for every kind says it on each job.
+    const searchKind = text(about.kind);
 
     const found = (item: Record<string, unknown>, longShot: boolean): SearchRecord => {
       const company = text(item.company) ?? '';
@@ -398,6 +406,7 @@ function searchRecords(workspace: WorkspaceReader): ToolRecord[] {
         location: longShot ? null : text(item.remote),
         tier: longShot ? 'long' : (SEARCH_TIERS.get(text(item.tier) ?? '') ?? null),
         score: longShot ? null : number(item.score),
+        kind: text(item.kind) ?? searchKind,
         detail: {
           why: longShot ? [] : texts(item.why),
           gaps: longShot ? [] : texts(item.gaps),

@@ -98,6 +98,39 @@ describe('tracker rows', () => {
     expect(trackedChange({ id: 's1', status: 'teleported', at: '2026-10-10' })).toBeNull();
   });
 
+  it('read the kind of job the user put a job under, leaving out one that isn’t an id', () => {
+    expect(trackedRow({ ...STORED_JOB, kind: 'project-manager' }).kind).toBe('project-manager');
+    expect(trackedRow(STORED_JOB).kind).toBeNull();
+    expect(trackedRow({ ...STORED_JOB, kind: '../base' }).kind).toBeNull();
+  });
+
+  it('read a job set aside, and one passed on, with the day it comes back and why', () => {
+    expect(
+      trackedRow({ ...STORED_JOB, status: 'later', back_on: '2026-11-02', pass_reason: null }),
+    ).toMatchObject({ status: 'later', backOn: '2026-11-02', passReason: null });
+    expect(trackedRow({ ...STORED_JOB, status: 'passed', pass_reason: 'pay' })).toMatchObject({
+      status: 'passed',
+      backOn: null,
+      passReason: 'pay',
+    });
+    // A tracker from before both, or a value that doesn't read, has neither.
+    expect(trackedRow(STORED_JOB)).toMatchObject({ backOn: null, passReason: null });
+    expect(trackedRow({ ...STORED_JOB, back_on: 'soon', pass_reason: 'vibes' })).toMatchObject({
+      backOn: null,
+      passReason: null,
+    });
+  });
+
+  it('read the statuses Claude’s work used to set, in the job and its history, as To review', () => {
+    expect(trackedRow({ ...STORED_JOB, status: 'checked' }).status).toBe('review');
+    expect(trackedRow({ ...STORED_JOB, status: 'resume' }).status).toBe('review');
+    expect(trackedChange({ id: 's1', status: 'resume', at: '2026-10-10' })).toEqual({
+      id: 's1',
+      status: 'review',
+      at: '2026-10-10',
+    });
+  });
+
   it('leave out answers and questions that don’t read, keeping the rest', () => {
     const row = trackedRow({
       ...STORED_JOB,
@@ -217,7 +250,7 @@ describe('jobList', () => {
         notes: new Map([['acme--staff', [NOTE]]]),
       }),
     ).toHaveLength(1);
-    for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }]) {
+    for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }, { kind: 'pm' }]) {
       const row = trackedRow({
         ...STORED_JOB,
         status: null,
@@ -236,6 +269,22 @@ describe('jobList', () => {
       folder: null,
       link: 'https://jobs.ashbyhq.com/acme/7f3a',
     });
+  });
+
+  it('takes a job the user asked Claude about out of New, like Claude’s other work', () => {
+    const quiet = { questions: '[]', sent: '[]', asks: '[]', status: null };
+    const stage = (row: Record<string, unknown>, collected?: CollectedJob) =>
+      jobList(
+        [trackedRow({ ...STORED_JOB, ...quiet, ...row })],
+        new Map(collected ? [['acme--staff', collected]] : []),
+        NOTHING_KEPT,
+      )[0]?.stage;
+    const searched = { ...found, stage: 'new' } as CollectedJob;
+    expect(stage({}, searched)).toBe('new');
+    expect(stage({ asks: STORED_JOB.asks }, searched)).toBe('review');
+    expect(stage({ questions: STORED_JOB.questions }, searched)).toBe('review');
+    expect(stage({ asks: STORED_JOB.asks })).toBe('review');
+    expect(stage({}, { ...found, stage: 'review' } as CollectedJob)).toBe('review');
   });
 
   it('shows a job added by hand with the pay the user typed', () => {
