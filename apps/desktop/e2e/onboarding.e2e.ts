@@ -217,4 +217,20 @@ test('takes a second kind of job, with its own titles, and searches for it alone
   const panel = window.locator('section[aria-label="Claude"]');
   await expect(panel.getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('/factwright:job-search for project-manager: HN');
+
+  // The job it found is under that kind, and the list can show that kind's jobs alone.
+  const kinds = window.getByRole('combobox', { name: 'Kind of job', exact: true });
+  await kinds.selectOption('project-manager');
+  await window
+    .locator('label')
+    .filter({ has: window.getByRole('radio', { name: /^All/ }) })
+    .click();
+  await window.getByRole('button', { name: /^Harbor Light/ }).click();
+  const kind = window.getByRole('combobox', { name: 'Kind of job for Harbor Light' });
+  await expect(kind).toHaveValue('project-manager');
+  // Put under the first kind instead, it leaves the project manager jobs.
+  await kind.selectOption('developer');
+  await expect(window.getByRole('button', { name: /^Harbor Light/ })).toBeHidden();
+  await kinds.selectOption('developer');
+  await expect(window.getByRole('button', { name: /^Harbor Light/ })).toBeVisible();
 });

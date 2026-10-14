@@ -92,7 +92,10 @@ export function App({ api }: { api: FactwrightApi }) {
     ...NO_FILTERS,
   }));
   // A kind of job picked, then removed, shows every kind again.
-  const filter = kinds.some((kind) => kind.id === chosen.kind) ? chosen : { ...chosen, kind: null };
+  const filter =
+    chosen.kind === null || kinds.some((kind) => kind.id === chosen.kind)
+      ? chosen
+      : { ...chosen, kind: null };
   const changeFilter = (next: ListFilter) => {
     if (next.view !== filter.view) writePref(VIEW_PREF, next.view);
     setFilter(next);
