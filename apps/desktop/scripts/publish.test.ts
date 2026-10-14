@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -17,9 +18,13 @@ const PUBLISH = fileURLToPath(new URL('publish.sh', import.meta.url));
 
 /**
  * A stand-in for the AWS CLI that keeps each uploaded file under $STORE, with the sha256 it was
- * uploaded with under $META, and logs each upload. It answers only the calls publish.sh makes, as
- * publish.sh makes them. An upload to $FAIL_ON fails, as a network problem would partway through a
- * publish, $FEED_FAILS makes reading a file back fail, and $HEAD_FAILS makes asking about one fail.
+ * uploaded with under $META, and logs each upload with its headers. It answers only the calls
+ * publish.sh makes, as publish.sh makes them. To act out what goes wrong:
+ * - $FAIL_ON: uploading that key fails, as a network problem would partway through a publish.
+ * - $FEED_FAILS: reading a file back fails.
+ * - $HEAD_FAILS: asking about that key fails with something other than "not found".
+ * - $EMPTY_META: asking about that key gets an empty answer.
+ * - $MARKER_ON, $MARKER: uploading the first puts the second up, as a take-back during a publish.
  */
 const AWS = `#!/usr/bin/env bash
 set -euo pipefail
@@ -29,15 +34,26 @@ if [ "$1 $2" = "s3 cp" ] && [ "$4" = - ]; then
   if [ ! -f "$STORE/$key" ]; then echo "fatal error: An error occurred (404) when calling the HeadObject operation: Key \\"$key\\" does not exist" >&2; exit 1; fi
   cat "$STORE/$key"
 elif [ "$1 $2" = "s3 cp" ]; then
-  src="$3"; key="\${4#s3://*/}"; sum=""; shift 4
+  src="$3"; dest="\${4#s3://}"; bucket="\${dest%%/*}"; key="\${dest#*/}"; shift 4
+  sum=""; cache=""; type=""; endpoint=""
   while [ $# -gt 0 ]; do
-    if [ "$1" = --metadata ]; then sum="\${2#sha256=}"; shift 2; else shift; fi
+    case "$1" in
+      --metadata) sum="\${2#sha256=}"; shift 2 ;;
+      --cache-control) cache="$2"; shift 2 ;;
+      --content-type) type="$2"; shift 2 ;;
+      --endpoint-url) endpoint="$2"; shift 2 ;;
+      *) shift ;;
+    esac
   done
   if [ "$key" = "\${FAIL_ON:-}" ]; then echo "upload failed: $key" >&2; exit 1; fi
   mkdir -p "$(dirname "$STORE/$key")" "$(dirname "$META/$key")"
   cp "$src" "$STORE/$key"
   printf '%s' "$sum" > "$META/$key"
-  echo "$key" >> "$UPLOADS"
+  printf '%s|%s|%s|%s|%s\\n' "$key" "$cache" "$type" "$endpoint" "$bucket" >> "$UPLOADS"
+  if [ "$key" = "\${MARKER_ON:-}" ]; then
+    mkdir -p "$(dirname "$STORE/$MARKER")" "$(dirname "$META/$MARKER")"
+    echo "taken back" > "$STORE/$MARKER"; : > "$META/$MARKER"
+  fi
 elif [ "$1 $2" = "s3api head-object" ]; then
   case " $* " in
     *" --query Metadata.sha256 --output text "*) ;;
@@ -47,8 +63,9 @@ elif [ "$1 $2" = "s3api head-object" ]; then
   while [ $# -gt 0 ]; do
     if [ "$1" = --key ]; then key="$2"; shift 2; else shift; fi
   done
-  if [ -n "\${HEAD_FAILS:-}" ]; then echo "An error occurred (403) when calling the HeadObject operation: Forbidden" >&2; exit 254; fi
+  if [ "$key" = "\${HEAD_FAILS:-}" ]; then echo "An error occurred (403) when calling the HeadObject operation: Forbidden" >&2; exit 254; fi
   if [ ! -f "$STORE/$key" ]; then echo "An error occurred (404) when calling the HeadObject operation: Not Found" >&2; exit 254; fi
+  if [ "$key" = "\${EMPTY_META:-}" ]; then echo; exit 0; fi
   if [ -s "$META/$key" ]; then cat "$META/$key"; echo; else echo None; fi
 else
   echo "aws, asked for something publish.sh doesn't do: $*" >&2; exit 2
@@ -88,6 +105,15 @@ const FILES = {
   }),
 };
 
+/** One upload, as the stand-in logged it. */
+interface Upload {
+  key: string;
+  cache: string;
+  type: string;
+  endpoint: string;
+  bucket: string;
+}
+
 let root: string;
 let store: string;
 let dist: string;
@@ -119,12 +145,32 @@ function publish(computer: Computer, version: string, env: Record<string, string
       ...env,
     },
   });
-  const uploads = readFileSync(join(root, 'uploads.log'), 'utf8').split('\n').filter(Boolean);
-  return { status: run.status, output: `${run.stdout}${run.stderr}`, uploads };
+  const log: Upload[] = readFileSync(join(root, 'uploads.log'), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [key = '', cache = '', type = '', endpoint = '', bucket = ''] = line.split('|');
+      return { key, cache, type, endpoint, bucket };
+    });
+  return {
+    status: run.status,
+    output: `${run.stdout}${run.stderr}`,
+    log,
+    uploads: log.map((upload) => upload.key),
+  };
 }
 
 const up = (key: string) => existsSync(join(store, key));
 const read = (path: string) => readFileSync(path, 'utf8');
+const sha256 = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+/** Each of a version's files is up with the sha256 of its own bytes. */
+function expectSums(computer: Computer, version: string): void {
+  const { installer, others } = FILES[computer](version);
+  for (const file of [installer, ...others]) {
+    expect(read(join(root, 'meta', file)), file).toBe(sha256(join(dist, file)));
+  }
+}
 
 // publish.sh runs on Linux in the release workflow, and needs bash and the usual Unix tools.
 describe.skipIf(process.platform === 'win32')('publish.sh', () => {
@@ -160,7 +206,18 @@ describe.skipIf(process.platform === 'win32')('publish.sh', () => {
       ]);
       expect(read(join(store, files.feed))).toContain('version: 0.1.2');
       expect(read(join(store, files.newest))).toBe(read(join(dist, files.installer)));
-      expect(read(join(root, 'meta', files.installer))).toMatch(/^[0-9a-f]{64}$/);
+      expectSums(computer, '0.1.2');
+      for (const upload of run.log) {
+        expect(upload.endpoint, upload.key).toBe('https://r2.invalid');
+        expect(upload.bucket, upload.key).toBe('factwright-downloads');
+        if (upload.key.endsWith('.yml')) {
+          expect([upload.cache, upload.type], upload.key).toEqual(['no-cache', 'text/yaml']);
+        } else if (upload.key === files.newest) {
+          expect(upload.cache).toBe('no-cache');
+        } else {
+          expect(upload.cache, upload.key).toBe('public, max-age=31536000, immutable');
+        }
+      }
     },
   );
 
@@ -197,6 +254,7 @@ describe.skipIf(process.platform === 'win32')('publish.sh', () => {
     expect(again.uploads).not.toContain('Factwright-0.1.2.dmg');
     expect(again.uploads.at(-1)).toBe('latest-mac.yml');
     expect(read(join(store, 'latest-mac.yml'))).toContain('version: 0.1.2');
+    expectSums('mac', '0.1.2');
   });
 
   it('finishes for Windows too, after its feed failed to go up', () => {
@@ -206,6 +264,7 @@ describe.skipIf(process.platform === 'win32')('publish.sh', () => {
     expect(again.status, again.output).toBe(0);
     expect(again.output).toContain('Factwright-Setup-0.1.2.exe is up already.');
     expect(read(join(store, 'latest.yml'))).toContain('version: 0.1.2');
+    expectSums('windows', '0.1.2');
   });
 
   it('checks every file before uploading any, and refuses one that’s up with other contents', () => {
@@ -220,12 +279,15 @@ describe.skipIf(process.platform === 'win32')('publish.sh', () => {
     expect(run.uploads).toEqual([]);
   });
 
-  it('refuses a file that went up without a sha256, as the first releases did', () => {
+  it.each([
+    ['no sha256', {}],
+    ['an empty answer', { EMPTY_META: 'Factwright-0.1.2.dmg' }],
+  ])('refuses a file that’s up with %s to check it by', (_, env) => {
     build('mac', '0.1.2');
     mkdirSync(join(root, 'meta'), { recursive: true });
     writeFileSync(join(store, 'Factwright-0.1.2.dmg'), 'uploaded by an older publish.sh');
     writeFileSync(join(root, 'meta', 'Factwright-0.1.2.dmg'), '');
-    const run = publish('mac', '0.1.2');
+    const run = publish('mac', '0.1.2', env);
     expect(run.status).toBe(1);
     expect(run.output).toContain(
       'Factwright-0.1.2.dmg is up already, without a sha256 to check it by.',
@@ -248,29 +310,63 @@ describe.skipIf(process.platform === 'win32')('publish.sh', () => {
     expect(read(join(store, 'latest-mac.yml'))).toContain('version: 0.1.0');
   });
 
+  it('refuses a taken-back version even while its feed is still out', () => {
+    build('mac', '0.1.1');
+    expect(publish('mac', '0.1.1').status).toBe(0);
+    writeFileSync(join(store, 'feeds/0.1.1/withdrawn'), 'taken back');
+    const run = publish('mac', '0.1.1');
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('Factwright 0.1.1 was taken back');
+    expect(run.output).not.toContain('is out already');
+  });
+
+  it('stops before putting the feed up when the version is taken back while it publishes', () => {
+    build('mac', '0.1.0');
+    expect(publish('mac', '0.1.0').status).toBe(0);
+    build('mac', '0.1.2');
+    const run = publish('mac', '0.1.2', {
+      MARKER_ON: 'Factwright.dmg',
+      MARKER: 'feeds/0.1.2/withdrawn',
+    });
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('Factwright 0.1.2 was taken back');
+    expect(run.uploads).not.toContain('latest-mac.yml');
+    expect(read(join(store, 'latest-mac.yml'))).toContain('version: 0.1.0');
+  });
+
   it('refuses a folder that doesn’t hold the version’s feed and installer', () => {
     build('mac', '0.1.1');
-    const run = publish('mac', '0.1.2');
-    expect(run.status).toBe(1);
-    expect(run.output).toContain("doesn't hold Factwright 0.1.2's latest-mac.yml");
-    expect(run.uploads).toEqual([]);
+    const other = publish('mac', '0.1.2');
+    expect(other.status).toBe(1);
+    expect(other.output).toContain("doesn't hold Factwright 0.1.2's latest-mac.yml");
+    expect(other.uploads).toEqual([]);
 
     // The installer is the version's, but the feed names another.
     build('mac', '0.1.2');
     writeFileSync(join(dist, 'latest-mac.yml'), 'version: 0.1.1\n');
     const mixed = publish('mac', '0.1.2');
     expect(mixed.status).toBe(1);
-    expect(mixed.output).toContain("doesn't hold Factwright 0.1.2's latest-mac.yml");
     expect(mixed.uploads).toEqual([]);
+
+    // The feed is the version's, but its installer is missing.
+    build('mac', '0.1.2');
+    rmSync(join(dist, 'Factwright-0.1.2.dmg'));
+    const missing = publish('mac', '0.1.2');
+    expect(missing.status).toBe(1);
+    expect(missing.output).toContain("doesn't hold Factwright 0.1.2's latest-mac.yml");
+    expect(missing.uploads).toEqual([]);
   });
 
-  it('stops, rather than replacing a file, when it can’t check what’s up', () => {
-    build('mac', '0.1.2');
-    const run = publish('mac', '0.1.2', { HEAD_FAILS: '1' });
-    expect(run.status).not.toBe(0);
-    expect(run.output).toContain("Couldn't check whether feeds/0.1.2/withdrawn is up");
-    expect(run.uploads).toEqual([]);
-  });
+  it.each(['feeds/0.1.2/withdrawn', 'Factwright-0.1.2.dmg'])(
+    'stops, rather than taking %s for missing, when it can’t check whether it’s up',
+    (key) => {
+      build('mac', '0.1.2');
+      const run = publish('mac', '0.1.2', { HEAD_FAILS: key });
+      expect(run.status).not.toBe(0);
+      expect(run.output).toContain(`Couldn't check whether ${key} is up`);
+      expect(run.uploads).toEqual([]);
+    },
+  );
 
   it('stops, rather than guessing what’s out, when it can’t read the update feed', () => {
     build('mac', '0.1.2');

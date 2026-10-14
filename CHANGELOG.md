@@ -15,7 +15,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Fixed
 - Re-running a release's failed jobs long after it began can no longer put an older version out over a newer one that's gone out since.
-- A release whose uploads stopped partway can be finished by re-running its failed jobs, instead of needing a new version. Each file goes up with its sha256, so a re-run leaves the files that are up, and refuses one with other contents. A version that's been taken back, as docs/releasing.md says, can never be put out again by re-running its release.
+- A release whose uploads stopped partway can be finished by re-running its failed jobs, instead of needing a new version. Each file goes up with its sha256, so a re-run leaves the files that are up, and refuses one with other contents. A version that's been taken back, as docs/releasing.md says, can never be put out again, or get a release on GitHub, by re-running its release.
 
 ## 0.1.1 - 2026-10-13
 

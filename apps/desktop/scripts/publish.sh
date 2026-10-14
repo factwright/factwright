@@ -33,6 +33,12 @@ case "$computer" in
     ;;
 esac
 
+# R2 needs the AWS CLI's classic transfer client: the CRT one, the default from version 2.38, can
+# fail R2's signature checks on downloads.
+AWS_CONFIG_FILE=$(mktemp)
+export AWS_CONFIG_FILE
+printf '[default]\ns3 =\n  preferred_transfer_client = classic\n' > "$AWS_CONFIG_FILE"
+
 upload() { aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" --no-progress "${@:3}"; }
 
 # A file's sha256, which each version's files are uploaded with.
@@ -93,11 +99,15 @@ fi
 
 # A version taken back, as docs/releasing.md says under "If a release goes wrong", never goes out
 # again: re-running its run would otherwise find its files up, and put its feed back.
-withdrawn=$(stored "feeds/$version/withdrawn")
-if [ -n "$withdrawn" ]; then
-  echo "::error::Factwright $version was taken back, so it can't go out again. Release the next version instead."
-  exit 1
-fi
+refuse_if_withdrawn() {
+  local withdrawn
+  withdrawn=$(stored "feeds/$version/withdrawn")
+  if [ -n "$withdrawn" ]; then
+    echo "::error::Factwright $version was taken back, so it can't go out again. Release the next version instead."
+    exit 1
+  fi
+}
+refuse_if_withdrawn
 
 live=$(live_version)
 # The update feed goes up last, so once it names this version, there's nothing left to put up.
@@ -144,6 +154,8 @@ done
 upload "$dist/$feed" "feeds/$version/$feed" --cache-control no-cache --content-type text/yaml
 # The website's link: the newest installer, under a name that never changes.
 upload "$dist/$installer" "$newest" --cache-control no-cache
+# Once more, as taking the version back while this ran must win.
+refuse_if_withdrawn
 # The update feed goes last.
 upload "$dist/$feed" "$feed" --cache-control no-cache --content-type text/yaml
 

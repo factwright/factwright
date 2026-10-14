@@ -166,25 +166,42 @@ anything, and stops if it can't tell what's out.
 
 **To take a bad version back:** an installed copy only moves forward, so a bad version is fixed by
 releasing the next one. To stop it spreading first, put the previous version's files back where the
-newest go, and mark the bad one as taken back, so that re-running its run can never put it out
-again. Each release keeps its update feeds under `feeds/<version>/`. To take 0.1.1 back to 0.1.0:
+newest go, mark the bad one as taken back, so that neither publishing nor its release on GitHub can
+ever put it out again, and take its release off GitHub.
+
+If the bad version's release run is still going, cancel it first. You need the AWS CLI, an R2 API
+token with Object Read & Write on `factwright-downloads` (Cloudflare → R2 → Manage API tokens) as
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=auto`, and the CLI's classic
+transfer client, as its newer one can fail R2's signature checks:
+`aws configure set default.s3.preferred_transfer_client classic`.
+
+Each release keeps its update feeds under `feeds/<version>/`. To take 0.1.1 back to 0.1.0:
 
 ```bash
-endpoint=https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
-echo "taken back" | aws s3 cp - s3://factwright-downloads/feeds/0.1.1/withdrawn --endpoint-url "$endpoint"
-for feed in latest-mac.yml latest.yml; do
-  aws s3 cp "s3://factwright-downloads/feeds/0.1.0/$feed" "s3://factwright-downloads/$feed" \
-    --endpoint-url "$endpoint" --copy-props none --cache-control no-cache --content-type text/yaml
-done
-for pair in Factwright-0.1.0.dmg:Factwright.dmg Factwright-Setup-0.1.0.exe:Factwright-Setup.exe; do
-  aws s3 cp "s3://factwright-downloads/${pair%%:*}" "/tmp/${pair##*:}" --endpoint-url "$endpoint"
-  aws s3 cp "/tmp/${pair##*:}" "s3://factwright-downloads/${pair##*:}" --endpoint-url "$endpoint" --cache-control no-cache
-done
+(
+  set -euo pipefail
+  endpoint=https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
+  echo "taken back" | aws s3 cp - s3://factwright-downloads/feeds/0.1.1/withdrawn --endpoint-url "$endpoint"
+  for feed in latest-mac.yml latest.yml; do
+    aws s3 cp "s3://factwright-downloads/feeds/0.1.0/$feed" "s3://factwright-downloads/$feed" \
+      --endpoint-url "$endpoint" --metadata-directive REPLACE --cache-control no-cache --content-type text/yaml
+  done
+  work=$(mktemp -d)
+  for pair in Factwright-0.1.0.dmg:Factwright.dmg Factwright-Setup-0.1.0.exe:Factwright-Setup.exe; do
+    aws s3 cp "s3://factwright-downloads/${pair%%:*}" "$work/${pair##*:}" --endpoint-url "$endpoint"
+    aws s3 cp "$work/${pair##*:}" "s3://factwright-downloads/${pair##*:}" --endpoint-url "$endpoint" --cache-control no-cache
+  done
+  if gh release view v0.1.1 --repo factwright/factwright > /dev/null 2>&1; then
+    gh release delete v0.1.1 --repo factwright/factwright --yes
+  fi
+  gh release edit v0.1.0 --repo factwright/factwright --latest
+)
 ```
 
-The installers are downloaded and uploaded again rather than copied within R2, because a large copy
-there asks for the source's tags, which R2 doesn't support. Copies that haven't updated yet stay where
-they are.
+It stops at the first step that fails, and can be run again. The feeds are copied with
+`--metadata-directive REPLACE`, which sets their headers without the tag handling R2 doesn't
+support. The installers are downloaded and uploaded again for the same reason, as a large copy
+within R2 asks for the source's tags. Copies that haven't updated yet stay where they are.
 
 ## The website
 The download pages, `factwright.com/download/mac` and `/download/windows`, offer the newest
