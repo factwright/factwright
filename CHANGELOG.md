@@ -2,6 +2,11 @@
 
 Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+- A Support Factwright link at the bottom of the sidebar, above the version, which opens Factwright's page on Buy Me a Coffee in your browser, for anyone who'd like to chip in.
+
 ## 0.1.1 - 2026-10-13
 
 Steadier sync, the version in the sidebar, the privacy policy and terms, and installers in Factwright's colors.

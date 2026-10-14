@@ -1,5 +1,5 @@
 import { NavItem } from '@factwright/ui';
-import { BookCheck, Briefcase, UserRound } from 'lucide-react';
+import { BookCheck, Briefcase, Heart, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
 import type { SyncStatus } from '../shared/sync.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
@@ -12,9 +12,12 @@ import type { ClaudeStatusView } from './useClaudeStatus.ts';
 /** The app's places: the jobs, the fact bank, and everything else about the user. */
 export type Page = 'jobs' | 'facts' | 'profile';
 
+/** Factwright's page on Buy Me a Coffee, where anyone can chip in with a card and no account. */
+const COFFEE_URL = 'https://buymeacoffee.com/factwright';
+
 /**
- * The sidebar: the app's places, then an update when there's one, sync, the user's Claude, and
- * Factwright's version, so an update shows it landed.
+ * The sidebar: the app's places, then an update when there's one, sync, the user's Claude, a way
+ * to support Factwright, and Factwright's version, so an update shows it landed.
  */
 export function Sidebar({
   page,
@@ -92,7 +95,13 @@ export function Sidebar({
           onCheckSetup={setup.checkAgain}
           onSettings={onOpenClaudeSettings}
         />
-        {version && <p className={styles.version}>Factwright {version}</p>}
+        <div className={styles.footer}>
+          <a className={styles.support} href={COFFEE_URL} target="_blank" rel="noreferrer">
+            <Heart size={14} aria-hidden="true" />
+            Support Factwright
+          </a>
+          {version && <p className={styles.version}>Factwright {version}</p>}
+        </div>
       </div>
     </aside>
   );
