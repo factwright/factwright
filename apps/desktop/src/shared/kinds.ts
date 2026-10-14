@@ -1,3 +1,4 @@
+import { kindIdFor, kindNameKey, kindNameText } from '@factwright/core';
 import {
   type AboutYou,
   ANSWER_LIMITS,
@@ -5,9 +6,6 @@ import {
   FIELDS,
   type JobKind,
   type KindAnswers,
-  kindIdFor,
-  kindNameKey,
-  kindNameText,
   labelOf,
 } from './about.ts';
 

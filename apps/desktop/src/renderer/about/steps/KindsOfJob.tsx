@@ -1,12 +1,8 @@
+import { kindNameText } from '@factwright/core';
 import { Button, Field, Input, SegmentedControl } from '@factwright/ui';
 import { Plus } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
-import {
-  type AboutYou,
-  ANSWER_LIMITS,
-  type AnswerChanges,
-  kindNameText,
-} from '../../../shared/about.ts';
+import { type AboutYou, ANSWER_LIMITS, type AnswerChanges } from '../../../shared/about.ts';
 import { addKind, firstKindName, hasKinds, kindsOf, renameKind } from '../../../shared/kinds.ts';
 import styles from './KindsOfJob.module.css';
 

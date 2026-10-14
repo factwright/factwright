@@ -111,7 +111,20 @@ export {
   journeys,
 } from './journey.ts';
 export { companyKey, roleKey, slug } from './keys.ts';
-export { KIND_ID, type KindName, kindNamed, kindOfJob } from './kinds.ts';
+export {
+  KIND_ID,
+  KIND_LIMITS,
+  KINDS_FILE,
+  type KindName,
+  kindIdFor,
+  kindNamed,
+  kindNameKey,
+  kindNamesIn,
+  kindNameText,
+  kindOfJob,
+  readKindName,
+  sameKind,
+} from './kinds.ts';
 export { PRIVACY_URL, TERMS_URL } from './legal.ts';
 export { hostOf, isJobLink, type Link, linksFrom, normalizeUrl } from './links.ts';
 export {

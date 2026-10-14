@@ -14,6 +14,76 @@ export interface KindName {
   name: string;
 }
 
+/** How many kinds of job the app keeps, the first included, and how long a kind's name runs. */
+export const KIND_LIMITS = { kinds: 6, name: 60 } as const;
+
+/** Where the kinds of job are kept in the workspace. */
+export const KINDS_FILE = 'about-me/kinds-of-job.json';
+
+/** A kind of job's name as it's kept: on one line, with single spaces. */
+export const kindNameText = (name: string) => name.replace(/\s+/g, ' ').trim();
+
+/** What kinds of job are told apart by: their names, kept as they're kept, in any case. */
+export const kindNameKey = (name: string) => kindNameText(name).toLowerCase();
+
+/** Whether two kinds of job are the same one, by id or by name. */
+export const sameKind = (a: KindName, b: KindName) =>
+  a.id === b.id || kindNameKey(a.name) === kindNameKey(b.name);
+
+/** An id for a new kind of job, from its name, that none of the others has. */
+export function kindIdFor(name: string, taken: readonly string[]): string {
+  const words = slug(name).slice(0, 32).replace(/-+$/, '') || 'kind';
+  // A name Windows keeps for itself, such as "prn", can't name a folder in base/.
+  const base = KIND_ID.test(words) ? words : `${words}-jobs`;
+  let id = base;
+  for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+/** A kind of job's id and name, as a file holds them, or null when either doesn't hold up. */
+export function readKindName(value: unknown): KindName | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { id, name } = value as Record<string, unknown>;
+  if (typeof id !== 'string' || !KIND_ID.test(id)) return null;
+  if (typeof name !== 'string' || name.length > KIND_LIMITS.name) return null;
+  const named = kindNameText(name);
+  return named ? { id, name: named } : null;
+}
+
+/**
+ * The kinds of job the kinds file holds, by id and name, as the app reads them: the first kind,
+ * then each other one that holds up and isn't one before it, as many as the app keeps. None
+ * when the file holds no other kind, since then there's one kind, unnamed. A first kind the file
+ * doesn't name, as after a hand edit, is named for the user's first job title.
+ */
+export function kindNamesIn(file: unknown, firstTitle = ''): KindName[] {
+  const { first, others } = (typeof file === 'object' && file !== null ? file : {}) as Record<
+    string,
+    unknown
+  >;
+  const named = readKindName(first);
+  const kept: KindName[] = [];
+  for (const each of Array.isArray(others) ? others : []) {
+    if (kept.length === KIND_LIMITS.kinds - 1) break;
+    const kind = readKindName(each);
+    const clashes = (other: KindName) => kind !== null && sameKind(other, kind);
+    if (kind && !kept.some(clashes) && !(named && clashes(named))) kept.push(kind);
+  }
+  if (kept.length === 0) return [];
+  const name =
+    kindNameText(firstTitle).slice(0, KIND_LIMITS.name).trim() || 'Your first kind of job';
+  return [
+    named ?? {
+      id: kindIdFor(
+        name,
+        kept.map((kind) => kind.id),
+      ),
+      name,
+    },
+    ...kept,
+  ];
+}
+
 /** The text between the first two backticks, as in "Project manager (`project-manager`)". */
 function quoted(text: string): string {
   const open = text.indexOf('`');

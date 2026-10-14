@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { KINDS_FILE } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { KINDS_FILE, NO_ANSWERS } from '../../shared/about.ts';
+import { NO_ANSWERS } from '../../shared/about.ts';
 import { addKind, changeKind, removeKind } from '../../shared/kinds.ts';
 import { AboutStore } from './store.ts';
 import type { CheckedUpload } from './uploads.ts';
