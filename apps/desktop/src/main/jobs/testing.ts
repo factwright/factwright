@@ -9,6 +9,7 @@ const ADDED: readonly ({ table: string } | { jobColumns: readonly string[] })[] 
   { jobColumns: ['sent', 'asks'] },
   { table: 'notes' },
   { jobColumns: ['back_on', 'pass_reason'] },
+  { jobColumns: ['kind'] },
 ];
 
 /**

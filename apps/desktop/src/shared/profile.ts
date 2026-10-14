@@ -48,8 +48,13 @@ export type AddFileResult = { ok: true; file: SharedFile } | { ok: false; messag
 
 /** A starting resume in base/, and the files built from it. */
 export interface StartingResume {
-  /** Its file in the workspace, such as "base/startup-ic.json". */
+  /**
+   * Its file in the workspace, such as "base/startup-ic.json", or for a kind of job after the
+   * first, "base/project-manager/startup-ic.json".
+   */
   path: string;
+  /** The kind of job it's for, by id, or null for the first kind's, at the top of base/. */
+  kind: string | null;
   /** Its headline, or its file's name. */
   title: string;
   layout: string;

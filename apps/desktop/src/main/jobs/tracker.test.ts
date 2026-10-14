@@ -25,6 +25,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     fit: null,
     search: null,
     searches: [],
+    kindFound: null,
     folder: null,
     stage: 'review',
     firstSeen: '2026-10-07',
@@ -134,6 +135,14 @@ describe('updateJob', () => {
       archived: true,
     });
     expect(history()).toEqual([['passed', TODAY]]);
+  });
+
+  it('puts a job under a kind of job, and back to what the search or fit check found', () => {
+    tracker.updateJob('acme--staff', { kind: 'project-manager' }, AT);
+    expect(row()?.kind).toBe('project-manager');
+    tracker.updateJob('acme--staff', { kind: null }, AT);
+    expect(row()?.kind).toBeNull();
+    expect(history()).toEqual([]);
   });
 
   it('logs nothing when the status stays the same', () => {
@@ -283,6 +292,14 @@ describe('addJob', () => {
       AT,
     );
     expect(second).toEqual({ ok: true, jobId: 'harbor-and-pine--senior-engineer-payments-2' });
+  });
+
+  it('adds a job under the kind of job the user picked', () => {
+    const added = tracker.addJob({ company: 'Fernway', kind: 'project-manager' }, AT);
+    expect(added).toEqual({ ok: true, jobId: 'fernway--general' });
+    expect(row('fernway--general')?.kind).toBe('project-manager');
+    tracker.addJob({ company: 'Tidewater' }, AT);
+    expect(row('tidewater--general')?.kind).toBeNull();
   });
 
   it('needs a company, and a link that starts with http', () => {
@@ -439,9 +456,24 @@ describe('the database file', () => {
     // Sync fills the columns it gained from what other devices sent before, and reads every
     // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(
-      new Map([['jobs', ['sent', 'asks', 'back_on', 'pass_reason']]]),
+      new Map([['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind']]]),
     );
     expect(second.gainedTables()).toEqual(['notes']);
+    second.close();
+  });
+
+  it('adds kinds of job to a tracker from before them, for sync to fill', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { status: 'applied' }, AT);
+    first.close();
+    trackerAsOf(file, 5);
+    const second = new Tracker(file);
+    expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['kind']]]));
+    second.updateJob('acme--staff', { kind: 'developer' }, AT);
+    expect(second.rows()[0]?.kind).toBe('developer');
     second.close();
   });
 
@@ -462,7 +494,7 @@ describe('the database file', () => {
         .get('acme--staff')
         ?.map((note) => note.text),
     ).toEqual(['Screen went well']);
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason']]]));
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason', 'kind']]]));
     expect(second.gainedTables()).toEqual(['notes']);
     second.close();
     // A tracker that's up to date, or new, made nothing.
@@ -487,7 +519,7 @@ describe('the database file', () => {
     before.close();
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason']]]));
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason', 'kind']]]));
     second.updateJob('acme--staff', { passReason: 'company' }, AT);
     expect(second.rows()[0]?.passReason).toBe('company');
     second.close();

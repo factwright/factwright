@@ -40,7 +40,7 @@ Use web searches first: snippets often show posted ranges. `read_posting` reads 
 - **High:** a posted range for this job. **Medium:** the company's own bands or filings. **Low:** market data only.
 - Show base and total comp separately when you can. Never present an estimate as a posted number.
 - If a pay-transparency law where the user lives, or where the job is, seems to apply, mention it as leverage for asking, not as legal advice. Several US states, such as California, Colorado, Illinois, New York and Washington, require pay ranges in many postings.
-- If `about_you` has the user's target or lowest pay, say in one line how the estimate compares.
+- If `about_you` has the user's target or lowest pay, say in one line how the estimate compares. With more than one kind of job, compare with the pay of the job's kind, which `job_details` gives.
 - If the job has a folder (`find_job` says so), append the result to its `notes.md` under `## Pay`.
 
 ## 5. Log it

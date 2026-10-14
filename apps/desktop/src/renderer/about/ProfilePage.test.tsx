@@ -3,7 +3,12 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { readAnswers } from '../../shared/about.ts';
+import {
+  type AboutYou,
+  type AnswerChanges,
+  applyChanges,
+  readAnswers,
+} from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type {
   AddTemplateResult,
@@ -68,9 +73,24 @@ const TEMPLATES: TemplateInfo[] = [
   },
 ];
 
-function profileApi(status: Partial<ProfileStatus> = {}) {
+/** The same user, after adding design jobs beside product ones. */
+const TWO_KINDS = readAnswers({
+  ...ANSWERS,
+  firstKind: { id: 'product', name: 'Product' },
+  otherKinds: [
+    {
+      id: 'design',
+      name: 'Design',
+      roles: ['Product Designer'],
+      levels: ['lead'],
+      minPay: '$140k',
+    },
+  ],
+});
+
+function profileApi(status: Partial<ProfileStatus> = {}, answers: AboutYou = ANSWERS) {
   const profile: Profile = {
-    answers: ANSWERS,
+    answers,
     notes: 'I run the guest team.',
     confidential: [],
     status: { ...STATUS, ...status },
@@ -78,7 +98,7 @@ function profileApi(status: Partial<ProfileStatus> = {}) {
   };
   return {
     profile: vi.fn(async () => profile),
-    saveAnswers: vi.fn(async (changes: object) => ({ ...ANSWERS, ...changes })),
+    saveAnswers: vi.fn(async (changes: AnswerChanges) => applyChanges(answers, changes)),
     saveNotes: vi.fn(async () => ({ ok: true as const })),
     changeConfidential: vi.fn(async ({ add }: { add: string[] }) => add),
     onProfileChanged: vi.fn(() => () => {}),
@@ -161,6 +181,7 @@ describe('ProfilePage', () => {
       starting: [
         {
           path: 'base/startup-ic.json',
+          kind: null,
           title: 'Senior Product Manager',
           layout: 'navy-sidebar',
           pdf: 'base/JordanAveryResume_Startups.pdf',
@@ -215,6 +236,158 @@ describe('ProfilePage', () => {
         expect.objectContaining({ levels: ['senior', 'director'] }),
       ),
     );
+  });
+
+  it('adds another kind of job, with its own titles and pay, and names the first', async () => {
+    const api = profileApi();
+    const { container } = render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    // With one kind of job, only the way to add another shows.
+    expect(within(dialog).queryByRole('group', { name: 'Kinds of job' })).toBeNull();
+    expect(within(dialog).getByRole('heading', { name: 'Pay and terms' })).toBeTruthy();
+    const adding = within(dialog).getByRole('button', { name: 'Add another kind of job' });
+    await userEvent.click(adding);
+    // Cancel puts focus back where it was.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole('button', { name: 'Add another kind of job' }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add another kind of job' }));
+    const name = within(dialog).getByLabelText('What to call the new kind');
+    expect(document.activeElement).toBe(name);
+    const first = within(dialog).getByLabelText('What to call the jobs above') as HTMLInputElement;
+    expect(first.value).toBe('Product Manager');
+    await userEvent.clear(first);
+    await userEvent.type(name, 'Design{Enter}');
+    expect(within(dialog).getByRole('alert').textContent).toBe(
+      'Name the jobs above too, such as Developer.',
+    );
+    await userEvent.clear(name);
+    await userEvent.type(first, 'Product');
+    await userEvent.type(name, 'product{Enter}');
+    expect(within(dialog).getByRole('alert').textContent).toBe('You already have Product.');
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Design{Enter}');
+
+    // The new kind is picked, with its titles the next thing to fill in.
+    const kinds = within(dialog).getByRole('group', { name: 'Kinds of job' });
+    expect((within(kinds).getByRole('radio', { name: 'Design' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    const titles = within(dialog).getByLabelText('Job titles you want');
+    expect(document.activeElement).toBe(titles);
+    await userEvent.type(titles, 'Product Designer{Enter}');
+    await userEvent.type(within(dialog).getByLabelText('Pay you’re hoping for'), '$150k');
+    // Pay is each kind's own now, so the shared section is only the terms.
+    expect(within(dialog).getByRole('heading', { name: 'Terms' })).toBeTruthy();
+    await userEvent.click(within(kinds).getByRole('radio', { name: 'Product' }));
+    expect(within(dialog).getByText('Product Manager')).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+
+    await waitFor(() => expect(within(wants).getByText('Product Designer roles')).toBeTruthy());
+    const saved = api.saveAnswers.mock.calls.reduce(
+      (answers, [changes]) => applyChanges(answers, changes),
+      ANSWERS,
+    );
+    expect(saved).toMatchObject({
+      firstKind: { id: 'product', name: 'Product' },
+      otherKinds: [
+        { id: 'design', name: 'Design', roles: ['Product Designer'], targetPay: '$150k' },
+      ],
+    });
+  });
+
+  it('shows each kind of job’s work and starting resumes, and builds a kind’s missing ones', async () => {
+    const onRun = vi.fn();
+    const api = profileApi(
+      {
+        facts: { claims: 30, unconfirmed: 0, files: 4 },
+        starting: [
+          {
+            path: 'base/startup-ic.json',
+            kind: null,
+            title: 'Senior Product Manager',
+            layout: 'minimal',
+            pdf: 'base/JordanAveryResume_Startups.pdf',
+            docx: null,
+          },
+        ],
+      },
+      TWO_KINDS,
+    );
+    render(<Harness api={api} onRun={onRun} />);
+    expect(await screen.findByText('Jordan Avery · Product · Design')).toBeTruthy();
+    const wants = screen.getByRole('region', { name: 'What you want' });
+    expect(within(wants).getByText('Product Manager roles (senior)')).toBeTruthy();
+    expect(within(wants).getByText('Product Designer roles (lead or principal)')).toBeTruthy();
+    expect(within(wants).getByText('Remote, at startups')).toBeTruthy();
+    const card = screen.getByRole('region', { name: 'Starting resumes' });
+    expect(within(card).getByRole('heading', { name: 'Product' })).toBeTruthy();
+    expect(within(card).getByText('Senior Product Manager')).toBeTruthy();
+    expect(within(card).getByText('None yet. Build them to make a set for it.')).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Build them' }));
+    expect(onRun).toHaveBeenLastCalledWith({ skill: 'get-started', mode: 'resumes' });
+  });
+
+  it('removes a kind of job after asking, back to one', async () => {
+    const api = profileApi({}, TWO_KINDS);
+    const { container } = render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    // The first kind stays: only the others can be removed.
+    expect(within(dialog).queryByRole('button', { name: 'Remove Product' })).toBeNull();
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Design' }));
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Design');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove Design' }));
+    const confirm = within(dialog).getByRole('group', { name: 'Remove Design?' });
+    expect(within(confirm).getByText(/Its jobs move to Product/)).toBeTruthy();
+    expect(document.activeElement).toBe(within(confirm).getByRole('button', { name: 'Keep it' }));
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    expect(within(dialog).queryByRole('group', { name: 'Kinds of job' })).toBeNull();
+    expect(within(dialog).queryByLabelText('Name')).toBeNull();
+    // Focus goes on from the button that went, to adding a kind again.
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole('button', { name: 'Add another kind of job' }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    await waitFor(() =>
+      expect(api.saveAnswers).toHaveBeenLastCalledWith({ removedKinds: ['design'] }),
+    );
+  });
+
+  it('renames a kind of job once the user moves on, never to a name on its way to one that’s taken', async () => {
+    const api = profileApi({}, TWO_KINDS);
+    render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Design' }));
+    const name = within(dialog).getByLabelText('Name');
+    await userEvent.clear(name);
+    expect(within(dialog).getByRole('alert').textContent).toBe(
+      'Give it a name, such as Project manager.',
+    );
+    await userEvent.type(name, 'Product');
+    expect(within(dialog).getByRole('alert').textContent).toBe('You already have Product.');
+    await userEvent.tab();
+    // Nothing on the way there was saved, and the kind keeps its name until one will do.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(api.saveAnswers).not.toHaveBeenCalled();
+    await userEvent.clear(name);
+    await userEvent.type(name, 'UX design{Enter}');
+    await waitFor(() =>
+      expect(api.saveAnswers).toHaveBeenLastCalledWith({
+        kindChanges: [{ id: 'design', name: 'UX design' }],
+      }),
+    );
+    const kinds = within(dialog).getByRole('group', { name: 'Kinds of job' });
+    expect(within(kinds).getByRole('radio', { name: 'UX design' })).toBeTruthy();
   });
 
   it('says when the criteria were changed by hand, and can use the answers instead', async () => {

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
+import {
+  type AboutYou,
+  type AnswerChanges,
+  applyChanges,
+  mergeChanges,
+} from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { Profile } from '../../shared/profile.ts';
 
@@ -66,7 +71,7 @@ export function useProfile(api: ProfileApi): ProfileState {
     const [sent, typed] = [saving.current, pending.current];
     setProfile({
       ...next,
-      answers: { ...next.answers, ...sent.answers, ...typed.answers },
+      answers: applyChanges(applyChanges(next.answers, sent.answers), typed.answers),
       notes: typed.notes ?? sent.notes ?? next.notes,
     });
   }, []);
@@ -110,7 +115,7 @@ export function useProfile(api: ProfileApi): ProfileState {
     }
     // What didn't save goes back under anything typed since, for the next save to carry.
     pending.current = {
-      answers: { ...failed.answers, ...pending.current.answers },
+      answers: mergeChanges(failed.answers, pending.current.answers),
       notes: pending.current.notes ?? failed.notes,
     };
     saving.current = NOTHING;
@@ -134,7 +139,10 @@ export function useProfile(api: ProfileApi): ProfileState {
 
   const update = useCallback(
     (changes: AnswerChanges) => {
-      pending.current = { ...pending.current, answers: { ...pending.current.answers, ...changes } };
+      pending.current = {
+        ...pending.current,
+        answers: mergeChanges(pending.current.answers, changes),
+      };
       if (latest.current) show(latest.current);
       later();
     },

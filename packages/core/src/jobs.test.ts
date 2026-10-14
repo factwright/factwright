@@ -42,6 +42,7 @@ function search(company: string, role: string, extra: Partial<SearchRecord> = {}
     location: null,
     tier: 'good',
     score: 70,
+    kind: null,
     detail: NO_DETAIL,
     ...extra,
   };
@@ -79,6 +80,7 @@ function folder(company: string, role: string, extra: Partial<FolderRecord> = {}
     foundVia: null,
     format: null,
     style: null,
+    kind: null,
     files: [],
     docs: {},
     ...extra,
@@ -181,6 +183,21 @@ describe('collectJobs', () => {
       'Resume built',
       'Fit check: Strong 82',
     ]);
+  });
+
+  it('takes a job’s kind from its fit check, or else the search that rated it highest', () => {
+    const [found] = collectJobs([
+      search('Acme Robotics', 'Program Manager', { key: 'a', score: 60, kind: 'developer' }),
+      search('Acme Robotics', 'Program Manager', { key: 'b', score: 80, kind: 'project-manager' }),
+      search('Acme Robotics', 'Program Manager', { key: 'c', score: 90 }),
+    ]);
+    expect(found?.kindFound).toBe('project-manager');
+    const [checked] = collectJobs([
+      search('Acme Robotics', 'Program Manager', { kind: 'project-manager' }),
+      folder('Acme Robotics', 'Program Manager', { kind: 'developer' }),
+    ]);
+    expect(checked?.kindFound).toBe('developer');
+    expect(collectJobs([search('Acme Robotics', 'Program Manager')])[0]?.kindFound).toBeNull();
   });
 
   it('matches roles worded differently at the same company', () => {

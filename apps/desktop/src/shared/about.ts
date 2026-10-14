@@ -1,3 +1,4 @@
+import { KIND_ID, type KindName, slug } from '@factwright/core';
 import { TEMPLATE_ID } from '@factwright/engine/templates';
 
 /**
@@ -9,7 +10,10 @@ import { TEMPLATE_ID } from '@factwright/engine/templates';
 export interface AboutYou {
   /** Who they are, as their resumes should show it. */
   you: Contact;
-  /** Job titles they want, such as "Product Designer". */
+  /**
+   * Job titles they want, such as "Product Designer". With more than one kind of job, these,
+   * the kinds of work, levels and pay are the first kind's.
+   */
   roles: string[];
   fields: Field[];
   levels: Level[];
@@ -53,7 +57,53 @@ export interface AboutYou {
   startedOn: string | null;
   /** They skipped getting started, for now. */
   skipped: boolean;
+  /**
+   * The first kind of job's id and name, once they want more than one kind, such as
+   * "Developer" beside "Project manager". Its titles, kinds of work, levels and pay are the ones
+   * above. Null with one kind.
+   */
+  firstKind: KindName | null;
+  /** Each kind of job after the first, with its own titles, kinds of work, levels and pay. */
+  otherKinds: JobKind[];
 }
+
+/**
+ * A kind of job the user wants, such as "Project manager" beside "Developer": its own titles,
+ * kinds of work, levels and pay. The rest of what they want is the same for every kind.
+ */
+export interface JobKind extends KindName {
+  roles: string[];
+  fields: Field[];
+  levels: Level[];
+  minPay: string;
+  targetPay: string;
+  payFilter: boolean;
+}
+
+/** What each kind of job has of its own. */
+export const KIND_ANSWERS = [
+  'roles',
+  'fields',
+  'levels',
+  'minPay',
+  'targetPay',
+  'payFilter',
+] as const satisfies readonly (keyof JobKind & keyof AboutYou)[];
+
+type KindAnswerKey = (typeof KIND_ANSWERS)[number];
+
+/** A kind of job's own answers, which each kind has apart from the others. */
+export type KindAnswers = Pick<JobKind, KindAnswerKey>;
+
+/** A change to a kind of job after the first, by its id: its name, or some of its own answers. */
+export type KindChange = { id: string } & Partial<Pick<JobKind, 'name' | KindAnswerKey>>;
+
+/**
+ * Where the kinds of job are kept: the first one's name, and each other one's own answers. They
+ * have a file of their own so a copy of the app from before them, which rewrites answers.json
+ * with only what it knows, never drops them.
+ */
+export const KINDS_FILE = 'about-me/kinds-of-job.json';
 
 export interface Contact {
   name: string;
@@ -213,6 +263,8 @@ export const NO_ANSWERS: AboutYou = {
   reached: 0,
   startedOn: null,
   skipped: false,
+  firstKind: null,
+  otherKinds: [],
 };
 
 /** The longest text each answer takes, so a stray paste can't swell the file. */
@@ -222,6 +274,9 @@ export const ANSWER_LIMITS = {
   entries: 30,
   text: 4000,
   files: 200,
+  /** Kinds of job, the first included, and how long a kind's name runs. */
+  kinds: 6,
+  kindName: 60,
   /** The notes, kept in about-me/notes.md, can be long: that's the point of them. */
   notes: 200_000,
 } as const;
@@ -322,6 +377,114 @@ function files(value: unknown): SharedFile[] | undefined {
   return kept;
 }
 
+/** A kind of job's name as it's kept: on one line, with single spaces. */
+export const kindNameText = (name: string) => name.replace(/\s+/g, ' ').trim();
+
+/** What kinds of job are told apart by: their names, kept as they're kept, in any case. */
+export const kindNameKey = (name: string) => kindNameText(name).toLowerCase();
+
+/** A kind of job's name, on one line, or nothing when it's blank or too long. */
+function oneLine(value: unknown): string | undefined {
+  const named = text(value, ANSWER_LIMITS.kindName);
+  return named === undefined ? undefined : kindNameText(named) || undefined;
+}
+
+/** A kind of job's id and name, or nothing when either doesn't hold up. */
+function kindName(value: unknown): KindName | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { id, name } = value as Record<string, unknown>;
+  if (typeof id !== 'string' || !KIND_ID.test(id)) return undefined;
+  const named = oneLine(name);
+  return named ? { id, name: named } : undefined;
+}
+
+/** Whether two kinds of job are the same one, by id or by name. */
+export const sameKind = (a: KindName, b: KindName) =>
+  a.id === b.id || kindNameKey(a.name) === kindNameKey(b.name);
+
+/**
+ * A kind of job, whole: its id, its name and its own answers. Each answer that doesn't hold up
+ * falls back to nothing told, as the answers do, or when it's strict, the kind doesn't hold up.
+ */
+function jobKind(value: unknown, strict: boolean): JobKind | undefined {
+  const named = kindName(value);
+  if (!named) return undefined;
+  const fields = value as Record<string, unknown>;
+  const own: Record<string, unknown> = {};
+  for (const key of KIND_ANSWERS) {
+    const read = key in fields ? READERS[key](fields[key]) : NO_ANSWERS[key];
+    if (read === undefined && strict) return undefined;
+    own[key] = read ?? NO_ANSWERS[key];
+  }
+  return { ...named, ...own } as JobKind;
+}
+
+/**
+ * The kinds of job after the first, as a file holds them. A kind without an id and a name is
+ * left out, and so is a second one by the same id or name, or one past as many as the app keeps,
+ * but the rest stay.
+ */
+function kinds(value: unknown): JobKind[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const kept: JobKind[] = [];
+  for (const each of value) {
+    if (kept.length === ANSWER_LIMITS.kinds - 1) break;
+    const kind = jobKind(each, false);
+    if (kind && !kept.some((other) => sameKind(other, kind))) kept.push(kind);
+  }
+  return kept;
+}
+
+/**
+ * Kinds of job the window adds, each whole, or none when any doesn't hold up. Two by one name,
+ * or more than the app keeps, can come together after a save that failed, and the changes
+ * leave those out as they're made, rather than refusing them and every save after.
+ */
+function addedKinds(value: unknown): JobKind[] | undefined {
+  if (!Array.isArray(value) || value.length > ANSWER_LIMITS.entries) return undefined;
+  const kept: JobKind[] = [];
+  for (const each of value) {
+    const kind = jobKind(each, true);
+    if (!kind) return undefined;
+    kept.push(kind);
+  }
+  return kept;
+}
+
+/** Kinds of job the window removes, by id, or none when any isn't one. */
+function removedKinds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length > ANSWER_LIMITS.entries) return undefined;
+  return value.every((id) => typeof id === 'string' && KIND_ID.test(id))
+    ? [...new Set(value as string[])]
+    : undefined;
+}
+
+/** Changes to kinds of job after the first as the window sends them, each that holds up, or none. */
+function kindChanges(value: unknown): KindChange[] | undefined {
+  if (!Array.isArray(value) || value.length > ANSWER_LIMITS.entries) return undefined;
+  const kept: KindChange[] = [];
+  for (const each of value) {
+    if (typeof each !== 'object' || each === null || Array.isArray(each)) return undefined;
+    const { id, ...fields } = each as Record<string, unknown>;
+    if (typeof id !== 'string' || !KIND_ID.test(id) || kept.some((other) => other.id === id)) {
+      return undefined;
+    }
+    const change: Record<string, unknown> = { id };
+    for (const [key, field] of Object.entries(fields)) {
+      const read =
+        key === 'name'
+          ? oneLine(field)
+          : (KIND_ANSWERS as readonly string[]).includes(key)
+            ? READERS[key as KindAnswerKey](field)
+            : undefined;
+      if (read === undefined) return undefined;
+      change[key] = read;
+    }
+    kept.push(change as KindChange);
+  }
+  return kept;
+}
+
 function stepNumber(value: unknown): number | undefined {
   return Number.isInteger(value) && (value as number) >= 0 && (value as number) < 20
     ? (value as number)
@@ -360,6 +523,8 @@ const READERS: { [K in keyof AboutYou]: (value: unknown) => AboutYou[K] | undefi
       ? value
       : undefined,
   skipped: (value) => (typeof value === 'boolean' ? value : undefined),
+  firstKind: (value) => (value === null ? null : kindName(value)),
+  otherKinds: kinds,
 };
 
 /**
@@ -377,11 +542,53 @@ export function readAnswers(value: unknown): AboutYou {
     const valid = key in fields ? read(fields[key]) : undefined;
     if (valid !== undefined) answers[key] = valid;
   }
-  return answers as AboutYou;
+  return withKinds(answers as AboutYou);
 }
 
-/** The answers the window may change. The files list changes only as files are added or removed. */
-export type AnswerChanges = Partial<Omit<AboutYou, 'files' | 'startedOn'>>;
+/**
+ * The kinds of job as they can stand together: the first named whenever there are others, and
+ * no other by the first one's id or name.
+ */
+function withKinds(answers: AboutYou): AboutYou {
+  const first = answers.firstKind;
+  const others = answers.otherKinds.filter(
+    (kind) => kind.id !== first?.id && kind.name.toLowerCase() !== first?.name.toLowerCase(),
+  );
+  if (others.length === 0 || first) return { ...answers, otherKinds: others };
+  // Others with no first named, as after a hand edit: the first is named for its titles.
+  const name = answers.roles[0]?.slice(0, ANSWER_LIMITS.kindName) || 'Your first kind of job';
+  const taken = others.map((kind) => kind.id);
+  return { ...answers, firstKind: { id: kindIdFor(name, taken), name }, otherKinds: others };
+}
+
+/** An id for a new kind of job, from its name, that none of the others has. */
+export function kindIdFor(name: string, taken: readonly string[]): string {
+  const words = slug(name).slice(0, 32).replace(/-+$/, '') || 'kind';
+  // A name Windows keeps for itself, such as "prn", can't name a folder in base/.
+  const base = KIND_ID.test(words) ? words : `${words}-jobs`;
+  let id = base;
+  for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+/**
+ * The answers the window may change: each answer whole, and the kinds of job after the first by
+ * their ids: those added, those removed, and changes to a field at a time. So changing one kind,
+ * or adding or removing one, never undoes a change made to another meanwhile, such as by Claude
+ * or on another computer. The files list changes only as files are added or removed.
+ */
+export type AnswerChanges = Partial<Omit<AboutYou, 'files' | 'startedOn' | 'otherKinds'>> & {
+  addedKinds?: JobKind[];
+  removedKinds?: string[];
+  kindChanges?: KindChange[];
+};
+
+/** What the window sends about the kinds of job after the first, and how each is read. */
+const KIND_CHANGES: Readonly<Record<string, (value: unknown) => unknown>> = {
+  addedKinds,
+  removedKinds,
+  kindChanges,
+};
 
 /**
  * Changes from the window, checked one by one, or null if any doesn't hold up, so nothing is
@@ -391,20 +598,114 @@ export function parseAnswerChanges(value: unknown): AnswerChanges | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const changes: Record<string, unknown> = {};
   for (const [key, change] of Object.entries(value)) {
-    if (key === 'files' || key === 'startedOn' || !Object.hasOwn(READERS, key)) return null;
-    const valid = READERS[key as keyof AboutYou](change);
+    const read = Object.hasOwn(KIND_CHANGES, key)
+      ? KIND_CHANGES[key]
+      : ['files', 'startedOn', 'otherKinds'].includes(key) || !Object.hasOwn(READERS, key)
+        ? null
+        : READERS[key as keyof AboutYou];
+    const valid = read?.(change);
     if (valid === undefined) return null;
     changes[key] = valid;
   }
   return changes as AnswerChanges;
 }
 
-/** How long resumes should be: what the user chose, or by their level when they haven't. */
-export function pagesFor(answers: Pick<AboutYou, 'pages' | 'levels'>): 1 | 2 {
+/**
+ * The answers with changes made: each answer replaced, and the kinds of job removed, renamed,
+ * added and changed by their ids. A change that would give two kinds one name or id, as when
+ * another computer named a kind the same meanwhile, is left out, and so is a kind added past as
+ * many as the app keeps, so the kinds always stand together. A change to a kind that's gone
+ * does nothing.
+ */
+export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYou {
+  const {
+    addedKinds: added = [],
+    removedKinds: removed = [],
+    kindChanges: changed = [],
+    firstKind,
+    ...rest
+  } = changes;
+  let first = answers.firstKind;
+  const others = answers.otherKinds.filter((kind) => !removed.includes(kind.id));
+  const clashes = (kind: KindName, except?: string) =>
+    (first !== null && first.id !== except && sameKind(first, kind)) ||
+    others.some((other) => other.id !== except && sameKind(other, kind));
+  // The first kind named for the first time, as when the second kind is added. Once it's named,
+  // a first kind sent from elsewhere renames it, and it keeps its id for its jobs.
+  if (firstKind && first === null && !clashes(firstKind)) first = firstKind;
+  const renames: KindName[] = [
+    ...(firstKind && first ? [{ id: first.id, name: firstKind.name }] : []),
+    ...changed.flatMap(({ id, name }) => (name ? [{ id, name }] : [])),
+  ];
+  // A name lands once its kind is there and no other kind has the name, so names handed along
+  // in one go, such as A's to B while B's went to C, all land. Two kinds trading names keep
+  // their own.
+  const land = () => {
+    for (let landed = true; landed; ) {
+      landed = false;
+      for (const rename of [...renames]) {
+        const at = others.findIndex((kind) => kind.id === rename.id);
+        if ((at < 0 && first?.id !== rename.id) || clashes(rename, rename.id)) continue;
+        renames.splice(renames.indexOf(rename), 1);
+        landed = true;
+        if (at >= 0) others[at] = { ...(others[at] as JobKind), name: rename.name };
+        else if (first) first = { ...first, name: rename.name };
+      }
+    }
+  };
+  land();
+  for (const kind of added) {
+    if (others.length < ANSWER_LIMITS.kinds - 1 && !clashes(kind)) others.push(kind);
+  }
+  // Names given to kinds just added, or freed by them.
+  land();
+  for (const { id, name: _, ...own } of changed) {
+    const at = others.findIndex((kind) => kind.id === id);
+    if (at >= 0) others[at] = { ...(others[at] as JobKind), ...own };
+  }
+  return { ...answers, ...rest, firstKind: first, otherKinds: others };
+}
+
+/**
+ * Changes made one after another, as one: the later wins, changes to one kind join, and a kind
+ * removed takes its earlier changes with it, and its add, when it was added since the last save.
+ * A kind added since the last save carries its own changes, so it's added as it's now named.
+ */
+export function mergeChanges(earlier: AnswerChanges, later: AnswerChanges): AnswerChanges {
+  const removed = later.removedKinds ?? [];
+  const added = [
+    ...(earlier.addedKinds ?? []).filter((kind) => !removed.includes(kind.id)),
+    ...(later.addedKinds ?? []),
+  ];
+  // Every removal stays: one of a kind that isn't there does nothing.
+  const gone = [...new Set([...(earlier.removedKinds ?? []), ...removed])];
+  const changed = (earlier.kindChanges ?? []).filter((change) => !removed.includes(change.id));
+  for (const change of later.kindChanges ?? []) {
+    const fresh = added.findIndex((kind) => kind.id === change.id);
+    const at = changed.findIndex((each) => each.id === change.id);
+    if (fresh >= 0) added[fresh] = { ...(added[fresh] as JobKind), ...change };
+    else if (at < 0) changed.push(change);
+    else changed[at] = { ...changed[at], ...change };
+  }
+  const rest = Object.fromEntries(
+    Object.entries({ ...earlier, ...later }).filter(([key]) => !Object.hasOwn(KIND_CHANGES, key)),
+  ) as AnswerChanges;
+  return {
+    ...rest,
+    ...(added.length > 0 && { addedKinds: added }),
+    ...(gone.length > 0 && { removedKinds: gone }),
+    ...(changed.length > 0 && { kindChanges: changed }),
+  };
+}
+
+/**
+ * How long resumes should be: what the user chose, or by their levels when they haven't, every
+ * kind of job's.
+ */
+export function pagesFor(answers: Pick<AboutYou, 'pages' | 'levels' | 'otherKinds'>): 1 | 2 {
   if (answers.pages) return answers.pages;
-  const early =
-    answers.levels.length > 0 &&
-    answers.levels.every((level) => level === 'entry' || level === 'mid');
+  const levels = [answers.levels, ...answers.otherKinds.map((kind) => kind.levels)].flat();
+  const early = levels.length > 0 && levels.every((level) => level === 'entry' || level === 'mid');
   return early ? 1 : 2;
 }
 

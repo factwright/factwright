@@ -38,6 +38,16 @@
   font-size: var(--fw-text-md);
 }
 
+/* One kind of job's own answers, under the kinds to pick from. */
+.kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
 .fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

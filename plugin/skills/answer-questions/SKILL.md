@@ -40,7 +40,7 @@ Before starting, read:
 One AskUserQuestion round, up to 4 questions, for whatever facts/ and `about_you` can't answer. Give easy options. File what they tell you before drafting:
 - **New experience:** a claim in the right facts file, in that file's format: a `### Short claim title` heading, then its tags (status, ownership, confidence) in backticks, the resume-ready wording as a `>` quote, and `- **Source:** <first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`). Record what they said, and never upgrade it.
 - **"No, I haven't":** a row under **Doesn't have** in `facts/gaps.md`, so nobody asks again.
-- **What applications ask again:** their work authorization, when they can start, whether they'd relocate, their target pay or a contact detail. Save it with `save_about_you`, in their words, when it holds for every job. One job's pay stays with that job.
+- **What applications ask again:** their work authorization, when they can start, whether they'd relocate, their target pay or a contact detail. Save it with `save_about_you`, in their words, when it holds for every job. One job's pay stays with that job. With more than one kind of job, pay is each kind's own: save it with the kind it's for, the job's kind from `job_details`.
 
 ## 4. Save
 Write `applications/<folder>/answers.md`, or append to it if it exists. Each run's answers go together, under their own title, so the app knows a later answer replaces an earlier one:

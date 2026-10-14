@@ -4,6 +4,7 @@ import {
   CALL_STATES,
   isIsoDate,
   JOB_STATUSES,
+  KIND_ID,
   PASS_REASONS,
 } from '@factwright/core';
 import type {
@@ -56,6 +57,8 @@ const date: Reader<string> = (value) => (isIsoDate(value) ? value : BAD);
 const time: Reader<string> = (value) =>
   typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : BAD;
 const flag: Reader<boolean> = (value) => (typeof value === 'boolean' ? value : BAD);
+const kindId: Reader<string> = (value) =>
+  typeof value === 'string' && KIND_ID.test(value) ? value : BAD;
 
 function oneOf<T extends string>(list: readonly T[]): Reader<T> {
   return (value) =>
@@ -97,6 +100,7 @@ export function parseJobChanges(value: unknown): JobChanges | null {
     earlierNotes: textUpTo(LIMITS.notes),
     questions: textsUpTo(LIMITS.question, LIMITS.questions),
     archived: flag,
+    kind: orNull(kindId),
   });
 }
 
@@ -108,6 +112,7 @@ export function parseNewJob(value: unknown): NewJob | null {
     pay: textUpTo(LIMITS.pay),
     status: orNull(oneOf(JOB_STATUSES)),
     notes: textUpTo(LIMITS.notes),
+    kind: orNull(kindId),
   });
   return fields ? { ...fields, company: fields.company ?? '' } : null;
 }

@@ -1,6 +1,6 @@
 ---
 name: get-started
-description: Get to know a new user from what they shared in Factwright (their resumes, LinkedIn, screenshots and notes in about-me/), build their fact bank with every claim marked unconfirmed, interview them to confirm it and fill the gaps, then build and fact-check a starting resume in each template they picked. Use when the app's getting started hands off, when the user says "get started" or "set me up", or to carry on where it left off. "starting resumes" builds only the resumes.
+description: Get to know a new user from what they shared in Factwright (their resumes, LinkedIn, screenshots and notes in about-me/), build their fact bank with every claim marked unconfirmed, interview them to confirm it and fill the gaps, then build and fact-check a starting resume in each template they picked, a set for each kind of job they want. Use when the app's getting started hands off, when the user says "get started" or "set me up", or to carry on where it left off. "starting resumes" builds only the resumes.
 argument-hint: "[starting resumes]"
 ---
 
@@ -17,6 +17,7 @@ Read these, all at once:
   - `roles`, `fields`, `levels`, `workplaces`, `companies`, `industries` and the rest: what they want.
   - `looks`: the templates they picked, each with the kind of company it's for (`startup`, `established`, `public` or `any`).
   - `files`: what they shared, each with its `path`, its `kind` (`resume`, `linkedin-profile`, `linkedin-data`, `screenshot` or `document`) and its `textFile`, the text read out of it, when there is one.
+- `about-me/kinds-of-job.json`, when its `others` lists any kind: they want more than one kind of job, such as Developer and Project manager, and `about_you` lists them too, as the app reads them. `first` names the first kind, whose `roles`, `fields`, `levels` and pay are the ones in answers.json. `others` holds each other kind with its own `id`, `name`, `roles`, `fields`, `levels` and pay. Everything else in answers.json holds for every kind.
 - `about-me/read.md`, if it's there: what's been read already, a line each: `- <path> · <YYYY-MM-DD>`.
 - `guide/rules.md`, `guide/writing.md`, `guide/styles/README.md`, `guide/templates.md` and `facts/README.md`. They're binding.
 - all of `facts/`, if there's anything in it.
@@ -25,7 +26,7 @@ Then start where things stand, and say where in one line:
 - No claims in `facts/` yet: step 1.
 - Files that `read.md` doesn't list: step 1 for those alone, then step 2 for what they add.
 - Claims tagged `unconfirmed`: step 3.
-- Everything confirmed, but no starting resumes in `base/`: step 5.
+- Everything confirmed, but no starting resumes in `base/`, or none yet for a kind of job: step 5.
 
 This run reads only what the user shared: it can't reach the web, and doesn't need to.
 
@@ -61,7 +62,7 @@ Ask with AskUserQuestion, up to four questions a round, most important first for
    - ownership: did they do it themselves, lead it, or was it their team's?
    - status: is it in use, delivered, finished but not out, or still a plan?
    - numbers: is "~30%" right? Measured, or a rough guess?
-3. **Gaps for what they want:** the two to four things the roles in `answers.json` usually ask for that the facts don't show yet. Concrete options: "Yes, in a job", "Some: a side project, a course, or a little", "No".
+3. **Gaps for what they want:** the two to four things the roles they want usually ask for that the facts don't show yet, across every kind of job. Concrete options: "Yes, in a job", "Some: a side project, a course, or a little", "No".
 4. **Their voice**, one question: how they want application answers and messages to sound. Options: "Laid back and short", "Warm and professional", "Formal". They can say more.
 
 File each answer:
@@ -85,16 +86,21 @@ One starting resume for each kind of company in `companies` (or one for any job,
 - **Content:** confirmed claims only, by `guide/writing.md` and the style: a headline and tagline for the roles they want, the summary, highlights, highlight cards, experience bullets, projects, education and skills. `contact` comes from `you`. Set `output_name` to `<FirstLast>Resume_<Style>`, such as `JordanAveryResume_Startups`.
 - **Build:** `build_resume` with `base/<style>-<track>`. Read the PDF, fix every runt and problem, and build again until: `Checks: clean`, no more pages than `guide/lint.json` allows, the last page 70–98% full, and no stranded headings.
 
+**More than one kind of job:** build a set like that for each kind, from the one fact bank. Each kind's set aims at its own roles and levels: its own headline and tagline, its track, and the facts that matter most for it leading.
+- The first kind's set is the one above, at the top of `base/`.
+- Each other kind's goes in a folder of its own, by its id: `base/<kind>/<style>-<track>.json`, such as `base/project-manager/big-company-leader.json`. Build it with `build_resume` and `base/<kind>/<style>-<track>`, and add the kind's name to its `output_name`, such as `JordanAveryResume_ProjectManager_Startups`.
+- A kind that has a set already keeps it, as above. "starting resumes" builds what's missing for every kind, and builds the rest again.
+
 Then fact-check all of them with **one** subagent:
 
-> Adversarially fact-check the starting resumes in base/ (<the files>). The sources of truth are facts/ (read all of it) and guide/rules.md. Check every summary sentence, stat, card, bullet and skill: is it supported by a confirmed claim in facts/ (never one tagged unconfirmed)? Is its verb within the claim's status, its ownership within the claim's tag, every number as facts/ has it, with its "~"? Does anything break rules.md or confidentiality? Return a numbered list: file → place → problem → exact fix. Don't edit files.
+> Adversarially fact-check the starting resumes in base/ and its folders (<the files>). The sources of truth are facts/ (read all of it) and guide/rules.md. Check every summary sentence, stat, card, bullet and skill: is it supported by a confirmed claim in facts/ (never one tagged unconfirmed)? Is its verb within the claim's status, its ownership within the claim's tag, every number as facts/ has it, with its "~"? Does anything break rules.md or confidentiality? Return a numbered list: file → place → problem → exact fix. Don't edit files.
 
 Apply the fixes and build again.
 
 ## 6. Wrap up
 Reply in eight lines or fewer:
 - the fact bank: claims, files, and how many are still unconfirmed
-- each starting resume, by template, which the app shows in Profile
+- each starting resume, by template, and by kind of job when there's more than one, which the app shows in Profile
 - what's next: Find jobs on the Jobs page, or add a job and run Tailored resume on it
 - anything they should double-check
 

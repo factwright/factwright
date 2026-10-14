@@ -14,6 +14,8 @@ import {
   type JobShot,
   type JobStatus,
   jobProgress,
+  type KindName,
+  kindNamed,
   localDate,
   normalizeUrl,
   PASS_REASON_LABELS,
@@ -62,6 +64,33 @@ export function findJobs(jobs: readonly Job[], query: JobQuery): Job[] {
 
 const name = (job: Job) => `${job.company}, ${job.role || 'the company itself'}`;
 
+/** A kind of job by its name and id, as the skills write it back. */
+const kindText = (kind: KindName) => `${kind.name} (\`${kind.id}\`)`;
+
+/**
+ * The kind of job a job is under, when the user wants more than one kind, and who set it: the
+ * user, or its fit check or job search. A job neither set only counts as the first kind until
+ * one does, so its kind is null, for a fit check to judge which it is.
+ */
+function kindSet(job: Job, kinds: readonly KindName[]) {
+  if (kinds.length < 2) return null;
+  const named = (id: string | null) => kinds.find((kind) => kind.id === id) ?? null;
+  const mine = named(kindNamed(job.kind, kinds));
+  if (mine) return { kind: mine, by: 'as the user put it' };
+  const found = named(kindNamed(job.kindFound, kinds));
+  if (found) return { kind: found, by: 'from its fit check or job search' };
+  return { kind: null, first: kinds[0] as KindName };
+}
+
+/** A job's kind of job, for its details, or null with only one kind. */
+function kindLine(job: Job, kinds: readonly KindName[]): string | null {
+  const set = kindSet(job, kinds);
+  if (!set) return null;
+  return set.kind
+    ? `${kindText(set.kind)}, ${set.by}`
+    : `not set yet, so it counts as ${kindText(set.first)} until a fit check or the user decides`;
+}
+
 const reasonWords = (reason: PassReason) => PASS_REASON_LABELS[reason].toLowerCase();
 
 /**
@@ -95,9 +124,11 @@ function passReasons(jobs: readonly Job[]): string | null {
 }
 
 /** One line on a job: where it stands, and what's on file. */
-function summary(job: Job, today: string): string {
+function summary(job: Job, today: string, kinds: readonly KindName[]): string {
   const { status } = jobProgress(job, today);
+  const set = kindSet(job, kinds);
   const parts = [
+    set && `kind of job ${set.kind ? kindText(set.kind) : 'not set yet'}`,
     job.fit &&
       `fit check ${[job.fit.verdict, job.fit.score].filter((part) => part !== null).join(' ')}${job.fit.date ? ` on ${job.fit.date}` : ''}`,
     job.search?.tier &&
@@ -112,9 +143,15 @@ function summary(job: Job, today: string): string {
 
 /**
  * Whether the user has seen a job before, for a skill to say so up front, and why they passed on
- * jobs, when they've given the same reason more than once.
+ * jobs, when they've given the same reason more than once. With more than one kind of job, each
+ * job says which it's under.
  */
-export function findJob(jobs: readonly Job[], query: JobQuery, today: string): string {
+export function findJob(
+  jobs: readonly Job[],
+  query: JobQuery,
+  today: string,
+  kinds: readonly KindName[] = [],
+): string {
   const found = findJobs(jobs, query);
   const asked = query.company
     ? `${query.company}${query.role ? `, ${query.role}` : ''}`
@@ -124,7 +161,7 @@ export function findJob(jobs: readonly Job[], query: JobQuery, today: string): s
   if (found.length === 0) return [`Not seen before: ${asked}.`, ...passes].join('\n');
   return [
     'Seen before:',
-    ...found.map((job) => summary(job, today)),
+    ...found.map((job) => summary(job, today, kinds)),
     'For everything on file, call job_details with the job’s id.',
     ...passes,
   ].join('\n');
@@ -215,12 +252,17 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
 }
 
 /**
- * Everything on file for a job, as Markdown: where it stands, its dates, the user's notes,
- * calls and history, a line for each file on record, the application's questions with what the
- * user actually sent, and the questions they asked Claude about it. The notes can name people,
- * which is the user's own information for their own Claude.
+ * Everything on file for a job, as Markdown: where it stands and its kind of job, its dates, the
+ * user's notes, calls and history, a line for each file on record, the application's questions
+ * with what the user actually sent, and the questions they asked Claude about it. The notes can
+ * name people, which is the user's own information for their own Claude.
  */
-export async function jobDetails(job: Job, workspace: string, today: string): Promise<string> {
+export async function jobDetails(
+  job: Job,
+  workspace: string,
+  today: string,
+  kinds: readonly KindName[] = [],
+): Promise<string> {
   const { status } = jobProgress(job, today);
   const { asked, shots } = readJobExtras(diskWorkspace(workspace), job.id);
   const out = [`## ${name(job)}`, `- Job id: ${job.id}`];
@@ -233,6 +275,7 @@ export async function jobDetails(job: Job, workspace: string, today: string): Pr
       .filter(Boolean)
       .join('; '),
   );
+  add('Kind of job', kindLine(job, kinds));
   add(
     'Fit check',
     job.fit &&

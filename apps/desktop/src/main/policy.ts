@@ -1,5 +1,5 @@
 import { join, normalize, resolve, sep } from 'node:path';
-import { ASK_ID } from '@factwright/core';
+import { ASK_ID, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
   FACTS_SKILL,
@@ -108,18 +108,19 @@ const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 /**
  * Where a search should look, as the Find jobs dialog sent it: known places, each once, an HN
- * month only with HN, and a company typed in a safe form. At least one place. Anything else is
- * null.
+ * month only with HN, a company typed in a safe form, and a kind of job by its id. At least one
+ * place. Anything else is null.
  */
 export function parseSearchSources(value: unknown): SearchSources | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  const { sites, month, company, ...rest } = value as Record<string, unknown>;
+  const { sites, month, company, kind, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || !Array.isArray(sites)) return null;
   const known = (site: unknown): site is SearchSite =>
     (SEARCH_SITES as readonly unknown[]).includes(site);
   if (!sites.every(known) || new Set(sites).size !== sites.length) return null;
   if (month !== undefined && (typeof month !== 'string' || !MONTH.test(month))) return null;
   if (month !== undefined && !sites.includes('hn')) return null;
+  if (kind !== undefined && (typeof kind !== 'string' || !KIND_ID.test(kind))) return null;
   const named = company === undefined ? undefined : searchCompany(String(company));
   if (named === null || (typeof company !== 'string' && company !== undefined)) return null;
   if (sites.length === 0 && !named) return null;
@@ -129,6 +130,7 @@ export function parseSearchSources(value: unknown): SearchSources | null {
     sites: ordered,
     ...(month !== undefined && { month }),
     ...(named !== undefined && { company: named }),
+    ...(kind !== undefined && { kind }),
   };
 }
 
@@ -198,18 +200,18 @@ const MODE_WORDS = {
 /**
  * What the app types to start a task. It names a job only by its ID, and everything else it
  * types is its own fixed words, so text from a posting or a file, such as a company's name,
- * never reaches Claude as if the user had typed it. The one exception is a company the user
- * typed for a search themselves, checked first. A search the user picked no places for starts
- * without any, so Claude asks.
+ * never reaches Claude as if the user had typed it. The exceptions are a company the user typed
+ * for a search themselves, checked first, and the id of a kind of job they named. A search the
+ * user picked no places for starts without any, so Claude asks.
  */
 export function runPrompt(task: RunTask): string {
   if ('sources' in task && task.sources) {
-    const { sites, month, company } = task.sources;
+    const { sites, month, company, kind } = task.sources;
     const places = [
       ...sites.map((site) => (site === 'hn' && month ? `HN ${month}` : SITE_WORDS[site])),
       ...(company ? [company] : []),
     ];
-    return `/factwright:${task.skill} ${places.join(' · ')}`;
+    return `/factwright:${task.skill} ${kind ? `for ${kind}: ` : ''}${places.join(' · ')}`;
   }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;

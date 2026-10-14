@@ -1,0 +1,64 @@
+/* The kinds of job the user wants: picking one, adding one, naming and removing one. */
+.switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+/* Adding a kind: a card of its own, under the work it joins. */
+.adding,
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-sunken);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.lead {
+  max-width: 64ch;
+  margin: var(--fw-space-1) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.confirm .lead {
+  margin: 0;
+  color: var(--fw-text);
+}
+
+.names {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--fw-space-4);
+}
+
+.name {
+  max-width: 360px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+}
+
+.problem {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}
+
+.remove {
+  display: flex;
+  justify-content: flex-end;
+}

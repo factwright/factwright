@@ -1,4 +1,5 @@
-import { Button, Dialog, DialogActions, Input, Select } from '@factwright/ui';
+import type { KindName } from '@factwright/core';
+import { Button, Dialog, DialogActions, Input, SegmentedControl, Select } from '@factwright/ui';
 import { type FormEvent, useId, useState } from 'react';
 import {
   COMMAND_LINE_MARKS,
@@ -51,21 +52,30 @@ const isSites = (value: unknown): value is SearchSite[] =>
   Array.isArray(value) &&
   value.every((site) => (SEARCH_SITES as readonly unknown[]).includes(site));
 
+const isText = (value: unknown): value is string => typeof value === 'string';
+
 /**
  * Where to look for jobs: HN's monthly thread, LinkedIn, Indeed, companies' job boards, and a
  * company the user has in mind. Each place is a search of its own, so its jobs can be seen
- * together later. The places picked are kept for next time.
+ * together later. With more than one kind of job, it looks for one kind or every kind. The
+ * places and the kind picked are kept for next time.
  */
 export function FindJobsDialog({
   today,
+  kinds = [],
   onStart,
   onClose,
 }: {
   today: string;
+  /** The user's kinds of job, when they want more than one. */
+  kinds?: readonly KindName[];
   onStart: (sources: SearchSources) => void;
   onClose: () => void;
 }) {
   const [sites, setSites] = usePref<SearchSite[]>('search.sites', ['hn'], isSites);
+  const [kept, setKind] = usePref<string>('search.kind', '', isText);
+  // A kind since removed, or none at all, looks for every kind.
+  const kind = kinds.length > 1 && kinds.some((each) => each.id === kept) ? kept : '';
   const [month, setMonth] = useState('');
   const [naming, setNaming] = useState(false);
   const [company, setCompany] = useState('');
@@ -86,6 +96,7 @@ export function FindJobsDialog({
       sites,
       ...(month && sites.includes('hn') && { month }),
       ...(named && { company: named }),
+      ...(kind && { kind }),
     });
     close();
   };
@@ -98,6 +109,22 @@ export function FindJobsDialog({
     >
       {(close) => (
         <form className={styles.form} onSubmit={(event) => start(event, close)}>
+          {kinds.length > 1 && (
+            <div className={styles.kinds}>
+              <span className={styles.kindsLabel} aria-hidden="true">
+                Look for
+              </span>
+              <SegmentedControl
+                label="Look for"
+                options={[
+                  { value: '', label: 'Every kind' },
+                  ...kinds.map(({ id, name }) => ({ value: id, label: name })),
+                ]}
+                value={kind}
+                onChange={setKind}
+              />
+            </div>
+          )}
           <fieldset className={styles.places}>
             <legend className={styles.legend}>Where to look</legend>
             {SEARCH_SITES.map((site) => {

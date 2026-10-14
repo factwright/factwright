@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { KindName } from '@factwright/core';
 import { localDate } from '@factwright/core';
 import { TEMPLATES } from '@factwright/engine';
 import {
   type AboutYou,
   ANSWER_LIMITS,
   type AnswerChanges,
+  applyChanges,
   FILES_FOLDER,
+  type JobKind,
+  KINDS_FILE,
   pagesFor,
   readAnswers,
   type SharedFile,
@@ -41,6 +45,27 @@ export interface AboutStoreDeps {
 
 const BUILT_IN = (): TemplateInfo[] =>
   TEMPLATES.map(({ id, name, look }) => ({ id, name, look, own: false, stamp: '' }));
+
+/** A JSON object's fields, or none for anything else. */
+const fieldsOf = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+/** Whether two values say the same, as JSON. */
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** A file's JSON object, or null when it isn't one. */
+function jsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Where LinkedIn's spreadsheets are kept, and the summary Claude reads. */
 const LINKEDIN_FOLDER = 'linkedin';
@@ -96,25 +121,96 @@ export class AboutStore {
     renameSync(temporary, target);
   }
 
-  answers(): AboutYou {
-    const text = this.read(ABOUT.answers);
-    if (text === null) return readAnswers({});
-    try {
-      return readAnswers(JSON.parse(text));
-    } catch {
-      return readAnswers({});
+  /** A JSON file's object, or nothing when it's missing or doesn't parse. */
+  private readJson(file: string): Record<string, unknown> {
+    return jsonObject(this.read(file) ?? '{}') ?? {};
+  }
+
+  /** Keeps a file's old contents beside it, as <name>-before-<date>, numbered after the first. */
+  private keepOld(file: string, contents: string): void {
+    const dot = file.lastIndexOf('.');
+    const stem = dot > file.lastIndexOf('/') ? file.slice(0, dot) : file;
+    const extension = file.slice(stem.length);
+    let name = `${stem}-before-${this.today()}${extension}`;
+    for (let n = 2; this.read(name) !== null; n++) {
+      name = `${stem}-before-${this.today()}-${n}${extension}`;
     }
+    this.write(name, contents);
+  }
+
+  /** The answers, with the kinds of job from their own file. */
+  answers(): AboutYou {
+    const { first, others } = this.readJson(KINDS_FILE);
+    return readAnswers({
+      ...this.readJson(ABOUT.answers),
+      firstKind: first ?? null,
+      otherKinds: others ?? [],
+    });
   }
 
   private saveAll(answers: AboutYou): AboutYou {
-    this.write(ABOUT.answers, `${JSON.stringify(answers, null, 2)}\n`);
+    const { firstKind, otherKinds, ...rest } = answers;
+    this.write(ABOUT.answers, `${JSON.stringify(rest, null, 2)}\n`);
+    this.saveKinds(firstKind, otherKinds);
     if (this.inUse(answers)) this.writeDerived(answers);
     return answers;
   }
 
+  /**
+   * Writes the kinds of job to their file once there's a second kind, and keeps it after, so the
+   * first's id holds steady for its jobs. It's written only when they change, and then only what
+   * changed goes over the file, so what this version doesn't know stays: fields a later version
+   * added, values it reads differently, and kinds it can't read, such as one past as many as it
+   * keeps. A file that doesn't read stays as it is until there are kinds to save, and then it's
+   * kept beside them.
+   */
+  private saveKinds(firstKind: KindName | null, otherKinds: readonly JobKind[]): void {
+    const text = this.read(KINDS_FILE);
+    if (text === null && !firstKind) return;
+    // As this version read the file before the change.
+    const before = this.answers();
+    if (same(before.firstKind, firstKind) && same(before.otherKinds, otherKinds)) return;
+    const raw = text === null ? {} : jsonObject(text);
+    if (raw === null) this.keepOld(KINDS_FILE, text as string);
+    const kept = raw ?? {};
+    const rawOthers = Array.isArray(kept.others) ? (kept.others as unknown[]) : [];
+    // Kinds this version read from the file: one of those left out was removed.
+    const read = new Set(before.otherKinds.map((kind) => kind.id));
+    const ours = new Set(otherKinds.map((kind) => kind.id));
+    // What changed of a kind since it was read, all of it for a kind that's new.
+    const changes = (kind: object, was: object | null | undefined) =>
+      Object.fromEntries(
+        Object.entries(kind).filter(
+          ([key, value]) => !was || !same(value, (was as Record<string, unknown>)[key]),
+        ),
+      );
+    const others = [
+      ...otherKinds.map((kind) => ({
+        ...fieldsOf(rawOthers.find((entry) => fieldsOf(entry).id === kind.id)),
+        ...changes(
+          kind,
+          before.otherKinds.find((each) => each.id === kind.id),
+        ),
+        id: kind.id,
+      })),
+      ...rawOthers.filter((entry) => {
+        const { id } = fieldsOf(entry);
+        return !(typeof id === 'string' && (read.has(id) || ours.has(id)));
+      }),
+    ];
+    // The first kind is left as the file has it unless it changed, as one this version can't
+    // read stands in for while it reads the file.
+    const first = !firstKind
+      ? (kept.first ?? null)
+      : same(before.firstKind, firstKind)
+        ? (kept.first ?? firstKind)
+        : { ...fieldsOf(kept.first), ...changes(firstKind, before.firstKind) };
+    this.write(KINDS_FILE, `${JSON.stringify({ ...kept, first, others }, null, 2)}\n`);
+  }
+
   /** Saves the window's changes, already checked, and answers with all the answers. */
   saveAnswers(changes: AnswerChanges): AboutYou {
-    return this.saveAll({ ...this.answers(), ...changes });
+    return this.saveAll(applyChanges(this.answers(), changes));
   }
 
   notes(): string {
@@ -245,7 +341,8 @@ export class AboutStore {
     // The page count is the user's choice in the app, or follows their level. With neither
     // given, a count already there stays, such as one set by hand. The rest of the file is the
     // user's, so it's only written again when the count changes.
-    const chosen = answers.pages !== null || answers.levels.length > 0 ? pagesFor(answers) : null;
+    const levels = [answers.levels, ...answers.otherKinds.map((kind) => kind.levels)].flat();
+    const chosen = answers.pages !== null || levels.length > 0 ? pagesFor(answers) : null;
     if (chosen !== null && lint.maxPages !== chosen) {
       this.write(ABOUT.lint, `${JSON.stringify({ ...lint, maxPages: chosen }, null, 2)}\n`);
     }
@@ -254,12 +351,7 @@ export class AboutStore {
   /** Replaces a criteria file the user or Claude wrote with one from the answers, keeping theirs. */
   useAnswersForCriteria(): void {
     const own = this.read(ABOUT.criteria);
-    if (own !== null && !untouched(own)) {
-      let name = `searches/criteria-before-${this.today()}.md`;
-      for (let n = 2; this.read(name) !== null; n++)
-        name = `searches/criteria-before-${this.today()}-${n}.md`;
-      this.write(name, own);
-    }
+    if (own !== null && !untouched(own)) this.keepOld(ABOUT.criteria, own);
     this.write(ABOUT.criteria, criteriaMarkdown(this.answers()));
   }
 

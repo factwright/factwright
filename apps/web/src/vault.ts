@@ -147,6 +147,7 @@ function untracked(job: CollectedJob): TrackedRow {
     asks: [],
     earlierNotes: null,
     archived: false,
+    kind: null,
   };
 }
 

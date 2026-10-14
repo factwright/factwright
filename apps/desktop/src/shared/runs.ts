@@ -27,13 +27,18 @@ export const SEARCH_SITES = ['hn', 'linkedin', 'indeed', 'boards'] as const;
 
 export type SearchSite = (typeof SEARCH_SITES)[number];
 
-/** Where a job search looks: the places picked, and a company the user has in mind. */
+/**
+ * Where a job search looks, and for what: the places picked, a company the user has in mind,
+ * and one kind of job, when the user wants more than one.
+ */
 export interface SearchSources {
   sites: SearchSite[];
   /** Which month's HN thread, as YYYY-MM. Without one, the newest. */
   month?: string;
   /** A company's name, or a link to its careers page or job board. */
   company?: string;
+  /** The kind of job to look for, by its id. Without one, every kind. */
+  kind?: string;
 }
 
 /** A month as YYYY-MM. */

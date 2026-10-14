@@ -33,7 +33,7 @@ There are three modes.
    - **Confirmed draft:** drop `unconfirmed` from its tags and set its Source to `<first name> <YYYY-MM-DD>`, fixing the wording and tags to what they said.
    - **New tech:** add a row to `facts/skills.md`.
    - **Confidential names they mention** (a customer, a colleague, a codename, an internal tool or host): a line each in `guide/confidential-terms.txt`, never in facts/. Say so in one line.
-4. If a status changed (for example, built → live), update wording that's now stale in `base/*.json`, if there are any. Never edit a past application's files.
+4. If a status changed (for example, built → live), update wording that's now stale in the starting resumes, `base/*.json` and each kind of job's `base/*/*.json`, if there are any. Never edit a past application's files.
 5. Reply in 4 lines or fewer: what changed, and where.
 
 Record what the user said, and never upgrade it. Write claims plainly and in the active voice, with no "I". Never write confidential details: names of customers, prospects or colleagues, contractor firms, internal names and codenames, hostnames, IDs, commit hashes, ticket or PR numbers, incidents, security findings, pricing or spend.

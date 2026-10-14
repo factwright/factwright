@@ -56,6 +56,53 @@ describe('criteriaMarkdown', () => {
     expect(text).toContain("- **Lowest they'd take:** $120,000 base.");
   });
 
+  it('gives each kind of job a section of its own, and keeps the rest shared', () => {
+    const text = criteriaMarkdown({
+      ...ANSWERS,
+      firstKind: { id: 'designer', name: 'Designer' },
+      otherKinds: [
+        {
+          id: 'researcher',
+          name: 'UX researcher',
+          roles: ['UX Researcher'],
+          fields: ['science'],
+          levels: ['mid'],
+          minPay: '$100,000',
+          targetPay: '$130,000',
+          payFilter: false,
+        },
+      ],
+    });
+    const [shared = '', kinds = ''] = text.split('## Kinds of job');
+    // Where, employment and deal-breakers hold for every kind, and stay in the shared filters.
+    expect(shared).toContain('- **Where:** Remote from anywhere in the US');
+    expect(shared).toContain('- **Employment:** Full-time or Contract.');
+    expect(shared).toContain('- **Deal-breakers:** On-call weeks / long commutes');
+    expect(shared).not.toContain('- **Level:**');
+    expect(shared).not.toContain('- **Target:**');
+    expect(kinds).toContain(
+      [
+        '### Designer (`designer`)',
+        '- **Level:** Senior or Lead or principal.',
+        '- **Kind of work:** Design and UX. Roles such as Product Designer or UX Designer, and close matches.',
+        '- **Pay:** At least $120,000 base, when the posting says.',
+        '- **Target:** $150,000 base.',
+      ].join('\n'),
+    );
+    expect(kinds).toContain(
+      [
+        '### UX researcher (`researcher`)',
+        '- **Level:** Mid level.',
+        '- **Kind of work:** Science and research. Roles such as UX Researcher, and close matches.',
+        '- **Target:** $130,000 base.',
+        "- **Lowest they'd take:** $100,000 base.",
+      ].join('\n'),
+    );
+    expect(text).toContain(
+      '| Role | 25 | The level and shape fit what the user wants for the job’s kind |',
+    );
+  });
+
   it('still makes a whole file with nothing told', () => {
     const text = criteriaMarkdown(NO_ANSWERS);
     expect(text).toContain('## Filters (must pass)\n- **Real:**');
