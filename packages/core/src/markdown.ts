@@ -32,7 +32,7 @@ export function markdownTable(text: string | null): Record<string, string>[] {
   if (!text) return [];
   const lines = text.split(/\r?\n/);
   const start = lines.findIndex(
-    (line, i) => line.trim().startsWith('|') && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1] ?? ''),
+    (line, i) => line.trim().startsWith('|') && /^\s*(?:\|\s*)?:?-{2,}/.test(lines[i + 1] ?? ''),
   );
   if (start < 0) return [];
   const headings = tableCells(lines[start] ?? '').map((heading) => heading.toLowerCase());
@@ -46,6 +46,37 @@ export function markdownTable(text: string | null): Record<string, string>[] {
   return rows;
 }
 
+/** A character that ends a line: a "." in a pattern never matches one. */
+const LINE_BREAK = /[\n\r\u2028\u2029]/;
+
+/**
+ * A "## " heading's text, such as "Company sentiment (2026-10-09)", or undefined for any other
+ * line. It reads a line as /^##\s+(.+?)\s*$/ would, in one pass, as that pattern slows down
+ * badly on a long run of spaces or tabs. A heading of spaces alone has no text.
+ */
+export function sectionHeading(line: string): string | undefined {
+  if (!/^##\s/.test(line)) return undefined;
+  const rest = line.slice(3);
+  const text = rest.trim();
+  // Its words can't run across a line break. A heading of spaces alone counts only if one of
+  // them isn't a line break.
+  if (text) return LINE_BREAK.test(text) ? undefined : text;
+  return /[^\n\r\u2028\u2029]/.test(rest) ? '' : undefined;
+}
+
+/**
+ * Text without a "(…)" at its end, such as a date: "company sentiment (2026-10-09)" becomes
+ * "company sentiment". The "(…)" starts at the first "(" after the ")" before the last one, as
+ * the pattern /\s*\([^)]*\)\s*$/ would take it, but it's read in one pass.
+ */
+function withoutTrailingNote(text: string): string {
+  const trimmed = text.trimEnd();
+  const close = trimmed.length - 1;
+  if (close < 1 || trimmed[close] !== ')') return text;
+  const open = trimmed.indexOf('(', trimmed.lastIndexOf(')', close - 1) + 1);
+  return open >= 0 && open < close ? trimmed.slice(0, open).trimEnd() : text;
+}
+
 /**
  * Splits Markdown text at its "## " headings. Each section is keyed by its lowercase heading,
  * minus a trailing "(…)", so "## Company sentiment (2026-10-09)" is "company sentiment". Text
@@ -56,15 +87,12 @@ export function markdownSections(text: string): Map<string, Section> {
   const sections = new Map([['', top]]);
   let current = top;
   for (const line of text.split(/\r?\n/)) {
-    const heading = line.match(/^##\s+(.+?)\s*$/)?.[1];
+    const heading = sectionHeading(line);
     if (heading === undefined) {
       current.lines.push(line);
       continue;
     }
-    const key = heading
-      .toLowerCase()
-      .replace(/\s*\([^)]*\)\s*$/, '')
-      .trim();
+    const key = withoutTrailingNote(heading.toLowerCase()).trim();
     let section = sections.get(key);
     if (!section) {
       section = { title: heading, lines: [] };
@@ -87,7 +115,9 @@ export function markdownItems(lines: readonly string[]): ListItem[] {
       continuing = false;
       continue;
     }
-    const bullet = raw.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/);
+    // After the marker's spaces, the text starts at a visible character: "\s+(.*)" would read a
+    // long run of spaces again for each way to split it between the two.
+    const bullet = raw.match(/^(\s*)(?:[-*+]|\d+[.)])\s+((?:\S.*)?)$/);
     const last = items.at(-1);
     const indent = bullet?.[1] ?? '';
     const text = (bullet?.[2] ?? raw).trim();

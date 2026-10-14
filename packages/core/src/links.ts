@@ -32,7 +32,8 @@ export function normalizeUrl(url: string): string {
  */
 export function isJobLink(url: string): boolean {
   const normal = normalizeUrl(url);
-  if (normal.startsWith('news.ycombinator.com') || /\/(company|cmp)\//.test(normal)) return false;
+  const host = normal.split(/[/?#]/, 1)[0];
+  if (host === 'news.ycombinator.com' || /\/(company|cmp)\//.test(normal)) return false;
   const [path = '', query] = normal.split('?');
   return Boolean(query) || path.split('/').filter(Boolean).length >= 3;
 }
@@ -48,6 +49,40 @@ export function hostOf(url: string): string {
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
+const isSpace = (character: string | undefined) => character !== undefined && /\s/.test(character);
+
+/**
+ * A field's parts, split at each "·" with space on each side and each ";" with space after, each
+ * taking the spaces around it, as /\s+·\s+|\s*;\s+/ would split them. It's read in one pass,
+ * where that pattern reads a long run of spaces again from each space in it.
+ */
+function fieldParts(field: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let at = 0; at < field.length; at += 1) {
+    const character = field[at];
+    if (character !== '·' && character !== ';') continue;
+    let before = at;
+    while (before > start && isSpace(field[before - 1])) before -= 1;
+    let after = at + 1;
+    while (isSpace(field[after])) after += 1;
+    if (after > at + 1 && (character === ';' || before < at)) {
+      parts.push(field.slice(start, before));
+      start = after;
+      at = after - 1;
+    }
+  }
+  parts.push(field.slice(start));
+  return parts;
+}
+
+/** Text without any of the given characters at its end, read from the end, once. */
+function trimEndOf(text: string, characters: string): string {
+  let end = text.length;
+  while (end > 0 && characters.includes(text.charAt(end - 1))) end -= 1;
+  return text.slice(0, end);
+}
+
 /**
  * Reads the links in a field like "LinkedIn https://… · Ashby https://… · company https://…".
  * Text just before a link becomes its label. Links cut short with "…" are dropped, because
@@ -55,16 +90,13 @@ const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
  */
 export function linksFrom(field: string | null | undefined, fallbackLabel?: string): Link[] {
   if (!field) return [];
-  return field.split(/\s+·\s+|\s*;\s+/).flatMap((part) => {
+  return fieldParts(field).flatMap((part) => {
     const links: Link[] = [];
     for (const match of part.matchAll(/https?:\/\/[^\s)<>]+/g)) {
-      const url = match[0].replace(/[.,;:]+$/, '');
+      const url = trimEndOf(match[0], '.,;:');
       const end = match.index + match[0].length;
       if (url.includes('…') || part[end] === '…') continue;
-      const before = part
-        .slice(0, match.index)
-        .replace(/[:(]+\s*$/, '')
-        .trim();
+      const before = trimEndOf(part.slice(0, match.index).trimEnd(), ':(').trim();
       const label =
         before && before.length <= 24 ? capitalize(before) : (fallbackLabel ?? hostOf(url));
       links.push({ url, label });

@@ -30,17 +30,70 @@ const ENTITIES: Readonly<Record<string, string>> = {
   bull: '•',
 };
 
+/** A character by its number, or "�" for a number past the last one, which can't be shown. */
+const character = (code: number) => (code <= 0x10ffff ? String.fromCodePoint(code) : '\ufffd');
+
 /** Turns HTML entities such as "&amp;" and "&#8217;" back into the characters they stand for. */
 export function decodeEntities(text: string): string {
   return text
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) =>
-      String.fromCodePoint(Number.parseInt(hex, 16)),
-    )
-    .replace(/&#(\d+);/g, (_, decimal: string) => String.fromCodePoint(Number(decimal)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => character(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, decimal: string) => character(Number(decimal)))
     .replace(
       /&(nbsp|amp|lt|gt|quot|apos|#39|rsquo|lsquo|rdquo|ldquo|ndash|mdash|hellip|bull);/g,
       (_, name: string) => ENTITIES[name] ?? '',
     );
+}
+
+/*
+ * Pages come from anywhere, so everything that reads them does so in one pass. A pattern such as
+ * /<nav[\s\S]*?<\/nav>/ reads to the end of the page again for each tag left open, which a page
+ * with many of them would make take minutes.
+ */
+
+/** What a page shows besides its own words: scripts, styles, navigation and forms. */
+const DROPPED = ['script', 'style', 'noscript', 'svg', 'nav', 'footer', 'form', 'button'];
+
+/**
+ * HTML with each dropped element, from its opening tag to the first closing one after it, made a
+ * space. One left open stays, and so does every later one of its kind, which nothing closes.
+ */
+function withoutDropped(html: string): string {
+  const opening = new RegExp(`<(${DROPPED.join('|')})`, 'gi');
+  const closings = new Map(DROPPED.map((name) => [name, new RegExp(`</${name}>`, 'gi')]));
+  const unclosed = new Set<string>();
+  let kept = '';
+  let at = 0;
+  for (let open = opening.exec(html); open; open = opening.exec(html)) {
+    const name = (open[1] ?? '').toLowerCase();
+    const closing = closings.get(name);
+    if (!closing || unclosed.has(name)) continue;
+    closing.lastIndex = opening.lastIndex;
+    if (!closing.exec(html)) {
+      unclosed.add(name);
+      continue;
+    }
+    kept += `${html.slice(at, open.index)} `;
+    at = closing.lastIndex;
+    opening.lastIndex = at;
+  }
+  return kept + html.slice(at);
+}
+
+/** Text with its tags taken out: each "<" up to the next ">", with something between them. */
+export function withoutTags(html: string): string {
+  let kept = '';
+  let at = 0;
+  let from = 0;
+  for (let open = html.indexOf('<', from); open >= 0; open = html.indexOf('<', from)) {
+    const close = html.indexOf('>', open + 1);
+    if (close < 0) break;
+    from = close + 1;
+    // "<>" isn't a tag.
+    if (close === open + 1) continue;
+    kept += html.slice(at, open);
+    at = from;
+  }
+  return kept + html.slice(at);
 }
 
 /**
@@ -49,19 +102,19 @@ export function decodeEntities(text: string): string {
  */
 export function htmlToText(html: string): string {
   return decodeEntities(
-    html
-      .replace(/<(script|style|noscript|svg|nav|footer|form|button)[\s\S]*?<\/\1>/gi, ' ')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<li[^>]*>/gi, '\n- ')
-      .replace(
-        /<h([1-6])[^>]*>/gi,
-        (_, level: string) => `\n\n${'#'.repeat(Math.min(6, Number(level) + 1))} `,
-      )
-      // List items already start on their own line. A list ends with a blank line, so the next
-      // paragraph isn't read as part of its last item.
-      .replace(/<\/(ul|ol)>/gi, '\n\n')
-      .replace(/<\/(p|div|section|article|h[1-6]|tr|table|header)>/gi, '\n')
-      .replace(/<[^>]+>/g, ''),
+    withoutTags(
+      withoutDropped(html)
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<li[^<>]*>/gi, '\n- ')
+        .replace(
+          /<h([1-6])[^<>]*>/gi,
+          (_, level: string) => `\n\n${'#'.repeat(Math.min(6, Number(level) + 1))} `,
+        )
+        // List items already start on their own line. A list ends with a blank line, so the next
+        // paragraph isn't read as part of its last item.
+        .replace(/<\/(ul|ol)>/gi, '\n\n')
+        .replace(/<\/(p|div|section|article|h[1-6]|tr|table|header)>/gi, '\n'),
+    ),
   )
     .replace(/[ \t ]+/g, ' ')
     .replace(/ *\n */g, '\n')
@@ -235,25 +288,60 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       const data = jobPostingData(answer);
       if (data) return { text: data, via: 'the page’s JobPosting data' };
       const main =
-        answer.match(/<main[\s\S]*?<\/main>/i)?.[0] ??
-        answer.match(/<article[\s\S]*?<\/article>/i)?.[0] ??
-        answer.match(/<body[\s\S]*<\/body>/i)?.[0] ??
+        element(answer, 'main') ??
+        element(answer, 'article') ??
+        element(answer, 'body', true) ??
         answer;
       return { text: htmlToText(main), via: 'the web page' };
     }
   }
 }
 
+/**
+ * A page's first element of a kind, from its opening tag to the first closing tag after it, or,
+ * with `toLast`, to the last one.
+ */
+function element(html: string, name: string, toLast = false): string | null {
+  const open = new RegExp(`<${name}`, 'i').exec(html);
+  if (!open) return null;
+  const closing = new RegExp(`</${name}>`, 'gi');
+  closing.lastIndex = open.index + name.length + 1;
+  let end = -1;
+  for (let close = closing.exec(html); close; close = toLast ? closing.exec(html) : null) {
+    end = closing.lastIndex;
+  }
+  return end < 0 ? null : html.slice(open.index, end);
+}
+
+/**
+ * A script tag of type JSON-LD. Some sites entity-encode the "+" in its type. Its attributes are
+ * read to at most 500 characters, far more than any has, so a tag left open is found out without
+ * reading to the end of the page each time.
+ */
+const JSON_LD_TAG = /<script[^<>]{1,500}?application\/ld(?:\+|&#x2B;|&#43;)json[^<>]{0,500}>/gi;
+
+/** What's inside each JSON-LD script on a page, in order. */
+function jsonLdScripts(html: string): string[] {
+  const tag = new RegExp(JSON_LD_TAG);
+  const closing = /<\/script>/gi;
+  const found: string[] = [];
+  for (let open = tag.exec(html); open; open = tag.exec(html)) {
+    closing.lastIndex = tag.lastIndex;
+    const close = closing.exec(html);
+    // Nothing closes this script, so nothing closes any after it either.
+    if (!close) break;
+    found.push(html.slice(tag.lastIndex, close.index));
+    tag.lastIndex = closing.lastIndex;
+  }
+  return found;
+}
+
 /** Most job pages embed schema.org JobPosting data, which reads cleaner than the page. */
 export function jobPostingData(html: string): string | null {
-  // Some sites entity-encode the "+" in the script's type.
-  const scripts = html.matchAll(
-    /<script[^>]+application\/ld(?:\+|&#x2B;|&#43;)json[^>]*>([\s\S]*?)<\/script>/gi,
-  );
-  for (const [, raw] of scripts) {
+  for (const raw of jsonLdScripts(html)) {
     let data: unknown;
     try {
-      data = JSON.parse((raw ?? '').trim());
+      data = JSON.parse(raw.trim());
     } catch {
       continue;
     }

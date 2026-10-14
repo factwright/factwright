@@ -1,4 +1,4 @@
-import { decodeEntities, htmlToText } from './posting.ts';
+import { decodeEntities, htmlToText, withoutTags } from './posting.ts';
 
 /** Hacker News's monthly threads, newest first, from the whoishiring account, through Algolia. */
 export const HN_THREADS_URL =
@@ -73,17 +73,40 @@ export function hiringThread(answer: unknown, month?: string): HnThread | null {
   return null;
 }
 
-/** A link's full address, where Hacker News shortened the text it shows. */
+/**
+ * A link's full address, where Hacker News shortened the text it shows. Each piece but the last
+ * ends where a link closes, and holds the link's opening tag: read this way, a link left open
+ * costs no more than its own length, where one pattern for the whole link would read to the end
+ * of the post again for each.
+ */
 function withFullLinks(html: string): string {
-  return html.replace(
-    /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
-    (_, href: string, shown: string) => {
-      const url = decodeEntities(href);
-      const label = decodeEntities(shown.replace(/<[^>]+>/g, ''));
-      const cut = label.replace(/(\.\.\.|…)$/, '');
-      return label === url || url.startsWith(cut) ? url : `${label} (${url})`;
-    },
-  );
+  const pieces = html.split(/<\/a>/i);
+  const rest = pieces.pop() ?? '';
+  return pieces.map(withFullLink).join('') + rest;
+}
+
+/**
+ * A piece of a post that ends where a link closed, with that link's full address. The link is
+ * its first "<a " tag with an address, and its text runs to the end of the piece.
+ */
+function withFullLink(piece: string): string {
+  const opening = /<a\s/gi;
+  for (let open = opening.exec(piece); open; open = opening.exec(piece)) {
+    const end = piece.indexOf('>', open.index);
+    if (end < 0) break;
+    const href = [...piece.slice(open.index, end).matchAll(/href="([^"]*)"/gi)].at(-1)?.[1];
+    if (href === undefined) {
+      // Any other "<a " before this tag's end shares its end, and has no address either.
+      opening.lastIndex = end + 1;
+      continue;
+    }
+    const url = decodeEntities(href);
+    const label = decodeEntities(withoutTags(piece.slice(end + 1)));
+    const cut = label.replace(/(\.\.\.|…)$/, '');
+    const full = label === url || url.startsWith(cut) ? url : `${label} (${url})`;
+    return piece.slice(0, open.index) + full;
+  }
+  return `${piece}</a>`;
 }
 
 /**

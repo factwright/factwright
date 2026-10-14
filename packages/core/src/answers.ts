@@ -1,5 +1,5 @@
 import { slug } from './keys.ts';
-import { markdownTable } from './markdown.ts';
+import { markdownTable, sectionHeading } from './markdown.ts';
 import type { SentAnswer } from './tracker.ts';
 
 /** One of Claude's suggested answers, from a job's answers.md. */
@@ -61,7 +61,7 @@ export function readSuggestedAnswers(markdown: string | null | undefined): Sugge
       sections.push({ heading: null, batch, lines: [] });
       continue;
     }
-    const heading = line.match(/^##\s+(.+?)\s*$/)?.[1];
+    const heading = sectionHeading(line);
     if (heading !== undefined) sections.push({ heading, batch, lines: [] });
     else sections.at(-1)?.lines.push(line);
   }

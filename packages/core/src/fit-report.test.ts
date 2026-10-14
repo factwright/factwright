@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { jobNotesSentiment, parseFitReport, parseVerdict } from './fit-report.ts';
 
+/** How long something takes, in milliseconds. */
+function timed(work: () => unknown): number {
+  const start = Date.now();
+  work();
+  return Date.now() - start;
+}
+
 const REPORT = `# Fit check: Acme Robotics, Staff Engineer
 
 - **Date:** 2026-10-07
@@ -141,5 +148,25 @@ describe('jobNotesSentiment', () => {
       points: [],
     });
     expect(jobNotesSentiment('# No sentiment here')).toBeNull();
+  });
+});
+
+describe('a write-up made to keep the app busy', () => {
+  it('reads a verdict, and an old sentiment line, in a moment', () => {
+    expect(timed(() => parseVerdict(`A${' '.repeat(80_000)}`))).toBeLessThan(1000);
+    // Each "(" left open made the old pattern read to the end of the notes again.
+    expect(
+      timed(() => jobNotesSentiment('- **Sentiment (left open\n'.repeat(10_000))),
+    ).toBeLessThan(1000);
+  });
+
+  it('reads them as before', () => {
+    expect(parseVerdict('Very strong , 90')).toEqual({ verdict: 'Very strong', score: 90 });
+    expect(jobNotesSentiment('- **Sentiment (fit check,\n2026-10-06):** Positive')).toMatchObject({
+      date: '2026-10-06',
+      summary: 'Positive',
+    });
+    // A sentiment line with nothing after it has no sentiment.
+    expect(jobNotesSentiment('- **Sentiment:**   ')).toBeNull();
   });
 });
