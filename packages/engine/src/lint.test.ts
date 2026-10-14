@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { lintResume, readConfidentialTerms } from './lint.ts';
 import { sampleResume } from './sample.ts';
 
+/** How long something takes, in milliseconds. */
+function timed(work: () => unknown): number {
+  const start = performance.now();
+  work();
+  return performance.now() - start;
+}
+
 describe('lintResume', () => {
   it('passes a resume that keeps the rules', () => {
     expect(lintResume(sampleResume(), { maxPages: 2, skillsLines: 1, systemsCards: 1 })).toEqual(
@@ -83,5 +90,14 @@ describe('readConfidentialTerms', () => {
       'acme\\s+health',
     ]);
     expect(readConfidentialTerms(null)).toEqual([]);
+  });
+});
+
+describe('a resume made to keep the app busy', () => {
+  it('is checked in a moment, however many "[[" are left open', () => {
+    const resume = { ...sampleResume(), summary: '[['.repeat(50_000) };
+    let issues: string[] = [];
+    expect(timed(() => (issues = lintResume(resume)))).toBeLessThan(1000);
+    expect(issues).toEqual([]);
   });
 });
