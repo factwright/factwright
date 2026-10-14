@@ -197,6 +197,39 @@ export interface LinkRequest {
   approving: boolean;
 }
 
+const REQUEST_STATES = new Set<unknown>(['waiting', 'approved', 'denied', 'linked']);
+
+const isTime = (value: unknown) =>
+  typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
+
+const isName = (value: unknown) => typeof value === 'string' && value.length <= 200;
+
+/**
+ * Whether the server's word about a request to link is in the shape devices act on: IDs, keys
+ * and the hash in their exact formats, so nothing odd ends up in an address or a key.
+ */
+export function isLinkRequest(value: unknown): value is LinkRequest {
+  const request = value as Partial<LinkRequest> | null;
+  if (typeof request !== 'object' || request === null) return false;
+  const { approver } = request;
+  return (
+    isRequestId(request.id) &&
+    isName(request.device) &&
+    isTime(request.asked) &&
+    isTime(request.expires) &&
+    isCommitment(request.commitment) &&
+    (request.key === null || isOneTimeKey(request.key)) &&
+    (approver === null ||
+      (typeof approver === 'object' &&
+        approver !== undefined &&
+        isName(approver.device) &&
+        isOneTimeKey(approver.key))) &&
+    REQUEST_STATES.has(request.state) &&
+    typeof request.mine === 'boolean' &&
+    typeof request.approving === 'boolean'
+  );
+}
+
 /** What the server can do beyond the basics, so devices offer only what it has. */
 export type Feature =
   /** Approving a new device from one that's set up: requests to link, at API.requests. */

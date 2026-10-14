@@ -97,6 +97,35 @@ describe('SyncClient', () => {
     expect(await client.takeLink('link-id')).toBeNull();
   });
 
+  it('acts only on requests to link in the shape devices expect', async () => {
+    const id = 'A'.repeat(22);
+    const good = {
+      id,
+      device: 'Chrome on Windows',
+      asked: '2026-10-14T18:00:00.000Z',
+      expires: '2026-10-14T18:10:00.000Z',
+      commitment: 'B'.repeat(43),
+      key: null,
+      approver: { device: 'Factwright on Sam’s Mac', key: `B${'A'.repeat(86)}` },
+      state: 'waiting',
+      mine: false,
+      approving: false,
+    };
+    const { client } = fakeServer(
+      json({ requests: [good, { ...good, id: '../keys' }, { ...good, key: 'not a key' }, null] }),
+      json(good),
+      json({ ...good, id: 'C'.repeat(22) }),
+      json({ ...good, approver: { device: 'x', key: 'short' } }),
+      json({ requests: 'not a list' }),
+    );
+    expect(await client.linkRequests()).toEqual([good]);
+    expect(await client.linkRequest(id)).toEqual(good);
+    // Asked about one request, answered about another: the server's mistake, not a request.
+    await expect(client.linkRequest(id)).rejects.toMatchObject({ kind: 'server' });
+    await expect(client.linkRequest(id)).rejects.toMatchObject({ kind: 'server' });
+    expect(await client.linkRequests()).toEqual([]);
+  });
+
   it('listens for changes over a secure WebSocket', () => {
     const { client } = fakeServer();
     expect(client.liveUrl('a b')).toBe('wss://app.example/api/sync/live?ticket=a+b');

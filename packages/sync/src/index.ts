@@ -54,6 +54,7 @@ export {
   isFileId,
   isKeyId,
   isLinkId,
+  isLinkRequest,
   isOneTimeKey,
   isRecordId,
   isRequestId,

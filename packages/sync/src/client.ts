@@ -6,6 +6,7 @@ import {
   type ChangesPage,
   type ErrorBody,
   type Feature,
+  isLinkRequest,
   type KeyRecord,
   type LinkRequest,
   type PushChange,
@@ -233,19 +234,31 @@ export class SyncClient {
     await this.request(API.requests, { method: 'POST', json: { id, commitment } });
   }
 
-  /** The account's requests to link that are waiting, from this device and others. */
+  /**
+   * The account's requests to link that are waiting, from this device and others. Any the server
+   * describes in a shape devices don't act on are left out.
+   */
   async linkRequests(): Promise<LinkRequest[]> {
-    return (await this.json<{ requests: LinkRequest[] }>(API.requests)).requests;
+    const answer = await this.json<{ requests?: unknown } | null>(API.requests);
+    return Array.isArray(answer?.requests) ? answer.requests.filter(isLinkRequest) : [];
   }
 
   /** One request to link, or null once it's gone: picked up, called off or run out. */
   async linkRequest(id: string): Promise<LinkRequest | null> {
+    let request: unknown;
     try {
-      return await this.json<LinkRequest>(`${API.requests}/${id}`);
+      request = await this.json<unknown>(`${API.requests}/${id}`);
     } catch (error) {
       if (error instanceof SyncError && error.kind === 'not-found') return null;
       throw error;
     }
+    if (!isLinkRequest(request) || request.id !== id) {
+      throw new SyncError(
+        'server',
+        'The sync server’s answer about a request to link didn’t make sense.',
+      );
+    }
+    return request;
   }
 
   /** On a device that's set up: offers to approve a request, with a one-time key of its own. */
