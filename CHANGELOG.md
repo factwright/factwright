@@ -5,6 +5,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- A Support Factwright link at the bottom of the sidebar, above the version, which opens the Buy Me a Coffee page of Factwright's maker, Steve Hillyer, in your browser, for anyone who'd like to chip in.
 - factwright.com says Factwright is fully open source: a GitHub link in its header and under the download buttons, a section on what anyone can check in the code, with the folders worth opening first, a question about it, and a link to the code in every page's footer. It also says who builds Factwright, and how to support it with a coffee or on GitHub Sponsors.
 
 ### Changed

@@ -10,7 +10,7 @@ Please report security problems privately, not as public issues:
 You'll hear back within a week, with updates until it's resolved.
 
 ## Supported versions
-Factwright hasn't had a release yet. Until it does, reports should be about the `main` branch.
+Fixes go into the newest release, and installed copies update to it on their own. Reports should be about the newest release, or the `main` branch.
 
 ## Scope
 In scope:
