@@ -1,6 +1,7 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_EFFORT, type EffortChoices, parseEffort } from '../../shared/effort.ts';
+import { saveJson } from './save.ts';
 
 /** The file that holds how hard Claude thinks, in the app's data folder. */
 const FILE = 'claude-effort.json';
@@ -15,9 +16,5 @@ export async function loadEffort(dataDir: string): Promise<EffortChoices> {
 }
 
 /** Saves what the user chose, whole or not at all. */
-export async function saveEffort(dataDir: string, choices: EffortChoices): Promise<void> {
-  const file = join(dataDir, FILE);
-  const draft = `${file}.${process.pid}.tmp`;
-  await writeFile(draft, `${JSON.stringify(choices, null, 2)}\n`);
-  await rename(draft, file);
-}
+export const saveEffort = (dataDir: string, choices: EffortChoices): Promise<void> =>
+  saveJson(join(dataDir, FILE), choices);

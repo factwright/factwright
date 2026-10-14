@@ -1,6 +1,7 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ASK_FIRST, type ClaudePermissions, parsePermissions } from '../../shared/permissions.ts';
+import { saveJson } from './save.ts';
 
 /**
  * The file that holds what Claude may do without asking. It sits in the app's data folder,
@@ -18,12 +19,5 @@ export async function loadPermissions(dataDir: string): Promise<ClaudePermission
 }
 
 /** Saves what the user chose, whole or not at all. */
-export async function savePermissions(
-  dataDir: string,
-  permissions: ClaudePermissions,
-): Promise<void> {
-  const file = join(dataDir, FILE);
-  const draft = `${file}.${process.pid}.tmp`;
-  await writeFile(draft, `${JSON.stringify(permissions, null, 2)}\n`);
-  await rename(draft, file);
-}
+export const savePermissions = (dataDir: string, permissions: ClaudePermissions): Promise<void> =>
+  saveJson(join(dataDir, FILE), permissions);

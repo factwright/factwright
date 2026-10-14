@@ -7,7 +7,6 @@ import {
   DEFAULT_MODELS,
   MODEL_TASKS,
   modelFor,
-  needsModel,
   PRO_MODELS,
   parseModels,
   RECOMMENDED_MODELS,
@@ -105,22 +104,6 @@ describe('which model Claude runs on', () => {
     // Saved again, it says so.
     await saveModels(dataDir, { main: null, tasks: {} });
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ version: 2, main: null, tasks: {} });
-  });
-
-  it('starts Claude again for a model the user chose or a more careful one, but not a lighter one it only recommends', () => {
-    const pro = planLevels('pro');
-    const fit = job('fit-check');
-    // Open on Opus, as for a resume, a fit check recommended Sonnet runs in the open run.
-    expect(needsModel('opus', DEFAULT_MODELS, fit, pro)).toBe(false);
-    expect(needsModel('opus', DEFAULT_MODELS, fit, planLevels('max'))).toBe(false);
-    // Open on Sonnet, as for a fit check, a resume needs Opus.
-    expect(needsModel('sonnet', DEFAULT_MODELS, job('focused-resume'), pro)).toBe(true);
-    // A model the user chose, for the task or for everything, gets a run of its own.
-    expect(needsModel('opus', { main: null, tasks: { 'fit-check': 'sonnet' } }, fit, pro)).toBe(
-      true,
-    );
-    expect(needsModel('opus', { main: 'haiku', tasks: {} }, fit, pro)).toBe(true);
-    expect(needsModel('haiku', { main: 'haiku', tasks: {} }, fit, pro)).toBe(false);
   });
 
   it('takes only models and tasks it knows', () => {

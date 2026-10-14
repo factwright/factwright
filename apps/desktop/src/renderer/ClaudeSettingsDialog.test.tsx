@@ -175,7 +175,7 @@ describe('ClaudeSettingsDialog', () => {
     expect(api.setClaudePermissions).toHaveBeenLastCalledWith({ anyFile: true, anySite: true });
   });
 
-  it('passes on only what saved', async () => {
+  it('passes on what’s really saved when a choice didn’t save', async () => {
     const api = apiWith();
     api.setClaudeModels.mockRejectedValueOnce(new Error('disk full'));
     const onSaved = vi.fn();
@@ -185,8 +185,9 @@ describe('ClaudeSettingsDialog', () => {
       'haiku',
     );
     expect((await screen.findByRole('alert')).textContent).toBe('That didn’t save. Try again.');
-    expect(onSaved).not.toHaveBeenCalled();
-    await waitFor(() => expect(select('Model for everything').value).toBe(''));
+    await waitFor(() => expect(onSaved).toHaveBeenLastCalledWith({ models: DEFAULT_MODELS }));
+    expect(onSaved).not.toHaveBeenCalledWith({ models: { main: 'haiku', tasks: {} } });
+    expect(select('Model for everything').value).toBe('');
   });
 
   it('says when a choice didn’t save, and shows what’s really saved', async () => {

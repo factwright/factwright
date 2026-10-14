@@ -206,10 +206,13 @@ describe('placeTooltip', () => {
     });
   });
 
-  it('stays inside the window when it fits beside its trigger nowhere', () => {
+  it('opens on the side with the most room where it fits nowhere, still beside its trigger', () => {
     const small = { width: 200, height: 150 };
-    const trigger = { top: 60, left: 80, width: 40, height: 30 };
-    expect(placeTooltip(trigger, tip, small, 'top')).toEqual({ top: 8, left: 8, side: 'top' });
+    const trigger = { top: 110, left: 80, width: 40, height: 30 };
+    const place = placeTooltip(trigger, tip, small, 'right');
+    expect(place).toEqual({ top: -18, left: 8, side: 'top' });
+    // Its bottom stays clear of the trigger, so the trigger can still be clicked.
+    expect(place.top + tip.height).toBeLessThanOrEqual(trigger.top - 8);
   });
 
   it('sits farther from its trigger when asked', () => {

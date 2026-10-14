@@ -1,6 +1,7 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_MODELS, type ModelChoices, parseModels } from '../../shared/models.ts';
+import { saveJson } from './save.ts';
 
 /** The file that holds which model Claude runs on, in the app's data folder. */
 const FILE = 'claude-models.json';
@@ -50,9 +51,5 @@ export async function loadModels(dataDir: string): Promise<ModelChoices> {
 }
 
 /** Saves what the user chose, whole or not at all. */
-export async function saveModels(dataDir: string, choices: ModelChoices): Promise<void> {
-  const file = join(dataDir, FILE);
-  const draft = `${file}.${process.pid}.tmp`;
-  await writeFile(draft, `${JSON.stringify({ version: VERSION, ...choices }, null, 2)}\n`);
-  await rename(draft, file);
-}
+export const saveModels = (dataDir: string, choices: ModelChoices): Promise<void> =>
+  saveJson(join(dataDir, FILE), { version: VERSION, ...choices });

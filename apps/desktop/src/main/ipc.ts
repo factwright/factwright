@@ -22,7 +22,7 @@ import type {
 } from '../shared/api.ts';
 import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
-import { modelFor, needsModel, parseModels } from '../shared/models.ts';
+import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
 import { scopeOf } from '../shared/runs.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
@@ -221,18 +221,18 @@ export function registerIpc({
   });
 
   // A task for the run that's open. One that needs another model or more effort, or may change
-  // other files without asking, starts a new run instead. One that needs less effort, or is only
-  // recommended a lighter model, runs at the open run's.
+  // other files without asking, starts a new run instead. One that needs less effort runs at the
+  // open run's. A lighter model still gets a run of its own, as that's what saves the most of a
+  // plan, such as Sonnet for a job search on Pro.
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
     const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
     const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
-    const open = session.model();
     const thinking = session.effort();
     const levels = session.levels();
     if (
-      (open !== undefined && needsModel(open, models, run, levels)) ||
+      differs(session.model(), modelFor(models, run, levels)) ||
       (thinking !== undefined && needsMore(thinking, effortFor(effort, run, levels))) ||
       differs(session.scope(), scopeOf(run))
     ) {

@@ -27,7 +27,10 @@ export interface TooltipTrigger {
 export interface TooltipProps {
   /** What it says: a few short lines, with no links or buttons, since it never takes focus. */
   content: ReactNode;
-  /** The side it opens on when there's room there, or else the opposite one. */
+  /**
+   * The side it opens on when there's room there. Otherwise it's the opposite side, then one of
+   * the two across, whichever has room, or else the one with the most.
+   */
   side?: TooltipSide;
   /** How far it sits from its trigger, in pixels, such as to clear the edge of a sidebar. */
   gap?: number;
@@ -68,7 +71,7 @@ export interface TooltipPlace {
 /**
  * Where a tooltip goes: beside its trigger, on the first side it fits, starting with the one asked
  * for, as a narrow or zoomed window may leave room only above or below. It's centered on the
- * trigger along that side, and always kept inside the window.
+ * trigger along that side, but kept inside the window.
  */
 export function placeTooltip(
   trigger: { top: number; left: number } & Size,
@@ -77,32 +80,32 @@ export function placeTooltip(
   side: TooltipSide,
   gap = GAP,
 ): TooltipPlace {
-  const fits: Readonly<Record<TooltipSide, boolean>> = {
-    top: trigger.top - gap - tip.height >= GAP,
-    bottom: trigger.top + trigger.height + gap + tip.height <= view.height - GAP,
-    left: trigger.left - gap - tip.width >= GAP,
-    right: trigger.left + trigger.width + gap + tip.width <= view.width - GAP,
+  // The room each side has to spare, which is less than none where it doesn't fit.
+  const spare: Readonly<Record<TooltipSide, number>> = {
+    top: trigger.top - gap - tip.height - GAP,
+    bottom: view.height - GAP - (trigger.top + trigger.height + gap + tip.height),
+    left: trigger.left - gap - tip.width - GAP,
+    right: view.width - GAP - (trigger.left + trigger.width + gap + tip.width),
   };
-  const chosen = TRY[side].find((each) => fits[each]) ?? side;
-  const centered = (start: number, length: number, own: number) => start + length / 2 - own / 2;
-  const top =
-    chosen === 'top'
-      ? trigger.top - gap - tip.height
-      : chosen === 'bottom'
-        ? trigger.top + trigger.height + gap
-        : centered(trigger.top, trigger.height, tip.height);
-  const left =
-    chosen === 'left'
-      ? trigger.left - gap - tip.width
-      : chosen === 'right'
-        ? trigger.left + trigger.width + gap
-        : centered(trigger.left, trigger.width, tip.width);
-  // Inside the window, even where it fits beside its trigger nowhere.
-  const inside = (value: number, room: number, own: number) =>
-    Math.max(GAP, Math.min(value, room - own - GAP));
+  const sides = TRY[side];
+  // Where it fits nowhere, as in a window zoomed far in, the side with the most room. Even then it
+  // stays beside its trigger, so it never covers it.
+  const chosen =
+    sides.find((each) => spare[each] >= 0) ??
+    sides.reduce((most, each) => (spare[each] > spare[most] ? each : most));
+  // Along the side, centered on the trigger, but never past the window's edges.
+  const along = (start: number, length: number, room: number, own: number) =>
+    Math.max(GAP, Math.min(start + length / 2 - own / 2, room - own - GAP));
+  if (chosen === 'top' || chosen === 'bottom') {
+    return {
+      top: chosen === 'top' ? trigger.top - gap - tip.height : trigger.top + trigger.height + gap,
+      left: along(trigger.left, trigger.width, view.width, tip.width),
+      side: chosen,
+    };
+  }
   return {
-    top: inside(top, view.height, tip.height),
-    left: inside(left, view.width, tip.width),
+    top: along(trigger.top, trigger.height, view.height, tip.height),
+    left: chosen === 'left' ? trigger.left - gap - tip.width : trigger.left + trigger.width + gap,
     side: chosen,
   };
 }

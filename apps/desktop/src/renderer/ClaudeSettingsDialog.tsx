@@ -65,7 +65,7 @@ export function ClaudeSettingsDialog({
 }: {
   api: SettingsApi;
   onClose: () => void;
-  /** Hears each choice of model or effort once it's saved. */
+  /** Hears what's saved for the model or effort after each change, even one that didn't save. */
   onSaved?: (saved: { models: ModelChoices } | { effort: EffortChoices }) => void;
   /** The user's Claude plan, such as "pro", when Claude Code says. */
   plan?: string | undefined;
@@ -105,7 +105,9 @@ export function ClaudeSettingsDialog({
       setProblem(null);
     } catch {
       failed();
-      setModels(await api.claudeModels());
+      const kept = await api.claudeModels();
+      setModels(kept);
+      onSaved?.({ models: kept });
     }
   };
 
@@ -118,7 +120,9 @@ export function ClaudeSettingsDialog({
       setProblem(null);
     } catch {
       failed();
-      setEffort(await api.claudeEffort());
+      const kept = await api.claudeEffort();
+      setEffort(kept);
+      onSaved?.({ effort: kept });
     }
   };
 
@@ -293,8 +297,8 @@ export function ClaudeSettingsDialog({
         </p>
       )}
       <p className={styles.note}>
-        Changes apply the next time Claude starts, or when a task needs a model you chose for it, or
-        a more careful model or more effort than Claude is open with.
+        Changes apply the next time Claude starts, or when a task needs another model or more effort
+        than Claude is open with.
       </p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>
