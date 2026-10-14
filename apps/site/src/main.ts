@@ -50,8 +50,8 @@ const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '
 
 /**
  * The app drawing at the top: Interview prep runs in Claude's panel, asks one question, and the
- * prep sheet lands in the job. Its Run buttons change the way the app's do. With reduced motion,
- * it shows the finished run.
+ * prep sheet lands in the job's files. Its Run buttons change the way the app's do, and the job's
+ * other runs wait while Claude works. With reduced motion, it shows the finished run.
  */
 function heroRun(root: HTMLElement): void {
   const find = (selector: string) => root.querySelector<HTMLElement>(selector);
@@ -63,14 +63,16 @@ function heroRun(root: HTMLElement): void {
   const toggle = find('[data-demo-toggle]');
   const run = find('[data-demo-run]');
   const runState = find('[data-demo-run-state]');
-  const runLabel = find('[data-demo-run-label]');
+  const runs = find('[data-demo-runs]');
   const before = find('[data-demo-before]');
   const doc = find('[data-demo-doc]');
-  const panel = find('.win-panel');
-  if (!claude || !status || !statusLabel || !title || !hint || !toggle || !run) return;
-  if (!runState || !runLabel) return;
+  const files = find('[data-demo-files]');
+  const filesCount = find('[data-demo-files-count]');
+  const sections = find('[data-demo-scroll]');
+  if (!claude || !status || !statusLabel || !title || !hint || !toggle || !run || !runState) return;
   const lines = [...root.querySelectorAll<HTMLElement>('[data-at]')];
   const spinners = [...root.querySelectorAll<HTMLElement>('.t-spin')];
+  const waiting = [...root.querySelectorAll<HTMLElement>('[data-demo-wait]')];
   const term = claude.querySelector<HTMLElement>('.term');
 
   const show = (stage: number) => {
@@ -88,32 +90,53 @@ function heroRun(root: HTMLElement): void {
     statusLabel.textContent = PHASES[next].label;
     hint.textContent = PHASES[next].hint;
   };
+  // The job's sections scroll to a part of them, with a little room above it, the way you would.
+  const scrollSections = (part: HTMLElement | null, room: number) => {
+    if (!sections || !part) return;
+    const top = part.getBoundingClientRect().top - sections.getBoundingClientRect().top;
+    sections.scrollTo({
+      top: Math.max(0, sections.scrollTop + top - room),
+      behavior: still ? 'auto' : 'smooth',
+    });
+  };
   const open = () => {
     claude.classList.add('is-open');
     toggle.textContent = 'Hide';
     title.textContent = 'Interview prep · Lumen Health';
   };
-  const runIs = (label: string, state: 'is-running' | 'is-ok') => {
-    runLabel.textContent = label;
-    runState.classList.remove('is-running', 'is-ok');
-    runState.classList.add(state);
+  // While Claude works, the job's other runs and anything else that would start Claude wait.
+  const busy = (on: boolean) => {
+    runs?.classList.toggle('is-busy', on);
+    for (const part of waiting) part.classList.toggle('is-waiting', on);
+  };
+  const runIs = (label: string, done: boolean) => {
+    runState.textContent = label;
+    runState.classList.toggle('is-ok', done);
     // The app highlights a Run button while its run goes.
-    run.classList.toggle('is-suggested', state === 'is-running');
+    run.classList.toggle('is-suggested', !done);
   };
   const start = () => {
     // The last run's "Done" becomes what's on file once another run starts.
     if (before) before.textContent = 'Ready';
-    runIs('Running', 'is-running');
+    runIs('Running', false);
+    busy(true);
     open();
     phase('working');
+    // Claude's panel takes room from the job's, so the run it's doing stays in view.
+    scrollSections(run, 120);
   };
   const finish = () => {
     show(7);
     phase('done');
-    runIs('Done', 'is-ok');
+    runIs('Done', true);
+    busy(false);
     doc?.classList.add('is-shown');
-    // The new prep sheet is at the foot of the job's panel, under Claude's panel once it opens.
-    panel?.scrollTo({ top: panel.scrollHeight, behavior: still ? 'auto' : 'smooth' });
+    // The files' count, which the page keeps beside it, takes in the prep sheet.
+    const count = filesCount?.dataset.demoFilesCount;
+    if (filesCount && count) filesCount.textContent = count;
+    // The prep sheet is in the job's files, further down its sections. They scroll there once laid
+    // out, and again whenever their size changes, such as when a tablet turns.
+    if (sections) new ResizeObserver(() => scrollSections(files, 0)).observe(sections);
   };
 
   show(0);

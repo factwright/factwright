@@ -76,6 +76,14 @@
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" /></symbol>
       <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.7 5.4 3.7 8.5s-1.2 5.9-3.7 8.5c-2.5-2.6-3.7-5.4-3.7-8.5S9.5 6.1 12 3.5z" /></symbol>
       <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.5S4.5 15 4.5 9.25A3.75 3.75 0 0 1 8.25 5.5c1.6 0 2.9.9 3.75 2.3.85-1.4 2.15-2.3 3.75-2.3a3.75 3.75 0 0 1 3.75 3.75C19.5 15 12 19.5 12 19.5z" /></symbol>
+      <symbol id="i-book-check" viewBox="0 0 24 24"><path d="M5.5 19V5.5a2 2 0 0 1 2-2h11v13h-11a2 2 0 0 0 0 4h11" /><path d="M9.5 9.5l2 2 3.5-3.5" /></symbol>
+      <symbol id="i-chevrons" viewBox="0 0 24 24"><path d="M8.5 9.5L12 6l3.5 3.5M8.5 14.5L12 18l3.5-3.5" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h7M15 7h5M13 5v4M4 12h3M11 12h9M9 10v4M4 17h9M17 17h3M15 15v4" /></symbol>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M10 4.5l1.7 4.6 4.6 1.7-4.6 1.7L10 17.1l-1.7-4.6-4.6-1.7 4.6-1.7z" /><path d="M18 3.5v4M16 5.5h4M18 15.5v4M16 17.5h4" /></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5l-6 6M4.5 19.5l6-6" /></symbol>
+      <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7.5 16.5l9-9M9 7.5h7.5V15" /></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.35-5.65L4 8.7" /><path d="M4 4.5v4.2h4.2M12 8v4.2l2.8 1.8" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3l2.2 2.2" /><path d="M19.5 4.5v4.4h-4.4" /></symbol>
       <symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" stroke="none" d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A8 8 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></symbol>
     </svg>
 
@@ -174,9 +182,10 @@
         <figure class="wrap hero-shot">
           <figcaption class="visually-hidden">
             <span data-nosnippet>
-              The Factwright app: a list of jobs with their status and fit, the Lumen Health job open
-              with a Run button for each task, and Claude’s panel at the bottom, where your own
-              Claude Code writes an interview prep sheet and asks you one question along the way.
+              The Factwright app: your jobs in seven views, from New to All, each job with its
+              status, fit and pay. The Lumen Health job is open, with a Run button for each task,
+              and Claude’s panel at the bottom, where your own Claude Code writes an interview prep
+              sheet and asks you one question along the way.
             </span>
           </figcaption>
           <div class="window" aria-hidden="true" data-demo data-nosnippet>
@@ -196,11 +205,23 @@
 
             <div class="win-body">
               <div class="win-side">
-                <div class="nav-item is-current">
-                  <svg aria-hidden="true" class="icon"><use href="#i-briefcase" /></svg><span>Jobs</span><b class="nav-count">14</b>
+                <div class="side-profile">
+                  <span class="side-switch">
+                    <span class="avatar tone-purple">J</span>
+                    <span class="side-profile-name">Jordan Avery</span>
+                    <svg aria-hidden="true" class="icon"><use href="#i-chevrons" /></svg>
+                  </span>
                 </div>
-                <div class="nav-item">
-                  <svg aria-hidden="true" class="icon"><use href="#i-user" /></svg><span>Profile</span>
+                <div class="side-nav">
+                  <div class="nav-item is-current">
+                    <svg aria-hidden="true" class="icon"><use href="#i-briefcase" /></svg><span>Jobs</span><b class="nav-count">21</b>
+                  </div>
+                  <div class="nav-item">
+                    <svg aria-hidden="true" class="icon"><use href="#i-book-check" /></svg><span>Fact bank</span><b class="nav-count">48</b>
+                  </div>
+                  <div class="nav-item">
+                    <svg aria-hidden="true" class="icon"><use href="#i-user" /></svg><span>Profile</span>
+                  </div>
                 </div>
                 <div class="side-cards">
                   <div class="side-card">
@@ -208,11 +229,21 @@
                     <p class="side-line">Up to date</p>
                     <span class="ui-button ui-secondary ui-sm side-action">Manage</span>
                   </div>
-                  <div class="side-card">
-                    <p class="side-title"><i class="dot dot-ok"></i>Your Claude</p>
-                    <p class="side-line">Signed in · Max plan</p>
-                    <p class="side-help">Factwright never sees your login.</p>
-                    <span class="ui-button ui-secondary ui-sm side-action">Settings</span>
+                  <div class="side-claude">
+                    <div class="side-card">
+                      <p class="side-title"><i class="dot dot-ok"></i>Your Claude</p>
+                      <p class="side-line">Signed in · Max plan</p>
+                      <p class="side-help">Factwright never sees your login.</p>
+                      <span class="ui-button ui-secondary ui-sm side-action">Settings</span>
+                    </div>
+                    <div class="side-levels">
+                      <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
+                      <span><b>Opus · Extra high</b><span>Job searches at High</span></span>
+                    </div>
+                  </div>
+                  <div class="side-foot">
+                    <span class="side-support"><svg aria-hidden="true" class="icon"><use href="#i-heart" /></svg>Support Factwright</span>
+                    <span class="side-version">Factwright 0.2.0</span>
                   </div>
                 </div>
               </div>
@@ -223,91 +254,203 @@
                     <div class="list-head">
                       <div>
                         <p class="list-title">Jobs</p>
-                        <p class="list-sub">14 jobs</p>
+                        <p class="list-sub">21 jobs</p>
                       </div>
                       <div class="list-buttons">
-                        <span class="ui-button ui-secondary"><svg aria-hidden="true" class="icon"><use href="#i-search" /></svg>Find jobs</span>
+                        <span class="ui-button ui-secondary" data-demo-wait><svg aria-hidden="true" class="icon"><use href="#i-search" /></svg>Find jobs</span>
                         <span class="ui-button ui-secondary"><svg aria-hidden="true" class="icon"><use href="#i-pulse" /></svg>Your journey</span>
                       </div>
                     </div>
                     <div class="stats">
-                      <div class="stat"><p class="stat-label">In play</p><p class="stat-value">4</p><p class="stat-detail">2 calls ahead</p></div>
+                      <div class="stat"><p class="stat-label">In play</p><p class="stat-value">7</p><p class="stat-detail">3 interviewing · 2 calls ahead</p></div>
                       <div class="stat"><p class="stat-label">Applied</p><p class="stat-value">9</p><p class="stat-detail">2 this week</p></div>
-                      <div class="stat"><p class="stat-label">Heard back</p><p class="stat-value">44%</p><p class="stat-detail">4 of 9</p></div>
-                      <div class="stat"><p class="stat-label">Needs you</p><p class="stat-value is-need">2</p><p class="stat-detail">1 due today</p></div>
+                      <div class="stat"><p class="stat-label">Heard back</p><p class="stat-value">44%</p><p class="stat-detail">4 of 9 applications</p></div>
+                      <div class="stat"><p class="stat-label">Needs you</p><p class="stat-value is-need">2</p><p class="stat-detail">Nothing overdue</p></div>
                     </div>
-                    <div class="seg">
-                      <span class="seg-option">To review <b>3</b></span>
-                      <span class="seg-option">Applied <b>4</b></span>
-                      <span class="seg-option">Interviewing <b>3</b></span>
-                      <span class="seg-option is-selected">All <b>14</b></span>
+                    <div class="toolbar">
+                      <div class="views">
+                        <span class="seg">
+                          <span class="seg-option">New <b>3</b></span>
+                          <span class="seg-option">To review <b>4</b></span>
+                          <span class="seg-option">To apply <b>2</b></span>
+                          <span class="seg-option">Applied <b>4</b></span>
+                          <span class="seg-option">Interviewing <b>3</b></span>
+                          <span class="seg-option">Closed <b>3</b></span>
+                          <span class="seg-option is-selected">All <b>21</b></span>
+                        </span>
+                      </div>
+                      <div class="narrowing">
+                        <span class="ui-select">Found anywhere<svg aria-hidden="true" class="icon"><use href="#i-chevron" /></svg></span>
+                        <span class="ui-check"><i class="box"></i>Needs you</span>
+                        <span class="ui-button ui-secondary ui-sm"><svg aria-hidden="true" class="icon"><use href="#i-sliders" /></svg>Filters</span>
+                      </div>
                     </div>
                     <div class="table">
-                      <div class="t-head"><span>Job</span><span>Status</span><span>Fit</span></div>
+                      <div class="t-head">
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells"><span class="t-job">Job</span><span class="t-status">Status</span><span class="t-fit">Fit</span><span class="t-pay">Pay</span></span>
+                      </div>
                       <div class="t-row is-selected">
-                        <span class="t-job"><b>Lumen Health</b><span>Senior Product Manager, Growth</span><em>Panel interview Friday at 2:00 PM</em></span>
-                        <span class="pill tone-purple">Interview</span>
-                        <span class="pill tone-green">86 · Strong</span>
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells">
+                          <span class="t-job"><b>Lumen Health</b><span>Senior Product Manager, Growth</span></span>
+                          <span class="pill tone-purple t-status">Interview</span>
+                          <span class="pill tone-green t-fit">86 · Strong</span>
+                          <span class="t-pay">$165k–$190k</span>
+                          <span class="t-next">Panel interview Friday</span>
+                        </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-job"><b>Fernway</b><span>Product Lead, Payments</span><em class="is-need">Reply to the offer by Thursday</em></span>
-                        <span class="pill tone-green">Offer</span>
-                        <span class="pill tone-green">81 · Strong</span>
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells">
+                          <span class="t-job"><b>Fernway</b><span>Product Lead, Payments</span></span>
+                          <span class="pill tone-green t-status">Offer</span>
+                          <span class="pill tone-green t-fit">81 · Strong</span>
+                          <span class="t-pay">$175k–$205k</span>
+                          <span class="t-next is-need">Due today: Reply to the offer</span>
+                        </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-job"><b>Harbor &amp; Pine</b><span>Group Product Manager, Marketplace</span><em>Applied 3 days ago</em></span>
-                        <span class="pill tone-blue">Applied</span>
-                        <span class="pill tone-blue">72 · Good</span>
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells">
+                          <span class="t-job"><b>Brightpath Learning</b><span>Product Manager III</span></span>
+                          <span class="pill tone-gray t-status">New</span>
+                          <span class="pill tone-blue t-fit">64 · Good</span>
+                          <span class="t-pay">$140k–$160k</span>
+                          <span class="t-next">Run a fit check</span>
+                        </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-job"><b>Tidewater Analytics</b><span>Senior Product Manager, Data</span><em>Recruiter screen Wednesday at 10:30 AM</em></span>
-                        <span class="pill tone-teal">Screen</span>
-                        <span class="pill tone-blue">74 · Good</span>
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells">
+                          <span class="t-job"><b>Harbor &amp; Pine</b><span>Group Product Manager, Marketplace</span></span>
+                          <span class="pill tone-violet t-status">To apply</span>
+                          <span class="pill tone-blue t-fit">72 · Good</span>
+                          <span class="t-pay">$170k–$195k est.</span>
+                          <span class="t-next">Tailor a resume</span>
+                        </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-job"><b>Brightpath Learning</b><span>Product Manager III</span><em>Ready to apply</em></span>
-                        <span class="pill tone-violet">Resume ready</span>
-                        <span class="pill tone-amber">58 · Worth a look</span>
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells">
+                          <span class="t-job"><b>Tidewater Analytics</b><span>Senior Product Manager, Data</span></span>
+                          <span class="pill tone-teal t-status">Screen</span>
+                          <span class="pill tone-blue t-fit">74 · Good</span>
+                          <span class="t-pay">$150k–$175k</span>
+                          <span class="t-next">Recruiter screen Wednesday</span>
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   <div class="win-panel">
-                    <div class="panel-top">
-                      <p class="panel-company">Lumen Health</p>
-                      <svg aria-hidden="true" class="icon panel-close"><use href="#i-x" /></svg>
-                    </div>
-                    <p class="panel-role">Senior Product Manager, Growth</p>
-                    <p class="panel-meta">Remote, US · $165k–$190k · <u>Posting</u></p>
-                    <div class="panel-pills">
-                      <span class="pill tone-purple pill-select">Interview<svg aria-hidden="true" class="icon"><use href="#i-chevron" /></svg></span>
-                      <span class="pill tone-green">86 · Strong</span>
-                    </div>
-                    <div class="next-step">
-                      <p class="next-label">Next step</p>
-                      <p class="next-text">Panel interview · Fri, Oct 16, 2:00 PM</p>
-                    </div>
-                    <p class="panel-heading">Run with your Claude</p>
-                    <div class="runs">
-                      <div class="run">
-                        <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
-                        <span class="run-state is-ok" data-demo-before>Done</span>
+                    <div class="panel-head">
+                      <div class="panel-top">
+                        <div class="panel-title">
+                          <p class="panel-company">Lumen Health</p>
+                          <p class="panel-role">Senior Product Manager, Growth</p>
+                        </div>
+                        <span class="panel-tools">
+                          <svg aria-hidden="true" class="icon"><use href="#i-expand" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-x" /></svg>
+                        </span>
                       </div>
-                      <div class="run" data-demo-run>
-                        <span class="run-text"><b>Interview prep</b><span>A prep sheet for a call or an interview</span></span>
-                        <span class="run-state" data-demo-run-state><i class="run-dot"></i><span data-demo-run-label>Run</span></span>
-                      </div>
-                      <div class="run">
-                        <span class="run-text"><b>Application questions</b><span>Answers to the form, in your own voice</span></span>
-                        <span class="run-state is-quiet">Ran</span>
+                      <p class="panel-meta">Remote, US · $165k–$190k · <u>Posting<svg aria-hidden="true" class="icon"><use href="#i-arrow-up-right" /></svg></u></p>
+                      <div class="panel-badges">
+                        <span class="pill tone-purple pill-select">Interview<svg aria-hidden="true" class="icon"><use href="#i-chevron" /></svg></span>
+                        <span class="pill tone-green">86 · Strong</span>
                       </div>
                     </div>
-                    <p class="panel-heading">Documents</p>
-                    <div class="docs">
-                      <span class="doc"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Posting</span>
-                      <span class="doc"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Fit check</span>
-                      <span class="doc"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Resume · PDF</span>
-                      <span class="doc is-new" data-demo-doc><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Interview prep<b>New</b></span>
+                    <!-- The job's sections, scrolled to Your Claude. The script keeps the run in view, then shows where the prep sheet lands. -->
+                    <div class="panel-body" data-demo-scroll>
+                      <div class="job-section">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg>
+                          <b>Your Claude</b><span class="job-section-sum">Fit checked · Resume ready</span>
+                        </p>
+                        <div class="job-section-body">
+                          <div class="runs" data-demo-runs>
+                            <div class="run">
+                              <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
+                              <span class="run-state is-ok" data-demo-before>Done</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
+                              <span class="run-state is-quiet">Ran</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Salary check</b><span>Estimate the pay when the posting doesn’t say</span></span>
+                              <span class="run-state">Run</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Who to message</b><span>People worth contacting, with drafts you send</span></span>
+                              <span class="run-state">Run</span>
+                            </div>
+                            <div class="run" data-demo-run>
+                              <span class="run-text"><b>Interview prep</b><span>A prep sheet for a call or an interview</span></span>
+                              <span class="run-state" data-demo-run-state>Run</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Application questions</b><span>Answers to the form, in your own voice</span></span>
+                              <span class="run-state">Run</span>
+                            </div>
+                          </div>
+                          <div class="ask">
+                            <p class="ask-head"><span class="subheading">Ask Claude</span><span class="ui-button ui-secondary ui-sm" data-demo-wait>Ask a question</span></p>
+                            <p class="quiet">Ask anything about this job, such as what to expect from a call. The answers stay here.</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="job-section is-closed">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
+                          <b>Fit</b><span class="job-section-sum">Strong 86</span>
+                        </p>
+                      </div>
+                      <div class="job-section" data-demo-files>
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-folder" /></svg>
+                          <b>Files</b><span class="job-section-sum extra" data-demo-files-count="1 resume · 4 documents">1 resume · 3 documents</span>
+                        </p>
+                        <div class="job-section-body job-files">
+                          <div class="job-file">
+                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
+                            <span class="job-file-text"><b>Resume - Lumen Health.pdf</b><span>PDF · 52 KB · Oct&nbsp;12</span></span>
+                            <span class="ui-button ui-quiet ui-sm">Preview</span>
+                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                          </div>
+                          <div class="job-file is-new" data-demo-doc>
+                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
+                            <span class="job-file-text"><b>Interview prep</b><span>For your calls and interviews</span></span>
+                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                          </div>
+                          <div class="job-file extra">
+                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
+                            <span class="job-file-text"><b>Posting</b><span>Saved word for word</span></span>
+                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                          </div>
+                          <div class="job-file extra">
+                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
+                            <span class="job-file-text"><b>Fit check report</b><span>The full write-up</span></span>
+                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                          </div>
+                          <div class="job-file extra">
+                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
+                            <span class="job-file-text"><b>Job notes</b><span>What Claude noted about the job</span></span>
+                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="job-section is-closed extra">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-history" /></svg>
+                          <b>Activity</b><span class="job-section-sum">9 things so far</span>
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -329,7 +472,8 @@
                     <p class="t-line t-pick" data-at="4" data-until="5">❯ 1. Panel with the product team</p>
                     <p class="t-line t-indent" data-at="4" data-until="5">2. Hiring manager, one on one</p>
                     <p class="t-line t-indent" data-at="4" data-until="5">3. Type something else</p>
-                    <p class="t-line t-gap t-dim" data-at="5">⏺ You answered: Which round is Friday’s interview? → Panel with the product team</p>
+                    <p class="t-line t-gap t-dim" data-at="5">⏺ User answered Claude’s questions:</p>
+                    <p class="t-line t-dim t-indent" data-at="5">⎿&nbsp; · Which round is Friday’s interview? → Panel with the product team</p>
                     <p class="t-line" data-at="6" data-until="7"><span class="t-spin">✻</span> <span class="t-dim">Checking company news and writing your prep sheet…</span></p>
                     <p class="t-line t-gap" data-at="7"><span class="t-ok">⏺</span> Your prep sheet is ready: likely questions answered from your facts, your best stories, and questions to ask them.</p>
                     <p class="t-line t-gap t-dim" data-at="7">❯ <span class="t-caret"></span></p>
@@ -472,7 +616,8 @@
                 <p>
                   Point it at Hacker News’s monthly “Who is hiring?” thread, a company’s job board or
                   a careers page, or paste any posting. Every job gets scored against your facts, and
-                  a fit check adds what people say about working there.
+                  a fit check adds what people say about working there. Then decide on each with a
+                  click: apply, later or pass.
                 </p>
                 <p class="step-aside">
                   A salary check estimates pay a posting hides, and an unmask finds the company behind
@@ -481,47 +626,64 @@
               </div>
               <figure class="step-visual">
                 <figcaption class="visually-hidden">
-                  A fit check: 86 out of 100, strong, split into work, role, stack and requirements,
-                  plus what people say about the company.
+                  A job to review, with its fit check: 86 out of 100, strong, split into work, role,
+                  stack and requirements, plus what people say about the company. Under its name, a
+                  button each to apply, set it aside for later or pass.
                 </figcaption>
                 <div class="card fit" aria-hidden="true" data-nosnippet>
-                  <div class="fit-head">
-                    <div>
-                      <p class="fit-company">Lumen Health</p>
-                      <p class="fit-role">Senior Product Manager, Growth</p>
-                    </div>
-                    <span class="pill tone-green pill-lg">86 · Strong</span>
-                  </div>
-                  <div class="scores">
-                    <div class="score" data-share="85">
-                      <p class="score-head"><b>Work</b><span class="score-points">34 of 40</span></p>
-                      <span class="track"><span class="track-fill"></span></span>
-                      <small>Marketplace growth, like Northwind Stays</small>
-                    </div>
-                    <div class="score" data-share="88">
-                      <p class="score-head"><b>Role</b><span class="score-points">22 of 25</span></p>
-                      <span class="track"><span class="track-fill"></span></span>
-                      <small>A senior PM owning a growth area</small>
-                    </div>
-                    <div class="score" data-share="80">
-                      <p class="score-head"><b>Stack</b><span class="score-points">16 of 20</span></p>
-                      <span class="track"><span class="track-fill"></span></span>
-                      <small>SQL, Amplitude and A/B testing match</small>
-                    </div>
-                    <div class="score" data-share="93">
-                      <p class="score-head"><b>Requirements</b><span class="score-points">14 of 15</span></p>
-                      <span class="track"><span class="track-fill"></span></span>
-                      <small>Every must-have is covered</small>
+                  <div class="fit-top">
+                    <p class="fit-company">Lumen Health</p>
+                    <p class="fit-role">Senior Product Manager, Growth</p>
+                    <div class="fit-badges">
+                      <span class="pill tone-slate pill-select">To review<svg aria-hidden="true" class="icon"><use href="#i-chevron" /></svg></span>
+                      <span class="pill tone-green">86 · Strong</span>
                     </div>
                   </div>
-                  <ul class="fit-marks">
-                    <li><svg aria-hidden="true" class="icon fit-yes"><use href="#i-check" /></svg><span><b>Pricing experiments:</b> proven, 40+ run</span></li>
-                    <li><svg aria-hidden="true" class="icon fit-part"><use href="#i-minus" /></svg><span><b>Healthcare:</b> partly, through clinic bookings</span></li>
-                    <li><svg aria-hidden="true" class="icon fit-no"><use href="#i-x" /></svg><span><b>HIPAA:</b> missing, so it won’t be claimed</span></li>
-                  </ul>
-                  <div class="mood">
-                    <p class="mood-head"><b>What people say</b><span class="pill tone-green">People like it</span></p>
-                    <p>Praise for the team and a steady pace. Pay sits at the top of the band.</p>
+                  <div class="fit-moves">
+                    <span class="ui-button ui-secondary ui-sm">To apply</span>
+                    <span class="ui-button ui-secondary ui-sm">Later</span>
+                    <span class="ui-button ui-secondary ui-sm">Pass</span>
+                  </div>
+                  <div class="job-section">
+                    <p class="job-section-head">
+                      <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                      <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
+                      <b>Fit</b><span class="job-section-sum">Strong 86</span>
+                    </p>
+                    <div class="job-section-body">
+                      <p class="fit-sub"><span class="subheading">Why it scored 86</span><span class="fit-from">From the fit check</span></p>
+                      <div class="scores">
+                        <div class="score" data-share="85">
+                          <p class="score-head"><b>Work</b><span class="score-points">34 of 40</span></p>
+                          <span class="track"><span class="track-fill"></span></span>
+                          <small>Marketplace growth, like Northwind Stays</small>
+                        </div>
+                        <div class="score" data-share="88">
+                          <p class="score-head"><b>Role</b><span class="score-points">22 of 25</span></p>
+                          <span class="track"><span class="track-fill"></span></span>
+                          <small>A senior PM owning a growth area</small>
+                        </div>
+                        <div class="score" data-share="80">
+                          <p class="score-head"><b>Stack</b><span class="score-points">16 of 20</span></p>
+                          <span class="track"><span class="track-fill"></span></span>
+                          <small>SQL, Amplitude and A/B testing match</small>
+                        </div>
+                        <div class="score" data-share="93">
+                          <p class="score-head"><b>Requirements</b><span class="score-points">14 of 15</span></p>
+                          <span class="track"><span class="track-fill"></span></span>
+                          <small>Every must-have is covered</small>
+                        </div>
+                      </div>
+                      <ul class="fit-marks">
+                        <li><svg aria-hidden="true" class="icon fit-yes"><use href="#i-check" /></svg><span><b>Pricing experiments:</b> proven, 40+ run</span></li>
+                        <li><svg aria-hidden="true" class="icon fit-part"><use href="#i-minus" /></svg><span><b>Healthcare:</b> partly, through clinic bookings</span></li>
+                        <li><svg aria-hidden="true" class="icon fit-no"><use href="#i-x" /></svg><span><b>HIPAA:</b> missing, so it won’t be claimed</span></li>
+                      </ul>
+                      <div class="mood">
+                        <p class="fit-sub"><span class="subheading">What people say</span><span class="fit-from">From the fit check</span></p>
+                        <p class="mood-text"><span class="pill tone-green">People like it</span>Praise for the team and a steady pace. Pay sits at the top of the band.</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </figure>
@@ -545,16 +707,21 @@
               </div>
               <figure class="step-visual">
                 <figcaption class="visually-hidden">
-                  A job’s Run buttons, with a tailored resume running in Claude’s panel. Claude asks
-                  about something the job wants that isn’t in your fact bank yet.
+                  A job’s Run buttons, under Your Claude, with a tailored resume running in Claude’s
+                  panel and the other runs waiting. Claude asks about something the job wants that
+                  isn’t in your fact bank yet.
                 </figcaption>
                 <div class="run-demo" aria-hidden="true" data-nosnippet>
                   <div class="card run-card">
-                    <p class="panel-heading">Run with your Claude</p>
-                    <div class="runs">
+                    <p class="job-section-head">
+                      <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                      <svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg>
+                      <b>Your Claude</b><span class="job-section-sum">Fit checked</span>
+                    </p>
+                    <div class="runs is-busy">
                       <div class="run is-suggested">
                         <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
-                        <span class="run-state is-running"><i class="run-dot"></i>Running</span>
+                        <span class="run-state">Running</span>
                       </div>
                       <div class="run">
                         <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
@@ -606,25 +773,34 @@
                   </div>
                   <div class="phone">
                     <div class="phone-screen">
-                      <p class="phone-title">Jobs</p>
+                      <p class="phone-title"><b>Jobs</b><span class="phone-update"><svg aria-hidden="true" class="icon"><use href="#i-refresh" /></svg>Update</span></p>
                       <div class="phone-stats">
-                        <span><b>4</b>In play</span>
-                        <span><b class="is-need">2</b>Needs you</span>
+                        <span><i>Needs you</i><b class="is-need">2</b></span>
+                        <span><i>In play</i><b>7</b></span>
+                        <span><i>Applied</i><b>9</b></span>
+                        <span><i>Heard back</i><b>44%</b></span>
+                      </div>
+                      <div class="phone-views">
+                        <span class="phone-seg"><span>New <b>3</b></span><span>To review <b>4</b></span><span>To apply <b>2</b></span><span>Applied <b>4</b></span><span class="is-selected">Interviewing <b>3</b></span><span>Closed <b>3</b></span><span>All <b>21</b></span></span>
+                      </div>
+                      <span class="phone-search"><svg aria-hidden="true" class="icon"><use href="#i-search" /></svg><span>Search companies, roles and notes</span></span>
+                      <div class="phone-row">
+                        <span class="phone-row-head"><b>Fernway</b><span class="pill tone-green">Offer</span></span>
+                        <span class="phone-role">Product Lead, Payments</span>
+                        <span class="phone-meta"><span class="pill tone-green">81 · Strong</span>$175k–$205k</span>
+                        <em class="is-need">Due today: Reply to the offer</em>
                       </div>
                       <div class="phone-row">
-                        <b>Fernway</b><span>Product Lead, Payments</span>
-                        <em class="is-need">Reply to the offer by Thursday</em>
-                        <span class="pill tone-green">Offer</span>
+                        <span class="phone-row-head"><b>Lumen Health</b><span class="pill tone-purple">Interview</span></span>
+                        <span class="phone-role">Senior Product Manager, Growth</span>
+                        <span class="phone-meta"><span class="pill tone-green">86 · Strong</span>$165k–$190k</span>
+                        <em>Panel interview Friday</em>
                       </div>
                       <div class="phone-row">
-                        <b>Lumen Health</b><span>Senior Product Manager, Growth</span>
-                        <em>Panel interview Friday at 2:00 PM</em>
-                        <span class="pill tone-purple">Interview</span>
-                      </div>
-                      <div class="phone-row">
-                        <b>Tidewater Analytics</b><span>Senior Product Manager, Data</span>
+                        <span class="phone-row-head"><b>Tidewater Analytics</b><span class="pill tone-teal">Screen</span></span>
+                        <span class="phone-role">Senior Product Manager, Data</span>
+                        <span class="phone-meta"><span class="pill tone-blue">74 · Good</span>$150k–$175k</span>
                         <em>Recruiter screen Wednesday</em>
-                        <span class="pill tone-teal">Screen</span>
                       </div>
                     </div>
                   </div>
