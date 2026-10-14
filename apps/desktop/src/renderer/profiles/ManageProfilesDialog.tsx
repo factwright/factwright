@@ -89,11 +89,13 @@ export function ManageProfilesDialog({
     );
     setSaving(false);
     setRemoving(null);
-    setFocusOn('button');
     if (!result.ok) {
+      // The profile's still there, so focus goes back to its Remove button.
+      setFocusOn(`[data-remove="${profile.id}"]`);
       setProblem(result.message);
       return;
     }
+    setFocusOn('button');
     setProblem(null);
     onChanged();
   };
@@ -146,9 +148,12 @@ export function ManageProfilesDialog({
                   aria-label={`Remove ${profile.name}?`}
                   aria-describedby={confirmText}
                 >
-                  <p id={confirmText} className={styles.confirmText}>
-                    Remove {profile.name}? Its job hunt on this computer goes to the trash, where it
-                    can be restored. What it synced stays in its sync account.
+                  <p className={styles.confirmText}>
+                    <strong>Remove {profile.name}?</strong>{' '}
+                    <span id={confirmText}>
+                      Its job hunt on this computer goes to the trash, where it can be restored.
+                      What it synced stays in its sync account.
+                    </span>
                   </p>
                   <div className={styles.confirmButtons}>
                     <Button

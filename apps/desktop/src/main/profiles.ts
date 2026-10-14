@@ -10,6 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import type { EditResult } from '../shared/api.ts';
 import {
@@ -59,6 +60,9 @@ const NO_NAME = 'Unnamed profile';
 
 /** What the window says when a name won't do. */
 const NAME_IT = 'Give it a name of 40 characters or fewer.';
+
+/** How long a start may take before one that never showed its window counts as stopped short. */
+const START_MS = 60_000;
 
 /** A profile's folder, and what's kept about it there. */
 export interface ProfileFolder {
@@ -136,26 +140,34 @@ function keep(profile: ProfileFolder, changes: Record<string, unknown>): void {
 }
 
 /**
- * Whether another copy of the app has a profile open. On a Mac, Chromium's lock in the folder
- * names the process that holds it. On Windows, a folder in use can't be moved, which the trash
- * says instead.
+ * Whether a process of this user's is running. One this user can't signal belongs to someone
+ * else, so it isn't a copy of the app this user runs: the number was used again.
+ */
+function running(pid: unknown): boolean {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether another copy of the app has a profile open. Chromium keeps a lock in the folder while a
+ * copy has it: on a Mac, a link naming the computer and process that hold it, and on Windows a
+ * file that goes when that copy closes.
  */
 function openElsewhere(dir: string): boolean {
+  if (process.platform === 'win32') return existsSync(join(dir, 'lockfile'));
   let holder: string;
   try {
     holder = readlinkSync(join(dir, 'SingletonLock'));
   } catch {
     return false;
   }
-  const pid = Number(holder.slice(holder.lastIndexOf('-') + 1));
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // A process this user can't signal is still running.
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
+  const at = holder.lastIndexOf('-');
+  return holder.slice(0, at) === hostname() && running(Number(holder.slice(at + 1)));
 }
 
 /** Every profile: the first, then the rest in the order they were added. */
@@ -182,15 +194,29 @@ export function listProfiles(home: string): ProfileFolder[] {
 }
 
 /**
- * The profile the app opens: the one chosen last, while it's still there, or else the first. One
- * whose last start never got as far as its window opens the first instead, so a profile that
- * can't start never shuts the others out. Read once, as the app starts, before anything uses the
- * data folder.
+ * The added profile chosen last, when its last start stopped short: it never showed its window,
+ * and the copy of the app that started it has gone, or has taken over a minute. One still
+ * starting in another copy doesn't count, so opening the app again meanwhile brings that copy
+ * forward.
  */
-export function profileToOpen(home: string): ProfileFolder {
+export function stoppedStart(home: string): ProfileFolder | null {
   const choice = readJson(join(home, OPEN_FILE));
   const open = choice?.open;
-  const chosen = isId(open) && choice?.starting !== true ? readProfile(home, open) : null;
+  const starting = choice?.starting;
+  if (!isId(open) || typeof starting !== 'object' || starting === null) return null;
+  const { pid, at } = starting as Record<string, unknown>;
+  const going = typeof at === 'number' && Date.now() - at < START_MS && running(pid);
+  return going ? null : readProfile(home, open);
+}
+
+/**
+ * The profile the app opens: the one chosen last, while it's still there, or else the first. One
+ * whose last start stopped short opens the first instead, so a profile that can't start never
+ * shuts the others out. Read once, as the app starts, before anything uses the data folder.
+ */
+export function profileToOpen(home: string): ProfileFolder {
+  const open = readJson(join(home, OPEN_FILE))?.open;
+  const chosen = isId(open) && !stoppedStart(home) ? readProfile(home, open) : null;
   return chosen ?? (readProfile(home, FIRST_PROFILE) as ProfileFolder);
 }
 
@@ -200,12 +226,13 @@ export function chooseProfile(home: string, id: string): void {
 }
 
 /**
- * Notes that the app is starting on an added profile, until its window shows. If it never does,
- * the next start opens the first profile.
+ * Notes that this copy of the app is starting on an added profile, until its window shows or it
+ * quits. If neither happens, the next start opens the first profile.
  */
 export function noteStarting(home: string, profile: Pick<ProfileFolder, 'id'>): void {
   if (profile.id === FIRST_PROFILE) return;
-  writeJson(join(home, OPEN_FILE), { open: profile.id, starting: true });
+  const starting = { pid: process.pid, at: Date.now() };
+  writeJson(join(home, OPEN_FILE), { open: profile.id, starting });
 }
 
 /** Adds a profile with its own empty folder, and Claude Code's folder ready in it. */
@@ -254,12 +281,13 @@ const powerShellQuoted = (text: string) => `'${text.replace(/['‘’‚‛]/g, 
  * The command that signs a profile in to Claude Code, for the user to run in their terminal:
  * with the profile's own Claude Code folder, when it has one. On a Mac the folder holds for that
  * one command. PowerShell would keep it for the rest of the window, where someone signing in to
- * another profile next would sign in to this one, so the command clears it again.
+ * another profile next would sign in to this one, so the command puts it back as it was, even
+ * when stopped with Ctrl+C.
  */
 export function signInCommand(platform: NodeJS.Platform, folder: string | null): string {
   if (!folder) return 'claude auth login';
   return platform === 'win32'
-    ? `$env:CLAUDE_CONFIG_DIR=${powerShellQuoted(folder)}; claude auth login; Remove-Item Env:CLAUDE_CONFIG_DIR`
+    ? `$saved = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = ${powerShellQuoted(folder)}; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $saved }`
     : `CLAUDE_CONFIG_DIR=${shellQuoted(folder)} claude auth login`;
 }
 
@@ -277,6 +305,8 @@ export interface ProfilesDeps {
   busy: () => boolean;
   /** Restarts the app, which opens the profile chosen. */
   restart: () => void;
+  /** The profile whose last start stopped short, which the first profile opened in place of. */
+  stopped?: ProfileFolder | null;
 }
 
 /** The profiles on this computer, as the window sees and changes them. */
@@ -303,17 +333,24 @@ export class Profiles {
         named: profile.named,
       })),
       claudeSignIn: signInCommand(platform, claudeFolder(open)),
+      ...(this.deps.stopped && { stopped: this.deps.stopped.name }),
     };
   }
 
-  /** The open profile's window showed, so it started, and opens again next time. */
+  /**
+   * The open profile started, as its window showed or the app is quitting as usual, so it opens
+   * again next time. Only its own note of starting is cleared, never a choice made since, such as
+   * the profile the app is about to restart on. A write that fails is tried again the next time.
+   */
   started(): void {
     const { home, open } = this.deps;
     if (open.id === FIRST_PROFILE) return;
+    const choice = readJson(join(home, OPEN_FILE));
+    if (choice?.open !== open.id || choice?.starting === undefined) return;
     try {
       chooseProfile(home, open.id);
     } catch {
-      // The next start opens the first profile, which can switch back.
+      // Tried again as the window comes forward, or the app quits.
     }
   }
 
@@ -380,7 +417,7 @@ export class Profiles {
     const profile = isId(id) ? readProfile(home, id) : null;
     if (!profile) return failed('That profile isn’t on this computer anymore.');
     if (openElsewhere(profile.dir)) {
-      return failed('That profile is open in another Factwright window. Close it first.');
+      return failed('That profile is open in another copy of Factwright. Quit that copy first.');
     }
     try {
       await this.deps.trash(profile.dir);

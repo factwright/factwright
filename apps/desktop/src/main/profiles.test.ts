@@ -9,7 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -25,6 +25,7 @@ import {
   prepareClaudeFolder,
   profileToOpen,
   signInCommand,
+  stoppedStart,
 } from './profiles.ts';
 
 let home: string;
@@ -79,20 +80,50 @@ describe('the profile the app opens', () => {
     expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
   });
 
-  it('is the first when the chosen one’s last start never got as far as its window', () => {
+  it('is the first when the chosen one’s last start stopped short of its window', () => {
     const sam = addProfile(home, 'Sam');
-    chooseProfile(home, sam.id);
-    noteStarting(home, sam);
+    const gone = spawnSync(process.execPath, ['-e', '']).pid;
+    const choose = (starting: object) =>
+      writeFileSync(join(home, 'profiles.json'), JSON.stringify({ open: sam.id, starting }));
+    // Started in a copy of the app that has gone, without showing its window.
+    choose({ pid: gone, at: Date.now() });
+    expect(stoppedStart(home)?.id).toBe(sam.id);
     expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
-    // Until another is chosen, or it starts as far as its window.
-    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
-    chooseProfile(home, sam.id);
-    noteStarting(home, sam);
-    profiles(sam).opened.started();
+    // Still starting in a copy that's running, so opening the app again brings that copy forward.
+    choose({ pid: process.pid, at: Date.now() });
+    expect(stoppedStart(home)).toBeNull();
     expect(profileToOpen(home).id).toBe(sam.id);
+    // Starting for over a minute counts as stopped.
+    choose({ pid: process.pid, at: Date.now() - 61_000 });
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+  });
+
+  it('notes a start until the window shows, never overwriting a choice made since', () => {
+    const sam = addProfile(home, 'Sam');
+    tick();
+    const testing = addProfile(home, 'Testing');
+    noteStarting(home, sam);
+    expect(readJson(join(home, 'profiles.json'))).toEqual({
+      open: sam.id,
+      starting: { pid: process.pid, at: Date.now() },
+    });
+    const opened = profiles(sam).opened;
+    opened.started();
+    expect(readJson(join(home, 'profiles.json'))).toEqual({ open: sam.id });
+    // Switching chose another before the app quit: quitting leaves that choice alone.
+    chooseProfile(home, testing.id);
+    opened.started();
+    expect(readJson(join(home, 'profiles.json'))).toEqual({ open: testing.id });
     // The first profile is where the others fall back to, so its starts aren't noted.
     noteStarting(home, { id: FIRST_PROFILE });
-    expect(readJson(join(home, 'profiles.json'))).toEqual({ open: sam.id });
+    expect(readJson(join(home, 'profiles.json'))).toEqual({ open: testing.id });
+  });
+
+  it('says which profile stopped short, for the window to tell', () => {
+    const sam = addProfile(home, 'Sam');
+    const { opened } = profiles(profileToOpen(home), { stopped: sam });
+    expect(opened.list().stopped).toBe('Sam');
+    expect(profiles(profileToOpen(home)).opened.list()).not.toHaveProperty('stopped');
   });
 
   it('never opens a profile folder that’s a link to a folder somewhere else', () => {
@@ -176,9 +207,9 @@ describe('Claude Code for a profile', () => {
     ).toBe(
       "CLAUDE_CONFIG_DIR='/Users/o'\\''neil/Library/Application Support/Factwright/claude' claude auth login",
     );
-    // PowerShell keeps the folder for the rest of the window, so the command clears it again.
+    // PowerShell keeps the folder for the rest of the window, so the command puts it back.
     expect(signInCommand('win32', 'C:\\Users\\O’Neil\\AppData\\Roaming\\Factwright\\claude')).toBe(
-      "$env:CLAUDE_CONFIG_DIR='C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login; Remove-Item Env:CLAUDE_CONFIG_DIR",
+      "$saved = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = 'C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $saved }",
     );
   });
 });
@@ -282,17 +313,21 @@ describe('Profiles, as the window uses them', () => {
   it('won’t remove a profile another copy of the app has open', async () => {
     const testing = addProfile(home, 'Testing');
     const { opened, trash } = profiles(profileToOpen(home));
-    // Chromium's lock names the host and process that hold the folder.
-    symlinkSync(`this-mac-${process.pid}`, join(testing.dir, 'SingletonLock'));
+    const lock = (holder: string) => {
+      rmSync(join(testing.dir, 'SingletonLock'), { force: true });
+      symlinkSync(holder, join(testing.dir, 'SingletonLock'));
+    };
+    // Chromium's lock names the computer and process that hold the folder.
+    lock(`${hostname()}-${process.pid}`);
     expect(await opened.remove(testing.id)).toEqual({
       ok: false,
-      message: 'That profile is open in another Factwright window. Close it first.',
+      message: 'That profile is open in another copy of Factwright. Quit that copy first.',
     });
     expect(trash).not.toHaveBeenCalled();
-    // A lock left by a copy that's no longer running doesn't count.
-    const gone = spawnSync(process.execPath, ['-e', '']).pid;
-    rmSync(join(testing.dir, 'SingletonLock'));
-    symlinkSync(`this-mac-${gone}`, join(testing.dir, 'SingletonLock'));
+    // A lock left by a copy that's no longer running, or by another computer, doesn't count.
+    lock(`other-computer-${process.pid}`);
+    expect(await opened.remove(testing.id)).toEqual({ ok: true });
+    lock(`${hostname()}-${spawnSync(process.execPath, ['-e', '']).pid}`);
     expect(await opened.remove(testing.id)).toEqual({ ok: true });
   });
 

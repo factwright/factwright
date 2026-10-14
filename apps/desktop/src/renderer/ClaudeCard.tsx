@@ -11,8 +11,6 @@ const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 export interface OwnSignIn {
   command: string;
   copy: (text: string) => Promise<EditResult>;
-  /** The terminal it runs in: PowerShell on Windows, Terminal on a Mac. */
-  terminal: string;
 }
 
 /** Copies an added profile's sign-in command, read as a link in the card's help. */
@@ -46,6 +44,7 @@ function describe(
   status: ClaudeStatusView,
   setup: SetupCheck | null,
   signIn: OwnSignIn | undefined,
+  terminal: string,
 ): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: null };
   switch (status.state) {
@@ -73,12 +72,12 @@ function describe(
         line: 'Not signed in',
         help: signIn ? (
           <>
-            This profile has its own Claude login. In {signIn.terminal}, run its sign-in command,
-            then come back. <CopySignIn signIn={signIn} />
+            This profile has its own Claude login. In {terminal}, run its sign-in command, then come
+            back. <CopySignIn signIn={signIn} />
           </>
         ) : (
           <>
-            In Terminal, run <code>claude auth login</code>, then come back.
+            In {terminal}, run <code>claude auth login</code>, then come back.
           </>
         ),
         recheck: 'status',
@@ -89,7 +88,7 @@ function describe(
         line: 'Needs an update',
         help: (
           <>
-            Version {status.version} is older than Factwright needs. In Terminal, run{' '}
+            Version {status.version} is older than Factwright needs. In {terminal}, run{' '}
             <code>claude update</code>.
           </>
         ),
@@ -106,8 +105,8 @@ function describe(
             <a href={INSTALL_URL} target="_blank" rel="noreferrer">
               How to install it
             </a>
-            . Then sign in with this profile’s own command, not plain <code>claude</code>.{' '}
-            <CopySignIn signIn={signIn} />
+            . Then, in {terminal}, sign in with this profile’s own command, not plain{' '}
+            <code>claude</code>. <CopySignIn signIn={signIn} />
           </>
         ) : (
           <>
@@ -123,7 +122,7 @@ function describe(
       return {
         tone: 'bad',
         line: 'Couldn’t check Claude Code',
-        help: 'Make sure it opens in Terminal, then check again.',
+        help: `Make sure it opens in ${terminal}, then check again.`,
         recheck: 'status',
       };
   }
@@ -137,6 +136,7 @@ export function ClaudeCard({
   status,
   onRecheck,
   signIn,
+  terminal = 'Terminal',
   setup = null,
   checkingSetup = false,
   onCheckSetup,
@@ -146,13 +146,15 @@ export function ClaudeCard({
   onRecheck: () => void;
   /** An added profile's own sign-in, which its signed-out help copies. */
   signIn?: OwnSignIn | undefined;
+  /** Where the user runs Claude Code's commands: PowerShell on Windows, Terminal on a Mac. */
+  terminal?: string;
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
   /** Opens Claude's settings, once Claude is ready to run. */
   onSettings?: () => void;
 }) {
-  const view = describe(status, setup, signIn);
+  const view = describe(status, setup, signIn, terminal);
   const checking = view.recheck === 'setup' && checkingSetup;
   const ready = status !== 'checking' && status.state === 'ready' && !view.recheck;
   return (

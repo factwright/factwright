@@ -18,6 +18,8 @@ export interface ProfileList {
   profiles: ProfileEntry[];
   /** The command that signs the open profile in to Claude Code, which the user runs themselves. */
   claudeSignIn: string;
+  /** The profile whose last start stopped short, so the first profile opened in its place. */
+  stopped?: string;
 }
 
 export type AddProfileResult = { ok: true; id: string } | { ok: false; message: string };

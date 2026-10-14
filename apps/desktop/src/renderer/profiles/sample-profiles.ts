@@ -19,15 +19,16 @@ const folder = (id: string) =>
 
 /**
  * Profiles for the screens, kept until the page reloads. ?profiles= picks how many there are:
- * one (as for most people), two, or three with ?profiles=added, where an added one is open.
- * Opening another only says so, as the screens can't restart.
+ * one (as for most people), two, or three with ?profiles=added, where an added one is open. With
+ * ?profiles=stopped, Sam's profile stopped short of opening last time. Opening another only says
+ * so, as the screens can't restart.
  */
 export function sampleProfiles(choice: string | null): ProfilesApi {
   // With one profile, the first has no name yet, as for most people.
   let profiles =
     choice === 'added'
       ? PEOPLE.map((profile) => ({ ...profile, open: profile.id === '3f9c2a71d0be' }))
-      : choice === 'two'
+      : choice === 'two' || choice === 'stopped'
         ? PEOPLE.slice(0, 2)
         : [{ ...(PEOPLE[0] as ProfileEntry), name: 'First profile', named: false }];
   let next = 1;
@@ -40,6 +41,7 @@ export function sampleProfiles(choice: string | null): ProfilesApi {
           open && !open.first
             ? `CLAUDE_CONFIG_DIR='${folder(open.id)}' claude auth login`
             : 'claude auth login',
+        ...(choice === 'stopped' && { stopped: 'Sam' }),
       };
     },
     addProfile: async (value, firstValue) => {

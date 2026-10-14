@@ -30,6 +30,7 @@ export function Sidebar({
   claude,
   onRecheckClaude,
   claudeSignIn,
+  terminal,
   setup,
   sync,
   onOpenSync,
@@ -55,6 +56,8 @@ export function Sidebar({
   onRecheckClaude: () => void;
   /** An added profile's own Claude sign-in, for its card to copy when it's signed out. */
   claudeSignIn?: OwnSignIn | undefined;
+  /** Where the user runs Claude Code's commands: PowerShell on Windows, Terminal on a Mac. */
+  terminal?: string;
   /** The latest check of Factwright's setup, and how to run it again. */
   setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
   sync: SyncStatus | 'checking';
@@ -115,6 +118,7 @@ export function Sidebar({
           status={claude}
           onRecheck={onRecheckClaude}
           signIn={claudeSignIn}
+          {...(terminal && { terminal })}
           setup={setup.check}
           checkingSetup={setup.checking}
           onCheckSetup={setup.checkAgain}

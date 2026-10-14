@@ -94,6 +94,8 @@ export function App({ api }: { api: FactwrightApi }) {
   // A profile to switch to, once the user says what they're writing can go unsaved.
   const [switching, setSwitching] = useState<ProfileEntry | null>(null);
   const [profileProblem, setProfileProblem] = useState<string | null>(null);
+  // A profile that stopped short of opening last time, which the user hears about once.
+  const [stoppedSeen, setStoppedSeen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
@@ -237,15 +239,8 @@ export function App({ api }: { api: FactwrightApi }) {
           gettingStarted={gettingStarted}
           claude={status}
           onRecheckClaude={recheck}
-          claudeSignIn={
-            ownSignIn
-              ? {
-                  command: ownSignIn,
-                  copy: api.copyText,
-                  terminal: api.platform === 'win32' ? 'PowerShell' : 'Terminal',
-                }
-              : undefined
-          }
+          claudeSignIn={ownSignIn ? { command: ownSignIn, copy: api.copyText } : undefined}
+          terminal={api.platform === 'win32' ? 'PowerShell' : 'Terminal'}
           setup={setup}
           sync={sync}
           onOpenSync={() => setDialog('sync')}
@@ -437,6 +432,21 @@ export function App({ api }: { api: FactwrightApi }) {
                 }}
               >
                 Switch anyway
+              </Button>
+            </DialogActions>
+          )}
+        </Dialog>
+      )}
+      {profiles.list?.stopped && !stoppedSeen && (
+        <Dialog
+          title={`${profiles.list.stopped} didn’t open`}
+          description={`Last time, Factwright stopped before the profile “${profiles.list.stopped}” finished opening, so it opened this one. To try again, pick it at the top of the sidebar.`}
+          onClose={() => setStoppedSeen(true)}
+        >
+          {(close) => (
+            <DialogActions>
+              <Button variant="primary" onClick={close}>
+                OK
               </Button>
             </DialogActions>
           )}

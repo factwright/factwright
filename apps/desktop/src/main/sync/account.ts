@@ -256,7 +256,11 @@ export class SyncAccount {
     await this.deps.openUrl(pending.url);
     if (overtaken()) return OVERTAKEN;
     const result = await flow.finish();
-    if (overtaken()) return result.ok ? OVERTAKEN : failed(result.message);
+    if (overtaken()) {
+      // A sign-in that's dropped is ended, so it isn't left signed in on the server.
+      if (result.ok) void this.signOutOnServer(result.token);
+      return result.ok ? OVERTAKEN : failed(result.message);
+    }
     if (!result.ok) {
       this.signIn = null;
       this.set(before);
@@ -265,7 +269,6 @@ export class SyncAccount {
     // Before anything is kept: an account another profile here uses stays that profile's.
     const taken = await this.usedByAnotherProfile(result.token);
     if (overtaken()) {
-      // A sign-in that's dropped is ended, so it isn't left signed in on the server.
       void this.signOutOnServer(result.token);
       return OVERTAKEN;
     }

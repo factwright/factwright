@@ -25,12 +25,15 @@ import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
 import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
+  chooseProfile,
   claudeFolder,
+  FIRST_PROFILE,
   noteStarting,
   type ProfileFolder,
   Profiles,
   prepareClaudeFolder,
   profileToOpen,
+  stoppedStart,
 } from './profiles.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
@@ -125,7 +128,9 @@ if (process.platform === 'win32') app.setAppUserModelId('com.factwright.app');
 
 // The app's own data folder, as Electron gives it: the first profile's, which holds the others.
 const home = app.getPath('userData');
-// The profile chosen last, read before anything uses the data folder.
+// The profile chosen last, read before anything uses the data folder, and one whose last start
+// stopped short, which the first profile opens in place of.
+const stopped = stoppedStart(home);
 const profile = profileToOpen(home);
 
 if (debuggingTheUsersData([home, profile.dir])) {
@@ -134,11 +139,13 @@ if (debuggingTheUsersData([home, profile.dir])) {
   openProfile(home, profile);
   if (app.requestSingleInstanceLock()) {
     try {
-      noteStarting(home, profile);
+      // After one stopped short, the first profile opens from now on, until another is chosen.
+      if (stopped) chooseProfile(home, FIRST_PROFILE);
+      else noteStarting(home, profile);
     } catch {
       // Without the note, a profile that can't start opens again next time.
     }
-    start(home, profile);
+    start(home, profile, stopped);
   } else {
     // Factwright is already open on this profile, and that copy brings its window forward.
     app.quit();
@@ -152,7 +159,7 @@ function pluginDir(): string {
     : join(app.getAppPath(), '..', '..', 'plugin');
 }
 
-function start(home: string, profile: ProfileFolder): void {
+function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | null): void {
   registerAppScheme();
   app.on('web-contents-created', (_event, contents) => hardenContents(contents));
 
@@ -181,6 +188,7 @@ function start(home: string, profile: ProfileFolder): void {
       ownName: () => about.answers().you.name,
       trash: (path) => shell.trashItem(path),
       busy: () => claude.busy(),
+      stopped,
       restart: () => {
         // An update that's ready installs as the app restarts, then opens the profile chosen.
         if (updates?.install()) return;
@@ -234,8 +242,10 @@ function start(home: string, profile: ProfileFolder): void {
     await server.start();
 
     let window = createMainWindow(startUrl);
-    // Once the window shows, the profile has started, so it opens again next time.
+    // Once the window shows, the profile has started, so it opens again next time. A note that
+    // couldn't be written then is tried again as the window comes forward, or the app quits.
     window.once('ready-to-show', () => profiles.started());
+    app.on('browser-window-focus', () => profiles.started());
     jobs.watch();
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
     // so the profile follows the workspace too.
@@ -330,6 +340,7 @@ function start(home: string, profile: ProfileFolder): void {
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
     stopWithWindow(window);
     app.on('before-quit', () => {
+      profiles.started();
       updates?.stop();
       claude.stop();
       setup.stop();

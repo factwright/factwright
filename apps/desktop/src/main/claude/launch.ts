@@ -76,22 +76,25 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
 }
 
 /**
- * Variables that sign Claude Code in by themselves, whichever profile it runs for: a key or
- * token, a cloud provider's account in place of a Claude login, or where Claude Code keeps its
- * sign-in.
+ * Variables that would sign Claude Code in by themselves, whichever profile it runs for: a token,
+ * a cloud provider in place of a Claude login, or where Claude Code keeps its sign-in.
  */
 const CLAUDE_LOGINS = new Set([
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_AUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
   'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+  'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
+  'CLAUDE_CODE_USE_MANTLE',
+  'CLAUDE_CODE_USE_GATEWAY',
   'AWS_BEARER_TOKEN_BEDROCK',
-  'ANTHROPIC_FOUNDRY_API_KEY',
   'CLAUDE_SECURESTORAGE_CONFIG_DIR',
 ]);
+
+/** Anthropic's keys and tokens, for any of its services, such as ANTHROPIC_FOUNDRY_API_KEY. */
+const ANTHROPIC_KEY = /^ANTHROPIC_(?:\w+_)?(?:API_KEY|AUTH_TOKEN|IDENTITY_TOKEN(?:_FILE)?)$/;
 
 /**
  * The open profile's own Claude Code folder, for a profile added in Factwright: its login, plan,
@@ -119,7 +122,8 @@ export function launchEnv(base: NodeJS.ProcessEnv, path: string): NodeJS.Process
   const kept = Object.entries(base).filter(([name]) => {
     const upper = name.toUpperCase();
     if (upper === 'PATH' || PARENT_SESSION_VARIABLES.has(name)) return false;
-    return !profileFolder || (upper !== 'CLAUDE_CONFIG_DIR' && !CLAUDE_LOGINS.has(upper));
+    if (!profileFolder) return true;
+    return upper !== 'CLAUDE_CONFIG_DIR' && !CLAUDE_LOGINS.has(upper) && !ANTHROPIC_KEY.test(upper);
   });
   return {
     ...Object.fromEntries(kept),

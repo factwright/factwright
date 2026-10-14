@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -137,4 +138,26 @@ test('renames a profile, and won’t remove the open one or the first', async ()
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(window.getByRole('button', { name: 'Alex Rivera, switch profiles' })).toBeVisible();
   await expect(window).toHaveTitle('Factwright · Alex Rivera');
+});
+
+test('opens the first profile when another stopped short of opening, and says so', async () => {
+  await opened?.app.close();
+  opened = undefined;
+  const [id] = addedProfiles();
+  // Testing started in a copy of the app that has gone, without showing its window.
+  const gone = spawnSync(process.execPath, ['-e', '']).pid;
+  writeFileSync(
+    join(dataDir, 'profiles.json'),
+    JSON.stringify({ open: id, starting: { pid: gone, at: Date.now() } }),
+  );
+  const { window } = await open();
+  const notice = window.getByRole('dialog', { name: 'Testing didn’t open' });
+  await expect(notice).toBeVisible();
+  await expect(window.getByRole('button', { name: 'Alex Rivera, switch profiles' })).toBeVisible();
+  await notice.getByRole('button', { name: 'OK' }).click();
+  await expect(notice).toHaveCount(0);
+  // From now on the first profile opens, until another is chosen.
+  expect(JSON.parse(readFileSync(join(dataDir, 'profiles.json'), 'utf8'))).toEqual({
+    open: 'first',
+  });
 });

@@ -153,13 +153,22 @@ describe('launchEnv', () => {
         CLAUDE_CODE_OAUTH_TOKEN: 'oauth',
         CLAUDE_CODE_OAUTH_REFRESH_TOKEN: 'refresh',
         CLAUDE_CODE_USE_BEDROCK: '1',
+        CLAUDE_CODE_USE_ANTHROPIC_AWS: '1',
+        ANTHROPIC_AWS_API_KEY: 'aws',
+        ANTHROPIC_FOUNDRY_AUTH_TOKEN: 'foundry',
+        ANTHROPIC_IDENTITY_TOKEN_FILE: '/Users/someone/token',
         AWS_BEARER_TOKEN_BEDROCK: 'bedrock',
         CLAUDE_SECURESTORAGE_CONFIG_DIR: '/Users/someone/.claude',
         ANTHROPIC_BASE_URL: 'https://llm.example.com',
+        // Settings that don't sign anyone in stay.
+        ANTHROPIC_MODEL: 'opus',
+        CLAUDE_CODE_USE_POWERSHELL_TOOL: '1',
       };
       expect(launchEnv(base, '/usr/bin')).toEqual({
         HOME: '/Users/someone',
         ANTHROPIC_BASE_URL: 'https://llm.example.com',
+        ANTHROPIC_MODEL: 'opus',
+        CLAUDE_CODE_USE_POWERSHELL_TOOL: '1',
         PATH: '/usr/bin',
         CLAUDE_CONFIG_DIR: '/profiles/sam/claude',
       });

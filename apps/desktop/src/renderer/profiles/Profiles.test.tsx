@@ -345,7 +345,8 @@ describe('ClaudeCard, for an added profile', () => {
       <ClaudeCard
         status={{ state: 'signed-out', version: '2.1.296' }}
         onRecheck={() => {}}
-        signIn={{ command, copy, terminal: 'PowerShell' }}
+        signIn={{ command, copy }}
+        terminal="PowerShell"
       />,
     );
     expect(container.textContent).toContain(
@@ -363,14 +364,12 @@ describe('ClaudeCard, for an added profile', () => {
     const copy = vi.fn(async () => ({ ok: true as const }));
     const command = "CLAUDE_CONFIG_DIR='/profiles/sam/claude' claude auth login";
     const { container } = render(
-      <ClaudeCard
-        status={{ state: 'missing' }}
-        onRecheck={() => {}}
-        signIn={{ command, copy, terminal: 'Terminal' }}
-      />,
+      <ClaudeCard status={{ state: 'missing' }} onRecheck={() => {}} signIn={{ command, copy }} />,
     );
     // Signing in as the install guide says would sign in the first profile.
-    expect(container.textContent).toContain('Then sign in with this profile’s own command');
+    expect(container.textContent).toContain(
+      'Then, in Terminal, sign in with this profile’s own command',
+    );
     await user.click(screen.getByRole('button', { name: 'Copy the command' }));
     expect(copy).toHaveBeenCalledWith(command);
     expect((await axe.run(container)).violations).toEqual([]);
