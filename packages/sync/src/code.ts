@@ -32,11 +32,18 @@ export function toCode(bytes: Bytes): string {
 }
 
 /**
+ * What doesn't count in a code: spaces and line breaks, and dashes of every kind, such as the
+ * long ones a phone's keyboard or a note app puts in place of a hyphen.
+ */
+const SEPARATORS = /[\s\-\u00ad\u2010-\u2015\u2212\u2e3a\u2e3b\ufe58\ufe63\uff0d]/g;
+
+/**
  * The bytes a code holds, or null when it isn't a code of that many bytes. Spaces and dashes
- * don't count, so it can be typed with or without them.
+ * don't count, so it can be typed with or without them, and full-width letters, as some
+ * keyboards type them, read as plain ones.
  */
 export function fromCode(text: string, length: number): Bytes | null {
-  const chars = text.toUpperCase().replace(/[\s-]/g, '');
+  const chars = text.normalize('NFKC').toUpperCase().replace(SEPARATORS, '');
   if (chars.length !== Math.ceil((length * 8) / 5)) return null;
   const bytes = new Uint8Array(length);
   let value = 0;

@@ -1,4 +1,5 @@
 export { Button, type ButtonProps } from './components/Button.tsx';
+export { CheckCode, type CheckCodeProps } from './components/CheckCode.tsx';
 export { Chip, type ChipProps } from './components/Chip.tsx';
 export { ChipGroup, type ChipGroupProps } from './components/ChipGroup.tsx';
 export { Dialog, DialogActions, type DialogProps } from './components/Dialog.tsx';

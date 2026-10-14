@@ -19,6 +19,17 @@ export const LIMITS = {
   linkMinutes: 10,
   /** Link codes waiting at once. */
   linksAtOnce: 5,
+  /** How long a new device's request to link waits to be approved. */
+  requestMinutes: 10,
+  /** Requests to link waiting at once. Each session has one at most. */
+  requestsAtOnce: 5,
+  /** Requests to link each device can make in an hour, so none can keep the others asking. */
+  requestsPerHour: 10,
+  /**
+   * How long after signing in a device can ask to link. A sign-in got by tricking someone, days
+   * ago, can't ask, and a device that signed in long ago signs in again or types a code.
+   */
+  askWithinMinutes: 30,
   /** IDs in one check for missing files. */
   filesPerCheck: 500,
 } as const;
@@ -29,6 +40,10 @@ const ID = /^[A-Za-z0-9_-]{43}$/;
 const LINK_ID = /^[A-Za-z0-9_-]{22}$/;
 /** A key ID: 16 bytes in URL-safe base64. */
 const KEY_ID = /^[A-Za-z0-9_-]{22}$/;
+/** A one-time public key: an uncompressed P-256 point, 65 bytes starting with 4. */
+const ONE_TIME_KEY = /^B[A-Za-z0-9_-]{86}$/;
+/** The account key, sealed for a new device: a version byte, the nonce, 32 bytes and the tag. */
+const SEALED = /^[A-Za-z0-9_-]{82}$/;
 
 export const isRecordId = (value: unknown): value is string =>
   typeof value === 'string' && ID.test(value);
@@ -37,6 +52,14 @@ export const isLinkId = (value: unknown): value is string =>
   typeof value === 'string' && LINK_ID.test(value);
 export const isKeyId = (value: unknown): value is string =>
   typeof value === 'string' && KEY_ID.test(value);
+/** A request to link: 16 random bytes the new device picked. */
+export const isRequestId = isLinkId;
+/** A SHA-256 hash, such as the one a request to link commits to its key with. */
+export const isCommitment = isRecordId;
+export const isOneTimeKey = (value: unknown): value is string =>
+  typeof value === 'string' && ONE_TIME_KEY.test(value);
+export const isSealedKey = (value: unknown): value is string =>
+  typeof value === 'string' && SEALED.test(value);
 
 /** Where each part of the API lives on the server. */
 export const API = {
@@ -46,6 +69,7 @@ export const API = {
   files: '/api/sync/files',
   missingFiles: '/api/sync/files/missing',
   links: '/api/sync/links',
+  requests: '/api/sync/requests',
   liveTicket: '/api/sync/live/ticket',
   live: '/api/sync/live',
   account: '/api/account',
@@ -149,6 +173,79 @@ export interface AccountInfo {
     files: number;
   };
 }
+
+/**
+ * A new device asking to link, waiting for a device that's set up to approve it. Everything in
+ * it is public: one-time public keys, a hash, and names the account page shows anyway.
+ */
+export interface LinkRequest {
+  id: string;
+  /** The device asking, as the account page names it, such as "Chrome on Windows". */
+  device: string;
+  /** The ID the account page lists the device asking under, to sign it out by. */
+  deviceId: string;
+  /** When it asked, and when the request runs out, as ISO times. */
+  asked: string;
+  expires: string;
+  /** When the device asking signed in, as an ISO time. */
+  signedIn: string;
+  /** A hash of the new device's one-time key, which fixes the key before it's shown. */
+  commitment: string;
+  /** The new device's one-time key, shown once a device offers to approve it. */
+  key: string | null;
+  /** The device that offered to approve it, with its one-time key. */
+  approver: { device: string; key: string } | null;
+  /**
+   * How it stands: waiting for an answer; approved, with the sealed account key waiting for the
+   * new device; turned down; or linked, once the new device picked the key up.
+   */
+  state: 'waiting' | 'approved' | 'denied' | 'linked';
+  /** Whether the session asking is the one that made it. */
+  mine: boolean;
+  /** Whether the session asking is the one approving it. */
+  approving: boolean;
+}
+
+const REQUEST_STATES = new Set<unknown>(['waiting', 'approved', 'denied', 'linked']);
+
+const isTime = (value: unknown) =>
+  typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
+
+const isName = (value: unknown) => typeof value === 'string' && value.length <= 200;
+
+/**
+ * Whether the server's word about a request to link is in the shape devices act on: IDs, keys
+ * and the hash in their exact formats, so nothing odd ends up in an address or a key.
+ */
+export function isLinkRequest(value: unknown): value is LinkRequest {
+  const request = value as Partial<LinkRequest> | null;
+  if (typeof request !== 'object' || request === null) return false;
+  const { approver } = request;
+  return (
+    isRequestId(request.id) &&
+    isName(request.device) &&
+    typeof request.deviceId === 'string' &&
+    /^[A-Za-z0-9_-]{1,100}$/.test(request.deviceId) &&
+    isTime(request.asked) &&
+    isTime(request.expires) &&
+    isTime(request.signedIn) &&
+    isCommitment(request.commitment) &&
+    (request.key === null || isOneTimeKey(request.key)) &&
+    (approver === null ||
+      (typeof approver === 'object' &&
+        approver !== undefined &&
+        isName(approver.device) &&
+        isOneTimeKey(approver.key))) &&
+    REQUEST_STATES.has(request.state) &&
+    typeof request.mine === 'boolean' &&
+    typeof request.approving === 'boolean'
+  );
+}
+
+/** What the server can do beyond the basics, so devices offer only what it has. */
+export type Feature =
+  /** Approving a new device from one that's set up: requests to link, at API.requests. */
+  'approve';
 
 /** What the server says when a request fails. */
 export interface ErrorBody {

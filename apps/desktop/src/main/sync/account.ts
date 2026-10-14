@@ -22,11 +22,13 @@ import {
 import type { EditResult } from '../../shared/api.ts';
 import type {
   AccountResult,
+  ApprovalsView,
   LinkCodeResult,
   RecoveryKeyResult,
   SyncStatus,
 } from '../../shared/sync.ts';
 import type { Tracker } from '../jobs/tracker.ts';
+import { Approvals } from './approvals.ts';
 import { computerName, userAgent } from './device.ts';
 import { SyncEngine } from './engine.ts';
 import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
@@ -51,6 +53,8 @@ export interface SyncAccountDeps {
   /** Opens a page in the user's browser. */
   openUrl: (url: string) => void | Promise<void>;
   onStatus: (status: SyncStatus) => void;
+  /** Whenever linking by approval changes: this computer asking, or other devices' requests. */
+  onApprovals?: (view: ApprovalsView) => void;
   /**
    * The sync accounts other profiles on this computer use, by email, with each one's name.
    * Signing in to one of them is turned away, so two people's job hunts never mix.
@@ -63,6 +67,8 @@ export interface SyncAccountDeps {
   fetch?: typeof fetch;
   /** For tests: how sign-in waits between asking whether the user approved. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** For tests: how linking by approval waits between looks at the other device. */
+  approvalWait?: (ms: number) => Promise<void>;
 }
 
 const failed = (message: string) => ({ ok: false as const, message });
@@ -75,6 +81,13 @@ const NO_SERVER = 'This copy of Factwright has no sync server.';
 
 /** Notes a sign-in that hasn't been checked against the account's key on the server yet. */
 const UNCHECKED = 'unchecked';
+
+/** How often, at most, a round of sync also looks for other devices' requests to link. */
+const REQUESTS_EVERY_MS = 60_000;
+
+/** How many times, and how far apart, linking with an approved key is tried while offline. */
+const KEY_TRIES = 12;
+const KEY_RETRY_MS = 5000;
 
 /** What to tell the user when a request to the server fails. */
 function reason(error: unknown): string {
@@ -107,9 +120,24 @@ export class SyncAccount {
   private device = 'This computer';
   /** Once the app is closing, nothing more happens. */
   private closed = false;
+  /** Linking devices by approval: this computer asking, and approving others. */
+  private readonly approvals: Approvals;
+  /** When a round of sync last looked for requests to link. */
+  private requestsLooked = 0;
 
   constructor(deps: SyncAccountDeps) {
     this.deps = deps;
+    this.approvals = new Approvals({
+      onChange: (view) => {
+        if (!this.closed) this.deps.onApprovals?.(view);
+      },
+      accountKey: () => (this.runner ? this.accountKey : null),
+      keyId: () => (this.runner ? (this.keys?.id ?? null) : null),
+      linkWith: (accountKey) => this.linkWithKey(accountKey),
+      signedOut: () => this.signedOutElsewhere(),
+      reason,
+      ...(deps.approvalWait && { wait: deps.approvalWait }),
+    });
     const folder = join(deps.dataDir, 'sync');
     mkdirSync(folder, { recursive: true });
     this.secrets = new Secrets(join(folder, 'secrets.json'), deps.keychain);
@@ -143,6 +171,12 @@ export class SyncAccount {
     return this.deps.server;
   }
 
+  /** Takes up a sign-in, or none. Linking by approval follows it. */
+  private useClient(client: SyncClient | null): void {
+    this.client = client;
+    this.approvals.use(client);
+  }
+
   private clientFor(token: string): SyncClient {
     return new SyncClient({
       server: this.server(),
@@ -174,7 +208,7 @@ export class SyncAccount {
       return;
     }
     const client = this.clientFor(token);
-    this.client = client;
+    this.useClient(client);
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
     if (accountKey) {
@@ -283,7 +317,7 @@ export class SyncAccount {
     // Noted before the new sign-in is kept, so it's never kept unchecked.
     if (accountKey) this.state.setMeta(UNCHECKED, '1');
     this.secrets.set('session', result.token);
-    this.client = this.clientFor(result.token);
+    this.useClient(this.clientFor(result.token));
     if (!accountKey) {
       await this.checkSetup();
       return { ok: true };
@@ -335,7 +369,7 @@ export class SyncAccount {
       if (this.overtaken(client)) return OVERTAKEN;
       if (error instanceof SyncError && error.kind === 'signed-out') {
         this.secrets.delete('session');
-        this.client = null;
+        this.useClient(null);
       }
       this.set({ state: 'signed-out', email: this.email() });
       return failed(reason(error));
@@ -391,7 +425,7 @@ export class SyncAccount {
     if (!this.deps.server) return failed(NO_SERVER);
     const token = this.secrets.get('session');
     // First, so a step still waiting on the server for this sign-in does nothing more.
-    this.client = null;
+    this.useClient(null);
     this.pending = null;
     await this.runner?.stop();
     this.runner = null;
@@ -487,6 +521,37 @@ export class SyncAccount {
     }
   }
 
+  /**
+   * On another device: takes the account key a device that's set up approved this one with. The
+   * key was picked up once and won't come again, so a dropped connection is waited out.
+   */
+  private async linkWithKey(accountKey: Bytes): Promise<EditResult> {
+    const client = this.client;
+    if (!client) return failed('Sign in first.');
+    for (let tries = 1; ; tries++) {
+      try {
+        return await this.checkAndTurnOn(client, accountKey);
+      } catch (error) {
+        const offline = error instanceof SyncError && error.kind === 'offline';
+        if (!offline || tries >= KEY_TRIES || this.overtaken(client)) return failed(reason(error));
+        await new Promise((resolve) => setTimeout(resolve, KEY_RETRY_MS));
+      }
+    }
+  }
+
+  /**
+   * The server says this sign-in has ended, such as when another device signed it out. As when
+   * signing in again finds that, the session goes, and sync says to sign in again.
+   */
+  private signedOutElsewhere(): void {
+    if (this.closed || !this.client) return;
+    void this.runner?.stop();
+    this.runner = null;
+    this.useClient(null);
+    this.secrets.delete('session');
+    this.set({ state: 'signed-out', email: this.email() });
+  }
+
   /** Turns sync on with an account key, once it's the one the account uses. */
   private async checkAndTurnOn(client: SyncClient, accountKey: Bytes): Promise<EditResult> {
     const keys = await client.keys();
@@ -494,6 +559,8 @@ export class SyncAccount {
     if (this.overtaken(client)) return OVERTAKEN;
     if (!keys) return failed('No device has turned on sync for this account yet.');
     if (keys.keyId !== keyId) return failed('That key belongs to a different account.');
+    // Linked, so a request to be approved, if this computer asked, is called off.
+    this.approvals.stopAsking();
     await this.turnOnWith(client, accountKey);
     return { ok: true };
   }
@@ -539,6 +606,11 @@ export class SyncAccount {
         skipped = report.skipped.length;
         lastSynced = new Date().toISOString();
         if (report.pulled > 0 || report.conflicts > 0) this.deps.onApplied();
+        // In case the server's word about a request to link went unheard.
+        if (Date.now() - this.requestsLooked > REQUESTS_EVERY_MS) {
+          this.requestsLooked = Date.now();
+          void this.approvals.refresh();
+        }
         // Once the server answers, the account's key is checked, until the check gets through.
         if (!checked) {
           checked = true;
@@ -556,15 +628,21 @@ export class SyncAccount {
         if (this.runner !== runner) return;
         this.set({ state: 'on', email: this.email(), activity, lastSynced, message, skipped });
       },
+      onRequests: () => {
+        if (!this.closed && this.runner === runner) void this.approvals.refresh();
+      },
       onSignedOut: () => {
         if (this.closed || this.runner !== runner) return;
         this.runner = null;
+        this.approvals.use(null);
         this.secrets.delete('session');
         this.set({ state: 'signed-out', email: this.email() });
       },
     });
     this.runner = runner;
     runner.start();
+    this.requestsLooked = Date.now();
+    void this.approvals.refresh();
   }
 
   /**
@@ -606,6 +684,7 @@ export class SyncAccount {
     this.runner = null;
     this.keys = null;
     this.accountKey = null;
+    void this.approvals.refresh();
     this.set(
       saved === null
         ? { state: 'setting-up', email, firstDevice: true, again: 'remade' }
@@ -645,6 +724,50 @@ export class SyncAccount {
 
   async cancelLinkCode(id: string): Promise<void> {
     await this.client?.cancelLink(id).catch(() => {});
+  }
+
+  /** How linking by approval stands here, after a fresh look for other devices' requests. */
+  async approvalsView(): Promise<ApprovalsView> {
+    await this.approvals.refresh();
+    return this.approvals.view();
+  }
+
+  /** On a computer that isn't linked yet: asks a device that's set up to approve it. */
+  async askToLink(): Promise<EditResult> {
+    if (this.current.state !== 'setting-up' || this.current.firstDevice) {
+      return failed('Only a computer that isn’t linked yet asks to be.');
+    }
+    return this.approvals.ask();
+  }
+
+  /** On the computer asking: the person says whether the emoji match the other device's. */
+  confirmLinkCheck(matched: boolean): void {
+    this.approvals.confirm(matched);
+  }
+
+  /** With sync on: starts approving another device's request, up to showing its emoji. */
+  approveRequest(id: string): Promise<EditResult> {
+    return this.approvals.approve(id);
+  }
+
+  /** With sync on: the person says whether the emoji match, which approves or turns it down. */
+  answerApproval(matched: boolean): Promise<EditResult> {
+    return this.approvals.answer(matched);
+  }
+
+  /** With sync on: turns another device's request down. */
+  denyRequest(id: string): Promise<EditResult> {
+    return this.approvals.deny(id);
+  }
+
+  /** Signs out the device whose request was just turned down: it isn't the person's. */
+  signOutTurnedDown(): Promise<EditResult> {
+    return this.approvals.signOutTurnedDown();
+  }
+
+  /** Puts away what's over: an approval that ended, or a request just turned down. */
+  dismissApproval(): void {
+    this.approvals.dismiss();
   }
 
   async account(): Promise<AccountResult> {
@@ -697,7 +820,7 @@ export class SyncAccount {
   private async forget(): Promise<void> {
     await this.runner?.stop();
     this.runner = null;
-    this.client = null;
+    this.useClient(null);
     this.keys = null;
     this.accountKey = null;
     this.pending = null;
@@ -706,12 +829,22 @@ export class SyncAccount {
     this.set({ state: 'off' });
   }
 
+  /**
+   * Before the app quits, when this computer has a request to link out: calls it off, so it
+   * doesn't wait on the other devices, taking a moment at most. Null when there's none.
+   */
+  callOffBeforeQuit(): Promise<void> | null {
+    return this.approvals.hasRequest() ? this.approvals.stop() : null;
+  }
+
   /** Stops sync as the app closes, once a round that's running has finished. */
   async stop(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    // A request to link this computer is called off, so it doesn't wait on other devices.
+    const asking = this.approvals.stop();
     this.signIn?.cancel();
-    await this.runner?.stop();
+    await Promise.all([this.runner?.stop(), asking]);
     this.state.close();
   }
 }

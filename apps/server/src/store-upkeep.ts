@@ -87,7 +87,9 @@ export async function restore(
   const snapshot = JSON.parse(text) as Snapshot;
   if (snapshot.owner !== owner || gone()) return false;
   storage.transactionSync(() => {
-    for (const table of ['versions', 'heads', 'files', 'links']) sql.exec(`DELETE FROM ${table}`);
+    for (const table of ['versions', 'heads', 'files', 'links', 'requests']) {
+      sql.exec(`DELETE FROM ${table}`);
+    }
     for (const row of snapshot.versions) {
       sql.exec(
         `INSERT INTO versions (record, version, seq, data, file, deleted, at, device)
@@ -139,15 +141,18 @@ export async function restore(
 }
 
 /**
- * The daily cleanup. Links that ran out go. Earlier versions past the history window go, but
- * each record's current version stays. File contents no version points to are marked, and
- * removed a day later if that's still so: a device may be about to point to them again.
+ * The daily cleanup. Links and requests to link that ran out go. Earlier versions past the
+ * history window go, but each record's current version stays. File contents no version points
+ * to are marked, and removed a day later if that's still so: a device may be about to point to
+ * them again.
  */
 export async function cleanUp({ sql, storage, files, meta }: Upkeep, now: number) {
   const cutoff = new Date(now - HISTORY_DAYS * DAY_MS).toISOString();
   const used = 'id IN (SELECT file FROM versions WHERE file IS NOT NULL)';
   const doomed = storage.transactionSync(() => {
     sql.exec('DELETE FROM links WHERE expires <= ?', now);
+    sql.exec('DELETE FROM requests WHERE expires <= ?', now);
+    sql.exec('DELETE FROM requests_made WHERE at <= ?', now - DAY_MS);
     const old = sql
       .exec<{ size: number }>(
         `DELETE FROM versions WHERE at < ? AND NOT EXISTS (

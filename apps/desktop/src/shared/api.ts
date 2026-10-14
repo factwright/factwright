@@ -24,7 +24,13 @@ import type {
 } from './profile.ts';
 import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RunTask } from './runs.ts';
-import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
+import type {
+  AccountResult,
+  ApprovalsView,
+  LinkCodeResult,
+  RecoveryKeyResult,
+  SyncStatus,
+} from './sync.ts';
 import type { UpdateStatus } from './updates.ts';
 
 /** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
@@ -299,6 +305,24 @@ export interface FactwrightApi {
   /** A code for adding a phone or computer, good once, for 10 minutes. */
   makeLinkCode(): Promise<LinkCodeResult>;
   cancelLinkCode(id: string): void;
+  /** How linking by approval stands, after a fresh look for other devices' requests. */
+  linkApprovals(): Promise<ApprovalsView>;
+  /** Listens for changes in linking by approval. Returns a function that stops listening. */
+  onLinkApprovals(listener: (view: ApprovalsView) => void): () => void;
+  /** On a computer that isn't linked yet: asks a device that's set up to approve it. */
+  askToLink(): Promise<EditResult>;
+  /** On the computer asking: whether its emoji match the other device's. */
+  confirmLinkCheck(matched: boolean): void;
+  /** With sync on: starts approving another device's request, up to showing its emoji. */
+  approveLinkRequest(id: string): Promise<EditResult>;
+  /** With sync on: whether the emoji match, which approves the request or turns it down. */
+  answerLinkRequest(matched: boolean): Promise<EditResult>;
+  /** With sync on: turns another device's request down, leaving it signed in. */
+  denyLinkRequest(id: string): Promise<EditResult>;
+  /** Signs out the device whose request was just turned down: it isn't the person's. */
+  signOutTurnedDown(): Promise<EditResult>;
+  /** Puts away what's over: an approval that ended, or a request just turned down. */
+  dismissLinkApproval(): void;
   syncNow(): void;
   /** Who the account is, its signed-in devices, and how much it stores. */
   syncAccount(): Promise<AccountResult>;

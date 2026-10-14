@@ -47,7 +47,7 @@ import { ManageProfilesDialog } from './profiles/ManageProfilesDialog.tsx';
 import { useProfiles } from './profiles/useProfiles.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
-import { useSync } from './sync/useSync.ts';
+import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
@@ -72,6 +72,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const { status, recheck } = useClaudeStatus(api);
   const setup = useSetupCheck(api);
   const sync = useSync(api);
+  const approvals = useApprovals(api);
   const run = useClaudeRun(api);
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
@@ -279,6 +280,8 @@ export function App({ api }: { api: FactwrightApi }) {
           terminal={api.platform === 'win32' ? 'PowerShell' : 'Terminal'}
           setup={setup}
           sync={sync}
+          linkRequests={approvals.requests}
+          linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           levels={levels.choices}
@@ -423,7 +426,7 @@ export function App({ api }: { api: FactwrightApi }) {
         />
       )}
       {dialog === 'sync' && sync !== 'checking' && (
-        <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
+        <SyncDialog api={api} status={sync} approvals={approvals} onClose={() => setDialog(null)} />
       )}
       {withdraw && (
         <WithdrawDialog

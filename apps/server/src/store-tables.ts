@@ -1,4 +1,4 @@
-import type { Change, KeyRecord } from '@factwright/sync';
+import type { Change, KeyRecord, LinkRequest } from '@factwright/sync';
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,7 +44,45 @@ export const SCHEMA = `
     data TEXT NOT NULL,
     expires INTEGER NOT NULL
   ) WITHOUT ROWID;
+  -- New devices asking to link, until a device that's set up approves one. Each holds one-time
+  -- public keys, a hash, the sessions taking part, and once approved, the account key sealed
+  -- for that new device alone.
+  CREATE TABLE IF NOT EXISTS requests (
+    id TEXT PRIMARY KEY,
+    session TEXT NOT NULL,
+    device TEXT NOT NULL,
+    commitment TEXT NOT NULL,
+    key TEXT,
+    approver TEXT,
+    approver_device TEXT,
+    approver_key TEXT,
+    sealed TEXT,
+    denied INTEGER NOT NULL DEFAULT 0,
+    linked INTEGER NOT NULL DEFAULT 0,
+    signed_in INTEGER NOT NULL,
+    asked INTEGER NOT NULL,
+    expires INTEGER NOT NULL
+  ) WITHOUT ROWID;
+  -- When each session asked to link, kept for an hour to limit how often it can.
+  CREATE TABLE IF NOT EXISTS requests_made (session TEXT NOT NULL, at INTEGER NOT NULL);
 `;
+
+export type RequestRow = {
+  id: string;
+  session: string;
+  device: string;
+  commitment: string;
+  key: string | null;
+  approver: string | null;
+  approver_device: string | null;
+  approver_key: string | null;
+  sealed: string | null;
+  denied: number;
+  linked: number;
+  signed_in: number;
+  asked: number;
+  expires: number;
+};
 
 export type VersionRow = {
   record: string;
@@ -60,6 +98,31 @@ export type VersionRow = {
 export type HeadRow = { record: string; version: number; seq: number };
 
 export type FileRow = { id: string; key: string; size: number; at: number };
+
+/** A request to link as a session sees it. The sealed account key is never part of it. */
+export const toRequest = (row: RequestRow, session: string): LinkRequest => ({
+  id: row.id,
+  device: row.device,
+  deviceId: row.session,
+  asked: new Date(row.asked).toISOString(),
+  expires: new Date(row.expires).toISOString(),
+  signedIn: new Date(row.signed_in).toISOString(),
+  commitment: row.commitment,
+  key: row.key,
+  approver:
+    row.approver_device !== null && row.approver_key !== null
+      ? { device: row.approver_device, key: row.approver_key }
+      : null,
+  state: row.denied
+    ? 'denied'
+    : row.linked
+      ? 'linked'
+      : row.sealed !== null
+        ? 'approved'
+        : 'waiting',
+  mine: row.session === session,
+  approving: row.approver === session,
+});
 
 export const toChange = (row: VersionRow): Change => ({
   record: row.record,

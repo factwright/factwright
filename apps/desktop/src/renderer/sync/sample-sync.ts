@@ -1,6 +1,6 @@
 import { type AccountInfo, readLinkCode, readRecoveryKey } from '@factwright/sync';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, RequestView, SyncStatus } from '../../shared/sync.ts';
 
 type SyncApi = Pick<
   FactwrightApi,
@@ -20,6 +20,15 @@ type SyncApi = Pick<
   | 'signOutOfSync'
   | 'useDifferentSyncAccount'
   | 'openAccountPage'
+  | 'linkApprovals'
+  | 'onLinkApprovals'
+  | 'askToLink'
+  | 'confirmLinkCheck'
+  | 'approveLinkRequest'
+  | 'answerLinkRequest'
+  | 'denyLinkRequest'
+  | 'signOutTurnedDown'
+  | 'dismissLinkApproval'
 >;
 
 const EMAIL = 'sam.rivera@example.com';
@@ -92,11 +101,37 @@ const ACCOUNT: AccountInfo = {
   usage: { bytes: 3_600_000, limit: 1024 * 1024 * 1024, records: 380, files: 152 },
 };
 
+/** A check code for the preview: dog, key, rocket, pizza, guitar, anchor. */
+const CHECK = [0, 47, 54, 27, 57, 60];
+
+const REQUEST: RequestView = {
+  id: 'sample-request',
+  device: 'Chrome on Windows',
+  asked: minutesAgo(1),
+  signedIn: minutesAgo(2),
+  elsewhere: false,
+};
+
+/** Another device asking at the same time, as someone else's might. */
+const ANOTHER: RequestView = {
+  id: 'another-request',
+  device: 'Factwright on Sam’s MacBook',
+  asked: minutesAgo(0),
+  signedIn: minutesAgo(4),
+  elsewhere: false,
+};
+
+const APPROVER = 'Factwright on Sam’s MacBook Pro';
+
 /**
  * Sync for the screens preview, made up. ?sync= picks where it starts. Turning it on plays
  * through signing in (?sync=link for a second computer), and the rest answers as the app would.
+ * ?approve= picks how linking by approval starts: "request" for another device asking to link
+ * once sync is on, "two" for two at once, "check" to start at the emoji (asking or approving, by
+ * ?sync=), "quiet" for asking with no device ever offering, "stale" for a computer that signed in
+ * too long ago to ask, or "old" for a server that can't approve devices yet.
  */
-export function sampleSync(start: string | null): SyncApi {
+export function sampleSync(start: string | null, approve: string | null = null): SyncApi {
   const listeners = new Set<(status: SyncStatus) => void>();
   let status = STARTS[start ?? 'off'] ?? { state: 'off' };
   let devices = ACCOUNT.devices;
@@ -104,6 +139,22 @@ export function sampleSync(start: string | null): SyncApi {
     status = next;
     for (const listener of listeners) listener(next);
   };
+  const viewers = new Set<(view: ApprovalsView) => void>();
+  let approvals: ApprovalsView = {
+    supported: approve !== 'old',
+    asking: null,
+    requests: approve === 'request' ? [REQUEST] : approve === 'two' ? [REQUEST, ANOTHER] : [],
+    approving:
+      approve === 'check' && status.state === 'on'
+        ? { id: REQUEST.id, device: REQUEST.device, step: 'check', check: CHECK }
+        : null,
+    turnedDown: null,
+  };
+  const show = (next: Partial<ApprovalsView>) => {
+    approvals = { ...approvals, ...next };
+    for (const viewer of viewers) viewer(approvals);
+  };
+  const offered = { step: 'check', approver: APPROVER, check: CHECK, confirmed: false } as const;
   return {
     syncStatus: async () => status,
     onSyncStatus: (listener) => {
@@ -173,5 +224,101 @@ export function sampleSync(start: string | null): SyncApi {
       return { ok: true };
     },
     openAccountPage: async () => {},
+    linkApprovals: async () => approvals,
+    onLinkApprovals: (viewer) => {
+      viewers.add(viewer);
+      return () => viewers.delete(viewer);
+    },
+    askToLink: async () => {
+      if (approve === 'stale') {
+        show({ asking: { step: 'stale' } });
+        return { ok: false, message: 'This device signed in a while ago.' };
+      }
+      if (approvals.asking && approvals.asking.step !== 'ended') return { ok: true };
+      if (approve === 'check') {
+        show({ asking: offered });
+        return { ok: true };
+      }
+      show({ asking: { step: 'waiting' } });
+      if (approve !== 'quiet') {
+        setTimeout(() => {
+          if (approvals.asking?.step === 'waiting') show({ asking: offered });
+        }, 3000);
+      }
+      return { ok: true };
+    },
+    confirmLinkCheck: (matched) => {
+      if (approvals.asking?.step !== 'check') return;
+      if (!matched) {
+        show({
+          asking: {
+            step: 'ended',
+            message: 'Nothing was linked. If you didn’t start this, you can ignore it.',
+            check: CHECK,
+          },
+        });
+        return;
+      }
+      show({ asking: { ...approvals.asking, confirmed: true } });
+      setTimeout(() => {
+        show({ asking: null });
+        set(ON);
+      }, 2500);
+    },
+    approveLinkRequest: async (id) => {
+      const request = approvals.requests.find((each) => each.id === id);
+      if (!request) return { ok: false, message: 'That request to link is gone.' };
+      show({ approving: { id, device: request.device, step: 'waiting' } });
+      setTimeout(
+        () => show({ approving: { id, device: request.device, step: 'check', check: CHECK } }),
+        1500,
+      );
+      return { ok: true };
+    },
+    answerLinkRequest: async (matched) => {
+      const approving = approvals.approving;
+      if (approving?.step !== 'check') return { ok: false, message: 'Check the emoji first.' };
+      const { id, device } = approving;
+      if (!matched) {
+        show({
+          requests: [],
+          approving: {
+            id,
+            device,
+            step: 'ended',
+            linked: false,
+            message: 'Nothing was linked. If you didn’t start this, you can ignore it.',
+          },
+        });
+        return { ok: true };
+      }
+      show({ approving: { id, device, step: 'sent' } });
+      setTimeout(
+        () =>
+          show({
+            requests: [],
+            approving: { id, device, step: 'ended', linked: true, message: `${device} is linked.` },
+          }),
+        2500,
+      );
+      return { ok: true };
+    },
+    denyLinkRequest: async (id) => {
+      const request = approvals.requests.find((each) => each.id === id);
+      show({
+        requests: approvals.requests.filter((each) => each.id !== id),
+        turnedDown: request ? { id, device: request.device } : null,
+      });
+      return { ok: true };
+    },
+    signOutTurnedDown: async () => {
+      show({ turnedDown: null });
+      return { ok: true };
+    },
+    dismissLinkApproval: () =>
+      show({
+        approving: approvals.approving?.step === 'ended' ? null : approvals.approving,
+        turnedDown: null,
+      }),
   };
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, SyncStatus } from '../../shared/sync.ts';
 
 /** Where sync stands, kept up to date. "checking" until the app first says. */
 export function useSync(api: FactwrightApi): SyncStatus | 'checking' {
@@ -18,6 +18,37 @@ export function useSync(api: FactwrightApi): SyncStatus | 'checking' {
     };
   }, [api]);
   return status;
+}
+
+const NO_APPROVALS: ApprovalsView = {
+  supported: false,
+  asking: null,
+  requests: [],
+  approving: null,
+  turnedDown: null,
+};
+
+/** Linking devices by approval, as this computer takes part in it, kept up to date. */
+export function useApprovals(api: FactwrightApi): ApprovalsView {
+  const [view, setView] = useState(NO_APPROVALS);
+  useEffect(() => {
+    let live = true;
+    // What the app sends as it changes is newer than the first answer, which only fills in.
+    let heard = false;
+    api.linkApprovals().then(
+      (latest) => live && !heard && setView(latest),
+      () => {},
+    );
+    const stop = api.onLinkApprovals((latest) => {
+      heard = true;
+      setView(latest);
+    });
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [api]);
+  return view;
 }
 
 /** "just now", "5 minutes ago", "3 hours ago" or "on Oct 12", for when something happened. */

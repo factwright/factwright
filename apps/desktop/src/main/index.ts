@@ -22,7 +22,7 @@ import { registerIpc } from './ipc.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
-import { notifyIfAway } from './notify.ts';
+import { notifyIfAway, notifyOfRequests } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
   chooseProfile,
@@ -212,6 +212,22 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         if (status.state === 'off') profiles.noteSync(null);
         else if ('email' in status && status.email) profiles.noteSync(status.email);
       },
+      onApprovals: (view) => {
+        toWindow('sync:approvals', view);
+        notifyOfRequests(view.requests, {
+          focused: () => !window.isDestroyed() && window.isFocused(),
+          show: () => {
+            // On a Mac the window may be closed, with the app still running.
+            if (window.isDestroyed()) {
+              window = createMainWindow(startUrl);
+              stopWithWindow(window);
+              return;
+            }
+            if (window.isMinimized()) window.restore();
+            window.focus();
+          },
+        });
+      },
       otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.
       onApplied: () => toWindow('jobs:changed', jobs.read()),
@@ -339,7 +355,17 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     // A run belongs to its window, so closing the window or quitting stops it.
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
     stopWithWindow(window);
-    app.on('before-quit', () => {
+    // A request to link this computer is called off before the app goes, so it doesn't wait on
+    // the other devices. Quitting waits for that once, for a moment at most.
+    let calledOff = false;
+    app.on('before-quit', (event) => {
+      const callingOff = calledOff ? null : sync.callOffBeforeQuit();
+      if (callingOff) {
+        calledOff = true;
+        event.preventDefault();
+        void callingOff.finally(() => app.quit());
+        return;
+      }
       profiles.started();
       updates?.stop();
       claude.stop();

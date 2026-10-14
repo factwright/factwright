@@ -12,7 +12,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `src/index.ts` | Routes each request: sign-in, the API, the web view, the operator's restore and delete, and the daily backup |
 | `src/auth-options.ts`, `src/auth.ts` | Sign-in's settings, and device names for the account page |
 | `src/api.ts` | The sync API, for the signed-in account only |
-| `src/store.ts` | One account's store: records with their history, files, the locked account key and link codes |
+| `src/store.ts` | One account's store: records with their history, files, the locked account key, link codes and requests to link |
 | `src/store-tables.ts` | The store's tables |
 | `src/store-upkeep.ts` | Daily backups, restoring one, and the daily cleanup |
 | `src/accounts-upkeep.ts` | The daily cleanup of sign-in's own records: sessions that ended, sign-in steps that ran out, and the limits' counts by IP address |
@@ -30,10 +30,12 @@ Every route answers only the account of the session that calls it. The desktop a
 | `GET /api/sync/records/:id/versions[/:n]` | A record's earlier versions, kept for 90 days |
 | `POST /api/sync/files/missing`, `PUT`, `GET /api/sync/files/:id` | Locked file contents, stored once each |
 | `POST /api/sync/links`, `POST /api/sync/links/:id/take` | Link codes, for adding a device. Each works once, for 10 minutes |
+| `POST`, `GET /api/sync/requests`, `GET`, `DELETE /api/sync/requests/:id` | Requests to link, for approving a new device from one that's set up: asking, the account's waiting requests, one request, and calling it off. Each runs out after 10 minutes |
+| `POST /api/sync/requests/:id/approver`, `/key`, `/approve`, `/deny`, `/take` | The steps of approving one: a device offers to approve it, the new device shows its key, the approving device leaves the sealed account key or turns it down, and the new device picks it up, once |
 | `POST /api/sync/live/ticket`, `GET /api/sync/live` | Listening for changes, over a WebSocket |
 | `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, and how much you store |
 | `GET /api/account/export` | Everything the server keeps for your account, still locked |
-| `GET /api/sign-in-options` | The ways to sign in this server has set up. Anyone can ask |
+| `GET /api/sign-in-options` | The ways to sign in this server has set up, and what more it can do, such as approving devices. Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
 | `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
 
@@ -42,6 +44,7 @@ Better Auth's routes that list sessions (with their tokens), sign other sessions
 ## Limits
 - 1 GB per account (`STORAGE_LIMIT_MB`) and 25 MB per file.
 - Bursts of 600 requests per account, refilling at 10 a second.
+- Requests to link: one per device at a time, five waiting per account, ten an hour from each device, and only within 30 minutes of signing in.
 - Sign-in requests are limited per IP address, more tightly for signing in. The counts are deleted each day.
 
 ## Running it locally

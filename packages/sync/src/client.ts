@@ -5,7 +5,10 @@ import {
   type Change,
   type ChangesPage,
   type ErrorBody,
+  type Feature,
+  isLinkRequest,
   type KeyRecord,
+  type LinkRequest,
   type PushChange,
   type PushResponse,
   type VersionInfo,
@@ -34,13 +37,22 @@ export class SyncError extends Error {
   readonly status: number;
   /** For "slow-down", how many seconds to wait. */
   readonly retryAfter: number | null;
+  /** The server's own word for what went wrong, such as "stale", when it gave one. */
+  readonly code: string | null;
 
-  constructor(kind: SyncErrorKind, message: string, status = 0, retryAfter: number | null = null) {
+  constructor(
+    kind: SyncErrorKind,
+    message: string,
+    status = 0,
+    retryAfter: number | null = null,
+    code: string | null = null,
+  ) {
     super(message);
     this.name = 'SyncError';
     this.kind = kind;
     this.status = status;
     this.retryAfter = retryAfter;
+    this.code = code;
   }
 }
 
@@ -107,6 +119,7 @@ export class SyncClient {
       answer?.message ?? `The sync server answered ${response.status}.`,
       response.status,
       Number.isFinite(retry) && retry > 0 ? retry : null,
+      typeof answer?.error === 'string' ? answer.error : null,
     );
   }
 
@@ -214,6 +227,84 @@ export class SyncClient {
 
   async cancelLink(id: string): Promise<void> {
     await this.request(`${API.links}/${id}`, { method: 'DELETE' });
+  }
+
+  /**
+   * What the server can do beyond the basics, from the ways to sign in it lists. Anything that
+   * isn't a list, from a server too old to say, is none.
+   */
+  async features(): Promise<Feature[]> {
+    const answer = await this.json<{ features?: unknown } | null>('/api/sign-in-options');
+    const features = answer?.features;
+    return Array.isArray(features) ? features.filter((each) => each === 'approve') : [];
+  }
+
+  /** On a new device: asks to link, with a hash of its one-time key. */
+  async askToLink(id: string, commitment: string): Promise<void> {
+    await this.request(API.requests, { method: 'POST', json: { id, commitment } });
+  }
+
+  /**
+   * The account's requests to link that are waiting, from this device and others. Any the server
+   * describes in a shape devices don't act on are left out.
+   */
+  async linkRequests(): Promise<LinkRequest[]> {
+    const answer = await this.json<{ requests?: unknown } | null>(API.requests);
+    return Array.isArray(answer?.requests) ? answer.requests.filter(isLinkRequest) : [];
+  }
+
+  /** One request to link, or null once it's gone: picked up, called off or run out. */
+  async linkRequest(id: string): Promise<LinkRequest | null> {
+    let request: unknown;
+    try {
+      request = await this.json<unknown>(`${API.requests}/${id}`);
+    } catch (error) {
+      if (error instanceof SyncError && error.kind === 'not-found') return null;
+      throw error;
+    }
+    if (!isLinkRequest(request) || request.id !== id) {
+      throw new SyncError(
+        'server',
+        'The sync server’s answer about a request to link didn’t make sense.',
+      );
+    }
+    return request;
+  }
+
+  /** On a device that's set up: offers to approve a request, with a one-time key of its own. */
+  async offerToApprove(id: string, key: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/approver`, { method: 'POST', json: { key } });
+  }
+
+  /** On the new device, once a device offers to approve: shows its one-time key. */
+  async showKey(id: string, key: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/key`, { method: 'POST', json: { key } });
+  }
+
+  /** On the approving device: leaves the account key, sealed for the new device. */
+  async approveRequest(id: string, sealed: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/approve`, { method: 'POST', json: { sealed } });
+  }
+
+  /** On a device that's set up: turns a request down. */
+  async denyRequest(id: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/deny`, { method: 'POST' });
+  }
+
+  /** On the new device: picks up the sealed account key, once, or null when it isn't there. */
+  async takeApproval(id: string): Promise<string | null> {
+    try {
+      return (await this.json<{ sealed: string }>(`${API.requests}/${id}/take`, { method: 'POST' }))
+        .sealed;
+    } catch (error) {
+      if (error instanceof SyncError && error.kind === 'not-found') return null;
+      throw error;
+    }
+  }
+
+  /** On the new device: calls its request off. */
+  async cancelRequest(id: string): Promise<void> {
+    await this.request(`${API.requests}/${id}`, { method: 'DELETE' });
   }
 
   async account(): Promise<AccountInfo> {

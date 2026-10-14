@@ -1,4 +1,13 @@
 export {
+  type ApprovalStep,
+  type ApproveClient,
+  type AskStep,
+  CHECK_LENGTH,
+  commitmentTo,
+  LinkApproval,
+  LinkAsk,
+} from './approve.ts';
+export {
   type Bytes,
   concat,
   fromBase64Url,
@@ -10,6 +19,7 @@ export {
 } from './bytes.ts';
 export { type ClientOptions, SyncClient, SyncError, type SyncErrorKind } from './client.ts';
 export { fromCode, toCode } from './code.ts';
+export { CHECK_EMOJI, checkEmoji } from './emoji.ts';
 export {
   ACCOUNT_KEY_BYTES,
   type AccountKeys,
@@ -39,12 +49,19 @@ export {
   type ChangesPage,
   type Device,
   type ErrorBody,
+  type Feature,
+  isCommitment,
   isFileId,
   isKeyId,
   isLinkId,
+  isLinkRequest,
+  isOneTimeKey,
   isRecordId,
+  isRequestId,
+  isSealedKey,
   type KeyRecord,
   LIMITS,
+  type LinkRequest,
   type PushChange,
   type PushResponse,
   type PushResult,

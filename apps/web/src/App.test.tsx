@@ -1,5 +1,5 @@
 import { accountKeys, newAccountKey, newLinkCode } from '@factwright/sync';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.tsx';
@@ -134,6 +134,34 @@ describe('the web view', () => {
     server(SESSION);
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Link this browser' })).toBeTruthy();
+  });
+
+  it('asks a computer to approve a browser that isn’t linked, when the server can', async () => {
+    history.replaceState(null, '', '/');
+    const requests = fakeServer({
+      'GET /api/auth/get-session': () => SESSION,
+      'GET /api/sign-in-options': () => ({ providers: ['github'], features: ['approve'] }),
+      'POST /api/sync/requests': () => new Response(null, { status: 201 }),
+    });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Link this browser' })).toBeTruthy();
+    await waitFor(() =>
+      expect(requests.some((request) => request.path === '/api/sync/requests')).toBe(true),
+    );
+  });
+
+  it('never asks from a browser that’s linked already, back on the link page', async () => {
+    history.replaceState(null, '', '/link');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    const requests = fakeServer({
+      'GET /api/auth/get-session': () => SESSION,
+      'GET /api/sign-in-options': () => ({ providers: ['github'], features: ['approve'] }),
+      'GET /api/sync/changes': () => ({ changes: [], cursor: 0, more: false }),
+    });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Link this browser' })).toBeTruthy();
+    expect(screen.queryByText('Waiting for your computer…')).toBeNull();
+    expect(requests.some((request) => request.path.startsWith('/api/sync/requests'))).toBe(false);
   });
 
   it('opens the job hunt in a linked browser', async () => {

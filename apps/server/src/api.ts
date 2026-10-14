@@ -3,10 +3,14 @@ import {
   API,
   type Device,
   type ErrorBody,
+  isCommitment,
   isFileId,
   isKeyId,
   isLinkId,
+  isOneTimeKey,
   isRecordId,
+  isRequestId,
+  isSealedKey,
   LIMITS,
   type PushChange,
 } from '@factwright/sync';
@@ -14,7 +18,7 @@ import type { Auth } from './auth.ts';
 import { deviceName } from './auth-options.ts';
 import type { Env } from './env.ts';
 import { checkTicket, makeTicket } from './live.ts';
-import { DELETED, SLOW_DOWN, type UserStore } from './store.ts';
+import { type Asker, DELETED, SLOW_DOWN, type UserStore } from './store.ts';
 
 /** What the store throws before it writes anything, after which an upload's copy can go. */
 const REFUSED_BEFORE_WRITING = new Set([DELETED, SLOW_DOWN]);
@@ -100,7 +104,7 @@ interface Caller {
   auth: Auth;
   account: string;
   user: { id: string; email: string; name: string; createdAt: Date };
-  session: { id: string };
+  session: { id: string; userAgent?: string | null | undefined; createdAt: Date | string };
   store: DurableObjectStub<UserStore>;
 }
 
@@ -223,6 +227,130 @@ const deleteLink: Handler = async ({ store, account }, [id]) => {
   return empty();
 };
 
+/** Who's taking part in linking a device: this session, by the name the account page gives it. */
+const askerOf = ({ session }: Caller): Asker => ({
+  session: session.id,
+  device: deviceName(session.userAgent),
+  signedIn: new Date(session.createdAt).getTime(),
+});
+
+/** Why a step of linking a device didn't happen, for each way it can't. */
+const GONE = () =>
+  failure(
+    404,
+    'not-found',
+    'That request to link is gone. It may have run out or been called off.',
+  );
+
+const postRequest: Handler = async (caller) => {
+  const { request, store, account } = caller;
+  const { id, commitment } = await readJson(request, SMALL_BODY);
+  if (!isRequestId(id) || !isCommitment(commitment)) {
+    throw new Refused('The request to link wasn’t in the shape the server takes.');
+  }
+  const asker = askerOf(caller);
+  // Only soon after signing in, so a sign-in someone was tricked into long ago can't ask.
+  if (!(Date.now() - asker.signedIn <= LIMITS.askWithinMinutes * 60_000)) {
+    return failure(
+      403,
+      'stale',
+      'This device signed in a while ago, so it can’t ask to be approved. Sign in again, or type a code.',
+    );
+  }
+  const made = await store.askToLink(account, asker, id, commitment);
+  switch (made) {
+    case 'made':
+      return empty(201);
+    case 'taken':
+      return failure(409, 'taken', 'A request to link with that ID is already waiting.');
+    case 'too-many':
+      return failure(
+        429,
+        'too-many',
+        'Too many devices are asking to link right now. Try again in a few minutes.',
+      );
+    case 'too-often':
+      return failure(
+        429,
+        'too-often',
+        'That’s a lot of requests to link in an hour. Try again later, or use a code.',
+      );
+  }
+};
+
+const getRequests: Handler = async ({ store, account, session }) =>
+  json({ requests: await store.linkRequests(account, session.id) });
+
+const getRequest: Handler = async ({ store, account, session }, [id]) => {
+  if (!isRequestId(id)) return GONE();
+  const found = await store.linkRequest(account, session.id, id);
+  return found ? json(found) : GONE();
+};
+
+const postApprover: Handler = async (caller, [id]) => {
+  const { request, store, account } = caller;
+  if (!isRequestId(id)) return GONE();
+  const { key } = await readJson(request, SMALL_BODY);
+  if (!isOneTimeKey(key)) throw new Refused('That key wasn’t in the shape the server takes.');
+  const offered = await store.offerToApprove(account, askerOf(caller), id, key);
+  if (offered === 'offered') return empty();
+  if (offered === 'not-found') return GONE();
+  return offered === 'own'
+    ? failure(403, 'refused', 'A device can’t approve its own request to link.')
+    : failure(409, 'taken', 'Another device is approving it.');
+};
+
+const postKey: Handler = async ({ request, store, account, session }, [id]) => {
+  if (!isRequestId(id)) return GONE();
+  const { key } = await readJson(request, SMALL_BODY);
+  if (!isOneTimeKey(key)) throw new Refused('That key wasn’t in the shape the server takes.');
+  const shown = await store.showKey(account, session.id, id, key);
+  if (shown === 'shown') return empty();
+  return shown === 'not-found'
+    ? GONE()
+    : failure(
+        403,
+        'refused',
+        'Only the device that asked shows its key, once a device offers to approve.',
+      );
+};
+
+const postApprove: Handler = async ({ request, store, account, session }, [id]) => {
+  if (!isRequestId(id)) return GONE();
+  const { sealed } = await readJson(request, SMALL_BODY);
+  if (!isSealedKey(sealed)) throw new Refused('That wasn’t in the shape the server takes.');
+  const approved = await store.approveRequest(account, session.id, id, sealed);
+  if (approved === 'approved') return empty();
+  return approved === 'not-found'
+    ? GONE()
+    : failure(
+        403,
+        'refused',
+        'Only the device approving it can, once the new device shows its key.',
+      );
+};
+
+const postDeny: Handler = async ({ store, account, session }, [id]) => {
+  if (!isRequestId(id)) return GONE();
+  const denied = await store.denyRequest(account, session.id, id);
+  if (denied === 'denied') return empty();
+  return denied === 'not-found'
+    ? GONE()
+    : failure(403, 'refused', 'A device calls its own request off instead.');
+};
+
+const postTake: Handler = async ({ store, account, session }, [id]) => {
+  if (!isRequestId(id)) return GONE();
+  const sealed = await store.takeApproval(account, session.id, id);
+  return sealed ? json({ sealed }) : GONE();
+};
+
+const deleteRequest: Handler = async ({ store, account, session }, [id]) => {
+  if (!isRequestId(id)) return GONE();
+  await store.cancelRequest(account, session.id, id);
+  return empty();
+};
+
 const postLiveTicket: Handler = async ({ env, account }) =>
   json({ ticket: await makeTicket(env.BETTER_AUTH_SECRET, account) });
 
@@ -310,6 +438,15 @@ const ROUTES: [method: string, pattern: RegExp, handler: Handler][] = [
   ['POST', /^\/api\/sync\/links$/, postLink],
   ['POST', /^\/api\/sync\/links\/([^/]+)\/take$/, takeLink],
   ['DELETE', /^\/api\/sync\/links\/([^/]+)$/, deleteLink],
+  ['POST', /^\/api\/sync\/requests$/, postRequest],
+  ['GET', /^\/api\/sync\/requests$/, getRequests],
+  ['GET', /^\/api\/sync\/requests\/([^/]+)$/, getRequest],
+  ['DELETE', /^\/api\/sync\/requests\/([^/]+)$/, deleteRequest],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/approver$/, postApprover],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/key$/, postKey],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/approve$/, postApprove],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/deny$/, postDeny],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/take$/, postTake],
   ['POST', /^\/api\/sync\/live\/ticket$/, postLiveTicket],
   ['GET', /^\/api\/account$/, getAccount],
   ['DELETE', /^\/api\/account\/devices\/([^/]+)$/, deleteDevice],

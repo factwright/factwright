@@ -26,6 +26,24 @@ describe('codes for people', () => {
     expect(fromCode('1'.repeat(32), 20)).toEqual(fromCode('IlIlIlIlIlIlIlIlIlIlIlIlIlIlIlIl', 20));
   });
 
+  it('takes the code as other apps and keyboards change it', () => {
+    const bytes = randomBytes(20);
+    const code = toCode(bytes);
+    // Long dashes, as a phone or a note app puts in, and a line break from copying.
+    expect(fromCode(code.replaceAll('-', '\u2014'), 20)).toEqual(bytes);
+    expect(fromCode(code.replaceAll('-', '\u2013'), 20)).toEqual(bytes);
+    expect(fromCode(code.replaceAll('-', '\u2011'), 20)).toEqual(bytes);
+    expect(fromCode(`  ${code}\n`, 20)).toEqual(bytes);
+    expect(fromCode(code.replaceAll('-', '\u00a0'), 20)).toEqual(bytes);
+    // Full-width letters and digits, as some keyboards type them.
+    const wide = [...code]
+      .map((char) =>
+        char === '-' ? char : String.fromCodePoint((char.codePointAt(0) ?? 0) + 0xfee0),
+      )
+      .join('');
+    expect(fromCode(wide, 20)).toEqual(bytes);
+  });
+
   it('refuses what isn’t a code of that length', () => {
     expect(fromCode('ABCD-EFGH', 20)).toBeNull();
     expect(fromCode('U'.repeat(32), 20)).toBeNull();

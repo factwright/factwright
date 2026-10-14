@@ -59,6 +59,66 @@ export interface LinkCode {
   expiresAt: string;
 }
 
+/**
+ * This computer asking to be linked from a device that's set up. The check is six numbers from
+ * 0 to 63, each an emoji both screens show.
+ */
+export type AskingView =
+  /** Asking: no device has offered to approve it yet. */
+  | { step: 'waiting' }
+  /** A device offered to approve it: the person checks both screens show the same emoji. */
+  | { step: 'check'; approver: string; check: number[]; confirmed: boolean }
+  /**
+   * Over, with nothing linked: turned down, run out, or something didn't check out. The emoji
+   * this computer showed stay, if it showed any, to compare with what the other device showed.
+   */
+  | { step: 'ended'; message: string; check?: number[] }
+  /**
+   * This computer signed in too long ago to ask, so a sign-in someone was tricked into long ago
+   * can't: it types a code instead, or signs in again.
+   */
+  | { step: 'stale' };
+
+/** Another device asking to link, which this computer can approve. */
+export interface RequestView {
+  id: string;
+  /** The device asking, such as "Chrome on Windows". */
+  device: string;
+  /** When it asked, and when it signed in, as ISO times. */
+  asked: string;
+  signedIn: string;
+  /** Whether another device is approving it. */
+  elsewhere: boolean;
+}
+
+/** Where approving another device's request stands on this computer. */
+export type ApprovingStep =
+  /** Waiting for the new device to show its key. */
+  | { step: 'waiting' }
+  /** The person checks both screens show the same emoji. */
+  | { step: 'check'; check: number[] }
+  /** Approved: the new device finishes linking once its person says the emoji match there. */
+  | { step: 'sent' }
+  /** Over: linked, or nothing was. */
+  | { step: 'ended'; linked: boolean; message: string };
+
+/** This computer approving another device's request. */
+export type ApprovingView = { id: string; device: string } & ApprovingStep;
+
+/** Linking devices by approval, as this computer takes part in it. */
+export interface ApprovalsView {
+  /** Whether the sync server can approve devices. With an older one, only codes work. */
+  supported: boolean;
+  /** This computer, asking to be linked. */
+  asking: AskingView | null;
+  /** Other devices asking to link, which this computer can approve. */
+  requests: RequestView[];
+  /** The request this computer is approving. */
+  approving: ApprovingView | null;
+  /** The request this computer turned down last, whose device the person can still sign out. */
+  turnedDown: { id: string; device: string } | null;
+}
+
 export type RecoveryKeyResult = { ok: true; recoveryKey: string } | { ok: false; message: string };
 
 export type LinkCodeResult = { ok: true; link: LinkCode } | { ok: false; message: string };
