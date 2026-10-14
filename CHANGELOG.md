@@ -17,6 +17,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The terms say Factwright's code is under the AGPL-3.0, which they don't limit, and that their rules cover the services Neatifai runs. Supporting Factwright goes to Steve Hillyer, isn't a payment to Neatifai, and buys nothing. The privacy policy says what supporting it shares, and with whom.
 
 ### Fixed
+- A job page, Hacker News post, note or fit report made to keep the app busy can no longer freeze it while Factwright reads it. Reading one with thousands of tags left open, or a line of thousands of spaces, took minutes, or far longer, and now takes a moment. A page with a character number past the last one, such as `&#x110000;`, is read with "�" in its place instead of failing. Found by GitHub's code scanning.
+- A link counts as a Hacker News thread only when it's on news.ycombinator.com itself, not on a site whose name merely starts that way.
 - Re-running a release's failed jobs long after it began can no longer put an older version out over a newer one that's gone out since.
 - A release whose uploads stopped partway can be finished by re-running its failed jobs, instead of needing a new version. Each file goes up with its sha256, so a re-run leaves the files that are up, and refuses one with other contents. A version that's been taken back, as docs/releasing.md says, can never be put out again, or get a release on GitHub, by re-running its release.
 

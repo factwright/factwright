@@ -1,3 +1,4 @@
+import { PLACEHOLDER } from './markup.ts';
 import type { Resume } from './schema.ts';
 
 /**
@@ -57,7 +58,7 @@ export function lintResume(
 ): string[] {
   const issues: string[] = [];
   const text = shownText(resume).join('\n');
-  if (/\[\[.+?\]\]/.test(text)) issues.push('A [[placeholder]] is still in the resume.');
+  if (new RegExp(PLACEHOLDER).test(text)) issues.push('A [[placeholder]] is still in the resume.');
 
   for (const rule of config.banned ?? []) {
     const banned = pattern(rule.pattern, 'gi');
