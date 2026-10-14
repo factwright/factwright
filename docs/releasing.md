@@ -10,6 +10,11 @@ How a version of Factwright reaches people: installers built and signed by GitHu
     which is what updates download.
   - On Windows, one installer, which installs for the user without asking for an administrator.
   - The installed app keeps the name Factwright, so it opens the same data folder as before.
+  - Each opens on a window in Factwright's colors. The disk image's background is
+    `build/background.png`, around where `build/disk-image.json` puts its icons. On Windows,
+    `build/installer.nsh` redraws electron-builder's install banner with a header picture for
+    each display scaling, which `pnpm dist:win` draws first. Both pictures come from
+    `scripts/installer-art.ts`, and updates install silently, without a window.
 - **Locked down.** Electron's fuses turn off what an installed app never needs: Node's options
   from the environment, Node's debugger from the command line, and loading code from anywhere but
   the app's own checked archive. A Mac app can't start as plain Node either. A Windows one can, as

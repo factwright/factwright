@@ -9,6 +9,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The operator can delete an account for someone who asked by email, with a token only the operator has.
 - The sidebar shows Factwright's version at the bottom, so you can see an update has landed.
 - The Mac disk image opens on a window in Factwright's colors, with an arrow showing where to drag the app: onto Applications.
+- Installing on Windows shows a window in Factwright's colors: a blue header with the mark, "Installing Factwright…", and a thin progress bar. It's sharp at every display scaling, and updates still install silently.
 
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.

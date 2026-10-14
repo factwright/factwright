@@ -18,7 +18,7 @@
     "release-check": "node scripts/release-check.ts",
     "check-package": "node scripts/check-package.ts",
     "dist:mac": "electron-builder --config electron-builder.config.mjs --mac --publish never",
-    "dist:win": "electron-builder --config electron-builder.config.mjs --win --publish never",
+    "dist:win": "node scripts/installer-art.ts --win && electron-builder --config electron-builder.config.mjs --win --publish never",
     "start": "electron .",
     "screens": "vite -c vite.renderer.config.ts",
     "e2e": "playwright test -c e2e/playwright.config.ts",
