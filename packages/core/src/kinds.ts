@@ -22,16 +22,22 @@ export interface KindName {
 export function kindNamed(word: string | null, kinds: readonly KindName[]): string | null {
   const said = word?.trim();
   if (!said) return null;
-  const quoted = said.match(/`([^`]+)`/)?.[1]?.trim();
-  if (quoted) return kinds.find((kind) => kind.id === quoted)?.id ?? null;
-  const key = slug(said);
-  return (
-    kinds.find((kind) => kind.id === said)?.id ??
-    kinds.find((kind) => kind.name.toLowerCase() === said.toLowerCase())?.id ??
-    // A name in letters slug can't keep, such as Japanese, slugs to nothing, and matches none.
-    (key ? kinds.find((kind) => kind.id === key || slug(kind.name) === key)?.id : undefined) ??
-    null
-  );
+  // What's in backticks first, then the whole, then the name before an id in parentheses.
+  const tries = [
+    said.match(/`([^`]+)`/)?.[1]?.trim(),
+    said,
+    said.replace(/\s*\([^()]*\)\s*$/, ''),
+  ].filter((each): each is string => Boolean(each));
+  for (const each of tries) {
+    const key = slug(each);
+    const found =
+      kinds.find((kind) => kind.id === each) ??
+      kinds.find((kind) => kind.name.toLowerCase() === each.toLowerCase()) ??
+      // A name in letters slug can't keep, such as Japanese, slugs to nothing, and matches none.
+      (key ? kinds.find((kind) => kind.id === key || slug(kind.name) === key) : undefined);
+    if (found) return found.id;
+  }
+  return null;
 }
 
 /**

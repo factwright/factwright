@@ -113,10 +113,10 @@ describe('parseAnswerChanges', () => {
     expect(parseAnswerChanges([])).toBeNull();
   });
 
-  it('takes the kinds of job only whole: none left out for not holding up', () => {
+  it('takes kinds of job added only whole, and removed by id', () => {
     const kind = { id: 'pm', name: 'Project manager', roles: ['Program Manager'] };
-    expect(parseAnswerChanges({ otherKinds: [kind] })).toEqual({
-      otherKinds: [
+    expect(parseAnswerChanges({ addedKinds: [kind], removedKinds: ['designer'] })).toEqual({
+      addedKinds: [
         {
           ...kind,
           fields: [],
@@ -126,8 +126,10 @@ describe('parseAnswerChanges', () => {
           payFilter: false,
         },
       ],
+      removedKinds: ['designer'],
     });
-    expect(parseAnswerChanges({ otherKinds: [kind, { id: '../x', name: 'Bad' }] })).toBeNull();
+    expect(parseAnswerChanges({ addedKinds: [kind, { id: '../x', name: 'Bad' }] })).toBeNull();
+    expect(parseAnswerChanges({ removedKinds: ['../base'] })).toBeNull();
     expect(parseAnswerChanges({ firstKind: { id: 'developer', name: 'Developer' } })).toEqual({
       firstKind: { id: 'developer', name: 'Developer' },
     });
@@ -135,15 +137,10 @@ describe('parseAnswerChanges', () => {
     // A kind's own answers hold up as the first kind's do, or nothing is saved.
     const tooMany = Array.from({ length: 31 }, (_, n) => `Title ${n}`);
     expect(parseAnswerChanges({ roles: tooMany })).toBeNull();
-    expect(parseAnswerChanges({ otherKinds: [{ ...kind, roles: tooMany }] })).toBeNull();
-    expect(parseAnswerChanges({ otherKinds: [kind, { ...kind, id: 'pm-2' }] })).toBeNull();
-    // The first kind and another can't share a name or an id.
-    expect(
-      parseAnswerChanges({
-        firstKind: { id: 'developer', name: 'Project Manager' },
-        otherKinds: [kind],
-      }),
-    ).toBeNull();
+    expect(parseAnswerChanges({ addedKinds: [{ ...kind, roles: tooMany }] })).toBeNull();
+    expect(parseAnswerChanges({ addedKinds: [kind, { ...kind, id: 'pm-2' }] })).toBeNull();
+    // The whole list of kinds never comes from the window: it could undo changes made meanwhile.
+    expect(parseAnswerChanges({ otherKinds: [kind] })).toBeNull();
   });
 
   it('takes changes to another kind of job a field at a time, by its id', () => {

@@ -6,6 +6,8 @@ import {
   type JobKind,
   type KindAnswers,
   kindIdFor,
+  kindNameKey,
+  kindNameText,
   labelOf,
 } from './about.ts';
 
@@ -40,14 +42,17 @@ export type KindEdit = { ok: true; changes: AnswerChanges } | { ok: false; messa
 export function firstKindName(answers: AboutYou): string {
   const field = answers.fields.find((each) => each !== 'other');
   const name = answers.roles[0] ?? (field ? labelOf(FIELDS, field) : '');
-  return name.slice(0, ANSWER_LIMITS.kindName);
+  return kindNameText(name).slice(0, ANSWER_LIMITS.kindName).trim();
 }
 
-/** Why a name won't do for a kind of job, or null when it will. */
+/**
+ * Why a name won't do for a kind of job, or null when it will. Names are told apart as the app
+ * keeps them, on one line and in any case, so "Project  manager" is the same as "project manager".
+ */
 function badName(name: string, kinds: readonly JobKind[], id?: string): string | null {
   if (!name) return 'Give it a name, such as Project manager.';
   if (name.length > ANSWER_LIMITS.kindName) return 'That name’s too long. Try a shorter one.';
-  const same = kinds.find((kind) => kind.name.toLowerCase() === name.toLowerCase());
+  const same = kinds.find((kind) => kindNameKey(kind.name) === kindNameKey(name));
   return same && same.id !== id ? `You already have ${same.name}.` : null;
 }
 
@@ -57,10 +62,10 @@ function badName(name: string, kinds: readonly JobKind[], id?: string): string |
  * A first kind named before keeps its id, so jobs put under it stay there.
  */
 export function addKind(answers: AboutYou, name: string, firstName = ''): KindEdit {
-  const named = name.trim();
+  const named = kindNameText(name);
   const second = !hasKinds(answers);
   const firstNamed =
-    (second && firstName.trim()) ||
+    (second && kindNameText(firstName)) ||
     answers.firstKind?.name ||
     firstKindName(answers) ||
     'Your first kind of job';
@@ -87,12 +92,12 @@ export function addKind(answers: AboutYou, name: string, firstName = ''): KindEd
     targetPay: '',
     payFilter: false,
   };
-  return { ok: true, changes: { firstKind, otherKinds: [...answers.otherKinds, added] } };
+  return { ok: true, changes: { firstKind, addedKinds: [added] } };
 }
 
 /** The changes that rename a kind of job. Its id stays, since its jobs and resumes go by it. */
 export function renameKind(answers: AboutYou, id: string, name: string): KindEdit {
-  const named = name.trim();
+  const named = kindNameText(name);
   const problem = badName(named, kindsOf(answers), id);
   if (problem) return { ok: false, message: problem };
   if (answers.firstKind?.id === id) {
@@ -119,5 +124,5 @@ export function changeKind(
  * starting resumes stay in its folder in base/. The first is named still, for next time.
  */
 export function removeKind(answers: AboutYou, id: string): AnswerChanges {
-  return { otherKinds: answers.otherKinds.filter((kind) => kind.id !== id) };
+  return answers.otherKinds.some((kind) => kind.id === id) ? { removedKinds: [id] } : {};
 }

@@ -356,7 +356,9 @@ describe('ProfilePage', () => {
       within(dialog).getByRole('button', { name: 'Add another kind of job' }),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(api.saveAnswers).toHaveBeenLastCalledWith({ otherKinds: [] }));
+    await waitFor(() =>
+      expect(api.saveAnswers).toHaveBeenLastCalledWith({ removedKinds: ['design'] }),
+    );
   });
 
   it('renames a kind of job once the user moves on, never to a name on its way to one that’s taken', async () => {

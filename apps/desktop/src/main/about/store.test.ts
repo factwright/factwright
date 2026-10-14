@@ -155,28 +155,25 @@ describe('AboutStore', () => {
       first: { id: 'developer', name: 'Developer', color: 'blue' },
       others: [
         { id: 'pm', name: 'Project manager', roles: ['TPM'], rate: 'hourly' },
+        { id: 'qa', name: 'QA lead', levels: ['principal-plus'] },
         { id: 'Bad Id', name: 'Broken' },
         { id: 'pm-2', name: 'project manager' },
       ],
       version: 2,
     };
     writeFileSync(join(workspace(), KINDS_FILE), JSON.stringify(file));
-    expect(store.answers().otherKinds.map((kind) => kind.id)).toEqual(['pm']);
+    expect(store.answers().otherKinds.map((kind) => kind.id)).toEqual(['pm', 'qa']);
+    // Saving another answer leaves the file as it was.
+    const before = read(KINDS_FILE);
+    store.saveAnswers({ quiet: true });
+    expect(read(KINDS_FILE)).toBe(before);
+    // Changing one kind writes only what changed, over what was there.
     store.saveAnswers(changeKind(store.answers(), 'pm', { levels: ['senior'] }));
     expect(json(KINDS_FILE)).toEqual({
       first: { id: 'developer', name: 'Developer', color: 'blue' },
       others: [
-        {
-          id: 'pm',
-          name: 'Project manager',
-          roles: ['TPM'],
-          rate: 'hourly',
-          fields: [],
-          levels: ['senior'],
-          minPay: '',
-          targetPay: '',
-          payFilter: false,
-        },
+        { id: 'pm', name: 'Project manager', roles: ['TPM'], rate: 'hourly', levels: ['senior'] },
+        { id: 'qa', name: 'QA lead', levels: ['principal-plus'] },
         { id: 'Bad Id', name: 'Broken' },
         { id: 'pm-2', name: 'project manager' },
       ],
@@ -185,6 +182,7 @@ describe('AboutStore', () => {
     // Removing a kind it read takes it out, and leaves the rest.
     store.saveAnswers(removeKind(store.answers(), 'pm'));
     expect(json(KINDS_FILE).others).toEqual([
+      { id: 'qa', name: 'QA lead', levels: ['principal-plus'] },
       { id: 'Bad Id', name: 'Broken' },
       { id: 'pm-2', name: 'project manager' },
     ]);

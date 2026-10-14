@@ -52,6 +52,9 @@ const fieldsOf = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 
+/** Whether two values say the same, as JSON. */
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 /** A file's JSON object, or null when it isn't one. */
 function jsonObject(text: string): Record<string, unknown> | null {
   try {
@@ -153,28 +156,37 @@ export class AboutStore {
 
   /**
    * Writes the kinds of job to their file once there's a second kind, and keeps it after, so the
-   * first's id holds steady for its jobs. What this version doesn't know stays: fields a later
-   * version added, and kinds it can't read, such as one past as many as it keeps. A file that
-   * doesn't read stays as it is until there are kinds to save, and then it's kept beside them.
+   * first's id holds steady for its jobs. It's written only when they change, and then only what
+   * changed goes over the file, so what this version doesn't know stays: fields a later version
+   * added, values it reads differently, and kinds it can't read, such as one past as many as it
+   * keeps. A file that doesn't read stays as it is until there are kinds to save, and then it's
+   * kept beside them.
    */
   private saveKinds(firstKind: KindName | null, otherKinds: readonly JobKind[]): void {
     const text = this.read(KINDS_FILE);
     if (text === null && !firstKind) return;
+    // As this version read the file before the change.
+    const before = this.answers();
+    if (same(before.firstKind, firstKind) && same(before.otherKinds, otherKinds)) return;
     const raw = text === null ? {} : jsonObject(text);
-    if (raw === null) {
-      if (!firstKind && otherKinds.length === 0) return;
-      this.keepOld(KINDS_FILE, text as string);
-    }
+    if (raw === null) this.keepOld(KINDS_FILE, text as string);
     const kept = raw ?? {};
     const rawOthers = Array.isArray(kept.others) ? (kept.others as unknown[]) : [];
     // Kinds this version read from the file: one of those left out was removed.
-    const read = new Set(this.answers().otherKinds.map((kind) => kind.id));
+    const read = new Set(before.otherKinds.map((kind) => kind.id));
     const ours = new Set(otherKinds.map((kind) => kind.id));
     const others = [
-      ...otherKinds.map((kind) => ({
-        ...fieldsOf(rawOthers.find((entry) => fieldsOf(entry).id === kind.id)),
-        ...kind,
-      })),
+      ...otherKinds.map((kind) => {
+        const was = before.otherKinds.find((each) => each.id === kind.id);
+        const changed = Object.entries(kind).filter(
+          ([key, value]) => !was || !same(value, was[key as keyof JobKind]),
+        );
+        return {
+          ...fieldsOf(rawOthers.find((entry) => fieldsOf(entry).id === kind.id)),
+          ...Object.fromEntries(changed),
+          id: kind.id,
+        };
+      }),
       ...rawOthers.filter((entry) => {
         const { id } = fieldsOf(entry);
         return !(typeof id === 'string' && (read.has(id) || ours.has(id)));

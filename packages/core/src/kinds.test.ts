@@ -14,6 +14,9 @@ describe('kindNamed', () => {
     expect(kindNamed(' `developer` ', KINDS)).toBe('developer');
     // As the tools show a kind, its name and its id.
     expect(kindNamed('Project manager (`project-manager`)', KINDS)).toBe('project-manager');
+    // A name in backticks, or beside an id that isn't one, still finds its kind.
+    expect(kindNamed('`Project manager`', KINDS)).toBe('project-manager');
+    expect(kindNamed('Project manager (`pm`)', KINDS)).toBe('project-manager');
   });
 
   it('finds nothing for a kind the user doesn’t have, or for nothing said', () => {

@@ -1,7 +1,12 @@
 import { Button, Field, Input, SegmentedControl } from '@factwright/ui';
 import { Plus } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
-import { type AboutYou, ANSWER_LIMITS, type AnswerChanges } from '../../../shared/about.ts';
+import {
+  type AboutYou,
+  ANSWER_LIMITS,
+  type AnswerChanges,
+  kindNameText,
+} from '../../../shared/about.ts';
 import { addKind, firstKindName, hasKinds, kindsOf, renameKind } from '../../../shared/kinds.ts';
 import styles from './KindsOfJob.module.css';
 
@@ -79,7 +84,7 @@ export function AddKind({
       setProblem(edit.message);
       return;
     }
-    onAdd(edit.changes, edit.changes.otherKinds?.at(-1)?.id ?? '');
+    onAdd(edit.changes, edit.changes.addedKinds?.[0]?.id ?? '');
   };
 
   return (
@@ -172,7 +177,7 @@ export function KindNameField({
   latest.current = { edit, typed, name, update };
   const save = useRef(() => {
     const { edit, typed, name, update } = latest.current;
-    if (edit.ok && typed.trim() !== name) update(edit.changes);
+    if (edit.ok && kindNameText(typed) !== name) update(edit.changes);
   }).current;
   useEffect(() => save, [save]);
 

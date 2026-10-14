@@ -107,6 +107,54 @@ describe('kinds of job', () => {
     ]);
   });
 
+  it('never stand two by one name or id, even when changes cross on two computers', () => {
+    // Another computer added a "Designer" meanwhile; this one's own "designer" stays out.
+    const elsewhere = apply(TWO, addKind(TWO, 'Designer'));
+    const here = addKind(TWO, 'designer ');
+    if (!here.ok) throw new Error(here.message);
+    expect(applyChanges(elsewhere, here.changes).otherKinds.map((kind) => kind.name)).toEqual([
+      'Project manager',
+      'Designer',
+    ]);
+    // A rename to a name another kind took meanwhile keeps the old name, and the rest changes.
+    const renamed = mergeChanges(changeKind(TWO, 'project-manager', { roles: ['TPM'] }), {
+      kindChanges: [{ id: 'project-manager', name: 'Designer' }],
+    });
+    expect(applyChanges(elsewhere, renamed).otherKinds[0]).toMatchObject({
+      name: 'Project manager',
+      roles: ['TPM'],
+    });
+    // So does the first kind.
+    expect(
+      applyChanges(elsewhere, { firstKind: { id: 'developer', name: 'designer' } }).firstKind,
+    ).toEqual({ id: 'developer', name: 'Developer' });
+    // Names differing only in spaces are the same name, in the window as in the app.
+    expect(addKind(TWO, 'Project\u00a0 manager')).toEqual({
+      ok: false,
+      message: 'You already have Project manager.',
+    });
+    expect(renameKind(TWO, 'developer', 'project  MANAGER')).toMatchObject({ ok: false });
+  });
+
+  it('join changes made one after another, dropping what a later removal undid', () => {
+    const adding = addKind(TWO, 'Designer');
+    if (!adding.ok) throw new Error(adding.message);
+    const typed = mergeChanges(
+      adding.changes,
+      changeKind(TWO, 'project-manager', { roles: ['TPM'] }),
+    );
+    // Added and removed again before saving: as if it never was.
+    expect(mergeChanges(adding.changes, { removedKinds: ['designer'] })).toEqual({
+      firstKind: TWO.firstKind,
+    });
+    // A removed kind's changes go with it.
+    expect(mergeChanges(typed, removeKind(TWO, 'project-manager'))).toEqual({
+      firstKind: TWO.firstKind,
+      addedKinds: adding.changes.addedKinds,
+      removedKinds: ['project-manager'],
+    });
+  });
+
   it('get ids Windows can hold as folder names', () => {
     const nurse = apply(ONE, addKind(ONE, 'PRN', 'Developer'));
     expect(nurse.otherKinds[0]).toMatchObject({ id: 'prn-jobs', name: 'PRN' });
@@ -146,7 +194,7 @@ describe('kinds of job', () => {
     expect(hasKinds(back)).toBe(false);
     expect(back.firstKind).toEqual({ id: 'developer', name: 'Developer' });
     // The first can't be removed this way.
-    expect(removeKind(TWO, 'developer')).toEqual({ otherKinds: TWO.otherKinds });
+    expect(removeKind(TWO, 'developer')).toEqual({});
     // Adding another later can name the first again, and it keeps its id for its jobs.
     const again = apply(back, addKind(back, 'Designer', 'Engineer'));
     expect(again.firstKind).toEqual({ id: 'developer', name: 'Engineer' });
