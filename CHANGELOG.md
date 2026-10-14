@@ -2,7 +2,9 @@
 
 Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.1 - 2026-10-13
+
+Steadier sync, the version in the sidebar, the privacy policy and terms, and installers in Factwright's colors.
 
 ### Added
 - A privacy policy and terms of service, at factwright.com/privacy and factwright.com/terms. Every page of the site links to them. Downloading, the app's first step and signing in to sync each say they mean agreeing to the terms, and the privacy policy says what's collected.
