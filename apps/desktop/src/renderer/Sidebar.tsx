@@ -1,10 +1,12 @@
 import { NavItem } from '@factwright/ui';
 import { BookCheck, Briefcase, Heart, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
+import type { ProfileEntry } from '../shared/profiles.ts';
 import type { SyncStatus } from '../shared/sync.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
-import { ClaudeCard } from './ClaudeCard.tsx';
+import { ClaudeCard, type OwnSignIn } from './ClaudeCard.tsx';
 import { LevelsChip } from './LevelsChip.tsx';
+import { ProfileSwitcher } from './profiles/ProfileSwitcher.tsx';
 import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
 import { UpdateCard } from './updates/UpdateCard.tsx';
@@ -18,16 +20,19 @@ export type Page = 'jobs' | 'facts' | 'profile';
 const COFFEE_URL = 'https://buymeacoffee.com/stevehillyer';
 
 /**
- * The sidebar: the app's places, then an update when there's one, sync, the user's Claude and the
- * levels it runs at, a way to support Factwright, and Factwright's version, so an update shows it
- * landed.
+ * The sidebar: the open profile when there's more than one, the app's places, then an update when
+ * there's one, sync, the user's Claude and the levels it runs at, a way to support Factwright, and
+ * Factwright's version, so an update shows it landed.
  */
 export function Sidebar({
+  profiles,
   page,
   onPage,
   gettingStarted,
   claude,
   onRecheckClaude,
+  claudeSignIn,
+  terminal,
   setup,
   sync,
   onOpenSync,
@@ -38,12 +43,24 @@ export function Sidebar({
   update,
   version,
 }: {
+  /** The profiles on this computer, and switching between them, once they've loaded. */
+  profiles?: {
+    list: ProfileEntry[];
+    busy: boolean;
+    onOpen: (profile: ProfileEntry) => void;
+    onAdd: () => void;
+    onManage: () => void;
+  };
   page: Page;
   onPage: (page: Page) => void;
   /** Whether the user is still getting started, which their profile page walks them through. */
   gettingStarted: boolean;
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
+  /** An added profile's own Claude sign-in, for its card to copy when it's signed out. */
+  claudeSignIn?: OwnSignIn | undefined;
+  /** Where the user runs Claude Code's commands: PowerShell on Windows, Terminal on a Mac. */
+  terminal?: string;
   /** The latest check of Factwright's setup, and how to run it again. */
   setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
   sync: SyncStatus | 'checking';
@@ -63,6 +80,15 @@ export function Sidebar({
 }) {
   return (
     <aside className={styles.sidebar}>
+      {profiles && profiles.list.length > 1 && (
+        <ProfileSwitcher
+          profiles={profiles.list}
+          busy={profiles.busy}
+          onOpen={profiles.onOpen}
+          onAdd={profiles.onAdd}
+          onManage={profiles.onManage}
+        />
+      )}
       <nav className={styles.nav} aria-label="Main">
         <NavItem
           icon={<Briefcase size={16} aria-hidden="true" />}
@@ -97,6 +123,8 @@ export function Sidebar({
           <ClaudeCard
             status={claude}
             onRecheck={onRecheckClaude}
+            signIn={claudeSignIn}
+            {...(terminal && { terminal })}
             setup={setup.check}
             checkingSetup={setup.checking}
             onCheckSetup={setup.checkAgain}

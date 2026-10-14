@@ -90,6 +90,11 @@ const api: FactwrightApi = {
   onUpdateChanged: (listener) => subscribe('updates:changed', listener),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
   openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
+  profiles: () => ipcRenderer.invoke('profiles:list'),
+  addProfile: (name, firstName) => ipcRenderer.invoke('profiles:add', name, firstName),
+  renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', id, name),
+  removeProfile: (id) => ipcRenderer.invoke('profiles:remove', id),
+  openProfile: (id) => ipcRenderer.invoke('profiles:open', id),
 };
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {

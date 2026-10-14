@@ -54,6 +54,7 @@ import {
   runPrompt,
   saveableFileName,
 } from './policy.ts';
+import type { Profiles } from './profiles.ts';
 import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
 import type { UpdateWatcher } from './updates.ts';
@@ -108,6 +109,8 @@ export interface IpcDeps {
   dataDir: string;
   /** Keeps an installed copy up to date, or null for one that doesn't update itself. */
   updates: UpdateWatcher | null;
+  /** The profiles on this computer: each person's own job hunt, one open at a time. */
+  profiles: Profiles;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -141,6 +144,7 @@ export function registerIpc({
   sync,
   dataDir,
   updates,
+  profiles,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -432,6 +436,13 @@ export function registerIpc({
   answer('sync:sign-out', () => sync.signOut());
   answer('sync:different-account', () => sync.useDifferentAccount());
   answer('sync:account-page', () => sync.openAccountPage());
+
+  // Profiles, each checked by Profiles itself. Opening another restarts the app on it.
+  answer('profiles:list', () => profiles.list());
+  answer('profiles:add', (name, firstName) => profiles.add(name, firstName));
+  answer('profiles:rename', (id, name) => profiles.rename(id, name));
+  answer('profiles:remove', (id) => profiles.remove(id));
+  answer('profiles:open', (id) => profiles.open(id));
 
   registerAboutIpc(answer, { about, previews, templates });
 }

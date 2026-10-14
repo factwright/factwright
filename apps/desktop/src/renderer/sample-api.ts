@@ -6,6 +6,7 @@ import type { RunTask } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
+import { sampleProfiles } from './profiles/sample-profiles.ts';
 import { sampleSync } from './sync/sample-sync.ts';
 
 const READY: ClaudeStatus = {
@@ -111,10 +112,11 @@ function sampleRun(dark: boolean) {
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
  * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?plan picks the
  * plan Claude is ready on: pro, team, or api for an API key. ?jobs picks the jobs: none, failed
- * or loading. ?profile picks how far the user's profile has come: new,
- * started or done. Starting Claude plays a short made-up run, so every state
- * of the panel can be seen, and status changes stick until the page reloads. With ?run=asks,
- * interview prep stops to ask a question, as the README's screenshots show it.
+ * or loading. ?profile picks how far the user's profile has come: new, started or done.
+ * ?profiles picks how many profiles there are: two, three with an added one open (added), or two
+ * after one stopped short of opening (stopped). Starting Claude plays a short made-up run, so
+ * every state of the panel can be seen, and status changes stick until the page reloads. With
+ * ?run=asks, interview prep stops to ask a question, as the README's screenshots show it.
  */
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
@@ -238,6 +240,7 @@ export function sampleApi(): FactwrightApi {
     ...sampleSync(query.get('sync')),
     ...sampleProfile(query.get('profile')),
     ...sampleFacts(query.get('profile')),
+    ...sampleProfiles(query.get('profiles')),
     // ?update=ready shows an update waiting to be installed.
     updateStatus: async () =>
       query.get('update') === 'ready'
