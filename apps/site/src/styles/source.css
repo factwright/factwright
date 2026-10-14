@@ -1,0 +1,203 @@
+/*
+ * Open source: what anyone can check in the code, a card in the shape of the repository with
+ * the folders worth opening first, and who makes Factwright.
+ */
+
+.source {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  gap: clamp(40px, 6vw, 88px);
+  align-items: center;
+}
+
+.source-copy .lede {
+  max-width: 56ch;
+}
+
+.source-list {
+  margin-top: 28px;
+}
+
+.source-list .stance-mark {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.source-button {
+  margin-top: 32px;
+}
+
+.repo {
+  container: repo / inline-size;
+  overflow: hidden;
+  padding: 22px 22px 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-xl);
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-lift);
+}
+
+.repo-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+}
+
+.repo-name .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.repo-name b {
+  font-weight: 650;
+}
+
+.repo-badge {
+  padding: 1px 9px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-muted);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.repo-about {
+  margin-top: 12px;
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.repo-meta {
+  display: flex;
+  gap: 18px;
+  margin-top: 10px;
+  color: var(--fw-muted);
+  font-size: 13.5px;
+}
+
+.repo-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.repo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fw-tone-blue-fg);
+}
+
+/* The folders, as rows across the card's full width, each opening that folder on GitHub. */
+.repo-files {
+  margin: 20px -22px 0;
+  border-top: 1px solid var(--fw-border);
+}
+
+.repo-files li + li {
+  border-top: 1px solid var(--fw-border);
+}
+
+.repo-files a {
+  display: grid;
+  grid-template-columns: 18px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 22px;
+  color: var(--fw-text);
+  text-decoration: none;
+  transition: background-color 140ms ease;
+}
+
+.repo-files a:hover {
+  background: var(--fw-hover);
+}
+
+/* The rows reach the card's edges, which would cut off the usual ring around the outside. */
+.repo-files a:focus-visible {
+  outline-offset: -2px;
+}
+
+.repo-files .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--fw-accent-text);
+}
+
+.repo-files b {
+  font-family: var(--fw-font-mono);
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+.repo-files a:hover b {
+  color: var(--fw-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.repo-files span {
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 14px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-maker {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: clamp(56px, 7vw, 80px);
+  color: var(--fw-muted);
+  font-size: 16px;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.source-maker .icon {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  color: var(--fw-tone-purple-fg);
+  fill: color-mix(in srgb, var(--fw-tone-purple-fg) 18%, transparent);
+}
+
+.source-maker a {
+  color: var(--fw-text);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.source-maker a:hover {
+  color: var(--fw-accent-text);
+}
+
+@media (max-width: 900px) {
+  .source {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* In a narrow card, on a phone or beside the text on a small laptop, each folder's description
+   goes under its name instead of beside it. */
+@container repo (max-width: 470px) {
+  .repo-files a {
+    grid-template-columns: 18px minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .repo-files span {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 520px) {
+  .source-maker {
+    text-align: left;
+  }
+}
