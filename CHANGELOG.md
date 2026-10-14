@@ -8,6 +8,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A privacy policy and terms of service, at factwright.com/privacy and factwright.com/terms. Every page of the site links to them. Downloading, the app's first step and signing in to sync each say they mean agreeing to the terms, and the privacy policy says what's collected.
 - The operator can delete an account for someone who asked by email, with a token only the operator has.
 - The sidebar shows Factwright's version at the bottom, so you can see an update has landed.
+- The Mac disk image opens on a window in Factwright's colors, with an arrow showing where to drag the app: onto Applications.
 
 ### Changed
 - The sync server deletes sign-in records it no longer needs, each day: sessions that ended, sign-in steps that ran out, and the sign-in limits' counts, which are kept by IP address.
