@@ -229,6 +229,7 @@ jobs:
     needs: mac
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Signing an installer's record needs a token from GitHub, and somewhere to keep the record.
     permissions: &attest
       contents: read
@@ -270,6 +271,7 @@ jobs:
     needs: windows
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions: *attest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -296,6 +298,7 @@ jobs:
     needs: [publish-mac, publish-windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -318,7 +321,8 @@ jobs:
 
           Copies already installed update on their own.
           NOTES
-          # The check names this workflow and tag, so it fails for a record any other run made.
+          # The check names this workflow and the version's tag, so it fails for a record from any other
+          # workflow or version.
           if [ "$ATTESTED" = true ]; then
             cat >> "$notes" <<NOTES
 
@@ -326,11 +330,19 @@ jobs:
 
           \`\`\`
           gh attestation verify Factwright-$version.dmg -R $GITHUB_REPOSITORY --signer-workflow ${GITHUB_WORKFLOW_REF%@*} --source-ref $GITHUB_REF
+          gh attestation verify Factwright-Setup-$version.exe -R $GITHUB_REPOSITORY --signer-workflow ${GITHUB_WORKFLOW_REF%@*} --source-ref $GITHUB_REF
           \`\`\`
           NOTES
           fi
+          # GitHub makes a new release the latest unless told otherwise, so a late re-run of an older
+          # version's release says not to, and leaves "Latest" on the newer one.
+          newest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2> /dev/null || true)
+          latest=true
+          if [ -n "$newest" ] && [ "$(printf '%s\n%s\n' "${newest#v}" "$version" | sort -V | tail -1)" != "$version" ]; then
+            latest=false
+          fi
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Factwright $version" --notes-file "$notes"
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Factwright $version" --notes-file "$notes" --latest="$latest"
           else
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Factwright $version" --notes-file "$notes"
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Factwright $version" --notes-file "$notes" --latest="$latest"
           fi
