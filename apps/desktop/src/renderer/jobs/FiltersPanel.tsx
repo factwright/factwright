@@ -121,7 +121,8 @@ export function FiltersPanel({
               variant="quiet"
               size="sm"
               disabled={count === 0}
-              onClick={() => onFilter({ ...filter, ...NO_FILTERS })}
+              // The kind of job stays: it's which jobs the page is about, not a filter.
+              onClick={() => onFilter({ ...filter, ...NO_FILTERS, kind: filter.kind })}
             >
               Clear filters
             </Button>

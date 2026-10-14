@@ -159,6 +159,20 @@
   margin-top: 12px;
 }
 
+/* The kind of job it's under, as a quiet outline beside its status and fit. */
+.kind {
+  min-width: 0;
+  max-width: 220px;
+}
+
+.kind select {
+  height: 30px;
+  padding-left: 12px;
+  border-radius: var(--fw-radius-full);
+  font-size: 13px;
+  font-weight: 550;
+}
+
 .problem {
   margin: var(--fw-space-2) 0 0;
   color: var(--fw-bad);

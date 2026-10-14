@@ -1,3 +1,20 @@
+/* The choice between the summary and the chart, and of the kind of job to see. */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-3);
+}
+
+.kind {
+  max-width: 260px;
+}
+
+.kind select {
+  height: 32px;
+  font-size: 13px;
+}
+
 /* The summary or the chart, under the choice between them. */
 .view {
   margin-top: var(--fw-space-5);
@@ -57,6 +74,53 @@
   margin: var(--fw-space-2) 0 0;
   padding: 0;
   list-style: none;
+}
+
+/* Each kind of job's steps, side by side. Narrow windows scroll it sideways. */
+.byKindWrap {
+  margin-top: var(--fw-space-2);
+  overflow-x: auto;
+}
+
+.byKind {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fw-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.byKind th,
+.byKind td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--fw-border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.byKind thead th {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+}
+
+.byKind th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.byKind tbody th {
+  max-width: 220px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.byKind tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.share {
+  color: var(--fw-muted);
 }
 
 .actions {

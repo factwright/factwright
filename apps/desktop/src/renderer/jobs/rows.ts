@@ -6,10 +6,14 @@ import {
   JOB_VIEWS,
   type Job,
   type JobProgress,
+  type JobStatus,
   type JobView,
   jobProgress,
+  type KindName,
+  kindOfJob,
   nextStep,
   shortDate,
+  viewOf,
   startingView as viewToOpen,
 } from '@factwright/core';
 import { FIT_TIER_DISPLAY, JOB_STATUS_DISPLAY, MOOD_DISPLAY } from '@factwright/ui';
@@ -19,6 +23,11 @@ export interface JobRow {
   job: Job;
   progress: JobProgress;
   next: Attention | null;
+  /**
+   * The kind of job it's under, when the user wants more than one: the one they put it under,
+   * or else the one the job search or fit check found it as, or else their first. Null with one.
+   */
+  kind: KindName | null;
   /** Everything the search box looks through, in lowercase. */
   searchText: string;
 }
@@ -31,6 +40,8 @@ export interface ListFilter {
   view: JobView;
   query: string;
   needsYou: boolean;
+  /** The kind of job to show, by its id, or null for every kind. */
+  kind: string | null;
   /** The fit levels to show. None picked shows every level. */
   tiers: TierFilter[];
   /**
@@ -46,6 +57,7 @@ export interface ListFilter {
 
 /** The filters, all off. */
 export const NO_FILTERS: Omit<ListFilter, 'view' | 'query' | 'needsYou'> = {
+  kind: null,
   tiers: [],
   found: null,
   minPay: null,
@@ -53,7 +65,10 @@ export const NO_FILTERS: Omit<ListFilter, 'view' | 'query' | 'needsYou'> = {
   showArchived: false,
 };
 
-/** How many filters are on, for the Filters button. Where jobs came from has its own menu. */
+/**
+ * How many filters are on, for the Filters button. The kind of job and where jobs came from have
+ * their own menus.
+ */
 export function filterCount(filter: ListFilter): number {
   return (
     filter.tiers.length +
@@ -115,9 +130,48 @@ export function foundOptions(
   };
 }
 
-export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
+/** The filter, with a kind of job the user no longer wants, such as one removed, back to every kind. */
+export function withKnownKind(filter: ListFilter, kinds: readonly KindName[]): ListFilter {
+  return filter.kind === null || kinds.some((kind) => kind.id === filter.kind)
+    ? filter
+    : { ...filter, kind: null };
+}
+
+/**
+ * What the list shows once a job is added, so it's there: all of the view it starts in, still of
+ * the kind of job picked when the job is that kind.
+ */
+export function filterForAdded(
+  filter: ListFilter,
+  status: JobStatus,
+  kind: string | null,
+): ListFilter {
+  return {
+    ...NO_FILTERS,
+    kind: kind === filter.kind ? kind : null,
+    view: viewOf(status),
+    query: '',
+    needsYou: false,
+  };
+}
+
+/** The rows of one kind of job, or every row for every kind. */
+export const ofKind = (rows: readonly JobRow[], kind: string | null): readonly JobRow[] =>
+  kind ? rows.filter((row) => row.kind?.id === kind) : rows;
+
+/**
+ * The jobs as the list shows them. With more than one kind of job, each is under one of them,
+ * and searching for a kind's name finds its jobs.
+ */
+export function jobRows(
+  jobs: readonly Job[],
+  today: string,
+  kinds: readonly KindName[] = [],
+): JobRow[] {
   return jobs.map((job) => {
     const progress = jobProgress(job, today);
+    const id = kinds.length > 1 ? kindOfJob(job, kinds) : null;
+    const kind = kinds.find((each) => each.id === id) ?? null;
     const searchText = [
       job.company,
       job.role,
@@ -131,6 +185,7 @@ export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
       job.location,
       job.fit?.verdict,
       job.apply,
+      kind?.name,
       JOB_STATUS_DISPLAY[progress.status].label,
       progress.tier && FIT_TIER_DISPLAY[progress.tier].label,
       job.sentiment?.mood && MOOD_DISPLAY[job.sentiment.mood].label,
@@ -138,16 +193,17 @@ export function jobRows(jobs: readonly Job[], today: string): JobRow[] {
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
-    return { job, progress, next: nextStep(job, progress, today), searchText };
+    return { job, progress, next: nextStep(job, progress, today), kind, searchText };
   });
 }
 
 /** The rows that match the search box, "Needs you" and the filters, whatever the view. */
 function matching(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
   const words = filter.query.toLowerCase().split(/\s+/).filter(Boolean);
-  return rows.filter(({ job, progress, searchText }) => {
+  return rows.filter(({ job, progress, kind, searchText }) => {
     if (job.archived && !filter.showArchived) return false;
     if (filter.needsYou && progress.attention === null) return false;
+    if (filter.kind && kind?.id !== filter.kind) return false;
     if (filter.tiers.length > 0 && !filter.tiers.includes(progress.tier ?? 'none')) return false;
     if (filter.found && !cameFrom(job, filter.found)) return false;
     if (filter.minPay && (job.pay?.max ?? 0) < filter.minPay) return false;

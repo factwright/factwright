@@ -1,5 +1,6 @@
 import type { FlowLink, FlowNode } from './flows.ts';
 import type { Job } from './jobs.ts';
+import { type KindName, kindOfJob } from './kinds.ts';
 import type { JobProgress } from './progress.ts';
 import { type CallKind, type JobStatus, STATUS_RANK } from './tracker.ts';
 
@@ -271,11 +272,17 @@ function csvCell(value: string): string {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-/** Every job's journey as a spreadsheet (CSV): a row per job, with each step's date. */
-export function journeyCsv(list: readonly Journey[]): string {
+/**
+ * Every job's journey as a spreadsheet (CSV): a row per job, with each step's date. With more
+ * than one kind of job, each row says which kind it's under.
+ */
+export function journeyCsv(list: readonly Journey[], kinds: readonly KindName[] = []): string {
+  const split = kinds.length > 1;
+  const kindOf = (job: Job) => kinds.find((kind) => kind.id === kindOfJob(job, kinds))?.name ?? '';
   const head = [
     'Company',
     'Role',
+    ...(split ? ['Kind of job'] : []),
     'Source',
     ...JOURNEY_STAGES.map((stage) => JOURNEY_STAGE_LABELS[stage]),
     'Outcome',
@@ -286,6 +293,7 @@ export function journeyCsv(list: readonly Journey[]): string {
   const rows = list.map(({ job, dates, outcome, outcomeOn }) => [
     job.company,
     job.role,
+    ...(split ? [kindOf(job)] : []),
     job.source,
     ...JOURNEY_STAGES.map((stage) => {
       const date = dates[stage];

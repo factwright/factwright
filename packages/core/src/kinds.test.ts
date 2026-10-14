@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { KIND_ID, kindNamed, kindOfJob } from './kinds.ts';
+import {
+  KIND_ID,
+  KIND_LIMITS,
+  kindIdFor,
+  kindNamed,
+  kindNamesIn,
+  kindOfJob,
+  unnamedFirstKind,
+} from './kinds.ts';
 
 const KINDS = [
   { id: 'developer', name: 'Developer' },
@@ -42,6 +50,55 @@ describe('kindOfJob', () => {
     expect(kindOfJob({ kind: null, kindFound: null }, KINDS)).toBe('developer');
     expect(kindOfJob({ kind: 'removed-kind', kindFound: 'designer' }, KINDS)).toBe('developer');
     expect(kindOfJob({ kind: null, kindFound: null }, [])).toBeNull();
+  });
+});
+
+describe('kindNamesIn', () => {
+  it('reads the first kind and each other one, as the app keeps them', () => {
+    expect(
+      kindNamesIn({
+        first: { id: 'developer', name: 'Developer' },
+        others: [
+          { id: 'project-manager', name: ' Project\n manager ', roles: ['TPM'] },
+          { id: 'Bad Id', name: 'Broken' },
+          { id: 'pm-2', name: 'project manager' },
+          { id: 'developer', name: 'Another developer' },
+        ],
+      }),
+    ).toEqual([
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ]);
+  });
+
+  it('is none with one kind, and names a first kind the file leaves out for what it is', () => {
+    expect(kindNamesIn({ first: { id: 'developer', name: 'Developer' }, others: [] })).toEqual([]);
+    expect(kindNamesIn(null)).toEqual([]);
+    const pm = { id: 'project-manager', name: 'Project manager' };
+    expect(kindNamesIn({ first: { id: 'Bad Id', name: 'Developer' }, others: [pm] })).toEqual([
+      { id: 'your-first-kind-of-job', name: 'Your first kind of job' },
+      pm,
+    ]);
+    expect(unnamedFirstKind(['your-first-kind-of-job']).id).toBe('your-first-kind-of-job-2');
+  });
+
+  it('keeps as many as the app keeps, counting one that repeats the first, as the app does', () => {
+    const others = Array.from({ length: 9 }, (_, n) => ({ id: `kind-${n}`, name: `Kind ${n}` }));
+    const first = { id: 'a', name: 'A' };
+    expect(kindNamesIn({ first, others })).toHaveLength(KIND_LIMITS.kinds);
+    // The first over again takes a place in the count, then is left out.
+    expect(kindNamesIn({ first, others: [{ id: 'b', name: 'a' }, ...others] })).toHaveLength(
+      KIND_LIMITS.kinds - 1,
+    );
+  });
+});
+
+describe('kindIdFor', () => {
+  it('makes an id from a name, unlike the ones taken, that Windows can hold as a folder', () => {
+    expect(kindIdFor('Project manager', [])).toBe('project-manager');
+    expect(kindIdFor('Project manager', ['project-manager'])).toBe('project-manager-2');
+    expect(kindIdFor('PRN', [])).toBe('prn-jobs');
+    expect(kindIdFor('看護師', [])).toBe('kind');
   });
 });
 

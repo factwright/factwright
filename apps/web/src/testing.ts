@@ -52,6 +52,7 @@ export function job(base: Partial<Job> & Pick<Job, 'id' | 'company'>): Job {
 /** A job hunt as the browser opened it, with just these jobs unless given more. */
 export const vaultOf = (jobs: Job[], more: Partial<Vault> = {}): Vault => ({
   jobs,
+  kinds: [],
   files: new Map(),
   docs: new Map(),
   asked: new Map(),

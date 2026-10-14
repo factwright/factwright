@@ -1,6 +1,8 @@
 import {
   type Job,
   type JobStatus,
+  type KindName,
+  kindNamed,
   type PassReason,
   payLabel,
   readApplySteps,
@@ -12,6 +14,7 @@ import {
   Markdown,
   MarkdownLine,
   Notice,
+  Select,
   StatusSelect,
 } from '@factwright/ui';
 import {
@@ -105,6 +108,8 @@ export interface PanelNavigation {
 export interface JobPanelProps {
   row: JobRow | null;
   api: FactwrightApi;
+  /** The kinds of job the user wants, when there's more than one, to put the job under one. */
+  kinds?: readonly KindName[];
   today: string;
   onClose: () => void;
   /** Claude's panel, so the job's Run buttons can start skills. */
@@ -122,6 +127,7 @@ export interface JobPanelProps {
 export function JobPanel({
   row,
   api,
+  kinds = [],
   today,
   onClose,
   run,
@@ -169,6 +175,9 @@ export function JobPanel({
   const fit = progress.tier
     ? `${FIT_TIER_DISPLAY[progress.tier].label}${progress.score !== null ? ` ${progress.score}` : ''}`
     : 'Not scored yet';
+  // A job nobody has put under a kind, and no search or fit check found as one, is under the first
+  // kind until a fit check says. Picking that kind keeps it there.
+  const decided = kindNamed(job.kind, kinds) ?? kindNamed(job.kindFound, kinds);
 
   const save = async (edit: Promise<EditResult>) => {
     const result = await edit;
@@ -358,6 +367,21 @@ export function JobPanel({
               onChange={changeStatus}
             />
             <FitBadge score={progress.score} tier={progress.tier} />
+            {kinds.length > 1 && row.kind && (
+              <Select
+                className={styles.kind}
+                aria-label={`Kind of job for ${job.company}`}
+                value={decided ?? ''}
+                onChange={(event) => change({ kind: event.target.value })}
+              >
+                {!decided && <option value="">{row.kind.name}, until a fit check</option>}
+                {kinds.map((kind) => (
+                  <option key={kind.id} value={kind.id}>
+                    {kind.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
           {problem?.jobId === job.id && (
             <p className={styles.problem} role="alert">

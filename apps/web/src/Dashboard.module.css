@@ -12,6 +12,31 @@
   letter-spacing: -0.015em;
 }
 
+/* The kind of job to show, for a user who wants more than one. */
+.kindOf {
+  display: flex;
+  margin-top: var(--fw-space-3);
+}
+
+.kindOf select {
+  width: 100%;
+}
+
+/* The kind of job a row is under, while every kind shows, on one line however long. */
+.kind {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  font-size: var(--fw-text-xs);
+  font-weight: 550;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -85,6 +110,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--fw-space-2);
+  /* So a long kind of job ends in an ellipsis rather than widen the page. */
+  min-width: 0;
   margin-top: 2px;
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);

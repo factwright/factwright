@@ -76,10 +76,14 @@ describe('readAnswers', () => {
   it('names the first kind of job when others are there without it, as after a hand edit', () => {
     const answers = readAnswers({
       roles: ['Staff Engineer'],
-      otherKinds: [{ id: 'staff-engineer', name: 'Project manager' }],
+      otherKinds: [{ id: 'your-first-kind-of-job', name: 'Project manager' }],
     });
-    expect(answers.firstKind).toEqual({ id: 'staff-engineer-2', name: 'Staff Engineer' });
-    expect(answers.otherKinds.map((kind) => kind.id)).toEqual(['staff-engineer']);
+    // Named for what it is, not for its titles, so the web view names it the same way.
+    expect(answers.firstKind).toEqual({
+      id: 'your-first-kind-of-job-2',
+      name: 'Your first kind of job',
+    });
+    expect(answers.otherKinds.map((kind) => kind.id)).toEqual(['your-first-kind-of-job']);
   });
 
   it('keeps shared files only inside about-me/files', () => {

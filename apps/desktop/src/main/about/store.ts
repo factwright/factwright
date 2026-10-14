@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { KindName } from '@factwright/core';
-import { localDate } from '@factwright/core';
+import { KINDS_FILE, type KindName, localDate } from '@factwright/core';
 import { TEMPLATES } from '@factwright/engine';
 import {
   type AboutYou,
@@ -11,7 +10,6 @@ import {
   applyChanges,
   FILES_FOLDER,
   type JobKind,
-  KINDS_FILE,
   pagesFor,
   readAnswers,
   type SharedFile,

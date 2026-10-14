@@ -2,15 +2,18 @@ import { fileSize, localDate, payLabel, shortDate } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   filterCount,
+  filterForAdded,
   foundOptions,
   jobRows,
   laterRows,
   NO_FILTERS,
+  ofKind,
   startingView,
   stepFrom,
   viewCounts,
   viewNow,
   visibleRows,
+  withKnownKind,
 } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
 
@@ -149,6 +152,79 @@ describe('visibleRows', () => {
     expect(companies(visibleRows(byHand, { ...ALL, found: 'from:Added by hand' }))).toEqual([
       'Northwind Labs',
     ]);
+  });
+});
+
+describe('kinds of job', () => {
+  const KINDS = [
+    { id: 'developer', name: 'Developer' },
+    { id: 'project-manager', name: 'Project manager' },
+  ];
+  const split = jobRows(
+    sampleJobs().map((job) =>
+      // The user put Northwind under project manager, and Fernway back under developer.
+      job.company === 'Northwind Labs'
+        ? { ...job, kind: 'project-manager' }
+        : job.company === 'Fernway'
+          ? { ...job, kind: 'developer' }
+          : job,
+    ),
+    TODAY,
+    KINDS,
+  );
+
+  it('puts each job under the kind the user picked, or found it as, or else the first', () => {
+    const kindOf = (company: string) => split.find((row) => row.job.company === company)?.kind;
+    expect(kindOf('Northwind Labs')).toEqual(KINDS[1]);
+    expect(kindOf('Saltmarsh Games')).toEqual(KINDS[1]);
+    expect(kindOf('Fernway')).toEqual(KINDS[0]);
+    expect(kindOf('Acme Robotics')).toEqual(KINDS[0]);
+    // With one kind, no job is under any.
+    expect(rows.every((row) => row.kind === null)).toBe(true);
+    expect(jobRows(sampleJobs(), TODAY, KINDS.slice(0, 1)).every((row) => !row.kind)).toBe(true);
+  });
+
+  it('narrows to one kind, and searches by its name', () => {
+    expect(companies(visibleRows(split, { ...ALL, kind: 'project-manager' })).sort()).toEqual([
+      'Northwind Labs',
+      'Pinecrest Software',
+      'Saltmarsh Games',
+    ]);
+    expect(companies(ofKind(split, 'project-manager'))).toEqual(
+      companies(split.filter((row) => row.kind?.id === 'project-manager')),
+    );
+    expect(ofKind(split, null)).toBe(split);
+    expect(companies(visibleRows(split, { ...ALL, query: 'project manager' })).sort()).toEqual([
+      'Northwind Labs',
+      'Pinecrest Software',
+      'Saltmarsh Games',
+    ]);
+    // The views count only that kind's jobs. Saltmarsh is set aside, so To review leaves it out.
+    const counts = viewCounts(split, { ...ALL, kind: 'project-manager' });
+    expect([counts.all, counts.review]).toEqual([3, 1]);
+    // It isn't one of the Filters button's filters: it has its own menu.
+    expect(filterCount({ ...ALL, kind: 'developer' })).toBe(0);
+  });
+
+  it('shows every kind again once the kind picked is gone, and keeps one renamed', () => {
+    const picked = { ...ALL, kind: 'project-manager' };
+    expect(withKnownKind(picked, KINDS)).toBe(picked);
+    expect(withKnownKind(picked, [{ id: 'project-manager', name: 'Program manager' }])).toBe(
+      picked,
+    );
+    expect(withKnownKind(picked, KINDS.slice(0, 1)).kind).toBeNull();
+    expect(withKnownKind(ALL, [])).toBe(ALL);
+  });
+
+  it('shows a job just added, of the kind picked only when it’s that kind', () => {
+    const picked = { ...ALL, view: 'closed', kind: 'project-manager', query: 'acme' } as const;
+    expect(filterForAdded(picked, 'applied', 'project-manager')).toEqual({
+      ...ALL,
+      view: 'applied',
+      kind: 'project-manager',
+    });
+    expect(filterForAdded(picked, 'new', null)).toEqual({ ...ALL, view: 'new' });
+    expect(filterForAdded(picked, 'new', 'developer').kind).toBeNull();
   });
 });
 

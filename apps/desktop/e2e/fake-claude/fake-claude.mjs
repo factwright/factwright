@@ -110,6 +110,28 @@ async function work(text) {
       }),
     );
   }
+  // As Claude would for a search for one kind of job: say which kind the jobs it found are.
+  const forKind = text.match(/^\/factwright:job-search for ([a-z0-9-]+): /);
+  if (forKind) {
+    const folder = join(process.cwd(), 'searches', `2026-10-12-hn-${forKind[1]}`);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'jobs.json'),
+      JSON.stringify({
+        meta: { source: 'HN October 2026', checked: '2026-10-12', kind: forKind[1] },
+        jobs: [
+          {
+            company: 'Harbor Light',
+            role: 'Technical Program Manager',
+            posting: 'https://boards.greenhouse.io/harborlight/jobs/2',
+            tier: 'good',
+            score: 72,
+            why: ['Program work, from the stand-in Claude'],
+          },
+        ],
+      }),
+    );
+  }
   // As Claude would for a template: start from one of the app's, and save one of the user's own.
   if (/^\/factwright:make-template from templates\/sources\/\S+$/.test(text)) {
     const classic = await call('read_template', { id: 'classic' });

@@ -172,6 +172,78 @@ describe('JobsPage', () => {
     expect(props.onFilter).toHaveBeenCalledWith(expect.objectContaining({ found: null }));
   });
 
+  it('narrows to one kind of job, with its numbers, for a user who wants more than one', async () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const rows = jobRows(sampleJobs(), TODAY, kinds);
+    const props = page({ rows, kinds, filter: view('all') });
+    const menu = screen.getByRole('combobox', { name: 'Kind of job' });
+    expect(
+      within(menu)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Every kind of job', 'Developer (16)', 'Project manager (3)']);
+    // While every kind shows, each job says which it's under.
+    expect(screen.getByRole('button', { name: /^Fernway/ }).textContent).toContain(
+      'Project manager',
+    );
+    await userEvent.selectOptions(menu, 'Project manager (3)');
+    expect(props.onFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'project-manager' }),
+    );
+    cleanup();
+    page({ rows, kinds, filter: { ...view('all'), kind: 'project-manager' } });
+    expect(screen.getByText('3 of 19 jobs')).toBeTruthy();
+    const list = screen.getByRole('list', { name: 'Jobs' });
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((button) => button.textContent?.includes('Project manager')),
+    ).toEqual([false, false, false]);
+    // The numbers above are that kind's, and so is where its jobs came from.
+    // Fernway's offer is the one project manager job in play.
+    expect(screen.getByText('In play').parentElement?.textContent).toBe(
+      'In play11 interviewing · 0 calls ahead',
+    );
+    expect(
+      within(screen.getByRole('combobox', { name: 'Found by' }))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toContain('HN October 2026 (3)');
+  });
+
+  it('keeps the name of a search picked for another kind of job, to clear it', () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const run = {
+      folder: '2026-10-12-hn-project-manager',
+      source: 'HN · Project manager',
+      date: null,
+    };
+    const jobs = sampleJobs().map((job) =>
+      job.company === 'Fernway' ? { ...job, searches: [run] } : job,
+    );
+    page({
+      rows: jobRows(jobs, TODAY, kinds),
+      kinds,
+      filter: { ...view('all'), kind: 'developer', found: `search:${run.folder}` },
+    });
+    const menu = screen.getByRole('combobox', { name: 'Found by' }) as HTMLSelectElement;
+    expect(menu.selectedOptions[0]?.textContent).toBe('HN · Project manager (0)');
+  });
+
+  it('shows no kinds of job with one', () => {
+    page({ filter: view('all') });
+    expect(screen.queryByRole('combobox', { name: 'Kind of job' })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Fernway/ }).textContent).not.toContain(
+      'Project manager',
+    );
+  });
+
   it('narrows the list to one search’s jobs', async () => {
     const props = page({ filter: { view: 'all', query: '', needsYou: false, ...NO_FILTERS } });
     const menu = screen.getByRole('combobox', { name: 'Found by' });

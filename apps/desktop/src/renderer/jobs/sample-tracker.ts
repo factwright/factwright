@@ -120,6 +120,7 @@ export function sampleTracker(jobs: string | null): TrackerApi {
       }),
       ...(changes.questions !== undefined && { questions: changes.questions }),
       ...(changes.archived !== undefined && { archived: changes.archived }),
+      ...(changes.kind !== undefined && { kind: changes.kind }),
     };
     const { status } = changes;
     const moved = status !== undefined && status !== job.status;
@@ -184,6 +185,7 @@ export function sampleTracker(jobs: string | null): TrackerApi {
           : [],
         firstSeen: today,
         lastActivity: today,
+        kind: input.kind ?? null,
         pay: input.pay
           ? { text: input.pay, min: range?.min ?? null, max: range?.max ?? null, source: 'listed' }
           : null,
