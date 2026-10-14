@@ -1,4 +1,12 @@
-import { KIND_ID, type KindName, slug } from '@factwright/core';
+import {
+  KIND_ID,
+  KIND_LIMITS,
+  type KindName,
+  kindNameText,
+  readKindName,
+  sameKind,
+  unnamedFirstKind,
+} from '@factwright/core';
 import { TEMPLATE_ID } from '@factwright/engine/templates';
 
 /**
@@ -97,13 +105,6 @@ export type KindAnswers = Pick<JobKind, KindAnswerKey>;
 
 /** A change to a kind of job after the first, by its id: its name, or some of its own answers. */
 export type KindChange = { id: string } & Partial<Pick<JobKind, 'name' | KindAnswerKey>>;
-
-/**
- * Where the kinds of job are kept: the first one's name, and each other one's own answers. They
- * have a file of their own so a copy of the app from before them, which rewrites answers.json
- * with only what it knows, never drops them.
- */
-export const KINDS_FILE = 'about-me/kinds-of-job.json';
 
 export interface Contact {
   name: string;
@@ -275,8 +276,8 @@ export const ANSWER_LIMITS = {
   text: 4000,
   files: 200,
   /** Kinds of job, the first included, and how long a kind's name runs. */
-  kinds: 6,
-  kindName: 60,
+  kinds: KIND_LIMITS.kinds,
+  kindName: KIND_LIMITS.name,
   /** The notes, kept in about-me/notes.md, can be long: that's the point of them. */
   notes: 200_000,
 } as const;
@@ -377,12 +378,6 @@ function files(value: unknown): SharedFile[] | undefined {
   return kept;
 }
 
-/** A kind of job's name as it's kept: on one line, with single spaces. */
-export const kindNameText = (name: string) => name.replace(/\s+/g, ' ').trim();
-
-/** What kinds of job are told apart by: their names, kept as they're kept, in any case. */
-export const kindNameKey = (name: string) => kindNameText(name).toLowerCase();
-
 /** A kind of job's name, on one line, or nothing when it's blank or too long. */
 function oneLine(value: unknown): string | undefined {
   const named = text(value, ANSWER_LIMITS.kindName);
@@ -390,17 +385,7 @@ function oneLine(value: unknown): string | undefined {
 }
 
 /** A kind of job's id and name, or nothing when either doesn't hold up. */
-function kindName(value: unknown): KindName | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const { id, name } = value as Record<string, unknown>;
-  if (typeof id !== 'string' || !KIND_ID.test(id)) return undefined;
-  const named = oneLine(name);
-  return named ? { id, name: named } : undefined;
-}
-
-/** Whether two kinds of job are the same one, by id or by name. */
-export const sameKind = (a: KindName, b: KindName) =>
-  a.id === b.id || kindNameKey(a.name) === kindNameKey(b.name);
+const kindName = (value: unknown): KindName | undefined => readKindName(value) ?? undefined;
 
 /**
  * A kind of job, whole: its id, its name and its own answers. Each answer that doesn't hold up
@@ -555,20 +540,9 @@ function withKinds(answers: AboutYou): AboutYou {
     (kind) => kind.id !== first?.id && kind.name.toLowerCase() !== first?.name.toLowerCase(),
   );
   if (others.length === 0 || first) return { ...answers, otherKinds: others };
-  // Others with no first named, as after a hand edit: the first is named for its titles.
-  const name = answers.roles[0]?.slice(0, ANSWER_LIMITS.kindName) || 'Your first kind of job';
-  const taken = others.map((kind) => kind.id);
-  return { ...answers, firstKind: { id: kindIdFor(name, taken), name }, otherKinds: others };
-}
-
-/** An id for a new kind of job, from its name, that none of the others has. */
-export function kindIdFor(name: string, taken: readonly string[]): string {
-  const words = slug(name).slice(0, 32).replace(/-+$/, '') || 'kind';
-  // A name Windows keeps for itself, such as "prn", can't name a folder in base/.
-  const base = KIND_ID.test(words) ? words : `${words}-jobs`;
-  let id = base;
-  for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
-  return id;
+  // Others with no first named, as after a hand edit, the way the web view reads the file too.
+  const firstKind = unnamedFirstKind(others.map((kind) => kind.id));
+  return { ...answers, firstKind, otherKinds: others };
 }
 
 /**

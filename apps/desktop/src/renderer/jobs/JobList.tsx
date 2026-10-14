@@ -83,6 +83,7 @@ export function JobList({
   view,
   today,
   showFound = view === 'new',
+  showKind = false,
   selectedId,
   onSelect,
   picks,
@@ -93,6 +94,8 @@ export function JobList({
   today: string;
   /** Whether each job says which search found it. */
   showFound?: boolean;
+  /** Whether each job says which kind of job it's under. */
+  showKind?: boolean;
   selectedId: string | null;
   onSelect: (jobId: string) => void;
   picks?: ListPicks;
@@ -131,8 +134,14 @@ export function JobList({
           onClick={() => onSelect(job.id)}
         >
           <span className={styles.job}>
-            <span className={styles.companyLine}>
+            <span className={`${styles.companyLine} ${showKind ? styles.withKind : ''}`}>
               <span className={styles.company}>{job.company}</span>
+              {showKind && row.kind && (
+                <span className={styles.kind}>
+                  <VisuallyHidden>, </VisuallyHidden>
+                  {row.kind.name}
+                </span>
+              )}
               {showFound && job.searches[0] && (
                 <span className={styles.found}>{job.searches[0].source}</span>
               )}

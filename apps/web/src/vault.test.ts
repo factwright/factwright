@@ -239,6 +239,58 @@ describe('opening the job hunt in the browser', () => {
     expect(downloaded).toHaveLength(3);
   });
 
+  it('reads the kinds of job the user wants, and what each job was found as', async () => {
+    const downloaded: string[] = [];
+    const client = new SyncClient({
+      server: server.url.toString(),
+      token: () => sam.token,
+      fetch: (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.startsWith('/api/sync/files/')) downloaded.push(path);
+        return fetch(input, init);
+      },
+    });
+    const kinds = {
+      first: { id: 'developer', name: 'Developer' },
+      others: [{ id: 'project-manager', name: 'Project manager', roles: ['TPM'] }],
+    };
+    await pushFiles(sam.client, keys, {
+      ...FILES,
+      [`${ACME}/job.md`]: `${FILES[`${ACME}/job.md`]}\n- **Kind of job:** Project manager`,
+      'about-me/kinds-of-job.json': JSON.stringify(kinds),
+      'about-me/answers.json': JSON.stringify({ roles: ['Staff Engineer'] }),
+    });
+    const vault = await openVault(client, keys);
+    expect(vault.kinds).toEqual([
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ]);
+    expect(vault.jobs[0]?.kindFound).toBe('Project manager');
+    // The job's notes and posting, and the kinds file, but never the answers.
+    expect(downloaded).toHaveLength(3);
+  });
+
+  it('names a first kind of job the kinds file leaves out, as the desktop app does', async () => {
+    await pushFiles(sam.client, keys, {
+      ...FILES,
+      'about-me/kinds-of-job.json': JSON.stringify({
+        others: [{ id: 'project-manager', name: 'Project manager' }],
+      }),
+    });
+    expect((await openVault(sam.client, keys)).kinds).toEqual([
+      { id: 'your-first-kind-of-job', name: 'Your first kind of job' },
+      { id: 'project-manager', name: 'Project manager' },
+    ]);
+  });
+
+  it('has no kinds of job with one, or with a kinds file that won’t read', async () => {
+    await pushFiles(sam.client, keys, FILES);
+    expect((await openVault(sam.client, keys)).kinds).toEqual([]);
+    const bob = await server.signUp();
+    await pushFiles(bob.client, keys, { ...FILES, 'about-me/kinds-of-job.json': '{ not json' });
+    expect((await openVault(bob.client, keys)).kinds).toEqual([]);
+  });
+
   it('reads Claude’s answers to the user’s questions about a job', async () => {
     const answer =
       '# What should I expect?\n\nAsked 2026-10-09. Answered 2026-10-09.\n\nA short screen.';

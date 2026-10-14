@@ -7,6 +7,9 @@ import {
   type Job,
   type JobDocs,
   jobList,
+  KINDS_FILE,
+  type KindName,
+  kindNamesIn,
   noteOrder,
   readJobExtras,
   readRecords,
@@ -44,6 +47,8 @@ export interface SyncedFile {
 /** The job hunt as this browser opened it. */
 export interface Vault {
   jobs: Job[];
+  /** The kinds of job the user wants, by id and name, when there's more than one. */
+  kinds: KindName[];
   /** Every file in the workspace, by path. */
   files: Map<string, SyncedFile>;
   /** Each job's documents, such as its posting and fit check, as text. */
@@ -71,6 +76,15 @@ const PAGE_CODE_LENGTH = 16;
  */
 const READ_FOR_JOBS =
   /^(applications\/[^/]+\/[^/]+\.md|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json|asked\/[^/]+\/[^/]+\.md)$/;
+
+/** The kinds of job the user wants, as the desktop app reads them, or none from a broken file. */
+function readKinds(text: string | null): KindName[] {
+  try {
+    return kindNamesIn(JSON.parse(text ?? 'null'));
+  } catch {
+    return [];
+  }
+}
 
 /** How many files download at once. */
 const AT_ONCE = 6;
@@ -177,7 +191,9 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
   }
 
   const texts = new Map<string, string>();
-  const wanted = [...files.values()].filter((file) => READ_FOR_JOBS.test(file.path));
+  const wanted = [...files.values()].filter(
+    (file) => READ_FOR_JOBS.test(file.path) || file.path === KINDS_FILE,
+  );
   for (let i = 0; i < wanted.length; i += AT_ONCE) {
     await Promise.all(
       wanted.slice(i, i + AT_ONCE).map(async (file) => {
@@ -216,5 +232,14 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
       ),
     ),
   );
-  return { jobs, files, docs, asked, rows, unreadable, pages };
+  return {
+    jobs,
+    kinds: readKinds(texts.get(KINDS_FILE) ?? null),
+    files,
+    docs,
+    asked,
+    rows,
+    unreadable,
+    pages,
+  };
 }

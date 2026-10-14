@@ -16,6 +16,11 @@ import { WithdrawDialog } from './WithdrawDialog.tsx';
 
 const TODAY = localDate();
 
+const KINDS = [
+  { id: 'developer', name: 'Developer' },
+  { id: 'project-manager', name: 'Project manager' },
+];
+
 beforeAll(() => {
   // jsdom doesn't open dialogs on its own.
   HTMLDialogElement.prototype.showModal ??= function showModal(this: HTMLDialogElement) {
@@ -81,6 +86,28 @@ describe('FiltersPanel', () => {
     expect(onFilter).toHaveBeenLastCalledWith(expect.objectContaining(NO_FILTERS));
   });
 
+  it('keeps the kind of job picked when it clears the filters', async () => {
+    const onFilter = vi.fn();
+    render(
+      <FiltersPanel
+        filter={{
+          view: 'all',
+          query: '',
+          needsYou: false,
+          ...NO_FILTERS,
+          kind: 'project-manager',
+          hasResume: true,
+        }}
+        onFilter={onFilter}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Filters · 1' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: 'project-manager', hasResume: false }),
+    );
+  });
+
   it('closes with Escape, Done, or a click elsewhere', async () => {
     render(
       <>
@@ -130,8 +157,53 @@ describe('AddJobDialog', () => {
       status: 'applied',
       notes: '',
     });
-    expect(onAdded).toHaveBeenCalledWith('fernhill-labs--platform-engineer', 'applied');
+    expect(onAdded).toHaveBeenCalledWith('fernhill-labs--platform-engineer', 'applied', null);
     expect(onClose).toHaveBeenCalled();
+    // With one kind of job, there's none to pick.
+    expect(screen.queryByRole('combobox', { name: 'Kind of job' })).toBeNull();
+  });
+
+  it('puts the job under a kind of job, starting with the one the list shows', async () => {
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'fernhill-labs--tpm' }));
+    const onAdded = vi.fn();
+    const { container } = render(
+      <AddJobDialog
+        api={{ addJob } as unknown as FactwrightApi}
+        kinds={KINDS}
+        kind="project-manager"
+        onAdded={onAdded}
+        onClose={() => {}}
+      />,
+    );
+    const menu = screen.getByRole('combobox', { name: 'Kind of job' }) as HTMLSelectElement;
+    expect(menu.value).toBe('project-manager');
+    await userEvent.keyboard('Fernhill Labs');
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'project-manager' }));
+    expect(onAdded).toHaveBeenCalledWith('fernhill-labs--tpm', 'new', 'project-manager');
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    cleanup();
+    // With every kind showing, or one since removed, its fit check decides, unless the user picks.
+    const addAgain = vi.fn(async () => ({ ok: true as const, jobId: 'kite--staff' }));
+    const onAddedAgain = vi.fn();
+    render(
+      <AddJobDialog
+        api={{ addJob: addAgain } as unknown as FactwrightApi}
+        kinds={KINDS}
+        kind="gone"
+        onAdded={onAddedAgain}
+        onClose={() => {}}
+      />,
+    );
+    const open = screen.getByRole('combobox', { name: 'Kind of job' }) as HTMLSelectElement;
+    expect(open.selectedOptions[0]?.textContent).toBe('Let its fit check decide');
+    await userEvent.keyboard('Kite');
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addAgain.mock.calls[0]).toEqual([
+      expect.not.objectContaining({ kind: expect.anything() }),
+    ]);
+    expect(onAddedAgain).toHaveBeenCalledWith('kite--staff', 'new', null);
   });
 
   it('starts a job at New, or wherever the user already is with it', () => {
@@ -242,6 +314,71 @@ describe('JourneyDialog', () => {
     expect((screen.getByRole('radio', { name: 'Flow chart' }) as HTMLInputElement).checked).toBe(
       true,
     );
+  });
+
+  it('shows one kind of job’s journey, or how each kind is going, for more than one', async () => {
+    const split = jobRows(sampleJobs(), TODAY, KINDS);
+    const saveFile = vi.fn(async () => ({ ok: true as const, saved: true }));
+    const { container } = render(
+      <JourneyDialog
+        rows={split}
+        kinds={KINDS}
+        api={{ saveFile } as unknown as FactwrightApi}
+        today={TODAY}
+        onClose={() => {}}
+      />,
+    );
+    const table = screen.getByRole('table', { name: 'By kind of job' });
+    expect(
+      within(table)
+        .getAllByRole('row')
+        .map((row) => [...row.children].map((cell) => cell.textContent)),
+    ).toEqual([
+      ['Kind of job', 'Found', 'Applied', 'Heard back', 'Interviewed', 'Offer'],
+      ['Developer', '16', '7', '3 43%', '1', '0'],
+      ['Project manager', '3', '1', '1 100%', '1', '1'],
+    ]);
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Kind of job' }),
+      'Project manager',
+    );
+    const steps = screen.getByRole('list', { name: 'How far your jobs got' });
+    expect(within(steps).getAllByRole('listitem')[0]?.textContent).toBe('Found3');
+    expect(screen.queryByRole('table', { name: 'By kind of job' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Download as a spreadsheet' }));
+    expect(saveFile).toHaveBeenCalledWith(
+      `job-search-journey-project-manager-${TODAY}.csv`,
+      expect.stringContaining('Company,Role,Kind of job,Source'),
+    );
+  });
+
+  it('starts on the kind of job the list shows', () => {
+    render(
+      <JourneyDialog
+        rows={jobRows(sampleJobs(), TODAY, KINDS)}
+        kinds={KINDS}
+        kind="project-manager"
+        api={{} as FactwrightApi}
+        today={TODAY}
+        onClose={() => {}}
+      />,
+    );
+    const steps = screen.getByRole('list', { name: 'How far your jobs got' });
+    expect(within(steps).getAllByRole('listitem')[0]?.textContent).toBe('Found3');
+    cleanup();
+    // With one kind, there's nothing to pick.
+    render(
+      <JourneyDialog
+        rows={jobRows(sampleJobs(), TODAY)}
+        api={{} as FactwrightApi}
+        today={TODAY}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Kind of job' })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('keeps the button as it was when the user cancels saving', async () => {

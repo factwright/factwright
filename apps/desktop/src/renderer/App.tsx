@@ -1,4 +1,4 @@
-import { JOB_VIEWS, type JobView, LIVE_STATUSES, viewOf } from '@factwright/core';
+import { JOB_VIEWS, type JobView, type KindName, LIVE_STATUSES } from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
@@ -25,6 +25,7 @@ import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
+  filterForAdded,
   type JobRow,
   jobRows,
   type ListFilter,
@@ -33,6 +34,7 @@ import {
   stepFrom,
   viewNow,
   visibleRows,
+  withKnownKind,
 } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
@@ -77,17 +79,28 @@ export function App({ api }: { api: FactwrightApi }) {
   const update = useUpdates(api);
   const levels = useLevelChoices(api);
   const profiles = useProfiles(api);
+  const profile = about.profile;
+  // The kinds of job the user wants, by id and name, when there's more than one. They change
+  // only when a kind is added, renamed or removed, so the rows aren't made again as they type.
+  const kindKey = JSON.stringify(
+    profile && hasKinds(profile.answers)
+      ? kindsOf(profile.answers).map(({ id, name }) => ({ id, name }))
+      : [],
+  );
+  const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
   const rows = useMemo(
-    () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
-    [jobs, today],
+    () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds) : []),
+    [jobs, today, kinds],
   );
   // The view the user last picked, or, the first time, one chosen once the jobs load.
-  const [filter, setFilter] = useState<ListFilter>(() => ({
+  const [chosen, setFilter] = useState<ListFilter>(() => ({
     view: keptView() ?? 'new',
     query: '',
     needsYou: false,
     ...NO_FILTERS,
   }));
+  // A kind of job picked, then removed, shows every kind again.
+  const filter = withKnownKind(chosen, kinds);
   const changeFilter = (next: ListFilter) => {
     if (next.view !== filter.view) writePref(VIEW_PREF, next.view);
     setFilter(next);
@@ -116,7 +129,6 @@ export function App({ api }: { api: FactwrightApi }) {
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
   const [picked, setPicked] = useState<Page | null>(null);
-  const profile = about.profile;
   const gettingStarted = profile !== null && needsGettingStarted(profile);
   // A brand-new user starts on getting started, unless they skipped it. Once there are jobs,
   // such as when sync brings them from another computer, the app opens on them instead.
@@ -341,6 +353,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 jobs={jobs}
                 api={api}
                 rows={rows}
+                kinds={kinds}
                 today={today}
                 filter={filter}
                 onFilter={changeFilter}
@@ -359,6 +372,7 @@ export function App({ api }: { api: FactwrightApi }) {
               <JobPanel
                 row={selected}
                 api={api}
+                kinds={kinds}
                 today={today}
                 onClose={() => setSelectedId(null)}
                 expanded={alone}
@@ -379,9 +393,12 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'add-job' && (
         <AddJobDialog
           api={api}
-          onAdded={(jobId, status) => {
+          kinds={kinds}
+          // A job added while one kind shows is that kind's, to begin with.
+          kind={filter.kind}
+          onAdded={(jobId, status, kind) => {
             // Show the new job in the list as well as the panel.
-            changeFilter({ ...NO_FILTERS, view: viewOf(status), query: '', needsYou: false });
+            changeFilter(filterForAdded(filter, status, kind));
             setSelectedId(jobId);
           }}
           onClose={() => setDialog(null)}
@@ -390,13 +407,20 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'find-jobs' && (
         <FindJobsDialog
           today={today}
-          kinds={profile && hasKinds(profile.answers) ? kindsOf(profile.answers) : []}
+          kinds={kinds}
           onStart={(sources) => run.requestStart({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog === 'journey' && (
-        <JourneyDialog rows={rows} api={api} today={today} onClose={() => setDialog(null)} />
+        <JourneyDialog
+          rows={rows}
+          kinds={kinds}
+          kind={filter.kind}
+          api={api}
+          today={today}
+          onClose={() => setDialog(null)}
+        />
       )}
       {dialog === 'sync' && sync !== 'checking' && (
         <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />

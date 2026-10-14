@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from './Dashboard.tsx';
 import { job, vaultOf } from './testing.ts';
 
@@ -29,6 +29,11 @@ const VAULT = vaultOf([
   }),
   job({ id: 'cobalt--senior', company: 'Cobalt', role: 'Senior Engineer' }),
 ]);
+
+afterEach(() => {
+  // The kind of job picked, kept until the tab closes.
+  sessionStorage.clear();
+});
 
 const shownCompanies = () =>
   within(screen.getByRole('list', { name: 'Jobs' }))
@@ -81,6 +86,51 @@ describe('the jobs page on the phone', () => {
     expect(within(later).getByRole('list', { name: 'Set aside for later' }).textContent).toContain(
       'Lark',
     );
+  });
+
+  it('narrows to one kind of job, numbers and all, and keeps it on coming back', async () => {
+    const vault = {
+      ...VAULT,
+      kinds: [
+        { id: 'developer', name: 'Developer' },
+        { id: 'project-manager', name: 'Project manager' },
+      ],
+      jobs: VAULT.jobs.map((each) =>
+        each.id === 'birch--lead' ? { ...each, kindFound: 'project-manager' } : each,
+      ),
+    };
+    const { container, unmount } = render(
+      <Dashboard vault={vault} today={TODAY} refreshing={false} onRefresh={vi.fn()} />,
+    );
+    const menu = screen.getByRole('combobox', { name: 'Kind of job' }) as HTMLSelectElement;
+    expect([...menu.options].map((option) => option.textContent)).toEqual([
+      'Every kind of job',
+      'Developer (2)',
+      'Project manager (1)',
+    ]);
+    // While every kind shows, each job says which it's under.
+    expect(screen.getByRole('link', { name: /Birch Health/ }).textContent).toContain(
+      'Project manager',
+    );
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.selectOptions(menu, 'Developer (2)');
+    expect(screen.getByRole('radio', { name: 'Interviewing 0' })).toBeTruthy();
+    expect(screen.getByText('All caught up')).toBeTruthy();
+    unmount();
+    render(<Dashboard vault={vault} today={TODAY} refreshing={false} onRefresh={vi.fn()} />);
+    expect((screen.getByRole('combobox', { name: 'Kind of job' }) as HTMLSelectElement).value).toBe(
+      'developer',
+    );
+    // It opens on the furthest view that kind has jobs in.
+    expect((screen.getByRole('radio', { name: 'Applied 1' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect(shownCompanies()).toEqual(['Acme Robotics']);
+  });
+
+  it('shows no kinds of job with one', () => {
+    render(<Dashboard vault={VAULT} today={TODAY} refreshing={false} onRefresh={vi.fn()} />);
+    expect(screen.queryByRole('combobox', { name: 'Kind of job' })).toBeNull();
   });
 
   it('opens a job on its own page', async () => {

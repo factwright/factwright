@@ -244,6 +244,42 @@ describe('JobPanel', () => {
     expect(results.violations).toEqual([]);
   });
 
+  it('puts the job under another kind of job, for a user who wants more than one', async () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const job = byCompany('Fernway');
+    const { api, container } = panel(job, {}, { kinds, row: jobRows([job], TODAY, kinds)[0] });
+    const menu = screen.getByRole('combobox', {
+      name: 'Kind of job for Fernway',
+    }) as HTMLSelectElement;
+    // The job search found it as a project manager job.
+    expect(menu.value).toBe('project-manager');
+    await userEvent.selectOptions(menu, 'Developer');
+    expect(api.updateJob).toHaveBeenCalledWith('fernway--engineering-lead', { kind: 'developer' });
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    cleanup();
+    panel(job);
+    expect(screen.queryByRole('combobox', { name: /Kind of job/ })).toBeNull();
+  });
+
+  it('says a job is under the first kind of job until a fit check, and keeps it there', async () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const job = byCompany('Acme Robotics');
+    const { api } = panel(job, {}, { kinds, row: jobRows([job], TODAY, kinds)[0] });
+    const menu = screen.getByRole('combobox', {
+      name: 'Kind of job for Acme Robotics',
+    }) as HTMLSelectElement;
+    expect(menu.selectedOptions[0]?.textContent).toBe('Developer, until a fit check');
+    await userEvent.selectOptions(menu, 'Developer');
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { kind: 'developer' });
+  });
+
   it('changes the status', async () => {
     const { api } = panel(byCompany('Acme Robotics'));
     await userEvent.selectOptions(
