@@ -29,7 +29,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
-import { PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
+import { focusNext, PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
 import { FilesSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
@@ -142,6 +142,18 @@ export function JobPanel({
       panel.current?.focus({ preventScroll: true });
     }
   }, [expanded, jobId]);
+  // A quick choice takes away the button that made it, so the keyboard's focus goes on to what
+  // comes next: a reason or a day to give, the choices left, or else the status menu.
+  const top = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  const shownStatus = row?.progress.status;
+  const backOn = row?.job.backOn;
+  useEffect(() => {
+    if (!refocus.current || !shownStatus) return;
+    refocus.current = false;
+    if (!focusNext(top.current))
+      panel.current?.querySelector<HTMLElement>('header select')?.focus();
+  }, [shownStatus, backOn]);
   if (!row) {
     return (
       <aside className={`${styles.panel} ${styles.empty}`} aria-label="Job details">
@@ -165,13 +177,18 @@ export function JobPanel({
   };
   const change = (changes: JobChanges) => save(api.updateJob(job.id, changes));
   const changeStatus = async (status: JobStatus) => {
-    if ((await change({ status })) && status === 'accepted') onAccepted?.(job.id);
+    const saved = await change({ status });
+    if (saved && status === 'accepted') onAccepted?.(job.id);
+    return saved;
   };
   // Setting a job aside again, once its day has come, starts it over with no day.
-  const move = (status: JobStatus) =>
-    status === 'later' && progress.status === 'later'
+  const move = async (status: JobStatus) => {
+    refocus.current = true;
+    const saved = await (status === 'later' && progress.status === 'later'
       ? change({ backOn: null })
-      : changeStatus(status);
+      : changeStatus(status));
+    if (!saved) refocus.current = false;
+  };
   const undo = (changeId: string) => save(api.undoStatusChange(changeId));
   const { status } = progress;
   const sorting =
@@ -192,7 +209,7 @@ export function JobPanel({
   };
 
   const nextStep = (
-    <div className={styles.top}>
+    <div ref={top} className={styles.top}>
       {attention && next && (
         <p className={`${styles.next} ${NEXT_TONE[attention.level]}`}>{next.text}</p>
       )}

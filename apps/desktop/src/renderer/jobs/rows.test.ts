@@ -9,6 +9,7 @@ import {
   startingView,
   stepFrom,
   viewCounts,
+  viewNow,
   visibleRows,
 } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
@@ -26,11 +27,11 @@ describe('visibleRows', () => {
       'Copperleaf Energy',
       'Granite Health',
     ]);
-    // A job set aside comes back up into To review on its day.
+    // A job set aside comes back up into To review on its day, at the top.
     expect(companies(visibleRows(rows, { ...ALL, view: 'review' }))).toEqual([
+      'Pinecrest Software',
       'Acme Robotics',
       'Wavelength Audio',
-      'Pinecrest Software',
     ]);
     // Kestrel, Meridian and Orchard last changed on the same day, so they go by name.
     expect(companies(visibleRows(rows, { ...ALL, view: 'closed' }))).toEqual([
@@ -79,9 +80,9 @@ describe('visibleRows', () => {
     expect(laterRows(rows, { ...ALL, view: 'all' })).toEqual([]);
     // Every job is in All, set aside or not.
     expect(companies(visibleRows(rows, { ...ALL, query: 'later' }))).toEqual([
+      'Pinecrest Software',
       'Ridgeline Analytics',
       'Saltmarsh Games',
-      'Pinecrest Software',
     ]);
   });
 
@@ -116,6 +117,7 @@ describe('visibleRows', () => {
     ]);
     // The top of the range counts: Lumen's $160k–$190k pays at least $190k.
     expect(companies(visibleRows(rows, { ...ALL, minPay: 190_000 }))).toEqual([
+      'Pinecrest Software',
       'Acme Robotics',
       'Fernway',
       'Quarry Labs',
@@ -123,7 +125,6 @@ describe('visibleRows', () => {
       'Northwind Labs',
       'Granite Health',
       'Lumen Health',
-      'Pinecrest Software',
     ]);
     expect(visibleRows(rows, { ...ALL, hasResume: true })).toHaveLength(5);
   });
@@ -202,12 +203,25 @@ describe('viewCounts', () => {
   });
 });
 
+describe('viewNow', () => {
+  it('opens a view kept before New on the view that holds those jobs now', () => {
+    expect(viewNow('review')).toBe('new');
+    expect(viewNow('apply')).toBe('review');
+    expect(viewNow('interviewing')).toBe('interviewing');
+    expect(viewNow(null)).toBeNull();
+  });
+});
+
 describe('startingView', () => {
   it('opens on the furthest view with jobs in it, or on the new ones', () => {
     expect(startingView(rows)).toBe('interviewing');
     const fresh = rows.filter((row) => row.progress.status === 'new');
     expect(startingView(fresh)).toBe('new');
     expect(startingView([])).toBe('new');
+    // Jobs set aside, folded away, don't make it open on an empty To review.
+    const aside = rows.filter((row) => ['new', 'later'].includes(row.progress.status));
+    expect(startingView(aside.filter((row) => !row.progress.backFromLater))).toBe('new');
+    expect(startingView(aside)).toBe('review');
   });
 });
 

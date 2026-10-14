@@ -197,9 +197,22 @@ export function viewCounts(rows: readonly JobRow[], filter: ListFilter): Record<
   ) as Record<JobView, number>;
 }
 
-/** The view to open on: the furthest along with jobs in it, where things move fastest. */
+/**
+ * The view that holds now what a view kept by an earlier version held, before New was a view:
+ * its To review held the jobs new to the user, and its To apply those Claude had worked on.
+ */
+export function viewNow(earlier: JobView | null): JobView | null {
+  if (earlier === 'review') return 'new';
+  return earlier === 'apply' ? 'review' : earlier;
+}
+
+/**
+ * The view to open on: the furthest along with jobs in it, where things move fastest. Jobs set
+ * aside for later don't count, so it never opens on an empty To review.
+ */
 export function startingView(rows: readonly JobRow[]): JobView {
-  return viewToOpen(rows.filter((row) => !row.job.archived).map((row) => row.progress.status));
+  const counted = rows.filter((row) => !row.job.archived && !isSetAside(row.progress));
+  return viewToOpen(counted.map((row) => row.progress.status));
 }
 
 /**

@@ -259,6 +259,7 @@ export function jobProgress(job: Job, today: string): JobProgress {
     ended ? rank('applied') : 0,
   );
   const score = job.fit?.score ?? job.search?.score ?? null;
+  const backFromLater = status === 'later' && job.backOn !== null && job.backOn <= today;
   const dates = [
     job.lastActivity,
     job.statusOn,
@@ -266,10 +267,12 @@ export function jobProgress(job: Job, today: string): JobProgress {
     ...job.statusLog.map((change) => change.at),
     ...calls.filter((call) => call.onDate <= today).map((call) => call.onDate),
     ...job.notes.filter((note) => note.on <= today).map((note) => note.on),
+    // A job set aside comes back up on its day, as if something had happened.
+    backFromLater && job.backOn,
   ].filter((date): date is string => Boolean(date));
   const progress = {
     status,
-    backFromLater: status === 'later' && job.backOn !== null && job.backOn <= today,
+    backFromLater,
     reached,
     score,
     tier: fitTier(job, score),
@@ -295,6 +298,7 @@ export function isSetAside(progress: Pick<JobProgress, 'status' | 'backFromLater
 /**
  * The view to open on: the furthest along that has jobs in it, where things move fastest, from
  * interviews back to the jobs not touched yet, and the closed ones when there's nothing else.
+ * Leave out the jobs set aside for later, which To review folds away.
  */
 export function startingView(statuses: readonly JobStatus[]): JobView {
   const views = ['interviewing', 'applied', 'apply', 'review', 'new', 'closed'] as const;

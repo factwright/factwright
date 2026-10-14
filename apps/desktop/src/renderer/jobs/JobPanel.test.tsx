@@ -81,6 +81,36 @@ describe('sorting a job before applying', () => {
     expect(results.violations).toEqual([]);
   });
 
+  it('moves the keyboard’s focus on to what comes next after a quick choice', async () => {
+    const job = byCompany('Copperleaf Energy');
+    const api = {
+      updateJob: vi.fn(async () => ({ ok: true as const })),
+      jobDocs: vi.fn(async () => sampleDocs(job)),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    } as unknown as FactwrightApi;
+    const shown = (each: Job) => (
+      <JobPanel
+        row={jobRows([each], TODAY)[0] ?? null}
+        api={api}
+        today={TODAY}
+        onClose={() => {}}
+      />
+    );
+    const { rerender } = render(shown(job));
+    await userEvent.click(screen.getByRole('button', { name: 'Pass' }));
+    // The job comes back passed, as the list sends it, and the first reason has the focus.
+    rerender(shown({ ...job, status: 'passed', statusOn: TODAY }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pay' }));
+    cleanup();
+    const { rerender: again } = render(shown(job));
+    await userEvent.click(screen.getByRole('button', { name: 'To apply' }));
+    // With no choices left to make here, the status menu has it.
+    again(shown({ ...job, status: 'apply', statusOn: TODAY }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('combobox', { name: 'Status for Copperleaf Energy' }),
+    );
+  });
+
   it('offers the rest for a job to review, and nothing once it’s decided', () => {
     panel(byCompany('Acme Robotics'), {}, { run: controls() });
     // Its fit check ran, so it isn't offered again here.

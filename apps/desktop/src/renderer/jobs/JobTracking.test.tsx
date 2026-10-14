@@ -287,6 +287,10 @@ describe('progress', () => {
     // Claude's work alone puts a job in To review, which isn't a step the user took.
     panel(byCompany('Acme Robotics'));
     expect(steps()).toEqual(['Found', 'Fit check', 'Applied']);
+    cleanup();
+    // Taken on by the user with no work of Claude's, it wasn't checked first.
+    panel(byCompany('Wavelength Audio'));
+    expect(steps()).toEqual(['Found', 'To review', 'Applied']);
   });
 
   it('fixes a step’s date once the whole date is in, and undoes the latest change', async () => {

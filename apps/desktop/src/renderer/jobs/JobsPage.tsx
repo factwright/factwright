@@ -86,7 +86,7 @@ export interface JobsPageProps {
 
 /**
  * Picking jobs in the list, to move several at once: a click picks one, and Shift picks every
- * job from the last one picked. Picks go when the view changes.
+ * job from the last one picked. Picks go when the view changes, and don't come back with it.
  */
 function usePicks(view: string) {
   const [picks, setPicks] = useState<{ view: string; ids: ReadonlySet<string>; last: string }>({
@@ -94,6 +94,7 @@ function usePicks(view: string) {
     ids: new Set(),
     last: '',
   });
+  if (picks.view !== view) setPicks({ view, ids: new Set(), last: '' });
   const ids = picks.view === view ? picks.ids : new Set<string>();
   const set = (next: ReadonlySet<string>, last = picks.last) => setPicks({ view, ids: next, last });
   return {

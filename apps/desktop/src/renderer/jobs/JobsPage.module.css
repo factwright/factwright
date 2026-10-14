@@ -60,11 +60,11 @@
 }
 
 /* The views stay on one line: closer together when the page is narrow, and at the very
-   narrowest they scroll sideways rather than wrap. */
+   narrowest they scroll sideways, with a thin scrollbar, rather than wrap. */
 .views {
   max-width: 100%;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 .views > fieldset {

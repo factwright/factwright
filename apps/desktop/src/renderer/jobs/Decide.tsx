@@ -29,6 +29,19 @@ const BACK_IN: readonly { days: number; label: string }[] = [
 ];
 
 /**
+ * Marks the control the keyboard's focus goes to once a quick choice has taken away the button
+ * that made it, such as the first reason to give after passing.
+ */
+export const FOCUS_NEXT = { 'data-focus-next': true } as const;
+
+/** Puts the keyboard's focus on the control marked to take it, inside an element. */
+export function focusNext(within: HTMLElement | null): boolean {
+  const next = within?.querySelector<HTMLElement>('[data-focus-next]');
+  next?.focus();
+  return Boolean(next);
+}
+
+/**
  * A New job's quick choices, and a job's in To review: a fit check first when there's none, then
  * where it goes. Each is one click, and the status menu has the rest.
  */
@@ -53,17 +66,25 @@ export function SortButtons({
           icon={<Sparkles size={14} aria-hidden="true" />}
           disabled={fitCheck.disabled}
           onClick={fitCheck.onRun}
+          {...FOCUS_NEXT}
         >
           Run a fit check
         </Button>
       )}
       {/* The moves stay together, beside the fit check or under it when the panel is narrow. */}
       <span className={styles.moves}>
-        {SORT_MOVES.filter((move) => move.status !== status || status === 'later').map((move) => (
-          <Button key={move.status} size="sm" onClick={() => onMove(move.status)}>
-            {move.label}
-          </Button>
-        ))}
+        {SORT_MOVES.filter((move) => move.status !== status || status === 'later').map(
+          (move, i) => (
+            <Button
+              key={move.status}
+              size="sm"
+              onClick={() => onMove(move.status)}
+              {...(i === 0 && !fitCheck && FOCUS_NEXT)}
+            >
+              {move.label}
+            </Button>
+          ),
+        )}
       </span>
     </fieldset>
   );
@@ -79,10 +100,16 @@ export function BackInChoices({
 }) {
   return (
     <>
-      {BACK_IN.map(({ days, label }) => (
-        <Chip key={days} pressed={false} onClick={() => onPick(addDays(today, days))}>
+      {BACK_IN.map(({ days, label }, i) => (
+        <Button
+          key={days}
+          size="sm"
+          className={styles.backIn}
+          onClick={() => onPick(addDays(today, days))}
+          {...(i === 0 && FOCUS_NEXT)}
+        >
           {label}
-        </Chip>
+        </Button>
       ))}
     </>
   );
@@ -98,12 +125,13 @@ export function ReasonChips({
 }) {
   return (
     <>
-      {PASS_REASONS.map((each) => (
+      {PASS_REASONS.map((each, i) => (
         <Chip
           key={each}
           pressed={reason === each}
           tone="slate"
           onClick={() => onPick(reason === each ? null : each)}
+          {...(i === 0 && FOCUS_NEXT)}
         >
           {PASS_REASON_LABELS[each]}
         </Chip>

@@ -159,6 +159,9 @@ describe('jobProgress', () => {
     expect(isSetAside(later(TODAY))).toBe(false);
     // A date kept from before means nothing once the job moved on.
     expect(progressOf({ status: 'review', backOn: '2026-10-01' }).backFromLater).toBe(false);
+    // Coming back counts as something happening, so it sorts with the latest.
+    expect(later('2026-10-09').lastActivity).toBe('2026-10-09');
+    expect(later('2026-10-11').lastActivity).toBe('2026-10-01');
   });
 
   it('counts the furthest step reached, from history and calls too', () => {

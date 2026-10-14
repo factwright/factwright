@@ -346,8 +346,9 @@ describe('two computers on one account', () => {
     mac.tracker.updateJob('acme--staff', { status: 'later', backOn: '2026-11-02' }, AT);
     mac.tracker.updateJob('globex--staff', { status: 'passed', passReason: 'pay' }, AT);
     await mac.sync();
-    // The PC is on the version before them. It keeps each status as it came, though it reads
-    // one it doesn't know as none, and the new columns only in what it synced.
+    // The PC is on the version before them: it keeps each status as it came, and the new
+    // columns only in what it synced. (An earlier version reads a status it doesn't know as
+    // none, but its edits write only the columns they change, as these do.)
     pc.goBackTo(4);
     await pc.sync();
     const stored = (id: string) => pc.tracker.syncRow('jobs', id);

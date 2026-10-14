@@ -119,5 +119,14 @@ describe('the phone’s job list', () => {
     expect(startingView(phoneRows([job({ id: 'cobalt--senior', company: 'Cobalt' })], TODAY))).toBe(
       'new',
     );
+    // Jobs set aside, folded away, don't make it open on an empty To review.
+    const aside = phoneRows(
+      [
+        job({ id: 'cobalt--senior', company: 'Cobalt' }),
+        job({ id: 'lark--staff', company: 'Lark', status: 'later' }),
+      ],
+      TODAY,
+    );
+    expect(startingView(aside)).toBe('new');
   });
 });

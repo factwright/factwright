@@ -309,9 +309,11 @@ export function registerIpc({
     return isId(jobId) && valid ? jobs.updateJob(jobId, valid) : REFUSED;
   });
 
+  // Several jobs at once take a new status, not a new date for the one they have.
   answer('jobs:update-many', (jobIds, changes) => {
     const valid = parseJobChanges(changes);
-    return isIds(jobIds) && valid ? jobs.updateJobs(jobIds, valid) : REFUSED;
+    const redates = valid?.statusOn !== undefined && valid.status === undefined;
+    return isIds(jobIds) && valid && !redates ? jobs.updateJobs(jobIds, valid) : REFUSED;
   });
 
   answer('jobs:add', (job) => {

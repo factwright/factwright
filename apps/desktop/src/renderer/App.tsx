@@ -28,6 +28,7 @@ import {
   NO_FILTERS,
   startingView,
   stepFrom,
+  viewNow,
   visibleRows,
 } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
@@ -49,6 +50,14 @@ import { useSetupCheck } from './useSetupCheck.ts';
 const isView = (value: unknown): value is JobView =>
   (JOB_VIEWS as readonly unknown[]).includes(value);
 
+/** Where the view the user last picked is kept. Earlier versions kept theirs as jobs.view. */
+const VIEW_PREF = 'jobs.lastView';
+
+/** The view the user last picked, in this version's views, or null the first time. */
+const keptView = () =>
+  readPref<JobView | null>(VIEW_PREF, null, isView) ??
+  viewNow(readPref<JobView | null>('jobs.view', null, isView));
+
 /** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 export function App({ api }: { api: FactwrightApi }) {
   const { status, recheck } = useClaudeStatus(api);
@@ -65,13 +74,13 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   // The view the user last picked, or, the first time, one chosen once the jobs load.
   const [filter, setFilter] = useState<ListFilter>(() => ({
-    view: readPref<JobView>('jobs.view', 'new', isView),
+    view: keptView() ?? 'new',
     query: '',
     needsYou: false,
     ...NO_FILTERS,
   }));
   const changeFilter = (next: ListFilter) => {
-    if (next.view !== filter.view) writePref('jobs.view', next.view);
+    if (next.view !== filter.view) writePref(VIEW_PREF, next.view);
     setFilter(next);
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -104,7 +113,7 @@ export function App({ api }: { api: FactwrightApi }) {
   useEffect(() => {
     if (viewChosen.current || jobs.state !== 'ready' || rows.length === 0) return;
     viewChosen.current = true;
-    if (readPref<JobView | null>('jobs.view', null, isView) !== null) return;
+    if (keptView() !== null) return;
     setFilter((current) => ({ ...current, view: startingView(rows) }));
   }, [jobs.state, rows]);
 

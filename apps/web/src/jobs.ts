@@ -77,6 +77,9 @@ export function viewCounts(rows: readonly PhoneRow[]): Record<JobView, number> {
   ) as Record<JobView, number>;
 }
 
-/** Opens on the furthest view with jobs in it, such as the interviews. */
+/**
+ * Opens on the furthest view with jobs in it, such as the interviews. Jobs set aside for later
+ * don't count, so it never opens on an empty To review.
+ */
 export const startingView = (rows: readonly PhoneRow[]): JobView =>
-  viewToOpen(rows.map((row) => row.progress.status));
+  viewToOpen(rows.filter((row) => !isSetAside(row.progress)).map((row) => row.progress.status));

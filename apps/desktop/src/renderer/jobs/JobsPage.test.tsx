@@ -32,6 +32,32 @@ const view = (name: ListFilter['view']): ListFilter => ({
   ...NO_FILTERS,
 });
 
+/** The jobs page on the sample tracker, which keeps what's changed, as the real one does. */
+function Live({ start }: { start: ListFilter['view'] }) {
+  const [api] = useState(() => sampleTracker(null) as unknown as FactwrightApi);
+  const [jobs, setJobs] = useState<Job[]>(() => sampleJobs());
+  useEffect(() => api.onJobsChanged((list) => setJobs(list.jobs)), [api]);
+  const [filter, setFilter] = useState(view(start));
+  return (
+    <JobsPage
+      jobs={{ state: 'ready', list: { jobs, readAt: null } }}
+      api={api}
+      rows={jobRows(jobs, TODAY)}
+      today={TODAY}
+      filter={filter}
+      onFilter={setFilter}
+      selectedId={null}
+      onSelect={() => {}}
+      onRetry={() => {}}
+      canStartClaude
+      onStartClaude={() => {}}
+      canFindJobs
+      onFindJobs={() => {}}
+      onOpenJourney={() => {}}
+    />
+  );
+}
+
 function page(overrides: Partial<JobsPageProps> = {}) {
   const jobs = sampleJobs();
   const props: JobsPageProps = {
@@ -169,10 +195,10 @@ describe('JobsPage', () => {
         .getAllByRole('button')
         .map((row) => row.textContent),
     ).toEqual([
+      // Back from later today, so up at the top.
+      expect.stringMatching(/^Pinecrest Software.*Back from Later/),
       expect.stringMatching(/^Acme Robotics/),
       expect.stringMatching(/^Wavelength Audio/),
-      // Back from later today, so up with the rest.
-      expect.stringMatching(/^Pinecrest Software.*Back from Later/),
     ]);
     const later = screen.getByRole('button', { name: /^Later 2/ });
     expect(later.getAttribute('aria-expanded')).toBe('false');
@@ -217,6 +243,9 @@ describe('JobsPage', () => {
     await user.keyboard('{/Shift}');
     const bar = screen.getByRole('region', { name: 'Selected jobs' });
     expect(bar.textContent).toContain('3 jobs selected');
+    // The count is a live region from the start, so what a move did is read aloud.
+    const live = within(bar).getByRole('status');
+    expect(live.textContent).toBe('3 jobs selected');
     expect(
       within(bar)
         .getAllByRole('button')
@@ -236,6 +265,7 @@ describe('JobsPage', () => {
       { status: 'review' },
     );
     expect(screen.getByRole('status').textContent).toBe('Moved 3 jobs to To review.');
+    expect(screen.getByRole('status')).toBe(live);
     expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
   });
 
@@ -285,37 +315,14 @@ describe('JobsPage', () => {
   });
 
   it('passes on several jobs, asks why, and undoes it', async () => {
-    function Live() {
-      const [api] = useState(() => sampleTracker(null) as unknown as FactwrightApi);
-      const [jobs, setJobs] = useState<Job[]>(() => sampleJobs());
-      useEffect(() => api.onJobsChanged((list) => setJobs(list.jobs)), [api]);
-      const [filter, setFilter] = useState(view('new'));
-      return (
-        <JobsPage
-          jobs={{ state: 'ready', list: { jobs, readAt: null } }}
-          api={api}
-          rows={jobRows(jobs, TODAY)}
-          today={TODAY}
-          filter={filter}
-          onFilter={setFilter}
-          selectedId={null}
-          onSelect={() => {}}
-          onRetry={() => {}}
-          canStartClaude
-          onStartClaude={() => {}}
-          canFindJobs
-          onFindJobs={() => {}}
-          onOpenJourney={() => {}}
-        />
-      );
-    }
-    render(<Live />);
+    render(<Live start="new" />);
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select every job in New' }));
     await userEvent.click(screen.getByRole('button', { name: 'Pass' }));
-    // They've left New, and the bar asks why.
+    // They've left New, and the bar asks why, with the keyboard's focus on the first reason.
     expect(await screen.findByText('Passed on 3 jobs.')).toBeTruthy();
     expect(screen.getByRole('radio', { name: 'New 0' })).toBeTruthy();
     const why = screen.getByRole('group', { name: 'Why you passed' });
+    expect(document.activeElement).toBe(within(why).getByRole('button', { name: 'Pay' }));
     await userEvent.click(within(why).getByRole('button', { name: 'Pay' }));
     expect(within(why).getByRole('button', { name: 'Pay' }).getAttribute('aria-pressed')).toBe(
       'true',
@@ -325,6 +332,50 @@ describe('JobsPage', () => {
     });
     expect(screen.getByRole('radio', { name: 'New 3' })).toBeTruthy();
     expect(screen.queryByText('Passed on 3 jobs.')).toBeNull();
+  });
+
+  it('sets aside again the jobs back from later, and Undo brings back their day', async () => {
+    render(<Live start="review" />);
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Pinecrest Software/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Acme Robotics/ }));
+    const bar = screen.getByRole('region', { name: 'Selected jobs' });
+    await userEvent.click(within(bar).getByRole('button', { name: 'Later' }));
+    expect(await screen.findByText('Set 2 jobs aside.')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'To review 1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Later 4/ })).toBeTruthy();
+    await act(async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    });
+    expect(screen.getByRole('radio', { name: 'To review 3' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: /^Pinecrest Software.*Back from Later/ }),
+    ).toBeTruthy();
+  });
+
+  it('forgets what was picked once the view changes, even on coming back', async () => {
+    const props = (name: ListFilter['view']): JobsPageProps => ({
+      jobs: { state: 'ready', list: { jobs: sampleJobs(), readAt: null } },
+      api: apiStub(),
+      rows: jobRows(sampleJobs(), TODAY),
+      today: TODAY,
+      filter: view(name),
+      onFilter: () => {},
+      selectedId: null,
+      onSelect: () => {},
+      onRetry: () => {},
+      canStartClaude: true,
+      onStartClaude: () => {},
+      canFindJobs: true,
+      onFindJobs: () => {},
+      onOpenJourney: () => {},
+    });
+    const { rerender } = render(<JobsPage {...props('new')} />);
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Bluewave Staffing/ }));
+    expect(screen.getByRole('region', { name: 'Selected jobs' })).toBeTruthy();
+    rerender(<JobsPage {...props('review')} />);
+    expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
+    rerender(<JobsPage {...props('new')} />);
+    expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
   });
 
   it('offers to start Claude before there are any jobs', async () => {

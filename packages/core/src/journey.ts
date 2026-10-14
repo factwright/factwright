@@ -103,7 +103,7 @@ export function journeyOf(job: Job, progress: JobProgress): Journey {
   // Checked once Claude did something for it, or the user took it on from New.
   if (progress.reached >= rank('review')) {
     const work = job.events.filter((event) => event.tool !== 'search').map((event) => event.date);
-    dates.checked = earliest(job.fit?.date, ...work) ?? found;
+    dates.checked = earliest(job.fit?.date, ...work) ?? changedOn(['review', 'apply']) ?? found;
   }
   if (job.files.length > 0) {
     const built = job.events.filter((event) => event.tool === 'resume').map((event) => event.date);

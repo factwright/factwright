@@ -54,6 +54,10 @@ const tone = (status: JobStatus) => JOB_STATUS_DISPLAY[status].tone;
  */
 export function trackSteps(job: Job, progress: JobProgress, today: string): TrackStep[] {
   const { dates } = journeyOf(job, progress);
+  const { status } = progress;
+  // What the user decided before applying shows while it's where the job is. With no work of
+  // Claude's on the job, that step says it all, with no check of its own before it.
+  const decided = DECIDED.includes(status) && job.status === status;
   const first = (statuses: readonly JobStatus[]) =>
     job.statusLog.find((change) => statuses.includes(change.status));
   const steps: TrackStep[] = [];
@@ -85,7 +89,7 @@ export function trackSteps(job: Job, progress: JobProgress, today: string): Trac
     date: when(dates.found),
     detail: job.source,
   });
-  if (dates.checked !== undefined) {
+  if (dates.checked !== undefined && !(decided && job.stage === 'new')) {
     const verdict = [job.fit?.verdict, job.fit?.score].filter((part) => part != null).join(' ');
     add({
       key: 'checked',
@@ -100,9 +104,8 @@ export function trackSteps(job: Job, progress: JobProgress, today: string): Trac
     const built = { tone: 'violet', rank: rank('review') } as const;
     add({ key: 'resume', label: 'Resume built', ...built, date: when(dates.resume) });
   }
-  const { status } = progress;
-  // What the user decided before applying, while it's where the job is, by the latest change.
-  if (DECIDED.includes(status) && job.status === status) {
+  // Dated by the latest change, as it's where the job is now.
+  if (decided) {
     const change = job.statusLog.findLast((each) => each.status === status);
     const back = status === 'later' && job.backOn ? `Back ${shortDate(job.backOn, today)}` : null;
     add({

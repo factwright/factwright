@@ -74,6 +74,12 @@
   padding: 0 6px;
 }
 
+/* A day to come back, a click away: a small button, as round as the chips beside it. */
+.backIn {
+  height: 28px;
+  border-radius: var(--fw-radius-full);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;

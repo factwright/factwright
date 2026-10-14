@@ -151,6 +151,13 @@ describe('journeyOf', () => {
   it('counts a job as checked once Claude worked on it or the user took it on', () => {
     expect(journey({ stage: 'review' }).stages).toEqual(['found', 'checked']);
     expect(journey({ status: 'apply' }).stages).toEqual(['found', 'checked']);
+    // With no work of Claude's to date it by, it's checked when the user took it on.
+    const taken = journey({
+      status: 'apply',
+      statusOn: '2026-09-12',
+      statusLog: [{ id: '1', status: 'apply', at: '2026-09-12' }],
+    });
+    expect(taken.dates.checked).toBe('2026-09-12');
     // Passing on a job at a glance, or setting it aside, isn't checking it.
     expect(journey({ status: 'passed' }).stages).toEqual(['found']);
     expect(journey({ status: 'later' }).stages).toEqual(['found']);
