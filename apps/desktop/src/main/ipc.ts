@@ -211,8 +211,10 @@ export function registerIpc({
     return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(([models, effort]) =>
       session.start(valid, {
         prompt: run ? runPrompt(run) : undefined,
-        model: modelFor(models, run),
-        effort: (plan) => effortFor(effort, run, plan),
+        choose: (levels) => ({
+          model: modelFor(models, run, levels),
+          effort: effortFor(effort, run, levels),
+        }),
         scope: scopeOf(run),
       }),
     );
@@ -227,9 +229,10 @@ export function registerIpc({
     const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
     const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
     const thinking = session.effort();
+    const levels = session.levels();
     if (
-      differs(session.model(), modelFor(models, run)) ||
-      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, session.plan()))) ||
+      differs(session.model(), modelFor(models, run, levels)) ||
+      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, levels))) ||
       differs(session.scope(), scopeOf(run))
     ) {
       return { ok: false, reason: 'new-run' };

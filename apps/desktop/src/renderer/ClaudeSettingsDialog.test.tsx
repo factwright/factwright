@@ -51,9 +51,10 @@ const box = (name: string) => screen.getByRole('checkbox', { name }) as HTMLInpu
 const select = (name: string) => screen.getByRole('combobox', { name }) as HTMLSelectElement;
 
 describe('ClaudeSettingsDialog', () => {
-  it('runs on Opus and asks first, until the user chooses otherwise', async () => {
+  it('runs at the recommended levels and asks first, until the user chooses otherwise', async () => {
     const { container } = render(<ClaudeSettingsDialog api={apiWith()} onClose={vi.fn()} />);
-    await waitFor(() => expect(select('Model for everything').value).toBe('opus'));
+    await screen.findByRole('combobox', { name: 'Model for everything' });
+    expect(select('Model for everything').value).toBe('');
     expect(select('Effort for everything').value).toBe('');
     expect(box('Change any file in your job hunt').checked).toBe(false);
     expect(box('Read any website').checked).toBe(false);
@@ -61,7 +62,7 @@ describe('ClaudeSettingsDialog', () => {
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
-  it('saves the model for everything', async () => {
+  it('saves the model for everything, and goes back to recommended', async () => {
     const api = apiWith();
     render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
     await userEvent.selectOptions(
@@ -69,6 +70,8 @@ describe('ClaudeSettingsDialog', () => {
       'sonnet',
     );
     expect(api.setClaudeModels).toHaveBeenLastCalledWith({ main: 'sonnet', tasks: {} });
+    await userEvent.selectOptions(select('Model for everything'), '');
+    expect(api.setClaudeModels).toHaveBeenLastCalledWith({ main: null, tasks: {} });
   });
 
   it('gives a task its own model, and back to the one for everything', async () => {
@@ -77,15 +80,20 @@ describe('ClaudeSettingsDialog', () => {
     await userEvent.click(await screen.findByText('Choose by task'));
     const resume = select('Model for Tailored resume');
     expect(resume.value).toBe('');
-    expect(within(resume).getByRole('option', { name: 'Same as everything (Opus)' })).toBeTruthy();
+    expect(within(resume).getByRole('option', { name: 'Recommended (Opus)' })).toBeTruthy();
     await userEvent.selectOptions(resume, 'haiku');
     expect(api.setClaudeModels).toHaveBeenLastCalledWith({
-      main: 'opus',
+      main: null,
       tasks: { 'focused-resume': 'haiku' },
     });
     await userEvent.selectOptions(select('Model for Tailored resume'), '');
-    expect(api.setClaudeModels).toHaveBeenLastCalledWith({ main: 'opus', tasks: {} });
-    expect(select('Model for Find jobs')).toBeTruthy();
+    expect(api.setClaudeModels).toHaveBeenLastCalledWith({ main: null, tasks: {} });
+    await userEvent.selectOptions(select('Model for everything'), 'sonnet');
+    expect(
+      within(select('Model for Find jobs')).getByRole('option', {
+        name: 'Same as everything (Sonnet)',
+      }),
+    ).toBeTruthy();
   });
 
   it('shows each task’s recommended effort for the plan, until the user chooses', async () => {
@@ -167,32 +175,40 @@ describe('ClaudeSettingsDialog', () => {
     await waitFor(() => expect(box('Read any website').checked).toBe(false));
   });
 
-  it('offers Sonnet for routine tasks on a Pro plan, and keeps Opus for the writing', async () => {
+  it('recommends Sonnet for the checks and searches on a Pro plan, and Opus for the writing', async () => {
     const api = apiWith();
     const { container } = render(<ClaudeSettingsDialog api={api} plan="pro" onClose={vi.fn()} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Use Sonnet for those' }));
-    expect(api.setClaudeModels).toHaveBeenLastCalledWith({
-      main: 'opus',
-      tasks: {
-        'fit-check': 'sonnet',
-        'salary-check': 'sonnet',
-        'job-search': 'sonnet',
-        'who-to-message': 'sonnet',
-      },
-    });
-    expect(select('Model for Tailored resume').value).toBe('');
-    expect(select('Model for Getting started').value).toBe('');
-    // Done, so it says no more.
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Use Sonnet for those' })).toBeNull(),
-    );
+    await userEvent.click(await screen.findByText('Choose by task'));
+    const option = (label: string) =>
+      within(select(`Model for ${label}`)).getAllByRole('option')[0]?.textContent;
+    expect(option('Fit check')).toBe('Recommended (Sonnet)');
+    expect(option('Find jobs')).toBe('Recommended (Sonnet)');
+    expect(option('Tailored resume')).toBe('Recommended (Opus)');
+    expect(option('Getting started')).toBe('Recommended (Opus)');
+    expect(screen.getByText(/On a Pro plan, limits are the tightest/)).toBeTruthy();
+    // Nothing to do: it starts that way.
+    expect(screen.queryByRole('button', { name: /Sonnet/ })).toBeNull();
+    expect(api.setClaudeModels).not.toHaveBeenCalled();
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('recommends the same with an API key, since every token is billed', async () => {
+    render(<ClaudeSettingsDialog api={apiWith()} method="api_key" onClose={vi.fn()} />);
+    await userEvent.click(await screen.findByText('Choose by task'));
+    expect(within(select('Model for Salary check')).getAllByRole('option')[0]?.textContent).toBe(
+      'Recommended (Sonnet)',
+    );
+    expect(within(select('Effort for Salary check')).getAllByRole('option')[0]?.textContent).toBe(
+      'Recommended (Medium)',
+    );
+    expect(screen.getByText(/Every token is billed with an API key/)).toBeTruthy();
   });
 
   it('says nothing about plans on Max', async () => {
     render(<ClaudeSettingsDialog api={apiWith()} plan="max" onClose={vi.fn()} />);
-    await waitFor(() => expect(select('Model for everything').value).toBe('opus'));
+    await screen.findByRole('combobox', { name: 'Model for everything' });
     expect(screen.queryByText(/On a Pro plan/)).toBeNull();
+    expect(screen.queryByText(/Every token is billed/)).toBeNull();
   });
 
   it('closes with Done', async () => {

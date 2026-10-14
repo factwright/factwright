@@ -35,6 +35,12 @@ export { JOB_STATUS_DISPLAY, StatusPill } from './components/StatusPill.tsx';
 export { StatusSelect, type StatusSelectProps } from './components/StatusSelect.tsx';
 export { Steps, type StepsProps } from './components/Steps.tsx';
 export { TagInput, type TagInputProps } from './components/TagInput.tsx';
+export {
+  Tooltip,
+  type TooltipProps,
+  type TooltipSide,
+  type TooltipTrigger,
+} from './components/Tooltip.tsx';
 export { VisuallyHidden } from './components/VisuallyHidden.tsx';
 export { CONTROL_CONTRAST, contrastRatio, TEXT_CONTRAST } from './contrast.ts';
 export { ThemeStyle } from './ThemeStyle.tsx';

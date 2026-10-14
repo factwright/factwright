@@ -8,12 +8,14 @@ import {
   type EffortChoices,
   effortWithout,
 } from '../shared/effort.ts';
+import { billedByUse, planLevels } from '../shared/levels.ts';
 import {
   MODEL_NAMES,
   MODELS,
   type Model,
   type ModelChoices,
   type ModelTask,
+  modelWithout,
 } from '../shared/models.ts';
 import type { ClaudePermissions } from '../shared/permissions.ts';
 import styles from './ClaudeSettingsDialog.module.css';
@@ -28,12 +30,6 @@ const TASKS: readonly { task: ModelTask; label: string }[] = [
   { task: 'add-facts', label: 'Fact bank interviews' },
   { task: 'make-template', label: 'Making templates' },
 ];
-
-/**
- * Tasks that do well on Sonnet, which uses less of a plan than Opus: checks and searches, where
- * the fact-checked writing isn't. Pro plans have the tightest limits.
- */
-const ROUTINE: readonly ModelTask[] = ['fit-check', 'salary-check', 'job-search', 'who-to-message'];
 
 type SettingsApi = Pick<
   FactwrightApi,
@@ -64,12 +60,16 @@ export function ClaudeSettingsDialog({
   api,
   onClose,
   plan,
+  method,
 }: {
   api: SettingsApi;
   onClose: () => void;
   /** The user's Claude plan, such as "pro", when Claude Code says. */
   plan?: string | undefined;
+  /** How Claude Code signs in, such as "api_key", when it says. */
+  method?: string | undefined;
 }) {
+  const suggested = planLevels(plan, method);
   const [models, setModels] = useState<ModelChoices | null>(null);
   const [effort, setEffort] = useState<EffortChoices | null>(null);
   const [permissions, setPermissions] = useState<ClaudePermissions | null>(null);
@@ -150,31 +150,17 @@ export function ClaudeSettingsDialog({
             thinks before it acts: more is more careful and slower, and uses more of your plan.
             Recommended suits your plan, and Max, the most careful, can take many minutes a run.
           </p>
-          {plan === 'pro' &&
-            ROUTINE.some((task) => (models.tasks[task] ?? models.main) === 'opus') && (
-              <div className={styles.pro}>
-                <p className={styles.lead}>
-                  <strong>On a Pro plan,</strong> limits are tighter. Running fit checks, salary
-                  checks, job searches and who to message on Sonnet uses less of your plan, while
-                  tailored resumes and getting started keep Opus.
-                </p>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setByTask(true);
-                    void changeModels({
-                      ...models,
-                      tasks: {
-                        ...models.tasks,
-                        ...Object.fromEntries(ROUTINE.map((task) => [task, 'sonnet'])),
-                      },
-                    });
-                  }}
-                >
-                  Use Sonnet for those
-                </Button>
-              </div>
-            )}
+          {suggested === 'pro' && (
+            <p className={`${styles.lead} ${styles.pro}`}>
+              <strong>
+                {billedByUse(method) && plan !== 'pro'
+                  ? 'Every token is billed with an API key, a Console account or a cloud provider.'
+                  : 'On a Pro plan, limits are the tightest.'}
+              </strong>{' '}
+              So recommended runs fit checks, salary checks, job searches and who to message on
+              Sonnet, which uses less, and keeps Opus for the writing, with High effort or lower.
+            </p>
+          )}
           <div className={styles.grid}>
             <span aria-hidden="true" />
             <span className={styles.column} aria-hidden="true">
@@ -186,11 +172,12 @@ export function ClaudeSettingsDialog({
             <span className={styles.row}>For everything</span>
             <Select
               aria-label="Model for everything"
-              value={models.main}
+              value={models.main ?? ''}
               onChange={(event) =>
-                void changeModels({ ...models, main: event.target.value as Model })
+                void changeModels({ ...models, main: (event.target.value as Model) || null })
               }
             >
+              <option value="">Recommended</option>
               {options}
             </Select>
             <Select
@@ -224,7 +211,9 @@ export function ClaudeSettingsDialog({
                       })
                     }
                   >
-                    <option value="">Same as everything ({MODEL_NAMES[models.main]})</option>
+                    <option value="">
+                      {`${models.main ? 'Same as everything' : 'Recommended'} (${MODEL_NAMES[modelWithout(models, task, suggested)]})`}
+                    </option>
                     {options}
                   </Select>
                   <Select
@@ -238,7 +227,7 @@ export function ClaudeSettingsDialog({
                     }
                   >
                     <option value="">
-                      {`${effort.main ? 'Same as everything' : 'Recommended'} (${EFFORT_NAMES[effortWithout(effort, task, plan)]})`}
+                      {`${effort.main ? 'Same as everything' : 'Recommended'} (${EFFORT_NAMES[effortWithout(effort, task, suggested)]})`}
                     </option>
                     {levels}
                   </Select>
