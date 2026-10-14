@@ -222,6 +222,11 @@ describe('startingView', () => {
     const aside = rows.filter((row) => ['new', 'later'].includes(row.progress.status));
     expect(startingView(aside.filter((row) => !row.progress.backFromLater))).toBe('new');
     expect(startingView(aside)).toBe('review');
+    // With only jobs set aside, To review shows them, folded.
+    const onlyAside = aside.filter(
+      (row) => row.progress.status === 'later' && !row.progress.backFromLater,
+    );
+    expect(startingView(onlyAside)).toBe('review');
   });
 });
 

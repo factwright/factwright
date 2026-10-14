@@ -189,7 +189,12 @@ export function JobPanel({
       : changeStatus(status));
     if (!saved) refocus.current = false;
   };
-  const undo = (changeId: string) => save(api.undoStatusChange(changeId));
+  // A day to come back, or Undo, also takes away the button that made it.
+  const followUp = async (edit: Promise<EditResult>) => {
+    refocus.current = true;
+    if (!(await save(edit))) refocus.current = false;
+  };
+  const undo = (changeId: string) => followUp(api.undoStatusChange(changeId));
   const { status } = progress;
   const sorting =
     Boolean(job.role) &&
@@ -218,7 +223,7 @@ export function JobPanel({
         <SetAsideBox
           job={job}
           today={today}
-          onBackOn={(backOn) => change({ backOn })}
+          onBackOn={(backOn) => followUp(api.updateJob(job.id, { backOn }))}
           onUndo={undo}
         />
       )}

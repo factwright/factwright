@@ -34,11 +34,20 @@ const BACK_IN: readonly { days: number; label: string }[] = [
  */
 export const FOCUS_NEXT = { 'data-focus-next': true } as const;
 
-/** Puts the keyboard's focus on the control marked to take it, inside an element. */
+/**
+ * Puts the keyboard's focus on the control marked to take it, inside an element: the marked one
+ * itself, or the first control in it, when that can take focus. False when there's none.
+ */
 export function focusNext(within: HTMLElement | null): boolean {
-  const next = within?.querySelector<HTMLElement>('[data-focus-next]');
-  next?.focus();
-  return Boolean(next);
+  const controls = 'button:not(:disabled), input:not(:disabled), select:not(:disabled)';
+  for (const marked of within?.querySelectorAll<HTMLElement>('[data-focus-next]') ?? []) {
+    const next = marked.matches(controls) ? marked : marked.querySelector<HTMLElement>(controls);
+    if (next) {
+      next.focus();
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -79,7 +88,8 @@ export function SortButtons({
               key={move.status}
               size="sm"
               onClick={() => onMove(move.status)}
-              {...(i === 0 && !fitCheck && FOCUS_NEXT)}
+              // Next after the fit check, which can't take focus while Claude is busy.
+              {...(i === 0 && FOCUS_NEXT)}
             >
               {move.label}
             </Button>
@@ -187,12 +197,14 @@ export function SetAsideBox({
         <div className={styles.backOn}>
           <p className={styles.line}>
             Back in To review on{' '}
-            <DateEdit
-              date={job.backOn}
-              label="When it comes back"
-              today={today}
-              onChange={(date) => onBackOn(date)}
-            />
+            <span {...FOCUS_NEXT}>
+              <DateEdit
+                date={job.backOn}
+                label="When it comes back"
+                today={today}
+                onChange={(date) => onBackOn(date)}
+              />
+            </span>
           </p>
           <Button variant="quiet" size="sm" className={styles.noDay} onClick={() => onBackOn(null)}>
             No day

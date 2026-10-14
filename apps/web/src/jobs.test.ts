@@ -128,5 +128,7 @@ describe('the phone’s job list', () => {
       TODAY,
     );
     expect(startingView(aside)).toBe('new');
+    // With only jobs set aside, To review shows them, folded.
+    expect(startingView(aside.filter((row) => row.job.status === 'later'))).toBe('review');
   });
 });

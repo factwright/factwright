@@ -111,6 +111,42 @@ describe('sorting a job before applying', () => {
     );
   });
 
+  it('keeps the keyboard’s focus going through a day to come back, and Undo', async () => {
+    const job = byCompany('Copperleaf Energy');
+    const api = {
+      updateJob: vi.fn(async () => ({ ok: true as const })),
+      undoStatusChange: vi.fn(async () => ({ ok: true as const })),
+      jobDocs: vi.fn(async () => sampleDocs(job)),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    } as unknown as FactwrightApi;
+    // A fit check is running on another job, so its button here can't take focus.
+    const run: RunControls = { ...controls(), phase: 'working' };
+    const shown = (each: Job) => (
+      <JobPanel
+        row={jobRows([each], TODAY)[0] ?? null}
+        api={api}
+        today={TODAY}
+        onClose={() => {}}
+        run={run}
+      />
+    );
+    const { rerender } = render(shown(job));
+    await userEvent.click(screen.getByRole('button', { name: 'Later' }));
+    const later = { ...job, status: 'later' as const, statusOn: TODAY };
+    const set = { ...later, statusLog: [{ id: 'later-1', status: 'later' as const, at: TODAY }] };
+    rerender(shown(set));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'In a week' }));
+    await userEvent.click(screen.getByRole('button', { name: 'In a week' }));
+    rerender(shown({ ...set, backOn: addDays(TODAY, 7) }));
+    expect(document.activeElement?.getAttribute('aria-label')).toMatch(/^When it comes back: /);
+    const box = screen.getByRole('region', { name: 'Set aside for later' });
+    await userEvent.click(within(box).getByRole('button', { name: 'Undo “Marked Later”' }));
+    expect(api.undoStatusChange).toHaveBeenCalledWith('later-1');
+    rerender(shown(job));
+    // Back in New, with the fit check waiting on Claude, the first move has it.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'To review' }));
+  });
+
   it('offers the rest for a job to review, and nothing once it’s decided', () => {
     panel(byCompany('Acme Robotics'), {}, { run: controls() });
     // Its fit check ran, so it isn't offered again here.

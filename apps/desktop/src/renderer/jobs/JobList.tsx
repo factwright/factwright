@@ -170,6 +170,7 @@ export function JobList({
               <span className={styles.pick}>
                 <input
                   type="checkbox"
+                  data-select-all
                   aria-label={`Select every job in ${picks.label}`}
                   checked={allPicked}
                   ref={(box) => {

@@ -1,7 +1,7 @@
 import { JOB_VIEW_LABELS, JOB_VIEWS, jobStats } from '@factwright/core';
 import { Button, Checkbox, EmptyState, SegmentedControl, Select, Stat } from '@factwright/ui';
 import { Activity, Briefcase, Search, SearchX } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { isBoolean, usePref } from '../prefs.ts';
 import { BulkBar, type Moved } from './BulkBar.tsx';
@@ -124,6 +124,16 @@ export function JobsPage(props: JobsPageProps) {
   const picks = usePicks(filter.view);
   const [moved, setMoved] = useState<Moved | null>(null);
   const [laterOpen, setLaterOpen] = usePref('jobs.laterOpen', false, isBoolean);
+  // Once the bar closes with the keyboard's focus in it, the focus goes back to the list: the
+  // box that selects every job, or else the view picked.
+  const page = useRef<HTMLElement>(null);
+  const backToList = useRef(false);
+  useEffect(() => {
+    if (moved || !backToList.current) return;
+    backToList.current = false;
+    const all = page.current?.querySelector<HTMLElement>('[data-select-all]');
+    (all ?? page.current?.querySelector<HTMLElement>('input[type="radio"]:checked'))?.focus();
+  }, [moved]);
   if (jobs.state === 'loading') {
     return (
       <main className={styles.page}>
@@ -167,7 +177,7 @@ export function JobsPage(props: JobsPageProps) {
   };
 
   return (
-    <main className={styles.page}>
+    <main ref={page} className={styles.page}>
       <div className={styles.head}>
         <div>
           <h1 className={styles.title}>Jobs</h1>
@@ -352,7 +362,10 @@ export function JobsPage(props: JobsPageProps) {
               setMoved(next);
             }}
             onClear={picks.clear}
-            onDone={() => setMoved(null)}
+            onDone={(fromBar) => {
+              backToList.current = fromBar;
+              setMoved(null);
+            }}
           />
         </>
       )}

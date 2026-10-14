@@ -208,10 +208,13 @@ export function viewNow(earlier: JobView | null): JobView | null {
 
 /**
  * The view to open on: the furthest along with jobs in it, where things move fastest. Jobs set
- * aside for later don't count, so it never opens on an empty To review.
+ * aside for later count only when they're all there is, so it opens on To review, which folds
+ * them away, only then.
  */
 export function startingView(rows: readonly JobRow[]): JobView {
-  const counted = rows.filter((row) => !row.job.archived && !isSetAside(row.progress));
+  const open = rows.filter((row) => !row.job.archived);
+  const counted = open.filter((row) => !isSetAside(row.progress));
+  if (counted.length === 0 && open.length > 0) return 'review';
   return viewToOpen(counted.map((row) => row.progress.status));
 }
 

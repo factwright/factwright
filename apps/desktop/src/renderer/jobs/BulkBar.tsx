@@ -68,7 +68,8 @@ export function BulkBar({
   api: FactwrightApi;
   onMoved: (moved: Moved) => void;
   onClear: () => void;
-  onDone: () => void;
+  /** Closes the bar. Says whether the keyboard's focus was in it, to put it back in the list. */
+  onDone: (fromBar: boolean) => void;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,17 +103,20 @@ export function BulkBar({
       return;
     }
     const ids = (list: readonly JobRow[]) => list.map((row) => row.job.id);
-    const saved = await run(async () => {
-      const first = moving.length > 0 ? await api.updateJobs(ids(moving), { status }) : null;
-      if (first && !first.ok) return first;
-      return again.length > 0 ? api.updateJobs(ids(again), { backOn: null }) : { ok: true };
-    });
-    if (!saved) return;
+    // Two changes at most: what one of them moved still counts, with Undo, if the other fails.
+    setBusy(true);
+    const marked = moving.length > 0 ? await api.updateJobs(ids(moving), { status }) : null;
+    const setAside = again.length > 0 ? await api.updateJobs(ids(again), { backOn: null }) : null;
+    setBusy(false);
+    const failed = [marked, setAside].find((result) => result && !result.ok);
+    setProblem(failed && !failed.ok ? failed.message : null);
+    const took = [...(marked?.ok ? moving : []), ...(setAside?.ok ? again : [])];
+    if (took.length === 0) return;
     refocus.current = fromBar;
     onMoved({
       status,
-      jobIds: ids([...moving, ...again]),
-      again: again.map((row) => ({ id: row.job.id, backOn: row.job.backOn })),
+      jobIds: ids(took),
+      again: (setAside?.ok ? again : []).map((row) => ({ id: row.job.id, backOn: row.job.backOn })),
     });
   };
   const after = (changes: JobChanges) => moved && run(() => api.updateJobs(moved.jobIds, changes));
@@ -120,6 +124,7 @@ export function BulkBar({
   // set aside again had.
   const undo = async () => {
     if (!moved) return;
+    const fromBar = bar.current?.contains(document.activeElement) ?? false;
     const undone = await run(async () => {
       for (const id of moved.jobIds) {
         const earlier = moved.again.find((each) => each.id === id);
@@ -135,7 +140,7 @@ export function BulkBar({
       }
       return { ok: true };
     });
-    if (undone) onDone();
+    if (undone) onDone(fromBar);
   };
 
   const selecting = picked.length > 0;
@@ -233,7 +238,7 @@ export function BulkBar({
                 variant="quiet"
                 size="sm"
                 icon={<X size={15} aria-hidden="true" />}
-                onClick={onDone}
+                onClick={() => onDone(true)}
               />
             </span>
           </>

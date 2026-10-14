@@ -350,6 +350,28 @@ describe('JobsPage', () => {
     expect(
       screen.getByRole('button', { name: /^Pinecrest Software.*Back from Later/ }),
     ).toBeTruthy();
+    // Undo closed the bar, and the keyboard's focus went back to the list.
+    expect(document.activeElement).toBe(
+      screen.getByRole('checkbox', { name: 'Select every job in To review' }),
+    );
+  });
+
+  it('keeps what a bulk move did when part of it fails, with Undo', async () => {
+    const api = {
+      updateJobs: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: false, message: 'That job isn’t in your tracker anymore.' }),
+      undoStatusChange: vi.fn(async () => ({ ok: true as const })),
+    } as unknown as FactwrightApi;
+    page({ filter: view('review'), api });
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Pinecrest Software/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Acme Robotics/ }));
+    const bar = screen.getByRole('region', { name: 'Selected jobs' });
+    await userEvent.click(within(bar).getByRole('button', { name: 'Later' }));
+    expect(screen.getByRole('status').textContent).toBe('Set 1 job aside.');
+    expect(screen.getByRole('alert').textContent).toBe('That job isn’t in your tracker anymore.');
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
   });
 
   it('forgets what was picked once the view changes, even on coming back', async () => {

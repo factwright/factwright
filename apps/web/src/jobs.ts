@@ -79,7 +79,11 @@ export function viewCounts(rows: readonly PhoneRow[]): Record<JobView, number> {
 
 /**
  * Opens on the furthest view with jobs in it, such as the interviews. Jobs set aside for later
- * don't count, so it never opens on an empty To review.
+ * count only when they're all there is, so it opens on To review, which folds them away, only
+ * then.
  */
-export const startingView = (rows: readonly PhoneRow[]): JobView =>
-  viewToOpen(rows.filter((row) => !isSetAside(row.progress)).map((row) => row.progress.status));
+export function startingView(rows: readonly PhoneRow[]): JobView {
+  const counted = rows.filter((row) => !isSetAside(row.progress));
+  if (counted.length === 0 && rows.length > 0) return 'review';
+  return viewToOpen(counted.map((row) => row.progress.status));
+}
