@@ -92,6 +92,8 @@ test('links a second computer with a code, and the job hunt arrives', async () =
   const code = (await mac.window.locator('code').last().textContent()) ?? '';
   expect(code).toMatch(/^([0-9A-Z]{4}-){7}[0-9A-Z]{4}$/);
 
+  // The computer asks to be approved, with typing a code still there as another way.
+  await pc.window.getByText('Or type a code from your other device').click();
   await pc.window.getByRole('textbox', { name: 'Code from your other device' }).fill(code);
   await pc.window.getByRole('button', { name: 'Link this computer' }).click();
   await expect(pc.window.getByRole('heading', { name: 'Sync' })).toBeVisible();
@@ -111,4 +113,37 @@ test('keeps both computers in step as the job hunt changes', async () => {
     'Recruiter: Sam, from the PC',
     { timeout: 20_000 },
   );
+});
+
+test('links a third computer from the first, once both show the same emoji', async () => {
+  const laptop = await computer(true);
+  await syncCard(laptop).getByRole('button', { name: 'Turn on…' }).click();
+  await laptop.window.getByRole('button', { name: 'Sign in with your browser' }).click();
+  await approveInBrowser(laptop);
+  await expect(laptop.window.getByRole('heading', { name: 'Link this computer' })).toBeVisible();
+  await expect(laptop.window.getByText('Waiting for your other device…')).toBeVisible();
+
+  // The first computer hears of it at once, and the person approves it there.
+  await expect(syncCard(mac).getByText('A device wants to link')).toBeVisible();
+  await syncCard(mac).getByRole('button', { name: 'Review' }).click();
+  const request = mac.window.getByRole('region', { name: 'A new device wants to link' });
+  await request.getByRole('button', { name: 'Approve…' }).click();
+  const onMac = mac.window.getByRole('list', { name: 'Check code' });
+  const onLaptop = laptop.window.getByRole('list', { name: 'Check code' });
+  await expect(onMac).toBeVisible();
+  await expect(onLaptop).toBeVisible();
+  const emoji = await onMac.getByRole('listitem').allTextContents();
+  expect(emoji).toHaveLength(6);
+  expect(await onLaptop.getByRole('listitem').allTextContents()).toEqual(emoji);
+
+  await laptop.window.getByRole('button', { name: 'They match', exact: true }).click();
+  await mac.window.getByRole('button', { name: 'They match, link it' }).click();
+  await expect(laptop.window.getByRole('heading', { name: 'Sync' })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(mac.window.getByText(/is linked\.$/)).toBeVisible({ timeout: 20_000 });
+  await laptop.window.getByRole('button', { name: 'Done' }).click();
+  await expect(laptop.window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible({
+    timeout: 20_000,
+  });
 });
