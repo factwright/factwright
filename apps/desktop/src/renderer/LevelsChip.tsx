@@ -29,8 +29,8 @@ function Help({ plan, method }: { plan: string | undefined; method: string | und
         </p>
       ) : billedByUse(method) ? (
         <p>
-          <strong>Best when every token is billed,</strong> as with an API key: Sonnet for {ROUTINE}
-          , and Opus at High for the writing, as on a Pro plan.
+          <strong>Best when every token is billed,</strong> as with an API key, the same as on a Pro
+          plan: Sonnet for {ROUTINE}, and Opus at High for the writing.
         </p>
       ) : (
         name && (
