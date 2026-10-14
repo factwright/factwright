@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   app,
@@ -14,6 +14,7 @@ import {
 import { autoUpdater } from 'electron-updater';
 import { TemplatePreviews } from './about/previews.ts';
 import { AboutStore } from './about/store.ts';
+import { useClaudeFolder } from './claude/launch.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
@@ -23,6 +24,13 @@ import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
 import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
+import {
+  claudeFolder,
+  type ProfileFolder,
+  Profiles,
+  prepareClaudeFolder,
+  profileToOpen,
+} from './profiles.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
@@ -77,28 +85,56 @@ function realFolder(folder: string): string {
 
 /**
  * Whether the app was asked to let another program drive it, through Chromium's debugging port,
- * while using the user's own data folder. Like Chrome, an installed copy then won't start: with a
- * folder of its own, as the tests give it, it's an empty app, with no job hunt and no sync to reach.
+ * while using the user's own data: their own data folder, or a profile in it. Like Chrome, an
+ * installed copy then won't start: with a folder of its own, as the tests give it, it's an empty
+ * app, with no job hunt and no sync to reach.
  */
-function debuggingTheUsersData(): boolean {
+function debuggingTheUsersData(home: string): boolean {
   const debugging = ['remote-debugging-port', 'remote-debugging-pipe'].some((name) =>
     app.commandLine.hasSwitch(name),
   );
   if (!app.isPackaged || !debugging) return false;
-  const usersOwn = join(app.getPath('appData'), app.getName());
-  return realFolder(app.getPath('userData')) === realFolder(usersOwn);
+  const usersOwn = realFolder(join(app.getPath('appData'), app.getName()));
+  const folder = realFolder(home);
+  return folder === usersOwn || folder.startsWith(usersOwn + sep);
+}
+
+/**
+ * Opens the profile chosen last. Its folder becomes the data folder for everything, Chromium's
+ * own storage and the lock that keeps one copy of the app on it included, and an added profile's
+ * Claude Code gets a folder of its own. So this comes before anything uses either.
+ */
+function openProfile(home: string): ProfileFolder {
+  const profile = profileToOpen(home);
+  if (profile.dir !== home) app.setPath('userData', profile.dir);
+  const claude = claudeFolder(profile);
+  if (claude) {
+    try {
+      prepareClaudeFolder(claude);
+    } catch {
+      // Claude Code makes its folder itself, when it first runs.
+    }
+  }
+  useClaudeFolder(claude);
+  return profile;
 }
 
 // On Windows, the installer's shortcuts carry this ID, and notifications need the app to match it.
 if (process.platform === 'win32') app.setAppUserModelId('com.factwright.app');
 
-if (debuggingTheUsersData()) {
+// The app's own data folder, as Electron gives it: the first profile's, which holds the others.
+const home = app.getPath('userData');
+
+if (debuggingTheUsersData(home)) {
   app.exit(1);
-} else if (app.requestSingleInstanceLock()) {
-  start();
 } else {
-  // Factwright is already open, and that copy brings its window forward.
-  app.quit();
+  const profile = openProfile(home);
+  if (app.requestSingleInstanceLock()) {
+    start(home, profile);
+  } else {
+    // Factwright is already open on this profile, and that copy brings its window forward.
+    app.quit();
+  }
 }
 
 /** Factwright's Claude Code plugin: from the repo while developing, from the app once installed. */
@@ -108,7 +144,7 @@ function pluginDir(): string {
     : join(app.getAppPath(), '..', '..', 'plugin');
 }
 
-function start(): void {
+function start(home: string, profile: ProfileFolder): void {
   registerAppScheme();
   app.on('web-contents-created', (_event, contents) => hardenContents(contents));
 
@@ -124,11 +160,28 @@ function start(): void {
       if (!window.isDestroyed()) window.webContents.send(channel, ...values);
     };
 
+    // The open profile's folder, which holds its job hunt, its sync and its settings.
     const dataDir = app.getPath('userData');
     // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
     // Claude reaches it only through Factwright's tools.
     const tracker = new Tracker(join(dataDir, 'tracker.db'));
     const workspace = workspaceDir(dataDir);
+    const profiles = new Profiles({
+      home,
+      open: profile,
+      platform: process.platform,
+      ownName: () => about.answers().you.name,
+      trash: (path) => shell.trashItem(path),
+      busy: () => claude.busy(),
+      restart: () => {
+        // An update that's ready installs as the app restarts, then opens the profile chosen.
+        if (updates?.install()) return;
+        // While developing, the screens' server closes with the app, and the tests start it
+        // again themselves.
+        if (!devUrl && develop('FACTWRIGHT_RELAUNCH') !== 'off') app.relaunch();
+        app.quit();
+      },
+    });
     const sync = new SyncAccount({
       dataDir,
       server: syncServer,
@@ -137,7 +190,13 @@ function start(): void {
       tracker,
       workspace,
       openUrl: (url) => shell.openExternal(url),
-      onStatus: (status) => toWindow('sync:status', status),
+      onStatus: (status) => {
+        toWindow('sync:status', status);
+        // Which account this profile syncs with, so no other profile here signs in to it.
+        if (status.state === 'off') profiles.noteSync(null);
+        else if ('email' in status && status.email) profiles.noteSync(status.email);
+      },
+      otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.
       onApplied: () => toWindow('jobs:changed', jobs.read()),
     });
@@ -252,6 +311,7 @@ function start(): void {
       sync,
       dataDir,
       updates,
+      profiles,
     });
     void sync.start();
 

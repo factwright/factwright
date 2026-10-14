@@ -43,11 +43,17 @@ export function GetStarted({
   onMakeTemplate,
   onSkip,
   onOpenSync,
+  claudeSignIn,
+  onAddProfile = null,
 }: {
   state: ProfileState & { profile: NonNullable<ProfileState['profile']> };
   api: FactwrightApi;
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
+  /** An added profile's own Claude sign-in command. */
+  claudeSignIn?: string | undefined;
+  /** Adds a profile, for someone else sharing this computer, or a fresh start. */
+  onAddProfile?: (() => void) | null;
   /** Whether Claude is ready and free to take this on. */
   canStartClaude: boolean;
   /** Starts Claude on getting to know the user, once the workspace is ready for it. */
@@ -80,7 +86,9 @@ export function GetStarted({
     page.current?.querySelector<HTMLElement>('h2')?.focus();
   }, [step]);
 
-  const claudeBox = <ClaudeReady status={claude} onRecheck={onRecheckClaude} api={api} />;
+  const claudeBox = (
+    <ClaudeReady status={claude} onRecheck={onRecheckClaude} api={api} signIn={claudeSignIn} />
+  );
   const enough = answers.files.length > 0 || wordCount(notes) >= ENOUGH_WORDS;
   const ready = claude !== 'checking' && claude.state === 'ready';
   const why = !enough
@@ -109,7 +117,9 @@ export function GetStarted({
         />
       </div>
       <div className={styles.body}>
-        {step === 0 && <WelcomeStep claude={claudeBox} onOpenSync={onOpenSync} />}
+        {step === 0 && (
+          <WelcomeStep claude={claudeBox} onOpenSync={onOpenSync} onAddProfile={onAddProfile} />
+        )}
         {step === 1 && <AboutYouStep you={answers.you} update={update} />}
         {step === 2 && (
           <FilesStep

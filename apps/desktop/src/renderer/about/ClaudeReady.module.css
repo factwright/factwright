@@ -64,6 +64,13 @@
   vertical-align: middle;
 }
 
+/* A profile's own sign-in is long, so it gets a line of its own. */
+.long {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--fw-space-1);
+}
+
 .command code {
   overflow-wrap: anywhere;
   font-family: var(--fw-font-mono);

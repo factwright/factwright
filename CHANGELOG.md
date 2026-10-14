@@ -5,6 +5,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- Profiles, for people who share a computer, or a fresh start: each profile is its own job hunt, with its own sync account and its own Claude login, and one is open at a time. Add one from the bottom of Profile, or Get started's first step, and switch at the top of the sidebar, which restarts Factwright on the other. Your job hunt so far is the first profile, untouched and where it was. Profiles aren't private from each other, as a browser's aren't: separate logins on the computer are. Signing in to sync with an account another profile on the computer uses is turned away.
 - A Support Factwright link at the bottom of the sidebar, above the version, which opens the Buy Me a Coffee page of Factwright's maker, Steve Hillyer, in your browser, for anyone who'd like to chip in.
 - factwright.com says Factwright is fully open source: a GitHub link in its header and under the download buttons, a section on what anyone can check in the code, with the folders worth opening first, a question about it, and a link to the code in every page's footer. It also says who builds Factwright, and how to support it with a coffee or on GitHub Sponsors.
 - Each release appears on the repository's Releases page on GitHub, with its notes. While the repository is public, its installers also come with a signed record of the commit and run that built them, which `gh attestation verify` checks.

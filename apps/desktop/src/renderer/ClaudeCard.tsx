@@ -1,10 +1,35 @@
-import type { ReactNode } from 'react';
-import type { SetupCheck } from '../shared/api.ts';
+import { type ReactNode, useState } from 'react';
+import type { EditResult, SetupCheck } from '../shared/api.ts';
+import styles from './ClaudeCard.module.css';
 import { planName } from './plan.ts';
 import { type CardTone, SidebarCard } from './SidebarCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
 const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
+
+/** An added profile's own Claude sign-in: its command, too long for the card, and copying it. */
+export interface OwnSignIn {
+  command: string;
+  copy: (text: string) => Promise<EditResult>;
+}
+
+/** Copies an added profile's sign-in command, read as a link in the card's help. */
+function CopySignIn({ signIn }: { signIn: OwnSignIn }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={styles.link}
+      onClick={() =>
+        void signIn.copy(signIn.command).then((result) => {
+          if (result.ok) setCopied(true);
+        })
+      }
+    >
+      {copied ? 'Copied' : 'Copy the command'}
+    </button>
+  );
+}
 
 interface CardView {
   tone: CardTone;
@@ -15,7 +40,11 @@ interface CardView {
 }
 
 /** How each status reads, in plain words, with the fix when there is one. */
-function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView {
+function describe(
+  status: ClaudeStatusView,
+  setup: SetupCheck | null,
+  signIn: OwnSignIn | undefined,
+): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: null };
   switch (status.state) {
     case 'ready': {
@@ -40,7 +69,12 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
       return {
         tone: 'need',
         line: 'Not signed in',
-        help: (
+        help: signIn ? (
+          <>
+            This profile has its own Claude login. In Terminal, run its sign-in command, then come
+            back. <CopySignIn signIn={signIn} />
+          </>
+        ) : (
           <>
             In Terminal, run <code>claude auth login</code>, then come back.
           </>
@@ -90,6 +124,7 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
 export function ClaudeCard({
   status,
   onRecheck,
+  signIn,
   setup = null,
   checkingSetup = false,
   onCheckSetup,
@@ -97,13 +132,15 @@ export function ClaudeCard({
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
+  /** An added profile's own sign-in, which its signed-out help copies. */
+  signIn?: OwnSignIn | undefined;
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
   /** Opens Claude's settings, once Claude is ready to run. */
   onSettings?: () => void;
 }) {
-  const view = describe(status, setup);
+  const view = describe(status, setup, signIn);
   const checking = view.recheck === 'setup' && checkingSetup;
   const ready = status !== 'checking' && status.state === 'ready' && !view.recheck;
   return (

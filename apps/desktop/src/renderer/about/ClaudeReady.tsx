@@ -15,10 +15,19 @@ const INSTALL: Readonly<Record<string, string>> = {
 };
 
 /** A command the user runs themselves, with a button that copies it. */
-function Command({ text, api }: { text: string; api: Pick<FactwrightApi, 'copyText'> }) {
+function Command({
+  text,
+  api,
+  long = false,
+}: {
+  text: string;
+  api: Pick<FactwrightApi, 'copyText'>;
+  /** A long command, such as a profile's own sign-in, which gets a line of its own. */
+  long?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   return (
-    <span className={styles.command}>
+    <span className={long ? `${styles.command} ${styles.long}` : styles.command}>
       <code>{text}</code>
       <Button
         size="sm"
@@ -46,10 +55,16 @@ export function ClaudeReady({
   status,
   onRecheck,
   api,
+  signIn,
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
   api: Pick<FactwrightApi, 'copyText' | 'openTerminal' | 'platform'>;
+  /**
+   * An added profile's own sign-in command, with its own Claude Code folder. The first profile
+   * signs in as Claude Code always does.
+   */
+  signIn?: string | undefined;
 }) {
   const titleId = useId();
   const terminal = api.platform === 'win32' ? 'PowerShell' : 'Terminal';
@@ -101,25 +116,41 @@ export function ClaudeReady({
               Paste this, then press {api.platform === 'darwin' ? 'Return' : 'Enter'}:{' '}
               <Command text={INSTALL[api.platform] ?? (INSTALL.default as string)} api={api} />
             </>,
-            <>
-              When it’s done, run <Command text="claude" api={api} /> once, and sign in with your
-              Claude account in the browser it opens.
-            </>,
+            signIn ? (
+              <>
+                When it’s done, run this, and sign in with this profile’s Claude account in the
+                browser it opens: <Command text={signIn} api={api} long />
+              </>
+            ) : (
+              <>
+                When it’s done, run <Command text="claude" api={api} /> once, and sign in with your
+                Claude account in the browser it opens.
+              </>
+            ),
             <>Come back here. {checkAgain}</>,
           ],
         }
       : status.state === 'signed-out'
         ? {
             title: 'Sign in to Claude Code',
-            lead: 'Claude Code is installed, but it isn’t signed in. You sign in yourself, so Factwright never sees your login.',
+            lead: signIn
+              ? 'This profile has its own Claude login, so it signs in on its own. You sign in yourself, so Factwright never sees your login.'
+              : 'Claude Code is installed, but it isn’t signed in. You sign in yourself, so Factwright never sees your login.',
             items: [
               <>
                 Open {terminal}. {openTerminal}
               </>,
-              <>
-                Run <Command text="claude auth login" api={api} />, and sign in with your Claude
-                account in the browser it opens.
-              </>,
+              signIn ? (
+                <>
+                  Run this, and sign in with this profile’s Claude account in the browser it opens:{' '}
+                  <Command text={signIn} api={api} long />
+                </>
+              ) : (
+                <>
+                  Run <Command text="claude auth login" api={api} />, and sign in with your Claude
+                  account in the browser it opens.
+                </>
+              ),
               <>Come back here. {checkAgain}</>,
             ],
           }

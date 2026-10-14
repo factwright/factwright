@@ -1,0 +1,292 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  addProfile,
+  chooseProfile,
+  claudeFolder,
+  FIRST_PROFILE,
+  listProfiles,
+  type ProfileFolder,
+  Profiles,
+  type ProfilesDeps,
+  prepareClaudeFolder,
+  profileToOpen,
+  signInCommand,
+} from './profiles.ts';
+
+let home: string;
+
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), 'factwright-profiles-'));
+});
+
+afterEach(() => {
+  rmSync(home, { recursive: true, force: true });
+});
+
+const readJson = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
+
+/** A data folder as an earlier version left it: a job hunt, a tracker and sync's notes. */
+function earlierJobHunt(): string[] {
+  mkdirSync(join(home, 'workspace', 'jobs'), { recursive: true });
+  writeFileSync(join(home, 'workspace', 'jobs', 'acme.md'), '# Acme\n');
+  writeFileSync(join(home, 'tracker.db'), 'tracker');
+  mkdirSync(join(home, 'sync'));
+  writeFileSync(join(home, 'sync', 'secrets.json'), '{}');
+  return readdirSync(home).sort();
+}
+
+describe('the profile the app opens', () => {
+  it('is the first, in the app’s own folder, when no profile was ever added', () => {
+    const before = earlierJobHunt();
+    const profile = profileToOpen(home);
+    expect(profile).toEqual({
+      id: FIRST_PROFILE,
+      name: 'First profile',
+      named: false,
+      dir: home,
+      sync: null,
+    });
+    // Opening it changes nothing in the folder.
+    expect(readdirSync(home).sort()).toEqual(before);
+    expect(claudeFolder(profile)).toBeNull();
+  });
+
+  it('is the one chosen last, while its folder is there', () => {
+    const added = addProfile(home, 'Sam');
+    chooseProfile(home, added.id);
+    expect(profileToOpen(home)).toMatchObject({ id: added.id, name: 'Sam', dir: added.dir });
+    rmSync(added.dir, { recursive: true });
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+  });
+
+  it('is the first when the choice can’t be read, or names no profile', () => {
+    writeFileSync(join(home, 'profiles.json'), 'not json');
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+    writeFileSync(join(home, 'profiles.json'), JSON.stringify({ open: '../../elsewhere' }));
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+    writeFileSync(join(home, 'profiles.json'), JSON.stringify({ open: 'abcdefabcdef' }));
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+  });
+});
+
+describe('adding a profile', () => {
+  it('makes an empty folder inside the first profile’s, leaving the first profile’s job hunt as it was', () => {
+    const before = earlierJobHunt();
+    const added = addProfile(home, 'Sam');
+    expect(added.id).toMatch(/^[0-9a-f]{12}$/);
+    expect(added.dir).toBe(join(home, 'Profiles', added.id));
+    expect(readdirSync(home).sort()).toEqual([...before, 'Profiles'].sort());
+    expect(readFileSync(join(home, 'workspace', 'jobs', 'acme.md'), 'utf8')).toBe('# Acme\n');
+    expect(readJson(join(added.dir, 'profile.json'))).toMatchObject({ name: 'Sam' });
+    // Its own Claude Code folder, with Claude Code's first-run screens marked done.
+    expect(claudeFolder(added)).toBe(join(added.dir, 'claude'));
+    expect(readJson(join(added.dir, 'claude', '.claude.json'))).toEqual({
+      hasCompletedOnboarding: true,
+    });
+  });
+
+  it('lists profiles in the order they came, and skips folders that were never finished', () => {
+    const sam = addProfile(home, 'Sam');
+    const testing = addProfile(home, 'Testing');
+    mkdirSync(join(home, 'Profiles', '0123456789ab'));
+    mkdirSync(join(home, 'Profiles', 'not-a-profile'));
+    expect(listProfiles(home).map((profile) => profile.id)).toEqual([
+      FIRST_PROFILE,
+      sam.id,
+      testing.id,
+    ]);
+  });
+
+  it('still lists a profile whose name can’t be read, so it can be opened or removed', () => {
+    const sam = addProfile(home, 'Sam');
+    writeFileSync(join(sam.dir, 'profile.json'), '{');
+    expect(listProfiles(home)[1]).toMatchObject({
+      id: sam.id,
+      name: 'Unnamed profile',
+      named: false,
+    });
+  });
+});
+
+describe('Claude Code for a profile', () => {
+  it('keeps what Claude Code already wrote in its folder', () => {
+    const folder = join(home, 'claude');
+    mkdirSync(folder);
+    writeFileSync(join(folder, '.claude.json'), '{"theme":"dark"}');
+    prepareClaudeFolder(folder);
+    expect(readFileSync(join(folder, '.claude.json'), 'utf8')).toBe('{"theme":"dark"}');
+  });
+
+  it('gives each profile the command that signs it in, quoted for its terminal', () => {
+    expect(signInCommand('darwin', null)).toBe('claude auth login');
+    expect(signInCommand('win32', null)).toBe('claude auth login');
+    expect(
+      signInCommand('darwin', "/Users/o'neil/Library/Application Support/Factwright/claude"),
+    ).toBe(
+      "CLAUDE_CONFIG_DIR='/Users/o'\\''neil/Library/Application Support/Factwright/claude' claude auth login",
+    );
+    expect(signInCommand('win32', 'C:\\Users\\O’Neil\\AppData\\Roaming\\Factwright\\claude')).toBe(
+      "$env:CLAUDE_CONFIG_DIR='C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login",
+    );
+  });
+});
+
+/** The profiles as the open app sees them, with the restart and the trash stood in for. */
+function profiles(open: ProfileFolder, deps: Partial<ProfilesDeps> = {}) {
+  const restart = vi.fn();
+  const trash = vi.fn(async (_path: string) => {});
+  const busy = vi.fn(() => false);
+  const opened = new Profiles({
+    home,
+    open,
+    platform: 'darwin',
+    ownName: () => 'Alex Rivera',
+    trash,
+    busy,
+    restart,
+    ...deps,
+  });
+  return { opened, restart, trash, busy };
+}
+
+describe('Profiles, as the window uses them', () => {
+  it('lists each profile, which one is open, and how the open one signs in to Claude', () => {
+    const sam = addProfile(home, 'Sam');
+    const { opened } = profiles(sam);
+    expect(opened.list()).toEqual({
+      profiles: [
+        { id: FIRST_PROFILE, name: 'First profile', open: false, first: true, named: false },
+        { id: sam.id, name: 'Sam', open: true, first: false, named: true },
+      ],
+      claudeSignIn: `CLAUDE_CONFIG_DIR='${join(sam.dir, 'claude')}' claude auth login`,
+    });
+  });
+
+  it('names the first profile when the second is added: as asked, or after its person', () => {
+    const { opened } = profiles(profileToOpen(home));
+    expect(opened.add('  Sam  ', 'Alex')).toMatchObject({ ok: true });
+    expect(listProfiles(home).map((profile) => profile.name)).toEqual(['Alex', 'Sam']);
+    // Once it has a name, adding another leaves it.
+    expect(opened.add('Testing', 'Someone else')).toMatchObject({ ok: true });
+    expect(listProfiles(home)[0]?.name).toBe('Alex');
+  });
+
+  it('names the first profile after its person, when the window doesn’t say', () => {
+    const { opened } = profiles(profileToOpen(home));
+    expect(opened.add('Sam')).toMatchObject({ ok: true });
+    expect(listProfiles(home).map((profile) => profile.name)).toEqual(['Alex Rivera', 'Sam']);
+  });
+
+  it('won’t give the first profile and the new one the same name', () => {
+    const { opened } = profiles(profileToOpen(home));
+    expect(opened.add('Sam', 'sam')).toEqual({
+      ok: false,
+      message: 'Give the two profiles different names.',
+    });
+    expect(listProfiles(home)).toHaveLength(1);
+  });
+
+  it('keeps the first profile’s own name once it has one', () => {
+    const { opened } = profiles(profileToOpen(home), { ownName: () => '' });
+    expect(opened.add('Sam').ok).toBe(true);
+    expect(opened.rename(FIRST_PROFILE, 'Alex')).toEqual({ ok: true });
+    expect(opened.add('Testing').ok).toBe(true);
+    expect(listProfiles(home).map((profile) => profile.name)).toEqual(['Alex', 'Sam', 'Testing']);
+  });
+
+  it('turns away a name that’s empty, too long, or another profile’s', () => {
+    const { opened } = profiles(profileToOpen(home));
+    expect(opened.add('Sam')).toMatchObject({ ok: true });
+    expect(opened.add('sam')).toEqual({
+      ok: false,
+      message: 'There’s already a profile called Sam.',
+    });
+    expect(opened.add('   ')).toMatchObject({ ok: false });
+    expect(opened.add('x'.repeat(41))).toMatchObject({ ok: false });
+    expect(opened.add('Sam\u0007')).toMatchObject({ ok: false });
+    expect(opened.add(42)).toMatchObject({ ok: false });
+    const sam = listProfiles(home)[1] as ProfileFolder;
+    expect(opened.rename(sam.id, 'alex rivera')).toEqual({
+      ok: false,
+      message: 'There’s already a profile called Alex Rivera.',
+    });
+    expect(opened.rename(sam.id, 'Samantha')).toEqual({ ok: true });
+    expect(opened.rename('abcdefabcdef', 'Pat')).toMatchObject({ ok: false });
+  });
+
+  it('removes an added profile to the trash, but never the open one or the first', async () => {
+    const sam = addProfile(home, 'Sam');
+    const testing = addProfile(home, 'Testing');
+    const { opened, trash } = profiles(sam);
+    expect(await opened.remove(FIRST_PROFILE)).toMatchObject({ ok: false });
+    expect(await opened.remove(sam.id)).toMatchObject({ ok: false });
+    expect(await opened.remove('../..')).toMatchObject({ ok: false });
+    expect(trash).not.toHaveBeenCalled();
+    expect(await opened.remove(testing.id)).toEqual({ ok: true });
+    expect(trash).toHaveBeenCalledWith(testing.dir);
+  });
+
+  it('says so when the trash won’t take a profile', async () => {
+    const sam = addProfile(home, 'Sam');
+    const { opened } = profiles(profileToOpen(home), {
+      trash: async () => {
+        throw new Error('no trash here');
+      },
+    });
+    expect(await opened.remove(sam.id)).toEqual({
+      ok: false,
+      message: 'Its folder couldn’t be moved to the trash.',
+    });
+    expect(existsSync(sam.dir)).toBe(true);
+  });
+
+  it('restarts on another profile, but not while Claude is working', () => {
+    const sam = addProfile(home, 'Sam');
+    const working = profiles(profileToOpen(home), { busy: () => true });
+    expect(working.opened.open(sam.id)).toEqual({
+      ok: false,
+      message: 'Your Claude is working. Switch once it’s done.',
+    });
+    expect(working.restart).not.toHaveBeenCalled();
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+
+    const { opened, restart } = profiles(profileToOpen(home));
+    expect(opened.open(FIRST_PROFILE)).toEqual({ ok: true });
+    expect(restart).not.toHaveBeenCalled();
+    expect(opened.open('abcdefabcdef')).toMatchObject({ ok: false });
+    expect(opened.open(sam.id)).toEqual({ ok: true });
+    expect(restart).toHaveBeenCalledOnce();
+    expect(profileToOpen(home).id).toBe(sam.id);
+  });
+
+  it('notes the sync account a profile uses only once there are others, for them to turn away', () => {
+    const first = profiles(profileToOpen(home));
+    first.opened.noteSync('alex@example.com');
+    // With one profile, nothing is written in the app's folder.
+    expect(existsSync(join(home, 'profile.json'))).toBe(false);
+    expect(first.opened.add('Sam').ok).toBe(true);
+    expect(readJson(join(home, 'profile.json'))).toMatchObject({ sync: 'alex@example.com' });
+
+    const sam = listProfiles(home)[1] as ProfileFolder;
+    const second = profiles(sam);
+    expect(second.opened.otherSyncAccounts()).toEqual([
+      { name: 'Alex Rivera', email: 'alex@example.com' },
+    ]);
+    second.opened.noteSync('sam@example.com');
+    expect(first.opened.otherSyncAccounts()).toEqual([{ name: 'Sam', email: 'sam@example.com' }]);
+    // Turning sync off frees the account.
+    second.opened.noteSync(null);
+    expect(first.opened.otherSyncAccounts()).toEqual([]);
+  });
+});

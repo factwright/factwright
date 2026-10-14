@@ -38,14 +38,17 @@ function filesPoint(canSync: boolean): Point {
 /**
  * The first step: what Factwright does, how it treats the user's data, and their Claude. Someone
  * who already uses Factwright on another computer turns on sync instead of starting over, unless
- * this copy was built without it, which `onOpenSync` is null for.
+ * this copy was built without it, which `onOpenSync` is null for. Someone sharing this computer
+ * can add a profile, for someone else or a fresh start.
  */
 export function WelcomeStep({
   claude,
   onOpenSync,
+  onAddProfile = null,
 }: {
   claude: ReactNode;
   onOpenSync: (() => void) | null;
+  onAddProfile?: (() => void) | null;
 }) {
   const titleId = useId();
   const points = [...POINTS, filesPoint(onOpenSync !== null)];
@@ -92,6 +95,15 @@ export function WelcomeStep({
             Turn on sync
           </Button>{' '}
           to bring your job hunt here instead.
+        </p>
+      )}
+      {onAddProfile && (
+        <p className={styles.note}>
+          Sharing this computer?{' '}
+          <Button variant="quiet" size="sm" onClick={onAddProfile}>
+            Add a profile
+          </Button>{' '}
+          so each person has a job hunt of their own.
         </p>
       )}
     </section>

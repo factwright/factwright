@@ -21,6 +21,7 @@ import type {
   Profile,
   TemplateUpload,
 } from './profile.ts';
+import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RunTask } from './runs.ts';
 import type { AccountResult, LinkCodeResult, RecoveryKeyResult, SyncStatus } from './sync.ts';
 import type { UpdateStatus } from './updates.ts';
@@ -337,4 +338,16 @@ export interface FactwrightApi {
   onUpdateChanged(listener: (status: UpdateStatus) => void): () => void;
   /** Restarts into a downloaded update. Answers whether there was one to install. */
   installUpdate(): Promise<boolean>;
+  /** The profiles on this computer, and how the open one signs in to Claude Code. */
+  profiles(): Promise<ProfileList>;
+  /**
+   * Adds a profile, empty, for someone else or a fresh start. It opens with openProfile. The
+   * first time, the first profile is named too: firstName, or its person's own name.
+   */
+  addProfile(name: string, firstName?: string): Promise<AddProfileResult>;
+  renameProfile(id: string, name: string): Promise<EditResult>;
+  /** Moves a profile that isn't open to the trash, with its whole job hunt on this computer. */
+  removeProfile(id: string): Promise<EditResult>;
+  /** Restarts the app on another profile. Not while Claude is working. */
+  openProfile(id: string): Promise<EditResult>;
 }

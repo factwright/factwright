@@ -10,6 +10,8 @@ Factwright holds the most personal parts of a job hunt: your career history, you
 - It launches your installed Claude Code unmodified. The only check it makes is `claude auth status`, to see whether you're signed in.
 - If you're signed out, it tells you to run `claude auth login` yourself. There's no "sign in to Claude" button in the app.
 - Your Claude Code talks to Anthropic directly. Factwright's servers are never in that path.
+- Each [profile](#profiles) you add has a Claude login of its own. The app runs Claude Code for it with `CLAUDE_CONFIG_DIR` set to the profile's own folder, where Claude Code keeps that profile's sign-in, settings and history. On a Mac the sign-in itself goes in the Keychain, under a name Claude Code gives that folder alone; on Windows it's a file in the folder. Its sign-in command, which you run yourself, names the folder. The first profile uses your own Claude Code setup, as before.
+- For an added profile, a Claude login in the app's environment (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN`) is left out of what Claude Code gets, since it would be someone else's. The app also marks Claude Code's first-run screens done in that folder, as each run sets Claude Code's look itself.
 
 ## What Claude can do on your computer
 Job postings are web pages written by strangers, so a posting could try to give Claude instructions. Factwright limits what those instructions could do:
@@ -40,6 +42,16 @@ Getting started asks for your resumes, your LinkedIn and anything else that show
 - **What's in a file is data.** Claude is told never to follow instructions found in a file you shared, the same as with job posts.
 - **Unconfirmed until you say so.** Every fact Claude drafts from your files is marked `unconfirmed`, and nothing goes on a resume until you've confirmed it.
 - **A run for getting started,** or for adding facts, may save your facts, starting resumes and guide without asking each time, since that's the work you started it for. In return it can't reach the web at all, so nothing it reads can come from a page that tries to tell it what to write. Every other run asks before changing those files.
+
+## Profiles
+People who share a computer can each keep their own job hunt in a profile, and one is open at a time.
+- **Each is a folder of its own:** the workspace and tracker, sync's session and keys, Claude's settings, the window's storage, and, for a profile you add, its own Claude Code folder. The first profile is the app's data folder, as it was before there were profiles. Each one added is in a folder under `Profiles` inside it, named by a random ID that's never used again, so a new profile never picks up a removed one's Claude sign-in.
+- **Switching restarts the app** on the other profile's folder, before anything uses it. Chromium's own storage, and the lock that keeps one copy of the app on a folder, go with it.
+- **Claude works in the open profile's workspace.** Its file access stays inside that folder, as [above](#what-claude-can-do-on-your-computer), so the other profiles' folders are outside it, like the rest of the computer.
+- **Each profile syncs with its own account.** A browser that's already signed in to Factwright approves a device code for that account without asking who's there, so a profile could otherwise sign in to the account of the person who used the browser last. So once there's more than one profile, each notes its sync account's email, and signing in to an account another profile here uses is turned away before anything is kept, and that sign-in is ended on the server. Even without that check, nothing could sync until the profile linked with that account's link code or recovery key.
+- **Not private from each other.** As with a browser's profiles, anyone who can use the computer login can open any profile, read its files, and use its Claude and sync sign-ins. On a Mac, every profile's sync secrets are locked with the app's own Keychain item; on Windows, each profile's folder has its own key, locked to the Windows account. To keep job hunts private, give each person their own login on the computer.
+- **Removing a profile** moves its folder to the trash, where it can be restored. Its synced copy stays in its sync account. On a Mac, its Claude Code sign-in stays in the Keychain until it's signed out with `claude auth logout` and the profile's folder, or deleted in Keychain Access. The open profile and the first one, whose folder holds the others, can't be removed.
+- **Updates are app-wide.** There's one copy of the app for every profile, and it updates once for all of them.
 
 ## Your data in the cloud
 Sync is off until you turn it on. Once it's on, your Mac, your Windows PC and your phone show the same job hunt, and everything is locked on your device before it leaves.
@@ -159,8 +171,8 @@ If you lose every device and your recovery key, your data can't be recovered, by
   which a fork's builds don't have, and which the release workflow gives to no pull request's run.
 - **No debugging the user's data.** Chromium, which the app is built on, can let another program
   drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
-  user's own data folder: only with a folder of its own, as the tests give it, where there's no
-  job hunt and no sync to reach.
+  user's own data folder, or any profile in it: only with a folder of its own, as the tests give
+  it, where there's no job hunt and no sync to reach.
 - **Updates are checked.** A copy from Factwright's own releases downloads updates only from
   downloads.factwright.com, over https. An update must match the checksum in the update feed. On a
   Mac, it must also pass Apple's check that it's signed by the same developer as the app. On

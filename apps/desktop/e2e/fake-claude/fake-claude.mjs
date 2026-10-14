@@ -12,6 +12,13 @@ if (args[0] === '--version') {
   process.exit(0);
 }
 if (args[0] === 'auth' && args[1] === 'status') {
+  // A profile's own Claude Code folder is signed in only once a test signs it in, as
+  // `claude auth login` would. Without one, it's the user's own Claude Code, signed in.
+  const folder = process.env.CLAUDE_CONFIG_DIR;
+  if (folder && !existsSync(join(folder, 'signed-in'))) {
+    console.log(JSON.stringify({ loggedIn: false, authMethod: 'none' }));
+    process.exit(1);
+  }
   console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' }));
   process.exit(0);
 }

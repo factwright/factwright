@@ -65,6 +65,7 @@ function computer(
   name: string,
   dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-')),
   fetchWith?: typeof fetch,
+  otherProfiles?: () => { name: string; email: string }[],
 ) {
   folders.push(dataDir);
   const workspace = join(dataDir, 'workspace');
@@ -85,6 +86,7 @@ function computer(
     computerName: async () => name,
     sleep: async () => {},
     ...(fetchWith && { fetch: fetchWith }),
+    ...(otherProfiles && { otherProfiles }),
   });
   opened.push(sync);
   return {
@@ -437,6 +439,45 @@ describe('a computer with sync on', () => {
     const again = computer('Sam’s Mac', mac.dataDir);
     await again.sync.start();
     expect(again.sync.status()).toMatchObject({ state: 'on', email: person.email });
+  });
+
+  it('turns away an account another profile on this computer syncs with, keeping none of it', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpFirst(mac);
+    // Someone else's profile on the same Mac, in a browser still signed in as Sam.
+    const other = computer('Sam’s Mac', undefined, undefined, () => [
+      { name: 'Sam Rivera', email: person.email.toUpperCase() },
+    ]);
+    await other.sync.start();
+    expect(await other.sync.signInWithBrowser()).toEqual({
+      ok: false,
+      message:
+        'The profile “Sam Rivera” on this computer syncs with that account, and each profile needs its own. If your browser signed in as someone else, sign out of Factwright there first.',
+    });
+    expect(other.sync.status()).toEqual({ state: 'off' });
+    expect(new Secrets(join(other.dataDir, 'sync', 'secrets.json'), keychain).get('session')).toBe(
+      null,
+    );
+    // Its sign-in ended on the server too: the Mac's first profile is the only one signed in.
+    const listed = await person.client.account();
+    const macs = listed.devices.filter((device) => device.name === 'Factwright on Sam’s Mac');
+    expect(macs).toHaveLength(1);
+  });
+
+  it('signs another profile in to an account of its own', async () => {
+    const sam = person;
+    await setUpFirst(computer('Sam’s Mac'));
+    person = await server.signUp('Alex Kim');
+    const other = computer('Sam’s Mac', undefined, undefined, () => [
+      { name: 'Sam Rivera', email: sam.email },
+    ]);
+    await other.sync.start();
+    expect(await other.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(other.sync.status()).toEqual({
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: true,
+    });
   });
 
   it('lists the account’s devices, and signs one out', async () => {

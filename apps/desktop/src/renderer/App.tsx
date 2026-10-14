@@ -1,6 +1,8 @@
 import { JOB_VIEWS, type JobView, viewOf } from '@factwright/core';
+import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import type { ProfileEntry } from '../shared/profiles.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
@@ -34,6 +36,9 @@ import { useToday } from './jobs/useToday.ts';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
 import { isBoolean, readPref, usePref, writePref } from './prefs.ts';
+import { AddProfileDialog } from './profiles/AddProfileDialog.tsx';
+import { ManageProfilesDialog } from './profiles/ManageProfilesDialog.tsx';
+import { useProfiles } from './profiles/useProfiles.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useSync } from './sync/useSync.ts';
@@ -57,6 +62,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const about = useProfile(api);
   const today = useToday();
   const update = useUpdates(api);
+  const profiles = useProfiles(api);
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today) : []),
     [jobs, today],
@@ -76,8 +82,18 @@ export function App({ api }: { api: FactwrightApi }) {
   // Whether a picked job has the window to itself, kept for next time.
   const [expanded, setExpanded] = usePref('panel.expanded', false, isBoolean);
   const [dialog, setDialog] = useState<
-    'add-job' | 'find-jobs' | 'journey' | 'sync' | 'claude-settings' | null
+    | 'add-job'
+    | 'find-jobs'
+    | 'journey'
+    | 'sync'
+    | 'claude-settings'
+    | 'add-profile'
+    | 'profiles'
+    | null
   >(null);
+  // A profile to switch to, once the user says what they're writing can go unsaved.
+  const [switching, setSwitching] = useState<ProfileEntry | null>(null);
+  const [profileProblem, setProfileProblem] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
@@ -119,6 +135,28 @@ export function App({ api }: { api: FactwrightApi }) {
 
   const ready = status !== 'checking' && status.state === 'ready';
   const plan = ready ? planName(status.plan) : undefined;
+
+  const profileList = profiles.list?.profiles ?? [];
+  const currentProfile = profileList.find((each) => each.open);
+  // An added profile has its own Claude login, which it signs in to with its own command.
+  const ownSignIn =
+    currentProfile && !currentProfile.first ? profiles.list?.claudeSignIn : undefined;
+  // Restarts the app on another profile, once what's waiting to save is saved.
+  const switchTo = async (target: ProfileEntry) => {
+    await about.flush();
+    const result = await api.openProfile(target.id);
+    if (!result.ok) setProfileProblem(result.message);
+  };
+  const askToSwitch = (target: ProfileEntry) => {
+    if (hasUnsaved()) setSwitching(target);
+    else void switchTo(target);
+  };
+
+  // With more than one profile, the window's title says whose job hunt it is.
+  const titled = profileList.length > 1 ? currentProfile?.name : undefined;
+  useEffect(() => {
+    document.title = titled ? `Factwright · ${titled}` : 'Factwright';
+  }, [titled]);
   const openJobs = rows.filter((row) => !row.job.archived).length;
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
   // The list as it shows, for moving from job to job while one has the window to itself.
@@ -177,6 +215,15 @@ export function App({ api }: { api: FactwrightApi }) {
       />
       <div className={styles.body}>
         <Sidebar
+          {...(profiles.list && {
+            profiles: {
+              list: profileList,
+              busy: isRunning(run.phase),
+              onOpen: askToSwitch,
+              onAdd: () => setDialog('add-profile'),
+              onManage: () => setDialog('profiles'),
+            },
+          })}
           page={page}
           onPage={(next) => {
             // Leaving getting started for the jobs counts as skipping it for now.
@@ -188,6 +235,7 @@ export function App({ api }: { api: FactwrightApi }) {
           gettingStarted={gettingStarted}
           claude={status}
           onRecheckClaude={recheck}
+          claudeSignIn={ownSignIn ? { command: ownSignIn, copy: api.copyText } : undefined}
           setup={setup}
           sync={sync}
           onOpenSync={() => setDialog('sync')}
@@ -229,6 +277,8 @@ export function App({ api }: { api: FactwrightApi }) {
                 onOpenSync={
                   sync !== 'checking' && sync.state === 'no-server' ? null : () => setDialog('sync')
                 }
+                claudeSignIn={ownSignIn}
+                onAddProfile={profiles.list ? () => setDialog('add-profile') : null}
               />
             )}
             {page === 'profile' && profile && !gettingStarted && (
@@ -239,6 +289,13 @@ export function App({ api }: { api: FactwrightApi }) {
                 ready={ready}
                 onRun={(next) => run.requestStart(next)}
                 onOpenFacts={() => setPicked('facts')}
+                {...(profiles.list && {
+                  profiles: {
+                    list: profileList,
+                    onAdd: () => setDialog('add-profile'),
+                    onManage: () => setDialog('profiles'),
+                  },
+                })}
               />
             )}
             {page === 'facts' && (
@@ -317,6 +374,68 @@ export function App({ api }: { api: FactwrightApi }) {
           plan={ready ? status.plan : undefined}
           onClose={() => setDialog(null)}
         />
+      )}
+      {dialog === 'add-profile' && (
+        <AddProfileDialog
+          api={api}
+          busy={isRunning(run.phase)}
+          firstName={
+            currentProfile?.first && !currentProfile.named
+              ? (profile?.answers.you.name ?? '')
+              : undefined
+          }
+          onAdded={(added) => {
+            profiles.reload();
+            setDialog(null);
+            askToSwitch(added);
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'profiles' && profiles.list && (
+        <ManageProfilesDialog
+          api={api}
+          profiles={profileList}
+          onChanged={profiles.reload}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {switching && (
+        <Dialog
+          title={`Switch to ${switching.name}?`}
+          description="Something you’re writing isn’t saved. Factwright restarts to switch, and it would be lost."
+          onClose={() => setSwitching(null)}
+        >
+          {(close) => (
+            <DialogActions>
+              <Button onClick={close}>Not now</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  close();
+                  void switchTo(switching);
+                }}
+              >
+                Switch anyway
+              </Button>
+            </DialogActions>
+          )}
+        </Dialog>
+      )}
+      {profileProblem && (
+        <Dialog
+          title="Couldn’t switch profiles"
+          description={profileProblem}
+          onClose={() => setProfileProblem(null)}
+        >
+          {(close) => (
+            <DialogActions>
+              <Button variant="primary" onClick={close}>
+                OK
+              </Button>
+            </DialogActions>
+          )}
+        </Dialog>
       )}
     </div>
   );

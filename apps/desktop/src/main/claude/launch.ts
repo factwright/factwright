@@ -75,11 +75,45 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
   return prompt ? [...args, prompt] : args;
 }
 
-/** A copy of `base` with PATH replaced and only a parent session's variables removed. */
+/** Variables that sign Claude Code in by themselves, whichever profile it runs for. */
+const CLAUDE_LOGINS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+]);
+
+/**
+ * The open profile's own Claude Code folder, for a profile added in Factwright: its login, plan,
+ * settings and history. Null for the first profile, which uses the user's own setup.
+ */
+let profileFolder: string | null = null;
+
+/**
+ * Runs every Claude Code from now on with a profile's own folder, or with the user's own setup
+ * for null. Set once, as the app opens a profile. The app's own environment stays as it was, so
+ * nothing else it starts carries the folder, such as the app itself, opening another profile.
+ */
+export function useClaudeFolder(folder: string | null): void {
+  profileFolder = folder;
+}
+
+/**
+ * A copy of `base` with PATH replaced and only a parent session's variables removed. For a
+ * profile with its own Claude Code folder, it points there, and leaves out any login in the
+ * environment, which would be someone else's.
+ */
 export function launchEnv(base: NodeJS.ProcessEnv, path: string): NodeJS.ProcessEnv {
-  // Windows spells it Path, and two spellings in one environment would clash.
-  const kept = Object.entries(base).filter(
-    ([name]) => name.toUpperCase() !== 'PATH' && !PARENT_SESSION_VARIABLES.has(name),
-  );
-  return { ...Object.fromEntries(kept), PATH: path };
+  // Windows spells it Path, and two spellings in one environment would clash. Its names ignore
+  // case, so each is compared in capitals.
+  const kept = Object.entries(base).filter(([name]) => {
+    const upper = name.toUpperCase();
+    if (upper === 'PATH' || PARENT_SESSION_VARIABLES.has(name)) return false;
+    return !profileFolder || (upper !== 'CLAUDE_CONFIG_DIR' && !CLAUDE_LOGINS.has(upper));
+  });
+  return {
+    ...Object.fromEntries(kept),
+    PATH: path,
+    ...(profileFolder && { CLAUDE_CONFIG_DIR: profileFolder }),
+  };
 }

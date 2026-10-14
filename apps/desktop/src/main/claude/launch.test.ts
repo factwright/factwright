@@ -1,11 +1,12 @@
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildLaunchArgs,
   type LaunchOptions,
   launchEnv,
   PERMISSION_MODES,
   type PermissionMode,
+  useClaudeFolder,
 } from './launch.ts';
 
 const OPTIONS: LaunchOptions = {
@@ -137,5 +138,44 @@ describe('launchEnv', () => {
     const base = { PATH: '/usr/bin', CLAUDECODE: '1' };
     launchEnv(base, '/opt/homebrew/bin');
     expect(base).toEqual({ PATH: '/usr/bin', CLAUDECODE: '1' });
+  });
+
+  describe('for a profile with its own Claude Code folder', () => {
+    afterEach(() => useClaudeFolder(null));
+
+    it('points Claude Code there, and leaves out any login in the environment', () => {
+      useClaudeFolder('/profiles/sam/claude');
+      const base = {
+        HOME: '/Users/someone',
+        CLAUDE_CONFIG_DIR: '/Users/someone/.claude-work',
+        ANTHROPIC_API_KEY: 'key',
+        ANTHROPIC_AUTH_TOKEN: 'token',
+        CLAUDE_CODE_OAUTH_TOKEN: 'oauth',
+        CLAUDE_CODE_OAUTH_REFRESH_TOKEN: 'refresh',
+        ANTHROPIC_BASE_URL: 'https://llm.example.com',
+      };
+      expect(launchEnv(base, '/usr/bin')).toEqual({
+        HOME: '/Users/someone',
+        ANTHROPIC_BASE_URL: 'https://llm.example.com',
+        PATH: '/usr/bin',
+        CLAUDE_CONFIG_DIR: '/profiles/sam/claude',
+      });
+      // The app's own environment keeps them, for whatever else it starts.
+      expect(base.ANTHROPIC_API_KEY).toBe('key');
+    });
+
+    it('leaves them out whatever their case, as Windows reads them', () => {
+      useClaudeFolder('C:\\Profiles\\sam\\claude');
+      expect(
+        launchEnv({ Anthropic_Api_Key: 'key', claude_config_dir: 'C:\\other' }, 'C:\\Windows'),
+      ).toEqual({ PATH: 'C:\\Windows', CLAUDE_CONFIG_DIR: 'C:\\Profiles\\sam\\claude' });
+    });
+
+    it('goes back to the user’s own setup when the first profile is open', () => {
+      useClaudeFolder('/profiles/sam/claude');
+      useClaudeFolder(null);
+      const base = { CLAUDE_CONFIG_DIR: '/Users/someone/.claude-work', ANTHROPIC_API_KEY: 'key' };
+      expect(launchEnv(base, '/usr/bin')).toEqual({ ...base, PATH: '/usr/bin' });
+    });
   });
 });

@@ -51,6 +51,11 @@ export interface SyncAccountDeps {
   /** Opens a page in the user's browser. */
   openUrl: (url: string) => void | Promise<void>;
   onStatus: (status: SyncStatus) => void;
+  /**
+   * The sync accounts other profiles on this computer use, by email, with each one's name.
+   * Signing in to one of them is turned away, so two people's job hunts never mix.
+   */
+  otherProfiles?: () => { name: string; email: string }[];
   /** After changes from other devices land, so the window shows them. */
   onApplied: () => void;
   computerName?: () => Promise<string>;
@@ -252,10 +257,19 @@ export class SyncAccount {
     if (overtaken()) return OVERTAKEN;
     const result = await flow.finish();
     if (overtaken()) return result.ok ? OVERTAKEN : failed(result.message);
-    this.signIn = null;
     if (!result.ok) {
+      this.signIn = null;
       this.set(before);
       return failed(result.message);
+    }
+    // Before anything is kept: an account another profile here uses stays that profile's.
+    const taken = await this.usedByAnotherProfile(result.token);
+    if (overtaken()) return OVERTAKEN;
+    this.signIn = null;
+    if (taken) {
+      this.set(before);
+      await this.signOutOnServer(result.token);
+      return failed(taken);
     }
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
@@ -268,6 +282,27 @@ export class SyncAccount {
       return { ok: true };
     }
     return this.resume(accountKey);
+  }
+
+  /**
+   * Why a new sign-in can't be kept, when another profile on this computer syncs with the same
+   * account, or null when it can. A browser that's signed in as one person approves another's
+   * code without asking who's there, so this is where two job hunts would otherwise mix. When
+   * the account can't be asked, it isn't kept either.
+   */
+  private async usedByAnotherProfile(token: string): Promise<string | null> {
+    const others = this.deps.otherProfiles?.() ?? [];
+    if (others.length === 0) return null;
+    let email: string;
+    try {
+      email = (await this.clientFor(token).account()).user.email;
+    } catch (error) {
+      return reason(error);
+    }
+    const other = others.find((each) => each.email.toLowerCase() === email.toLowerCase());
+    return other
+      ? `The profile “${other.name}” on this computer syncs with that account, and each profile needs its own. If your browser signed in as someone else, sign out of Factwright there first.`
+      : null;
   }
 
   /**

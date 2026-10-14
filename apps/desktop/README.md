@@ -160,14 +160,26 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
   - **To sync a copy you build,** run a [sync server](../server#running-your-own) of your own, and set `FACTWRIGHT_SYNC_SERVER` to its address for `pnpm --filter @factwright/desktop build`, which builds it in.
   - **For updates,** set `FACTWRIGHT_DOWNLOADS_URL` to a site of your own for `dist:mac` or `dist:win`, which write it into the installers, and put each version's installers and its `latest.yml` or `latest-mac.yml` there, as [docs/releasing.md](../../docs/releasing.md) describes. A Mac copy installs an update only if the two are signed with the same certificate, so a copy built without one never updates; to give copies to other people, that's a Developer ID certificate.
 
+## Profiles
+People who share a computer each keep their own job hunt in a profile of their own ([`src/main/profiles.ts`](src/main/profiles.ts)). A profile is also a fresh start, for trying a setup from scratch.
+- **What's in one:** a whole data folder: the workspace and tracker, sync's session and keys, Claude's settings, and the window's own storage. Each signs in to its own sync account and its own Claude.
+- **Where:** the first profile is the app's data folder, as it was before there were profiles, so a job hunt from an earlier version stays where it was. Each profile added gets a folder under `Profiles`, inside it, named by a random ID that's never used again. `profiles.json` beside them says which profile opens.
+- **Adding one:** from the bottom of Profile, or Get started's first step. The first time, it names the profile that's open too.
+- **Switching:** one profile is open at a time. Switching, from the top of the sidebar once there are two, notes the choice and restarts the app. As it starts, the app opens that profile's folder before anything else uses it, so Chromium's storage, and the lock that keeps one copy of the app on a folder, go with it. An update that's ready installs as the app restarts. Switching waits while Claude is working.
+- **Claude:** the first profile uses your own Claude Code setup. An added profile runs Claude Code with `CLAUDE_CONFIG_DIR` set to its own `claude` folder, so its login, plan, settings and history are its own, and leaves any Claude login in the environment out. Get started and the Claude card show the command that signs it in.
+- **Sync:** each profile signs in to its own account. Signing in to one that another profile here uses is turned away.
+- **Removing one:** Manage profiles moves an added profile's folder to the trash, never the open one or the first, whose folder holds the others.
+- **Not private:** anyone who can use the computer login can open any profile. Separate computer logins keep job hunts private, as [docs/security.md](../../docs/security.md#profiles) says.
+
 ## Run it
-- **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
+- **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`. Switching profiles closes it, since the screens' server closes with the app: run `pnpm dev` again to open the profile chosen.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`).
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
   - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out`, `unavailable` and `no-server`). Turning it on plays through each step.
   - `?profile=done` shows a finished profile (also `new` and `started`).
+  - `?profiles=two` shows two profiles, with the switcher at the top of the sidebar (also `added`, with an added profile open, whose Claude signs in with a command of its own).
   - Start Claude plays a short made-up run, including a question. With `?run=asks`, interview prep stops to ask one too.
 - **The README's screenshots:** `pnpm --filter @factwright/desktop screenshots` takes them again from the same sample data, each framed as a Mac window, in light and dark, into [`docs/images`](../../docs/images). Take them on a Mac, after a change they show. It needs Playwright's Chromium, once: `pnpm --filter @factwright/desktop exec playwright install chromium`.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
@@ -176,6 +188,7 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
   - It runs on a made-up job hunt in a fresh data folder.
   - A stand-in for Claude Code ([`e2e/fake-claude`](e2e/fake-claude)) comes first on PATH. It answers the version and sign-in checks, and in a run reaches Factwright's tools and sends its hooks as Claude Code does. It never reaches Anthropic, so the tests use no plan.
   - `FACTWRIGHT_SETUP_WAIT_MS` shortens the setup check's wait, so the tests see it finish.
+  - `FACTWRIGHT_RELAUNCH=off` makes switching profiles close the app without starting it again, so the test opens it again itself. The stand-in reads as signed out in an added profile's own Claude Code folder, until the test signs it in.
   - Sync's tests run two copies of the app against the [sync server](../server), run locally in workerd, with a stand-in keychain: one turns sync on, the other links with a code, and a change on one shows up on the other.
   - CI runs the tests on every change, on Linux, with a virtual display.
   - A [Windows workflow](../../.github/workflows/windows.yml) runs the unit and end-to-end tests on Windows: weekly, by hand, and when its file changes. It doesn't run on every change, because Windows minutes cost twice as much on GitHub's free plan. Its stand-in is `claude.cmd`.
