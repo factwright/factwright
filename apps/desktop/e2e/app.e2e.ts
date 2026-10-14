@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp, terminalText } from './app.ts';
+import { version } from './paths.ts';
 import { ACME_RESUME, newDataFolder } from './workspace.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -38,11 +39,12 @@ async function closeRun() {
   await expect(panel).toHaveCount(0);
 }
 
-test('shows the jobs on file, and your Claude ready', async () => {
+test('shows the jobs on file, your Claude ready, and Factwright’s version', async () => {
   const { window } = opened;
   // It opens on the jobs furthest along: Acme, checked with a resume, is the next to apply to.
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
+  await expect(window.getByText(`Factwright ${version}`)).toBeVisible();
   await pickView(/^To review/);
   await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toBeVisible();
   await pickView(/^To apply/);

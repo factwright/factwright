@@ -169,10 +169,15 @@ export interface ShotUpload {
   bytes: Uint8Array;
 }
 
+/** How the main process passes the app's version to the window, as a command-line switch. */
+export const VERSION_ARGUMENT = '--factwright-version=';
+
 /** What the app's window may ask of the main process. Nothing else crosses over. */
 export interface FactwrightApi {
   /** The operating system, so the window can make room for its title bar buttons. */
   platform: string;
+  /** Factwright's own version, such as "0.1.1". */
+  version: string;
   claudeStatus(): Promise<ClaudeStatus>;
   /** The latest check of Factwright's setup with the user's Claude Code, or null before one. */
   setupCheck(): Promise<SetupCheck | null>;

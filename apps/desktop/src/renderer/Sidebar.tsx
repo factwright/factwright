@@ -12,7 +12,10 @@ import type { ClaudeStatusView } from './useClaudeStatus.ts';
 /** The app's places: the jobs, the fact bank, and everything else about the user. */
 export type Page = 'jobs' | 'facts' | 'profile';
 
-/** The sidebar: the app's places, then an update when there's one, sync and the user's Claude. */
+/**
+ * The sidebar: the app's places, then an update when there's one, sync, the user's Claude, and
+ * Factwright's version, so an update shows it landed.
+ */
 export function Sidebar({
   page,
   onPage,
@@ -26,6 +29,7 @@ export function Sidebar({
   jobCount,
   factCount,
   update,
+  version,
 }: {
   page: Page;
   onPage: (page: Page) => void;
@@ -45,6 +49,8 @@ export function Sidebar({
   factCount?: number | undefined;
   /** An update to Factwright that's ready to install, and restarting into it. */
   update: { status: UpdateStatus; busy: boolean; unsaved: () => boolean; onRestart: () => void };
+  /** Factwright's version, such as "0.1.1". */
+  version: string;
 }) {
   return (
     <aside className={styles.sidebar}>
@@ -86,6 +92,7 @@ export function Sidebar({
           onCheckSetup={setup.checkAgain}
           onSettings={onOpenClaudeSettings}
         />
+        {version && <p className={styles.version}>Factwright {version}</p>}
       </div>
     </aside>
   );
