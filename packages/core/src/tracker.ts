@@ -1,8 +1,12 @@
-/** Every status a job can have, from first look to outcome. */
+/**
+ * Every status a job can have, from first look to outcome, in the order the status menu lists
+ * them: before applying, after applying, and closed.
+ */
 export const JOB_STATUSES = [
   'new',
-  'checked',
-  'resume',
+  'review',
+  'apply',
+  'later',
   'applied',
   'screen',
   'interview',
@@ -11,26 +15,83 @@ export const JOB_STATUSES = [
   'declined',
   'rejected',
   'ghosted',
-  'passed',
   'withdrawn',
+  'passed',
+  'role-closed',
 ] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
-/** Statuses the tools set on their own. Anything later is set by the user. */
-export const AUTO_STATUSES: readonly JobStatus[] = ['new', 'checked', 'resume'];
+/** How each status reads on screen: in the same words as the views of the jobs page. */
+export const JOB_STATUS_LABELS: Readonly<Record<JobStatus, string>> = {
+  new: 'New',
+  review: 'To review',
+  apply: 'To apply',
+  later: 'Later',
+  applied: 'Applied',
+  screen: 'Screen',
+  interview: 'Interview',
+  offer: 'Offer',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  rejected: 'Rejected',
+  ghosted: 'No reply',
+  withdrawn: 'Withdrawn',
+  passed: 'Passed',
+  'role-closed': 'Role closed',
+};
 
-/** How far along each forward step is. Outcomes like "rejected" have no rank. */
+/**
+ * Statuses Claude's work alone can give a job: found, or worked on, such as with a fit check.
+ * Anything else is the user's own decision.
+ */
+export const AUTO_STATUSES: readonly JobStatus[] = ['new', 'review'];
+
+/** How far along each forward step is. Later and outcomes like "rejected" have no rank. */
 export const STATUS_RANK: Readonly<Partial<Record<JobStatus, number>>> = {
   new: 0,
-  checked: 1,
-  resume: 2,
+  review: 1,
+  apply: 2,
   applied: 3,
   screen: 4,
   interview: 5,
   offer: 6,
   accepted: 6,
   declined: 6,
+};
+
+/**
+ * Statuses earlier versions had, and how they read now. What Claude did for a job shows in its
+ * fit score and next step instead, so a job "checked" or with its "resume" ready is to review.
+ */
+const EARLIER_STATUSES = new Map<string, JobStatus>([
+  ['checked', 'review'],
+  ['resume', 'review'],
+]);
+
+/**
+ * A status as the tracker keeps it, read for this version. One an earlier version set reads as
+ * its status now. Null for none, or for one only a newer version knows.
+ */
+export function readStatus(value: unknown): JobStatus | null {
+  if (typeof value !== 'string') return null;
+  if ((JOB_STATUSES as readonly string[]).includes(value)) return value as JobStatus;
+  return EARLIER_STATUSES.get(value) ?? null;
+}
+
+/** Why the user passed on a job, when they say. The job search reads it. */
+export const PASS_REASONS = ['pay', 'level', 'location', 'work', 'company', 'other'] as const;
+
+export type PassReason = (typeof PASS_REASONS)[number];
+
+/** How each reason for passing reads on screen. */
+export const PASS_REASON_LABELS: Readonly<Record<PassReason, string>> = {
+  pay: 'Pay',
+  level: 'Level',
+  location: 'Location',
+  work: 'Not my kind of work',
+  company: 'The company',
+  other: 'Something else',
 };
 
 /** Kinds of calls and interviews a user can log against a job. */
@@ -58,15 +119,22 @@ export const CALL_STAGE = {
   offer: 'offer',
 } as const satisfies Partial<Record<CallKind, JobStatus>>;
 
-/** How far the skills' work alone has taken a job: found, checked, or with a resume built. */
-export type JobStage = Extract<JobStatus, 'new' | 'checked' | 'resume'>;
+/**
+ * How far Claude's work alone has taken a job: found, or worked on, such as with a fit check, a
+ * salary check, a resume or an answer to the user's question.
+ */
+export type JobStage = Extract<JobStatus, 'new' | 'review'>;
 
-/** Outcomes a call can't undo. Logging a call can revive a job marked ghosted or passed, but not these. */
+/**
+ * Outcomes a call can't undo. Logging a call can revive a job marked ghosted or passed, but not
+ * these: a call logged afterward is most often one that happened before.
+ */
 export const SETTLED_STATUSES: readonly JobStatus[] = [
   'rejected',
   'withdrawn',
   'accepted',
   'declined',
+  'role-closed',
 ];
 
 /** Where a logged call stands. */
@@ -106,6 +174,10 @@ export interface TrackerFields {
   status: JobStatus | null;
   /** When the current status started. */
   statusOn: string | null;
+  /** For a job set aside for later, the day it comes back to review, when the user gave one. */
+  backOn: string | null;
+  /** Why the user passed on the job, when they said. */
+  passReason: PassReason | null;
   appliedOn: string | null;
   nextAction: string | null;
   nextOn: string | null;
@@ -153,8 +225,8 @@ export interface StatusChange {
 }
 
 /**
- * The status a job shows: the user's own, unless the skills have since taken the job further.
- * A job the user marked "checked" shows "resume" once a resume is built.
+ * The status a job shows: the user's own, unless Claude's work has since taken the job further.
+ * A job the user left at "new" shows "review" once Claude does something for it.
  */
 export function effectiveStatus(status: JobStatus | null, stage: JobStage): JobStatus {
   if (!status) return stage;

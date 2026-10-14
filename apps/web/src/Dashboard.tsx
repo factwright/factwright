@@ -11,7 +11,7 @@ import {
 import { Briefcase, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import styles from './Dashboard.module.css';
-import { type PhoneRow, phoneRows, startingView, viewCounts, visible } from './jobs.ts';
+import { type PhoneRow, phoneRows, setAside, startingView, viewCounts, visible } from './jobs.ts';
 import { navigate } from './route.ts';
 import type { Vault } from './vault.ts';
 
@@ -69,6 +69,7 @@ export function Dashboard({
   const [query, setQuery] = useState('');
   const counts = viewCounts(rows);
   const shown = visible(rows, view, query);
+  const later = setAside(rows, view, query);
   const stats = jobStats(rows, today);
   const heardBack = stats.applied ? `${Math.round((stats.heardBack / stats.applied) * 100)}%` : '—';
 
@@ -154,13 +155,29 @@ export function Dashboard({
         onChange={(event) => setQuery(event.target.value)}
       />
       {shown.length === 0 ? (
-        <p className={styles.none}>No jobs here{query ? ' match that search' : ''}.</p>
+        <p className={styles.none}>
+          {later.length > 0 && !query
+            ? 'Nothing to review. The rest are set aside.'
+            : `No jobs here${query ? ' match that search' : ''}.`}
+        </p>
       ) : (
         <ul className={styles.list} aria-label="Jobs">
           {shown.map((row) => (
             <JobRow key={row.job.id} row={row} page={vault.pages.get(row.job.id) ?? ''} />
           ))}
         </ul>
+      )}
+      {later.length > 0 && (
+        <details className={styles.later}>
+          <summary className={styles.laterName}>
+            Later <span className={styles.laterCount}>{later.length}</span>
+          </summary>
+          <ul className={styles.list} aria-label="Set aside for later">
+            {later.map((row) => (
+              <JobRow key={row.job.id} row={row} page={vault.pages.get(row.job.id) ?? ''} />
+            ))}
+          </ul>
+        </details>
       )}
     </>
   );

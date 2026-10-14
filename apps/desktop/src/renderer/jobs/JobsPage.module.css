@@ -56,6 +56,27 @@
   align-items: center;
   gap: var(--fw-space-3);
   margin-top: 22px;
+  container: toolbar / inline-size;
+}
+
+/* The views stay on one line: closer together when the page is narrow, and at the very
+   narrowest they scroll sideways rather than wrap. */
+.views {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.views > fieldset {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+@container toolbar (max-width: 700px) {
+  .views label {
+    gap: 4px;
+    padding: 0 8px;
+  }
 }
 
 /* Narrowing what a view shows: where jobs came from, what needs the user, and the filters. */
@@ -85,4 +106,11 @@
 
 .noMatch {
   margin-top: 14px;
+}
+
+/* To review worked down to nothing, with jobs still set aside under Later. */
+.caughtUp {
+  margin: 14px 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
 }

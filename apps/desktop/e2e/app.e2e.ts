@@ -53,7 +53,7 @@ test('says sync isn’t in a copy built without a sync server', async () => {
 
 test('shows the jobs on file, your Claude ready, a way to support Factwright, and its version', async () => {
   const { window } = opened;
-  // It opens on the jobs furthest along: Acme, checked with a resume, is the next to apply to.
+  // It opens on the jobs furthest along: Acme, with Claude's fit check and a resume, is to review.
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
   // Not clicked: it would open Buy Me a Coffee in the browser of whoever runs the tests.
@@ -62,9 +62,10 @@ test('shows the jobs on file, your Claude ready, a way to support Factwright, an
     'https://buymeacoffee.com/stevehillyer',
   );
   await expect(window.getByText(`Factwright ${version}`)).toBeVisible();
-  await pickView(/^To review/);
+  // A job the search found, which nobody has touched, is new.
+  await pickView(/^New/);
   await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toBeVisible();
-  await pickView(/^To apply/);
+  await pickView(/^To review/);
 });
 
 test('scrolls only its panes, never the window, however far the list runs', async () => {
@@ -83,7 +84,7 @@ test('scrolls only its panes, never the window, however far the list runs', asyn
   );
   await zoom(1);
   expect(page.scrollHeight).toBe(page.clientHeight);
-  await pickView(/^To apply/);
+  await pickView(/^To review/);
 });
 
 test('checks its setup with Claude Code quietly, and it passes', async () => {
@@ -227,9 +228,9 @@ test('finds jobs where the user picks, and keeps each search’s jobs together',
   // A search reads a lot and weighs it lightly, so it thinks at high.
   expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();
-  // The LinkedIn search's job is under To review, saying which search found it now there are
-  // two, and the search can be picked on its own.
-  await pickView(/^To review/);
+  // The LinkedIn search's job is new, saying which search found it now there are two, and the
+  // search can be picked on its own.
+  await pickView(/^New/);
   await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toContainText(
     'LinkedIn Oct 12',
   );
@@ -250,6 +251,28 @@ test('adds a job by hand', async () => {
   await dialog.getByRole('textbox', { name: 'Company' }).fill('Northwind Labs');
   await dialog.getByRole('button', { name: 'Add job' }).click();
   await expect(window.getByRole('button', { name: /^Northwind Labs/ })).toBeVisible();
+});
+
+test('passes on several new jobs at once, saying why, and keeps why for the job search', async () => {
+  const { window } = opened;
+  await pickView(/^New/);
+  await window.getByRole('checkbox', { name: /^Select Tidewater Analytics/ }).click();
+  await window.getByRole('checkbox', { name: /^Select Lakeside Data/ }).click();
+  const bar = window.getByRole('region', { name: 'Selected jobs' });
+  await expect(bar).toContainText('2 jobs selected');
+  await bar.getByRole('button', { name: 'Pass' }).click();
+  await expect(window.getByRole('status').filter({ hasText: 'Passed on 2 jobs.' })).toBeVisible();
+  await window
+    .getByRole('group', { name: 'Why you passed' })
+    .getByRole('button', { name: 'Pay' })
+    .click();
+  await expect(
+    window.getByRole('group', { name: 'Why you passed' }).getByRole('button', { name: 'Pay' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await window.getByRole('button', { name: 'Done' }).click();
+  await pickView(/^Closed/);
+  await expect(window.getByRole('button', { name: /^Tidewater Analytics.*Passed/ })).toBeVisible();
+  await expect(window.getByRole('button', { name: /^Lakeside Data.*Passed/ })).toBeVisible();
 });
 
 test('reads and changes the fact bank: a fact’s words, a confirmation, and a new fact', async () => {
@@ -343,6 +366,13 @@ test('keeps everything tracked after a restart', async () => {
   await expect(jobPanel().getByRole('textbox', { name: /What you sent/ })).toHaveValue(
     'Deploys, mostly.',
   );
+  // Why the user passed stays with the job.
+  await window.getByRole('button', { name: /^Tidewater Analytics/ }).click();
+  await expect(
+    jobPanel()
+      .getByRole('region', { name: 'Why did you pass?' })
+      .getByRole('button', { name: 'Pay' }),
+  ).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('explains the first run’s question about trusting the workspace', async () => {

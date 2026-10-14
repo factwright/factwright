@@ -36,6 +36,7 @@ export type JourneyOutcome =
   | 'Rejected'
   | 'No response'
   | 'Withdrew'
+  | 'Role closed'
   | 'Passed'
   | 'In progress'
   | 'Not applied';
@@ -47,6 +48,7 @@ const OUTCOMES: Readonly<Partial<Record<JobStatus, JourneyOutcome>>> = {
   ghosted: 'No response',
   withdrawn: 'Withdrew',
   passed: 'Passed',
+  'role-closed': 'Role closed',
 };
 
 /** Colors for the flow chart's outcomes, so they read at a glance. */
@@ -57,6 +59,7 @@ const FLOW_COLORS: Readonly<Record<string, string>> = {
   Rejected: '#bb2d2d',
   'No response': '#85806f',
   Withdrew: '#9a5b00',
+  'Role closed': '#7c8496',
   Passed: '#a8a69d',
   'Not applied': '#c4c2b9',
   'In progress': '#2a66d0',
@@ -97,7 +100,8 @@ export function journeyOf(job: Job, progress: JobProgress): Journey {
 
   const found = job.firstSeen ?? progress.lastActivity ?? '';
   const dates: Partial<Record<JourneyStage, string>> = { found };
-  if (job.fit || job.folder || progress.reached >= rank('checked')) {
+  // Checked once Claude did something for it, or the user took it on from New.
+  if (progress.reached >= rank('review')) {
     const work = job.events.filter((event) => event.tool !== 'search').map((event) => event.date);
     dates.checked = earliest(job.fit?.date, ...work) ?? found;
   }
@@ -179,6 +183,7 @@ const OUTCOME_ORDER: readonly JourneyOutcome[] = [
   'Rejected',
   'Withdrew',
   'No response',
+  'Role closed',
   'Passed',
   'Not applied',
 ];

@@ -1,4 +1,4 @@
-import { JOB_VIEWS, type JobView, viewOf } from '@factwright/core';
+import { JOB_VIEWS, type JobView, LIVE_STATUSES, viewOf } from '@factwright/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
@@ -22,6 +22,7 @@ import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
+  type JobRow,
   jobRows,
   type ListFilter,
   NO_FILTERS,
@@ -31,6 +32,7 @@ import {
 } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
+import { WithdrawDialog } from './jobs/WithdrawDialog.tsx';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
 import { isBoolean, readPref, usePref, writePref } from './prefs.ts';
@@ -63,7 +65,7 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   // The view the user last picked, or, the first time, one chosen once the jobs load.
   const [filter, setFilter] = useState<ListFilter>(() => ({
-    view: readPref<JobView>('jobs.view', 'review', isView),
+    view: readPref<JobView>('jobs.view', 'new', isView),
     query: '',
     needsYou: false,
     ...NO_FILTERS,
@@ -78,6 +80,8 @@ export function App({ api }: { api: FactwrightApi }) {
   const [dialog, setDialog] = useState<
     'add-job' | 'find-jobs' | 'journey' | 'sync' | 'claude-settings' | null
   >(null);
+  // Once the user accepts an offer, the company and the other jobs still in play, to withdraw from.
+  const [withdraw, setWithdraw] = useState<{ company: string; rows: JobRow[] } | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
@@ -118,6 +122,14 @@ export function App({ api }: { api: FactwrightApi }) {
   }, []);
 
   const ready = status !== 'checking' && status.state === 'ready';
+  const offerAccepted = (jobId: string) => {
+    const inPlay = rows.filter(
+      (row) =>
+        row.job.id !== jobId && !row.job.archived && LIVE_STATUSES.includes(row.progress.status),
+    );
+    const company = rows.find((row) => row.job.id === jobId)?.job.company ?? 'the company';
+    if (inPlay.length > 0) setWithdraw({ company, rows: inPlay });
+  };
   const plan = ready ? planName(status.plan) : undefined;
   const openJobs = rows.filter((row) => !row.job.archived).length;
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
@@ -252,6 +264,7 @@ export function App({ api }: { api: FactwrightApi }) {
             {page === 'jobs' && !alone && (
               <JobsPage
                 jobs={jobs}
+                api={api}
                 rows={rows}
                 today={today}
                 filter={filter}
@@ -281,6 +294,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 {...(alone &&
                   at >= 0 && { navigation: { index: at + 1, count: order.length, onStep: step } })}
                 {...(ready && { run: runControls })}
+                onAccepted={offerAccepted}
               />
             )}
           </div>
@@ -310,6 +324,14 @@ export function App({ api }: { api: FactwrightApi }) {
       )}
       {dialog === 'sync' && sync !== 'checking' && (
         <SyncDialog api={api} status={sync} onClose={() => setDialog(null)} />
+      )}
+      {withdraw && (
+        <WithdrawDialog
+          company={withdraw.company}
+          rows={withdraw.rows}
+          api={api}
+          onClose={() => setWithdraw(null)}
+        />
       )}
       {dialog === 'claude-settings' && (
         <ClaudeSettingsDialog

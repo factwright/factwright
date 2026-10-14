@@ -114,3 +114,19 @@
   color: var(--fw-muted);
   text-align: center;
 }
+
+/* The jobs set aside, folded at the bottom of To review until opened. */
+.later {
+  margin-top: var(--fw-space-5);
+}
+
+.laterName {
+  padding: 6px 0;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.laterCount {
+  color: var(--fw-muted);
+  font-weight: 500;
+}

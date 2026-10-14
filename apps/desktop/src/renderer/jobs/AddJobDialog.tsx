@@ -15,7 +15,7 @@ import { LIMITS } from '../../shared/limits.ts';
 import styles from './AddJobDialog.module.css';
 
 /** The statuses a job added by hand can start at. */
-const STARTING: readonly JobStatus[] = ['new', 'checked', 'applied', 'screen', 'interview'];
+const STARTING: readonly JobStatus[] = ['new', 'review', 'apply', 'applied', 'screen', 'interview'];
 
 /** Adds a job the user found on their own. Only the company is needed. */
 export function AddJobDialog({

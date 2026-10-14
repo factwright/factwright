@@ -13,7 +13,7 @@ import {
   STATUS_RANK,
   shotsFolder,
 } from '@factwright/core';
-import type { EditResult, FactwrightApi, JobList } from '../../shared/api.ts';
+import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
 
@@ -22,6 +22,7 @@ type TrackerApi = Pick<
   | 'listJobs'
   | 'jobDocs'
   | 'updateJob'
+  | 'updateJobs'
   | 'addJob'
   | 'addCall'
   | 'updateCall'
@@ -102,6 +103,39 @@ export function sampleTracker(jobs: string | null): TrackerApi {
     appliedOn: status === 'applied' && !job.appliedOn ? at : job.appliedOn,
     statusLog: [...job.statusLog, { id: newId('change'), status, at }],
   });
+  /**
+   * One job's change, as the real tracker makes it: a job set aside keeps the day it comes back,
+   * and one passed on keeps why, each when given.
+   */
+  const edit = (job: Job, changes: JobChanges): Job => {
+    let updated: Job = {
+      ...job,
+      ...(changes.nextAction !== undefined && {
+        nextAction: changes.nextAction?.trim() || null,
+      }),
+      ...(changes.nextOn !== undefined && { nextOn: changes.nextOn }),
+      ...(changes.appliedOn !== undefined && { appliedOn: changes.appliedOn }),
+      ...(changes.earlierNotes !== undefined && {
+        earlierNotes: changes.earlierNotes?.trim() || null,
+      }),
+      ...(changes.questions !== undefined && { questions: changes.questions }),
+      ...(changes.archived !== undefined && { archived: changes.archived }),
+    };
+    const { status } = changes;
+    const moved = status !== undefined && status !== job.status;
+    if (moved) {
+      updated = status
+        ? mark(updated, status, changes.statusOn ?? localDate())
+        : { ...updated, status: null, statusOn: null };
+    }
+    if (changes.backOn !== undefined || (moved && status === 'later')) {
+      updated = { ...updated, backOn: changes.backOn ?? null };
+    }
+    if (changes.passReason !== undefined || (moved && status === 'passed')) {
+      updated = { ...updated, passReason: changes.passReason ?? null };
+    }
+    return updated;
+  };
 
   return {
     listJobs: () =>
@@ -117,28 +151,12 @@ export function sampleTracker(jobs: string | null): TrackerApi {
     updateJob: async (jobId, changes) =>
       change(
         (job) => job.id === jobId,
-        (job) => {
-          let updated: Job = {
-            ...job,
-            ...(changes.nextAction !== undefined && {
-              nextAction: changes.nextAction?.trim() || null,
-            }),
-            ...(changes.nextOn !== undefined && { nextOn: changes.nextOn }),
-            ...(changes.appliedOn !== undefined && { appliedOn: changes.appliedOn }),
-            ...(changes.earlierNotes !== undefined && {
-              earlierNotes: changes.earlierNotes?.trim() || null,
-            }),
-            ...(changes.questions !== undefined && { questions: changes.questions }),
-            ...(changes.archived !== undefined && { archived: changes.archived }),
-          };
-          const { status } = changes;
-          if (status !== undefined && status !== job.status) {
-            updated = status
-              ? mark(updated, status, changes.statusOn ?? localDate())
-              : { ...updated, status: null, statusOn: null };
-          }
-          return updated;
-        },
+        (job) => edit(job, changes),
+      ),
+    updateJobs: async (jobIds, changes) =>
+      change(
+        (job) => jobIds.includes(job.id),
+        (job) => edit(job, changes),
       ),
     addJob: async (input) => {
       const company = input.company.trim();

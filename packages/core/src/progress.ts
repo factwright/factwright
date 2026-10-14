@@ -12,6 +12,9 @@ import {
   STATUS_RANK,
 } from './tracker.ts';
 
+/** Statuses of jobs the user hasn't applied to yet. */
+export const BEFORE_APPLYING: readonly JobStatus[] = ['new', 'review', 'apply', 'later'];
+
 /** Statuses of jobs the user applied to and is still in the running for. */
 export const LIVE_STATUSES: readonly JobStatus[] = ['applied', 'screen', 'interview', 'offer'];
 
@@ -21,8 +24,16 @@ export const CLOSED_STATUSES: readonly JobStatus[] = [
   'declined',
   'rejected',
   'ghosted',
-  'passed',
   'withdrawn',
+  'passed',
+  'role-closed',
+];
+
+/** How the status menu groups every status, in order. */
+export const STATUS_GROUPS: readonly { label: string; statuses: readonly JobStatus[] }[] = [
+  { label: 'Before applying', statuses: BEFORE_APPLYING },
+  { label: 'After applying', statuses: LIVE_STATUSES },
+  { label: 'Closed', statuses: CLOSED_STATUSES },
 ];
 
 /** How each kind of call reads on screen. */
@@ -63,6 +74,8 @@ export interface Attention {
 export interface JobProgress {
   /** The status the job shows. */
   status: JobStatus;
+  /** For a job set aside for later, whether the day it comes back has come. */
+  backFromLater: boolean;
   /** The furthest step it reached, as a status rank. A rejection counts as having applied. */
   reached: number;
   /** The fit check's score, or else the job search's. */
@@ -78,15 +91,24 @@ export interface JobProgress {
 
 /**
  * The lists of jobs the jobs page can show, in the order a job moves through them: found and
- * waiting for a look, checked and on the way to applying, applied and waiting to hear, in
- * interviews (an offer included), and closed. Then every job.
+ * not touched yet, started on but not decided, decided on and waiting to be applied to, applied
+ * and waiting to hear, in interviews (an offer included), and closed. Then every job.
  */
-export const JOB_VIEWS = ['review', 'apply', 'applied', 'interviewing', 'closed', 'all'] as const;
+export const JOB_VIEWS = [
+  'new',
+  'review',
+  'apply',
+  'applied',
+  'interviewing',
+  'closed',
+  'all',
+] as const;
 
 export type JobView = (typeof JOB_VIEWS)[number];
 
 /** How each view reads on screen. */
 export const JOB_VIEW_LABELS: Readonly<Record<JobView, string>> = {
+  new: 'New',
   review: 'To review',
   apply: 'To apply',
   applied: 'Applied',
@@ -95,10 +117,14 @@ export const JOB_VIEW_LABELS: Readonly<Record<JobView, string>> = {
   all: 'All',
 };
 
-/** The statuses each view holds. Every status is in one of them, and in "all". */
+/**
+ * The statuses each view holds. Every status is in one of them, and in "all". To review holds
+ * the jobs set aside for later too, folded at its bottom.
+ */
 export const VIEW_STATUSES: Readonly<Record<Exclude<JobView, 'all'>, readonly JobStatus[]>> = {
-  review: ['new'],
-  apply: ['checked', 'resume'],
+  new: ['new'],
+  review: ['review', 'later'],
+  apply: ['apply'],
   applied: ['applied'],
   interviewing: ['screen', 'interview', 'offer'],
   closed: CLOSED_STATUSES,
@@ -205,10 +231,14 @@ function attentionFor(
     const days = daysSince(job.statusOn);
     if (days !== null && days >= 7) return { level: 'action', text: `No update in ${days} days` };
   }
-  if (status === 'resume') {
-    const days = daysSince(job.lastActivity);
+  if (status === 'later' && progress.backFromLater) {
+    return { level: 'action', text: 'Back from Later. Apply or pass?' };
+  }
+  if ((status === 'review' || status === 'apply') && job.files.length > 0) {
+    const days = daysSince(progress.lastActivity);
     if (days !== null && days >= 5) {
-      return { level: 'info', text: `Resume ready for ${days} days. Apply or pass?` };
+      const ask = status === 'apply' ? 'Apply?' : 'Apply or pass?';
+      return { level: 'info', text: `Resume ready for ${days} days. ${ask}` };
     }
   }
   return null;
@@ -239,6 +269,7 @@ export function jobProgress(job: Job, today: string): JobProgress {
   ].filter((date): date is string => Boolean(date));
   const progress = {
     status,
+    backFromLater: status === 'later' && job.backOn !== null && job.backOn <= today,
     reached,
     score,
     tier: fitTier(job, score),
@@ -254,18 +285,26 @@ export function isInView(view: JobView, status: JobStatus): boolean {
 }
 
 /**
+ * Whether a job is set aside for later: folded at the bottom of To review, outside its count,
+ * until the day it comes back, if the user gave one.
+ */
+export function isSetAside(progress: Pick<JobProgress, 'status' | 'backFromLater'>): boolean {
+  return progress.status === 'later' && !progress.backFromLater;
+}
+
+/**
  * The view to open on: the furthest along that has jobs in it, where things move fastest, from
- * interviews back to the jobs to review, and the closed ones when there's nothing else.
+ * interviews back to the jobs not touched yet, and the closed ones when there's nothing else.
  */
 export function startingView(statuses: readonly JobStatus[]): JobView {
-  const views = ['interviewing', 'applied', 'apply', 'review', 'closed'] as const;
-  return views.find((view) => statuses.some((status) => isInView(view, status))) ?? 'review';
+  const views = ['interviewing', 'applied', 'apply', 'review', 'new', 'closed'] as const;
+  return views.find((view) => statuses.some((status) => isInView(view, status))) ?? 'new';
 }
 
 /** The view a job with this status is in, other than "all". */
 export function viewOf(status: JobStatus): Exclude<JobView, 'all'> {
   const views = Object.keys(VIEW_STATUSES) as Exclude<JobView, 'all'>[];
-  return views.find((view) => VIEW_STATUSES[view].includes(status)) ?? 'review';
+  return views.find((view) => VIEW_STATUSES[view].includes(status)) ?? 'new';
 }
 
 /** Whether a posting looks like it hides the real employer. */
@@ -288,14 +327,20 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
     return { level: 'info', text: `${CALL_KIND_LABELS[call.kind]} ${callWhen(call, today)}` };
   }
   const step = (text: string): Attention => ({ level: 'info', text });
+  const check = () => step(looksHidden(job) ? 'Find the real employer' : 'Run a fit check');
   switch (progress.status) {
     case 'new':
       if (!job.role || progress.tier === 'skip') return null;
-      return step(looksHidden(job) ? 'Find the real employer' : 'Run a fit check');
-    case 'checked':
-      return step('Tailor a resume');
-    case 'resume':
-      return step('Ready to apply');
+      return check();
+    case 'review':
+      if (!job.role) return null;
+      if (job.files.length > 0) return step('Resume ready. Apply or pass?');
+      if (!job.fit) return check();
+      return step(progress.tier === 'skip' ? 'Fit check says skip. Pass?' : 'Apply or pass?');
+    case 'apply':
+      return step(job.files.length > 0 ? 'Ready to apply' : 'Tailor a resume');
+    case 'later':
+      return job.backOn && job.backOn > today ? step(`Back ${dayFrom(job.backOn, today)}`) : null;
     case 'applied': {
       if (!job.appliedOn) return step('Waiting to hear back');
       const days = daysBetween(job.appliedOn, today);

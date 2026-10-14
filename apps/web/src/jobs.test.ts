@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { phoneRows, startingView, viewCounts, visible } from './jobs.ts';
+import { phoneRows, setAside, startingView, viewCounts, visible } from './jobs.ts';
 import { job } from './testing.ts';
 
 const TODAY = '2026-10-10';
@@ -72,16 +72,33 @@ describe('the phone’s job list', () => {
     const rows = phoneRows(JOBS, TODAY);
     expect(companies(visible(rows, 'applied', ''))).toEqual(['Fable Co', 'Acme Robotics']);
     expect(companies(visible(rows, 'interviewing', ''))).toEqual(['Birch Health']);
-    expect(companies(visible(rows, 'review', ''))).toEqual(['Cobalt']);
+    expect(companies(visible(rows, 'new', ''))).toEqual(['Cobalt']);
     expect(companies(visible(rows, 'closed', ''))).toEqual(['Delta Freight']);
     expect(viewCounts(rows)).toEqual({
-      review: 1,
+      new: 1,
+      review: 0,
       apply: 0,
       applied: 2,
       interviewing: 1,
       closed: 1,
       all: 5,
     });
+  });
+
+  it('keeps the jobs set aside at the bottom of To review, outside its count, until their day', () => {
+    const rows = phoneRows(
+      [
+        job({ id: 'kite--staff', company: 'Kite', status: 'review' }),
+        job({ id: 'lark--staff', company: 'Lark', status: 'later', backOn: '2026-10-20' }),
+        job({ id: 'moth--staff', company: 'Moth', status: 'later' }),
+        job({ id: 'newt--staff', company: 'Newt', status: 'later', backOn: TODAY }),
+      ],
+      TODAY,
+    );
+    expect(companies(visible(rows, 'review', ''))).toEqual(['Newt', 'Kite']);
+    expect(companies(setAside(rows, 'review', ''))).toEqual(['Lark', 'Moth']);
+    expect(setAside(rows, 'all', '')).toEqual([]);
+    expect(viewCounts(rows)).toMatchObject({ review: 2, all: 4 });
   });
 
   it('searches companies, roles and notes, for every word typed', () => {
@@ -97,10 +114,10 @@ describe('the phone’s job list', () => {
     expect(visible(rows, 'all', '  ')).toHaveLength(5);
   });
 
-  it('opens on the furthest view with jobs in it, or on those to review', () => {
+  it('opens on the furthest view with jobs in it, or on the new ones', () => {
     expect(startingView(phoneRows(JOBS, TODAY))).toBe('interviewing');
     expect(startingView(phoneRows([job({ id: 'cobalt--senior', company: 'Cobalt' })], TODAY))).toBe(
-      'review',
+      'new',
     );
   });
 });

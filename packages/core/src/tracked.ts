@@ -10,8 +10,9 @@ import {
   CALL_OUTCOMES,
   CALL_STATES,
   type Call,
-  JOB_STATUSES,
   type Note,
+  PASS_REASONS,
+  readStatus,
   type SentAnswer,
   STATUS_RANK,
   type StatusChange,
@@ -117,8 +118,10 @@ export function trackedRow(row: StoredRow): TrackedRow {
     manual: row.manual === 1,
     payText: text(row.pay_text),
     firstSeen: text(row.first_seen),
-    status: isOneOf(JOB_STATUSES, row.status) ? row.status : null,
+    status: readStatus(row.status),
     statusOn: text(row.status_on),
+    backOn: isIsoDate(row.back_on) ? row.back_on : null,
+    passReason: isOneOf(PASS_REASONS, row.pass_reason) ? row.pass_reason : null,
     appliedOn: text(row.applied_on),
     nextAction: text(row.next_action),
     nextOn: text(row.next_on),
@@ -146,9 +149,8 @@ export function trackedCall(row: StoredRow): Call | null {
 
 /** A change of status, read from the tracker's history. */
 export function trackedChange(row: StoredRow): StatusChange | null {
-  return isOneOf(JOB_STATUSES, row.status)
-    ? { id: required(row.id), status: row.status, at: required(row.at) }
-    : null;
+  const status = readStatus(row.status);
+  return status ? { id: required(row.id), status, at: required(row.at) } : null;
 }
 
 /** A note, read from the tracker's notes table, or null when it doesn't read. */
@@ -171,6 +173,9 @@ export function byJob<T>(rows: readonly StoredRow[], read: (row: StoredRow) => T
   return grouped;
 }
 
+/** How far along a stored change of status is. */
+const rankOf = (row: StoredRow) => STATUS_RANK[readStatus(row.status) ?? 'new'] ?? 0;
+
 /**
  * Calls in the order they happen, and changes of status oldest first, for rows that come
  * without SQLite's order, as from sync. Changes on the same day go by how far along they are.
@@ -181,9 +186,7 @@ export const callOrder = (a: StoredRow, b: StoredRow) =>
   );
 
 export const changeOrder = (a: StoredRow, b: StoredRow) =>
-  required(a.at).localeCompare(required(b.at)) ||
-  (STATUS_RANK[required(a.status) as keyof typeof STATUS_RANK] ?? 0) -
-    (STATUS_RANK[required(b.status) as keyof typeof STATUS_RANK] ?? 0);
+  required(a.at).localeCompare(required(b.at)) || rankOf(a) - rankOf(b);
 
 /** Notes oldest first, by the day they're about, then when they were written. */
 export const noteOrder = (a: StoredRow, b: StoredRow) =>
@@ -212,11 +215,18 @@ function typedPay(row: TrackedRow): JobPay | null {
   return { text: row.payText, min: range?.min ?? null, max: range?.max ?? null, source: 'listed' };
 }
 
-/** A job as the app shows it: its tracker row, plus what the workspace says when it has files. */
+/**
+ * A job as the app shows it: its tracker row, plus what the workspace says when it has files.
+ * A question for Claude about the job, the user's own or the application's, takes it out of New
+ * like Claude's other work, even before the answer comes.
+ */
 function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept): Job {
+  const asked = row.asks.length > 0 || row.questions.length > 0;
   const tracking = {
     status: row.status,
     statusOn: row.statusOn,
+    backOn: row.backOn,
+    passReason: row.passReason,
     appliedOn: row.appliedOn,
     nextAction: row.nextAction,
     nextOn: row.nextOn,
@@ -233,6 +243,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     return {
       ...job,
       ...tracking,
+      stage: asked ? 'review' : job.stage,
       pay: job.pay ?? typedPay(row),
       source: row.manual ? ADDED_BY_HAND : job.source,
       docKinds: Object.keys(docs) as JobDocKind[],
@@ -252,7 +263,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     search: null,
     searches: [],
     folder: null,
-    stage: 'new',
+    stage: asked ? 'review' : 'new',
     firstSeen: row.firstSeen,
     lastActivity: row.firstSeen,
     summary: null,

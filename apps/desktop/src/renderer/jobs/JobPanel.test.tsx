@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { type Job, localDate } from '@factwright/core';
+import { addDays, type Job, localDate } from '@factwright/core';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { JobPanel } from './JobPanel.tsx';
+import type { RunControls } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
 import { sampleDocs, sampleJobs } from './sample-jobs.ts';
 
@@ -41,6 +42,7 @@ function panel(
 ) {
   const fullApi = {
     updateJob: vi.fn(async () => ({ ok: true as const })),
+    undoStatusChange: vi.fn(async () => ({ ok: true as const })),
     jobDocs: vi.fn(async () => (job ? sampleDocs(job) : null)),
     jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
     openFile: vi.fn(async () => ({ ok: true as const })),
@@ -53,6 +55,96 @@ function panel(
   );
   return { api: fullApi, onClose, ...view };
 }
+
+const controls = (): RunControls => ({ phase: 'idle', task: null, start: vi.fn(), show: vi.fn() });
+
+describe('sorting a job before applying', () => {
+  const sortButtons = () =>
+    within(screen.getByRole('group', { name: 'Sort this job' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent);
+
+  it('leads a new job with a fit check, then where it goes, each one click', async () => {
+    const run = controls();
+    const { api, container } = panel(byCompany('Copperleaf Energy'), {}, { run });
+    expect(sortButtons()).toEqual(['Run a fit check', 'To review', 'To apply', 'Later', 'Pass']);
+    await userEvent.click(screen.getByRole('button', { name: 'To apply' }));
+    expect(api.updateJob).toHaveBeenCalledWith('copperleaf-energy--principal-engineer', {
+      status: 'apply',
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Run a fit check' }));
+    expect(run.start).toHaveBeenCalledWith({
+      skill: 'fit-check',
+      jobId: 'copperleaf-energy--principal-engineer',
+    });
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+  });
+
+  it('offers the rest for a job to review, and nothing once it’s decided', () => {
+    panel(byCompany('Acme Robotics'), {}, { run: controls() });
+    // Its fit check ran, so it isn't offered again here.
+    expect(sortButtons()).toEqual(['To apply', 'Later', 'Pass']);
+    cleanup();
+    panel(byCompany('Quarry Labs'));
+    expect(screen.queryByRole('group', { name: 'Sort this job' })).toBeNull();
+  });
+
+  it('asks when a job set aside comes back, and undoes setting it aside', async () => {
+    const job = byCompany('Saltmarsh Games');
+    const { api } = panel(job);
+    const box = screen.getByRole('region', { name: 'Set aside for later' });
+    expect(box.textContent).toContain('It waits under Later until you move it');
+    await userEvent.click(within(box).getByRole('button', { name: 'In a week' }));
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { backOn: addDays(TODAY, 7) });
+    await userEvent.click(within(box).getByRole('button', { name: 'Undo “Marked Later”' }));
+    expect(api.undoStatusChange).toHaveBeenCalledWith(job.statusLog.at(-1)?.id);
+  });
+
+  it('says when a job set aside comes back, to change it or clear it', async () => {
+    const job = byCompany('Ridgeline Analytics');
+    const { api } = panel(job);
+    const box = screen.getByRole('region', { name: 'Set aside for later' });
+    expect(box.textContent).toContain('Back in To review on');
+    expect(within(box).getByRole('button', { name: /^When it comes back: / })).toBeTruthy();
+    await userEvent.click(within(box).getByRole('button', { name: 'No day' }));
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { backOn: null });
+  });
+
+  it('brings a job back from later, to sort again', async () => {
+    const job = byCompany('Pinecrest Software');
+    const { api } = panel(job);
+    expect(screen.getByText('Back from Later. Apply or pass?')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Set aside for later' })).toBeNull();
+    expect(sortButtons()).toEqual(['To review', 'To apply', 'Later', 'Pass']);
+    // Setting it aside again starts it over, with no day to come back.
+    await userEvent.click(screen.getByRole('button', { name: 'Later' }));
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { backOn: null });
+  });
+
+  it('asks why the user passed, in one click, and clears it with another', async () => {
+    const job = byCompany('Orchard Health');
+    const { api } = panel(job);
+    const box = screen.getByRole('region', { name: 'Why did you pass?' });
+    const chip = (name: string) => within(box).getByRole('button', { name });
+    expect(chip('Not my kind of work').getAttribute('aria-pressed')).toBe('true');
+    expect(chip('Pay').getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(chip('Pay'));
+    expect(api.updateJob).toHaveBeenLastCalledWith(job.id, { passReason: 'pay' });
+    await userEvent.click(chip('Not my kind of work'));
+    expect(api.updateJob).toHaveBeenLastCalledWith(job.id, { passReason: null });
+  });
+
+  it('offers to withdraw from the rest once an offer is accepted', async () => {
+    const onAccepted = vi.fn();
+    panel(byCompany('Fernway'), {}, { onAccepted });
+    const menu = screen.getByRole('combobox', { name: 'Status for Fernway' });
+    await userEvent.selectOptions(menu, 'Declined');
+    expect(onAccepted).not.toHaveBeenCalled();
+    await userEvent.selectOptions(menu, 'Accepted');
+    expect(onAccepted).toHaveBeenCalledWith('fernway--engineering-lead');
+  });
+});
 
 describe('JobPanel', () => {
   it('asks the user to pick a job until one is picked', () => {

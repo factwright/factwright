@@ -1,4 +1,11 @@
-import { CALL_KINDS, CALL_OUTCOMES, CALL_STATES, isIsoDate, JOB_STATUSES } from '@factwright/core';
+import {
+  CALL_KINDS,
+  CALL_OUTCOMES,
+  CALL_STATES,
+  isIsoDate,
+  JOB_STATUSES,
+  PASS_REASONS,
+} from '@factwright/core';
 import type {
   CallChanges,
   JobChanges,
@@ -82,6 +89,8 @@ export function parseJobChanges(value: unknown): JobChanges | null {
   return readFields<Required<JobChanges>>(value, {
     status: orNull(oneOf(JOB_STATUSES)),
     statusOn: date,
+    backOn: orNull(date),
+    passReason: orNull(oneOf(PASS_REASONS)),
     appliedOn: orNull(date),
     nextAction: textUpTo(LIMITS.nextAction),
     nextOn: orNull(date),

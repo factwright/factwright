@@ -1,4 +1,10 @@
-import { type Job, type JobStatus, payLabel, readApplySteps } from '@factwright/core';
+import {
+  type Job,
+  type JobStatus,
+  type PassReason,
+  payLabel,
+  readApplySteps,
+} from '@factwright/core';
 import {
   FIT_TIER_DISPLAY,
   FitBadge,
@@ -20,16 +26,17 @@ import {
   X,
 } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import type { FactwrightApi } from '../../shared/api.ts';
+import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
+import { PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
 import { FilesSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
 import { ActivitySection, ArchiveFooter, NextStep, ProgressSection } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
-import { RunActions, type RunControls } from './RunActions.tsx';
+import { BUSY, RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: styles.info } as const;
@@ -107,6 +114,8 @@ export interface JobPanelProps {
   /** Gives the job the window to itself, or puts it back beside the list. */
   onExpand?: (expanded: boolean) => void;
   navigation?: PanelNavigation;
+  /** Called when the user marks a job's offer accepted, to offer to withdraw from the rest. */
+  onAccepted?: (jobId: string) => void;
 }
 
 /** Everything on file for the job picked in the list, in sections that open and close. */
@@ -119,6 +128,7 @@ export function JobPanel({
   expanded = false,
   onExpand,
   navigation,
+  onAccepted,
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
@@ -148,10 +158,32 @@ export function JobPanel({
     ? `${FIT_TIER_DISPLAY[progress.tier].label}${progress.score !== null ? ` ${progress.score}` : ''}`
     : 'Not scored yet';
 
-  const changeStatus = async (status: JobStatus) => {
-    const result = await api.updateJob(job.id, { status });
+  const save = async (edit: Promise<EditResult>) => {
+    const result = await edit;
     setProblem(result.ok ? null : { jobId: job.id, message: result.message });
+    return result.ok;
   };
+  const change = (changes: JobChanges) => save(api.updateJob(job.id, changes));
+  const changeStatus = async (status: JobStatus) => {
+    if ((await change({ status })) && status === 'accepted') onAccepted?.(job.id);
+  };
+  // Setting a job aside again, once its day has come, starts it over with no day.
+  const move = (status: JobStatus) =>
+    status === 'later' && progress.status === 'later'
+      ? change({ backOn: null })
+      : changeStatus(status);
+  const undo = (changeId: string) => save(api.undoStatusChange(changeId));
+  const { status } = progress;
+  const sorting =
+    Boolean(job.role) &&
+    (status === 'new' || status === 'review' || (status === 'later' && progress.backFromLater));
+  const fitCheck =
+    run && !job.fit
+      ? {
+          onRun: () => run.start({ skill: 'fit-check', jobId: job.id }),
+          disabled: BUSY.includes(run.phase),
+        }
+      : undefined;
   // Escape puts an expanded job back beside the list first, then closes it.
   const onEscape = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -163,6 +195,22 @@ export function JobPanel({
     <div className={styles.top}>
       {attention && next && (
         <p className={`${styles.next} ${NEXT_TONE[attention.level]}`}>{next.text}</p>
+      )}
+      {sorting && <SortButtons status={status} onMove={move} fitCheck={fitCheck} />}
+      {status === 'later' && !progress.backFromLater && (
+        <SetAsideBox
+          job={job}
+          today={today}
+          onBackOn={(backOn) => change({ backOn })}
+          onUndo={undo}
+        />
+      )}
+      {status === 'passed' && (
+        <PassedBox
+          job={job}
+          onReason={(passReason: PassReason | null) => change({ passReason })}
+          onUndo={undo}
+        />
       )}
       <NextStep key={`next-${job.id}`} job={job} api={api} />
       {job.apply && <ApplySection markdown={job.apply} />}

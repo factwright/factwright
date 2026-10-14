@@ -1,6 +1,6 @@
 ---
 name: job-search
-description: Search for jobs in one or more places (Hacker News's monthly "Who is hiring?" thread, LinkedIn's or Indeed's listings found through web search, companies' job boards on Greenhouse, Lever, Ashby or Gem, a company's careers page, or a job site's public listings, such as YC's Work at a Startup or Wellfound) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names places to search. Saves each source word for word, plus a ranked report the app shows as jobs to review.
+description: Search for jobs in one or more places (Hacker News's monthly "Who is hiring?" thread, LinkedIn's or Indeed's listings found through web search, companies' job boards on Greenhouse, Lever, Ashby or Gem, a company's careers page, or a job site's public listings, such as YC's Work at a Startup or Wellfound) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names places to search. Saves each source word for word, plus a ranked report the app shows as new jobs to sort.
 argument-hint: "[places, between · marks: HN or HN 2026-11, LinkedIn, Indeed, company job boards, a link, or a company's name]"
 ---
 
@@ -57,7 +57,7 @@ Before starting, read:
 
 ## 3. Verify and score
 For each listing that passed:
-- Call `find_job` with its company, plus the posting's link if there is one. If the user has seen the job before (checked it, applied, passed), say so first in its flags, and don't pitch it as new.
+- Call `find_job` with its company, plus the posting's link if there is one. If the user has seen the job before (checked it, set it aside, applied, passed), say so first in its flags, with why they passed when it gives a reason ("passed Oct 14: pay"), and don't pitch it as new.
 - Confirm it's still open, and get the remote fine print, pay, stage and size:
   - **A posting on Greenhouse, Lever, Ashby or Gem:** call `job_board` with the posting's link. It says whether the posting is still open, and saves its full text along with the company's other openings. Note related roles as "also: <role>".
   - **Anywhere else:** a web search often finds the posting on an applicant system. Otherwise, read the posting with `read_page`.
@@ -76,7 +76,7 @@ For each listing that passed:
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.
 
 ## 4. Write the report
-Write `jobs.json` in the search's folder. The app reads it and lists each ranked job under **To review**, with its score, why, gaps and flags. Leave out what doesn't apply.
+Write `jobs.json` in the search's folder. The app reads it and lists each ranked job under **New**, with its score, why, gaps and flags. Leave out what doesn't apply.
 ```jsonc
 {
   "meta": {
@@ -124,6 +124,7 @@ Reply in 6 lines or fewer, plus a line for each place after the first:
 - the funnel, in one line per place
 - the top 3, with scores
 - anything odd about a source
-- the next step: the ranked jobs are in the app under **To review**, each place as a search of its own to filter by, and each job's panel runs `/factwright:fit-check` or `/factwright:focused-resume` on it.
+- the next step: the ranked jobs are in the app under **New**, each place as a search of its own to filter by. Each job's panel sorts it in a click (To review, To apply, Later or Pass) and runs `/factwright:fit-check` or `/factwright:focused-resume` on it.
+- when `find_job` says the user passed on jobs for the same reason more than once, one line suggesting it as a deal-breaker they can add in Profile, under What you want ("You've passed on 4 jobs over pay. Add a pay floor to your deal-breakers?"). Only suggest it; change nothing.
 
 The app picks up the search on its own. There's nothing to commit or sync.

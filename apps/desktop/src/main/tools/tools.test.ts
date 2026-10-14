@@ -89,7 +89,7 @@ describe('find_job', () => {
     expect(answer).toBe(
       [
         'Seen before:',
-        `- Acme Robotics, Staff Engineer (job acme-robotics--staff-engineer): fit check Strong 82 on 2026-10-07; folder applications/${FOLDER}; status applied since 2026-10-08; applied 2026-10-08`,
+        `- Acme Robotics, Staff Engineer (job acme-robotics--staff-engineer): fit check Strong 82 on 2026-10-07; folder applications/${FOLDER}; status Applied since 2026-10-08; applied 2026-10-08`,
         'For everything on file, call job_details with the job’s id.',
       ].join('\n'),
     );
@@ -116,6 +116,36 @@ describe('find_job', () => {
     );
   });
 
+  it('says why the user passed, and when a reason for passing repeats', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.updateJob(id, { status: 'passed', passReason: 'pay' });
+    const found = await tool('find_job').run({ company: 'Acme Robotics' });
+    expect(found).toContain('status Passed since 2026-10-11, why: pay');
+    expect(found).not.toContain('Why the user passed');
+    for (const company of ['Globex', 'Initech', 'Stark', 'Hooli', 'Umbrella']) {
+      jobs.addJob({ company, role: 'Staff Engineer', status: 'passed' });
+    }
+    const [globex, initech, stark, hooli, umbrella] = jobs.list().jobs.filter((job) => job.manual);
+    const ids = [globex, initech, stark].map((job) => job?.id ?? '');
+    jobs.updateJobs(ids, { passReason: 'location' });
+    jobs.updateJob(hooli?.id ?? '', { passReason: 'company' });
+    jobs.updateJob(umbrella?.id ?? '', { passReason: 'pay' });
+    // Most given first. A reason given once isn't a pattern yet.
+    expect(await tool('find_job').run({ company: 'Tidewater Analytics' })).toBe(
+      [
+        'Not seen before: Tidewater Analytics.',
+        'Why the user passed on jobs before: location 3, pay 2.',
+      ].join('\n'),
+    );
+  });
+
+  it('says when a job set aside comes back', async () => {
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'later', backOn: '2026-11-02' });
+    expect(await tool('find_job').run({ company: 'Acme Robotics' })).toContain(
+      'status Later since 2026-10-11, back 2026-11-02',
+    );
+  });
+
   it('asks for a company or a link', async () => {
     await expect(tool('find_job').run({})).rejects.toThrow(
       'Give the company, or a link to the posting.',
@@ -136,7 +166,7 @@ describe('job_details', () => {
     jobs.addCall(id, { kind: 'screen', onDate: '2026-10-14', atTime: '10:30' });
     const answer = await tool('job_details').run({ job: id });
     expect(answer).toContain('## Acme Robotics, Staff Engineer');
-    expect(answer).toContain('- Status: screen since 2026-10-11');
+    expect(answer).toContain('- Status: Screen since 2026-10-11');
     expect(answer).toContain('- Fit check: Strong 82 (2026-10-07)');
     expect(answer).toContain('- Next step: Prepare by 2026-10-13');
     expect(answer).toContain(`- Folder: applications/${FOLDER}/`);
@@ -160,7 +190,7 @@ describe('job_details', () => {
       ].join('\n'),
     );
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled');
-    expect(answer).toContain('    2026-10-11  The user marked it screen');
+    expect(answer).toContain('    2026-10-11  The user marked it Screen');
   });
 
   it('gives the application’s questions, numbered, as questions to answer, with what was sent', async () => {
@@ -700,6 +730,17 @@ describe('build_resume', () => {
     expect(readFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'utf8')).toBe('as sent');
     writeResume({ ...resume, output_name: 'AlexRiveraResume10112026_Acme_v2' });
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('_v2.pdf');
+  });
+
+  it('keeps them once the user withdrew, but not for a role that closed before applying', async () => {
+    writeResume(resume);
+    writeFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'as sent');
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'withdrawn' });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('stays as sent');
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'role-closed' });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
+      'Built applications/',
+    );
   });
 });
 
