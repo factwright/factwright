@@ -165,7 +165,9 @@ After `pnpm --filter @factwright/desktop build`:
   Code and checks it opens, reaches Claude Code with its own plugin, and reads the workspace.
 
 These builds are for trying out only: macOS and Windows warn about apps that aren't signed, and
-they have no update settings, so they never update themselves.
+they have no sync server or update settings, so they can't sync and never update themselves.
+`build` reads `FACTWRIGHT_SYNC_SERVER` and `dist:mac` or `dist:win` reads `FACTWRIGHT_DOWNLOADS_URL`,
+as the release workflow sets them for Factwright's own builds.
 
 ## If a release goes wrong
 **If publishing stops partway,** such as an upload failing, choose **Re-run failed jobs** on the

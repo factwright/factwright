@@ -76,7 +76,8 @@ It runs on Cloudflare's free plan. The first deploy creates the database, the fi
 Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one. To run your own:
 1. In `wrangler.jsonc`, change the `routes` pattern and `APP_URL` to an address on a domain in your own Cloudflare account. They must match: the app opens sign-in pages only from its server's own address.
 2. Follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
-3. Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://sync.example.com pnpm --filter @factwright/desktop build`.
+3. Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://sync.example.com pnpm --filter @factwright/desktop build`. The build reads it, so set it there, then make the installers as usual.
+4. The app and the web view link to factwright.com's terms and privacy policy ([`packages/core/src/legal.ts`](../../packages/core/src/legal.ts)), which cover Neatifai's services, not yours: point them at your own.
 
 ### Restoring an account
 Each store is backed up to R2 every day, and kept for 14 days. To put one back as it was on a day, with `ADMIN_TOKEN` set:

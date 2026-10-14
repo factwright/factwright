@@ -21,6 +21,8 @@ const UPDATE_SETTINGS: Readonly<Record<string, string>> = {
   win32: 'resources/app-update.yml',
 };
 
+// A copy installed from a release can stand in, with FACTWRIGHT_SYNC_SERVER and
+// FACTWRIGHT_DOWNLOADS_URL set as release.yml built it.
 const executable =
   process.env.FACTWRIGHT_PACKAGED_APP ?? join(desktop, BUILT[process.platform] ?? 'none');
 

@@ -73,11 +73,11 @@ jobs:
             echo "::error::Releases are built only in factwright/factwright, which gets Factwright's sync server and download site."
             exit 1
           fi
-          if ! curl --fail --silent --max-time 30 --retry 2 "$FACTWRIGHT_SYNC_SERVER/api/sign-in-options" | grep -q '"providers"'; then
+          if ! curl --fail --silent --show-error --max-time 30 --retry 2 "$FACTWRIGHT_SYNC_SERVER/api/sign-in-options" | grep -q '"providers"'; then
             echo "::error::$FACTWRIGHT_SYNC_SERVER doesn't answer as Factwright's sync server."
             exit 1
           fi
-          if ! curl --fail --silent --max-time 30 --retry 2 "${FACTWRIGHT_DOWNLOADS_URL}latest.yml" | grep -q '^version: '; then
+          if ! curl --fail --silent --show-error --max-time 30 --retry 2 "${FACTWRIGHT_DOWNLOADS_URL}latest.yml" | grep -q '^version: '; then
             echo "::error::$FACTWRIGHT_DOWNLOADS_URL doesn't give Factwright's update feed."
             exit 1
           fi

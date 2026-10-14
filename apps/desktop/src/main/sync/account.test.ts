@@ -295,6 +295,8 @@ describe('a copy built without a sync server', () => {
     await mac.sync.stop();
     const secrets = join(mac.dataDir, 'sync', 'secrets.json');
     const kept = readFileSync(secrets, 'utf8');
+    const known = ['keyId', 'account'].map((key) => syncMeta(mac.dataDir, key));
+    expect(known).not.toContain(null);
     const asked = [
       vi.spyOn(keychain, 'isEncryptionAvailable'),
       vi.spyOn(keychain, 'decryptString'),
@@ -312,6 +314,7 @@ describe('a copy built without a sync server', () => {
       for (const spy of asked) spy.mockRestore();
     }
     expect(readFileSync(secrets, 'utf8')).toBe(kept);
+    expect(['keyId', 'account'].map((key) => syncMeta(mac.dataDir, key))).toEqual(known);
     // The copy with the server picks sync up where it left off.
     const again = computer('Sam’s Mac', mac.dataDir);
     await again.sync.start();

@@ -153,10 +153,10 @@ If you lose every device and your recovery key, your data can't be recovered, by
   copy built anywhere else, such as from a fork, has neither: its Sync card says sync isn't in that
   copy, and it never looks for updates. Its builder can set up their own, as `apps/server` and
   `apps/desktop` say. This is how copies are built, not a lock: anyone can build a copy that
-  points at app.factwright.com, and the server treats it like any other, as what it keeps is locked
-  with keys only each account's devices hold. No one else's build can sign as Neatifai, though:
-  the signing keys are secrets of this repository, which GitHub never gives to a fork's runs, and
-  the release workflow gives to no pull request's run.
+  points at app.factwright.com. The server treats it like any other copy: it reaches only the
+  account it signs in to, whose job hunt is locked with keys only that account's devices hold. No
+  one else's build can sign as Neatifai, though: the signing keys are secrets of this repository,
+  which a fork's builds don't have, and which the release workflow gives to no pull request's run.
 - **No debugging the user's data.** Chromium, which the app is built on, can let another program
   drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
   user's own data folder: only with a folder of its own, as the tests give it, where there's no
