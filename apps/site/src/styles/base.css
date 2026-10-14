@@ -279,6 +279,12 @@ img {
   color: var(--fw-text);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .header-cta {
   display: none;
 }
@@ -288,9 +294,24 @@ img {
     display: none;
   }
 
+  .header-actions {
+    margin-left: auto;
+  }
+
   .header-cta {
     display: inline-flex;
-    margin-left: auto;
+  }
+}
+
+/* On a phone, the link to the code is just GitHub's mark, so the header fits on one line. */
+@media (max-width: 480px) {
+  .header-code {
+    width: 36px;
+    padding: 0;
+  }
+
+  .header-code-label {
+    display: none;
   }
 }
 

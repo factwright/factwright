@@ -6,7 +6,7 @@ It's built on the design system in [`@factwright/ui`](../../packages/ui): its co
 
 | Part | What it does |
 |---|---|
-| `index.html` | The page: what Factwright is, how it works in five steps, the fact bank, the Run buttons, the templates, whose Claude does the work, and questions |
+| `index.html` | The page: what Factwright is, how it works in five steps, the fact bank, the Run buttons, the templates, whose Claude does the work, its open-source code and who makes it, and questions |
 | `download.html`, `download/` | The download pages. `/download/mac` and `/download/windows` start that computer's download and say how to install it, with a link in case it doesn't start. `/download` goes on to the one for the visitor's computer, or shows both on a phone or Linux |
 | `privacy.html`, `terms.html` | The privacy policy and the terms of service, at `/privacy` and `/terms`. Every page's footer links to both, and so does signing in to sync, in the app and the web view |
 | `404.html` | The page for an address that doesn't exist |

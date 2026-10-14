@@ -2,6 +2,14 @@
 
 Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+- factwright.com says Factwright is fully open source: a GitHub link in its header and under the download buttons, a section on what anyone can check in the code, with the folders worth opening first, a question about it, and a link to the code in every page's footer. It also says who makes Factwright, and how to support it with a coffee or on GitHub Sponsors.
+
+### Changed
+- The terms say Factwright's code is under the AGPL-3.0, which they don't limit, and that supporting Factwright is a choice that buys nothing. The privacy policy says what supporting it shares, and with whom.
+
 ## 0.1.1 - 2026-10-13
 
 Steadier sync, the version in the sidebar, the privacy policy and terms, and installers in Factwright's colors.

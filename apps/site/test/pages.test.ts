@@ -36,6 +36,19 @@ const DOWNLOAD_PAGES = ['/download', '/download/mac', '/download/windows'];
 /** The privacy policy and the terms, which every page's footer links to. */
 const LEGAL_PAGES = ['/privacy', '/terms'];
 
+/** Factwright's code on GitHub, which every page's footer links to, as can links into it. */
+const SOURCE = 'https://github.com/factwright/factwright';
+
+/** Factwright's maker, and the two ways to support Factwright. */
+const MAKER = [
+  'https://github.com/steve1two',
+  'https://buymeacoffee.com/factwright',
+  'https://github.com/sponsors/steve1two',
+];
+
+/** Whether a link goes to Factwright's code, or something in it, such as a folder. */
+const inSource = (href: string) => href === SOURCE || href.startsWith(`${SOURCE}/`);
+
 /** The one address the privacy policy and terms give for questions. */
 const CONTACT = 'mailto:privacy@factwright.com';
 
@@ -80,7 +93,7 @@ describe.each([
     }
   });
 
-  it('links only to its own sections, the site’s pages, the downloads and Anthropic’s terms', () => {
+  it('links only to its own sections, the site’s pages, the downloads, its code, its maker and Anthropic’s terms', () => {
     const doc = open(page);
     const legal = LEGAL_PAGES.includes(`/${page.replace('.html', '')}`);
     const allowed = [
@@ -88,21 +101,22 @@ describe.each([
       ...DOWNLOAD_PAGES,
       ...DOWNLOADS,
       ...LEGAL_PAGES,
+      ...MAKER,
       ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL] : []),
     ];
     for (const link of doc.querySelectorAll('a[href]')) {
       const href = link.getAttribute('href') ?? '';
       if (href.startsWith('#')) expect(doc.getElementById(href.slice(1)), href).not.toBeNull();
-      else expect(allowed).toContain(href);
+      else if (!inSource(href)) expect(allowed).toContain(href);
     }
   });
 
-  it('links to the privacy policy and the terms from its footer', () => {
+  it('links to the privacy policy, the terms and the code from its footer', () => {
     const footer = open(page).querySelector('footer');
     const hrefs = [...(footer?.querySelectorAll('a[href]') ?? [])].map((link) =>
       link.getAttribute('href'),
     );
-    expect(hrefs).toEqual(expect.arrayContaining(LEGAL_PAGES));
+    expect(hrefs).toEqual(expect.arrayContaining([...LEGAL_PAGES, SOURCE]));
   });
 
   it('describes every picture, or hides it from screen readers', () => {
@@ -142,6 +156,14 @@ describe('the home page', () => {
     expect(footer).toContain(
       'It uses your own Claude account, and its runs count against your plan.',
     );
+  });
+
+  it('says it’s open source, with its code a click away in the header', () => {
+    const doc = open('index.html');
+    const header = [...(doc.querySelector('header')?.querySelectorAll('a[href]') ?? [])];
+    expect(header.map((link) => link.getAttribute('href'))).toContain(SOURCE);
+    expect(doc.querySelector('#open-source')?.textContent).toContain('fully open source');
+    expect(doc.querySelector('.hero-note a')?.getAttribute('href')).toBe(SOURCE);
   });
 
   it('shows the fact behind each resume line it offers', () => {
@@ -186,9 +208,8 @@ describe('the download pages', () => {
 
   it('are where the home page’s download buttons go', () => {
     const doc = open('index.html');
-    const hrefs = [...doc.querySelectorAll('[data-downloads] a')].map((link) =>
-      link.getAttribute('href'),
-    );
+    const offers = doc.querySelectorAll('[data-download], [data-downloads] [data-for] a');
+    const hrefs = [...offers].map((link) => link.getAttribute('href'));
     expect(new Set(hrefs)).toEqual(new Set(['/download/mac', '/download/windows']));
   });
 });
