@@ -4,7 +4,7 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
 import { desktop, fakeClaude, version } from './paths.ts';
 import { newDataFolder } from './workspace.ts';
@@ -15,6 +15,14 @@ const BUILT: Readonly<Record<string, string>> = {
   win32: 'dist/win-unpacked/Factwright.exe',
 };
 
+/** Where the app keeps the settings it looks for updates with, from the folder its program is in. */
+const UPDATE_SETTINGS: Readonly<Record<string, string>> = {
+  darwin: '../Resources/app-update.yml',
+  win32: 'resources/app-update.yml',
+};
+
+// A copy installed from a release can stand in, with FACTWRIGHT_SYNC_SERVER and
+// FACTWRIGHT_DOWNLOADS_URL set as release.yml built it.
 const executable =
   process.env.FACTWRIGHT_PACKAGED_APP ?? join(desktop, BUILT[process.platform] ?? 'none');
 
@@ -116,6 +124,28 @@ test('reaches Claude Code with its own plugin, and the setup check passes', asyn
       { timeout: 30_000 },
     )
     .toBe('passed');
+});
+
+// Factwright's own releases, which release.yml builds with FACTWRIGHT_SYNC_SERVER, can turn sync
+// on. A copy built without it, such as from a fork or on this computer, can't.
+test('can turn sync on only if built with a sync server', async () => {
+  const sync = window.getByRole('region', { name: 'Sync' });
+  if (process.env.FACTWRIGHT_SYNC_SERVER) {
+    await expect(sync.getByRole('button', { name: 'Turn on…' })).toBeVisible();
+  } else {
+    await expect(sync.getByText('Not in this copy')).toBeVisible();
+  }
+});
+
+// Likewise only a copy built with FACTWRIGHT_DOWNLOADS_URL looks for updates, there.
+test('looks for updates only if built with a download site', () => {
+  const settings = join(dirname(executable), UPDATE_SETTINGS[process.platform] ?? 'none');
+  const downloads = process.env.FACTWRIGHT_DOWNLOADS_URL;
+  if (downloads) {
+    expect(readFileSync(settings, 'utf8')).toContain(`url: ${downloads}`);
+  } else {
+    expect(existsSync(settings)).toBe(false);
+  }
 });
 
 // Never on this computer, where it would start on the user's own data folder.

@@ -38,8 +38,11 @@ import { SyncState } from './state.ts';
 export interface SyncAccountDeps {
   /** The app's data folder. Sync keeps its notes and secrets in a folder there. */
   dataDir: string;
-  /** The sync server, such as "https://app.factwright.com". */
-  server: string;
+  /**
+   * The sync server, such as "https://app.factwright.com", or null in a copy built without one, as
+   * copies built anywhere but Factwright's own releases are.
+   */
+  server: string | null;
   /** The app's version, which it tells the server. */
   version: string;
   keychain: Keychain;
@@ -61,6 +64,9 @@ const failed = (message: string) => ({ ok: false as const, message });
 
 /** What a step says when another sign-in, or closing the app, overtook it: it does nothing more. */
 const OVERTAKEN = failed('Signing in was canceled.');
+
+/** What signing in says in a copy built without a sync server. */
+const NO_SERVER = 'This copy of Factwright has no sync server.';
 
 /** Notes a sign-in that hasn't been checked against the account's key on the server yet. */
 const UNCHECKED = 'unchecked';
@@ -123,9 +129,18 @@ export class SyncAccount {
     return this.state.meta('email') ?? '';
   }
 
+  /**
+   * The sync server, for the steps past signing in. Only a copy built with a server gets that far,
+   * as signing in, picking sync up and signing out all stop without one.
+   */
+  private server(): string {
+    if (!this.deps.server) throw new Error(NO_SERVER);
+    return this.deps.server;
+  }
+
   private clientFor(token: string): SyncClient {
     return new SyncClient({
-      server: this.deps.server,
+      server: this.server(),
       token: () => token,
       headers: { 'user-agent': userAgent(this.deps.version, this.device) },
       ...(this.deps.fetch && { fetch: this.deps.fetch }),
@@ -134,6 +149,10 @@ export class SyncAccount {
 
   /** Picks up where sync left off when the app last closed. */
   async start(): Promise<void> {
+    if (!this.deps.server) {
+      this.set({ state: 'no-server' });
+      return;
+    }
     this.device = await (this.deps.computerName ?? computerName)();
     // With sync never turned on here, the keychain isn't asked anything.
     if (!this.secrets.exists()) {
@@ -192,6 +211,11 @@ export class SyncAccount {
 
   /** Signs in through the browser: shows a code, opens the page, and waits for the user. */
   async signInWithBrowser(): Promise<EditResult> {
+    const server = this.deps.server;
+    if (!server) {
+      this.set({ state: 'no-server' });
+      return failed(NO_SERVER);
+    }
     if (!this.secrets.available()) {
       this.set({ state: 'unavailable' });
       return failed('This computer’s keychain isn’t available.');
@@ -200,7 +224,7 @@ export class SyncAccount {
     const before: SyncStatus =
       this.current.state === 'signing-in' ? { state: 'off' } : this.current;
     const flow = new DeviceSignIn({
-      server: this.deps.server,
+      server,
       userAgent: userAgent(this.deps.version, this.device),
       ...(this.deps.fetch && { fetch: this.deps.fetch }),
       ...(this.deps.sleep && { sleep: this.deps.sleep }),
@@ -218,7 +242,7 @@ export class SyncAccount {
     }
     if (overtaken()) return OVERTAKEN;
     // Only the sync server's own pages open: never another site, or a file on this computer.
-    if (new URL(pending.url).origin !== new URL(this.deps.server).origin) {
+    if (new URL(pending.url).origin !== new URL(server).origin) {
       flow.cancel();
       this.signIn = null;
       return failed('The sync server sent a sign-in page somewhere else. Try again later.');
@@ -320,6 +344,9 @@ export class SyncAccount {
    * account key this computer has, and what sync knows, stay for the right account.
    */
   async useDifferentAccount(): Promise<EditResult> {
+    // A copy with no server never signed in. What sync keeps here is a copy with one's, such as
+    // one installed that shares this data folder, so it stays as it is.
+    if (!this.deps.server) return failed(NO_SERVER);
     const token = this.secrets.get('session');
     // First, so a step still waiting on the server for this sign-in does nothing more.
     this.client = null;
@@ -558,7 +585,7 @@ export class SyncAccount {
     try {
       const link = await lockForLink(accountKey, code.bytes);
       await client.saveLink(link.id, link.data);
-      const url = new URL('/link', this.deps.server);
+      const url = new URL('/link', this.server());
       url.hash = code.text.replaceAll('-', '');
       return {
         ok: true,
@@ -599,7 +626,7 @@ export class SyncAccount {
 
   /** Opens the account's page on the web, to download everything or delete the account. */
   async openAccountPage(): Promise<void> {
-    await this.deps.openUrl(new URL('/account', this.deps.server).toString());
+    if (this.deps.server) await this.deps.openUrl(new URL('/account', this.deps.server).toString());
   }
 
   /**
@@ -607,6 +634,8 @@ export class SyncAccount {
    * key. The job hunt here stays as it is, and so does the account's data on other devices.
    */
   async signOut(): Promise<EditResult> {
+    // As with signing in to a different account, a copy with no server leaves sync's keys alone.
+    if (!this.deps.server) return failed(NO_SERVER);
     const token = this.secrets.get('session');
     await this.forget();
     if (token) await this.signOutOnServer(token);
@@ -615,6 +644,7 @@ export class SyncAccount {
 
   /** Ends a session on the server, as far as it can be reached. */
   private async signOutOnServer(token: string): Promise<void> {
+    if (!this.deps.server) return;
     await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', this.deps.server), {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

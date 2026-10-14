@@ -1,8 +1,8 @@
 // How the app becomes installers: `pnpm dist:mac` or `pnpm dist:win`, after `pnpm build`.
 // Signing and notarizing happen only when their credentials are in the environment, as in the
 // release workflow. Without them, a Mac build is signed only for this computer, and a Windows
-// build isn't signed: both are for trying out, never for sending to anyone. Only GitHub's
-// builds look for updates: one made on this computer never updates itself.
+// build isn't signed: both are for trying out, never for sending to anyone. Only Factwright's
+// own releases look for updates, as `publish` below says.
 
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -164,13 +164,15 @@ export default {
     artifactName: 'Factwright-Setup-${version}.${ext}',
   },
   // Where installed copies look for updates, and where the release workflow puts each version.
-  // Only GitHub's builds get it: a copy built on this computer never updates itself. Updates
-  // download a range at a time, as Cloudflare's storage doesn't send several in one answer.
-  publish: env.GITHUB_ACTIONS
+  // Only Factwright's own releases are built with it, as release.yml sets FACTWRIGHT_DOWNLOADS_URL
+  // for them alone: a copy built anywhere else, such as from a fork or on this computer, never
+  // updates itself. Updates download a range at a time, as Cloudflare's storage doesn't send
+  // several in one answer.
+  publish: env.FACTWRIGHT_DOWNLOADS_URL
     ? [
         {
           provider: 'generic',
-          url: 'https://downloads.factwright.com/',
+          url: env.FACTWRIGHT_DOWNLOADS_URL,
           useMultipleRangeRequest: false,
         },
       ]

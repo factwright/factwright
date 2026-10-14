@@ -18,6 +18,11 @@ export type SyncStatus =
   | { state: 'off' }
   /** The system's keychain can't keep secrets, so sync can't turn on here. */
   | { state: 'unavailable' }
+  /**
+   * This copy was built without a sync server, as copies built from Factwright's code anywhere but
+   * its own releases are, so it can't sync.
+   */
+  | { state: 'no-server' }
   /** Waiting for the user to approve signing in, in their browser. */
   | { state: 'signing-in'; code: string; url: string }
   /**

@@ -28,10 +28,12 @@ The window is locked down:
 [`electron-builder.config.mjs`](electron-builder.config.mjs) makes the installers: a Mac disk image
 for Apple silicon and Intel, and a Windows installer that needs no administrator. A release signs
 them, notarizes the Mac app and puts them on downloads.factwright.com
-([docs/releasing.md](../../docs/releasing.md)). An installed copy looks there every few hours,
-downloads a new version in the background, and shows **Update ready** at the bottom of the
-sidebar ([`src/main/updates.ts`](src/main/updates.ts)). It installs on restart, or the next time
-the user quits. A copy being developed, or built on this computer, never updates itself.
+([docs/releasing.md](../../docs/releasing.md)). A copy installed from one looks there 30 seconds
+after it starts and every ten minutes after, downloads a new version in the background, and shows
+**Update ready** at the bottom of the sidebar ([`src/main/updates.ts`](src/main/updates.ts)). It
+installs on restart, or the next time the user quits. A copy being developed, or built anywhere
+else, never updates itself, unless it's built with a download site of its own, as
+[Sync](#sync) says.
 
 ## Claude's panel
 Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.js), in the workspace folder inside the app's data folder. Each run is locked down too:
@@ -96,7 +98,7 @@ The main process prints resumes in one hidden window ([`src/main/resume`](src/ma
 
 ## Getting started and Profile
 A new user, with no jobs and no fact bank yet, opens on **Get started**: seven short steps, saved as they go (in the workspace's `about-me/` folder), so they can stop and pick up later.
-- **Welcome:** what Factwright does, that it runs their own Claude Code and never sees its login, and their Claude's state. When Claude Code is missing, signed out or too old, the steps to fix it, with the exact command to copy and a button that opens Terminal (PowerShell on Windows). The user runs it themselves; the app checks again when they come back. Someone who already uses Factwright on another computer can turn on sync instead.
+- **Welcome:** what Factwright does, that it runs their own Claude Code and never sees its login, and their Claude's state. When Claude Code is missing, signed out or too old, the steps to fix it, with the exact command to copy and a button that opens Terminal (PowerShell on Windows). The user runs it themselves; the app checks again when they come back. Someone who already uses Factwright on another computer can turn on sync instead, in a copy built with a sync server.
 - **About you:** their name and contact details, as resumes should show them.
 - **Your files:** resumes (PDF, Word or text), their LinkedIn profile saved as a PDF, LinkedIn's own export of their data as a ZIP, and screenshots and other documents. The window reads the text out of PDFs (with pdf.js) and Word files, and out of the LinkedIn export it keeps only the profile's spreadsheets and the connections. The app checks each file again before keeping it ([`src/main/about`](src/main/about)).
 - **In your words:** a big box for everything about them, with prompts to start from, and the names to keep off every resume.
@@ -154,6 +156,9 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
 - **When:** a moment after each change here, right away when another device changes something (the server tells each listening device), and every ten minutes anyway. Offline, it waits and tries again, and your changes stay safe here.
 - **When both changed something,** nothing is lost. A file keeps both: the other device's version in its place, and this computer's beside it, named with the computer and the day, like `notes (Sam’s Mac, Oct 12).md`. A tracked job merges: its links, questions, the answers you sent, your questions for Claude, and its notes keep both sides, and the later change wins a clash. A note changed elsewhere shows up in the job panel unless you're typing in it.
 - **Managing it:** the Sync dialog lists your signed-in devices, signs any of them out, makes link codes, turns sync off on this computer (its job hunt stays), and opens your account on the web, to download everything or delete the account.
+- **Only Factwright's own builds,** made by its release workflow, have its sync server, app.factwright.com, and its download site. A copy built anywhere else, such as from a fork or on your own computer, has neither: its Sync card says sync isn't in that copy, getting started doesn't offer sync, and it never looks for updates.
+  - **To sync a copy you build,** run a [sync server](../server#running-your-own) of your own, and set `FACTWRIGHT_SYNC_SERVER` to its address for `pnpm --filter @factwright/desktop build`, which builds it in.
+  - **For updates,** set `FACTWRIGHT_DOWNLOADS_URL` to a site of your own for `dist:mac` or `dist:win`, which write it into the installers, and put each version's installers and its `latest.yml` or `latest-mac.yml` there, as [docs/releasing.md](../../docs/releasing.md) describes. A Mac copy installs an update only if the two are signed with the same certificate, so a copy built without one never updates; to give copies to other people, that's a Developer ID certificate.
 
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
@@ -161,12 +166,12 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`).
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
-  - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out` and `unavailable`). Turning it on plays through each step.
+  - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out`, `unavailable` and `no-server`). Turning it on plays through each step.
   - `?profile=done` shows a finished profile (also `new` and `started`).
   - Start Claude plays a short made-up run, including a question. With `?run=asks`, interview prep stops to ask one too.
 - **The README's screenshots:** `pnpm --filter @factwright/desktop screenshots` takes them again from the same sample data, each framed as a Mac window, in light and dark, into [`docs/images`](../../docs/images). Take them on a Mac, after a change they show. It needs Playwright's Chromium, once: `pnpm --filter @factwright/desktop exec playwright install chromium`.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
-- **Sync against a server on this computer:** set `FACTWRIGHT_SERVER_URL`, such as `http://localhost:8787` for the [sync server](../server) run with `pnpm --filter @factwright/server dev`.
+- **Sync against a server on this computer:** set `FACTWRIGHT_SERVER_URL`, such as `http://localhost:8787` for the [sync server](../server) run with `pnpm --filter @factwright/server dev`. Without it, a copy you run from the code has no sync server, unless it was built with `FACTWRIGHT_SYNC_SERVER`.
 - **End-to-end tests:** after a build, `e2e` drives the built app with [Playwright](https://playwright.dev) through its main flows ([`e2e`](e2e)):
   - It runs on a made-up job hunt in a fresh data folder.
   - A stand-in for Claude Code ([`e2e/fake-claude`](e2e/fake-claude)) comes first on PATH. It answers the version and sign-in checks, and in a run reaches Factwright's tools and sends its hooks as Claude Code does. It never reaches Anthropic, so the tests use no plan.

@@ -20,6 +20,8 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
     env: {
       ...process.env,
       PATH: [fakeClaude, process.env.PATH ?? ''].join(delimiter),
+      // A sync server only where a test starts one, never one from the shell running the tests.
+      FACTWRIGHT_SERVER_URL: '',
       // The setup check waits less, so the tests see it finish.
       FACTWRIGHT_SETUP_WAIT_MS: '500',
       ...env,

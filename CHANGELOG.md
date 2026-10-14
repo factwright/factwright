@@ -10,6 +10,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Each release appears on the repository's Releases page on GitHub, with its notes. While the repository is public, its installers also come with a signed record of the commit and run that built them, which `gh attestation verify` checks.
 
 ### Changed
+- Only Factwright's own releases sync through app.factwright.com and look for updates at downloads.factwright.com. A copy built anywhere else, such as from a fork, has neither: its Sync card says sync isn't in that copy, getting started doesn't offer sync, and it never looks for updates, unless its builder sets up servers of their own.
 - factwright.com, the README and the terms say Factwright is free, with no "during the beta": it stays free, with support from those who'd like to give. The terms no longer say what would happen if it started charging.
 - The terms say Factwright's code is under the AGPL-3.0, which they don't limit, and that their rules cover the services Neatifai runs. Supporting Factwright goes to Steve Hillyer, isn't a payment to Neatifai, and buys nothing. The privacy policy says what supporting it shares, and with whom.
 

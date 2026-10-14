@@ -147,15 +147,24 @@ If you lose every device and your recovery key, your data can't be recovered, by
   terminal library stops a run through a helper started that way.
 - **Settings for testing are ignored.** The variables that point the app at other screens or
   another sync server, for development and tests, do nothing in an installed copy.
+- **Only Factwright's own builds are set up to use its servers.** The release workflow builds
+  with the sync server, app.factwright.com, and the download site, downloads.factwright.com, only
+  when it runs in this repository, outside pull requests: for a release, or by hand to try one. A
+  copy built anywhere else, such as from a fork, has neither: its Sync card says sync isn't in that
+  copy, and it never looks for updates. Its builder can set up their own, as `apps/server` and
+  `apps/desktop` say. This is how copies are built, not a lock: anyone can build a copy that
+  points at app.factwright.com. The server treats it like any other copy: it reaches only the
+  account it signs in to, whose job hunt is locked with keys only that account's devices hold. No
+  one else's build can sign as Neatifai, though: the signing keys are secrets of this repository,
+  which a fork's builds don't have, and which the release workflow gives to no pull request's run.
 - **No debugging the user's data.** Chromium, which the app is built on, can let another program
   drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
   user's own data folder: only with a folder of its own, as the tests give it, where there's no
   job hunt and no sync to reach.
-- **Updates are checked.** An installed copy downloads updates only from downloads.factwright.com,
-  over https, and only if it was built by the release workflow: a copy built on someone's own
-  computer never updates itself. An update must match the checksum in the update feed. On a Mac,
-  it must also pass Apple's check that it's signed by the same developer as the app. On Windows,
-  it must be signed by a certificate issued to the same publisher name, Neatifai's.
+- **Updates are checked.** A copy from Factwright's own releases downloads updates only from
+  downloads.factwright.com, over https. An update must match the checksum in the update feed. On a
+  Mac, it must also pass Apple's check that it's signed by the same developer as the app. On
+  Windows, it must be signed by a certificate issued to the same publisher name, Neatifai's.
 - **Asking for updates says little.** Looking for an update asks for the feed, which tells the
   download site your IP address and that a copy of Factwright is looking, like any download. The
   updater can send an ID of each install too, to roll a version out to some installs at a time.

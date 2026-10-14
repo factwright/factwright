@@ -225,7 +225,10 @@ export function App({ api }: { api: FactwrightApi }) {
                   about.update({ skipped: true });
                   setPicked('jobs');
                 }}
-                onOpenSync={() => setDialog('sync')}
+                // A copy built without a sync server doesn't offer it.
+                onOpenSync={
+                  sync !== 'checking' && sync.state === 'no-server' ? null : () => setDialog('sync')
+                }
               />
             )}
             {page === 'profile' && profile && !gettingStarted && (

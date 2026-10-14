@@ -74,6 +74,7 @@ describe('SyncCard', () => {
     [{ ...ON, activity: 'offline', message: 'Can’t reach the sync server.' }, 'Offline', 'Manage'],
     [{ state: 'signed-out', email: 'a' }, 'Sign in again', 'Sign in…'],
     [{ state: 'unavailable' }, 'Can’t turn on here', null],
+    [{ state: 'no-server' }, 'Not in this copy', null],
   ] as [SyncStatus | 'checking', string, string | null][])(
     'says how sync stands, and what to do (%o)',
     async (status, line, action) => {
@@ -260,6 +261,17 @@ describe('SyncDialog', () => {
     expect(screen.getByText(/Your job hunt stays here/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Turn off here' }));
     expect(await screen.findByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
+  });
+
+  it('says a copy built without a sync server can’t sync, with nothing to sign in to', async () => {
+    const onClose = vi.fn();
+    const api = apiFor('no-server');
+    render(<SyncDialog api={api} status={await api.syncStatus()} onClose={onClose} />);
+    expect(screen.getByRole('heading', { name: 'Sync isn’t in this copy' })).toBeTruthy();
+    expect(screen.getByText(/built from its code without a sync server/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sign in with your browser' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('says how long ago sync last ran', () => {

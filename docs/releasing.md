@@ -50,6 +50,14 @@ repository's Releases page.
   `--signer-workflow` makes it fail for a record that any other workflow in the repository made,
   and `--source-ref` for one from another version. GitHub's free plan makes attestations for public
   repositories only, so versions released while the repository was private have none.
+- **Only Factwright's own.** The workflow builds with `FACTWRIGHT_SYNC_SERVER`
+  (https://app.factwright.com) and `FACTWRIGHT_DOWNLOADS_URL` (https://downloads.factwright.com/)
+  only when it runs in factwright/factwright, outside pull requests: for a release, or by hand on a
+  branch. Builds anywhere else, a fork's or a pull request's included, have no sync server and
+  never look for updates. A release stops before it builds unless both are set and answer as
+  Factwright's, as one without them, or with either wrong, would leave everyone who installs it
+  unable to sync, and stuck on it for good. Each built app's tests then check it can turn sync on,
+  and that its update settings name the download site, only if it was built with them.
 - **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
   minutes, and straight away when the user comes back to it or the computer wakes, at most once a
   minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new
@@ -63,7 +71,7 @@ repository's Releases page.
     working, the card leaves out Restart now, as restarting would stop the run, and it asks first
     if the user is writing a fact or a note they haven't saved.
   - A problem is noted in `updates.log` in the app's data folder, and the next look tries again.
-  - Only copies built by the release workflow look for updates. Each look sends the same ID for
+  - Only Factwright's own builds look for updates, as above. Each look sends the same ID for
     everyone, rather than one for each install.
 
 ## Setting it up, once
@@ -117,12 +125,14 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
    - the tag is on `main`
    - it names the app's version, and that version has its notes
    - it's newer than the version out now, for the Mac and for Windows
+   - it's built with Factwright's sync server and download site, and both answer
 
    Then it builds, signs and notarizes on a Mac and on Windows. It checks:
    - the app's archive holds only the app
    - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name
    - the Mac app's certificate is from Apple's G2 authority, and Apple's ticket is stapled to it
-   - each built app starts with a stand-in Claude Code
+   - each built app starts with a stand-in Claude Code, can turn sync on, and looks for updates
+     at the download site
 
    Only then does it upload, refusing to replace a version that's out already, and first records
    where each installer came from if the repository is public. A release that isn't signed is
@@ -155,7 +165,9 @@ After `pnpm --filter @factwright/desktop build`:
   Code and checks it opens, reaches Claude Code with its own plugin, and reads the workspace.
 
 These builds are for trying out only: macOS and Windows warn about apps that aren't signed, and
-they have no update settings, so they never update themselves.
+they have no sync server or update settings, so they can't sync and never update themselves.
+`build` reads `FACTWRIGHT_SYNC_SERVER` and `dist:mac` or `dist:win` reads `FACTWRIGHT_DOWNLOADS_URL`,
+as the release workflow sets them for Factwright's own builds.
 
 ## If a release goes wrong
 **If publishing stops partway,** such as an upload failing, choose **Re-run failed jobs** on the

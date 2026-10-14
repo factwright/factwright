@@ -36,6 +36,11 @@ env:
   RELEASING: ${{ startsWith(github.ref, 'refs/tags/v') }}
   # Signing keys never reach a pull request's run.
   SIGNING: ${{ github.event_name != 'pull_request' }}
+  # Only Factwright's own builds, made here outside pull requests, get its sync server and download
+  # site. A fork's, or a pull request's, are built without them, so they never sync or look for
+  # updates through Factwright's.
+  FACTWRIGHT_SYNC_SERVER: ${{ github.repository == 'factwright/factwright' && github.event_name != 'pull_request' && 'https://app.factwright.com' || '' }}
+  FACTWRIGHT_DOWNLOADS_URL: ${{ github.repository == 'factwright/factwright' && github.event_name != 'pull_request' && 'https://downloads.factwright.com/' || '' }}
 
 jobs:
   check:
@@ -57,6 +62,25 @@ jobs:
             exit 1
           fi
           node apps/desktop/scripts/release-check.ts "$GITHUB_REF_NAME"
+      # A release built without them, or with either one wrong, would leave everyone who installs
+      # it unable to sync, and stuck on it for good, as it would never find an update. So each must
+      # answer as Factwright's own: the sync server with its ways to sign in, as its web view asks
+      # for them, and the download site with the update feed.
+      - name: It's built with Factwright's sync server and download site
+        if: env.RELEASING == 'true'
+        run: |
+          if [ -z "$FACTWRIGHT_SYNC_SERVER" ] || [ -z "$FACTWRIGHT_DOWNLOADS_URL" ]; then
+            echo "::error::Releases are built only in factwright/factwright, which gets Factwright's sync server and download site."
+            exit 1
+          fi
+          if ! curl --fail --silent --show-error --max-time 30 --retry 2 "$FACTWRIGHT_SYNC_SERVER/api/sign-in-options" | grep -q '"providers"'; then
+            echo "::error::$FACTWRIGHT_SYNC_SERVER doesn't answer as Factwright's sync server."
+            exit 1
+          fi
+          if ! curl --fail --silent --show-error --max-time 30 --retry 2 "${FACTWRIGHT_DOWNLOADS_URL}latest.yml" | grep -q '^version: '; then
+            echo "::error::$FACTWRIGHT_DOWNLOADS_URL doesn't give Factwright's update feed."
+            exit 1
+          fi
       # Each computer's version is checked, as each goes out on its own. A version taken back stops
       # here, before any build, as publishing would refuse it anyway.
       - name: It's newer than the version out now, and wasn't taken back
@@ -214,8 +238,11 @@ jobs:
             if ($name -ne $expected) { throw "$($file.Name) is signed by $name, not $expected" }
           }
           Write-Output "$($all.Count) files signed; the app and its installer by $expected."
-          $settings = Get-Content apps/desktop/dist/win-unpacked/resources/app-update.yml -Raw
-          if (-not $settings.Contains($expected)) { throw "Installed copies wouldn't check updates against $expected" }
+          # A build with a download site looks for updates, and takes only this publisher's.
+          if ($env:FACTWRIGHT_DOWNLOADS_URL) {
+            $settings = Get-Content apps/desktop/dist/win-unpacked/resources/app-update.yml -Raw
+            if (-not $settings.Contains($expected)) { throw "Installed copies wouldn't check updates against $expected" }
+          }
       # The built app, started as a user would, with a stand-in Claude Code (claude.cmd).
       - run: pnpm --filter @factwright/desktop e2e:packaged
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

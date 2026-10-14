@@ -55,8 +55,11 @@ export function GetStarted({
   /** Starts Claude making a template from a resume the user likes, which the app kept. */
   onMakeTemplate: (source: string) => void;
   onSkip: () => void;
-  /** Opens sync, for someone who already has a job hunt on another computer. */
-  onOpenSync: () => void;
+  /**
+   * Opens sync, for someone who already has a job hunt on another computer, or null in a copy built
+   * without a sync server.
+   */
+  onOpenSync: (() => void) | null;
 }) {
   const { profile, update } = state;
   const { answers, notes } = profile;

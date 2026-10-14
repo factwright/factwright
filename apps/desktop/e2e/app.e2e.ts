@@ -39,6 +39,18 @@ async function closeRun() {
   await expect(panel).toHaveCount(0);
 }
 
+// The tests' build is made without FACTWRIGHT_SYNC_SERVER, as a fork's is, unless the shell that
+// runs them has one, as Factwright's own releases are built with.
+test('says sync isn’t in a copy built without a sync server', async () => {
+  const sync = opened.window.getByRole('region', { name: 'Sync' });
+  if (process.env.FACTWRIGHT_SYNC_SERVER) {
+    await expect(sync.getByRole('button', { name: 'Turn on…' })).toBeVisible();
+  } else {
+    await expect(sync.getByText('Not in this copy')).toBeVisible();
+    await expect(sync.getByRole('button')).toHaveCount(0);
+  }
+});
+
 test('shows the jobs on file, your Claude ready, a way to support Factwright, and its version', async () => {
   const { window } = opened;
   // It opens on the jobs furthest along: Acme, checked with a resume, is the next to apply to.
