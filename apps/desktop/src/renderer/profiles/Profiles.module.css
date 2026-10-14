@@ -1,0 +1,317 @@
+/* A profile's initial, in its own tint. */
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--fw-radius-full);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.blue {
+  background: var(--fw-tone-blue-bg);
+  color: var(--fw-tone-blue-fg);
+}
+
+.teal {
+  background: var(--fw-tone-teal-bg);
+  color: var(--fw-tone-teal-fg);
+}
+
+.violet {
+  background: var(--fw-tone-violet-bg);
+  color: var(--fw-tone-violet-fg);
+}
+
+.amber {
+  background: var(--fw-tone-amber-bg);
+  color: var(--fw-tone-amber-fg);
+}
+
+.green {
+  background: var(--fw-tone-green-bg);
+  color: var(--fw-tone-green-fg);
+}
+
+.purple {
+  background: var(--fw-tone-purple-bg);
+  color: var(--fw-tone-purple-fg);
+}
+
+.slate {
+  background: var(--fw-tone-slate-bg);
+  color: var(--fw-tone-slate-fg);
+}
+
+/* The open profile, at the top of the sidebar, and its menu. */
+.switcher {
+  position: relative;
+  padding-bottom: var(--fw-space-3);
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 38px;
+  padding: 0 var(--fw-space-2) 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--fw-radius-md);
+  background: transparent;
+  color: var(--fw-text);
+  font: inherit;
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.switch:hover,
+.switch[aria-expanded="true"] {
+  border-color: var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.switchName,
+.itemName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevrons {
+  flex: none;
+  color: var(--fw-muted);
+}
+
+.popup {
+  position: absolute;
+  z-index: 10;
+  top: 42px;
+  right: 0;
+  left: 0;
+  padding: var(--fw-space-1);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--fw-space-2) 0 7px;
+  border: 0;
+  border-radius: var(--fw-radius-sm);
+  background: transparent;
+  color: var(--fw-text);
+  font: inherit;
+  font-size: var(--fw-text-md);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--fw-hover);
+  outline: none;
+}
+
+.item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fw-accent);
+}
+
+.item[aria-checked="true"] {
+  font-weight: 600;
+}
+
+.item[aria-disabled="true"] {
+  color: var(--fw-muted);
+  cursor: default;
+}
+
+.item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+/* Lines up with the initials above it. */
+.itemIcon {
+  flex: none;
+  width: 22px;
+  color: var(--fw-muted);
+}
+
+.check {
+  flex: none;
+  color: var(--fw-accent-text);
+}
+
+.separator {
+  height: 1px;
+  margin: var(--fw-space-1) 0;
+  border: 0;
+  background: var(--fw-border);
+}
+
+.menuNote {
+  margin: var(--fw-space-1) 0 0;
+  padding: var(--fw-space-2);
+  border-radius: var(--fw-radius-sm);
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+/* The dialogs. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-1);
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--fw-text-md);
+}
+
+.hint,
+.problem {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.hint {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: var(--fw-space-2) var(--fw-space-2) var(--fw-space-2) var(--fw-space-3);
+}
+
+.row + .row {
+  border-top: 1px solid var(--fw-border);
+}
+
+.rowName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.openNow {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+}
+
+.rowActions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.renaming {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+.renaming input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.confirm {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-2) var(--fw-space-3);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+}
+
+.confirmText {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.confirmButtons {
+  display: flex;
+  gap: var(--fw-space-2);
+}
+
+/* The quiet line at the bottom of the Profile page. */
+.share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2) var(--fw-space-3);
+  margin-top: var(--fw-space-6);
+  padding-top: var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+}
+
+.shareText {
+  flex: 1 1 320px;
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.shareText strong {
+  color: var(--fw-text);
+  font-weight: 600;
+}
+
+.shareActions {
+  display: flex;
+  gap: var(--fw-space-2);
+}

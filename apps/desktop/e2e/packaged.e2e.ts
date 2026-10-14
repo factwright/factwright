@@ -4,6 +4,7 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
 import { desktop, fakeClaude, version } from './paths.ts';
@@ -152,6 +153,21 @@ test('looks for updates only if built with a download site', () => {
 test('won’t open with a debugging port on the user’s own data folder', async () => {
   test.skip(!process.env.CI, 'Only on a build machine, which has no one’s data.');
   const started = spawn(executable, ['--remote-debugging-port=0'], {
+    env: { ...process.env, FACTWRIGHT_UPDATES: 'off' },
+  });
+  const code = await new Promise((resolve) => started.once('exit', resolve));
+  expect(code).toBe(1);
+});
+
+// Nor on a profile in it, which holds someone's job hunt just the same.
+test('won’t open with a debugging port on a profile in the user’s own data folder', async () => {
+  test.skip(!process.env.CI, 'Only on a build machine, which has no one’s data.');
+  const appData =
+    process.platform === 'win32'
+      ? (process.env.APPDATA ?? '')
+      : join(homedir(), 'Library', 'Application Support');
+  const profile = join(appData, 'Factwright', 'Profiles', '0123456789ab');
+  const started = spawn(executable, [`--user-data-dir=${profile}`, '--remote-debugging-port=0'], {
     env: { ...process.env, FACTWRIGHT_UPDATES: 'off' },
   });
   const code = await new Promise((resolve) => started.once('exit', resolve));

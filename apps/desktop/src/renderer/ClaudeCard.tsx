@@ -1,10 +1,35 @@
-import type { ReactNode } from 'react';
-import type { SetupCheck } from '../shared/api.ts';
+import { type ReactNode, useState } from 'react';
+import type { EditResult, SetupCheck } from '../shared/api.ts';
+import styles from './ClaudeCard.module.css';
 import { planName } from './plan.ts';
 import { type CardTone, SidebarCard } from './SidebarCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 
 const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
+
+/** An added profile's own Claude sign-in: its command, too long for the card, and copying it. */
+export interface OwnSignIn {
+  command: string;
+  copy: (text: string) => Promise<EditResult>;
+}
+
+/** Copies an added profile's sign-in command, read as a link in the card's help. */
+function CopySignIn({ signIn }: { signIn: OwnSignIn }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={styles.link}
+      onClick={() =>
+        void signIn.copy(signIn.command).then((result) => {
+          if (result.ok) setCopied(true);
+        })
+      }
+    >
+      {copied ? 'Copied' : 'Copy the command'}
+    </button>
+  );
+}
 
 interface CardView {
   tone: CardTone;
@@ -15,7 +40,12 @@ interface CardView {
 }
 
 /** How each status reads, in plain words, with the fix when there is one. */
-function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView {
+function describe(
+  status: ClaudeStatusView,
+  setup: SetupCheck | null,
+  signIn: OwnSignIn | undefined,
+  terminal: string,
+): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: null };
   switch (status.state) {
     case 'ready': {
@@ -40,9 +70,14 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
       return {
         tone: 'need',
         line: 'Not signed in',
-        help: (
+        help: signIn ? (
           <>
-            In Terminal, run <code>claude auth login</code>, then come back.
+            This profile has its own Claude login. In {terminal}, run its sign-in command, then come
+            back. <CopySignIn signIn={signIn} />
+          </>
+        ) : (
+          <>
+            In {terminal}, run <code>claude auth login</code>, then come back.
           </>
         ),
         recheck: 'status',
@@ -53,7 +88,7 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
         line: 'Needs an update',
         help: (
           <>
-            Version {status.version} is older than Factwright needs. In Terminal, run{' '}
+            Version {status.version} is older than Factwright needs. In {terminal}, run{' '}
             <code>claude update</code>.
           </>
         ),
@@ -63,7 +98,17 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
       return {
         tone: 'need',
         line: 'Claude Code isn’t installed',
-        help: (
+        help: signIn ? (
+          // Signing in as the install guide says would sign in the first profile, not this one.
+          <>
+            Factwright works with your own Claude Code.{' '}
+            <a href={INSTALL_URL} target="_blank" rel="noreferrer">
+              How to install it
+            </a>
+            . Then, in {terminal}, sign in with this profile’s own command, not plain{' '}
+            <code>claude</code>. <CopySignIn signIn={signIn} />
+          </>
+        ) : (
           <>
             Factwright works with your own Claude Code.{' '}
             <a href={INSTALL_URL} target="_blank" rel="noreferrer">
@@ -77,7 +122,7 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
       return {
         tone: 'bad',
         line: 'Couldn’t check Claude Code',
-        help: 'Make sure it opens in Terminal, then check again.',
+        help: `Make sure it opens in ${terminal}, then check again.`,
         recheck: 'status',
       };
   }
@@ -90,6 +135,8 @@ function describe(status: ClaudeStatusView, setup: SetupCheck | null): CardView 
 export function ClaudeCard({
   status,
   onRecheck,
+  signIn,
+  terminal = 'Terminal',
   setup = null,
   checkingSetup = false,
   onCheckSetup,
@@ -97,13 +144,17 @@ export function ClaudeCard({
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
+  /** An added profile's own sign-in, which its signed-out help copies. */
+  signIn?: OwnSignIn | undefined;
+  /** Where the user runs Claude Code's commands: PowerShell on Windows, Terminal on a Mac. */
+  terminal?: string;
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
   /** Opens Claude's settings, once Claude is ready to run. */
   onSettings?: () => void;
 }) {
-  const view = describe(status, setup);
+  const view = describe(status, setup, signIn, terminal);
   const checking = view.recheck === 'setup' && checkingSetup;
   const ready = status !== 'checking' && status.state === 'ready' && !view.recheck;
   return (

@@ -141,4 +141,9 @@ export class DeviceSignIn {
   cancel(): void {
     this.stopper.abort();
   }
+
+  /** Whether the user canceled, even after the browser said yes. */
+  get canceled(): boolean {
+    return this.stopper.signal.aborted;
+  }
 }

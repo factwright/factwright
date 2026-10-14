@@ -7,9 +7,11 @@ import type { FactwrightApi } from '../../shared/api.ts';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import { templateName } from '../../shared/looks.ts';
 import type { StartingResume, TemplateInfo } from '../../shared/profile.ts';
+import type { ProfileEntry } from '../../shared/profiles.ts';
 import { type RunTask, TEMPLATE_SKILL } from '../../shared/runs.ts';
 import { ResumePreview } from '../jobs/ResumePreview.tsx';
 import { BUSY } from '../jobs/RunActions.tsx';
+import { ProfilesLine } from '../profiles/ProfilesLine.tsx';
 import type { RunPhase } from '../useClaudeRun.ts';
 import styles from './ProfilePage.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
@@ -136,6 +138,7 @@ export function ProfilePage({
   ready,
   onRun,
   onOpenFacts,
+  profiles,
 }: {
   state: ProfileState & { profile: NonNullable<ProfileState['profile']> };
   api: FactwrightApi;
@@ -146,6 +149,8 @@ export function ProfilePage({
   onRun: (task: RunTask) => void;
   /** Opens the fact bank, to read and change each fact. */
   onOpenFacts: () => void;
+  /** The profiles on this computer, to add one for someone else or manage them. */
+  profiles?: { list: ProfileEntry[]; onAdd: () => void; onManage: () => void };
 }) {
   const { profile } = state;
   const { answers, status } = profile;
@@ -405,6 +410,14 @@ export function ProfilePage({
           </p>
         </Card>
       </div>
+
+      {profiles && (
+        <ProfilesLine
+          profiles={profiles.list}
+          onAdd={profiles.onAdd}
+          onManage={profiles.onManage}
+        />
+      )}
 
       {editing && (
         <Dialog

@@ -14,11 +14,13 @@ export interface Opened {
  * getting started for a new user, the error says how far it got, with what it printed.
  */
 export async function openApp(dataDir: string, env: Record<string, string> = {}): Promise<Opened> {
+  // A Claude Code folder of the shell's own would stand in for the user's, which no test reaches.
+  const { CLAUDE_CONFIG_DIR: _, ...shell } = process.env;
   const app = await _electron.launch({
     executablePath: electronPath as unknown as string,
     args: [desktop, `--user-data-dir=${dataDir}`],
     env: {
-      ...process.env,
+      ...shell,
       PATH: [fakeClaude, process.env.PATH ?? ''].join(delimiter),
       // A sync server only where a test starts one, never one from the shell running the tests.
       FACTWRIGHT_SERVER_URL: '',
