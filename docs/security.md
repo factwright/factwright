@@ -96,13 +96,25 @@ A new device signs in to the same account, then gets the account key in one of t
 1. The new device asks to link. It makes a one-time key pair for this request alone (ECDH on P-256), and sends the server only a hash of its public key (SHA-256, with a random ID for the request). The hash fixes the key before anyone sees it.
 2. The desktop app on a computer that's set up shows the request, with the name of the device asking, such as "Chrome on Windows". When the person chooses **Approve…**, it sends a one-time public key of its own.
 3. Only then does the new device send its public key. The approving device checks it matches the hash, and stops if it doesn't.
-4. Each device works out the same secret from its own private key and the other's public key, and shows six emoji made from it, from Matrix's list. The person checks both screens show the same six, in the same order, and says so on each.
-5. Once they say so on the device that's set up, it seals the account key with a key made from the secret (HKDF, then AES-256-GCM, bound to the request and both public keys) and leaves it on the server. Once they say so on the new device, it picks the sealed key up, once, and opens it. A request runs out 10 minutes after it's made.
+4. Each device works out the same secret from its own private key and the other's public key, and shows six emoji made from it, from Matrix's list. The emoji are bound to the request, both public keys and the ID of the account key, so an approving computer with a key the account doesn't use shows other emoji. The person checks both screens show the same six, in the same order, and says so on each.
+5. Once they say so on the device that's set up, it seals the account key with a key made from the secret (HKDF, then AES-256-GCM, bound to the request, both public keys and the key ID) and leaves it on the server. Once they say so on the new device, it picks the sealed key up, once, and opens it. A request runs out 10 minutes after it's made.
 
 What stops a server in the middle: to get the account key, or to slip the new device a key of its own, it would have to swap its own keys in for both devices' and still make both screens show the same emoji. The hash fixes the key it shows the approving device before it sees that device's key, and the new device shows its key only after the server has passed one along. So whatever it swaps in, the emoji on the two screens are each down to chance, and match once in 2^36 (about 69 billion) tries. Each try needs the person to start linking, and a miss shows them two different sets of emoji. That's why both screens ask: the approving device seals the key only once the person says they match there, and the new device takes a key only once they say so there.
 
+That holds only while each try keeps to a few rules, which both apps follow:
+- Each try makes fresh one-time keys, and the new device a fresh request ID. Nothing of a try is kept on disk, so a restart starts a new try, never picks one up.
+- The approving computer checks the new device's key against the hash it saw before it offered its own. The new device keeps the first approving key it's given, and never takes another.
+- A try ends on each device after 10 minutes, whatever the server says. Once the new device has shown its key, its emoji stay on screen, even if the server calls the request off, so the person can still compare them.
+- Each device runs one try at a time, and starts one only when the person does: by opening the step to link, choosing **Ask again**, or choosing **Approve…**.
+
+Who can approve, and who can ask:
 - Only the desktop app approves. A browser can ask, and gets the account key once, as with a code, but it never approves: the web view keeps only keys it can't read back out, so it has no account key to hand over, and it stays that way. A browser that could approve would have to keep the account key where the page can read it, and a server that was taken over could copy it whenever the web view opens, not only while a browser links.
-- Any device signed in to the account can ask, including one signed in by tricking someone into approving its sign-in code. So the approving device names the device asking, and says to approve only a device you're using right now. The server keeps one request per device at a time, five waiting per account, and ten an hour.
+- Any device signed in to the account can ask, including one signed in by tricking someone into approving its sign-in code. The emoji can't tell a person's own device from someone else's, so the approving computer does more:
+  - It shows the device asking by name, with when it asked and when it signed in. A device can ask only within 30 minutes of signing in, so a sign-in someone was tricked into long ago can't ask at all.
+  - It won't approve while more than one device is asking, so a request made alongside the person's own can't slip in. The person turns down any that aren't theirs first.
+  - **Not mine** turns a request down and signs that device out of the account.
+  - It says to approve only a device that's in front of you, and that nobody from Factwright will ever ask for the emoji.
+- The server keeps one request per device at a time, five waiting per account, and ten an hour.
 - A computer that's set up hears of a request as it's made, and shows it on its Sync card, with a notification if Factwright isn't in front.
 - A sync server from before this doesn't offer it, so the app and the web view offer it only when the server says it can.
 
@@ -131,7 +143,7 @@ The web view opens your job hunt in the browser, so the page that holds your key
 - A job's page address names it by a code made from its ID with the account's key, never by its company and role. Addresses go to the server and into the browser's history, which the browser may sync.
 - Its session is a cookie the page itself can't read. A change sent with that cookie must come from the app's own pages: sign-in and the sync API both turn away requests another site starts.
 - A copy of your job hunt is put together in the browser, as a ZIP, and never passes through the server opened.
-- **What it can't promise:** the web view's code comes from the server each time it opens. A server that misbehaved, or someone who took over the account it runs on, could send code that reads what you open there, or the account key when you link a browser or type your recovery key into it. The desktop app is different: its code changes only through updates signed by Neatifai and checked before they install.
+- **What it can't promise:** the web view's code comes from the server each time it opens. A server that misbehaved, or someone who took over the account it runs on, could send code that reads everything you've synced, in any browser you've linked, while it's open there, or the account key when you link a browser or type your recovery key into it. The desktop app is different: its code changes only through updates signed by Neatifai and checked before they install.
 
 ### What the server sees
 - Your account: the email and name your sign-in shares, and which GitHub or Google account it is.
@@ -139,13 +151,13 @@ The web view opens your job hunt in the browser, so the page that holds your key
 - Sign-in's limits, which count each IP address's requests to sign in or check a sign-in. Those counts are deleted within a day.
 - For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, which file contents it points to, and which session made each version.
 - For each file: an opaque ID, its size and when it was uploaded.
-- For each request to link: which devices asked and approved it, with their names, two one-time public keys and a hash, when it was made, and once it's approved, the account key sealed for the new device alone. It's gone once picked up, turned down or 10 minutes old, apart from a note that it was picked up, which goes when the 10 minutes are up.
+- For each request to link: which devices asked and approved it, with their names and when the one asking signed in, two one-time public keys and a hash, when it was made, whether it was turned down or picked up, and once it's approved, the account key sealed for the new device alone, until it's picked up. Each is gone 10 minutes after it's made, or sooner when the device asking calls it off.
 - Never your file names, the files' contents, what you track, or any key that opens them.
 - Its own logs keep only what it writes itself, such as a backup that failed. Cloudflare's log of every request is off, and a ticket to listen for changes says nothing about the account. Cloudflare, which runs the server, still sees each request's IP address and address as it passes through, as any host does.
 - Sizes and times aren't padded, so they show roughly how much you keep and when you change it.
 
 ### What it can't prevent
-A server that misbehaved couldn't read or forge what the desktop app syncs. It could still delete it, hold back new changes, or keep serving an old version of a record. And because it sends the web view's code, it could change that code to read what you open there.
+A server that misbehaved couldn't read or forge what the desktop app syncs. It could still delete it, hold back new changes, or keep serving an old version of a record. And because it sends the web view's code, it could change that code to read what you've synced, in a browser you've linked, while that code is open there.
 
 ### Separate accounts
 - The server takes your account from your verified session only, never from the request.
