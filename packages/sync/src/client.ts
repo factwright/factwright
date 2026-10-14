@@ -37,13 +37,22 @@ export class SyncError extends Error {
   readonly status: number;
   /** For "slow-down", how many seconds to wait. */
   readonly retryAfter: number | null;
+  /** The server's own word for what went wrong, such as "stale", when it gave one. */
+  readonly code: string | null;
 
-  constructor(kind: SyncErrorKind, message: string, status = 0, retryAfter: number | null = null) {
+  constructor(
+    kind: SyncErrorKind,
+    message: string,
+    status = 0,
+    retryAfter: number | null = null,
+    code: string | null = null,
+  ) {
     super(message);
     this.name = 'SyncError';
     this.kind = kind;
     this.status = status;
     this.retryAfter = retryAfter;
+    this.code = code;
   }
 }
 
@@ -110,6 +119,7 @@ export class SyncClient {
       answer?.message ?? `The sync server answered ${response.status}.`,
       response.status,
       Number.isFinite(retry) && retry > 0 ? retry : null,
+      typeof answer?.error === 'string' ? answer.error : null,
     );
   }
 

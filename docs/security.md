@@ -114,7 +114,7 @@ Who can approve, and who can ask:
   - It won't approve while more than one device is asking, so a request made alongside the person's own can't slip in. The person turns down any that aren't theirs first.
   - **Not mine** turns a request down and signs that device out of the account.
   - It says to approve only a device that's in front of you, and that nobody from Factwright will ever ask for the emoji.
-- The server keeps one request per device at a time, five waiting per account, and ten an hour.
+- The server keeps one request per device at a time, five waiting per account, and ten an hour from each device.
 - A computer that's set up hears of a request as it's made, and shows it on its Sync card, with a notification if Factwright isn't in front.
 - A sync server from before this doesn't offer it, so the app and the web view offer it only when the server says it can.
 

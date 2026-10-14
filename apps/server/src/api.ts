@@ -333,6 +333,7 @@ const postApprove: Handler = async ({ request, store, account, session }, [id]) 
 const postDeny: Handler = async ({ request, env, store, account, session }, [id]) => {
   if (!isRequestId(id)) return GONE();
   // Older devices turn a request down with nothing more to say.
+  if (Number(request.headers.get('content-length') ?? 0) > SMALL_BODY) throw new TooBig();
   const text = await request.text();
   if (text.length > SMALL_BODY) throw new TooBig();
   let signOut = false;

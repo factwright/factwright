@@ -44,7 +44,7 @@ Better Auth's routes that list sessions (with their tokens), sign other sessions
 ## Limits
 - 1 GB per account (`STORAGE_LIMIT_MB`) and 25 MB per file.
 - Bursts of 600 requests per account, refilling at 10 a second.
-- Requests to link: one per device at a time, five waiting per account, and ten an hour.
+- Requests to link: one per device at a time, five waiting per account, ten an hour from each device, and only within 30 minutes of signing in.
 - Sign-in requests are limited per IP address, more tightly for signing in. The counts are deleted each day.
 
 ## Running it locally

@@ -368,8 +368,9 @@ export class UserStore extends DurableObject<Env> {
 
   /**
    * A new device asks to link, with a hash of its one-time key. A session has one request at a
-   * time: asking again replaces the last. Only a few wait at once, and only so many come in an
-   * hour, so nobody can keep a person's devices asking them to approve.
+   * time: asking again replaces the last, once the new one's taken. Only a few wait at once, and
+   * each device asks only so many times an hour, so nobody can keep a person's devices asking
+   * them to approve.
    */
   askToLink(
     owner: string,
@@ -381,14 +382,23 @@ export class UserStore extends DurableObject<Env> {
     this.spend();
     const now = Date.now();
     const result = this.ctx.storage.transactionSync(() => {
-      this.sql.exec('DELETE FROM requests WHERE expires <= ? OR session = ?', now, asker.session);
+      this.sql.exec('DELETE FROM requests WHERE expires <= ?', now);
       this.sql.exec('DELETE FROM requests_made WHERE at <= ?', now - HOUR_MS);
-      if (this.sql.exec('SELECT id FROM requests WHERE id = ?', id).toArray().length > 0) {
-        return 'taken';
-      }
-      const made = this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM requests_made').one().n;
-      if (this.waitingRequests() >= LIMITS.requestsAtOnce) return 'too-many';
+      const count = (query: string, ...values: (string | number)[]) =>
+        this.sql.exec<{ n: number }>(query, ...values).one().n;
+      if (count('SELECT COUNT(*) AS n FROM requests WHERE id = ?', id) > 0) return 'taken';
+      // This session's own request, which this one replaces, doesn't count against it.
+      const others = count(
+        'SELECT COUNT(*) AS n FROM requests WHERE denied = 0 AND linked = 0 AND session != ?',
+        asker.session,
+      );
+      if (others >= LIMITS.requestsAtOnce) return 'too-many';
+      const made = count(
+        'SELECT COUNT(*) AS n FROM requests_made WHERE session = ?',
+        asker.session,
+      );
       if (made >= LIMITS.requestsPerHour) return 'too-often';
+      this.sql.exec('DELETE FROM requests WHERE session = ?', asker.session);
       this.sql.exec(
         `INSERT INTO requests (id, session, device, commitment, signed_in, asked, expires)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -400,7 +410,7 @@ export class UserStore extends DurableObject<Env> {
         now,
         now + LIMITS.requestMinutes * 60_000,
       );
-      this.sql.exec('INSERT INTO requests_made (at) VALUES (?)', now);
+      this.sql.exec('INSERT INTO requests_made (session, at) VALUES (?, ?)', asker.session, now);
       return 'made';
     });
     this.requestsChanged();
@@ -430,7 +440,8 @@ export class UserStore extends DurableObject<Env> {
 
   /**
    * Another device of the account offers to approve a request, with a one-time key of its own.
-   * The first to offer is the only one. Offering again with the same key changes nothing.
+   * The first to offer is the only one. It can offer again, such as after an answer that was
+   * lost, with the same key or, until the new device has shown its own, a new one.
    */
   offerToApprove(
     owner: string,
@@ -443,9 +454,10 @@ export class UserStore extends DurableObject<Env> {
     const row = this.liveRequest(id);
     if (!row || row.denied || row.linked) return 'not-found';
     if (row.session === approver.session) return 'own';
-    if (row.approver !== null) {
-      return row.approver === approver.session && row.approver_key === key ? 'offered' : 'taken';
-    }
+    if (row.approver !== null && row.approver !== approver.session) return 'taken';
+    if (row.approver_key === key) return 'offered';
+    // A new key once the new device has shown its own would break the run it's in.
+    if (row.key !== null) return 'taken';
     this.sql.exec(
       'UPDATE requests SET approver = ?, approver_device = ?, approver_key = ? WHERE id = ?',
       approver.session,

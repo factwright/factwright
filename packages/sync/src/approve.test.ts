@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { type ApproveClient, commitmentTo, LinkApproval, LinkAsk } from './approve.ts';
 import { randomBytes, toBase64Url } from './bytes.ts';
 import { CHECK_EMOJI, checkEmoji } from './emoji.ts';
-import { newAccountKey } from './keys.ts';
+import { accountKeys, newAccountKey } from './keys.ts';
 import type { LinkRequest } from './protocol.ts';
 
 interface Row {
@@ -28,6 +28,7 @@ class FakeServer {
       device: 'Chrome on Windows',
       asked: new Date().toISOString(),
       expires: new Date(Date.now() + 600_000).toISOString(),
+      signedIn: new Date().toISOString(),
       commitment: row.commitment,
       key: row.key,
       approver: row.approver && { device: row.approver.device, key: row.approver.key },
@@ -75,6 +76,7 @@ class FakeServer {
       approveRequest: async (id, sealed) => {
         const found = row(id);
         if (found.approver?.session !== session || !found.key) throw new Error('refused');
+        if (found.sealed !== null && found.sealed !== sealed) throw new Error('refused');
         found.sealed = sealed;
       },
       denyRequest: async (id) => {
@@ -307,10 +309,9 @@ describe('a server in the middle', () => {
     expect(await ask.step()).toEqual({ state: 'failed' });
   });
 
-  it('can’t slip the new device a key of its own', async () => {
-    // The server approves with a key it made, sealed under its own agreement with the new
-    // device. The new device shows the server's emoji, which the approver doesn't, so the person
-    // says they don't match and nothing is picked up. Had they matched, it would open.
+  it('can’t slip the new device a key of its own unless the person says unmatched emoji match', async () => {
+    // The server approves the new device with a key it made, and shows the person's computer a
+    // request of its own making in place of the real one.
     const server = new FakeServer();
     const ask = await LinkAsk.start(server.as('new'));
     const fakeApprover = await LinkApproval.start(
@@ -318,12 +319,42 @@ describe('a server in the middle', () => {
       await listed(server, ask.id),
       server.keyId,
     );
-    await ask.step();
+    const relay = new FakeServer();
+    relay.keyId = server.keyId;
+    const fakeAsk = await LinkAsk.start(relay.as('server-as-new'));
+    const mac = await LinkApproval.start(
+      relay.as('mac'),
+      await listed(relay, fakeAsk.id),
+      relay.keyId,
+    );
+    const onNew = await ask.step();
     await fakeApprover.step();
+    await fakeAsk.step();
+    const onMac = await mac.step();
+    // The two screens disagree, so the person says no, and nothing is picked up.
+    expect(onNew.state === 'check' && onNew.check).not.toEqual(
+      onMac.state === 'check' && onMac.check,
+    );
     const serversKey = newAccountKey();
     await fakeApprover.approve(serversKey);
-    expect(await ask.step()).toMatchObject({ state: 'check', approved: true });
     expect(await ask.finish()).toBeNull();
+    // Said to match anyway, the server's key would open. But it isn't the account's: its ID
+    // differs from the account's key record, which the apps check before using a key.
+    ask.confirm();
+    const taken = await ask.finish();
+    if (!taken) throw new Error('Nothing was picked up.');
+    expect(taken).toEqual(serversKey);
+    expect((await accountKeys(taken)).id).not.toBe(server.keyId);
+  });
+
+  it('seals the same thing again when the first answer was lost', async () => {
+    const { server, ask, approval } = await upToTheCheck();
+    const accountKey = newAccountKey();
+    await approval.approve(accountKey);
+    const first = server.rows.get(ask.id)?.sealed;
+    // The server keeps the first, and takes the same again without a fuss.
+    await approval.approve(accountKey);
+    expect(server.rows.get(ask.id)?.sealed).toBe(first);
   });
 
   it('refuses keys that aren’t points on the curve', async () => {

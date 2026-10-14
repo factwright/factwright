@@ -74,12 +74,18 @@ describe('approving a new device', () => {
     await ask.step();
     await approval.step();
     await approval.approve(newAccountKey());
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: mac.id });
+    const [row] = (await storage.exec('SELECT sealed FROM requests WHERE id = ?', ask.id)) as {
+      sealed: string;
+    }[];
+    const sealed = row?.sealed ?? '';
+    expect(sealed).toMatch(/^[A-Za-z0-9_-]{82}$/);
     for (const token of [mac.token, pc.token]) {
       const headers = { authorization: `Bearer ${token}` };
-      const one = await fetch(new URL(`${API.requests}/${ask.id}`, server.url), { headers });
-      const all = await fetch(new URL(API.requests, server.url), { headers });
-      expect(await one.text()).not.toContain('sealed');
-      expect(await all.text()).not.toContain('sealed');
+      for (const path of [`${API.requests}/${ask.id}`, API.requests, API.export]) {
+        const answer = await fetch(new URL(path, server.url), { headers });
+        expect(await answer.text()).not.toContain(sealed);
+      }
     }
     expect((await pc.client.linkRequest(ask.id))?.state).toBe('approved');
   });
@@ -222,10 +228,62 @@ describe('approving a new device', () => {
       status: 429,
       message: expect.stringContaining('a lot of requests to link in an hour'),
     });
+    // Refused, the device's last request stays as it was.
+    expect(await mac.client.linkRequests()).toHaveLength(1);
+    // Another device's asks are its own: they don't count against this one's.
+    const laptop = await server.newSession(mac.id, WINDOWS_CHROME);
+    await LinkAsk.start(laptop.client);
     // An hour on, it takes them again.
     const storage = await server.worker.getDurableObjectStorage('STORES', { name: mac.id });
     await storage.exec('UPDATE requests_made SET at = ?', Date.now() - 61 * 60_000);
     await LinkAsk.start(pc.client);
+  });
+
+  it('lets an approving device offer again after a lost answer, until the new device shows its key', async () => {
+    const { mac, pc } = await twoDevices();
+    const ask = await LinkAsk.start(pc.client);
+    await mac.client.offerToApprove(ask.id, someKey());
+    await mac.client.offerToApprove(ask.id, someKey());
+    const offered = await listed(mac.client, ask.id);
+    await pc.client.showKey(ask.id, someKey());
+    await expect(mac.client.offerToApprove(ask.id, someKey())).rejects.toMatchObject({
+      kind: 'conflict',
+    });
+    // The same key again is fine, and changes nothing.
+    await mac.client.offerToApprove(ask.id, offered.approver?.key ?? '');
+    expect((await listed(mac.client, ask.id)).approver?.key).toBe(offered.approver?.key);
+  });
+
+  it('are swept away once they run out, and by a restore', async () => {
+    const { mac, pc } = await twoDevices();
+    await LinkAsk.start(pc.client);
+    const env = (await server.worker.getEnv()) as unknown as {
+      STORES: {
+        idFromName(name: string): unknown;
+        get(id: unknown): { cleanup(now?: number): Promise<void> };
+      };
+    };
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: mac.id });
+    const left = async () =>
+      ((await storage.exec('SELECT COUNT(*) AS n FROM requests')) as { n: number }[])[0]?.n;
+    await env.STORES.get(env.STORES.idFromName(mac.id)).cleanup(Date.now() + 11 * 60_000);
+    expect(await left()).toBe(0);
+
+    await LinkAsk.start((await server.newSession(mac.id, WINDOWS_CHROME)).client);
+    await mac.client.push([
+      { record: someId(), base: 0, data: 'locked', file: null, deleted: false },
+    ]);
+    await server.worker.scheduled({
+      cron: '17 4 * * *',
+      scheduledTime: new Date('2026-10-12T04:17:00Z'),
+    });
+    const restored = await fetch(new URL('/api/admin/restore', server.url), {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ account: mac.id, day: '2026-10-12' }),
+    });
+    expect(restored.status).toBe(204);
+    expect(await left()).toBe(0);
   });
 
   it('refuses what isn’t in the shape it takes', async () => {

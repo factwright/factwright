@@ -63,8 +63,8 @@ export const SCHEMA = `
     asked INTEGER NOT NULL,
     expires INTEGER NOT NULL
   ) WITHOUT ROWID;
-  -- When each request to link came in, kept for an hour to limit how many come.
-  CREATE TABLE IF NOT EXISTS requests_made (at INTEGER NOT NULL);
+  -- When each session asked to link, kept for an hour to limit how often it can.
+  CREATE TABLE IF NOT EXISTS requests_made (session TEXT NOT NULL, at INTEGER NOT NULL);
 `;
 
 export type RequestRow = {

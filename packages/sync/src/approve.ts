@@ -320,6 +320,8 @@ export class LinkApproval {
   private agreed: Agreed | null = null;
   private newDeviceKey: string | null = null;
   private stepping: Promise<ApprovalStep> | null = null;
+  /** The account key as sealed, kept so trying again after a lost answer sends the same. */
+  private sealed: string | null = null;
   /** When the run ends, whatever the server says. */
   private readonly until = Date.now() + RUN_MS;
 
@@ -378,8 +380,8 @@ export class LinkApproval {
     if (!this.agreed) throw new Error('Check the emoji on both devices first.');
     if (Date.now() > this.until)
       throw new Error('That request ran out. Ask again on the new device.');
-    const sealed = await lock(this.agreed.seal, accountKey, sealedPurpose(this.id));
-    await this.client.approveRequest(this.id, toBase64Url(sealed));
+    this.sealed ??= toBase64Url(await lock(this.agreed.seal, accountKey, sealedPurpose(this.id)));
+    await this.client.approveRequest(this.id, this.sealed);
   }
 
   /** Turns the request down. */

@@ -23,7 +23,7 @@ export const LIMITS = {
   requestMinutes: 10,
   /** Requests to link waiting at once. Each session has one at most. */
   requestsAtOnce: 5,
-  /** Requests to link an account takes in an hour, so nobody can fill its devices with them. */
+  /** Requests to link each device can make in an hour, so none can keep the others asking. */
   requestsPerHour: 10,
   /**
    * How long after signing in a device can ask to link. A sign-in got by tricking someone, days
