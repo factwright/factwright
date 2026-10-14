@@ -52,6 +52,7 @@ describe('startingResumes', () => {
     expect(startingResumes(workspace)).toEqual([
       {
         path: 'base/public-sector-ic.json',
+        kind: null,
         title: 'public-sector-ic',
         layout: 'classic',
         pdf: null,
@@ -59,10 +60,38 @@ describe('startingResumes', () => {
       },
       {
         path: 'base/startup-ic.json',
+        kind: null,
         title: 'Product Designer',
         layout: 'modern',
         pdf: 'base/JordanAveryResume_Startups.pdf',
         docx: null,
+      },
+    ]);
+  });
+
+  it('lists each other kind of job’s from its own folder, after the first kind’s', () => {
+    write('base/startup-ic.json', JSON.stringify({ headline: 'Staff Engineer' }));
+    write(
+      'base/project-manager/big-company-leader.json',
+      JSON.stringify({ headline: 'Program Manager', output_name: 'JordanAveryResume_PM' }),
+    );
+    write('base/project-manager/JordanAveryResume_PM.pdf', '%PDF');
+    // A removed kind's folder stays, but isn't listed.
+    write('base/designer/startup-ic.json', JSON.stringify({ headline: 'Designer' }));
+    expect(
+      startingResumes(workspace, ['project-manager']).map(({ path, kind, title, pdf }) => ({
+        path,
+        kind,
+        title,
+        pdf,
+      })),
+    ).toEqual([
+      { path: 'base/startup-ic.json', kind: null, title: 'Staff Engineer', pdf: null },
+      {
+        path: 'base/project-manager/big-company-leader.json',
+        kind: 'project-manager',
+        title: 'Program Manager',
+        pdf: 'base/project-manager/JordanAveryResume_PM.pdf',
       },
     ]);
   });

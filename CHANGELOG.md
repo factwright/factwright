@@ -5,6 +5,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- More than one kind of job in one profile, such as developer and project manager jobs. **Add another kind of job** in What you want gives each kind its own titles, kinds of work, levels and pay, and where, companies, terms and deal-breakers stay shared. Your Claude builds a set of starting resumes for each kind from your one fact bank, searches and fit checks score each job against its kind, and Find jobs can look for one kind or every kind. Each job keeps its kind, and older copies of the app keep it too when they sync. With one kind of job, nothing changes.
 - A Support Factwright link at the bottom of the sidebar, above the version, which opens the Buy Me a Coffee page of Factwright's maker, Steve Hillyer, in your browser, for anyone who'd like to chip in.
 - factwright.com says Factwright is fully open source: a GitHub link in its header and under the download buttons, a section on what anyone can check in the code, with the folders worth opening first, a question about it, and a link to the code in every page's footer. It also says who builds Factwright, and how to support it with a coffee or on GitHub Sponsors.
 - Each release appears on the repository's Releases page on GitHub, with its notes. While the repository is public, its installers also come with a signed record of the commit and run that built them, which `gh attestation verify` checks.

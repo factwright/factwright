@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { NO_ANSWERS, pagesFor, parseAnswerChanges, readAnswers, wordCount } from './about.ts';
+import {
+  ANSWER_LIMITS,
+  NO_ANSWERS,
+  pagesFor,
+  parseAnswerChanges,
+  readAnswers,
+  wordCount,
+} from './about.ts';
 
 describe('readAnswers', () => {
   it('starts with nothing told', () => {
@@ -42,6 +49,39 @@ describe('readAnswers', () => {
     expect(answers.step).toBe(4);
   });
 
+  it('keeps each other kind of job that holds up, and leaves out only the ones that don’t', () => {
+    const designer = { id: 'designer', name: 'Designer', roles: ['UX Designer'], levels: ['lead'] };
+    const answers = readAnswers({
+      roles: ['Staff Engineer'],
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        designer,
+        { id: 'Bad Id', name: 'Broken' },
+        { id: 'pm', name: '   ' },
+        { ...designer, id: 'designer-2' },
+        { id: 'developer', name: 'Developer again' },
+        { id: 'pm', name: 'Project manager', levels: ['wizard'], minPay: 42 },
+      ],
+    });
+    const nothing = { fields: [], minPay: '', targetPay: '', payFilter: false };
+    expect(answers.otherKinds).toEqual([
+      { ...nothing, ...designer },
+      { ...nothing, id: 'pm', name: 'Project manager', roles: [], levels: [] },
+    ]);
+    // Past as many as the app keeps, the rest are left out.
+    const many = Array.from({ length: 9 }, (_, n) => ({ id: `kind-${n}`, name: `Kind ${n}` }));
+    expect(readAnswers({ otherKinds: many }).otherKinds).toHaveLength(ANSWER_LIMITS.kinds - 1);
+  });
+
+  it('names the first kind of job when others are there without it, as after a hand edit', () => {
+    const answers = readAnswers({
+      roles: ['Staff Engineer'],
+      otherKinds: [{ id: 'staff-engineer', name: 'Project manager' }],
+    });
+    expect(answers.firstKind).toEqual({ id: 'staff-engineer-2', name: 'Staff Engineer' });
+    expect(answers.otherKinds.map((kind) => kind.id)).toEqual(['staff-engineer']);
+  });
+
   it('keeps shared files only inside about-me/files', () => {
     const file = {
       path: 'about-me/files/2026-10-12-resume.pdf',
@@ -73,6 +113,27 @@ describe('parseAnswerChanges', () => {
     expect(parseAnswerChanges([])).toBeNull();
   });
 
+  it('takes the kinds of job only whole: none left out for not holding up', () => {
+    const kind = { id: 'pm', name: 'Project manager', roles: ['Program Manager'] };
+    expect(parseAnswerChanges({ otherKinds: [kind] })).toEqual({
+      otherKinds: [
+        {
+          ...kind,
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    });
+    expect(parseAnswerChanges({ otherKinds: [kind, { id: '../x', name: 'Bad' }] })).toBeNull();
+    expect(parseAnswerChanges({ firstKind: { id: 'developer', name: 'Developer' } })).toEqual({
+      firstKind: { id: 'developer', name: 'Developer' },
+    });
+    expect(parseAnswerChanges({ firstKind: { id: 'developer', name: '' } })).toBeNull();
+  });
+
   it('never takes the shared files or when Claude started, which only the app sets', () => {
     expect(parseAnswerChanges({ files: [] })).toBeNull();
     expect(parseAnswerChanges({ startedOn: '2026-10-12' })).toBeNull();
@@ -86,10 +147,19 @@ describe('parseAnswerChanges', () => {
 
 describe('pagesFor', () => {
   it('goes by the user’s choice, or by their level', () => {
-    expect(pagesFor({ pages: 1, levels: ['director'] })).toBe(1);
-    expect(pagesFor({ pages: null, levels: ['entry', 'mid'] })).toBe(1);
-    expect(pagesFor({ pages: null, levels: ['mid', 'senior'] })).toBe(2);
-    expect(pagesFor({ pages: null, levels: [] })).toBe(2);
+    const one = { otherKinds: [] };
+    expect(pagesFor({ ...one, pages: 1, levels: ['director'] })).toBe(1);
+    expect(pagesFor({ ...one, pages: null, levels: ['entry', 'mid'] })).toBe(1);
+    expect(pagesFor({ ...one, pages: null, levels: ['mid', 'senior'] })).toBe(2);
+    expect(pagesFor({ ...one, pages: null, levels: [] })).toBe(2);
+  });
+
+  it('goes by every kind of job’s levels', () => {
+    const lead = { ...NO_ANSWERS, id: 'lead', name: 'Team lead', levels: ['lead' as const] };
+    expect(pagesFor({ pages: null, levels: ['mid'], otherKinds: [lead] })).toBe(2);
+    expect(
+      pagesFor({ pages: null, levels: [], otherKinds: [{ ...lead, levels: ['entry'] }] }),
+    ).toBe(1);
   });
 });
 

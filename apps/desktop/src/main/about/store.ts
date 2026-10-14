@@ -8,6 +8,7 @@ import {
   ANSWER_LIMITS,
   type AnswerChanges,
   FILES_FOLDER,
+  KINDS_FILE,
   pagesFor,
   readAnswers,
   type SharedFile,
@@ -96,18 +97,35 @@ export class AboutStore {
     renameSync(temporary, target);
   }
 
-  answers(): AboutYou {
-    const text = this.read(ABOUT.answers);
-    if (text === null) return readAnswers({});
+  /** A JSON file's object, or nothing when it's missing or doesn't parse. */
+  private readJson(file: string): Record<string, unknown> {
     try {
-      return readAnswers(JSON.parse(text));
+      const value: unknown = JSON.parse(this.read(file) ?? '{}');
+      return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
     } catch {
-      return readAnswers({});
+      return {};
     }
   }
 
+  /** The answers, with the kinds of job from their own file. */
+  answers(): AboutYou {
+    const { first, others } = this.readJson(KINDS_FILE);
+    return readAnswers({
+      ...this.readJson(ABOUT.answers),
+      firstKind: first ?? null,
+      otherKinds: others ?? [],
+    });
+  }
+
   private saveAll(answers: AboutYou): AboutYou {
-    this.write(ABOUT.answers, `${JSON.stringify(answers, null, 2)}\n`);
+    const { firstKind, otherKinds, ...rest } = answers;
+    this.write(ABOUT.answers, `${JSON.stringify(rest, null, 2)}\n`);
+    // The kinds file is written once there's a second kind, and kept after, so the first's
+    // id holds steady for its jobs.
+    if (firstKind || this.read(KINDS_FILE) !== null) {
+      const kinds = { first: firstKind, others: otherKinds };
+      this.write(KINDS_FILE, `${JSON.stringify(kinds, null, 2)}\n`);
+    }
     if (this.inUse(answers)) this.writeDerived(answers);
     return answers;
   }

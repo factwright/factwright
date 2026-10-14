@@ -11,6 +11,7 @@ import {
   RELOCATE,
   WORKPLACES,
 } from '../../shared/about.ts';
+import { changeKind, hasKinds, type KindAnswers, kindsOf } from '../../shared/kinds.ts';
 
 /** Indents a text's later lines under its first, to keep a list item whole. */
 const indented = (text: string) => text.trim().split(/\r?\n/).join('\n    ');
@@ -21,13 +22,22 @@ const indented = (text: string) => text.trim().split(/\r?\n/).join('\n    ');
  */
 export function aboutYouText(answers: AboutYou): string {
   const lines: string[] = [];
-  const item = (label: string, value: string | null | undefined) => {
-    if (value?.trim()) lines.push(`- ${label}: ${indented(value)}`);
+  const item = (label: string, value: string | null | undefined, under = '') => {
+    if (value?.trim()) lines.push(`${under}- ${label}: ${indented(value)}`);
   };
   const list = <T extends string>(
     options: readonly (readonly [T, string, ...string[]])[],
     values: readonly T[],
   ) => values.map((value) => labelOf(options, value)).join(', ');
+  const pay = (kind: KindAnswers, under = '') => {
+    item('Target base pay', kind.targetPay, under);
+    item(
+      'Lowest base pay they’d take',
+      kind.minPay && `${kind.minPay}${kind.payFilter ? ' (jobs paying less are left out)' : ''}`,
+      under,
+    );
+  };
+  const kinds = hasKinds(answers) ? kindsOf(answers) : null;
 
   const { you } = answers;
   item('Name', you.name);
@@ -36,9 +46,22 @@ export function aboutYouText(answers: AboutYou): string {
   item('Location', you.location);
   item('LinkedIn', you.linkedin);
   item('Website', you.website);
-  item('Roles they want', answers.roles.join('; '));
-  item('Kinds of work', list(FIELDS, answers.fields));
-  item('Levels', list(LEVELS, answers.levels));
+  if (kinds) {
+    lines.push(
+      `- Kinds of job they want: ${kinds.map((kind) => `${kind.name} (\`${kind.id}\`)`).join(', ')}. Each has its own roles, kinds of work, levels and pay; the rest holds for every kind.`,
+    );
+    for (const kind of kinds) {
+      lines.push(`- ${kind.name} (\`${kind.id}\`):`);
+      item('Roles they want', kind.roles.join('; '), '    ');
+      item('Kinds of work', list(FIELDS, kind.fields), '    ');
+      item('Levels', list(LEVELS, kind.levels), '    ');
+      pay(kind, '    ');
+    }
+  } else {
+    item('Roles they want', answers.roles.join('; '));
+    item('Kinds of work', list(FIELDS, answers.fields));
+    item('Levels', list(LEVELS, answers.levels));
+  }
   item('Where they’ll work', list(WORKPLACES, answers.workplaces));
   item('Remote from', answers.remoteFrom);
   item('Cities for hybrid or on-site work', answers.places.join('; '));
@@ -47,12 +70,7 @@ export function aboutYouText(answers: AboutYou): string {
   item('Industries they’d love', answers.industries.join('; '));
   item('Industries they won’t work in', answers.avoid.join('; '));
   item('Employment', list(EMPLOYMENT, answers.employment));
-  item('Target base pay', answers.targetPay);
-  item(
-    'Lowest base pay they’d take',
-    answers.minPay &&
-      `${answers.minPay}${answers.payFilter ? ' (jobs paying less are left out)' : ''}`,
-  );
+  if (!kinds) pay(answers);
   item('Work authorization', answers.authorization);
   item('When they can start', answers.start);
   item('Must-haves', answers.mustHaves);
@@ -102,21 +120,31 @@ const LABELS: Readonly<Record<(typeof SAVABLE_ANSWERS)[number], string>> = {
   website: 'Website',
 };
 
+/** The answers each kind of job has its own of, which save_about_you saves for one kind. */
+const PAY_ANSWERS = ['targetPay', 'minPay'] as const;
+
 /**
  * The changes save_about_you was asked to make, checked like the window's own, with contact
- * details joining the ones on file. Null when any doesn't hold up, so nothing is half saved.
+ * details joining the ones on file. Pay goes to the kind of job named, or the first. Null when
+ * any doesn't hold up, so nothing is half saved.
  */
 export function aboutYouChanges(
   input: Record<string, unknown>,
   current: AboutYou,
 ): { changes: AnswerChanges; saved: string[] } | null {
-  const keys = Object.keys(input);
+  const { kind: kindId, ...given } = input;
+  const keys = Object.keys(given);
   if (keys.length === 0) return null;
   if (keys.some((key) => !(SAVABLE_ANSWERS as readonly string[]).includes(key))) return null;
+  const kinds = kindsOf(current);
+  const kind = kindId === undefined ? kinds[0] : kinds.find((each) => each.id === kindId);
+  if (!kind || (kindId !== undefined && !keys.some((key) => PAY_ANSWERS.includes(key as never)))) {
+    return null;
+  }
   const raw: Record<string, unknown> = {};
   const contact: Partial<Contact> = {};
   for (const key of keys) {
-    const value = input[key];
+    const value = given[key];
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     if ((CONTACT_FIELDS as readonly string[]).includes(key)) {
@@ -126,13 +154,21 @@ export function aboutYouChanges(
   if (Object.keys(contact).length > 0) raw.you = { ...current.you, ...contact };
   const changes = parseAnswerChanges(raw);
   if (!changes) return null;
-  const saved = keys.map(
-    (key) =>
-      `${LABELS[key as (typeof SAVABLE_ANSWERS)[number]]}: ${
-        key === 'relocate'
-          ? labelOf(RELOCATE, (input[key] as string).trim() as AboutYou['relocate'])
-          : (input[key] as string).trim()
-      }`,
+  const pay = Object.fromEntries(
+    PAY_ANSWERS.filter((key) => key in changes).map((key) => [key, changes[key]]),
   );
-  return { changes, saved };
+  const shared = Object.fromEntries(
+    Object.entries(changes).filter(([key]) => !PAY_ANSWERS.includes(key as never)),
+  );
+  // Pay is each kind of job's own, so the first kind's is the answers' own, as before.
+  const named = hasKinds(current) ? ` for ${kind.name}` : '';
+  const saved = keys.map((key) => {
+    const label = LABELS[key as (typeof SAVABLE_ANSWERS)[number]];
+    const value = (given[key] as string).trim();
+    if (key === 'relocate') {
+      return `${label}: ${labelOf(RELOCATE, value as AboutYou['relocate'])}`;
+    }
+    return `${label}${PAY_ANSWERS.includes(key as never) ? named : ''}: ${value}`;
+  });
+  return { changes: { ...shared, ...changeKind(current, kind.id, pay) }, saved };
 }

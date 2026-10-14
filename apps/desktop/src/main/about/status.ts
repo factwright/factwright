@@ -86,38 +86,49 @@ export function countFacts(workspace: string): ProfileStatus['facts'] {
 /** Whether the user has a fact bank yet. */
 export const hasFactBank = (workspace: string) => countFacts(workspace).claims > 0;
 
-/** The starting resumes in base/, with the files built from each. */
-export function startingResumes(workspace: string): StartingResume[] {
-  let names: string[];
-  try {
-    names = readdirSync(join(workspace, 'base'))
-      .filter((name) => name.endsWith('.json'))
-      .sort();
-  } catch {
-    return [];
-  }
-  return names.map((name) => {
-    let data: Record<string, unknown> = {};
+/**
+ * The starting resumes in base/, with the files built from each: the first kind of job's at the
+ * top of base/, then each other kind's in its own folder, such as base/project-manager/.
+ */
+export function startingResumes(
+  workspace: string,
+  kinds: readonly string[] = [],
+): StartingResume[] {
+  return [null, ...kinds].flatMap((kind) => {
+    const folder = kind ? `base/${kind}` : 'base';
+    const dir = join(workspace, ...folder.split('/'));
+    let names: string[];
     try {
-      data = JSON.parse(readText(join(workspace, 'base', name)) ?? '{}') as Record<string, unknown>;
+      names = readdirSync(dir)
+        .filter((name) => name.endsWith('.json'))
+        .sort();
     } catch {
-      // A file that won't parse still shows, so the user can see it's there.
+      return [];
     }
-    const output = typeof data.output_name === 'string' ? data.output_name : null;
-    const built = (extension: string) => {
-      const path = output ? `base/${output}.${extension}` : null;
-      return path && isFile(join(workspace, path)) ? path : null;
-    };
-    return {
-      path: `base/${name}`,
-      title:
-        typeof data.headline === 'string' && data.headline
-          ? data.headline
-          : name.replace(/\.json$/, ''),
-      layout: typeof data.layout === 'string' ? data.layout : DEFAULT_TEMPLATE,
-      pdf: built('pdf'),
-      docx: built('docx'),
-    };
+    return names.map((name) => {
+      let data: Record<string, unknown> = {};
+      try {
+        data = JSON.parse(readText(join(dir, name)) ?? '{}') as Record<string, unknown>;
+      } catch {
+        // A file that won't parse still shows, so the user can see it's there.
+      }
+      const output = typeof data.output_name === 'string' ? data.output_name : null;
+      const built = (extension: string) => {
+        const path = output ? `${folder}/${output}.${extension}` : null;
+        return path && isFile(join(workspace, ...path.split('/'))) ? path : null;
+      };
+      return {
+        path: `${folder}/${name}`,
+        kind,
+        title:
+          typeof data.headline === 'string' && data.headline
+            ? data.headline
+            : name.replace(/\.json$/, ''),
+        layout: typeof data.layout === 'string' ? data.layout : DEFAULT_TEMPLATE,
+        pdf: built('pdf'),
+        docx: built('docx'),
+      };
+    });
   });
 }
 
@@ -175,7 +186,10 @@ export function profileStatus(workspace: string, answers: AboutYou): ProfileStat
   const added = answers.files.find((file) => file.kind === 'linkedin-data')?.added ?? '';
   return {
     facts: countFacts(workspace),
-    starting: startingResumes(workspace),
+    starting: startingResumes(
+      workspace,
+      answers.otherKinds.map((kind) => kind.id),
+    ),
     unread: answers.files.map((file) => file.path).filter(changedSince),
     notesChanged: notes !== null && notes.size > 0 && changedSince(ABOUT.notes),
     criteria: criteria === null ? 'none' : untouched(criteria) ? 'app' : 'own',

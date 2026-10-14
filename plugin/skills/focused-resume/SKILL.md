@@ -74,6 +74,7 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 
 ## 6. Draft `resume.json` in the folder
 - Copy the closest starting point: the style and track's starting resume (`base/<style>-<track>.json`, or the base the style file names), or a past `applications/*/resume.json` for a more similar role.
+  - When the user wants more than one kind of job, start from the job's kind's: `job_details` gives its kind. The first kind's starting resumes are at the top of `base/`, and each other kind's are in its own folder, `base/<kind>/<style>-<track>.json`. Another kind's resume is a starting point only when its own kind has none.
 - Set `layout`, `format` and `output_name`:
   - `layout`: if the user names a template, use it: `list_templates` gives each one's ID, built in or their own. Otherwise, the one `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or, with none for that kind, the one for any job. Without `guide/templates.md`, the starting point's. When it gives more than one for the job's kind, or none for its kind and more than one for any job, pick the one of those that suits the role, by what the user's guide says each is for (such as a layouts table in `guide/writing.md`, or a layout a style file names for the track). With nothing said, use the one the starting point uses if it's among them, otherwise the first listed.
   - `format`: what the user asked for, or what `guide/templates.md` says.

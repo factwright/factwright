@@ -1,6 +1,7 @@
 import { ASK_ID, questionKey } from './answers.ts';
 import { isIsoDate } from './dates.ts';
 import type { CollectedJob, Job, JobPay } from './jobs.ts';
+import { KIND_ID } from './kinds.ts';
 import type { Link } from './links.ts';
 import { parsePay } from './pay.ts';
 import type { JobDocKind } from './records.ts';
@@ -127,6 +128,7 @@ export function trackedRow(row: StoredRow): TrackedRow {
     asks: asksOf(row.asks),
     earlierNotes: text(row.notes),
     archived: row.archived === 1,
+    kind: typeof row.kind === 'string' && KIND_ID.test(row.kind) ? row.kind : null,
   };
 }
 
@@ -195,13 +197,13 @@ const ADDED_BY_HAND = 'Added by hand';
 
 /** Whether the user has tracked anything about a job, so it stays listed after its files go. */
 function isTracked(row: TrackedRow, kept: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes } = row;
+  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes, kind } = row;
   return (
     manual ||
     archived ||
     kept > 0 ||
     [row.questions, row.sent, row.asks].some((list) => list.length > 0) ||
-    [status, appliedOn, nextAction, nextOn, earlierNotes].some(Boolean)
+    [status, appliedOn, nextAction, nextOn, earlierNotes, kind].some(Boolean)
   );
 }
 
@@ -225,6 +227,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     asks: row.asks,
     earlierNotes: row.earlierNotes,
     archived: row.archived,
+    kind: row.kind,
     manual: row.manual,
     ...kept,
   };
@@ -251,6 +254,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     fit: null,
     search: null,
     searches: [],
+    kindFound: null,
     folder: null,
     stage: 'new',
     firstSeen: row.firstSeen,

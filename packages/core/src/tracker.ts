@@ -121,6 +121,11 @@ export interface TrackerFields {
    */
   earlierNotes: string | null;
   archived: boolean;
+  /**
+   * The kind of job the user put it under, by its id, such as "project-manager". Null goes by
+   * what the job search or fit check found it as.
+   */
+  kind: string | null;
 }
 
 /** A call or interview the user logged for a job. */

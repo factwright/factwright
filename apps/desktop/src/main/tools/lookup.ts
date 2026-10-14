@@ -12,6 +12,8 @@ import {
   type JobDocKind,
   type JobShot,
   jobProgress,
+  type KindName,
+  kindOfJob,
   localDate,
   normalizeUrl,
   readApplySteps,
@@ -57,10 +59,19 @@ export function findJobs(jobs: readonly Job[], query: JobQuery): Job[] {
 
 const name = (job: Job) => `${job.company}, ${job.role || 'the company itself'}`;
 
+/** The kind of job a job is under, by name and id, when the user wants more than one kind. */
+function kindLine(job: Job, kinds: readonly KindName[]): string | null {
+  if (kinds.length < 2) return null;
+  const kind = kinds.find((each) => each.id === kindOfJob(job, kinds));
+  return kind ? `${kind.name} (\`${kind.id}\`)` : null;
+}
+
 /** One line on a job: where it stands, and what's on file. */
-function summary(job: Job, today: string): string {
+function summary(job: Job, today: string, kinds: readonly KindName[]): string {
   const { status } = jobProgress(job, today);
+  const kind = kindLine(job, kinds);
   const parts = [
+    kind && `kind of job ${kind}`,
     job.fit &&
       `fit check ${[job.fit.verdict, job.fit.score].filter((part) => part !== null).join(' ')}${job.fit.date ? ` on ${job.fit.date}` : ''}`,
     job.search?.tier &&
@@ -73,8 +84,16 @@ function summary(job: Job, today: string): string {
   return `- ${name(job)} (job ${job.id}): ${parts.join('; ')}`;
 }
 
-/** Whether the user has seen a job before, for a skill to say so up front. */
-export function findJob(jobs: readonly Job[], query: JobQuery, today: string): string {
+/**
+ * Whether the user has seen a job before, for a skill to say so up front. With more than one
+ * kind of job, each says which it's under.
+ */
+export function findJob(
+  jobs: readonly Job[],
+  query: JobQuery,
+  today: string,
+  kinds: readonly KindName[] = [],
+): string {
   const found = findJobs(jobs, query);
   const asked = query.company
     ? `${query.company}${query.role ? `, ${query.role}` : ''}`
@@ -82,7 +101,7 @@ export function findJob(jobs: readonly Job[], query: JobQuery, today: string): s
   if (found.length === 0) return `Not seen before: ${asked}.`;
   return [
     'Seen before:',
-    ...found.map((job) => summary(job, today)),
+    ...found.map((job) => summary(job, today, kinds)),
     'For everything on file, call job_details with the job’s id.',
   ].join('\n');
 }
@@ -172,12 +191,17 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
 }
 
 /**
- * Everything on file for a job, as Markdown: where it stands, its dates, the user's notes,
- * calls and history, a line for each file on record, the application's questions with what the
- * user actually sent, and the questions they asked Claude about it. The notes can name people,
- * which is the user's own information for their own Claude.
+ * Everything on file for a job, as Markdown: where it stands and its kind of job, its dates, the
+ * user's notes, calls and history, a line for each file on record, the application's questions
+ * with what the user actually sent, and the questions they asked Claude about it. The notes can
+ * name people, which is the user's own information for their own Claude.
  */
-export async function jobDetails(job: Job, workspace: string, today: string): Promise<string> {
+export async function jobDetails(
+  job: Job,
+  workspace: string,
+  today: string,
+  kinds: readonly KindName[] = [],
+): Promise<string> {
   const { status } = jobProgress(job, today);
   const { asked, shots } = readJobExtras(diskWorkspace(workspace), job.id);
   const out = [`## ${name(job)}`, `- Job id: ${job.id}`];
@@ -194,6 +218,7 @@ export async function jobDetails(job: Job, workspace: string, today: string): Pr
       .filter(Boolean)
       .join('; '),
   );
+  add('Kind of job', kindLine(job, kinds));
   add(
     'Fit check',
     job.fit &&

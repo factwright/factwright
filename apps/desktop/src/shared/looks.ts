@@ -84,15 +84,19 @@ function reason(layout: string, kind: CompanyKind | 'any', fields: readonly Fiel
  * The template the app comes with that suits each kind of company the user is aiming at, from
  * what they're looking for: one for startups, say, and another for established companies, each
  * its own, since a look goes with one kind. With no kind chosen, one template for any job. Once
- * each template has a kind, the kinds left get none, and the user picks for them.
+ * each template has a kind, the kinds left get none, and the user picks for them. The fields and
+ * levels are every kind of job's, since the looks are shared.
  */
 export function suggestLooks(
-  answers: Pick<AboutYou, 'companies' | 'fields' | 'levels'>,
+  answers: Pick<AboutYou, 'companies' | 'fields' | 'levels'> &
+    Partial<Pick<AboutYou, 'otherKinds'>>,
 ): Suggestion[] {
   const kinds: (CompanyKind | 'any')[] = answers.companies.length > 0 ? answers.companies : ['any'];
   const ids = TEMPLATES.map(({ id }) => id);
-  const fit = (layout: string, kind: CompanyKind | 'any') =>
-    score(layout, kind, answers.fields, answers.levels);
+  const others = answers.otherKinds ?? [];
+  const fields = [...answers.fields, ...others.flatMap((kind) => kind.fields)];
+  const levels = [...answers.levels, ...others.flatMap((kind) => kind.levels)];
+  const fit = (layout: string, kind: CompanyKind | 'any') => score(layout, kind, fields, levels);
   // Every way to give the kinds a template each, while there are templates left: the one that
   // covers the most kinds wins, then the one that suits them best. Templates come safest first,
   // and earlier kinds first, so of equals the first found wins.
@@ -112,7 +116,7 @@ export function suggestLooks(
   walk([], 0);
   return kinds.flatMap((kind, i) => {
     const layout = best.picks[i];
-    return layout ? [{ layout, for: kind, why: reason(layout, kind, answers.fields) }] : [];
+    return layout ? [{ layout, for: kind, why: reason(layout, kind, fields) }] : [];
   });
 }
 

@@ -256,6 +256,37 @@ describe('job_details', () => {
     ).rejects.toThrow('Nothing on file for nope.');
   });
 
+  it('says which kind of job a job is under, when the user wants more than one', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    expect(await tool('job_details').run({ job: id })).not.toContain('Kind of job');
+    answers = {
+      ...answers,
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Kind of job: Developer (`developer`)',
+    );
+    jobs.updateJob(id, { kind: 'project-manager' });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Kind of job: Project manager (`project-manager`)',
+    );
+    expect(await tool('find_job').run({ company: 'Acme' })).toContain(
+      'kind of job Project manager (`project-manager`)',
+    );
+  });
+
   it('finds a job by company, and says when nothing’s on file', async () => {
     expect(await tool('job_details').run({ company: 'Acme' })).toContain(
       'Job id: acme-robotics--staff-engineer',
@@ -300,6 +331,45 @@ describe('about_you', () => {
     expect(answer).not.toContain('Email');
   });
 
+  it('lists each kind of job with its own roles, levels and pay', async () => {
+    answers = {
+      ...answers,
+      roles: ['Staff Engineer'],
+      targetPay: '$200,000',
+      authorization: 'US citizen',
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: ['Program Manager'],
+          fields: ['product'],
+          levels: ['senior'],
+          minPay: '$140,000',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    const answer = await tool('about_you').run({});
+    expect(answer).toContain(
+      '- Kinds of job they want: Developer (`developer`), Project manager (`project-manager`).',
+    );
+    expect(answer).toContain(
+      [
+        '- Developer (`developer`):',
+        '    - Roles they want: Staff Engineer',
+        '    - Target base pay: $200,000',
+        '- Project manager (`project-manager`):',
+        '    - Roles they want: Program Manager',
+        '    - Kinds of work: Product management',
+        '    - Levels: Senior',
+        '    - Lowest base pay they’d take: $140,000',
+        '- Work authorization: US citizen',
+      ].join('\n'),
+    );
+  });
+
   it('says where else to look when the user hasn’t told it anything', async () => {
     expect(await tool('about_you').run({})).toContain(
       'The user hasn’t told Factwright about themselves yet.',
@@ -328,6 +398,47 @@ describe('save_about_you', () => {
     });
   });
 
+  it('saves pay for the kind of job it’s for, and the rest for every kind', async () => {
+    answers = {
+      ...answers,
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    expect(
+      await tool('save_about_you').run({
+        kind: 'project-manager',
+        targetPay: '$170,000',
+        start: 'Right away',
+      }),
+    ).toBe(
+      'Saved to the user’s profile: Target base pay for Project manager: $170,000; When they can start: Right away.',
+    );
+    expect(answers).toMatchObject({
+      targetPay: '',
+      start: 'Right away',
+      otherKinds: [{ id: 'project-manager', targetPay: '$170,000' }],
+    });
+    await tool('save_about_you').run({ minPay: '$150,000' });
+    expect(answers.minPay).toBe('$150,000');
+    for (const input of [
+      { kind: 'designer', targetPay: '$1' },
+      { kind: 'project-manager', start: 'Now' },
+    ]) {
+      await expect(tool('save_about_you').run(input)).rejects.toThrow('Give one or more of');
+    }
+  });
+
   it('refuses anything else, and saves nothing then', async () => {
     for (const input of [
       {},
@@ -336,6 +447,7 @@ describe('save_about_you', () => {
       { start: 42 },
       { start: 'x'.repeat(500) },
       { authorization: 'US citizen', files: '[]' },
+      { kind: 'developer', targetPay: '$200,000' },
     ]) {
       await expect(tool('save_about_you').run(input)).rejects.toThrow('Give one or more of');
     }
@@ -631,7 +743,14 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: FOLDER })).toBe(
       'Not built. Fix resume.json first:\n- resume.headline is missing.',
     );
-    for (const folder of ['../escape', 'base/../facts', 'base/Startup IC', 'base/']) {
+    for (const folder of [
+      '../escape',
+      'base/../facts',
+      'base/Startup IC',
+      'base/',
+      'base/pm/../../facts',
+      'base/a/b/c',
+    ]) {
       expect(await tool('build_resume').run({ folder })).toContain(
         'isn’t a job folder or a starting resume',
       );
@@ -661,6 +780,22 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: 'base/big-company-leader' })).toBe(
       'There’s no base/big-company-leader.json yet. Write the resume there first.',
     );
+  });
+
+  it('builds a kind of job’s starting resume in its own folder in base/', async () => {
+    mkdirSync(join(root, 'base', 'project-manager'), { recursive: true });
+    const data = { ...resume, layout: 'classic', output_name: 'AlexRiveraResume_PM' };
+    writeFileSync(
+      join(root, 'base', 'project-manager', 'startup-leader.json'),
+      JSON.stringify(data),
+    );
+    const answer = await tool('build_resume').run({
+      folder: 'base/project-manager/startup-leader',
+    });
+    expect(answer).toContain('Built base/project-manager/AlexRiveraResume_PM.pdf');
+    expect(
+      readFileSync(join(root, 'base', 'project-manager', 'AlexRiveraResume_PM.pdf'), 'utf8'),
+    ).toBe('%PDF-1.7 made up');
   });
 
   it('builds in a template of the user’s own, in the workspace’s templates folder', async () => {

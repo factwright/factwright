@@ -24,6 +24,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     fit: null,
     search: null,
     searches: [],
+    kindFound: null,
     folder: null,
     stage: 'checked',
     firstSeen: '2026-10-07',
@@ -135,6 +136,14 @@ describe('updateJob', () => {
     expect(history()).toEqual([['passed', TODAY]]);
   });
 
+  it('puts a job under a kind of job, and back to what the search or fit check found', () => {
+    tracker.updateJob('acme--staff', { kind: 'project-manager' }, AT);
+    expect(row()?.kind).toBe('project-manager');
+    tracker.updateJob('acme--staff', { kind: null }, AT);
+    expect(row()?.kind).toBeNull();
+    expect(history()).toEqual([]);
+  });
+
   it('logs nothing when the status stays the same', () => {
     tracker.updateJob('acme--staff', { status: 'applied' }, AT);
     tracker.updateJob('acme--staff', { status: 'applied' }, AT);
@@ -191,6 +200,14 @@ describe('addJob', () => {
       AT,
     );
     expect(second).toEqual({ ok: true, jobId: 'harbor-and-pine--senior-engineer-payments-2' });
+  });
+
+  it('adds a job under the kind of job the user picked', () => {
+    const added = tracker.addJob({ company: 'Fernway', kind: 'project-manager' }, AT);
+    expect(added).toEqual({ ok: true, jobId: 'fernway--general' });
+    expect(row('fernway--general')?.kind).toBe('project-manager');
+    tracker.addJob({ company: 'Tidewater' }, AT);
+    expect(row('tidewater--general')?.kind).toBeNull();
   });
 
   it('needs a company, and a link that starts with http', () => {
@@ -316,7 +333,7 @@ describe('the database file', () => {
     // Back to the first version: no questions yet, nor anything since.
     const old = new DatabaseSync(file);
     old.exec(
-      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN questions; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 1;',
+      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN questions; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 1;',
     );
     old.close();
     const second = new Tracker(file);
@@ -334,7 +351,7 @@ describe('the database file', () => {
     first.close();
     const old = new DatabaseSync(file);
     old.exec(
-      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
+      'DROP TABLE notes; ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 2;',
     );
     old.close();
     const second = new Tracker(file);
@@ -345,8 +362,25 @@ describe('the database file', () => {
     ]);
     // Sync fills the columns it gained from what other devices sent before, and reads every
     // change again for a table it made, such as notes.
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['sent', 'asks']]]));
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['sent', 'asks', 'kind']]]));
     expect(second.gainedTables()).toEqual(['notes']);
+    second.close();
+  });
+
+  it('adds kinds of job to a tracker from before them, for sync to fill', () => {
+    const file = join(folder, 'tracker.db');
+    const first = new Tracker(file);
+    first.saveCollected([collected('acme--staff')], NOW);
+    first.updateJob('acme--staff', { status: 'applied' }, AT);
+    first.close();
+    const old = new DatabaseSync(file);
+    old.exec('ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 4;');
+    old.close();
+    const second = new Tracker(file);
+    expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['kind']]]));
+    second.updateJob('acme--staff', { kind: 'developer' }, AT);
+    expect(second.rows()[0]?.kind).toBe('developer');
     second.close();
   });
 
@@ -357,7 +391,7 @@ describe('the database file', () => {
     first.updateJob('acme--staff', { earlierNotes: 'From the old box' }, AT);
     first.close();
     const old = new DatabaseSync(file);
-    old.exec('DROP TABLE notes; PRAGMA user_version = 3;');
+    old.exec('DROP TABLE notes; ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 3;');
     old.close();
     const second = new Tracker(file);
     expect(second.notes()).toEqual(new Map());
@@ -369,7 +403,7 @@ describe('the database file', () => {
         .get('acme--staff')
         ?.map((note) => note.text),
     ).toEqual(['Screen went well']);
-    expect(second.gainedColumns().size).toBe(0);
+    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['kind']]]));
     expect(second.gainedTables()).toEqual(['notes']);
     second.close();
     // A tracker that's up to date, or new, made nothing.

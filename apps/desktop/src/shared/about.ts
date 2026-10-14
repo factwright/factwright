@@ -1,3 +1,4 @@
+import { KIND_ID, type KindName, slug } from '@factwright/core';
 import { TEMPLATE_ID } from '@factwright/engine/templates';
 
 /**
@@ -9,7 +10,10 @@ import { TEMPLATE_ID } from '@factwright/engine/templates';
 export interface AboutYou {
   /** Who they are, as their resumes should show it. */
   you: Contact;
-  /** Job titles they want, such as "Product Designer". */
+  /**
+   * Job titles they want, such as "Product Designer". With more than one kind of job, these,
+   * the kinds of work, levels and pay are the first kind's.
+   */
   roles: string[];
   fields: Field[];
   levels: Level[];
@@ -53,7 +57,45 @@ export interface AboutYou {
   startedOn: string | null;
   /** They skipped getting started, for now. */
   skipped: boolean;
+  /**
+   * The first kind of job's id and name, once they want more than one kind, such as
+   * "Developer" beside "Project manager". Its titles, kinds of work, levels and pay are the ones
+   * above. Null with one kind.
+   */
+  firstKind: KindName | null;
+  /** Each kind of job after the first, with its own titles, kinds of work, levels and pay. */
+  otherKinds: JobKind[];
 }
+
+/**
+ * A kind of job the user wants, such as "Project manager" beside "Developer": its own titles,
+ * kinds of work, levels and pay. The rest of what they want is the same for every kind.
+ */
+export interface JobKind extends KindName {
+  roles: string[];
+  fields: Field[];
+  levels: Level[];
+  minPay: string;
+  targetPay: string;
+  payFilter: boolean;
+}
+
+/** What each kind of job has of its own. */
+export const KIND_ANSWERS = [
+  'roles',
+  'fields',
+  'levels',
+  'minPay',
+  'targetPay',
+  'payFilter',
+] as const satisfies readonly (keyof JobKind & keyof AboutYou)[];
+
+/**
+ * Where the kinds of job are kept: the first one's name, and each other one's own answers. They
+ * have a file of their own so a copy of the app from before them, which rewrites answers.json
+ * with only what it knows, never drops them.
+ */
+export const KINDS_FILE = 'about-me/kinds-of-job.json';
 
 export interface Contact {
   name: string;
@@ -213,6 +255,8 @@ export const NO_ANSWERS: AboutYou = {
   reached: 0,
   startedOn: null,
   skipped: false,
+  firstKind: null,
+  otherKinds: [],
 };
 
 /** The longest text each answer takes, so a stray paste can't swell the file. */
@@ -222,6 +266,9 @@ export const ANSWER_LIMITS = {
   entries: 30,
   text: 4000,
   files: 200,
+  /** Kinds of job, the first included, and how long a kind's name runs. */
+  kinds: 6,
+  kindName: 60,
   /** The notes, kept in about-me/notes.md, can be long: that's the point of them. */
   notes: 200_000,
 } as const;
@@ -322,6 +369,38 @@ function files(value: unknown): SharedFile[] | undefined {
   return kept;
 }
 
+/** A kind of job's id and name, or nothing when either doesn't hold up. */
+function kindName(value: unknown): KindName | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { id, name } = value as Record<string, unknown>;
+  if (typeof id !== 'string' || !KIND_ID.test(id)) return undefined;
+  const named = text(name, ANSWER_LIMITS.kindName)?.trim();
+  return named ? { id, name: named } : undefined;
+}
+
+/**
+ * The kinds of job after the first. A kind without an id and a name is left out, and so is a
+ * second one by the same id or name, or one past as many as the app keeps, but the rest stay.
+ * Each kind's own answers fall back to nothing told one by one, as the answers do.
+ */
+function kinds(value: unknown): JobKind[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const kept: JobKind[] = [];
+  for (const each of value) {
+    if (kept.length === ANSWER_LIMITS.kinds - 1) break;
+    const named = kindName(each);
+    const taken = (kind: KindName) =>
+      kind.id === named?.id || kind.name.toLowerCase() === named?.name.toLowerCase();
+    if (!named || kept.some(taken)) continue;
+    const fields = each as Record<string, unknown>;
+    const own = Object.fromEntries(
+      KIND_ANSWERS.map((key) => [key, READERS[key](fields[key]) ?? NO_ANSWERS[key]]),
+    );
+    kept.push({ ...named, ...own } as JobKind);
+  }
+  return kept;
+}
+
 function stepNumber(value: unknown): number | undefined {
   return Number.isInteger(value) && (value as number) >= 0 && (value as number) < 20
     ? (value as number)
@@ -360,6 +439,8 @@ const READERS: { [K in keyof AboutYou]: (value: unknown) => AboutYou[K] | undefi
       ? value
       : undefined,
   skipped: (value) => (typeof value === 'boolean' ? value : undefined),
+  firstKind: (value) => (value === null ? null : kindName(value)),
+  otherKinds: kinds,
 };
 
 /**
@@ -377,7 +458,31 @@ export function readAnswers(value: unknown): AboutYou {
     const valid = key in fields ? read(fields[key]) : undefined;
     if (valid !== undefined) answers[key] = valid;
   }
-  return answers as AboutYou;
+  return withKinds(answers as AboutYou);
+}
+
+/**
+ * The kinds of job as they can stand together: the first named whenever there are others, and
+ * no other by the first one's id or name.
+ */
+function withKinds(answers: AboutYou): AboutYou {
+  const first = answers.firstKind;
+  const others = answers.otherKinds.filter(
+    (kind) => kind.id !== first?.id && kind.name.toLowerCase() !== first?.name.toLowerCase(),
+  );
+  if (others.length === 0 || first) return { ...answers, otherKinds: others };
+  // Others with no first named, as after a hand edit: the first is named for its titles.
+  const name = answers.roles[0]?.slice(0, ANSWER_LIMITS.kindName) || 'Your first kind of job';
+  const taken = others.map((kind) => kind.id);
+  return { ...answers, firstKind: { id: kindIdFor(name, taken), name }, otherKinds: others };
+}
+
+/** An id for a new kind of job, from its name, that none of the others has. */
+export function kindIdFor(name: string, taken: readonly string[]): string {
+  const base = slug(name).slice(0, 32).replace(/-+$/, '') || 'kind';
+  let id = base;
+  for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
+  return id;
 }
 
 /** The answers the window may change. The files list changes only as files are added or removed. */
@@ -394,17 +499,23 @@ export function parseAnswerChanges(value: unknown): AnswerChanges | null {
     if (key === 'files' || key === 'startedOn' || !Object.hasOwn(READERS, key)) return null;
     const valid = READERS[key as keyof AboutYou](change);
     if (valid === undefined) return null;
+    // The window sends whole kinds: one left out for not holding up would be half saved.
+    if (key === 'otherKinds' && (valid as JobKind[]).length !== (change as unknown[]).length) {
+      return null;
+    }
     changes[key] = valid;
   }
   return changes as AnswerChanges;
 }
 
-/** How long resumes should be: what the user chose, or by their level when they haven't. */
-export function pagesFor(answers: Pick<AboutYou, 'pages' | 'levels'>): 1 | 2 {
+/**
+ * How long resumes should be: what the user chose, or by their levels when they haven't, every
+ * kind of job's.
+ */
+export function pagesFor(answers: Pick<AboutYou, 'pages' | 'levels' | 'otherKinds'>): 1 | 2 {
   if (answers.pages) return answers.pages;
-  const early =
-    answers.levels.length > 0 &&
-    answers.levels.every((level) => level === 'entry' || level === 'mid');
+  const levels = [answers.levels, ...answers.otherKinds.map((kind) => kind.levels)].flat();
+  const early = levels.length > 0 && levels.every((level) => level === 'entry' || level === 'mid');
   return early ? 1 : 2;
 }
 

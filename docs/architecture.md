@@ -47,7 +47,7 @@ Claude works on plain files in a folder on your computer:
 | `about-me/` | What you told Factwright: your answers, your own words about yourself, and the files you shared |
 | `facts/` | The fact bank: your experience as checkable claims |
 | `guide/` | Your rules, preferences and resume templates, and how to write and tailor a resume |
-| `base/` | Your starting resumes, one for each kind of company you're aiming at |
+| `base/` | Your starting resumes, one for each kind of company you're aiming at, and a folder of them for each other kind of job you want |
 | `applications/` | One folder per job: posting, fit check, notes, answers, prep and resumes |
 | `searches/` | Job searches, your search criteria, and logs of fit, salary and employer checks |
 | `outreach/` | Messages drafted for people at a company |

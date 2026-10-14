@@ -274,4 +274,31 @@ describe('readRecords', () => {
     expect(sourceOf('HN November 2026')).toBe('HN November 2026');
     expect(sourceOf('LinkedIn Oct 12')).toBe('LinkedIn Oct 12');
   });
+
+  it('reads the kind of job a search or fit check gave each job', () => {
+    const records = readRecords(
+      memoryWorkspace({
+        'searches/2026-11-03-linkedin/jobs.json': JSON.stringify({
+          meta: { source: 'LinkedIn Nov 3', kind: 'project-manager' },
+          jobs: [
+            { company: 'Acme Robotics', role: 'Technical Program Manager' },
+            { company: 'Fernway', role: 'Staff Engineer', kind: 'developer' },
+          ],
+        }),
+        'searches/2026-11-hn-whos-hiring/jobs.json': JSON.stringify({
+          meta: { source: 'HN November 2026' },
+          jobs: [{ company: 'Northwind Labs', role: 'Engineer' }],
+        }),
+        [`${ACME}/job.md`]:
+          '# Acme Robotics: Program Manager\n\n- **Kind of job:** project-manager',
+      }),
+    );
+    expect(of(records, 'search').map((record) => [record.company, record.kind])).toEqual([
+      ['Acme Robotics', 'project-manager'],
+      ['Fernway', 'developer'],
+      ['Northwind Labs', null],
+    ]);
+    expect(of(records, 'folder')[0]?.kind).toBe('project-manager');
+    expect(of(readRecords(WORKSPACE), 'folder')[0]?.kind).toBeNull();
+  });
 });

@@ -69,6 +69,24 @@ const TOLD: AboutYou = readAnswers({
   startedOn: '2026-10-12',
 });
 
+/** The same, after adding a second kind of job: program manager jobs beside engineering ones. */
+const TWO_KINDS: AboutYou = readAnswers({
+  ...TOLD,
+  firstKind: { id: 'developer', name: 'Developer' },
+  otherKinds: [
+    {
+      id: 'project-manager',
+      name: 'Project manager',
+      roles: ['Technical Program Manager', 'Engineering Program Manager'],
+      fields: ['product', 'operations'],
+      levels: ['senior', 'lead'],
+      minPay: '$160,000',
+      targetPay: '$185,000',
+      payFilter: false,
+    },
+  ],
+});
+
 const NOTES =
   'I lead the platform team at Tidewater Analytics. We moved twelve services onto one deploy pipeline last year, and deploys got about 40% faster.';
 
@@ -81,25 +99,44 @@ const BUILT_IN: TemplateInfo[] = TEMPLATES.map(({ id, name, look }) => ({
   stamp: '',
 }));
 
+const STARTING: ProfileStatus['starting'] = [
+  {
+    path: 'base/startup-builder.json',
+    kind: null,
+    title: 'Staff Platform Engineer',
+    layout: 'minimal',
+    pdf: 'base/AlexRiveraResume_Startups.pdf',
+    docx: null,
+  },
+  {
+    path: 'base/big-company-leader.json',
+    kind: null,
+    title: 'Engineering Lead, Platform',
+    layout: 'classic',
+    pdf: 'base/AlexRiveraResume_Enterprise.pdf',
+    docx: 'base/AlexRiveraResume_Enterprise.docx',
+  },
+];
+
 const STATUS: Readonly<Record<string, Partial<ProfileStatus>>> = {
   new: { facts: { claims: 0, unconfirmed: 0, files: 0 } },
   started: { facts: { claims: 24, unconfirmed: 18, files: 5 }, unread: [] },
   done: {
     facts: { claims: 5, unconfirmed: 2, files: 5 },
+    starting: STARTING,
+    connections: { count: 412, added: '2026-10-12' },
+  },
+  kinds: {
+    facts: { claims: 5, unconfirmed: 0, files: 5 },
     starting: [
+      ...STARTING,
       {
-        path: 'base/startup-builder.json',
-        title: 'Staff Platform Engineer',
-        layout: 'minimal',
-        pdf: 'base/AlexRiveraResume_Startups.pdf',
-        docx: null,
-      },
-      {
-        path: 'base/big-company-leader.json',
-        title: 'Engineering Lead, Platform',
+        path: 'base/project-manager/big-company-leader.json',
+        kind: 'project-manager',
+        title: 'Technical Program Manager',
         layout: 'classic',
-        pdf: 'base/AlexRiveraResume_Enterprise.pdf',
-        docx: 'base/AlexRiveraResume_Enterprise.docx',
+        pdf: 'base/project-manager/AlexRiveraResume_ProjectManager_Enterprise.pdf',
+        docx: null,
       },
     ],
     connections: { count: 412, added: '2026-10-12' },
@@ -108,12 +145,13 @@ const STATUS: Readonly<Record<string, Partial<ProfileStatus>>> = {
 
 /**
  * Sample answers about the user for checking the screens in a browser. ?profile=new starts with
- * nothing told, so getting started shows; started has Claude partway through the fact bank; and
- * done, the default, has it finished. Changes stick until the page reloads.
+ * nothing told, so getting started shows; started has Claude partway through the fact bank;
+ * done, the default, has it finished; and kinds has two kinds of job, each with its starting
+ * resumes. Changes stick until the page reloads.
  */
 export function sampleProfile(state: string | null): ProfileApi {
   const kind = state && state in STATUS ? state : 'done';
-  let answers: AboutYou = kind === 'new' ? readAnswers({}) : TOLD;
+  let answers: AboutYou = kind === 'new' ? readAnswers({}) : kind === 'kinds' ? TWO_KINDS : TOLD;
   let notes = kind === 'new' ? '' : NOTES;
   let confidential = kind === 'new' ? [] : ['Bluebird'];
   let templates: TemplateInfo[] = [

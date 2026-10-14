@@ -1,6 +1,7 @@
 import { JOB_VIEWS, type JobView, viewOf } from '@factwright/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
@@ -301,6 +302,7 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'find-jobs' && (
         <FindJobsDialog
           today={today}
+          kinds={profile && hasKinds(profile.answers) ? kindsOf(profile.answers) : []}
           onStart={(sources) => run.requestStart({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />

@@ -93,6 +93,8 @@ export interface JobChanges {
   /** All of the application's questions, in order, replacing those saved before. */
   questions?: string[];
   archived?: boolean;
+  /** The kind of job it's under, by its id, or null to go by the job search or fit check. */
+  kind?: string | null;
 }
 
 /** A job the user adds by hand. */
@@ -104,6 +106,8 @@ export interface NewJob {
   status?: JobStatus | null;
   /** A first note, dated today. */
   notes?: string | null;
+  /** The kind of job it's under, by its id, when the user wants more than one kind. */
+  kind?: string | null;
 }
 
 /** A note the user jots about a job: its words, and the day it's about if not today. */

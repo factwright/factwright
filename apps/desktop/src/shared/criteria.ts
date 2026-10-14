@@ -3,10 +3,12 @@ import {
   COMPANY_KINDS,
   EMPLOYMENT,
   FIELDS,
+  type JobKind,
   LEVELS,
   labelOf,
   RELOCATE,
 } from './about.ts';
+import { hasKinds, kindsOf } from './kinds.ts';
 import { stamped } from './stamp.ts';
 
 /** "a, b or c", for a few words. */
@@ -46,39 +48,85 @@ const item = (label: string, value: string | null) => (value ? [`- **${label}:**
 /** Text the user typed, kept to one bullet's worth of lines. */
 const typed = (value: string) => value.trim().replace(/\s*\n\s*/g, ' / ');
 
-/**
- * What the user is looking for, as searches/criteria.md: the filters a job must pass, what
- * ranks it higher, pay, and how fit is scored. Job searches and fit checks read it, and the app
- * writes it again whenever the answers change.
- */
-export function criteriaMarkdown(answers: AboutYou): string {
-  const place = where(answers);
-  const levels = answers.levels.map((level) => labelOf(LEVELS, level));
-  const fields = answers.fields
+/** A kind of job's levels and kinds of work, as criteria.md's filters give them. */
+function kindFilters(kind: JobKind): string[] {
+  const levels = kind.levels.map((level) => labelOf(LEVELS, level));
+  const fields = kind.fields
     .filter((field) => field !== 'other')
     .map((field) => labelOf(FIELDS, field));
   const work = [
     fields.length > 0 ? `${either(fields)}.` : '',
-    answers.roles.length > 0 ? `Roles such as ${either(answers.roles)}, and close matches.` : '',
+    kind.roles.length > 0 ? `Roles such as ${either(kind.roles)}, and close matches.` : '',
   ]
     .filter(Boolean)
     .join(' ');
-  const filters = [
-    ...item('Where', place),
+  return [
     ...item('Level', levels.length > 0 ? `${either(levels)}.` : null),
     ...item('Kind of work', work || null),
+  ];
+}
+
+/** A kind of job's lowest pay, as a filter, when the user asked to leave out jobs paying less. */
+const payFilter = (kind: JobKind) =>
+  item(
+    'Pay',
+    kind.payFilter && kind.minPay ? `At least ${kind.minPay} base, when the posting says.` : null,
+  );
+
+/** A kind of job's pay, as criteria.md's pay section gives it. */
+const kindPay = (kind: JobKind) => [
+  ...(kind.targetPay ? [`- **Target:** ${kind.targetPay} base.`] : []),
+  ...(kind.minPay && !kind.payFilter ? [`- **Lowest they'd take:** ${kind.minPay} base.`] : []),
+];
+
+/** The level and shape a kind of job's roles take, such as "Senior roles: Staff Engineer". */
+function shapeOf(kind: JobKind): string {
+  const levels = kind.levels.map((level) => labelOf(LEVELS, level));
+  return [levels.length > 0 ? either(levels) : '', kind.roles.length > 0 ? either(kind.roles) : '']
+    .filter(Boolean)
+    .join(' roles: ');
+}
+
+/**
+ * Each kind of job, with its own filters and pay, when the user wants more than one: what a
+ * job search or fit check scores a job of that kind against.
+ */
+function kindSections(kinds: readonly JobKind[]): string[] {
+  return [
+    '## Kinds of job',
+    'They want more than one kind of job, each with its own titles, levels, work and pay below. A job of a kind must pass its section’s Level, Kind of work and Pay lines as well as the filters above, and its role is scored against them. The preferences above hold for every kind. Each kind’s id is in backticks after its name.',
+    '',
+    ...kinds.flatMap((kind) => {
+      const own = [...kindFilters(kind), ...payFilter(kind), ...kindPay(kind)];
+      return [
+        `### ${kind.name} (\`${kind.id}\`)`,
+        ...(own.length > 0 ? own : ['- Nothing given yet beyond the shared filters.']),
+        '',
+      ];
+    }),
+  ];
+}
+
+/**
+ * What the user is looking for, as searches/criteria.md: the filters a job must pass, what
+ * ranks it higher, pay, and how fit is scored. With more than one kind of job, each kind's own
+ * titles, levels, work and pay get a section of their own. Job searches and fit checks read it,
+ * and the app writes it again whenever the answers change.
+ */
+export function criteriaMarkdown(answers: AboutYou): string {
+  const place = where(answers);
+  const kinds = hasKinds(answers) ? kindsOf(answers) : null;
+  const [only] = kindsOf(answers);
+  const filters = [
+    ...item('Where', place),
+    ...(kinds || !only ? [] : kindFilters(only)),
     ...item(
       'Employment',
       answers.employment.length > 0
         ? `${either(answers.employment.map((each) => labelOf(EMPLOYMENT, each)))}.`
         : null,
     ),
-    ...item(
-      'Pay',
-      answers.payFilter && answers.minPay
-        ? `At least ${answers.minPay} base, when the posting says.`
-        : null,
-    ),
+    ...(kinds || !only ? [] : payFilter(only)),
     ...item('Not in', answers.avoid.length > 0 ? `${either(lower(answers.avoid))}.` : null),
     ...item('Work authorization', answers.authorization ? typed(answers.authorization) : null),
     ...item('Deal-breakers', answers.dealBreakers ? typed(answers.dealBreakers) : null),
@@ -99,12 +147,7 @@ export function criteriaMarkdown(answers: AboutYou): string {
         ]
       : []),
   ];
-  const shape = [
-    levels.length > 0 ? either(levels) : '',
-    answers.roles.length > 0 ? either(answers.roles) : '',
-  ]
-    .filter(Boolean)
-    .join(' roles: ');
+  const shape = kinds || !only ? '' : shapeOf(only);
   const body = [
     '# Job search criteria',
     '',
@@ -117,20 +160,20 @@ export function criteriaMarkdown(answers: AboutYou): string {
     ...(preferences.length > 0 ? preferences : ['- None given yet.']),
     '',
     '## Pay',
-    ...(answers.targetPay ? [`- **Target:** ${answers.targetPay} base.`] : []),
-    ...(answers.minPay && !answers.payFilter
-      ? [`- **Lowest they'd take:** ${answers.minPay} base.`]
-      : []),
-    '- Show pay when the posting lists it. Pay never changes a fit score.',
+    ...(kinds || !only ? [] : kindPay(only)),
+    `- Show pay when the posting lists it.${kinds ? ' Each kind’s pay is in its section.' : ''} Pay never changes a fit score.`,
     '',
     ...(situation.length > 0 ? ['## Their situation', ...situation, ''] : []),
+    ...(kinds ? kindSections(kinds) : []),
     '## Scoring (0–100)',
     'Fit is judged against `facts/` only, the same bar as resumes.',
     '',
     '| Part | Points | What earns it |',
     '|---|---|---|',
     '| Work | 40 | The job’s core work is work the fact bank proves, domain included |',
-    `| Role | 25 | The level and shape fit what the user wants${shape ? `: ${shape}` : ''} |`,
+    kinds
+      ? '| Role | 25 | The level and shape fit what the user wants for the job’s kind |'
+      : `| Role | 25 | The level and shape fit what the user wants${shape ? `: ${shape}` : ''} |`,
     '| Stack | 20 | Overlap with the tools, methods and skills the fact bank proves |',
     '| Reqs | 15 | Full marks unless a hard requirement isn’t met: years, degree, license or certification |',
     '',

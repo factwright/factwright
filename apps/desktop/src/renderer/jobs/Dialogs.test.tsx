@@ -296,6 +296,40 @@ describe('FindJobsDialog', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
   });
 
+  it('looks for one kind of job, or every kind, when the user wants more than one', async () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const onStart = vi.fn();
+    const { container, unmount } = render(
+      <FindJobsDialog today="2026-10-12" kinds={kinds} onStart={onStart} onClose={() => {}} />,
+    );
+    const lookFor = screen.getByRole('group', { name: 'Look for' });
+    expect(
+      (within(lookFor).getByRole('radio', { name: 'Every kind' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    await userEvent.click(within(lookFor).getByRole('radio', { name: 'Project manager' }));
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(onStart).toHaveBeenCalledWith({ sites: ['hn'], kind: 'project-manager' });
+    unmount();
+    // Kept for next time, while the kind is still there.
+    render(
+      <FindJobsDialog today="2026-10-12" kinds={kinds} onStart={onStart} onClose={() => {}} />,
+    );
+    expect(
+      (screen.getByRole('radio', { name: 'Project manager' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    cleanup();
+    // With one kind of job, there's nothing to pick.
+    render(<FindJobsDialog today="2026-10-12" onStart={onStart} onClose={() => {}} />);
+    expect(screen.queryByRole('group', { name: 'Look for' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(onStart).toHaveBeenLastCalledWith({ sites: ['hn'] });
+  });
+
   it('remembers the places picked for next time', async () => {
     const { unmount } = render(
       <FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />,

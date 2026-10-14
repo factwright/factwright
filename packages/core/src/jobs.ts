@@ -84,6 +84,11 @@ export interface CollectedJob {
   } | null;
   /** Every job search that found it, oldest first. */
   searches: SearchRun[];
+  /**
+   * The kind of job its newest fit check judged it as, or else the job search that rated it
+   * highest, by id or name. Null when none said, as with only one kind of job.
+   */
+  kindFound: string | null;
   /** Its folder under applications/, once a fit check has made one. */
   folder: string | null;
   stage: JobStage;
@@ -335,6 +340,12 @@ function build(draft: Draft): CollectedJob {
   )[0];
   const source = !first ? '' : first.tool === 'search' ? first.source : SOURCES[first.tool];
 
+  // A fit check judges the one job, so its kind wins over a search's.
+  const kindFound =
+    [...folders].reverse().find((record) => record.kind)?.kind ??
+    [bestSearch, ...[...searches].reverse()].find((record) => record?.kind)?.kind ??
+    null;
+
   const docs = folder?.docs ?? {};
   const fitReport = parseFitReport(docs.fit);
   const sentiment = fitReport?.sentiment ?? jobNotesSentiment(docs.job);
@@ -372,6 +383,7 @@ function build(draft: Draft): CollectedJob {
         }
       : null,
     searches: searchRuns(searches),
+    kindFound,
     folder: folder?.folder ?? null,
     stage,
     firstSeen: dates[0] ?? null,

@@ -116,6 +116,9 @@ const MIGRATIONS = [
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS notes_job ON notes(job_id);`,
+  // The kind of job the user put a job under, such as "project-manager", when they want more
+  // than one kind. Empty goes by what the job search or fit check found it as.
+  `ALTER TABLE jobs ADD COLUMN kind TEXT;`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -367,6 +370,7 @@ export class Tracker {
     if (changes.earlierNotes !== undefined) set('notes', changes.earlierNotes);
     if (changes.questions !== undefined) set('questions', JSON.stringify(changes.questions));
     if (changes.archived !== undefined) set('archived', changes.archived ? 1 : 0);
+    if (changes.kind !== undefined) set('kind', changes.kind);
 
     const status = changes.status;
     const statusChanged = status !== undefined && status !== job.status;
@@ -494,8 +498,8 @@ export class Tracker {
       this.db
         .prepare(
           `INSERT INTO jobs (id, company, company_key, role, links, manual, pay_text, first_seen,
-             status, status_on, applied_on, updated_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+             status, status_on, applied_on, kind, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -508,6 +512,7 @@ export class Tracker {
           status,
           status ? today : null,
           status === 'applied' ? today : null,
+          input.kind ?? null,
           now,
         );
       if (status) this.logStatus(id, status, today);

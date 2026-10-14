@@ -35,6 +35,7 @@ const job = (id: string): CollectedJob => ({
   fit: null,
   search: null,
   searches: [],
+  kindFound: null,
   folder: null,
   stage: 'checked',
   firstSeen: '2026-10-07',
@@ -82,8 +83,14 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
     downgrade() {
       const old = new DatabaseSync(file);
       old.exec(
-        'ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; PRAGMA user_version = 2;',
+        'ALTER TABLE jobs DROP COLUMN sent; ALTER TABLE jobs DROP COLUMN asks; ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 2;',
       );
+      old.close();
+    },
+    /** Goes back to the tracker before kinds of job, as on 0.1.x. */
+    beforeKinds() {
+      const old = new DatabaseSync(file);
+      old.exec('ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 4;');
       old.close();
     },
     /** Updates the app: opens the tracker again, as the new version does, and syncs from there. */
@@ -101,7 +108,7 @@ async function computer(name: string, account: Account, accountKey: Bytes) {
     updateFromBeforeNotes() {
       tracker.close();
       const old = new DatabaseSync(file);
-      old.exec('DROP TABLE notes; PRAGMA user_version = 3;');
+      old.exec('DROP TABLE notes; ALTER TABLE jobs DROP COLUMN kind; PRAGMA user_version = 3;');
       old.close();
       const synced = new DatabaseSync(join(folder, 'sync.db'));
       synced.exec("DELETE FROM synced WHERE name LIKE 'row:notes:%'");
@@ -339,6 +346,44 @@ describe('two computers on one account', () => {
         sent: [{ question: 'Why Acme?', text: 'Deploys, mostly.' }],
       });
     }
+  });
+
+  it('keep a job’s kind through a computer from before kinds, which gets it once it updates', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    // The PC is still on a version without kinds of job, as 0.1.x is.
+    pc.beforeKinds();
+    mac.tracker.updateJob('acme--staff', { kind: 'project-manager' }, AT);
+    await mac.sync();
+    await pc.sync();
+    // It changes the job without knowing its kind, and what it sends keeps the kind.
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    pc.tracker.updateJob('acme--staff', { status: 'applied' }, later);
+    expect(await pc.sync()).toMatchObject({ pushed: 2 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'applied', kind: 'project-manager' });
+    // Once it updates, it has the kind too, from what it synced, with nothing to send.
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'applied', kind: 'project-manager' });
+    expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
+  });
+
+  it('keep a job’s kind when a computer from before kinds changed the job at the same time', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    pc.beforeKinds();
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    mac.tracker.updateJob('acme--staff', { kind: 'project-manager' }, AT);
+    pc.tracker.updateJob('acme--staff', { status: 'interview' }, later);
+    await mac.sync();
+    expect(await pc.sync()).toMatchObject({ conflicts: 1 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'interview', kind: 'project-manager' });
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'interview', kind: 'project-manager' });
+    expect(await pc.sync()).toMatchObject({ pushed: 0 });
   });
 
   it('keep edits to different answers from both computers, and the later of two to one', async () => {

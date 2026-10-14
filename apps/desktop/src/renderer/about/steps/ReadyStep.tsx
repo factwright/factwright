@@ -9,6 +9,7 @@ import {
   labelOf,
   wordCount,
 } from '../../../shared/about.ts';
+import { hasKinds, type KindAnswers, kindsOf } from '../../../shared/kinds.ts';
 import { livePicks, templateName } from '../../../shared/looks.ts';
 import type { TemplateInfo } from '../../../shared/profile.ts';
 import ready from './ReadyStep.module.css';
@@ -37,33 +38,51 @@ export function sharedSummary(answers: Pick<AboutYou, 'files'>): string | null {
 const either = (words: readonly string[]) =>
   words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} or ${words.at(-1)}`;
 
+const capitalized = (line: string) => line.charAt(0).toUpperCase() + line.slice(1);
+
 /**
- * What the user is looking for, in a line, such as "Product Designer roles (senior or lead),
- * remote from the US, at startups".
+ * One kind of job's work, in a few words, such as "Product Designer roles (senior or lead)", or
+ * nothing when it has none yet.
  */
-export function wantsSummary(answers: AboutYou): string | null {
-  const levels = either(answers.levels.map((level) => labelOf(LEVELS, level).toLowerCase()));
-  const kinds = either(
-    answers.fields
+export function workSummary(kind: KindAnswers): string {
+  const levels = either(kind.levels.map((level) => labelOf(LEVELS, level).toLowerCase()));
+  const fields = either(
+    kind.fields
       .filter((field) => field !== 'other')
       .map((field) => labelOf(FIELDS, field).toLowerCase()),
   );
-  const work = either(answers.roles.slice(0, 3)) || kinds;
-  const what = work
-    ? `${work} roles${levels ? ` (${levels})` : ''}`
-    : levels
-      ? `${levels.charAt(0).toUpperCase()}${levels.slice(1)} roles`
-      : '';
+  const work = either(kind.roles.slice(0, 3)) || fields;
+  if (work) return `${work} roles${levels ? ` (${levels})` : ''}`;
+  return levels ? `${capitalized(levels)} roles` : '';
+}
+
+/** Where the user would work, and at which kinds of company: "remote", "at startups". */
+function placeParts(answers: AboutYou): string[] {
   const where = answers.workplaces.includes('remote')
     ? `remote${answers.remoteFrom ? ` from ${answers.remoteFrom}` : ''}`
     : either(answers.places.slice(0, 2));
   const companies = either(
     answers.companies.map((kind) => labelOf(COMPANY_KINDS, kind).toLowerCase()),
   );
-  const parts = [what, where, companies ? `at ${companies}` : ''].filter(Boolean);
-  if (parts.length === 0) return null;
-  const line = parts.join(', ');
-  return line.charAt(0).toUpperCase() + line.slice(1);
+  return [where, companies ? `at ${companies}` : ''].filter(Boolean);
+}
+
+/** Where the user would work and at which kinds of company, such as "Remote, at startups". */
+export function placesSummary(answers: AboutYou): string | null {
+  const parts = placeParts(answers);
+  return parts.length > 0 ? capitalized(parts.join(', ')) : null;
+}
+
+/**
+ * What the user is looking for, in a line, such as "Product Designer roles (senior or lead),
+ * remote from the US, at startups". With more than one kind of job, the kinds by name.
+ */
+export function wantsSummary(answers: AboutYou): string | null {
+  const what = hasKinds(answers)
+    ? either(kindsOf(answers).map((kind) => kind.name))
+    : workSummary(answers);
+  const parts = [what, ...placeParts(answers)].filter(Boolean);
+  return parts.length > 0 ? capitalized(parts.join(', ')) : null;
 }
 
 /** The templates picked, in a line, such as "Minimal for startups, Classic for established companies". */

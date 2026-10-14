@@ -98,6 +98,12 @@ describe('tracker rows', () => {
     expect(trackedChange({ id: 's1', status: 'teleported', at: '2026-10-10' })).toBeNull();
   });
 
+  it('read the kind of job the user put a job under, leaving out one that isn’t an id', () => {
+    expect(trackedRow({ ...STORED_JOB, kind: 'project-manager' }).kind).toBe('project-manager');
+    expect(trackedRow(STORED_JOB).kind).toBeNull();
+    expect(trackedRow({ ...STORED_JOB, kind: '../base' }).kind).toBeNull();
+  });
+
   it('leave out answers and questions that don’t read, keeping the rest', () => {
     const row = trackedRow({
       ...STORED_JOB,
@@ -217,7 +223,7 @@ describe('jobList', () => {
         notes: new Map([['acme--staff', [NOTE]]]),
       }),
     ).toHaveLength(1);
-    for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }]) {
+    for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }, { kind: 'pm' }]) {
       const row = trackedRow({
         ...STORED_JOB,
         status: null,

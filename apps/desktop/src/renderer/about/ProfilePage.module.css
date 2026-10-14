@@ -183,3 +183,31 @@
   display: flex;
   flex-direction: column;
 }
+
+/* With more than one kind of job: each kind's work in a line, and its starting resumes. */
+.kinds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-1);
+  margin: 0 0 var(--fw-space-1);
+  padding: 0;
+  list-style: none;
+}
+
+.kinds li {
+  display: flex;
+  flex-direction: column;
+}
+
+.kindName {
+  margin: 0;
+  color: var(--fw-text);
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+}
+
+.kindResumes + .kindResumes {
+  margin-top: var(--fw-space-2);
+  padding-top: var(--fw-space-2);
+  border-top: 1px solid var(--fw-border);
+}

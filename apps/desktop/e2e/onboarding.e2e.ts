@@ -158,3 +158,63 @@ test('has their Claude make a template of their own from a resume they like', as
     .poll(() => read('guide/templates.md'))
     .toContain('| Liked Look | `liked-look` | any job |');
 });
+
+test('takes a second kind of job, with its own titles, and searches for it alone', async () => {
+  const { window } = opened;
+  await window
+    .getByRole('dialog', { name: 'Resume templates' })
+    .getByRole('button', { name: 'Done' })
+    .click();
+  const wants = window.getByRole('region', { name: 'What you want' });
+  await wants.getByRole('button', { name: 'Change' }).click();
+  const dialog = window.getByRole('dialog', { name: 'What you want' });
+  await dialog.getByRole('button', { name: 'Add another kind of job' }).click();
+  await dialog.getByRole('textbox', { name: 'What to call the jobs above' }).fill('Developer');
+  await dialog.getByRole('textbox', { name: 'What to call the new kind' }).fill('Project manager');
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+  const titles = dialog.getByRole('textbox', { name: 'Job titles you want' });
+  await expect(titles).toBeFocused();
+  await titles.fill('Program Manager');
+  await titles.press('Enter');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+
+  // Its own file keeps the kinds, and answers.json keeps the first kind's, as before.
+  await expect
+    .poll(
+      () =>
+        existsSync(workspace('about-me/kinds-of-job.json')) && read('about-me/kinds-of-job.json'),
+    )
+    .toContain('Program Manager');
+  expect(JSON.parse(read('about-me/kinds-of-job.json'))).toEqual({
+    first: { id: 'developer', name: 'Developer' },
+    others: [
+      {
+        id: 'project-manager',
+        name: 'Project manager',
+        roles: ['Program Manager'],
+        fields: [],
+        levels: [],
+        minPay: '',
+        targetPay: '',
+        payFilter: false,
+      },
+    ],
+  });
+  const answers = JSON.parse(read('about-me/answers.json'));
+  expect(answers).toMatchObject({ fields: ['software'], levels: ['senior'] });
+  expect(answers).not.toHaveProperty('otherKinds');
+  await expect
+    .poll(() => read('searches/criteria.md'))
+    .toContain('### Project manager (`project-manager`)');
+  await expect(wants.getByText('Program Manager roles')).toBeVisible();
+
+  // Find jobs looks for one kind, and says which to Claude by its id.
+  await window.getByRole('button', { name: /^Jobs/ }).click();
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  const find = window.getByRole('dialog', { name: 'Find jobs' });
+  await find.locator('label').filter({ hasText: 'Project manager' }).click();
+  await find.getByRole('button', { name: 'Search' }).click();
+  const panel = window.locator('section[aria-label="Claude"]');
+  await expect(panel.getByRole('status')).toHaveText('Done');
+  expect(await terminalText(window)).toContain('/factwright:job-search for project-manager: HN');
+});
