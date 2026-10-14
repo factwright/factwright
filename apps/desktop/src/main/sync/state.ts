@@ -107,10 +107,6 @@ export class SyncState {
       .run(key, value);
   }
 
-  forgetMeta(key: string): void {
-    this.db.prepare('DELETE FROM meta WHERE key = ?').run(key);
-  }
-
   /** How far this device has pulled the account's changes. */
   cursor(): number {
     return Number(this.meta('cursor') ?? 0);

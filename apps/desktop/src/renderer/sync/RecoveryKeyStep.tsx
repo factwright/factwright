@@ -89,12 +89,6 @@ export function RecoveryKeyStep({
           link again once it’s on.
         </p>
       )}
-      {again === 'unsaved' && (
-        <p className={styles.lead}>
-          This computer has been syncing your account, but the account has no recovery key, as can
-          happen after it was deleted and made again. Save this one, and syncing carries on.
-        </p>
-      )}
       <p className={styles.lead}>
         If you ever lose all your devices, this key is the only way back into your synced job hunt.
         Nobody else has a copy, us included.

@@ -59,6 +59,9 @@ export interface SyncAccountDeps {
 
 const failed = (message: string) => ({ ok: false as const, message });
 
+/** What a step says when another sign-in, or closing the app, overtook it: it does nothing more. */
+const OVERTAKEN = failed('Signing in was canceled.');
+
 /** Notes a sign-in that hasn't been checked against the account's key on the server yet. */
 const UNCHECKED = 'unchecked';
 
@@ -88,14 +91,8 @@ export class SyncAccount {
   private accountKey: Bytes | null = null;
   private runner: SyncRunner | null = null;
   private signIn: DeviceSignIn | null = null;
-  /**
-   * The account key a first device sets up with, kept until its recovery key is saved: a new
-   * one, or, `kept`, the one this computer synced with, for an account that has none on the
-   * server.
-   */
-  private pending: { accountKey: Bytes; recovery: Bytes | null; kept: boolean } | null = null;
-  /** A rebuild of what sync knows, while it runs: signing out and closing wait for it. */
-  private rebuilding: Promise<void> | null = null;
+  /** The account key made for a first device, kept until its recovery key is saved. */
+  private pending: { accountKey: Bytes; recovery: Bytes } | null = null;
   private device = 'This computer';
   /** Once the app is closing, nothing more happens. */
   private closed = false;
@@ -152,14 +149,15 @@ export class SyncAccount {
       this.set({ state: 'off' });
       return;
     }
-    this.client = this.clientFor(token);
+    const client = this.clientFor(token);
+    this.client = client;
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;
     if (accountKey) {
-      // Signed in again, but not yet checked against the account, such as when the app quit
-      // while asking for a new recovery key: it's checked before anything syncs.
+      // Signed in again, or stopped by a check, and not yet checked against the account, such as
+      // when the app quit while asking for a new recovery key: it's checked before anything syncs.
       if (this.state.meta(UNCHECKED) === '1') await this.resume(accountKey);
-      else await this.turnOnWith(accountKey);
+      else await this.turnOnWith(client, accountKey);
       return;
     }
     await this.checkSetup();
@@ -167,17 +165,29 @@ export class SyncAccount {
 
   /** Signed in without the account key: is this the first device, or does it link to others? */
   private async checkSetup(): Promise<void> {
-    if (!this.client) return;
+    const client = this.client;
+    if (!client) return;
     try {
-      const account = await this.client.account();
+      const account = await client.account();
+      if (this.overtaken(client)) return;
       this.state.setMeta('account', account.user.id);
       this.state.setMeta('email', account.user.email);
-      const keys = await this.client.keys();
+      const keys = await client.keys();
+      if (this.overtaken(client)) return;
       this.set({ state: 'setting-up', email: account.user.email, firstDevice: keys === null });
     } catch (error) {
+      if (this.overtaken(client)) return;
       if (error instanceof SyncError && error.kind === 'signed-out') await this.forget();
       else this.set({ state: 'setting-up', email: this.email(), firstDevice: false });
     }
+  }
+
+  /**
+   * Whether what began with this sign-in was overtaken, by closing the app or by another sign-in,
+   * so it changes nothing more: a late answer never lands on the sign-in that came after.
+   */
+  private overtaken(client: SyncClient): boolean {
+    return this.closed || this.client !== client;
   }
 
   /** Signs in through the browser: shows a code, opens the page, and waits for the user. */
@@ -240,19 +250,20 @@ export class SyncAccount {
    * - The same key: sync carries on.
    * - No key: the account is new, or was deleted and made again. This computer makes a new
    *   account key and recovery key, as a first device does, so the old ones, which a lost or
-   *   stolen device may still hold, open nothing of it. But when it's the account this computer
-   *   was syncing, as `checkKey` found, it saves a recovery key for the key it has.
+   *   stolen device may still hold, open nothing of it.
    * - Another key: the account isn't this computer's to sync with until it links, and linking
    *   adds this computer's job hunt to it. Nothing goes up before that.
    * When the server can't be asked, sign-in says why, and nothing syncs.
    */
   private async resume(accountKey: Bytes): Promise<EditResult> {
-    if (!this.client) return failed('Sign in first.');
+    const client = this.client;
+    if (!client) return failed('Sign in first.');
     let account: Awaited<ReturnType<SyncClient['account']>>;
     let saved: Awaited<ReturnType<SyncClient['keys']>>;
     try {
-      [account, saved] = await Promise.all([this.client.account(), this.client.keys()]);
+      [account, saved] = await Promise.all([client.account(), client.keys()]);
     } catch (error) {
+      if (this.overtaken(client)) return OVERTAKEN;
       if (error instanceof SyncError && error.kind === 'signed-out') {
         this.secrets.delete('session');
         this.client = null;
@@ -260,27 +271,17 @@ export class SyncAccount {
       this.set({ state: 'signed-out', email: this.email() });
       return failed(reason(error));
     }
+    const keyId = (await accountKeys(accountKey)).id;
+    if (this.overtaken(client)) return OVERTAKEN;
     this.pending = null;
     const email = account.user.email;
-    const keys = await accountKeys(accountKey);
-    // Whether a check found this computer syncing this very account under the key it has.
-    const synced = this.state.meta('account') === account.user.id;
     if (saved === null) {
-      if (synced) {
-        // If the app closed before what sync knew was rebuilt, it's rebuilt now, before anything
-        // changes here. Saving the recovery key tries again if this can't.
-        await this.rebuildNotes(this.client, keys).catch(() => {});
-        this.pending = { accountKey, recovery: null, kept: true };
-      }
-      this.set({
-        state: 'setting-up',
-        email,
-        firstDevice: true,
-        again: synced ? 'unsaved' : 'remade',
-      });
+      this.set({ state: 'setting-up', email, firstDevice: true, again: 'remade' });
       return { ok: true };
     }
-    if (saved.keyId !== keys.id) {
+    if (saved.keyId !== keyId) {
+      // Linking again, to the account this computer was syncing, or to another one.
+      const synced = this.state.meta('account') === account.user.id;
       this.set({
         state: 'setting-up',
         email,
@@ -296,44 +297,8 @@ export class SyncAccount {
     if (before !== null && before !== account.user.id) this.startOver();
     this.state.setMeta('account', account.user.id);
     this.state.setMeta('email', account.user.email);
-    await this.turnOnWith(accountKey);
+    await this.turnOnWith(client, accountKey);
     return { ok: true };
-  }
-
-  /**
-   * For a key this computer keeps, when what sync knew may be from the account before this one
-   * was made again: rebuilds it from the server's versions, sending nothing, so what changes here
-   * from now on syncs as a change, not a conflict. It's noted done only for the sign-in it was
-   * done for, so one cut short by signing out or closing is done again.
-   */
-  private async rebuildNotes(client: SyncClient, keys: AccountKeys): Promise<void> {
-    while (this.rebuilding) await this.rebuilding;
-    if (this.state.meta('keyId') === keys.id) return;
-    const work = (async () => {
-      this.startOver();
-      const { tracker, workspace } = this.deps;
-      const engine = new SyncEngine({
-        client,
-        keys,
-        state: this.state,
-        tracker,
-        workspace,
-        device: this.device,
-      });
-      const report = await engine.pullOnly();
-      if (report.pulled > 0 || report.conflicts > 0) this.deps.onApplied();
-      if (!this.closed && this.client === client) this.state.setMeta('keyId', keys.id);
-    })();
-    const settled = work.then(
-      () => {},
-      () => {},
-    );
-    this.rebuilding = settled;
-    try {
-      await work;
-    } finally {
-      if (this.rebuilding === settled) this.rebuilding = null;
-    }
   }
 
   /** Forgets what sync knew of the account's history, keeping who's signed in. */
@@ -373,51 +338,27 @@ export class SyncAccount {
   /** On the first device: makes the account key and its recovery key, to save before going on. */
   async newRecoveryKey(): Promise<RecoveryKeyResult> {
     if (this.current.state !== 'setting-up') return failed('Sign in first.');
-    const kept = this.pending?.kept ? this.pending.accountKey : null;
-    if (kept && this.client) {
-      // Another computer that kept this same key may have saved a recovery key for it since.
-      // That one works, so this computer carries on without making another.
-      const client = this.client;
-      try {
-        const keys = await accountKeys(kept);
-        if ((await client.keys())?.keyId === keys.id) {
-          await this.rebuildNotes(client, keys);
-          this.pending = null;
-          await this.turnOnWith(kept);
-          return { ok: true, recoveryKey: null };
-        }
-      } catch {
-        // Saving the recovery key asks again.
-      }
-    }
     const recovery = newRecoveryKey();
     this.pending = {
-      accountKey: kept ?? this.pending?.accountKey ?? newAccountKey(),
+      accountKey: this.pending?.accountKey ?? newAccountKey(),
       recovery: recovery.bytes,
-      kept: kept !== null,
     };
     return { ok: true, recoveryKey: recovery.text };
   }
 
   /** On the first device, once the recovery key is saved: turns sync on. */
   async turnOn(): Promise<EditResult> {
-    const recovery = this.pending?.recovery;
-    if (!this.client || !this.pending || !recovery) return failed('Make your recovery key first.');
-    const { accountKey, kept } = this.pending;
     const client = this.client;
+    if (!client || !this.pending) return failed('Make your recovery key first.');
+    const { accountKey, recovery } = this.pending;
     try {
       const keys = await accountKeys(accountKey);
-      // A kept key syncs on from what the server has, once that's rebuilt here.
-      if (kept) await this.rebuildNotes(client, keys);
       const locked = await lockWithRecoveryKey(accountKey, recovery);
-      if ((await client.saveKeys(keys.id, locked)) === 'taken') {
+      if (this.overtaken(client)) return OVERTAKEN;
+      const saved = await client.saveKeys(keys.id, locked);
+      if (this.overtaken(client)) return OVERTAKEN;
+      if (saved === 'taken') {
         this.pending = null;
-        // Another computer that kept this same key saved its recovery key first: that's the
-        // one that works, and sync carries on here.
-        if ((await client.keys())?.keyId === keys.id) {
-          await this.turnOnWith(accountKey);
-          return { ok: true };
-        }
         this.set({ state: 'setting-up', email: this.email(), firstDevice: false });
         return failed(
           'Another device turned on sync for this account first. Link this computer to it instead.',
@@ -427,7 +368,7 @@ export class SyncAccount {
       return failed(reason(error));
     }
     this.pending = null;
-    await this.turnOnWith(accountKey);
+    await this.turnOnWith(client, accountKey);
     return { ok: true };
   }
 
@@ -435,16 +376,18 @@ export class SyncAccount {
   async linkWithCode(text: string): Promise<EditResult> {
     const code = readLinkCode(text);
     if (!code) return failed('That isn’t a link code. It’s 32 letters and numbers.');
-    if (!this.client) return failed('Sign in first.');
+    const client = this.client;
+    if (!client) return failed('Sign in first.');
     try {
-      const data = await this.client.takeLink(await linkId(code));
+      const data = await client.takeLink(await linkId(code));
       const accountKey = data && (await openLink(data, code));
+      if (this.overtaken(client)) return OVERTAKEN;
       if (!accountKey) {
         return failed(
           'That code didn’t work. It lasts 10 minutes: make a new one on your other device.',
         );
       }
-      return await this.checkAndTurnOn(accountKey);
+      return await this.checkAndTurnOn(client, accountKey);
     } catch (error) {
       return failed(reason(error));
     }
@@ -454,46 +397,45 @@ export class SyncAccount {
   async useRecoveryKey(text: string): Promise<EditResult> {
     const recovery = readRecoveryKey(text);
     if (!recovery) return failed('That isn’t a recovery key. It’s 32 letters and numbers.');
-    if (!this.client) return failed('Sign in first.');
+    const client = this.client;
+    if (!client) return failed('Sign in first.');
     try {
-      const keys = await this.client.keys();
+      const keys = await client.keys();
       if (!keys) return failed('No device has turned on sync for this account yet.');
       const accountKey = await openWithRecoveryKey(keys.recovery, recovery);
+      if (this.overtaken(client)) return OVERTAKEN;
       if (!accountKey)
         return failed('That recovery key doesn’t open this account. Check it, and try again.');
-      return await this.checkAndTurnOn(accountKey);
+      return await this.checkAndTurnOn(client, accountKey);
     } catch (error) {
       return failed(reason(error));
     }
   }
 
   /** Turns sync on with an account key, once it's the one the account uses. */
-  private async checkAndTurnOn(accountKey: Bytes): Promise<EditResult> {
-    const keys = await this.client?.keys();
-    if (keys && keys.keyId !== (await accountKeys(accountKey)).id) {
-      return failed('That key belongs to a different account.');
-    }
-    await this.turnOnWith(accountKey);
+  private async checkAndTurnOn(client: SyncClient, accountKey: Bytes): Promise<EditResult> {
+    const keys = await client.keys();
+    const keyId = (await accountKeys(accountKey)).id;
+    if (this.overtaken(client)) return OVERTAKEN;
+    if (keys && keys.keyId !== keyId) return failed('That key belongs to a different account.');
+    await this.turnOnWith(client, accountKey);
     return { ok: true };
   }
 
-  private async turnOnWith(accountKey: Bytes): Promise<void> {
-    if (!this.client) return;
+  private async turnOnWith(client: SyncClient, accountKey: Bytes): Promise<void> {
     const keys = await accountKeys(accountKey);
-    // Another account's data must never mix in: a different key starts over. The account is
-    // noted again once a check finds it uses this key.
-    if (this.state.meta('keyId') !== keys.id) {
-      this.startOver();
-      this.state.forgetMeta('account');
-    }
+    if (this.overtaken(client)) return;
+    // Another account's data must never mix in: a different key starts over.
+    if (this.state.meta('keyId') !== keys.id) this.startOver();
     this.state.setMeta('keyId', keys.id);
     this.state.setMeta(UNCHECKED, '0');
     this.secrets.set('accountKey', toBase64Url(accountKey));
     this.accountKey = accountKey;
     this.keys = keys;
     await this.runner?.stop();
+    if (this.overtaken(client)) return;
     const engine = new SyncEngine({
-      client: this.client,
+      client,
       keys,
       state: this.state,
       tracker: this.deps.tracker,
@@ -511,10 +453,10 @@ export class SyncAccount {
       skipped,
     });
     let checked = false;
-    // A runner that's been replaced or stopped speaks for nothing.
+    // A runner that's been stopped or replaced speaks for nothing.
     const runner: SyncRunner = new SyncRunner({
       engine,
-      client: this.client,
+      client,
       state: this.state,
       onReport: (report) => {
         if (this.closed || this.runner !== runner) return;
@@ -524,7 +466,7 @@ export class SyncAccount {
         // Once the server answers, the account's key is checked, until the check gets through.
         if (!checked) {
           checked = true;
-          void this.checkKey(runner, accountKey, keys).then(
+          void this.checkKey(client, runner, keys).then(
             (done) => {
               checked = done;
             },
@@ -555,22 +497,18 @@ export class SyncAccount {
    * check when it signed in again, so after an account was deleted and made again, it synced
    * under its old key without saving that key to the account. A computer that set up later then
    * made another key, and each skipped what the other sent. So a key the account doesn't use
-   * stops sync here, even after a restart, until:
-   * - the account has no key: this computer saves a recovery key for the key it has. What sync
-   *   knew may be from the account before, so first it's rebuilt from what the server has, before
-   *   anything changes here; then what the server lacks goes up.
+   * stops sync here, even after a restart, as signing in again would:
+   * - the account has no key: this computer makes a new account key and recovery key.
    * - the account has another key: this computer links to it.
    * Returns whether the server answered. If it didn't, the next round asks again.
    */
   private async checkKey(
+    client: SyncClient,
     runner: SyncRunner,
-    accountKey: Bytes,
     keys: AccountKeys,
   ): Promise<boolean> {
-    const client = this.client;
-    if (!client) return true;
     // Whether this check still speaks for the sign-in and the sync it was made for.
-    const current = () => !this.closed && this.client === client && this.runner === runner;
+    const current = () => !this.overtaken(client) && this.runner === runner;
     let account: Awaited<ReturnType<SyncClient['account']>>;
     let saved: Awaited<ReturnType<SyncClient['keys']>>;
     try {
@@ -579,7 +517,6 @@ export class SyncAccount {
       return false;
     }
     if (!current()) return true;
-    const before = this.state.meta('account');
     const email = account.user.email;
     this.state.setMeta('email', email);
     this.state.setMeta('account', account.user.id);
@@ -588,21 +525,16 @@ export class SyncAccount {
       return true;
     }
     this.state.setMeta(UNCHECKED, '1');
-    // Noted before anything else, so the rebuild happens even if the app closes first.
-    if (saved === null && before !== account.user.id) this.state.forgetMeta('keyId');
     await runner.stop();
     if (!current()) return true;
     this.runner = null;
     this.keys = null;
     this.accountKey = null;
-    if (saved === null) {
-      await this.rebuildNotes(client, keys).catch(() => {});
-      if (this.closed || this.client !== client) return true;
-      this.pending = { accountKey, recovery: null, kept: true };
-      this.set({ state: 'setting-up', email, firstDevice: true, again: 'unsaved' });
-    } else {
-      this.set({ state: 'setting-up', email, firstDevice: false, again: 'changed' });
-    }
+    this.set(
+      saved === null
+        ? { state: 'setting-up', email, firstDevice: true, again: 'remade' }
+        : { state: 'setting-up', email, firstDevice: false, again: 'changed' },
+    );
     return true;
   }
 
@@ -684,7 +616,6 @@ export class SyncAccount {
 
   private async forget(): Promise<void> {
     await this.runner?.stop();
-    while (this.rebuilding) await this.rebuilding;
     this.runner = null;
     this.client = null;
     this.keys = null;
@@ -701,7 +632,6 @@ export class SyncAccount {
     this.closed = true;
     this.signIn?.cancel();
     await this.runner?.stop();
-    while (this.rebuilding) await this.rebuilding;
     this.state.close();
   }
 }

@@ -7,11 +7,9 @@ export type SyncActivity = 'syncing' | 'idle' | 'offline' | 'problem';
  * Why a computer that synced before sets up again:
  * - `remade`: the account has no key on the server, such as after it was deleted and made again.
  *   A new account key and recovery key, which the old ones won't open.
- * - `unsaved`: the account has no key on the server, though this computer has synced it under
- *   its own, as version 0.1.0 did after an account was made again. A recovery key for that key.
  * - `changed`: the account this computer synced uses another key now. It links again.
  */
-export type SetUpAgain = 'remade' | 'unsaved' | 'changed';
+export type SetUpAgain = 'remade' | 'changed';
 
 /** Where sync stands on this computer, as the sidebar and the sync dialog show it. */
 export type SyncStatus =
@@ -54,13 +52,7 @@ export interface LinkCode {
   expiresAt: string;
 }
 
-/**
- * A recovery key to save, or null when there's none to make: another computer that kept the same
- * account key saved its recovery key first, and sync carries on.
- */
-export type RecoveryKeyResult =
-  | { ok: true; recoveryKey: string | null }
-  | { ok: false; message: string };
+export type RecoveryKeyResult = { ok: true; recoveryKey: string } | { ok: false; message: string };
 
 export type LinkCodeResult = { ok: true; link: LinkCode } | { ok: false; message: string };
 

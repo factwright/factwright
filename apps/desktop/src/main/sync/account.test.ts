@@ -145,15 +145,15 @@ async function signedOut(sync: SyncAccount) {
   });
 }
 
-/** Waits for a computer to stop, asking for a recovery key for the key it kept. */
-async function waitsForRecoveryKey(sync: SyncAccount) {
+/** Waits for a computer to stop, asking for a new account key and recovery key. */
+async function waitsForNewKey(sync: SyncAccount) {
   await vi.waitFor(
     () =>
       expect(sync.status()).toEqual({
         state: 'setting-up',
         email: person.email,
         firstDevice: true,
-        again: 'unsaved',
+        again: 'remade',
       }),
     { timeout: 10_000 },
   );
@@ -224,7 +224,7 @@ async function remadeUnderMac(files: Record<string, string> = {}) {
 
 /**
  * Sam's Mac and PC, both syncing under one key, then both on 0.1.0 when Sam deleted the account
- * and made it again. Updated, each waits for a recovery key for the key it kept.
+ * and made it again. Updated, each waits to make a new key.
  */
 async function remadeUnderMacAndPc() {
   const first = computer('Sam’s Mac');
@@ -248,7 +248,7 @@ async function remadeUnderMacAndPc() {
   const pc = computer('Sam’s PC', second.dataDir);
   for (const each of [mac, pc]) {
     await each.sync.start();
-    await waitsForRecoveryKey(each.sync);
+    await waitsForNewKey(each.sync);
   }
   return { mac, pc, keyId };
 }
@@ -454,7 +454,7 @@ describe('a computer with sync on', () => {
     expect((await person.client.changes(0)).changes.length).toBeGreaterThan(0);
   });
 
-  it('stops when 0.1.0 synced a remade account without its key, then keeps that key', async () => {
+  it('stops when 0.1.0 synced a remade account without its key, and makes a new one', async () => {
     const { mac, keyId } = await remadeUnderMac({ 'facts/skills.md': 'Synced before the remake' });
     await signInWithVersion010(mac.dataDir);
     // 0.1.0 sends what changes after it signs in again, under its old key.
@@ -463,19 +463,19 @@ describe('a computer with sync on', () => {
     // Updated, the Mac syncs as before, until it finds the account has no key on the server.
     const updated = computer('Sam’s Mac', mac.dataDir);
     await updated.sync.start();
-    await waitsForRecoveryKey(updated.sync);
+    await waitsForNewKey(updated.sync);
     await updated.sync.stop();
     const reopened = computer('Sam’s Mac', mac.dataDir);
     await reopened.sync.start();
-    await waitsForRecoveryKey(reopened.sync);
+    await waitsForNewKey(reopened.sync);
 
-    // Its recovery key is for the key it has, which the account keeps, and syncing carries on.
+    // A new account key and recovery key, as after signing in again to a remade account.
     const saved = await recoveryKey(reopened.sync);
     expect(await reopened.sync.turnOn()).toEqual({ ok: true });
     await reopened.synced();
-    expect((await person.client.keys())?.keyId).toBe(keyId);
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
 
-    // What 0.1.0 never sent to the remade account went up too, so a new computer gets it all.
+    // Everything on the Mac went up under the new key, so a new computer gets all of it.
     const pc = computer('Sam’s PC');
     await pc.sync.start();
     expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
@@ -485,7 +485,7 @@ describe('a computer with sync on', () => {
     expect(pc.read('facts/notes.md')).toBe('Sent by 0.1.0');
   });
 
-  it('keeps what changes while it waits for the recovery key, as changes', async () => {
+  it('keeps what changes while it waits for the new recovery key', async () => {
     const { mac } = await remadeUnderMac();
     await signInWithVersion010(mac.dataDir);
     mac.write('facts/edited.md', 'Before');
@@ -514,7 +514,7 @@ describe('a computer with sync on', () => {
     };
     updated.tracker.applySyncRow('calls', 'call-1', call);
     await updated.sync.start();
-    await waitsForRecoveryKey(updated.sync);
+    await waitsForNewKey(updated.sync);
 
     // Sam keeps working before saving the recovery key.
     updated.write('facts/edited.md', 'Changed while waiting');
@@ -530,7 +530,7 @@ describe('a computer with sync on', () => {
     await updated.synced();
 
     // Every change stays as made, here and on a new computer: no conflict copies, and nothing
-    // deleted comes back.
+    // deleted comes back from what 0.1.0 sent under the old key.
     const pc = computer('Sam’s PC');
     await pc.sync.start();
     expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
@@ -547,7 +547,7 @@ describe('a computer with sync on', () => {
     }
   });
 
-  it('rebuilds what sync knew even if the app closes while the check stops sync', async () => {
+  it('asks again after a restart, even if the app closes while the check stops sync', async () => {
     const { mac } = await remadeUnderMac({ 'facts/skills.md': 'Synced before the remake' });
     await signInWithVersion010(mac.dataDir);
     // The check's question about the account waits, then so does the next round, so the check
@@ -581,7 +581,7 @@ describe('a computer with sync on', () => {
 
     const reopened = computer('Sam’s Mac', mac.dataDir);
     await reopened.sync.start();
-    await waitsForRecoveryKey(reopened.sync);
+    await waitsForNewKey(reopened.sync);
     const saved = await recoveryKey(reopened.sync);
     expect(await reopened.sync.turnOn()).toEqual({ ok: true });
     await reopened.synced();
@@ -632,6 +632,41 @@ describe('a computer with sync on', () => {
     expect((await person.client.keys())?.keyId).not.toBe(keyId);
   });
 
+  it('pays no mind to a late answer as it opens, once someone else has signed in', async () => {
+    const { mac } = await remadeUnderMac({ 'facts/skills.md': 'Sam’s job hunt' });
+    await signInWithVersion010(mac.dataDir);
+    const updated = computer('Sam’s Mac', mac.dataDir);
+    await updated.sync.start();
+    await waitsForNewKey(updated.sync);
+    await updated.sync.stop();
+
+    // Opened again, the Mac asks about Sam's account, and the answer is slow.
+    const late = gate();
+    let answered = false;
+    const reopened = computer('Sam’s Mac', mac.dataDir, async (input, init) => {
+      const response = await fetch(input, init);
+      if (new URL(String(input)).pathname === '/api/sync/keys' && !late.waiting) {
+        late.waiting = true;
+        await late.opened;
+        answered = true;
+      }
+      return response;
+    });
+    const opening = reopened.sync.start();
+    await vi.waitFor(() => expect(late.waiting).toBe(true), { timeout: 10_000 });
+
+    // Meanwhile that sign-in ends here, and Alex signs in.
+    expect(await reopened.sync.useDifferentAccount()).toEqual({ ok: true });
+    person = await server.signUp('Alex Kim');
+    expect(await reopened.sync.signInWithBrowser()).toEqual({ ok: true });
+    const alex = { state: 'setting-up', email: person.email, firstDevice: true, again: 'remade' };
+    expect(reopened.sync.status()).toEqual(alex);
+    late.open();
+    await opening;
+    expect(answered).toBe(true);
+    expect(reopened.sync.status()).toEqual(alex);
+  });
+
   it('asks again on the next round when the check gets no answer', async () => {
     const { mac } = await remadeUnderMac();
     await signInWithVersion010(mac.dataDir);
@@ -649,34 +684,34 @@ describe('a computer with sync on', () => {
     await updated.synced();
     answers = true;
     updated.sync.requestSync();
-    await waitsForRecoveryKey(updated.sync);
+    await waitsForNewKey(updated.sync);
     expect(asked).toBeGreaterThanOrEqual(2);
   });
 
-  it('carries on with no new recovery key when another computer kept the same key and saved one', async () => {
+  it('links a second computer that kept the old key to the first one’s new key', async () => {
     const { mac, pc, keyId } = await remadeUnderMacAndPc();
-    // The Mac saves its recovery key first; the PC, asked after, has none to make.
+    mac.write('facts/from-mac.md', 'From the Mac');
+    pc.write('facts/from-pc.md', 'From the PC');
+    // The Mac makes the new key first; the PC, trying after, is told to link instead.
     await recoveryKey(mac.sync);
     expect(await mac.sync.turnOn()).toEqual({ ok: true });
-    expect(await pc.sync.newRecoveryKey()).toEqual({ ok: true, recoveryKey: null });
-    expect(pc.sync.status()).toMatchObject({ state: 'on' });
-    expect((await person.client.keys())?.keyId).toBe(keyId);
-    pc.write('facts/from-pc.md', 'From the PC');
-    pc.sync.requestSync();
+    await mac.synced();
+    await recoveryKey(pc.sync);
+    expect(await pc.sync.turnOn()).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('Link this computer'),
+    });
+    expect(pc.sync.status()).toMatchObject({ state: 'setting-up', firstDevice: false });
+    const link = await mac.sync.makeLinkCode();
+    if (!link.ok) throw new Error(link.message);
+    expect(await pc.sync.linkWithCode(link.link.code)).toEqual({ ok: true });
+    await pc.synced();
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
+    expect(pc.read('facts/from-mac.md')).toBe('From the Mac');
+    mac.sync.requestSync();
     await vi.waitFor(() => expect(mac.read('facts/from-pc.md')).toBe('From the PC'), {
       timeout: 10_000,
     });
-  });
-
-  it('carries on when another computer that kept the same key saved its recovery key first', async () => {
-    const { mac, pc, keyId } = await remadeUnderMacAndPc();
-    // Both show a recovery key, and the Mac's is saved first.
-    await recoveryKey(pc.sync);
-    await recoveryKey(mac.sync);
-    expect(await mac.sync.turnOn()).toEqual({ ok: true });
-    expect(await pc.sync.turnOn()).toEqual({ ok: true });
-    expect(pc.sync.status()).toMatchObject({ state: 'on' });
-    expect((await person.client.keys())?.keyId).toBe(keyId);
   });
 
   it('ends the sign-in on the recovery key step, and asks again after signing back in', async () => {
@@ -684,14 +719,14 @@ describe('a computer with sync on', () => {
     await signInWithVersion010(mac.dataDir);
     const updated = computer('Sam’s Mac', mac.dataDir);
     await updated.sync.start();
-    await waitsForRecoveryKey(updated.sync);
+    await waitsForNewKey(updated.sync);
     expect(await updated.sync.useDifferentAccount()).toEqual({ ok: true });
     expect(updated.sync.status()).toMatchObject({ state: 'signed-out' });
     expect(await updated.sync.signInWithBrowser()).toEqual({ ok: true });
-    await waitsForRecoveryKey(updated.sync);
+    await waitsForNewKey(updated.sync);
     await recoveryKey(updated.sync);
     expect(await updated.sync.turnOn()).toEqual({ ok: true });
-    expect((await person.client.keys())?.keyId).toBe(keyId);
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
   });
 
   it('stops when 0.1.0 synced under its old key after another device made a new one, and links', async () => {

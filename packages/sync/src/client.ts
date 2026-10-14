@@ -119,7 +119,7 @@ export class SyncClient {
    * is the server's problem, not a sign the account has no key.
    */
   async keys(): Promise<KeyRecord | null> {
-    const { keys } = await this.json<{ keys?: unknown }>(API.keys);
+    const keys = (await this.json<{ keys?: unknown } | null>(API.keys))?.keys;
     if (keys === null) return null;
     const record = keys as Partial<KeyRecord> | undefined;
     if (typeof record?.keyId !== 'string' || typeof record.recovery !== 'string') {

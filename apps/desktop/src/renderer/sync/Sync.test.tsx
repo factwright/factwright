@@ -156,27 +156,10 @@ describe('SyncDialog', () => {
     expect(screen.getByText(/a key you saved before won’t open it/)).toBeTruthy();
   });
 
-  it('says why a computer that was syncing stopped, and what carries it on', async () => {
-    const api = apiFor('off');
-    const { unmount } = render(
-      <SyncDialog
-        api={api}
-        status={{
-          state: 'setting-up',
-          email: 'sam@example.com',
-          firstDevice: true,
-          again: 'unsaved',
-        }}
-        onClose={vi.fn()}
-      />,
-    );
-    expect(screen.getByRole('heading', { name: 'Save your recovery key' })).toBeTruthy();
-    expect(screen.getByText(/the account has no recovery key/)).toBeTruthy();
-    unmount();
-
+  it('says why a computer that was syncing stopped, and links again', async () => {
     render(
       <SyncDialog
-        api={api}
+        api={apiFor('off')}
         status={{
           state: 'setting-up',
           email: 'sam@example.com',
