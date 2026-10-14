@@ -29,7 +29,9 @@ repository's Releases page.
     (`asa-neatifaisigning`), so SmartScreen knows who made it.
 - **Published.** The installers go to the R2 bucket `factwright-downloads`, which serves
   `downloads.factwright.com`.
-  - Each version's files keep their version in the name, and never change.
+  - Each version's files keep their version in the name, and never change. Each goes up with its
+    sha256, so a publish that stopped partway can be finished: running it again leaves the files
+    that are up as they are, and puts up the rest.
   - `Factwright.dmg` and `Factwright-Setup.exe` are always the newest. The website links to them.
   - `latest-mac.yml` and `latest.yml` say which version is newest, with each file's checksum.
     They're uploaded last, so nothing finds a version before its files are there.
@@ -156,6 +158,12 @@ These builds are for trying out only: macOS and Windows warn about apps that are
 they have no update settings, so they never update themselves.
 
 ## If a release goes wrong
+**If publishing stops partway,** such as an upload failing, choose **Re-run failed jobs** on the
+run. It leaves the files already up, uploads the rest, and puts the update feed up last. It
+refuses if a file that's up has other contents, which is what **Re-run all jobs** would bring, as
+it builds new files: then release the next version. Publishing reads the update feed from R2
+before it uploads anything, and stops if it can't tell what's out.
+
 An installed copy only moves forward, so a bad version is fixed by releasing the next one. To stop
 a bad version spreading first, put the previous version's files back where the newest go. Each
 release keeps its update feeds under `feeds/<version>/`:

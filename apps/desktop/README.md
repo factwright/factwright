@@ -14,7 +14,7 @@ It:
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
-| [`scripts`](scripts) | The development runner, the app icons' drawing, the README's screenshots, a fix node-pty needs after every install, and a release's check |
+| [`scripts`](scripts) | The development runner, the app icons' drawing, the README's screenshots, a fix node-pty needs after every install, and a release's check and publishing, with a test that runs the publishing against stand-ins for R2 |
 | [`build`](build) | The app icons, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`), and what the Mac's hardened runtime allows. The installers build them in, and the app shows the icon in the Dock while you develop |
 | [`release-notes`](release-notes) | What's new in each version, which installed copies show as they update |
 
