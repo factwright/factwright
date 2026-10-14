@@ -246,7 +246,8 @@ export function App() {
         <LinkBrowser
           account={session.user.id}
           email={session.user.email}
-          canApprove={features.includes('approve')}
+          // A browser that's linked already, back here from a QR code, doesn't ask again.
+          canApprove={features.includes('approve') && !keys}
           code={linkCode}
           onLinked={(linked) => {
             setState({ ...state, keys: linked });
