@@ -21,6 +21,8 @@ export interface ApprovalsDeps {
   onChange: (view: ApprovalsView) => void;
   /** The account key, once sync is on here, to approve other devices with. */
   accountKey: () => Bytes | null;
+  /** The account key's ID, which the emoji are bound to, once sync is on here. */
+  keyId: () => string | null;
   /** With the account key an approval brought: checks it's the account's, then turns sync on. */
   linkWith: (accountKey: Bytes) => Promise<EditResult>;
   /** What to tell the user when a request to the server fails. */
@@ -40,6 +42,8 @@ const ENDED = {
     'Something changed the request on its way between your devices, so nothing was linked. Ask again.',
   mismatch: 'Nothing was linked. If you didn’t start this, you can ignore it.',
   broken: 'That didn’t work, so nothing was linked. Ask again.',
+  crowded:
+    'More than one device is asking to link. Turn down any that aren’t yours, then approve yours.',
 } as const;
 
 /**
@@ -74,6 +78,7 @@ export class Approvals {
           id: request.id,
           device: request.device,
           asked: request.asked,
+          signedIn: request.signedIn,
           elsewhere: request.approver !== null && !request.approving,
         })),
       approving: this.approving?.view ?? null,
@@ -150,7 +155,10 @@ export class Approvals {
 
   private endAsking(message: string): void {
     if (!this.asking) return;
-    this.asking = { ask: null, view: { step: 'ended', message } };
+    // The emoji stay, if they showed: once this computer has shown its key, the person can still
+    // compare them with the other device's, whatever the server says next.
+    const shown = this.asking.view.step === 'check' ? this.asking.view.check : undefined;
+    this.asking = { ask: null, view: { step: 'ended', message, ...(shown && { check: shown }) } };
     this.changed();
   }
 
@@ -266,10 +274,14 @@ export class Approvals {
     }
   }
 
-  /** Offers to approve a request, then waits for the new device's key to show the emoji. */
+  /**
+   * Offers to approve a request, then waits for the new device's key to show the emoji. Only
+   * while it's the one device asking: with two, someone else may be asking alongside the person.
+   */
   async approve(id: string): Promise<EditResult> {
     const client = this.client;
-    if (!client || !this.deps.accountKey()) return failed('Turn on sync first.');
+    const keyId = this.deps.keyId();
+    if (!client || !this.deps.accountKey() || !keyId) return failed('Turn on sync first.');
     if (this.approving && this.approving.view.step !== 'ended') {
       return failed('Finish approving the other device first.');
     }
@@ -277,10 +289,16 @@ export class Approvals {
     let device: string;
     try {
       // Read again, so the hash it's checked against is the one the server holds now.
-      const request = await client.linkRequest(id);
-      if (request?.state !== 'waiting' || request.mine) return failed(ENDED.gone);
+      const requests = (await client.linkRequests()).filter((each) => !each.mine);
+      if (this.client === client) {
+        this.requests = requests;
+        this.changed();
+      }
+      const request = requests.find((each) => each.id === id);
+      if (request?.state !== 'waiting') return failed(ENDED.gone);
+      if (requests.length > 1) return failed(ENDED.crowded);
       device = request.device;
-      approval = await LinkApproval.start(client, request);
+      approval = await LinkApproval.start(client, request, keyId);
     } catch (error) {
       void this.refresh();
       return failed(this.deps.reason(error));
@@ -362,6 +380,8 @@ export class Approvals {
     const { id, device } = approving.view;
     try {
       if (!matched) {
+        // Turned down, but not signed out: the emoji can differ for reasons that aren't the
+        // device's doing, such as something between the two.
         await approving.approval.deny();
         if (this.approving === approving) this.endApproving(false, ENDED.mismatch);
         return { ok: true };
@@ -379,12 +399,15 @@ export class Approvals {
     return { ok: true };
   }
 
-  /** Turns another device's request down, without starting to approve it. */
+  /**
+   * Turns another device's request down, without starting to approve it, and signs that device
+   * out: the person said it isn't theirs.
+   */
   async deny(id: string): Promise<EditResult> {
     const client = this.client;
     if (!client) return failed('Sign in first.');
     try {
-      await client.denyRequest(id);
+      await client.denyRequest(id, true);
     } catch (error) {
       if (!(error instanceof SyncError && error.kind === 'not-found')) {
         return failed(this.deps.reason(error));

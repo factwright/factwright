@@ -25,8 +25,10 @@ const WINDOWS_CHROME =
 /** An account with a computer that's set up, and a new device signed in beside it. */
 async function twoDevices() {
   const mac = await server.signUp();
+  const keyId = randomBytes(16).toString('base64url');
+  await mac.client.saveKeys(keyId, 'locked-with-the-recovery-key');
   const pc = await server.newSession(mac.id, WINDOWS_CHROME);
-  return { mac, pc };
+  return { mac, pc, keyId };
 }
 
 /** The request as a device that's set up lists it. */
@@ -41,13 +43,13 @@ const someKey = () => Buffer.concat([Buffer.of(4), randomBytes(64)]).toString('b
 
 describe('approving a new device', () => {
   it('hands the account key to the new device once, sealed so only it can open it', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const ask = await LinkAsk.start(pc.client);
     expect(await ask.step()).toEqual({ state: 'waiting' });
 
     const request = await listed(mac.client, ask.id);
     expect(request).toMatchObject({ device: 'Chrome on Windows', mine: false, key: null });
-    const approval = await LinkApproval.start(mac.client, request);
+    const approval = await LinkApproval.start(mac.client, request, keyId);
     const asked = await ask.step();
     expect(asked).toMatchObject({ state: 'check', approver: 'Factwright on Test Mac' });
     const approving = await approval.step();
@@ -66,9 +68,9 @@ describe('approving a new device', () => {
   });
 
   it('never shows the sealed key to anyone, while it waits to be picked up', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const ask = await LinkAsk.start(pc.client);
-    const approval = await LinkApproval.start(mac.client, await listed(mac.client, ask.id));
+    const approval = await LinkApproval.start(mac.client, await listed(mac.client, ask.id), keyId);
     await ask.step();
     await approval.step();
     await approval.approve(newAccountKey());
@@ -83,10 +85,10 @@ describe('approving a new device', () => {
   });
 
   it('lets only the device that asked show its key, and pick the sealed key up', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const other = await server.newSession(mac.id, WINDOWS_CHROME);
     const ask = await LinkAsk.start(pc.client);
-    const approval = await LinkApproval.start(mac.client, await listed(mac.client, ask.id));
+    const approval = await LinkApproval.start(mac.client, await listed(mac.client, ask.id), keyId);
     await expect(other.client.showKey(ask.id, someKey())).rejects.toMatchObject({
       kind: 'refused',
     });
@@ -102,11 +104,11 @@ describe('approving a new device', () => {
   });
 
   it('lets only the device that offered approve it, once the new device shows its key', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const other = await server.newSession(mac.id);
     const ask = await LinkAsk.start(pc.client);
     const request = await listed(mac.client, ask.id);
-    await LinkApproval.start(mac.client, request);
+    await LinkApproval.start(mac.client, request, keyId);
     const sealed = 'A'.repeat(82);
     // Not before the new device has shown its key.
     await expect(mac.client.approveRequest(ask.id, sealed)).rejects.toMatchObject({
@@ -125,7 +127,7 @@ describe('approving a new device', () => {
   });
 
   it('lets one device offer to approve, and never the one that asked', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const phone = await server.newSession(mac.id, 'Mozilla/5.0 (iPhone) Safari/604.1');
     const ask = await LinkAsk.start(pc.client);
     const request = await listed(mac.client, ask.id);
@@ -133,8 +135,8 @@ describe('approving a new device', () => {
       status: 403,
       message: expect.stringContaining('its own request'),
     });
-    await LinkApproval.start(mac.client, request);
-    await expect(LinkApproval.start(phone.client, request)).rejects.toMatchObject({
+    await LinkApproval.start(mac.client, request, keyId);
+    await expect(LinkApproval.start(phone.client, request, keyId)).rejects.toMatchObject({
       kind: 'conflict',
       message: 'Another device is approving it.',
     });
@@ -143,17 +145,17 @@ describe('approving a new device', () => {
   });
 
   it('lets the new device show only one key', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const ask = await LinkAsk.start(pc.client);
-    await LinkApproval.start(mac.client, await listed(mac.client, ask.id));
+    await LinkApproval.start(mac.client, await listed(mac.client, ask.id), keyId);
     await ask.step();
     await expect(pc.client.showKey(ask.id, someKey())).rejects.toMatchObject({ status: 403 });
   });
 
   it('can be turned down on another device, and then hands nothing over', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const ask = await LinkAsk.start(pc.client);
-    const approval = await LinkApproval.start(mac.client, await listed(mac.client, ask.id));
+    const approval = await LinkApproval.start(mac.client, await listed(mac.client, ask.id), keyId);
     await ask.step();
     await approval.step();
     await approval.approve(newAccountKey());
@@ -227,7 +229,7 @@ describe('approving a new device', () => {
   });
 
   it('refuses what isn’t in the shape it takes', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const id = someId().slice(0, 22);
     await expect(pc.client.askToLink('short', someId())).rejects.toMatchObject({
       kind: 'refused',
@@ -241,7 +243,7 @@ describe('approving a new device', () => {
         kind: 'refused',
       });
     }
-    await LinkApproval.start(mac.client, await listed(mac.client, ask.id));
+    await LinkApproval.start(mac.client, await listed(mac.client, ask.id), keyId);
     await ask.step();
     for (const sealed of ['', 'A'.repeat(81), 'A'.repeat(83), `${'A'.repeat(81)}!`]) {
       await expect(mac.client.approveRequest(ask.id, sealed)).rejects.toMatchObject({
@@ -285,6 +287,39 @@ describe('approving a new device', () => {
     socket.close();
   });
 
+  it('says when the device asking signed in', async () => {
+    const { mac, pc } = await twoDevices();
+    const ask = await LinkAsk.start(pc.client);
+    const { signedIn, asked } = await listed(mac.client, ask.id);
+    expect(Date.parse(signedIn)).toBeLessThanOrEqual(Date.parse(asked));
+    expect(Date.now() - Date.parse(signedIn)).toBeLessThan(60_000);
+  });
+
+  it('lets a device ask only soon after it signed in', async () => {
+    const { mac } = await twoDevices();
+    const old = await server.newSession(mac.id, WINDOWS_CHROME);
+    await server.env.DB.prepare('UPDATE "session" SET createdAt = ? WHERE id = ?')
+      .bind(new Date(Date.now() - 31 * 60_000).toISOString(), old.sessionId)
+      .run();
+    await expect(LinkAsk.start(old.client)).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringContaining('signed in a while ago'),
+    });
+    expect(await mac.client.linkRequests()).toEqual([]);
+  });
+
+  it('signs a device that asked out, when the person says it isn’t theirs', async () => {
+    const { mac, pc } = await twoDevices();
+    const ask = await LinkAsk.start(pc.client);
+    await mac.client.denyRequest(ask.id, true);
+    await expect(pc.client.linkRequests()).rejects.toMatchObject({ kind: 'signed-out' });
+    // Turned down without that, the device that asked stays signed in.
+    const again = await server.newSession(mac.id, WINDOWS_CHROME);
+    const second = await LinkAsk.start(again.client);
+    await mac.client.denyRequest(second.id);
+    expect(await second.step()).toEqual({ state: 'denied' });
+  });
+
   it('says the server can approve devices', async () => {
     const { pc } = await twoDevices();
     expect(await pc.client.features()).toEqual(['approve']);
@@ -295,13 +330,13 @@ describe('approving a new device', () => {
 
 describe('separate accounts', () => {
   it('never see or touch each other’s requests to link', async () => {
-    const { mac, pc } = await twoDevices();
+    const { mac, pc, keyId } = await twoDevices();
     const bob = await server.signUp('Bob');
     const ask = await LinkAsk.start(pc.client);
     const request = await listed(mac.client, ask.id);
     expect(await bob.client.linkRequests()).toEqual([]);
     expect(await bob.client.linkRequest(ask.id)).toBeNull();
-    await expect(LinkApproval.start(bob.client, request)).rejects.toMatchObject({
+    await expect(LinkApproval.start(bob.client, request, keyId)).rejects.toMatchObject({
       kind: 'not-found',
     });
     await expect(bob.client.denyRequest(ask.id)).rejects.toMatchObject({ kind: 'not-found' });

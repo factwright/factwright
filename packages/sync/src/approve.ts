@@ -1,7 +1,7 @@
 import { type Bytes, concat, fromBase64Url, randomBytes, toBase64Url, utf8 } from './bytes.ts';
 import type { SyncClient } from './client.ts';
 import { ACCOUNT_KEY_BYTES, type Key, lock, unlock } from './keys.ts';
-import { isOneTimeKey, isRequestId, type LinkRequest } from './protocol.ts';
+import { isKeyId, isOneTimeKey, isRequestId, LIMITS, type LinkRequest } from './protocol.ts';
 
 /*
  * Approving a new device from one that's set up, so nobody types a code. It works as Matrix's
@@ -13,7 +13,8 @@ import { isOneTimeKey, isRequestId, type LinkRequest } from './protocol.ts';
  * 3. Only then does the new device show its public key. The approver checks it hashes to what
  *    the request said.
  * 4. Each works out the same secret from its own private key and the other's public key (ECDH),
- *    and shows six emoji made from it. The person checks both screens show the same.
+ *    and shows six emoji made from it, and from the ID of the account key the approver holds and
+ *    the new device's account says it uses. The person checks both screens show the same.
  * 5. Once they say so on the approver, it seals the account key with a key made from the secret.
  *    Once they say so on the new device, it picks the sealed key up, once, and opens it.
  *
@@ -24,6 +25,14 @@ import { isOneTimeKey, isRequestId, type LinkRequest } from './protocol.ts';
  * after the server has passed one along, so whatever it swaps in, the emoji on the two screens
  * are each pure chance: they match one time in 2^36. Each try needs the person to start linking,
  * and a miss shows them two different sets of emoji.
+ *
+ * That holds because each run keeps to these rules, on both devices:
+ * - Every run makes a fresh key pair, and the new device a fresh request ID. Nothing of a run is
+ *   kept anywhere else, so a restart starts a new run, never resumes one.
+ * - The approver checks the new device's key against the hash it saw before it offered its own.
+ *   The new device fixes the approver's key before it shows its own, and never takes another.
+ * - A run ends on its own after the 10 minutes a request lasts, whatever the server says.
+ * - The apps run one at a time on each device, and start one only when the person does.
  */
 
 const subtle = () => crypto.subtle;
@@ -41,9 +50,13 @@ const PUBLIC_KEY_BYTES = 65;
 /** Emoji in a check code. Each is one of 64, so six make 36 bits. */
 export const CHECK_LENGTH = 6;
 
+/** How long a run lasts on each device, whatever the server says: as long as a request. */
+const RUN_MS = LIMITS.requestMinutes * 60_000;
+
 /** What the steps of approving need from the sync server. */
 export type ApproveClient = Pick<
   SyncClient,
+  | 'keys'
   | 'askToLink'
   | 'linkRequest'
   | 'offerToApprove'
@@ -126,22 +139,27 @@ interface Agreed {
 
 /**
  * The check code and the sealing key, from this side's private key and the other's public key.
- * Both are bound to the request and to both public keys, in the order the protocol gives them.
- * Null when the other key isn't one.
+ * Both are bound to the request, to both public keys in the order the protocol gives them, and
+ * to the ID of the account key, so a key that isn't the account's shows other emoji. Null when
+ * the other key or the key ID isn't one.
  */
 async function agree(
   own: OneTimeKey,
   theirs: string,
   id: string,
+  keyId: string,
   side: 'new' | 'approver',
 ): Promise<Agreed | null> {
   const other = await publicKeyFrom(theirs);
   const idBytes = fromBase64Url(id);
   const ownBytes = fromBase64Url(own.publicKey);
   const theirBytes = fromBase64Url(theirs);
-  if (!other || !idBytes || !ownBytes || !theirBytes) return null;
+  const keyIdBytes = isKeyId(keyId) ? fromBase64Url(keyId) : null;
+  if (!other || !idBytes || !ownBytes || !theirBytes || keyIdBytes?.length !== 16) return null;
   const context =
-    side === 'new' ? concat(idBytes, ownBytes, theirBytes) : concat(idBytes, theirBytes, ownBytes);
+    side === 'new'
+      ? concat(idBytes, ownBytes, theirBytes, keyIdBytes)
+      : concat(idBytes, theirBytes, ownBytes, keyIdBytes);
   const ecdh = { name: 'ECDH', public: other } as DeriveParams;
   const secret = await subtle().deriveBits(ecdh, own.privateKey, 256);
   const base = await subtle().importKey('raw', secret, 'HKDF', false, ['deriveKey', 'deriveBits']);
@@ -192,6 +210,8 @@ export class LinkAsk {
   private agreed: Agreed | null = null;
   private confirmed = false;
   private stepping: Promise<AskStep> | null = null;
+  /** When the run ends, whatever the server says. */
+  private readonly until = Date.now() + RUN_MS;
 
   private constructor(client: ApproveClient, id: string, own: OneTimeKey) {
     this.client = client;
@@ -218,13 +238,17 @@ export class LinkAsk {
   }
 
   private async takeStep(): Promise<AskStep> {
+    if (Date.now() > this.until) return { state: 'gone' };
     const request = await this.client.linkRequest(this.id);
     if (!request) return { state: 'gone' };
     if (request.state === 'denied') return { state: 'denied' };
     if (request.state === 'linked') return { state: 'gone' };
     if (!request.approver) return { state: 'waiting' };
     if (this.approverKey === null) {
-      const agreed = await agree(this.own, request.approver.key, this.id, 'new');
+      // The key the account says it uses, which the approver's must be for the emoji to match.
+      const keys = await this.client.keys();
+      if (!keys) return { state: 'failed' };
+      const agreed = await agree(this.own, request.approver.key, this.id, keys.keyId, 'new');
       if (!agreed) return { state: 'failed' };
       // Fixed before this device shows its own key, and never changed after.
       this.approverKey = request.approver.key;
@@ -252,7 +276,7 @@ export class LinkAsk {
    * match here. Null when it isn't there, or doesn't open with what this device worked out.
    */
   async finish(): Promise<Bytes | null> {
-    if (!this.agreed || !this.confirmed) return null;
+    if (!this.agreed || !this.confirmed || Date.now() > this.until) return null;
     const sealed = await this.client.takeApproval(this.id);
     if (!sealed) return null;
     const locked = fromBase64Url(sealed);
@@ -290,23 +314,35 @@ export class LinkApproval {
   private readonly client: ApproveClient;
   /** The hash the request came with, as seen before this device offered its own key. */
   private readonly commitment: string;
+  /** The ID of the account key this device holds, and would hand over. */
+  private readonly keyId: string;
   private readonly own: OneTimeKey;
   private agreed: Agreed | null = null;
   private newDeviceKey: string | null = null;
   private stepping: Promise<ApprovalStep> | null = null;
+  /** When the run ends, whatever the server says. */
+  private readonly until = Date.now() + RUN_MS;
 
-  private constructor(client: ApproveClient, request: LinkRequest, own: OneTimeKey) {
+  private constructor(client: ApproveClient, request: LinkRequest, keyId: string, own: OneTimeKey) {
     this.client = client;
     this.id = request.id;
     this.commitment = request.commitment;
+    this.keyId = keyId;
     this.own = own;
   }
 
-  /** Offers to approve a request, with a one-time key of its own. */
-  static async start(client: ApproveClient, request: LinkRequest): Promise<LinkApproval> {
+  /**
+   * Offers to approve a request, with a one-time key of its own. The key ID is the one of the
+   * account key this device holds.
+   */
+  static async start(
+    client: ApproveClient,
+    request: LinkRequest,
+    keyId: string,
+  ): Promise<LinkApproval> {
     const own = await oneTimeKey();
     await client.offerToApprove(request.id, own.publicKey);
-    return new LinkApproval(client, request, own);
+    return new LinkApproval(client, request, keyId, own);
   }
 
   /** Where approving stands now. Steps taken at once wait for each other. */
@@ -318,6 +354,7 @@ export class LinkApproval {
   }
 
   private async takeStep(): Promise<ApprovalStep> {
+    if (Date.now() > this.until) return { state: 'gone' };
     const request = await this.client.linkRequest(this.id);
     if (!request || request.state === 'denied') return { state: 'gone' };
     if (request.approver?.key !== this.own.publicKey) return { state: 'taken' };
@@ -329,7 +366,7 @@ export class LinkApproval {
     }
     if (!request.key) return { state: 'waiting' };
     if ((await commitmentTo(this.id, request.key)) !== this.commitment) return { state: 'failed' };
-    const agreed = await agree(this.own, request.key, this.id, 'approver');
+    const agreed = await agree(this.own, request.key, this.id, this.keyId, 'approver');
     if (!agreed) return { state: 'failed' };
     this.agreed = agreed;
     this.newDeviceKey = request.key;
@@ -339,6 +376,8 @@ export class LinkApproval {
   /** Once the person says both screens show the same emoji: seals the account key for the new device. */
   async approve(accountKey: Bytes): Promise<void> {
     if (!this.agreed) throw new Error('Check the emoji on both devices first.');
+    if (Date.now() > this.until)
+      throw new Error('That request ran out. Ask again on the new device.');
     const sealed = await lock(this.agreed.seal, accountKey, sealedPurpose(this.id));
     await this.client.approveRequest(this.id, toBase64Url(sealed));
   }

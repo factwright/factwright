@@ -41,10 +41,14 @@ const SWEEP_AGAIN_MS = 10 * 60 * 1000;
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** A session taking part in linking a device, with its device's name, as the account page shows it. */
+/**
+ * A session taking part in linking a device, with its device's name, as the account page shows
+ * it, and when it signed in.
+ */
 export interface Asker {
   session: string;
   device: string;
+  signedIn: number;
 }
 
 /**
@@ -386,12 +390,13 @@ export class UserStore extends DurableObject<Env> {
       if (this.waitingRequests() >= LIMITS.requestsAtOnce) return 'too-many';
       if (made >= LIMITS.requestsPerHour) return 'too-often';
       this.sql.exec(
-        `INSERT INTO requests (id, session, device, commitment, asked, expires)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO requests (id, session, device, commitment, signed_in, asked, expires)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         id,
         asker.session,
         asker.device,
         commitment,
+        asker.signedIn,
         now,
         now + LIMITS.requestMinutes * 60_000,
       );
@@ -496,9 +501,14 @@ export class UserStore extends DurableObject<Env> {
 
   /**
    * Another device of the account turns a request down, approved or not, so nothing is handed
-   * over. The new device sees it was turned down. It calls its own request off instead.
+   * over. The new device sees it was turned down. It calls its own request off instead. Answers
+   * with the session that asked, which the Worker signs out when the person says it isn't theirs.
    */
-  denyRequest(owner: string, session: string, id: string): 'denied' | 'not-found' | 'own' {
+  denyRequest(
+    owner: string,
+    session: string,
+    id: string,
+  ): { denied: string } | 'not-found' | 'own' {
     this.claim(owner);
     this.spend();
     const row = this.liveRequest(id);
@@ -506,7 +516,7 @@ export class UserStore extends DurableObject<Env> {
     if (row.session === session) return 'own';
     this.sql.exec('UPDATE requests SET denied = 1, sealed = NULL WHERE id = ?', id);
     this.requestsChanged();
-    return 'denied';
+    return { denied: row.session };
   }
 
   /**

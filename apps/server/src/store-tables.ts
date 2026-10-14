@@ -59,6 +59,7 @@ export const SCHEMA = `
     sealed TEXT,
     denied INTEGER NOT NULL DEFAULT 0,
     linked INTEGER NOT NULL DEFAULT 0,
+    signed_in INTEGER NOT NULL,
     asked INTEGER NOT NULL,
     expires INTEGER NOT NULL
   ) WITHOUT ROWID;
@@ -78,6 +79,7 @@ export type RequestRow = {
   sealed: string | null;
   denied: number;
   linked: number;
+  signed_in: number;
   asked: number;
   expires: number;
 };
@@ -103,6 +105,7 @@ export const toRequest = (row: RequestRow, session: string): LinkRequest => ({
   device: row.device,
   asked: new Date(row.asked).toISOString(),
   expires: new Date(row.expires).toISOString(),
+  signedIn: new Date(row.signed_in).toISOString(),
   commitment: row.commitment,
   key: row.key,
   approver:

@@ -158,6 +158,7 @@ function requestServer(saved: object) {
     device: 'Chrome on Windows',
     asked: new Date().toISOString(),
     expires: new Date(Date.now() + 600_000).toISOString(),
+    signedIn: new Date().toISOString(),
     commitment: row.commitment,
     key: row.key ?? null,
     approver: row.approverKey ? { device: 'Factwright on Sam’s Mac', key: row.approverKey } : null,
@@ -235,7 +236,7 @@ describe('asking a computer to approve this browser', () => {
     const id = await asked(rows);
     const request = await mac.linkRequest(id);
     if (!request) throw new Error('No request.');
-    const approval = await LinkApproval.start(mac, request);
+    const approval = await LinkApproval.start(mac, request, keys.id);
     await later();
     const shown = await screen.findByRole('list', { name: 'Check code' });
     expect(screen.getByText(/offered to approve this browser/)).toBeTruthy();
@@ -260,7 +261,7 @@ describe('asking a computer to approve this browser', () => {
   it('links nothing when the emoji don’t match, and can ask again', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { saved } = await anAccount();
+    const { keys, saved } = await anAccount();
     const { rows, seen, mac } = requestServer(saved);
     render(
       <LinkBrowser
@@ -274,11 +275,13 @@ describe('asking a computer to approve this browser', () => {
     const id = await asked(rows);
     const request = await mac.linkRequest(id);
     if (!request) throw new Error('No request.');
-    await LinkApproval.start(mac, request);
+    await LinkApproval.start(mac, request, keys.id);
     await later();
     await user.click(await screen.findByRole('button', { name: 'They don’t match' }));
     expect(seen).toContain(`web DELETE /api/sync/requests/${id}`);
     expect(screen.getByText(/Nothing was linked/)).toBeTruthy();
+    // The emoji it showed stay, to compare with what the computer showed.
+    expect(screen.getByRole('list', { name: 'Emoji this browser showed' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Ask again' }));
     await waitFor(() => expect(rows.size).toBe(1));
     expect([...rows.keys()]).not.toContain(id);

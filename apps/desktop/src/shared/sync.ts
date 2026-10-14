@@ -68,16 +68,20 @@ export type AskingView =
   | { step: 'waiting' }
   /** A device offered to approve it: the person checks both screens show the same emoji. */
   | { step: 'check'; approver: string; check: number[]; confirmed: boolean }
-  /** Over, with nothing linked: turned down, run out, or something didn't check out. */
-  | { step: 'ended'; message: string };
+  /**
+   * Over, with nothing linked: turned down, run out, or something didn't check out. The emoji
+   * this computer showed stay, if it showed any, to compare with what the other device showed.
+   */
+  | { step: 'ended'; message: string; check?: number[] };
 
 /** Another device asking to link, which this computer can approve. */
 export interface RequestView {
   id: string;
   /** The device asking, such as "Chrome on Windows". */
   device: string;
-  /** When it asked, as an ISO time. */
+  /** When it asked, and when it signed in, as ISO times. */
   asked: string;
+  signedIn: string;
   /** Whether another device is approving it. */
   elsewhere: boolean;
 }

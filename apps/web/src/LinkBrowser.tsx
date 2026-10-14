@@ -168,7 +168,8 @@ const BROKEN = 'That didn’t work, so nothing was linked. Ask again.';
 type Asking =
   | { step: 'waiting' }
   | { step: 'check'; approver: string; check: number[]; confirmed: boolean }
-  | { step: 'ended'; message: string };
+  /** Over, keeping the emoji it showed, if any, to compare with what the computer showed. */
+  | { step: 'ended'; message: string; check?: number[] };
 
 /** What to say when a request to the server fails. */
 const reasonOf = (error: unknown) =>
@@ -200,7 +201,12 @@ function AskToLink({
   useEffect(() => {
     let live = true;
     const end = (message: string) => {
-      if (live) setAsking({ step: 'ended', message });
+      if (!live) return;
+      setAsking((now) => ({
+        step: 'ended',
+        message,
+        ...(now.step === 'check' && { check: now.check }),
+      }));
     };
     void (async () => {
       let ask: LinkAsk;
@@ -270,7 +276,11 @@ function AskToLink({
     if (!matched) {
       current.current = null;
       void asked.ask.cancel().catch(() => {});
-      setAsking({ step: 'ended', message: MISMATCH });
+      setAsking((now) => ({
+        step: 'ended',
+        message: MISMATCH,
+        ...(now.step === 'check' && { check: now.check }),
+      }));
       return;
     }
     asked.ask.confirm();
@@ -282,6 +292,9 @@ function AskToLink({
     return (
       <div className={styles.ask} aria-live="polite">
         <p className={styles.lead}>{asking.message}</p>
+        {asking.check && (
+          <CheckCode items={checkEmoji(asking.check)} label="Emoji this browser showed" quiet />
+        )}
         <div className={styles.actions}>
           <Button
             onClick={() => {

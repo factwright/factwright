@@ -104,7 +104,7 @@ interface Caller {
   auth: Auth;
   account: string;
   user: { id: string; email: string; name: string; createdAt: Date };
-  session: { id: string; userAgent?: string | null | undefined };
+  session: { id: string; userAgent?: string | null | undefined; createdAt: Date | string };
   store: DurableObjectStub<UserStore>;
 }
 
@@ -231,6 +231,7 @@ const deleteLink: Handler = async ({ store, account }, [id]) => {
 const askerOf = ({ session }: Caller): Asker => ({
   session: session.id,
   device: deviceName(session.userAgent),
+  signedIn: new Date(session.createdAt).getTime(),
 });
 
 /** Why a step of linking a device didn't happen, for each way it can't. */
@@ -247,7 +248,16 @@ const postRequest: Handler = async (caller) => {
   if (!isRequestId(id) || !isCommitment(commitment)) {
     throw new Refused('The request to link wasn’t in the shape the server takes.');
   }
-  const made = await store.askToLink(account, askerOf(caller), id, commitment);
+  const asker = askerOf(caller);
+  // Only soon after signing in, so a sign-in someone was tricked into long ago can't ask.
+  if (!(Date.now() - asker.signedIn <= LIMITS.askWithinMinutes * 60_000)) {
+    return failure(
+      403,
+      'stale',
+      'This device signed in a while ago, so it can’t ask to be approved. Sign in again, or type a code.',
+    );
+  }
+  const made = await store.askToLink(account, asker, id, commitment);
   switch (made) {
     case 'made':
       return empty(201);
@@ -320,13 +330,28 @@ const postApprove: Handler = async ({ request, store, account, session }, [id]) 
       );
 };
 
-const postDeny: Handler = async ({ store, account, session }, [id]) => {
+const postDeny: Handler = async ({ request, env, store, account, session }, [id]) => {
   if (!isRequestId(id)) return GONE();
+  // Older devices turn a request down with nothing more to say.
+  const text = await request.text();
+  if (text.length > SMALL_BODY) throw new TooBig();
+  let signOut = false;
+  try {
+    signOut = text !== '' && (JSON.parse(text) as { signOut?: unknown }).signOut === true;
+  } catch {
+    throw new Refused('That wasn’t the JSON the server takes.');
+  }
   const denied = await store.denyRequest(account, session.id, id);
-  if (denied === 'denied') return empty();
-  return denied === 'not-found'
-    ? GONE()
-    : failure(403, 'refused', 'A device calls its own request off instead.');
+  if (denied === 'not-found') return GONE();
+  if (denied === 'own')
+    return failure(403, 'refused', 'A device calls its own request off instead.');
+  // Not the person's device: it's signed out of the account too.
+  if (signOut) {
+    await env.DB.prepare('DELETE FROM "session" WHERE id = ? AND userId = ?')
+      .bind(denied.denied, account)
+      .run();
+  }
+  return empty();
 };
 
 const postTake: Handler = async ({ store, account, session }, [id]) => {

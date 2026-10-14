@@ -108,6 +108,16 @@ const REQUEST: RequestView = {
   id: 'sample-request',
   device: 'Chrome on Windows',
   asked: minutesAgo(1),
+  signedIn: minutesAgo(2),
+  elsewhere: false,
+};
+
+/** Another device asking at the same time, as someone else's might. */
+const ANOTHER: RequestView = {
+  id: 'another-request',
+  device: 'Factwright on Sam’s MacBook',
+  asked: minutesAgo(0),
+  signedIn: minutesAgo(60 * 24 * 9),
   elsewhere: false,
 };
 
@@ -117,8 +127,8 @@ const APPROVER = 'Factwright on Sam’s MacBook Pro';
  * Sync for the screens preview, made up. ?sync= picks where it starts. Turning it on plays
  * through signing in (?sync=link for a second computer), and the rest answers as the app would.
  * ?approve= picks how linking by approval starts: "request" for another device asking to link
- * once sync is on, "check" to start at the emoji (asking or approving, by ?sync=), or "old" for a
- * server that can't approve devices yet.
+ * once sync is on, "two" for two at once, "check" to start at the emoji (asking or approving, by
+ * ?sync=), or "old" for a server that can't approve devices yet.
  */
 export function sampleSync(start: string | null, approve: string | null = null): SyncApi {
   const listeners = new Set<(status: SyncStatus) => void>();
@@ -132,7 +142,7 @@ export function sampleSync(start: string | null, approve: string | null = null):
   let approvals: ApprovalsView = {
     supported: approve !== 'old',
     asking: null,
-    requests: approve === 'request' ? [REQUEST] : [],
+    requests: approve === 'request' ? [REQUEST] : approve === 'two' ? [REQUEST, ANOTHER] : [],
     approving:
       approve === 'check' && status.state === 'on'
         ? { id: REQUEST.id, device: REQUEST.device, step: 'check', check: CHECK }
@@ -236,6 +246,7 @@ export function sampleSync(start: string | null, approve: string | null = null):
           asking: {
             step: 'ended',
             message: 'Nothing was linked. If you didn’t start this, you can ignore it.',
+            check: CHECK,
           },
         });
         return;

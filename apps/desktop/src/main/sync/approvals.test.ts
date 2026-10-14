@@ -193,20 +193,46 @@ describe('linking a computer from one that’s set up', () => {
     expect(pc.sync.status()).toMatchObject({ state: 'setting-up' });
   });
 
-  it('turns a request down without starting to approve it', async () => {
+  it('turns down a request that isn’t the person’s, and signs that device out', async () => {
     const mac = await firstComputer();
     const pc = await newComputer();
     await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     const view = await mac.sync.approvalsView();
+    expect(view.requests[0]).toMatchObject({ device: 'Factwright on SAM-PC' });
+    expect(Date.now() - Date.parse(view.requests[0]?.signedIn ?? '')).toBeLessThan(60_000);
     expect(await mac.sync.denyRequest(view.requests[0]?.id ?? '')).toEqual({ ok: true });
     expect(mac.approvals().requests).toEqual([]);
     await vi.waitFor(() =>
       expect(pc.approvals().asking).toMatchObject({
         step: 'ended',
-        message: expect.stringContaining('turned this down'),
+        message: 'Your sign-in ended. Sign in again.',
       }),
     );
+    const devices = (await mac.sync.account()) as { ok: true; account: { devices: unknown[] } };
+    expect(devices.account.devices).toHaveLength(2);
+  });
+
+  it('won’t approve while another device is asking too', async () => {
+    const mac = await firstComputer();
+    const pc = await newComputer();
+    const laptop = await newComputer('SAM-LAPTOP');
+    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await vi.waitFor(() => expect(laptop.approvals().supported).toBe(true));
+    await pc.sync.askToLink();
+    await laptop.sync.askToLink();
+    const { requests } = await mac.sync.approvalsView();
+    expect(requests).toHaveLength(2);
+    expect(await mac.sync.approveRequest(requests[0]?.id ?? '')).toEqual({
+      ok: false,
+      message:
+        'More than one device is asking to link. Turn down any that aren’t yours, then approve yours.',
+    });
+    // Once the other is turned down, the one that's the person's can be approved.
+    const theirs = requests.find((request) => request.device === 'Factwright on SAM-LAPTOP');
+    await mac.sync.denyRequest(theirs?.id ?? '');
+    const ours = requests.find((request) => request.device === 'Factwright on SAM-PC');
+    expect(await mac.sync.approveRequest(ours?.id ?? '')).toEqual({ ok: true });
   });
 
   it('calls its request off once it links with a code instead', async () => {

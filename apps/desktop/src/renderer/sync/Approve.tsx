@@ -40,6 +40,9 @@ export function AskPanel({ api, asking }: { api: FactwrightApi; asking: AskingVi
     return (
       <div className={styles.approve} aria-live="polite">
         <p className={styles.approveText}>{asking.message}</p>
+        {asking.check && (
+          <CheckCode items={checkEmoji(asking.check)} label="Emoji this computer showed" quiet />
+        )}
         <Problem text={step.problem} />
         <div className={styles.approveActions}>
           <Button disabled={step.busy} onClick={() => step.run(() => api.askToLink())}>
@@ -100,8 +103,20 @@ export function AskPanel({ api, asking }: { api: FactwrightApi; asking: AskingVi
   );
 }
 
-/** A request from another device, before this computer starts to approve it. */
-function Request({ api, request }: { api: FactwrightApi; request: RequestView }) {
+/**
+ * A request from another device, before this computer starts to approve it, with when that
+ * device signed in: a sign-in from a while ago is worth a second look.
+ */
+function Request({
+  api,
+  request,
+  crowded,
+}: {
+  api: FactwrightApi;
+  request: RequestView;
+  /** Whether another device is asking too, so none can be approved yet. */
+  crowded: boolean;
+}) {
   const step = useStep();
   return (
     <li className={styles.request}>
@@ -110,7 +125,7 @@ function Request({ api, request }: { api: FactwrightApi; request: RequestView })
         <span className={styles.deviceWhen}>
           {request.elsewhere
             ? 'Being approved on another device'
-            : `Asked ${timeAgo(request.asked)}`}
+            : `Asked ${timeAgo(request.asked)} · signed in ${timeAgo(request.signedIn)}`}
         </span>
       </div>
       {!request.elsewhere && (
@@ -126,7 +141,7 @@ function Request({ api, request }: { api: FactwrightApi; request: RequestView })
           <Button
             size="sm"
             variant="primary"
-            disabled={step.busy}
+            disabled={step.busy || crowded}
             onClick={() => step.run(() => api.approveLinkRequest(request.id))}
           >
             Approve…
@@ -185,7 +200,8 @@ export function RequestsPanel({
           </p>
           <CheckCode items={checkEmoji(approving.check)} />
           <p className={styles.hint}>
-            Only link a device you’re using right now. It gets your whole job hunt.
+            Only link a device that’s in front of you: it gets your whole job hunt. Nobody from
+            Factwright will ever ask you for these emoji.
           </p>
           <Problem text={step.problem} />
           <div className={styles.approveActions}>
@@ -226,11 +242,18 @@ export function RequestsPanel({
       )}
 
       {!approving && (
-        <ul className={styles.requestList}>
-          {requests.map((request) => (
-            <Request key={request.id} api={api} request={request} />
-          ))}
-        </ul>
+        <>
+          <ul className={styles.requestList}>
+            {requests.map((request) => (
+              <Request key={request.id} api={api} request={request} crowded={requests.length > 1} />
+            ))}
+          </ul>
+          <p className={styles.hint}>
+            {requests.length > 1
+              ? 'More than one device is asking. Turn down any that aren’t yours, then approve yours.'
+              : 'Don’t recognize it? Not mine turns it down and signs it out of your account.'}
+          </p>
+        </>
       )}
     </section>
   );

@@ -19,6 +19,8 @@ interface Row {
 /** The sync server's part, kept in memory, with its rules about who may take each step. */
 class FakeServer {
   readonly rows = new Map<string, Row>();
+  /** The ID of the account key, as the account's key record says. */
+  keyId = toBase64Url(randomBytes(16));
 
   view(row: Row, session: string): LinkRequest {
     return {
@@ -43,6 +45,7 @@ class FakeServer {
       return found;
     };
     return {
+      keys: async () => ({ keyId: this.keyId, recovery: 'locked', savedAt: '2026-10-14' }),
       askToLink: async (id, commitment) => {
         this.rows.set(id, {
           id,
@@ -111,7 +114,11 @@ async function listed(server: FakeServer, id: string): Promise<LinkRequest> {
 async function upToTheCheck(server = new FakeServer()) {
   const ask = await LinkAsk.start(server.as('new'));
   expect(await ask.step()).toEqual({ state: 'waiting' });
-  const approval = await LinkApproval.start(server.as('mac'), await listed(server, ask.id));
+  const approval = await LinkApproval.start(
+    server.as('mac'),
+    await listed(server, ask.id),
+    server.keyId,
+  );
   expect(await approval.step()).toEqual({ state: 'waiting' });
   const asked = await ask.step();
   const approving = await approval.step();
@@ -151,7 +158,11 @@ describe('approving a new device', () => {
     const client = server.as('new');
     const take = vi.spyOn(client, 'takeApproval');
     const ask = await LinkAsk.start(client);
-    const approval = await LinkApproval.start(server.as('mac'), await listed(server, ask.id));
+    const approval = await LinkApproval.start(
+      server.as('mac'),
+      await listed(server, ask.id),
+      server.keyId,
+    );
     await ask.step();
     await approval.step();
     await approval.approve(newAccountKey());
@@ -164,7 +175,11 @@ describe('approving a new device', () => {
   it('won’t seal the key before both keys are in', async () => {
     const server = new FakeServer();
     const ask = await LinkAsk.start(server.as('new'));
-    const approval = await LinkApproval.start(server.as('mac'), await listed(server, ask.id));
+    const approval = await LinkApproval.start(
+      server.as('mac'),
+      await listed(server, ask.id),
+      server.keyId,
+    );
     await expect(approval.approve(newAccountKey())).rejects.toThrow('Check the emoji');
   });
 
@@ -179,12 +194,60 @@ describe('approving a new device', () => {
     const server = new FakeServer();
     const ask = await LinkAsk.start(server.as('new'));
     const request = await listed(server, ask.id);
-    const approval = await LinkApproval.start(server.as('mac'), request);
-    await expect(LinkApproval.start(server.as('pc'), request)).rejects.toThrow('refused');
+    const approval = await LinkApproval.start(server.as('mac'), request, server.keyId);
+    await expect(LinkApproval.start(server.as('pc'), request, server.keyId)).rejects.toThrow(
+      'refused',
+    );
     // Should the server hand it to another device after all, the first one stops.
     const row = server.rows.get(ask.id);
     if (row) row.approver = { session: 'pc', device: 'PC', key: await anotherKey() };
     expect(await approval.step()).toEqual({ state: 'taken' });
+  });
+});
+
+describe('the account key’s ID', () => {
+  it('is in the emoji, so an approver holding another key shows other emoji', async () => {
+    const server = new FakeServer();
+    const ask = await LinkAsk.start(server.as('new'));
+    const stale = toBase64Url(randomBytes(16));
+    const approval = await LinkApproval.start(
+      server.as('mac'),
+      await listed(server, ask.id),
+      stale,
+    );
+    await approval.step();
+    const asked = await ask.step();
+    const approving = await approval.step();
+    expect(asked.state).toBe('check');
+    expect(approving.state).toBe('check');
+    expect(asked.state === 'check' && asked.check).not.toEqual(
+      approving.state === 'check' && approving.check,
+    );
+  });
+
+  it('must be there for the new device to go on', async () => {
+    const server = new FakeServer();
+    const client = { ...server.as('new'), keys: async () => null };
+    const ask = await LinkAsk.start(client);
+    await LinkApproval.start(server.as('mac'), await listed(server, ask.id), server.keyId);
+    expect(await ask.step()).toEqual({ state: 'failed' });
+  });
+});
+
+describe('a run', () => {
+  it('ends after 10 minutes on each device, whatever the server says', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { ask, approval } = await upToTheCheck();
+      ask.confirm();
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      expect(await ask.step()).toEqual({ state: 'gone' });
+      expect(await approval.step()).toEqual({ state: 'gone' });
+      await expect(approval.approve(newAccountKey())).rejects.toThrow('ran out');
+      expect(await ask.finish()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -194,11 +257,21 @@ describe('a server in the middle', () => {
     const server = new FakeServer();
     const ask = await LinkAsk.start(server.as('new'));
     const real = await listed(server, ask.id);
-    const fakeApprover = await LinkApproval.start(server.as('server-as-approver'), real);
+    const fakeApprover = await LinkApproval.start(
+      server.as('server-as-approver'),
+      real,
+      server.keyId,
+    );
 
     const relay = new FakeServer();
+    // It tells each device the account's real key ID: that's no secret from the server.
+    relay.keyId = server.keyId;
     const fakeAsk = await LinkAsk.start(relay.as('server-as-new'));
-    const approval = await LinkApproval.start(relay.as('mac'), await listed(relay, fakeAsk.id));
+    const approval = await LinkApproval.start(
+      relay.as('mac'),
+      await listed(relay, fakeAsk.id),
+      relay.keyId,
+    );
 
     const onNew = await ask.step();
     expect(await fakeApprover.step()).toMatchObject({ state: 'check' });
@@ -216,7 +289,11 @@ describe('a server in the middle', () => {
   it('can’t show the approver a key other than the one the request committed to', async () => {
     const server = new FakeServer();
     const ask = await LinkAsk.start(server.as('new'));
-    const approval = await LinkApproval.start(server.as('mac'), await listed(server, ask.id));
+    const approval = await LinkApproval.start(
+      server.as('mac'),
+      await listed(server, ask.id),
+      server.keyId,
+    );
     await ask.step();
     const row = server.rows.get(ask.id);
     if (row) row.key = await anotherKey();
@@ -239,6 +316,7 @@ describe('a server in the middle', () => {
     const fakeApprover = await LinkApproval.start(
       server.as('server-as-approver'),
       await listed(server, ask.id),
+      server.keyId,
     );
     await ask.step();
     await fakeApprover.step();

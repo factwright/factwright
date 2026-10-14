@@ -276,9 +276,12 @@ export class SyncClient {
     await this.request(`${API.requests}/${id}/approve`, { method: 'POST', json: { sealed } });
   }
 
-  /** On a device that's set up: turns a request down. */
-  async denyRequest(id: string): Promise<void> {
-    await this.request(`${API.requests}/${id}/deny`, { method: 'POST' });
+  /**
+   * On a device that's set up: turns a request down. "signOut" signs the device that asked out
+   * too, for a request that isn't the person's.
+   */
+  async denyRequest(id: string, signOut = false): Promise<void> {
+    await this.request(`${API.requests}/${id}/deny`, { method: 'POST', json: { signOut } });
   }
 
   /** On the new device: picks up the sealed account key, once, or null when it isn't there. */

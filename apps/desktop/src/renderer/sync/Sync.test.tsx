@@ -397,13 +397,15 @@ describe('linking by approval', () => {
     const { container } = await openDialog(api);
     const panel = await screen.findByRole('region', { name: 'A new device wants to link' });
     expect(within(panel).getByText('Chrome on Windows')).toBeTruthy();
+    expect(within(panel).getByText(/signed in 2 minutes ago/)).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
     await user.click(within(panel).getByRole('button', { name: 'Approve…' }));
     expect(await screen.findByText('Waiting for Chrome on Windows…')).toBeTruthy();
     await later(1500);
     const asking = await screen.findByRole('region', { name: 'Approve Chrome on Windows?' });
     expect(within(asking).getByRole('list', { name: 'Check code' })).toBeTruthy();
-    expect(within(asking).getByText(/Only link a device you’re using right now/)).toBeTruthy();
+    expect(within(asking).getByText(/Only link a device that’s in front of you/)).toBeTruthy();
+    expect(within(asking).getByText(/Nobody from Factwright will ever ask you/)).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
     await user.click(within(asking).getByRole('button', { name: 'They match, link it' }));
     expect(await screen.findByText(/Approved\. Chrome on Windows links once/)).toBeTruthy();
@@ -411,6 +413,25 @@ describe('linking by approval', () => {
     expect(await screen.findByText('Chrome on Windows is linked.')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'OK' }));
     expect(screen.queryByRole('region', { name: /link/i })).toBeNull();
+  });
+
+  it('won’t approve while more than one device is asking', async () => {
+    const api = apiFor('on', 'two');
+    await openDialog(api);
+    const panel = await screen.findByRole('region', { name: 'New devices want to link' });
+    expect(within(panel).getByText(/More than one device is asking/)).toBeTruthy();
+    expect(within(panel).getByText(/signed in on /)).toBeTruthy();
+    for (const button of within(panel).getAllByRole('button', { name: 'Approve…' })) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it('keeps the emoji this computer showed once it’s over, to compare', async () => {
+    const api = apiFor('link', 'check');
+    const user = userEvent.setup();
+    await openDialog(api);
+    await user.click(await screen.findByRole('button', { name: 'They don’t match' }));
+    expect(await screen.findByRole('list', { name: 'Emoji this computer showed' })).toBeTruthy();
   });
 
   it('turns a request down that isn’t the person’s', async () => {
@@ -433,6 +454,7 @@ describe('linking by approval', () => {
             id: 'r',
             device: 'Chrome on Windows',
             asked: new Date().toISOString(),
+            signedIn: new Date().toISOString(),
             elsewhere: false,
           },
         ]}

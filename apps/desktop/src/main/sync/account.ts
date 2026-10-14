@@ -128,6 +128,7 @@ export class SyncAccount {
         if (!this.closed) this.deps.onApprovals?.(view);
       },
       accountKey: () => (this.runner ? this.accountKey : null),
+      keyId: () => (this.runner ? (this.keys?.id ?? null) : null),
       linkWith: (accountKey) => this.linkWithKey(accountKey),
       reason,
       ...(deps.approvalWait && { wait: deps.approvalWait }),

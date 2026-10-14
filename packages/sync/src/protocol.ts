@@ -25,6 +25,11 @@ export const LIMITS = {
   requestsAtOnce: 5,
   /** Requests to link an account takes in an hour, so nobody can fill its devices with them. */
   requestsPerHour: 10,
+  /**
+   * How long after signing in a device can ask to link. A sign-in got by tricking someone, days
+   * ago, can't ask, and a device that signed in long ago signs in again or types a code.
+   */
+  askWithinMinutes: 30,
   /** IDs in one check for missing files. */
   filesPerCheck: 500,
 } as const;
@@ -180,6 +185,8 @@ export interface LinkRequest {
   /** When it asked, and when the request runs out, as ISO times. */
   asked: string;
   expires: string;
+  /** When the device asking signed in, as an ISO time. */
+  signedIn: string;
   /** A hash of the new device's one-time key, which fixes the key before it's shown. */
   commitment: string;
   /** The new device's one-time key, shown once a device offers to approve it. */
@@ -217,6 +224,7 @@ export function isLinkRequest(value: unknown): value is LinkRequest {
     isName(request.device) &&
     isTime(request.asked) &&
     isTime(request.expires) &&
+    isTime(request.signedIn) &&
     isCommitment(request.commitment) &&
     (request.key === null || isOneTimeKey(request.key)) &&
     (approver === null ||
