@@ -1,11 +1,21 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { type Account, startServer, type TestServer } from '@factwright/server/testing';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SyncStatus } from '../../shared/sync.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import { SyncAccount } from './account.ts';
+import { Secrets } from './secrets.ts';
 
 // Each test signs in and syncs for real, against the server running locally.
 vi.setConfig({ testTimeout: 30_000 });
@@ -114,10 +124,133 @@ async function setUpFirst(first: ReturnType<typeof computer>) {
     email: person.email,
     firstDevice: true,
   });
-  const made = await first.sync.newRecoveryKey();
-  if (!made.ok) throw new Error(made.message);
+  const made = await recoveryKey(first.sync);
   expect(await first.sync.turnOn()).toEqual({ ok: true });
+  return made;
+}
+
+/** The recovery key a computer that's setting up shows, to save. */
+async function recoveryKey(sync: SyncAccount): Promise<string> {
+  const made = await sync.newRecoveryKey();
+  if (!made.ok) throw new Error(made.message);
+  if (made.recoveryKey === null) throw new Error('No recovery key to save.');
   return made.recoveryKey;
+}
+
+/** Waits for a computer to be signed out, as when its account was deleted. */
+async function signedOut(sync: SyncAccount) {
+  sync.requestSync();
+  await vi.waitFor(() => expect(sync.status()).toMatchObject({ state: 'signed-out' }), {
+    timeout: 10_000,
+  });
+}
+
+/** Waits for a computer to stop, asking for a new account key and recovery key. */
+async function waitsForNewKey(sync: SyncAccount) {
+  await vi.waitFor(
+    () =>
+      expect(sync.status()).toEqual({
+        state: 'setting-up',
+        email: person.email,
+        firstDevice: true,
+        again: 'remade',
+      }),
+    { timeout: 10_000 },
+  );
+}
+
+/** Sam deletes the account on the web, then signs up again with the same GitHub login. */
+async function remakeAccount() {
+  const deleted = await fetch(new URL('/api/auth/delete-user', server.url), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${person.token}`, 'content-type': 'application/json' },
+    body: '{}',
+  });
+  expect(deleted.status).toBe(200);
+  person = await server.signUp('Sam Rivera');
+}
+
+/**
+ * Version 0.1.0 signing in again on a computer that was signed out: it kept its account key and
+ * synced straight away, checking nothing, and noted neither the account nor that it hadn't
+ * checked. The version after it takes over from there.
+ */
+async function signInWithVersion010(dataDir: string) {
+  const { token } = await server.newSession(person.id, 'Factwright/0.1.0 (Sam’s Mac)', 'device');
+  new Secrets(join(dataDir, 'sync', 'secrets.json'), keychain).set('session', token);
+  const state = new DatabaseSync(join(dataDir, 'sync', 'sync.db'));
+  state.exec(`DELETE FROM meta WHERE key IN ('account', 'unchecked')`);
+  state.close();
+}
+
+/** A promise to hold a request on, until the test opens it. */
+interface Gate {
+  opened: Promise<void>;
+  open: () => void;
+  waiting: boolean;
+}
+
+function gate(): Gate {
+  let open = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { opened, open, waiting: false };
+}
+
+/** A note sync keeps on this computer. */
+function syncMeta(dataDir: string, key: string): string | null {
+  const state = new DatabaseSync(join(dataDir, 'sync', 'sync.db'), { readOnly: true });
+  const row = state.prepare('SELECT value FROM meta WHERE key = ?').get(key);
+  state.close();
+  return typeof row?.value === 'string' ? row.value : null;
+}
+
+/**
+ * Sam's Mac, set up with these files, then signed out when Sam deleted the account and made it
+ * again. Returns the Mac and the ID of the key it set up.
+ */
+async function remadeUnderMac(files: Record<string, string> = {}) {
+  const mac = computer('Sam’s Mac');
+  for (const [path, text] of Object.entries(files)) mac.write(path, text);
+  await setUpFirst(mac);
+  await mac.synced();
+  const keyId = (await person.client.keys())?.keyId;
+  await remakeAccount();
+  await signedOut(mac.sync);
+  await mac.sync.stop();
+  return { mac, keyId };
+}
+
+/**
+ * Sam's Mac and PC, both syncing under one key, then both on 0.1.0 when Sam deleted the account
+ * and made it again. Updated, each waits to make a new key.
+ */
+async function remadeUnderMacAndPc() {
+  const first = computer('Sam’s Mac');
+  await setUpFirst(first);
+  await first.synced();
+  const second = computer('Sam’s PC');
+  await second.sync.start();
+  expect(await second.sync.signInWithBrowser()).toEqual({ ok: true });
+  const link = await first.sync.makeLinkCode();
+  if (!link.ok) throw new Error(link.message);
+  expect(await second.sync.linkWithCode(link.link.code)).toEqual({ ok: true });
+  await second.synced();
+  const keyId = (await person.client.keys())?.keyId;
+  await remakeAccount();
+  for (const each of [first, second]) {
+    await signedOut(each.sync);
+    await each.sync.stop();
+    await signInWithVersion010(each.dataDir);
+  }
+  const mac = computer('Sam’s Mac', first.dataDir);
+  const pc = computer('Sam’s PC', second.dataDir);
+  for (const each of [mac, pc]) {
+    await each.sync.start();
+    await waitsForNewKey(each.sync);
+  }
+  return { mac, pc, keyId };
 }
 
 describe('turning on sync', () => {
@@ -182,7 +315,47 @@ describe('turning on sync', () => {
       ok: false,
       message: expect.stringContaining('Link this computer'),
     });
-    expect(pc.sync.status()).toMatchObject({ state: 'setting-up', firstDevice: false });
+    // The link step then says the PC's recovery key won't open the account.
+    expect(pc.sync.status()).toMatchObject({
+      state: 'setting-up',
+      firstDevice: false,
+      again: 'taken',
+    });
+  });
+
+  it('stops a step still waiting on the server when the sign-in ends', async () => {
+    const save = gate();
+    const signOut = gate();
+    const mac = computer('Sam’s Mac', undefined, async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/sync/keys' && init?.method === 'PUT' && !save.waiting) {
+        save.waiting = true;
+        await save.opened;
+      }
+      if (path === '/api/auth/sign-out' && !signOut.waiting) {
+        signOut.waiting = true;
+        await signOut.opened;
+      }
+      return fetch(input, init);
+    });
+    mac.write('facts/skills.md', 'Stays on the Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    await recoveryKey(mac.sync);
+    const turningOn = mac.sync.turnOn();
+    await vi.waitFor(() => expect(save.waiting).toBe(true), { timeout: 10_000 });
+    // Not the account Sam meant: that sign-in ends while the key is still being saved, and the
+    // key is saved before the server hears of the sign-out.
+    const ending = mac.sync.useDifferentAccount();
+    await vi.waitFor(() => expect(signOut.waiting).toBe(true), { timeout: 10_000 });
+    save.open();
+    expect(await turningOn).toMatchObject({ ok: false });
+    signOut.open();
+    expect(await ending).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({ state: 'off' });
+    // Nothing went up to the account Sam left.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect((await person.client.changes(0)).changes).toEqual([]);
   });
 });
 
@@ -240,14 +413,7 @@ describe('a computer with sync on', () => {
     const oldRecoveryKey = await setUpFirst(mac);
     await mac.synced();
     const oldKeyId = (await person.client.keys())?.keyId;
-    // Sam deletes the account on the web, then signs up again with the same GitHub login.
-    const deleted = await fetch(new URL('/api/auth/delete-user', server.url), {
-      method: 'POST',
-      headers: { authorization: `Bearer ${person.token}`, 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(deleted.status).toBe(200);
-    person = await server.signUp('Sam Rivera');
+    await remakeAccount();
     mac.sync.requestSync();
     await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
       timeout: 10_000,
@@ -255,7 +421,12 @@ describe('a computer with sync on', () => {
 
     // Signing in again finds no key for the account: a new recovery key comes first, and
     // nothing goes up before it.
-    const waiting = { state: 'setting-up', email: person.email, firstDevice: true, again: true };
+    const waiting = {
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: true,
+      again: 'remade',
+    };
     expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
     expect(mac.sync.status()).toEqual(waiting);
     expect((await person.client.changes(0)).changes).toEqual([]);
@@ -266,9 +437,8 @@ describe('a computer with sync on', () => {
     await reopened.sync.start();
     expect(reopened.sync.status()).toEqual(waiting);
     expect((await person.client.changes(0)).changes).toEqual([]);
-    const made = await reopened.sync.newRecoveryKey();
-    if (!made.ok) throw new Error(made.message);
-    expect(made.recoveryKey).not.toBe(oldRecoveryKey);
+    const newRecoveryKey = await recoveryKey(reopened.sync);
+    expect(newRecoveryKey).not.toBe(oldRecoveryKey);
     expect(await reopened.sync.turnOn()).toEqual({ ok: true });
     await reopened.synced();
     // A new account key too, so a lost device that kept the old one can't get in.
@@ -279,7 +449,7 @@ describe('a computer with sync on', () => {
     await pc.sync.start();
     expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
     expect(await pc.sync.useRecoveryKey(oldRecoveryKey)).toMatchObject({ ok: false });
-    expect(await pc.sync.useRecoveryKey(made.recoveryKey)).toEqual({ ok: true });
+    expect(await pc.sync.useRecoveryKey(newRecoveryKey)).toEqual({ ok: true });
     await pc.synced();
     expect(pc.read('facts/skills.md')).toBe('Kept on the Mac');
   });
@@ -322,6 +492,326 @@ describe('a computer with sync on', () => {
     expect(await reopened.sync.signInWithBrowser()).toEqual({ ok: true });
     await reopened.synced();
     expect((await person.client.changes(0)).changes.length).toBeGreaterThan(0);
+  });
+
+  it('stops when 0.1.0 synced a remade account without its key, and makes a new one', async () => {
+    const { mac, keyId } = await remadeUnderMac({ 'facts/skills.md': 'Synced before the remake' });
+    await signInWithVersion010(mac.dataDir);
+    // 0.1.0 sends what changes after it signs in again, under its old key.
+    mac.write('facts/notes.md', 'Sent by 0.1.0');
+
+    // Updated, the Mac syncs as before, until it finds the account has no key on the server.
+    const updated = computer('Sam’s Mac', mac.dataDir);
+    await updated.sync.start();
+    await waitsForNewKey(updated.sync);
+    await updated.sync.stop();
+    const reopened = computer('Sam’s Mac', mac.dataDir);
+    await reopened.sync.start();
+    await waitsForNewKey(reopened.sync);
+
+    // A new account key and recovery key, as after signing in again to a remade account.
+    const saved = await recoveryKey(reopened.sync);
+    expect(await reopened.sync.turnOn()).toEqual({ ok: true });
+    await reopened.synced();
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
+
+    // Everything on the Mac went up under the new key, so a new computer gets all of it.
+    const pc = computer('Sam’s PC');
+    await pc.sync.start();
+    expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(await pc.sync.useRecoveryKey(saved)).toEqual({ ok: true });
+    await pc.synced();
+    expect(pc.read('facts/skills.md')).toBe('Synced before the remake');
+    expect(pc.read('facts/notes.md')).toBe('Sent by 0.1.0');
+  });
+
+  it('keeps what changes while it waits for the new recovery key', async () => {
+    const { mac } = await remadeUnderMac();
+    await signInWithVersion010(mac.dataDir);
+    mac.write('facts/edited.md', 'Before');
+    mac.write('facts/deleted.md', 'Deleted while waiting');
+    const updated = computer('Sam’s Mac', mac.dataDir);
+    const at = '2026-10-13T10:00:00.000Z';
+    const job = (company: string) => ({
+      company,
+      company_key: company.toLowerCase(),
+      role: 'Staff',
+      links: '[]',
+      manual: 1,
+      updated_at: at,
+    });
+    updated.tracker.applySyncRow('jobs', 'acme--staff', job('Acme'));
+    updated.tracker.applySyncRow('jobs', 'beta--staff', job('Beta'));
+    const call = {
+      job_id: 'acme--staff',
+      kind: 'phone',
+      on_date: '2026-10-20',
+      at_time: '10:00',
+      state: 'scheduled',
+      outcome: null,
+      notes: null,
+      created_at: at,
+    };
+    updated.tracker.applySyncRow('calls', 'call-1', call);
+    await updated.sync.start();
+    await waitsForNewKey(updated.sync);
+
+    // Sam keeps working before saving the recovery key.
+    updated.write('facts/edited.md', 'Changed while waiting');
+    rmSync(join(updated.workspace, 'facts', 'deleted.md'));
+    updated.tracker.applySyncRow('jobs', 'beta--staff', null);
+    updated.tracker.applySyncRow('calls', 'call-1', {
+      ...call,
+      state: 'done',
+      outcome: 'Went well',
+    });
+    const saved = await recoveryKey(updated.sync);
+    expect(await updated.sync.turnOn()).toEqual({ ok: true });
+    await updated.synced();
+
+    // Every change stays as made, here and on a new computer: no conflict copies, and nothing
+    // deleted comes back from what 0.1.0 sent under the old key.
+    const pc = computer('Sam’s PC');
+    await pc.sync.start();
+    expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(await pc.sync.useRecoveryKey(saved)).toEqual({ ok: true });
+    await pc.synced();
+    for (const each of [updated, pc]) {
+      expect(each.read('facts/edited.md')).toBe('Changed while waiting');
+      expect(readdirSync(join(each.workspace, 'facts'))).toEqual(['edited.md']);
+      expect(each.tracker.syncRow('jobs', 'beta--staff')).toBeNull();
+      expect(each.tracker.syncRow('calls', 'call-1')).toMatchObject({
+        state: 'done',
+        outcome: 'Went well',
+      });
+    }
+  });
+
+  it('asks again after a restart, even if the app closes while the check stops sync', async () => {
+    const { mac } = await remadeUnderMac({ 'facts/skills.md': 'Synced before the remake' });
+    await signInWithVersion010(mac.dataDir);
+    // The check's question about the account waits, then so does the next round, so the check
+    // is waiting for that round to end when the app closes.
+    const account = gate();
+    let round: Gate | null = null;
+    const updated = computer('Sam’s Mac', mac.dataDir, async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/account' && !account.waiting) {
+        account.waiting = true;
+        await account.opened;
+      }
+      if (round && path === '/api/sync/changes' && !init?.method) {
+        round.waiting = true;
+        await round.opened;
+      }
+      return fetch(input, init);
+    });
+    await updated.sync.start();
+    await vi.waitFor(() => expect(account.waiting).toBe(true), { timeout: 10_000 });
+    round = gate();
+    updated.sync.requestSync();
+    await vi.waitFor(() => expect(round?.waiting).toBe(true), { timeout: 10_000 });
+    account.open();
+    await vi.waitFor(() => expect(syncMeta(mac.dataDir, 'unchecked')).toBe('1'), {
+      timeout: 10_000,
+    });
+    const closing = updated.sync.stop();
+    round.open();
+    await closing;
+
+    const reopened = computer('Sam’s Mac', mac.dataDir);
+    await reopened.sync.start();
+    await waitsForNewKey(reopened.sync);
+    const saved = await recoveryKey(reopened.sync);
+    expect(await reopened.sync.turnOn()).toEqual({ ok: true });
+    await reopened.synced();
+    const pc = computer('Sam’s PC');
+    await pc.sync.start();
+    expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(await pc.sync.useRecoveryKey(saved)).toEqual({ ok: true });
+    await pc.synced();
+    expect(pc.read('facts/skills.md')).toBe('Synced before the remake');
+  });
+
+  it('pays no mind to a late answer about the account it was signed in to before', async () => {
+    const { mac, keyId } = await remadeUnderMac({ 'facts/skills.md': 'Sam’s job hunt' });
+    await signInWithVersion010(mac.dataDir);
+    const sam = person;
+    const late = gate();
+    let answered = false;
+    const updated = computer('Sam’s Mac', mac.dataDir, async (input, init) => {
+      const response = await fetch(input, init);
+      if (new URL(String(input)).pathname === '/api/account' && !late.waiting) {
+        late.waiting = true;
+        await late.opened;
+        answered = true;
+      }
+      return response;
+    });
+    await updated.sync.start();
+    await vi.waitFor(() => expect(late.waiting).toBe(true), { timeout: 10_000 });
+
+    // Meanwhile the Mac is signed out, and Alex signs in on it, to an account with no key.
+    const listed = await sam.client.account();
+    for (const device of listed.devices) {
+      if (device.name === 'Factwright on Sam’s Mac') await sam.client.removeDevice(device.id);
+    }
+    await signedOut(updated.sync);
+    person = await server.signUp('Alex Kim');
+    expect(await updated.sync.signInWithBrowser()).toEqual({ ok: true });
+    const remade = { state: 'setting-up', email: person.email, firstDevice: true, again: 'remade' };
+    expect(updated.sync.status()).toEqual(remade);
+
+    // The late answer about Sam's account changes nothing for Alex's sign-in.
+    late.open();
+    await vi.waitFor(() => expect(answered).toBe(true), { timeout: 10_000 });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(updated.sync.status()).toEqual(remade);
+    await recoveryKey(updated.sync);
+    expect(await updated.sync.turnOn()).toEqual({ ok: true });
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
+  });
+
+  it('pays no mind to a late answer as it opens, once someone else has signed in', async () => {
+    const { mac } = await remadeUnderMac({ 'facts/skills.md': 'Sam’s job hunt' });
+    await signInWithVersion010(mac.dataDir);
+    const updated = computer('Sam’s Mac', mac.dataDir);
+    await updated.sync.start();
+    await waitsForNewKey(updated.sync);
+    await updated.sync.stop();
+
+    // Opened again, the Mac asks about Sam's account, and the answer is slow.
+    const late = gate();
+    let answered = false;
+    const reopened = computer('Sam’s Mac', mac.dataDir, async (input, init) => {
+      const response = await fetch(input, init);
+      if (new URL(String(input)).pathname === '/api/sync/keys' && !late.waiting) {
+        late.waiting = true;
+        await late.opened;
+        answered = true;
+      }
+      return response;
+    });
+    const opening = reopened.sync.start();
+    await vi.waitFor(() => expect(late.waiting).toBe(true), { timeout: 10_000 });
+
+    // Meanwhile that sign-in ends here, and Alex signs in.
+    expect(await reopened.sync.useDifferentAccount()).toEqual({ ok: true });
+    person = await server.signUp('Alex Kim');
+    expect(await reopened.sync.signInWithBrowser()).toEqual({ ok: true });
+    const alex = { state: 'setting-up', email: person.email, firstDevice: true, again: 'remade' };
+    expect(reopened.sync.status()).toEqual(alex);
+    late.open();
+    await opening;
+    expect(answered).toBe(true);
+    expect(reopened.sync.status()).toEqual(alex);
+  });
+
+  it('asks again on the next round when the check gets no answer', async () => {
+    const { mac } = await remadeUnderMac();
+    await signInWithVersion010(mac.dataDir);
+    let answers = false;
+    let asked = 0;
+    const updated = computer('Sam’s Mac', mac.dataDir, async (input, init) => {
+      if (new URL(String(input)).pathname === '/api/sync/keys') {
+        asked += 1;
+        if (!answers) throw new TypeError('fetch failed');
+      }
+      return fetch(input, init);
+    });
+    await updated.sync.start();
+    await vi.waitFor(() => expect(asked).toBe(1), { timeout: 10_000 });
+    await updated.synced();
+    answers = true;
+    updated.sync.requestSync();
+    await waitsForNewKey(updated.sync);
+    expect(asked).toBeGreaterThanOrEqual(2);
+  });
+
+  it('links a second computer that kept the old key to the first one’s new key', async () => {
+    const { mac, pc, keyId } = await remadeUnderMacAndPc();
+    mac.write('facts/from-mac.md', 'From the Mac');
+    pc.write('facts/from-pc.md', 'From the PC');
+    // The Mac makes the new key first; the PC, trying after, is told to link instead.
+    await recoveryKey(mac.sync);
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    await mac.synced();
+    await recoveryKey(pc.sync);
+    expect(await pc.sync.turnOn()).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('Link this computer'),
+    });
+    expect(pc.sync.status()).toMatchObject({ state: 'setting-up', firstDevice: false });
+    const link = await mac.sync.makeLinkCode();
+    if (!link.ok) throw new Error(link.message);
+    expect(await pc.sync.linkWithCode(link.link.code)).toEqual({ ok: true });
+    await pc.synced();
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
+    expect(pc.read('facts/from-mac.md')).toBe('From the Mac');
+    mac.sync.requestSync();
+    await vi.waitFor(() => expect(mac.read('facts/from-pc.md')).toBe('From the PC'), {
+      timeout: 10_000,
+    });
+  });
+
+  it('ends the sign-in on the recovery key step, and asks again after signing back in', async () => {
+    const { mac, keyId } = await remadeUnderMac();
+    await signInWithVersion010(mac.dataDir);
+    const updated = computer('Sam’s Mac', mac.dataDir);
+    await updated.sync.start();
+    await waitsForNewKey(updated.sync);
+    expect(await updated.sync.useDifferentAccount()).toEqual({ ok: true });
+    expect(updated.sync.status()).toMatchObject({ state: 'signed-out' });
+    expect(await updated.sync.signInWithBrowser()).toEqual({ ok: true });
+    await waitsForNewKey(updated.sync);
+    await recoveryKey(updated.sync);
+    expect(await updated.sync.turnOn()).toEqual({ ok: true });
+    expect((await person.client.keys())?.keyId).not.toBe(keyId);
+  });
+
+  it('stops when 0.1.0 synced under its old key after another device made a new one, and links', async () => {
+    const mac = computer('Sam’s Mac');
+    mac.write('facts/skills.md', 'From the Mac');
+    await setUpFirst(mac);
+    await mac.synced();
+    await remakeAccount();
+    mac.sync.requestSync();
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
+      timeout: 10_000,
+    });
+    await mac.sync.stop();
+
+    // The PC sets up the remade account with a new key, then the Mac signs in again on 0.1.0.
+    const pc = computer('Sam’s PC');
+    pc.write('facts/education.md', 'From the PC');
+    await setUpFirst(pc);
+    await pc.synced();
+    await signInWithVersion010(mac.dataDir);
+
+    const updated = computer('Sam’s Mac', mac.dataDir);
+    await updated.sync.start();
+    const linking = {
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: false,
+      again: 'changed',
+    };
+    await vi.waitFor(() => expect(updated.sync.status()).toEqual(linking), { timeout: 10_000 });
+    await updated.sync.stop();
+    const reopened = computer('Sam’s Mac', mac.dataDir);
+    await reopened.sync.start();
+    expect(reopened.sync.status()).toEqual(linking);
+
+    // Linked with a code from the PC, each gets the other's job hunt.
+    const link = await pc.sync.makeLinkCode();
+    if (!link.ok) throw new Error(link.message);
+    expect(await reopened.sync.linkWithCode(link.link.code)).toEqual({ ok: true });
+    await reopened.synced();
+    expect(reopened.read('facts/education.md')).toBe('From the PC');
+    pc.sync.requestSync();
+    await vi.waitFor(() => expect(pc.read('facts/skills.md')).toBe('From the Mac'), {
+      timeout: 10_000,
+    });
   });
 
   it('says why when the account can’t be checked after signing in again, and syncs nothing', async () => {
