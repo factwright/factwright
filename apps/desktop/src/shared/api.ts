@@ -28,7 +28,17 @@ import type { UpdateStatus } from './updates.ts';
 
 /** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
 export type ClaudeStatus =
-  | { state: 'ready'; version: string; plan?: string | undefined }
+  | {
+      state: 'ready';
+      version: string;
+      /** The user's Claude plan, such as "pro" or "max", when they sign in with one. */
+      plan?: string | undefined;
+      /**
+       * How Claude Code signs in: "subscription" for a Claude plan, or its name for another way,
+       * such as "api_key".
+       */
+      method?: string | undefined;
+    }
   | { state: 'signed-out'; version: string }
   | { state: 'too-old'; version: string; minimum: string }
   | { state: 'missing' }

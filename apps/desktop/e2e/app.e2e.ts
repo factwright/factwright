@@ -56,6 +56,9 @@ test('shows the jobs on file, your Claude ready, a way to support Factwright, an
   // It opens on the jobs furthest along: Acme, with Claude's fit check and a resume, is to review.
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
+  await expect(window.getByRole('button', { name: /^Claude’s levels/ })).toHaveAccessibleName(
+    'Claude’s levels: Opus · Extra high. Job searches at High.',
+  );
   // Not clicked: it would open Buy Me a Coffee in the browser of whoever runs the tests.
   await expect(window.getByRole('link', { name: 'Support Factwright' })).toHaveAttribute(
     'href',
@@ -392,5 +395,25 @@ test('explains the first run’s question about trusting the workspace', async (
   await panel.locator('.xterm-helper-textarea').press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
   await expect(panel.getByRole('status')).toHaveText('Done');
+  await closeRun();
+});
+
+test('suits Claude’s levels to a Pro plan, once Claude Code signs in on one', async () => {
+  await opened.app.close();
+  opened = await openApp(dataDir, { FAKE_CLAUDE_PLAN: 'pro' });
+  const { window } = opened;
+  await expect(window.getByText('Signed in · Pro plan')).toBeVisible();
+  const levels = window.getByRole('button', { name: /^Claude’s levels/ });
+  await expect(levels).toHaveAccessibleName('Claude’s levels: Opus · High. Lighter for 4 tasks.');
+  await levels.hover();
+  await expect(window.getByRole('tooltip')).toContainText('Best on your Pro plan');
+  // A fit check is one of the routine tasks, which start on Sonnet with Pro's levels.
+  await pickView(/^All/);
+  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  await jobPanel()
+    .getByRole('button', { name: /^Fit check/ })
+    .click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  expect(await terminalText(window)).toContain('sonnet · high effort');
   await closeRun();
 });

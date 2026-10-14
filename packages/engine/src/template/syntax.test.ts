@@ -74,6 +74,15 @@ describe('renderNodes', () => {
     ).toBe('<p>&lt;i&gt;&quot;x&quot; &amp; y&lt;/i&gt; <strong>z</strong></p>');
   });
 
+  it('shows the engine’s markup inside an attribute as its text, escaping anything else', () => {
+    const node: Node = { kind: 'value', name: 'a', attribute: true };
+    // Markup the engine makes never has a stray "<", ">" or quote, but one couldn't end the quotes.
+    const markup = new Html('<b>a</b> &amp; x < <i>y</i> > "z"');
+    expect(renderNodes([node], [{ a: markup }], new Map())).toBe(
+      'a &amp; x &lt; y &gt; &quot;z&quot;',
+    );
+  });
+
   it('repeats a section for each item in a list, and looks up from the inside out', () => {
     const view = {
       name: 'Alex',

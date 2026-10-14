@@ -8,7 +8,19 @@ import { sampleFacts } from './facts/sample-facts.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleSync } from './sync/sample-sync.ts';
 
-const READY: ClaudeStatus = { state: 'ready', version: '2.1.296', plan: 'max' };
+const READY: ClaudeStatus = {
+  state: 'ready',
+  version: '2.1.296',
+  plan: 'max',
+  method: 'subscription',
+};
+
+/** Ready on another plan, for ?plan=: a Pro plan, or an API key, which bills every token. */
+const PLANS: Readonly<Record<string, ClaudeStatus>> = {
+  pro: { ...READY, plan: 'pro' },
+  team: { ...READY, plan: 'team' },
+  api: { state: 'ready', version: READY.version, method: 'api_key' },
+};
 
 /** Setup checks for ?setup=: the one a new version of Claude Code could fail, or a pass. */
 const SETUP_CHECKS: Readonly<Record<string, SetupCheck>> = {
@@ -97,8 +109,9 @@ function sampleRun(dark: boolean) {
 
 /**
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
- * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?jobs picks
- * the jobs: none, failed or loading. ?profile picks how far the user's profile has come: new,
+ * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?plan picks the
+ * plan Claude is ready on: pro, team, or api for an API key. ?jobs picks the jobs: none, failed
+ * or loading. ?profile picks how far the user's profile has come: new,
  * started or done. Starting Claude plays a short made-up run, so every state
  * of the panel can be seen, and status changes stick until the page reloads. With ?run=asks,
  * interview prep stops to ask a question, as the README's screenshots show it.
@@ -106,6 +119,7 @@ function sampleRun(dark: boolean) {
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
   const claude = query.get('claude') ?? 'ready';
+  const ready = PLANS[query.get('plan') ?? ''] ?? READY;
   const outputListeners = new Set<(data: string) => void>();
   const signalListeners = new Set<(signal: RunSignal) => void>();
   const print = (lines: string[]) => {
@@ -148,7 +162,9 @@ export function sampleApi(): FactwrightApi {
     platform: query.get('platform') ?? 'darwin',
     version: query.get('version') ?? '0.1.0',
     claudeStatus: () =>
-      claude === 'checking' ? new Promise(() => {}) : Promise.resolve(SAMPLES[claude] ?? READY),
+      claude === 'checking'
+        ? new Promise(() => {})
+        : Promise.resolve(claude === 'ready' ? ready : (SAMPLES[claude] ?? ready)),
     setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
     // Checking again takes a moment, then passes, as it would once Factwright is updated.
     checkSetup: () =>

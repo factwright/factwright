@@ -8,6 +8,13 @@ import {
   readPosting,
 } from './posting.ts';
 
+/** How long something takes, in milliseconds. */
+function timed(work: () => unknown): number {
+  const start = Date.now();
+  work();
+  return Date.now() - start;
+}
+
 describe('htmlToText', () => {
   it('keeps paragraphs, lists and headings, and drops scripts and navigation', () => {
     const html = `<nav>Menu</nav><h2>About the role</h2><p>Build the tools&nbsp;our engineers use.</p>
@@ -155,5 +162,44 @@ describe('jobPostingData', () => {
       })}</script>`;
     expect(jobPostingData(html)).toBe('Staff Engineer\nDenver, CO\n\nBuild tools.');
     expect(jobPostingData('<p>No data</p>')).toBeNull();
+  });
+});
+
+describe('a page made to keep the app busy', () => {
+  const page = { kind: 'page', url: 'https://acme.com/jobs/1' } as const;
+
+  it('is read in a moment, however many tags it leaves open', () => {
+    expect(timed(() => htmlToText('<nav'.repeat(40_000)))).toBeLessThan(1000);
+    expect(timed(() => htmlToText('<li'.repeat(50_000)))).toBeLessThan(1000);
+    expect(timed(() => htmlToText('<'.repeat(150_000)))).toBeLessThan(1000);
+    expect(timed(() => readPosting(page, '<main'.repeat(30_000)))).toBeLessThan(1000);
+    expect(timed(() => readPosting(page, '<body'.repeat(30_000)))).toBeLessThan(1000);
+    expect(timed(() => jobPostingData('<script'.repeat(35_000)))).toBeLessThan(1000);
+    expect(
+      timed(() => jobPostingData(`<script ${'application/ld+json '.repeat(20_000)}`)),
+    ).toBeLessThan(1000);
+    expect(
+      timed(() => jobPostingData('<script type="application/ld+json">'.repeat(40_000))),
+    ).toBeLessThan(1000);
+  });
+
+  it('drops what it dropped before, and leaves an element nothing closes', () => {
+    expect(
+      htmlToText('<p>Build things</p><NAV>Menu</nav><SCRIPT>x()</script><p>Remote</p><form>Apply'),
+    ).toBe('Build things\nRemote\nApply');
+    expect(htmlToText('<p>a <> b <<i>c</i>> d</p>')).toBe('a <> b c> d');
+    // A list item or heading tag runs to the next ">", whatever comes first.
+    expect(htmlToText('<li<li>Item one</li>')).toBe('- Item one');
+  });
+
+  it('finds JSON-LD data however its script tag is written', () => {
+    const data = '{"@type":"JobPosting","title":"Engineer","description":"Build things"}';
+    expect(
+      jobPostingData(`<script data-note="a<b" type="application/ld+json">${data}</script>`),
+    ).toBe('Engineer\n\nBuild things');
+  });
+
+  it('reads a character number past the last one as "�", rather than failing', () => {
+    expect(decodeEntities('a&#x110000;b&#99999999;c')).toBe('a�b�c');
   });
 });

@@ -145,10 +145,18 @@ export function isShown(value: Value): boolean {
 
 /**
  * A value as the page shows it: escaped, or the engine's own markup as it is. Inside an
- * attribute's quotes, that markup's tags are left out, leaving its escaped text.
+ * attribute's quotes, that markup's tags are left out, leaving its escaped text, and anything
+ * left that could end the quotes or start a tag is escaped too.
  */
 function shown(value: Value, attribute = false): string {
-  if (value instanceof Html) return attribute ? value.html.replace(/<[^>]*>/g, '') : value.html;
+  if (value instanceof Html) {
+    if (!attribute) return value.html;
+    return value.html
+      .replace(/<[^<>]*>/g, '')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
   if (typeof value === 'string' || typeof value === 'number') return escapeHtml(value);
   return '';
 }
