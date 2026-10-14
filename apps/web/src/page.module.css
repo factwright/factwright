@@ -139,3 +139,18 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* A link that's a button, inside a sentence. */
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}

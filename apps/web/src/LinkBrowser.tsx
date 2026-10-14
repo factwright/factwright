@@ -1,5 +1,6 @@
 import {
   type AccountKeys,
+  API,
   type AskStep,
   accountKeys,
   type Bytes,
@@ -17,7 +18,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { saveKeys } from './keys.ts';
 import styles from './page.module.css';
-import { client } from './server.ts';
+import { client, signOut } from './server.ts';
 
 type Result = { ok: true; keys: AccountKeys } | { ok: false; message: string };
 
@@ -153,6 +154,10 @@ function CodeForm({
 /** How often asking looks at the other device again, and how long after it couldn't. */
 const STEP_MS = 1500;
 const OFFLINE_MS = 5000;
+/** How many times keeping an approved key is tried while the connection's down. */
+const KEY_TRIES = 12;
+/** How long this browser waits before saying what to do if nothing shows on the computer. */
+const SLOW_MS = 30_000;
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -179,28 +184,69 @@ const reasonOf = (error: unknown) =>
       ? error.message
       : String(error);
 
+/** Keeps an approved key, waiting out a dropped connection: it was picked up once, for good. */
+async function keepApproved(account: string, accountKey: Bytes): Promise<Result> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await keep(account, accountKey);
+    } catch (error) {
+      const offline = error instanceof SyncError && error.kind === 'offline';
+      if (!offline || tries >= KEY_TRIES) return { ok: false, message: reasonOf(error) };
+      await pause(OFFLINE_MS);
+    }
+  }
+}
+
+/**
+ * Calls a request off as the page goes, such as when the tab closes: React's cleanup doesn't
+ * run then. The browser sends it on as the page unloads.
+ */
+function callOffAsThePageGoes(id: string) {
+  void fetch(`${API.requests}/${id}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+}
+
 /**
  * Asking a device that's set up to approve this browser: the person checks both screens show the
  * same emoji, and says so on each. Only then is the account key handed over, sealed for this
- * browser alone. Leaving the page calls the request off.
+ * browser alone. Leaving the page calls the request off, and so does a try that fails.
  */
 function AskToLink({
   account,
   onLinked,
+  onStale,
+  onSignedOut,
 }: {
   account: string;
   onLinked: (keys: AccountKeys) => void;
+  /** This browser signed in too long ago to ask. */
+  onStale: () => void;
+  /** The server says this browser's sign-in has ended. */
+  onSignedOut: () => void;
 }) {
   const [asking, setAsking] = useState<Asking>({ step: 'waiting' });
   const [round, setRound] = useState(0);
+  const [slow, setSlow] = useState(false);
   // The request, while it can still be called off, and whether the person said they match.
   const current = useRef<{ ask: LinkAsk; confirmed: boolean } | null>(null);
-  const linked = useRef(onLinked);
-  linked.current = onLinked;
+  const handlers = useRef({ onLinked, onStale, onSignedOut });
+  handlers.current = { onLinked, onStale, onSignedOut };
+
+  // A while with nothing from the computer: it may run an older Factwright.
+  const waiting = asking.step === 'waiting';
+  useEffect(() => {
+    setSlow(false);
+    if (!waiting) return;
+    const timer = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   useEffect(() => {
     let live = true;
-    const end = (message: string) => {
+    /** Ends this try, calling its request off unless the server's done with it. */
+    const end = (message: string, callOff = true) => {
+      const asked = current.current;
+      current.current = null;
+      if (callOff) void asked?.ask.cancel().catch(() => {});
       if (!live) return;
       setAsking((now) => ({
         step: 'ended',
@@ -208,12 +254,26 @@ function AskToLink({
         ...(now.step === 'check' && { check: now.check }),
       }));
     };
+    const failure = (error: unknown) => {
+      if (error instanceof SyncError && error.kind === 'signed-out') handlers.current.onSignedOut();
+      return reasonOf(error);
+    };
+    const pageGoes = () => {
+      const asked = current.current;
+      if (asked) callOffAsThePageGoes(asked.ask.id);
+    };
+    window.addEventListener('pagehide', pageGoes);
     void (async () => {
       let ask: LinkAsk;
       try {
         ask = await LinkAsk.start(client);
       } catch (error) {
-        end(reasonOf(error));
+        if (!live) return;
+        if (error instanceof SyncError && error.code === 'stale') {
+          handlers.current.onStale();
+          return;
+        }
+        end(failure(error));
         return;
       }
       if (!live) {
@@ -230,7 +290,7 @@ function AskToLink({
             await pause(OFFLINE_MS);
             continue;
           }
-          end(reasonOf(error));
+          end(failure(error));
           return;
         }
         if (!live || current.current?.ask !== ask) return;
@@ -240,23 +300,21 @@ function AskToLink({
           const { confirmed } = current.current;
           setAsking({ step: 'check', approver: step.approver, check: step.check, confirmed });
           if (confirmed && step.approved) {
-            const accountKey = await ask.finish().catch(() => null);
             // Picked up, so it's never called off: the approving device sees it linked.
             current.current = null;
+            const accountKey = await ask.finish().catch(() => null);
             if (!accountKey) {
-              end(BROKEN);
+              end(BROKEN, false);
               return;
             }
-            const result = await keep(account, accountKey).catch(
-              (error: unknown): Result => ({ ok: false, message: reasonOf(error) }),
-            );
+            const result = await keepApproved(account, accountKey);
             if (!live) return;
-            if (result.ok) linked.current(result.keys);
-            else end(result.message);
+            if (result.ok) handlers.current.onLinked(result.keys);
+            else end(result.message, false);
             return;
           }
         } else {
-          end(ENDED[step.state]);
+          end(ENDED[step.state], step.state === 'failed');
           return;
         }
         await pause(STEP_MS);
@@ -264,6 +322,7 @@ function AskToLink({
     })();
     return () => {
       live = false;
+      window.removeEventListener('pagehide', pageGoes);
       const asked = current.current;
       current.current = null;
       void asked?.ask.cancel().catch(() => {});
@@ -351,6 +410,11 @@ function AskToLink({
         <span className={styles.dot} aria-hidden="true" />
         Waiting for your computer…
       </p>
+      {slow && (
+        <p className={styles.hint}>
+          Nothing showing there? Update Factwright on that computer, or use a code instead.
+        </p>
+      )}
     </div>
   );
 }
@@ -366,6 +430,7 @@ export function LinkBrowser({
   canApprove = false,
   code,
   onLinked,
+  onSignedOut = () => {},
 }: {
   account: string;
   /** The account's email, which a password manager files the recovery key under. */
@@ -375,10 +440,15 @@ export function LinkBrowser({
   /** A link code from the QR code's address, to use straight away. */
   code: string | null;
   onLinked: (keys: AccountKeys) => void;
+  /** When the server says this browser's sign-in has ended. */
+  onSignedOut?: () => void;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [linking, setLinking] = useState(code !== null);
+  // Signed in too long ago to ask: the code leads, with a way to sign in again.
+  const [stale, setStale] = useState(false);
   const started = useRef(false);
+  const asks = canApprove && !stale;
 
   const finish = (result: Result) => {
     if (result.ok) onLinked(result.keys);
@@ -420,9 +490,29 @@ export function LinkBrowser({
       </h1>
       <p className={styles.lead}>
         Your job hunt opens only where you’ve linked it.{' '}
-        {canApprove ? 'Approve this browser from a computer where Factwright syncs.' : codeHow}
+        {asks ? 'Approve this browser from a computer where Factwright syncs.' : codeHow}
       </p>
-      {canApprove && <AskToLink account={account} onLinked={onLinked} />}
+      {asks && (
+        <AskToLink
+          account={account}
+          onLinked={onLinked}
+          onStale={() => setStale(true)}
+          onSignedOut={onSignedOut}
+        />
+      )}
+      {stale && (
+        <p className={styles.hint}>
+          This browser signed in a while ago, so it can’t ask a computer to approve it.{' '}
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => void signOut().finally(() => location.assign('/'))}
+          >
+            Sign in again
+          </button>{' '}
+          to ask.
+        </p>
+      )}
       {problem && (
         <p className={styles.problem} role="alert">
           {problem}
@@ -430,9 +520,9 @@ export function LinkBrowser({
       )}
       <details>
         <summary className={styles.hint}>
-          {canApprove ? 'Or use a code from your computer' : 'Or type the code it shows'}
+          {asks ? 'Or use a code from your computer' : 'Or type the code it shows'}
         </summary>
-        {canApprove && <p className={styles.hint}>{codeHow}</p>}
+        {asks && <p className={styles.hint}>{codeHow}</p>}
         <CodeForm
           label="Code from your computer"
           button="Link"

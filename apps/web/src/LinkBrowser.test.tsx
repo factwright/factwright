@@ -150,7 +150,7 @@ describe('linking a phone', () => {
  * The server's requests to link, in memory, as each session sees them: the browser's own session
  * ("web", with no token) and a computer's ("mac"). Returns the fetch the computer uses.
  */
-function requestServer(saved: object) {
+function requestServer(saved: object, { stale = false } = {}) {
   const rows = new Map<string, Record<string, unknown>>();
   const seen: string[] = [];
   const view = (row: Record<string, unknown>, session: string) => ({
@@ -171,11 +171,17 @@ function requestServer(saved: object) {
     const method = (init.method ?? 'GET').toUpperCase();
     const session = new Headers(init.headers).get('authorization') ? 'mac' : 'web';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : {};
-    seen.push(`${session} ${method} ${url.pathname}`);
+    seen.push(`${session} ${method} ${url.pathname}${init.keepalive ? ' as the page goes' : ''}`);
     const json = (value: unknown) => Response.json(value);
     const gone = () => Response.json({ error: 'not-found', message: 'Gone.' }, { status: 404 });
     if (url.pathname === '/api/sync/keys') return json({ keys: saved });
     if (method === 'POST' && url.pathname === '/api/sync/requests') {
+      if (stale) {
+        return Response.json(
+          { error: 'stale', message: 'This device signed in a while ago.' },
+          { status: 403 },
+        );
+      }
       rows.set(body.id, { id: body.id, commitment: body.commitment, session });
       return new Response(null, { status: 201 });
     }
@@ -302,6 +308,82 @@ describe('asking a computer to approve this browser', () => {
     const id = await asked(rows);
     unmount();
     await waitFor(() => expect(seen).toContain(`web DELETE /api/sync/requests/${id}`));
+  });
+
+  it('calls its request off when the tab closes', async () => {
+    const { saved } = await anAccount();
+    const { rows, seen } = requestServer(saved);
+    render(
+      <LinkBrowser
+        account="sam"
+        email="sam@example.com"
+        canApprove
+        code={null}
+        onLinked={vi.fn()}
+      />,
+    );
+    const id = await asked(rows);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(seen).toContain(`web DELETE /api/sync/requests/${id} as the page goes`);
+  });
+
+  it('calls its request off when a try fails', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { saved } = await anAccount();
+    const { rows, seen } = requestServer(saved);
+    render(
+      <LinkBrowser
+        account="sam"
+        email="sam@example.com"
+        canApprove
+        code={null}
+        onLinked={vi.fn()}
+      />,
+    );
+    const id = await asked(rows);
+    // An approving key that isn't a point on the curve: the try can't go on.
+    const row = rows.get(id);
+    if (row) Object.assign(row, { approver: 'mac', approverKey: `B${'A'.repeat(86)}` });
+    await later();
+    expect(await screen.findByText(/Something changed the request/)).toBeTruthy();
+    expect(seen).toContain(`web DELETE /api/sync/requests/${id}`);
+  });
+
+  it('leads with the code when it signed in too long ago to ask', async () => {
+    const { saved } = await anAccount();
+    requestServer(saved, { stale: true });
+    render(
+      <LinkBrowser
+        account="sam"
+        email="sam@example.com"
+        canApprove
+        code={null}
+        onLinked={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText(/signed in a while ago/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sign in again' })).toBeTruthy();
+    expect(screen.getByText(/Then scan its QR code with your phone’s camera/)).toBeTruthy();
+    expect(screen.queryByText('Waiting for your computer…')).toBeNull();
+  });
+
+  it('says what to do when nothing shows on the computer for a while', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { saved } = await anAccount();
+    const { rows } = requestServer(saved);
+    render(
+      <LinkBrowser
+        account="sam"
+        email="sam@example.com"
+        canApprove
+        code={null}
+        onLinked={vi.fn()}
+      />,
+    );
+    await asked(rows);
+    expect(screen.queryByText(/Nothing showing there/)).toBeNull();
+    await later(30_000);
+    expect(screen.getByText(/Nothing showing there\? Update Factwright/)).toBeTruthy();
   });
 
   it('only offers codes when the server can’t approve devices yet', async () => {
