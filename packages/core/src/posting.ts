@@ -79,6 +79,28 @@ function withoutDropped(html: string): string {
   return kept + html.slice(at);
 }
 
+/**
+ * HTML with each tag that `opening` starts, up to the next ">", made what `replace` gives, as
+ * /<li[^>]*>/gi would take them. Once a tag has no ">" after it, no later one does either.
+ */
+function replaceTags(
+  html: string,
+  opening: RegExp,
+  replace: (open: RegExpExecArray) => string,
+): string {
+  const open = new RegExp(opening.source, 'gi');
+  let kept = '';
+  let at = 0;
+  for (let found = open.exec(html); found; found = open.exec(html)) {
+    const close = html.indexOf('>', open.lastIndex);
+    if (close < 0) break;
+    kept += html.slice(at, found.index) + replace(found);
+    at = close + 1;
+    open.lastIndex = at;
+  }
+  return kept + html.slice(at);
+}
+
 /** Text with its tags taken out: each "<" up to the next ">", with something between them. */
 export function withoutTags(html: string): string {
   let kept = '';
@@ -103,13 +125,11 @@ export function withoutTags(html: string): string {
 export function htmlToText(html: string): string {
   return decodeEntities(
     withoutTags(
-      withoutDropped(html)
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<li[^<>]*>/gi, '\n- ')
-        .replace(
-          /<h([1-6])[^<>]*>/gi,
-          (_, level: string) => `\n\n${'#'.repeat(Math.min(6, Number(level) + 1))} `,
-        )
+      replaceTags(
+        replaceTags(withoutDropped(html).replace(/<br\s*\/?>/gi, '\n'), /<li/, () => '\n- '),
+        /<h([1-6])/,
+        (open) => `\n\n${'#'.repeat(Math.min(6, Number(open[1]) + 1))} `,
+      )
         // List items already start on their own line. A list ends with a blank line, so the next
         // paragraph isn't read as part of its last item.
         .replace(/<\/(ul|ol)>/gi, '\n\n')
@@ -313,25 +333,31 @@ function element(html: string, name: string, toLast = false): string | null {
   return end < 0 ? null : html.slice(open.index, end);
 }
 
-/**
- * A script tag of type JSON-LD. Some sites entity-encode the "+" in its type. Its attributes are
- * read to at most 500 characters, far more than any has, so a tag left open is found out without
- * reading to the end of the page each time.
- */
-const JSON_LD_TAG = /<script[^<>]{1,500}?application\/ld(?:\+|&#x2B;|&#43;)json[^<>]{0,500}>/gi;
+/** A script's type, when it's JSON-LD. Some sites entity-encode the "+" in it. */
+const JSON_LD_TYPE = /application\/ld(?:\+|&#x2B;|&#43;)json/i;
 
-/** What's inside each JSON-LD script on a page, in order. */
+/**
+ * What's inside each JSON-LD script on a page, in order, as
+ * /<script[^>]+application\/ld(?:\+|&#x2B;|&#43;)json[^>]*>([\s\S]*?)<\/script>/gi would find it.
+ */
 function jsonLdScripts(html: string): string[] {
-  const tag = new RegExp(JSON_LD_TAG);
+  const opening = /<script/gi;
   const closing = /<\/script>/gi;
   const found: string[] = [];
-  for (let open = tag.exec(html); open; open = tag.exec(html)) {
-    closing.lastIndex = tag.lastIndex;
+  for (let open = opening.exec(html); open; open = opening.exec(html)) {
+    const end = html.indexOf('>', opening.lastIndex);
+    if (end < 0) break;
+    // The type comes after at least one other character of the tag. Another "<script" before
+    // this tag's ">" ends there too, so it's no more JSON-LD than this one.
+    const jsonLd = JSON_LD_TYPE.test(html.slice(opening.lastIndex + 1, end));
+    opening.lastIndex = end + 1;
+    if (!jsonLd) continue;
+    closing.lastIndex = end + 1;
     const close = closing.exec(html);
     // Nothing closes this script, so nothing closes any after it either.
     if (!close) break;
-    found.push(html.slice(tag.lastIndex, close.index));
-    tag.lastIndex = closing.lastIndex;
+    found.push(html.slice(end + 1, close.index));
+    opening.lastIndex = closing.lastIndex;
   }
   return found;
 }

@@ -61,8 +61,11 @@ const PART_NAMES: Readonly<Record<string, ScorePartKey>> = {
   requirements: 'reqs',
 };
 
-/** A part as fit checks write it: "work 33/40", "Role shape: 15/25" or "reqs 15 / 15". */
-const PART = String.raw`(work|role|stack|reqs?|requirements)(?:\s+(?:match|shape))?\s*:?\s*(\d{1,3})\s*\/\s*(\d{1,3})`;
+/**
+ * A part as fit checks write it: "work 33/40", "Role shape: 15/25" or "reqs 15 / 15". The spaces
+ * around a ":" are read one way only, so a long run of them isn't read again for each way.
+ */
+const PART = String.raw`(work|role|stack|reqs?|requirements)(?:\s+(?:match|shape))?\s*(?::\s*)?(\d{1,3})\s*\/\s*(\d{1,3})`;
 
 const MOODS: Readonly<Record<string, Mood>> = {
   loved: 'loved',
@@ -168,7 +171,8 @@ export function parseFitReport(text: string | null | undefined): FitReport | nul
   const date = firstDate(field(text, 'Date'));
 
   const parts = partsFrom(verdictLine);
-  const scoreLine = new RegExp(`^${PART}\\s*[:.–—-]?\\s*(.*)$`, 'i');
+  // After the score, a separator, then why, which starts at a visible character.
+  const scoreLine = new RegExp(`^${PART}\\s*(?:[:.–—-]\\s*)?((?:\\S.*)?)$`, 'i');
   for (const item of list((key) => key.startsWith('score'))) {
     const match = item.text.replace(/\*\*/g, '').match(scoreLine);
     const key = PART_NAMES[(match?.[1] ?? '').toLowerCase()];

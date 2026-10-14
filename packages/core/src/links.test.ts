@@ -71,10 +71,15 @@ describe('linksFrom', () => {
 describe('links made to keep the app busy, or to pass for another site', () => {
   it('counts only Hacker News itself as Hacker News', () => {
     expect(isJobLink('https://news.ycombinator.com/item?id=45678901')).toBe(false);
+    expect(isJobLink('https://news.ycombinator.com./item?id=45678901')).toBe(false);
     expect(isJobLink('https://news.ycombinator.com.example.com/jobs/acme/42')).toBe(true);
   });
 
-  it('reads a field in a moment, however many spaces or commas it has', () => {
+  it('reads an address, or a field, in a moment, however many slashes, spaces or links', () => {
+    expect(timed(() => isJobLink(`https://acme.com/${'/'.repeat(100_000)}a`))).toBeLessThan(1000);
+    expect(
+      timed(() => linksFrom(`${' '.repeat(100_000)}${'https://acme.com/jobs/1 '.repeat(5_000)}`)),
+    ).toBeLessThan(1000);
     expect(timed(() => linksFrom(`${'\t'.repeat(50_000)}x`))).toBeLessThan(1000);
     expect(timed(() => linksFrom(`https://acme.com/${','.repeat(80_000)}a`))).toBeLessThan(1000);
   });

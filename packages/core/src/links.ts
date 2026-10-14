@@ -4,6 +4,15 @@ export interface Link {
   label: string;
 }
 
+const isSpace = (character: string | undefined) => character !== undefined && /\s/.test(character);
+
+/** Text without any of the given characters at its end, read from the end, once. */
+function trimEndOf(text: string, characters: string): string {
+  let end = text.length;
+  while (end > 0 && characters.includes(text.charAt(end - 1))) end -= 1;
+  return text.slice(0, end);
+}
+
 /** Query parameters that only track where a click came from. */
 const TRACKING_PARAM =
   /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
@@ -19,7 +28,7 @@ export function normalizeUrl(url: string): string {
       if (TRACKING_PARAM.test(key)) parsed.searchParams.delete(key);
     }
     const host = parsed.hostname.replace(/^www\./, '');
-    const path = parsed.pathname.replace(/\/+$/, '');
+    const path = trimEndOf(parsed.pathname, '/');
     return `${host}${path}${parsed.search}`.toLowerCase();
   } catch {
     return url.toLowerCase();
@@ -32,7 +41,8 @@ export function normalizeUrl(url: string): string {
  */
 export function isJobLink(url: string): boolean {
   const normal = normalizeUrl(url);
-  const host = normal.split(/[/?#]/, 1)[0];
+  // The site's name, without the "." a fully written-out one can end with.
+  const host = trimEndOf(normal.split(/[/?#]/, 1)[0] ?? '', '.');
   if (host === 'news.ycombinator.com' || /\/(company|cmp)\//.test(normal)) return false;
   const [path = '', query] = normal.split('?');
   return Boolean(query) || path.split('/').filter(Boolean).length >= 3;
@@ -48,8 +58,6 @@ export function hostOf(url: string): string {
 }
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-
-const isSpace = (character: string | undefined) => character !== undefined && /\s/.test(character);
 
 /**
  * A field's parts, split at each "·" with space on each side and each ";" with space after, each
@@ -76,11 +84,17 @@ function fieldParts(field: string): string[] {
   return parts;
 }
 
-/** Text without any of the given characters at its end, read from the end, once. */
-function trimEndOf(text: string, characters: string): string {
-  let end = text.length;
-  while (end > 0 && characters.includes(text.charAt(end - 1))) end -= 1;
-  return text.slice(0, end);
+/**
+ * The words before a link, as its label when they're short enough to be one: from the part's
+ * first visible character to the link, less the spaces, ":" and "(" just before it. They're read
+ * back from the link, and copied only when short, so a part with many links is read once.
+ */
+function labelBefore(part: string, from: number, to: number): string | null {
+  let end = to;
+  while (end > from && isSpace(part[end - 1])) end -= 1;
+  while (end > from && (part[end - 1] === ':' || part[end - 1] === '(')) end -= 1;
+  while (end > from && isSpace(part[end - 1])) end -= 1;
+  return end > from && end - from <= 24 ? part.slice(from, end) : null;
 }
 
 /**
@@ -92,13 +106,14 @@ export function linksFrom(field: string | null | undefined, fallbackLabel?: stri
   if (!field) return [];
   return fieldParts(field).flatMap((part) => {
     const links: Link[] = [];
+    let from = 0;
+    while (isSpace(part[from])) from += 1;
     for (const match of part.matchAll(/https?:\/\/[^\s)<>]+/g)) {
       const url = trimEndOf(match[0], '.,;:');
       const end = match.index + match[0].length;
       if (url.includes('…') || part[end] === '…') continue;
-      const before = trimEndOf(part.slice(0, match.index).trimEnd(), ':(').trim();
-      const label =
-        before && before.length <= 24 ? capitalize(before) : (fallbackLabel ?? hostOf(url));
+      const before = labelBefore(part, from, match.index);
+      const label = before ? capitalize(before) : (fallbackLabel ?? hostOf(url));
       links.push({ url, label });
     }
     return links;

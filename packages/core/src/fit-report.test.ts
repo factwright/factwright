@@ -152,11 +152,19 @@ describe('jobNotesSentiment', () => {
 });
 
 describe('a write-up made to keep the app busy', () => {
-  it('reads a verdict, and an old sentiment line, in a moment', () => {
+  it('reads a verdict, its score parts, and an old sentiment line, in a moment', () => {
     expect(timed(() => parseVerdict(`A${' '.repeat(80_000)}`))).toBeLessThan(1000);
+    expect(timed(() => parseFitReport(`- **Verdict:** work${' '.repeat(100_000)}x`))).toBeLessThan(
+      1000,
+    );
+    // A line break no pattern's "." crosses kept the old score pattern trying every way to split
+    // the spaces before it.
+    expect(
+      timed(() => parseFitReport(`## Score\n- work 1/2${' '.repeat(3_000)}z\n  more\u2028x`)),
+    ).toBeLessThan(1000);
     // Each "(" left open made the old pattern read to the end of the notes again.
     expect(
-      timed(() => jobNotesSentiment('- **Sentiment (left open\n'.repeat(10_000))),
+      timed(() => jobNotesSentiment('- **Sentiment (left open\n'.repeat(20_000))),
     ).toBeLessThan(1000);
   });
 
@@ -166,7 +174,9 @@ describe('a write-up made to keep the app busy', () => {
       date: '2026-10-06',
       summary: 'Positive',
     });
-    // A sentiment line with nothing after it has no sentiment.
+  });
+
+  it('finds no sentiment in a line with nothing after it', () => {
     expect(jobNotesSentiment('- **Sentiment:**   ')).toBeNull();
   });
 });

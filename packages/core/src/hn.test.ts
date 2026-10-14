@@ -101,6 +101,8 @@ describe('a post made to keep the app busy', () => {
   it('is read in a moment, however many links it leaves open', () => {
     expect(timed(() => post('<a\t'.repeat(40_000)))).toBeLessThan(1000);
     expect(timed(() => post('<a href="https://acme.com">x'.repeat(30_000)))).toBeLessThan(1000);
+    // Every "<a " here shares one ">", so each is read only up to it once.
+    expect(timed(() => post(`${'<a '.repeat(50_000)}>x</a>`))).toBeLessThan(1000);
   });
 
   it('gives its links as before', () => {
@@ -110,5 +112,9 @@ describe('a post made to keep the app busy', () => {
           '<a name="top">top</a> and <a href="https://acme.com/a-very-long-path">https://acme.com/a-very…</a>',
       )?.posts[0]?.text,
     ).toBe('Acme Jobs X (https://acme.com/jobs), top and https://acme.com/a-very-long-path');
+    // The address is the tag's last href="…", even after another attribute that mentions one.
+    expect(post('<a title="href=" href="https://acme.com/">Acme</a>')?.posts[0]?.text).toBe(
+      'Acme (https://acme.com/)',
+    );
   });
 });

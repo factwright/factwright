@@ -106,7 +106,7 @@ describe('Markdown written to keep the app busy', () => {
     expect(timed(() => markdownSections(`##\t${tabs(2_500)}\rx\ry`))).toBeLessThan(1000);
     expect(timed(() => markdownSections(`## ${'('.repeat(80_000)}`))).toBeLessThan(1000);
     expect(timed(() => markdownItems([`*\t${tabs(100_000)}\rx\ry`]))).toBeLessThan(1000);
-    expect(timed(() => markdownTable(`| a |\n${' '.repeat(60_000)}x`))).toBeLessThan(1000);
+    expect(timed(() => markdownTable(`| a |\n${' '.repeat(120_000)}x`))).toBeLessThan(1000);
   });
 
   it('still keys a heading without its last "(…)", from its first "(" after any other ")"', () => {

@@ -86,6 +86,20 @@ function withFullLinks(html: string): string {
 }
 
 /**
+ * The address in a link's opening tag: the last href="…" in it, as a pattern reading back from
+ * the tag's end would find it.
+ */
+function hrefIn(tag: string): string | undefined {
+  const starts = [...tag.matchAll(/href="/gi)].map((found) => found.index + 6);
+  // Only the last can lack its closing quote: each other one has the next one's.
+  for (const start of starts.reverse()) {
+    const end = tag.indexOf('"', start);
+    if (end >= 0) return tag.slice(start, end);
+  }
+  return undefined;
+}
+
+/**
  * A piece of a post that ends where a link closed, with that link's full address. The link is
  * its first "<a " tag with an address, and its text runs to the end of the piece.
  */
@@ -94,7 +108,7 @@ function withFullLink(piece: string): string {
   for (let open = opening.exec(piece); open; open = opening.exec(piece)) {
     const end = piece.indexOf('>', open.index);
     if (end < 0) break;
-    const href = [...piece.slice(open.index, end).matchAll(/href="([^"]*)"/gi)].at(-1)?.[1];
+    const href = hrefIn(piece.slice(open.index, end));
     if (href === undefined) {
       // Any other "<a " before this tag's end shares its end, and has no address either.
       opening.lastIndex = end + 1;
