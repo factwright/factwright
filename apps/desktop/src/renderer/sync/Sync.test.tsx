@@ -420,7 +420,7 @@ describe('linking by approval', () => {
     await openDialog(api);
     const panel = await screen.findByRole('region', { name: 'New devices want to link' });
     expect(within(panel).getByText(/More than one device is asking/)).toBeTruthy();
-    expect(within(panel).getByText(/signed in on /)).toBeTruthy();
+    expect(within(panel).getByText(/signed in 4 minutes ago/)).toBeTruthy();
     for (const button of within(panel).getAllByRole('button', { name: 'Approve…' })) {
       expect((button as HTMLButtonElement).disabled).toBe(true);
     }
