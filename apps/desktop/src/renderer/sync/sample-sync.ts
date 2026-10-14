@@ -28,6 +28,7 @@ type SyncApi = Pick<
   | 'approveLinkRequest'
   | 'answerLinkRequest'
   | 'denyLinkRequest'
+  | 'signOutTurnedDown'
   | 'dismissLinkApproval'
 >;
 
@@ -128,7 +129,8 @@ const APPROVER = 'Factwright on Sam’s MacBook Pro';
  * through signing in (?sync=link for a second computer), and the rest answers as the app would.
  * ?approve= picks how linking by approval starts: "request" for another device asking to link
  * once sync is on, "two" for two at once, "check" to start at the emoji (asking or approving, by
- * ?sync=), or "old" for a server that can't approve devices yet.
+ * ?sync=), "quiet" for asking with no device ever offering, "stale" for a computer that signed in
+ * too long ago to ask, or "old" for a server that can't approve devices yet.
  */
 export function sampleSync(start: string | null, approve: string | null = null): SyncApi {
   const listeners = new Set<(status: SyncStatus) => void>();
@@ -147,6 +149,7 @@ export function sampleSync(start: string | null, approve: string | null = null):
       approve === 'check' && status.state === 'on'
         ? { id: REQUEST.id, device: REQUEST.device, step: 'check', check: CHECK }
         : null,
+    turnedDown: null,
   };
   const show = (next: Partial<ApprovalsView>) => {
     approvals = { ...approvals, ...next };
@@ -228,15 +231,21 @@ export function sampleSync(start: string | null, approve: string | null = null):
       return () => viewers.delete(viewer);
     },
     askToLink: async () => {
+      if (approve === 'stale') {
+        show({ asking: { step: 'stale' } });
+        return { ok: false, message: 'This device signed in a while ago.' };
+      }
       if (approvals.asking && approvals.asking.step !== 'ended') return { ok: true };
       if (approve === 'check') {
         show({ asking: offered });
         return { ok: true };
       }
       show({ asking: { step: 'waiting' } });
-      setTimeout(() => {
-        if (approvals.asking?.step === 'waiting') show({ asking: offered });
-      }, 3000);
+      if (approve !== 'quiet') {
+        setTimeout(() => {
+          if (approvals.asking?.step === 'waiting') show({ asking: offered });
+        }, 3000);
+      }
       return { ok: true };
     },
     confirmLinkCheck: (matched) => {
@@ -297,9 +306,21 @@ export function sampleSync(start: string | null, approve: string | null = null):
       return { ok: true };
     },
     denyLinkRequest: async (id) => {
-      show({ requests: approvals.requests.filter((request) => request.id !== id) });
+      const request = approvals.requests.find((each) => each.id === id);
+      show({
+        requests: approvals.requests.filter((each) => each.id !== id),
+        turnedDown: request ? { id, device: request.device } : null,
+      });
       return { ok: true };
     },
-    dismissLinkApproval: () => show({ approving: null }),
+    signOutTurnedDown: async () => {
+      show({ turnedDown: null });
+      return { ok: true };
+    },
+    dismissLinkApproval: () =>
+      show({
+        approving: approvals.approving?.step === 'ended' ? null : approvals.approving,
+        turnedDown: null,
+      }),
   };
 }

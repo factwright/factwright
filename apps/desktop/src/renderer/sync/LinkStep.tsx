@@ -161,20 +161,31 @@ export function LinkStep({
   asking: AskingView | null;
 }) {
   // Asks as soon as the step shows, so the other device is ready by the time the person gets
-  // there. Closing the step, or linking another way, calls it off.
+  // there. Closing the dialog leaves it asking: the person may be off to the other computer.
   useEffect(() => {
-    if (!canApprove) return;
-    void api.askToLink();
-    return () => api.stopAskingToLink();
+    if (canApprove) void api.askToLink();
   }, [api, canApprove]);
 
-  if (!canApprove) {
+  if (!canApprove || asking?.step === 'stale') {
     return (
       <>
         <p className={styles.lead}>
           {lead(again)}
           <strong>Link a phone or computer</strong>, and type the code it shows.
         </p>
+        {asking?.step === 'stale' && (
+          <p className={styles.hint}>
+            This computer signed in a while ago, so it can’t ask another to approve it.{' '}
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => void api.useDifferentSyncAccount()}
+            >
+              Sign in again
+            </button>{' '}
+            to ask.
+          </p>
+        )}
         <CodeForm
           label="Code from your other device"
           button="Link this computer"

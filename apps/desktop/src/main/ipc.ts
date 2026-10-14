@@ -442,6 +442,7 @@ export function registerIpc({
     typeof matched === 'boolean' ? sync.answerApproval(matched) : REFUSED,
   );
   answer('sync:deny', (id) => (isRequestId(id) ? sync.denyRequest(id) : REFUSED));
+  answer('sync:sign-out-turned-down', () => sync.signOutTurnedDown());
   ipcMain.on('sync:dismiss-approval', (event) => {
     if (fromApp(event)) sync.dismissApproval();
   });

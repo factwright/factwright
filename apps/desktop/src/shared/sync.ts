@@ -72,7 +72,12 @@ export type AskingView =
    * Over, with nothing linked: turned down, run out, or something didn't check out. The emoji
    * this computer showed stay, if it showed any, to compare with what the other device showed.
    */
-  | { step: 'ended'; message: string; check?: number[] };
+  | { step: 'ended'; message: string; check?: number[] }
+  /**
+   * This computer signed in too long ago to ask, so a sign-in someone was tricked into long ago
+   * can't: it types a code instead, or signs in again.
+   */
+  | { step: 'stale' };
 
 /** Another device asking to link, which this computer can approve. */
 export interface RequestView {
@@ -110,6 +115,8 @@ export interface ApprovalsView {
   requests: RequestView[];
   /** The request this computer is approving. */
   approving: ApprovingView | null;
+  /** The request this computer turned down last, whose device the person can still sign out. */
+  turnedDown: { id: string; device: string } | null;
 }
 
 export type RecoveryKeyResult = { ok: true; recoveryKey: string } | { ok: false; message: string };

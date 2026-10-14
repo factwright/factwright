@@ -70,6 +70,7 @@ const api: FactwrightApi = {
   approveLinkRequest: (id) => ipcRenderer.invoke('sync:approve', id),
   answerLinkRequest: (matched) => ipcRenderer.invoke('sync:answer', matched),
   denyLinkRequest: (id) => ipcRenderer.invoke('sync:deny', id),
+  signOutTurnedDown: () => ipcRenderer.invoke('sync:sign-out-turned-down'),
   dismissLinkApproval: () => ipcRenderer.send('sync:dismiss-approval'),
   syncNow: () => ipcRenderer.send('sync:now'),
   syncAccount: () => ipcRenderer.invoke('sync:account'),

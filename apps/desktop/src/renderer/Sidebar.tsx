@@ -2,7 +2,7 @@ import { NavItem } from '@factwright/ui';
 import { BookCheck, Briefcase, Heart, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
-import type { RequestView, SyncStatus } from '../shared/sync.ts';
+import type { AskingView, RequestView, SyncStatus } from '../shared/sync.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
 import { ClaudeCard, type OwnSignIn } from './ClaudeCard.tsx';
 import { LevelsChip } from './LevelsChip.tsx';
@@ -36,6 +36,7 @@ export function Sidebar({
   setup,
   sync,
   linkRequests = [],
+  linkAsking = null,
   onOpenSync,
   onOpenClaudeSettings,
   levels,
@@ -67,6 +68,8 @@ export function Sidebar({
   sync: SyncStatus | 'checking';
   /** Other devices asking to link, which this computer can approve. */
   linkRequests?: RequestView[];
+  /** This computer, asking to be linked. */
+  linkAsking?: AskingView | null;
   onOpenSync: () => void;
   /** Opens Claude's settings: its model, and what it may do without asking. */
   onOpenClaudeSettings: () => void;
@@ -121,7 +124,7 @@ export function Sidebar({
           unsaved={update.unsaved}
           onRestart={update.onRestart}
         />
-        <SyncCard status={sync} requests={linkRequests} onOpen={onOpenSync} />
+        <SyncCard status={sync} requests={linkRequests} asking={linkAsking} onOpen={onOpenSync} />
         <div className={styles.claude}>
           <ClaudeCard
             status={claude}

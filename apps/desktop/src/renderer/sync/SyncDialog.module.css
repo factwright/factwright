@@ -412,3 +412,17 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* Another device asked while this one was being checked. */
+.crowded {
+  margin-top: var(--fw-space-3);
+  padding: var(--fw-space-3);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-need-soft);
+}
+
+.crowded > p {
+  margin: 0 0 var(--fw-space-2);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}

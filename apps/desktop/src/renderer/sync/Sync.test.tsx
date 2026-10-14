@@ -44,6 +44,7 @@ const OLD_SERVER: ApprovalsView = {
   asking: null,
   requests: [],
   approving: null,
+  turnedDown: null,
 };
 
 /** The window's API, with sample sync and spies for the rest it uses here. */
@@ -434,15 +435,93 @@ describe('linking by approval', () => {
     expect(await screen.findByRole('list', { name: 'Emoji this computer showed' })).toBeTruthy();
   });
 
-  it('turns a request down that isn’t the person’s', async () => {
+  it('turns a request down, then signs that device out if it isn’t the person’s', async () => {
     const api = apiFor('on', 'request');
     const user = userEvent.setup();
-    await openDialog(api);
+    const { container } = await openDialog(api);
     const panel = await screen.findByRole('region', { name: 'A new device wants to link' });
-    await user.click(within(panel).getByRole('button', { name: 'Not mine' }));
-    await waitFor(() =>
-      expect(screen.queryByRole('region', { name: 'A new device wants to link' })).toBeNull(),
+    await user.click(within(panel).getByRole('button', { name: 'Turn down' }));
+    const done = await screen.findByRole('region', { name: 'Turned down' });
+    expect(within(done).getByText(/If it isn’t yours, sign it out/)).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.click(within(done).getByRole('button', { name: 'Sign it out' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Turned down' })).toBeNull());
+  });
+
+  it('won’t link while another device asks meanwhile', async () => {
+    const api = apiFor('on', 'check');
+    const user = userEvent.setup();
+    const view = await openDialog(api);
+    // Another device asks while the person checks the emoji.
+    view.rerender(
+      <SyncDialog
+        api={api}
+        status={ON}
+        approvals={{
+          ...(await api.linkApprovals()),
+          requests: [
+            {
+              id: 'other',
+              device: 'Factwright on Sam’s MacBook',
+              asked: new Date().toISOString(),
+              signedIn: new Date().toISOString(),
+              elsewhere: false,
+            },
+          ],
+        }}
+        onClose={vi.fn()}
+      />,
     );
+    const asking = screen.getByRole('region', { name: 'Approve Chrome on Windows?' });
+    expect(within(asking).getByRole('alert').textContent).toContain('Another device asked');
+    const link = within(asking).getByRole('button', { name: 'They match, link it' });
+    expect((link as HTMLButtonElement).disabled).toBe(true);
+    expect(within(asking).getByRole('button', { name: 'Turn down' })).toBeTruthy();
+    expect(within(asking).queryByRole('button', { name: 'Approve…' })).toBeNull();
+    await user.click(within(asking).getByRole('button', { name: 'They don’t match' }));
+  });
+
+  it('says when this computer signed in too long ago to ask, with a way to sign in again', async () => {
+    const api = {
+      ...apiFor('link', 'stale'),
+      useDifferentSyncAccount: vi.fn(async () => ({ ok: true as const })),
+    };
+    const user = userEvent.setup();
+    await openDialog(api);
+    expect(await screen.findByText(/signed in a while ago/)).toBeTruthy();
+    // The code is what's left, so it's open.
+    expect(screen.getByRole('textbox', { name: 'Code from your other device' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Sign in again' }));
+    expect(api.useDifferentSyncAccount).toHaveBeenCalledOnce();
+  });
+
+  it('says what to do when nothing shows on the other device for a while', async () => {
+    const { later } = fakeTime();
+    await openDialog(apiFor('link', 'quiet'));
+    expect(await screen.findByText('Waiting for your other device…')).toBeTruthy();
+    expect(screen.queryByText(/Nothing showing there/)).toBeNull();
+    await later(30_000);
+    expect(screen.getByText(/Nothing showing there\? Update Factwright/)).toBeTruthy();
+  });
+
+  it('asks on the Sync card to check the emoji, with the dialog closed', () => {
+    render(
+      <SyncCard
+        status={{ state: 'setting-up', email: 'sam@example.com', firstDevice: false }}
+        asking={{
+          step: 'check',
+          approver: 'Factwright on Sam’s Mac',
+          check: [0, 1, 2, 3, 4, 5],
+          confirmed: false,
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Check the emoji')).toBeTruthy();
+    expect(
+      screen.getByText('Factwright on Sam’s Mac offered to approve this computer.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show' })).toBeTruthy();
   });
 
   it('says on the Sync card when a device wants to link', () => {

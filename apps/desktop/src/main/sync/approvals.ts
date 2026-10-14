@@ -15,6 +15,10 @@ const STEP_MS = 1500;
 const OFFLINE_MS = 5000;
 /** How often an approval waiting on the new device's person looks, to see it's still there. */
 const SENT_MS = 3000;
+/** How long a server's word that it can't approve devices holds, before it's asked again. */
+const RECHECK_MS = 10 * 60 * 1000;
+/** How long calling a request off may hold up the app as it quits. */
+const QUIT_MS = 1500;
 
 export interface ApprovalsDeps {
   /** After each change, for the window. */
@@ -25,6 +29,8 @@ export interface ApprovalsDeps {
   keyId: () => string | null;
   /** With the account key an approval brought: checks it's the account's, then turns sync on. */
   linkWith: (accountKey: Bytes) => Promise<EditResult>;
+  /** When the server says this sign-in has ended, such as when another device signed it out. */
+  signedOut: () => void;
   /** What to tell the user when a request to the server fails. */
   reason: (error: unknown) => string;
   /** For tests. */
@@ -46,6 +52,17 @@ const ENDED = {
     'More than one device is asking to link. Turn down any that aren’t yours, then approve yours.',
 } as const;
 
+const isSignedOut = (error: unknown) => error instanceof SyncError && error.kind === 'signed-out';
+const isOffline = (error: unknown) => error instanceof SyncError && error.kind === 'offline';
+
+/** This computer asking: the request, while it can still be called off, and how it stands. */
+interface Asking {
+  ask: LinkAsk | null;
+  view: AskingView;
+  /** Picking the sealed key up, so the request is never called off now. */
+  finishing: boolean;
+}
+
 /**
  * Linking devices by approval, on this computer, in both directions:
  * - asking: this computer, signed in but not linked, asks a device that's set up to approve it.
@@ -57,11 +74,14 @@ export class Approvals {
   private readonly deps: ApprovalsDeps;
   private readonly wait: (ms: number) => Promise<void>;
   private client: SyncClient | null = null;
-  /** Whether the server can approve devices, once it's said. */
+  /** Whether the server can approve devices, once it's said, and when it said so. */
   private supported: boolean | null = null;
-  private asking: { ask: LinkAsk | null; view: AskingView } | null = null;
+  private checkedAt = 0;
+  private asking: Asking | null = null;
   private requests: LinkRequest[] = [];
   private approving: { approval: LinkApproval; view: ApprovingView } | null = null;
+  /** The request this computer turned down last, which the person can still sign out. */
+  private turnedDown: { id: string; device: string } | null = null;
 
   constructor(deps: ApprovalsDeps) {
     this.deps = deps;
@@ -82,11 +102,18 @@ export class Approvals {
           elsewhere: request.approver !== null && !request.approving,
         })),
       approving: this.approving?.view ?? null,
+      turnedDown: this.turnedDown,
     };
   }
 
   private changed(): void {
     this.deps.onChange(this.view());
+  }
+
+  /** Calls this computer's own request off, unless it's being picked up. */
+  private callOff(asking: Asking | null): Promise<void> {
+    if (!asking?.ask || asking.finishing) return Promise.resolve();
+    return asking.ask.cancel().catch(() => {});
   }
 
   /**
@@ -95,28 +122,49 @@ export class Approvals {
    */
   use(client: SyncClient | null): void {
     if (client === this.client) return;
-    void this.asking?.ask?.cancel().catch(() => {});
+    void this.callOff(this.asking);
     this.client = client;
     this.supported = null;
     this.asking = null;
     this.requests = [];
     this.approving = null;
+    this.turnedDown = null;
     this.changed();
     if (client) void this.check(client);
   }
 
-  /** Asks the server whether it can approve devices, until it answers. */
+  /** As the app quits: calls this computer's own request off, as far as there's time to. */
+  async stop(): Promise<void> {
+    const asking = this.asking;
+    this.asking = null;
+    await Promise.race([this.callOff(asking), pause(QUIT_MS)]);
+  }
+
+  /**
+   * Whether the server can approve devices. A no is asked again after a while, so a server
+   * updated while the app runs gets its yes.
+   */
   private async check(client: SyncClient): Promise<boolean> {
-    if (this.supported !== null) return this.supported;
+    if (this.supported === true) return true;
+    if (this.supported === false && Date.now() - this.checkedAt < RECHECK_MS) return false;
     try {
       const supported = (await client.features()).includes('approve');
       if (this.client !== client) return false;
-      this.supported = supported;
-      this.changed();
+      this.checkedAt = Date.now();
+      if (supported !== this.supported) {
+        this.supported = supported;
+        this.changed();
+      }
       return supported;
     } catch {
       return false;
     }
+  }
+
+  /** Handles a request that failed, and says what went wrong. Signed out, it's signed out. */
+  private failure(error: unknown): string {
+    if (isSignedOut(error)) this.deps.signedOut();
+    return this.deps.reason(error);
   }
 
   // ---- Asking, on a computer that isn't linked yet ----
@@ -129,20 +177,27 @@ export class Approvals {
       return failed('The sync server can’t approve devices yet. Type a code instead.');
     }
     if (this.client !== client) return failed('Signing in was canceled.');
-    if (this.asking && this.asking.view.step !== 'ended') return { ok: true };
+    if (this.asking && this.asking.view.step !== 'ended' && this.asking.view.step !== 'stale') {
+      return { ok: true };
+    }
     // Shown at once, while the request is made.
-    const asking: { ask: LinkAsk | null; view: AskingView } = {
-      ask: null,
-      view: { step: 'waiting' },
-    };
+    const asking: Asking = { ask: null, view: { step: 'waiting' }, finishing: false };
     this.asking = asking;
     this.changed();
     let ask: LinkAsk;
     try {
       ask = await LinkAsk.start(client);
     } catch (error) {
-      if (this.asking === asking) this.endAsking(this.deps.reason(error));
-      return failed(this.deps.reason(error));
+      if (this.asking !== asking) return failed(this.deps.reason(error));
+      // A sign-in from a while ago can't ask: the person types a code, or signs in again.
+      if (error instanceof SyncError && error.code === 'stale') {
+        this.asking = { ask: null, view: { step: 'stale' }, finishing: false };
+        this.changed();
+        return failed(error.message);
+      }
+      const message = this.failure(error);
+      this.endAsking(message);
+      return failed(message);
     }
     if (this.asking !== asking) {
       void ask.cancel().catch(() => {});
@@ -153,31 +208,38 @@ export class Approvals {
     return { ok: true };
   }
 
-  private endAsking(message: string): void {
-    if (!this.asking) return;
-    // The emoji stay, if they showed: once this computer has shown its key, the person can still
-    // compare them with the other device's, whatever the server says next.
-    const shown = this.asking.view.step === 'check' ? this.asking.view.check : undefined;
-    this.asking = { ask: null, view: { step: 'ended', message, ...(shown && { check: shown }) } };
+  /**
+   * Ends a run with nothing linked, calling its request off unless the server's done with it: a
+   * request turned down stays, so the approving device can still sign this one out. The emoji
+   * stay, if they showed: once this computer has shown its key, the person can still compare
+   * them with the other device's, whatever the server says next.
+   */
+  private endAsking(message: string, callOff = true): void {
+    const asking = this.asking;
+    if (!asking) return;
+    if (callOff) void this.callOff(asking);
+    const shown = asking.view.step === 'check' ? asking.view.check : undefined;
+    this.asking = {
+      ask: null,
+      view: { step: 'ended', message, ...(shown && { check: shown }) },
+      finishing: false,
+    };
     this.changed();
   }
 
   /** Follows the request until it's linked or over, a step at a time. */
-  private async followAsking(
-    asking: NonNullable<Approvals['asking']>,
-    ask: LinkAsk,
-  ): Promise<void> {
+  private async followAsking(asking: Asking, ask: LinkAsk): Promise<void> {
     while (this.asking === asking) {
       let step: Awaited<ReturnType<LinkAsk['step']>>;
       try {
         step = await ask.step();
       } catch (error) {
         if (this.asking !== asking) return;
-        if (error instanceof SyncError && error.kind === 'offline') {
+        if (isOffline(error)) {
           await this.wait(OFFLINE_MS);
           continue;
         }
-        this.endAsking(this.deps.reason(error));
+        this.endAsking(this.failure(error));
         return;
       }
       if (this.asking !== asking) return;
@@ -191,7 +253,7 @@ export class Approvals {
           return;
         }
       } else {
-        this.endAsking(ENDED[step.state]);
+        this.endAsking(ENDED[step.state], step.state === 'failed');
         return;
       }
       this.changed();
@@ -199,29 +261,38 @@ export class Approvals {
     }
   }
 
-  private async finishAsking(asking: NonNullable<Approvals['asking']>, ask: LinkAsk) {
+  /**
+   * Picks the sealed key up and links with it. Once it's picked up, it's kept and linked with
+   * even if the person stops asking meanwhile, as long as it's the same sign-in.
+   */
+  private async finishAsking(asking: Asking, ask: LinkAsk): Promise<void> {
+    const client = this.client;
+    asking.finishing = true;
     let accountKey: Bytes | null;
     try {
       accountKey = await ask.finish();
     } catch (error) {
-      if (this.asking === asking) this.endAsking(this.deps.reason(error));
-      return;
-    }
-    if (this.asking !== asking) return;
-    if (!accountKey) {
-      this.endAsking(ENDED.broken);
+      asking.finishing = false;
+      if (this.asking === asking) this.endAsking(this.failure(error));
       return;
     }
     // Picked up, so it's never called off: the approving device sees it linked.
     asking.ask = null;
-    const linked = await this.deps.linkWith(accountKey);
-    if (this.asking !== asking) return;
-    if (!linked.ok) {
-      this.endAsking(linked.message);
+    if (this.client !== client) return;
+    if (!accountKey) {
+      if (this.asking === asking) this.endAsking(ENDED.broken);
       return;
     }
-    this.asking = null;
-    this.changed();
+    const linked = await this.deps.linkWith(accountKey);
+    if (this.client !== client) return;
+    if (!linked.ok) {
+      if (this.asking === asking) this.endAsking(linked.message);
+      return;
+    }
+    if (this.asking === asking) {
+      this.asking = null;
+      this.changed();
+    }
   }
 
   /**
@@ -232,7 +303,6 @@ export class Approvals {
     const asking = this.asking;
     if (asking?.view.step !== 'check' || !asking.ask) return;
     if (!matched) {
-      void asking.ask.cancel().catch(() => {});
       this.endAsking(ENDED.mismatch);
       return;
     }
@@ -241,10 +311,10 @@ export class Approvals {
     this.changed();
   }
 
-  /** Stops asking, as when the person closes the dialog or links another way. */
+  /** Stops asking, as when the person links another way or uses another account. */
   stopAsking(): void {
     if (!this.asking) return;
-    void this.asking.ask?.cancel().catch(() => {});
+    void this.callOff(this.asking);
     this.asking = null;
     this.changed();
   }
@@ -253,7 +323,7 @@ export class Approvals {
 
   /**
    * Looks again for other devices' requests to link. Without the account key, there are none.
-   * It asks whether the server can approve devices again too, if it hasn't said yet.
+   * It asks whether the server can approve devices again too, if it hasn't said yes.
    */
   async refresh(): Promise<void> {
     const client = this.client;
@@ -265,13 +335,21 @@ export class Approvals {
       return;
     }
     try {
-      const requests = await client.linkRequests();
-      if (this.client !== client) return;
-      this.requests = requests.filter((request) => !request.mine);
-      this.changed();
-    } catch {
+      await this.lookAgain(client);
+    } catch (error) {
       // Kept as they were: the next look tries again.
+      if (isSignedOut(error)) this.deps.signedOut();
     }
+  }
+
+  /** The account's requests from other devices, as the server has them now. */
+  private async lookAgain(client: SyncClient): Promise<LinkRequest[]> {
+    const requests = (await client.linkRequests()).filter((request) => !request.mine);
+    if (this.client === client) {
+      this.requests = requests;
+      this.changed();
+    }
+    return requests;
   }
 
   /**
@@ -289,11 +367,7 @@ export class Approvals {
     let device: string;
     try {
       // Read again, so the hash it's checked against is the one the server holds now.
-      const requests = (await client.linkRequests()).filter((each) => !each.mine);
-      if (this.client === client) {
-        this.requests = requests;
-        this.changed();
-      }
+      const requests = await this.lookAgain(client);
       const request = requests.find((each) => each.id === id);
       if (request?.state !== 'waiting') return failed(ENDED.gone);
       if (requests.length > 1) return failed(ENDED.crowded);
@@ -301,9 +375,10 @@ export class Approvals {
       approval = await LinkApproval.start(client, request, keyId);
     } catch (error) {
       void this.refresh();
-      return failed(this.deps.reason(error));
+      return failed(this.failure(error));
     }
     if (this.client !== client) return failed('Signing in was canceled.');
+    this.turnedDown = null;
     const approving = { approval, view: { id, device, step: 'waiting' } as ApprovingView };
     this.approving = approving;
     this.changed();
@@ -335,11 +410,11 @@ export class Approvals {
         step = await approving.approval.step();
       } catch (error) {
         if (this.approving !== approving) return;
-        if (error instanceof SyncError && error.kind === 'offline') {
+        if (isOffline(error)) {
           await this.wait(OFFLINE_MS);
           continue;
         }
-        this.endApproving(false, this.deps.reason(error));
+        this.endApproving(false, this.failure(error));
         return;
       }
       if (this.approving !== approving) return;
@@ -363,8 +438,9 @@ export class Approvals {
         this.endApproving(false, ENDED.failed);
         return;
       }
-      if (step.state === 'check' && !sent)
+      if (step.state === 'check' && !sent) {
         approving.view = { id, device, step: 'check', check: step.check };
+      }
       this.changed();
       await this.wait(sent || step.state === 'check' ? SENT_MS : STEP_MS);
     }
@@ -372,11 +448,13 @@ export class Approvals {
 
   /**
    * The person's answer on this computer. Only when they say the emoji match is the account key
-   * sealed for the new device. Otherwise the request is turned down.
+   * sealed for the new device, and only while it's still the one device asking. Otherwise the
+   * request is turned down.
    */
   async answer(matched: boolean): Promise<EditResult> {
     const approving = this.approving;
-    if (approving?.view.step !== 'check') return failed('Check the emoji first.');
+    const client = this.client;
+    if (approving?.view.step !== 'check' || !client) return failed('Check the emoji first.');
     const { id, device } = approving.view;
     try {
       if (!matched) {
@@ -386,11 +464,15 @@ export class Approvals {
         if (this.approving === approving) this.endApproving(false, ENDED.mismatch);
         return { ok: true };
       }
+      // Another device may have asked since this one was opened. Then the person checks which
+      // is theirs before anything is sealed.
+      const others = (await this.lookAgain(client)).filter((request) => request.id !== id);
+      if (others.length > 0) return failed(ENDED.crowded);
       const accountKey = this.deps.accountKey();
       if (!accountKey) return failed('Turn on sync first.');
       await approving.approval.approve(accountKey);
     } catch (error) {
-      return failed(this.deps.reason(error));
+      return failed(this.failure(error));
     }
     if (this.approving === approving) {
       approving.view = { id, device, step: 'sent' };
@@ -400,27 +482,51 @@ export class Approvals {
   }
 
   /**
-   * Turns another device's request down, without starting to approve it, and signs that device
-   * out: the person said it isn't theirs.
+   * Turns another device's request down, without starting to approve it. The device stays
+   * signed in: it may be the person's own, such as a request left behind by a closed tab. The
+   * person can sign it out next, if it isn't theirs.
    */
   async deny(id: string): Promise<EditResult> {
     const client = this.client;
     if (!client) return failed('Sign in first.');
+    const device = this.requests.find((request) => request.id === id)?.device ?? 'That device';
     try {
-      await client.denyRequest(id, true);
+      await client.denyRequest(id);
     } catch (error) {
       if (!(error instanceof SyncError && error.kind === 'not-found')) {
-        return failed(this.deps.reason(error));
+        return failed(this.failure(error));
       }
     }
+    this.turnedDown = { id, device };
     await this.refresh();
+    this.changed();
     return { ok: true };
   }
 
-  /** Puts an approval that's over away, as when the person closes it. */
+  /** Signs out the device whose request this computer just turned down: it isn't the person's. */
+  async signOutTurnedDown(): Promise<EditResult> {
+    const client = this.client;
+    const turnedDown = this.turnedDown;
+    if (!client || !turnedDown) return failed('There’s nothing to sign out.');
+    try {
+      await client.denyRequest(turnedDown.id, true);
+    } catch (error) {
+      const gone = error instanceof SyncError && error.kind === 'not-found';
+      return failed(
+        gone
+          ? 'That request ran out, so it can’t sign the device out from here. Sign it out under Signed-in devices.'
+          : this.failure(error),
+      );
+    }
+    this.turnedDown = null;
+    this.changed();
+    return { ok: true };
+  }
+
+  /** Puts away what's over: an approval that ended, or the request just turned down. */
   dismiss(): void {
-    if (this.approving?.view.step !== 'ended') return;
-    this.approving = null;
+    if (this.approving?.view.step === 'ended') this.approving = null;
+    this.turnedDown = null;
     this.changed();
   }
 }

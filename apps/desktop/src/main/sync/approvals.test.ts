@@ -201,16 +201,25 @@ describe('linking a computer from one that’s set up', () => {
     const view = await mac.sync.approvalsView();
     expect(view.requests[0]).toMatchObject({ device: 'Factwright on SAM-PC' });
     expect(Date.now() - Date.parse(view.requests[0]?.signedIn ?? '')).toBeLessThan(60_000);
+    // Turned down, it stays signed in: it may be the person's own, left behind.
     expect(await mac.sync.denyRequest(view.requests[0]?.id ?? '')).toEqual({ ok: true });
-    expect(mac.approvals().requests).toEqual([]);
+    expect(mac.approvals()).toMatchObject({
+      requests: [],
+      turnedDown: { device: 'Factwright on SAM-PC' },
+    });
     await vi.waitFor(() =>
       expect(pc.approvals().asking).toMatchObject({
         step: 'ended',
-        message: 'Your sign-in ended. Sign in again.',
+        message: expect.stringContaining('turned this down'),
       }),
     );
+    // Not the person's: signed out, and that computer says to sign in again.
+    expect(await mac.sync.signOutTurnedDown()).toEqual({ ok: true });
+    expect(mac.approvals().turnedDown).toBeNull();
     const devices = (await mac.sync.account()) as { ok: true; account: { devices: unknown[] } };
     expect(devices.account.devices).toHaveLength(2);
+    await pc.sync.askToLink();
+    await vi.waitFor(() => expect(pc.sync.status()).toMatchObject({ state: 'signed-out' }));
   });
 
   it('won’t approve while another device is asking too', async () => {
@@ -233,6 +242,69 @@ describe('linking a computer from one that’s set up', () => {
     await mac.sync.denyRequest(theirs?.id ?? '');
     const ours = requests.find((request) => request.device === 'Factwright on SAM-PC');
     expect(await mac.sync.approveRequest(ours?.id ?? '')).toEqual({ ok: true });
+  });
+
+  it('won’t seal the key while another device asks meanwhile', async () => {
+    const { mac } = await upToTheCheck();
+    const laptop = await newComputer('SAM-LAPTOP');
+    await vi.waitFor(() => expect(laptop.approvals().supported).toBe(true));
+    await laptop.sync.askToLink();
+    expect(await mac.sync.answerApproval(true)).toEqual({
+      ok: false,
+      message:
+        'More than one device is asking to link. Turn down any that aren’t yours, then approve yours.',
+    });
+    // The other is listed beside the emoji, which wait while the person sorts it out.
+    expect(mac.approvals()).toMatchObject({
+      approving: { step: 'check' },
+      requests: [{ device: 'Factwright on SAM-LAPTOP' }],
+    });
+    await mac.sync.denyRequest(mac.approvals().requests[0]?.id ?? '');
+    expect(await mac.sync.answerApproval(true)).toEqual({ ok: true });
+  });
+
+  it('turns a request down whose key doesn’t match what it asked with', async () => {
+    // A server in the middle shows the computer a key the request didn't commit to.
+    let swap = false;
+    const meddling: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      const url = String(input);
+      if (!swap || !/\/api\/sync\/requests\/[^/]+$/.test(url) || !response.ok) return response;
+      const request = (await response.json()) as { key: string | null };
+      if (request.key) request.key = `B${request.key.slice(1, 40)}${'A'.repeat(47)}`;
+      return Response.json(request);
+    };
+    const mac = await firstComputer();
+    const pc = await newComputer();
+    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await pc.sync.askToLink();
+    const meddled = computer('Sam’s other Mac', meddling);
+    await meddled.sync.start();
+    expect(await meddled.sync.signInWithBrowser()).toEqual({ ok: true });
+    const recovered = await mac.sync.makeLinkCode();
+    if (!recovered.ok) throw new Error(recovered.message);
+    expect(await meddled.sync.linkWithCode(recovered.link.code)).toEqual({ ok: true });
+    const id = (await meddled.sync.approvalsView()).requests[0]?.id ?? '';
+    swap = true;
+    expect(await meddled.sync.approveRequest(id)).toEqual({ ok: true });
+    await vi.waitFor(() =>
+      expect(meddled.approvals().approving).toMatchObject({
+        step: 'ended',
+        linked: false,
+        message: expect.stringContaining('Something changed the request'),
+      }),
+    );
+    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'ended' }));
+  });
+
+  it('calls its request off as the app quits', async () => {
+    const mac = await firstComputer();
+    const pc = await newComputer();
+    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await pc.sync.askToLink();
+    expect((await mac.sync.approvalsView()).requests).toHaveLength(1);
+    await pc.sync.stop();
+    expect((await mac.sync.approvalsView()).requests).toEqual([]);
   });
 
   it('calls its request off once it links with a code instead', async () => {

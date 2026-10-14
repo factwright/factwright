@@ -1,11 +1,14 @@
 import { checkEmoji } from '@factwright/sync';
 import { Button, CheckCode } from '@factwright/ui';
 import { CircleCheck, MonitorSmartphone } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import type { ApprovalsView, AskingView, RequestView } from '../../shared/sync.ts';
 import styles from './SyncDialog.module.css';
 import { timeAgo } from './useSync.ts';
+
+/** How long the new device waits before saying what to do if nothing shows on the other. */
+const SLOW_MS = 30_000;
 
 /** Runs a step the person started, keeping its button busy and saying why it didn't work. */
 function useStep() {
@@ -35,6 +38,15 @@ function Problem({ text }: { text: string | null }) {
  */
 export function AskPanel({ api, asking }: { api: FactwrightApi; asking: AskingView | null }) {
   const step = useStep();
+  // A while with nothing from the other device: it may run an older Factwright.
+  const [slow, setSlow] = useState(false);
+  const waiting = asking === null || asking.step === 'waiting';
+  useEffect(() => {
+    setSlow(false);
+    if (!waiting) return;
+    const timer = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   if (asking?.step === 'ended') {
     return (
@@ -99,23 +111,28 @@ export function AskPanel({ api, asking }: { api: FactwrightApi; asking: AskingVi
         <span className={`${styles.dot} ${styles.dotSyncing}`} aria-hidden="true" />
         Waiting for your other device…
       </p>
+      {slow && (
+        <p className={styles.hint}>
+          Nothing showing there? Update Factwright on that computer, or type a code instead.
+        </p>
+      )}
     </div>
   );
 }
 
 /**
  * A request from another device, before this computer starts to approve it, with when that
- * device signed in: a sign-in from a while ago is worth a second look.
+ * device signed in: a sign-in from a while ago is worth a second look. "approve" says whether
+ * it can be approved now, and leaves the button out for one asking while another is approved.
  */
 function Request({
   api,
   request,
-  crowded,
+  approve,
 }: {
   api: FactwrightApi;
   request: RequestView;
-  /** Whether another device is asking too, so none can be approved yet. */
-  crowded: boolean;
+  approve: 'yes' | 'not-while-crowded' | 'no';
 }) {
   const step = useStep();
   return (
@@ -136,16 +153,18 @@ function Request({
             disabled={step.busy}
             onClick={() => step.run(() => api.denyLinkRequest(request.id))}
           >
-            Not mine
+            Turn down
           </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={step.busy || crowded}
-            onClick={() => step.run(() => api.approveLinkRequest(request.id))}
-          >
-            Approve…
-          </Button>
+          {approve !== 'no' && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={step.busy || approve === 'not-while-crowded'}
+              onClick={() => step.run(() => api.approveLinkRequest(request.id))}
+            >
+              Approve…
+            </Button>
+          )}
         </div>
       )}
       <Problem text={step.problem} />
@@ -153,9 +172,37 @@ function Request({
   );
 }
 
+/** A request this computer just turned down, whose device the person can sign out. */
+function TurnedDown({ api, device }: { api: FactwrightApi; device: string }) {
+  const step = useStep();
+  return (
+    <div aria-live="polite">
+      <div className={styles.ended}>
+        <p className={styles.endedText}>
+          Turned down {device}. If it isn’t yours, sign it out of your account.
+        </p>
+        <div className={styles.requestActions}>
+          <Button size="sm" variant="quiet" onClick={() => api.dismissLinkApproval()}>
+            OK
+          </Button>
+          <Button
+            size="sm"
+            disabled={step.busy}
+            onClick={() => step.run(() => api.signOutTurnedDown())}
+          >
+            Sign it out
+          </Button>
+        </div>
+      </div>
+      <Problem text={step.problem} />
+    </div>
+  );
+}
+
 /**
  * With sync on: other devices asking to link, and approving one. The account key is sealed for
- * the new device only once the person says both screens show the same emoji.
+ * the new device only once the person says both screens show the same emoji, and only while
+ * it's the one device asking.
  */
 export function RequestsPanel({
   api,
@@ -164,14 +211,18 @@ export function RequestsPanel({
   api: FactwrightApi;
   approvals: ApprovalsView;
 }) {
-  const { requests, approving } = approvals;
+  const { requests, approving, turnedDown } = approvals;
   const step = useStep();
-  if (requests.length === 0 && !approving) return null;
+  if (requests.length === 0 && !approving && !turnedDown) return null;
 
   const ended = approving?.step === 'ended';
+  // While approving, the requests listed are the others: another device asked meanwhile.
+  const others = approving
+    ? requests.filter((request) => !request.elsewhere && request.id !== approving.id)
+    : [];
   return (
     <section
-      className={`${styles.requests} ${ended ? (approving.linked ? styles.requestsLinked : styles.requestsOver) : ''}`}
+      className={`${styles.requests} ${ended ? (approving.linked ? styles.requestsLinked : styles.requestsOver) : ''} ${!approving && requests.length === 0 ? styles.requestsOver : ''}`}
       aria-labelledby="sync-requests"
     >
       <h3 id="sync-requests" className={styles.heading}>
@@ -181,9 +232,11 @@ export function RequestsPanel({
             : 'Not linked'
           : approving
             ? `Approve ${approving.device}?`
-            : requests.length === 1
-              ? 'A new device wants to link'
-              : 'New devices want to link'}
+            : requests.length === 0
+              ? 'Turned down'
+              : requests.length === 1
+                ? 'A new device wants to link'
+                : 'New devices want to link'}
       </h3>
 
       {approving?.step === 'waiting' && (
@@ -203,6 +256,19 @@ export function RequestsPanel({
             Only link a device that’s in front of you: it gets your whole job hunt. Nobody from
             Factwright will ever ask you for these emoji.
           </p>
+          {others.length > 0 && (
+            <div className={styles.crowded} role="alert">
+              <p>
+                Another device asked to link while you were checking this one. Turn down any that
+                aren’t yours before you link.
+              </p>
+              <ul className={styles.requestList}>
+                {others.map((request) => (
+                  <Request key={request.id} api={api} request={request} approve="no" />
+                ))}
+              </ul>
+            </div>
+          )}
           <Problem text={step.problem} />
           <div className={styles.approveActions}>
             <Button
@@ -213,7 +279,7 @@ export function RequestsPanel({
             </Button>
             <Button
               variant="primary"
-              disabled={step.busy}
+              disabled={step.busy || others.length > 0}
               onClick={() => step.run(() => api.answerLinkRequest(true))}
             >
               They match, link it
@@ -241,17 +307,24 @@ export function RequestsPanel({
         </div>
       )}
 
-      {!approving && (
+      {!approving && turnedDown && <TurnedDown api={api} device={turnedDown.device} />}
+
+      {!approving && requests.length > 0 && (
         <>
           <ul className={styles.requestList}>
             {requests.map((request) => (
-              <Request key={request.id} api={api} request={request} crowded={requests.length > 1} />
+              <Request
+                key={request.id}
+                api={api}
+                request={request}
+                approve={requests.length > 1 ? 'not-while-crowded' : 'yes'}
+              />
             ))}
           </ul>
           <p className={styles.hint}>
             {requests.length > 1
               ? 'More than one device is asking. Turn down any that aren’t yours, then approve yours.'
-              : 'Don’t recognize it? Not mine turns it down and signs it out of your account.'}
+              : 'Don’t recognize it? Turn it down, then sign it out.'}
           </p>
         </>
       )}

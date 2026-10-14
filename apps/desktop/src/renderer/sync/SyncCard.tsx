@@ -1,4 +1,4 @@
-import type { RequestView, SyncStatus } from '../../shared/sync.ts';
+import type { AskingView, RequestView, SyncStatus } from '../../shared/sync.ts';
 import { type CardTone, SidebarCard } from '../SidebarCard.tsx';
 
 interface CardView {
@@ -9,18 +9,31 @@ interface CardView {
 }
 
 /** How sync reads in the sidebar, in plain words, with what to do next. */
-function describe(status: SyncStatus | 'checking', requests: RequestView[]): CardView {
+function describe(
+  status: SyncStatus | 'checking',
+  requests: RequestView[],
+  asking: AskingView | null,
+): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…' };
-  // Another device asking to link comes first: the person is waiting at it.
-  const asking = requests.filter((request) => !request.elsewhere);
-  if (status.state === 'on' && asking.length > 0) {
+  // Another computer offered to approve this one, with the dialog closed: the emoji wait here.
+  if (status.state === 'setting-up' && asking?.step === 'check' && !asking.confirmed) {
     return {
       tone: 'need',
-      line: asking.length === 1 ? 'A device wants to link' : 'Devices want to link',
+      line: 'Check the emoji',
+      help: `${asking.approver} offered to approve this computer.`,
+      action: 'Show',
+    };
+  }
+  // Another device asking to link comes first: the person is waiting at it.
+  const others = requests.filter((request) => !request.elsewhere);
+  if (status.state === 'on' && others.length > 0) {
+    return {
+      tone: 'need',
+      line: others.length === 1 ? 'A device wants to link' : 'Devices want to link',
       help:
-        asking.length === 1
-          ? `${asking[0]?.device} asked to sync your job hunt.`
-          : `${asking.length} devices asked to sync your job hunt.`,
+        others.length === 1
+          ? `${others[0]?.device} asked to sync your job hunt.`
+          : `${others.length} devices asked to sync your job hunt.`,
       action: 'Review',
     };
   }
@@ -92,14 +105,17 @@ function describe(status: SyncStatus | 'checking', requests: RequestView[]): Car
 export function SyncCard({
   status,
   requests = [],
+  asking = null,
   onOpen,
 }: {
   status: SyncStatus | 'checking';
   /** Other devices asking to link, which this computer can approve. */
   requests?: RequestView[];
+  /** This computer, asking to be linked. */
+  asking?: AskingView | null;
   onOpen: () => void;
 }) {
-  const view = describe(status, requests);
+  const view = describe(status, requests, asking);
   return (
     <SidebarCard
       title="Sync"

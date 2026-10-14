@@ -281,6 +281,7 @@ export function App({ api }: { api: FactwrightApi }) {
           setup={setup}
           sync={sync}
           linkRequests={approvals.requests}
+          linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           levels={levels.choices}

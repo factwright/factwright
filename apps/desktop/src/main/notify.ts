@@ -15,22 +15,25 @@ const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
 const toldOf = new Set<string>();
 
 /**
- * Tells the user when another device asks to link, if they're looking somewhere else, once for
- * each request. They approve it in the app, never from the notification.
+ * Tells the user when another device asks to link, once for each request, unless they're
+ * looking at the app already. On a Mac the app keeps running with its window closed, so the
+ * notification shows then too, and clicking it brings the window back. They approve in the app,
+ * never from the notification.
  */
-export function notifyOfRequests(window: BrowserWindow, requests: RequestView[]): void {
+export function notifyOfRequests(
+  requests: RequestView[],
+  window: { focused: () => boolean; show: () => void },
+): void {
   const fresh = requests.filter((request) => !request.elsewhere && !toldOf.has(request.id));
-  for (const request of requests) toldOf.add(request.id);
   const first = fresh[0];
-  if (!first || window.isDestroyed() || window.isFocused()) return;
+  if (!first) return;
+  for (const request of fresh) toldOf.add(request.id);
+  if (window.focused()) return;
   const notification = new Notification({
     title: 'A new device wants to link',
     body: `${first.device} asked to sync your job hunt. Open Factwright to check it’s yours.`,
   });
-  notification.on('click', () => {
-    if (window.isMinimized()) window.restore();
-    window.focus();
-  });
+  notification.on('click', () => window.show());
   notification.show();
 }
 

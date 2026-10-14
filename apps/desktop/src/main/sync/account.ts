@@ -85,6 +85,10 @@ const UNCHECKED = 'unchecked';
 /** How often, at most, a round of sync also looks for other devices' requests to link. */
 const REQUESTS_EVERY_MS = 60_000;
 
+/** How many times, and how far apart, linking with an approved key is tried while offline. */
+const KEY_TRIES = 12;
+const KEY_RETRY_MS = 5000;
+
 /** What to tell the user when a request to the server fails. */
 function reason(error: unknown): string {
   if (error instanceof SyncError) {
@@ -130,6 +134,7 @@ export class SyncAccount {
       accountKey: () => (this.runner ? this.accountKey : null),
       keyId: () => (this.runner ? (this.keys?.id ?? null) : null),
       linkWith: (accountKey) => this.linkWithKey(accountKey),
+      signedOut: () => this.signedOutElsewhere(),
       reason,
       ...(deps.approvalWait && { wait: deps.approvalWait }),
     });
@@ -516,15 +521,35 @@ export class SyncAccount {
     }
   }
 
-  /** On another device: takes the account key a device that's set up approved this one with. */
+  /**
+   * On another device: takes the account key a device that's set up approved this one with. The
+   * key was picked up once and won't come again, so a dropped connection is waited out.
+   */
   private async linkWithKey(accountKey: Bytes): Promise<EditResult> {
     const client = this.client;
     if (!client) return failed('Sign in first.');
-    try {
-      return await this.checkAndTurnOn(client, accountKey);
-    } catch (error) {
-      return failed(reason(error));
+    for (let tries = 1; ; tries++) {
+      try {
+        return await this.checkAndTurnOn(client, accountKey);
+      } catch (error) {
+        const offline = error instanceof SyncError && error.kind === 'offline';
+        if (!offline || tries >= KEY_TRIES || this.overtaken(client)) return failed(reason(error));
+        await new Promise((resolve) => setTimeout(resolve, KEY_RETRY_MS));
+      }
     }
+  }
+
+  /**
+   * The server says this sign-in has ended, such as when another device signed it out. As when
+   * signing in again finds that, the session goes, and sync says to sign in again.
+   */
+  private signedOutElsewhere(): void {
+    if (this.closed || !this.client) return;
+    void this.runner?.stop();
+    this.runner = null;
+    this.useClient(null);
+    this.secrets.delete('session');
+    this.set({ state: 'signed-out', email: this.email() });
   }
 
   /** Turns sync on with an account key, once it's the one the account uses. */
@@ -740,7 +765,12 @@ export class SyncAccount {
     return this.approvals.deny(id);
   }
 
-  /** Puts an approval that's over away. */
+  /** Signs out the device whose request was just turned down: it isn't the person's. */
+  signOutTurnedDown(): Promise<EditResult> {
+    return this.approvals.signOutTurnedDown();
+  }
+
+  /** Puts away what's over: an approval that ended, or a request just turned down. */
   dismissApproval(): void {
     this.approvals.dismiss();
   }
@@ -808,8 +838,10 @@ export class SyncAccount {
   async stop(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    // A request to link this computer is called off, so it doesn't wait on other devices.
+    const asking = this.approvals.stop();
     this.signIn?.cancel();
-    await this.runner?.stop();
+    await Promise.all([this.runner?.stop(), asking]);
     this.state.close();
   }
 }

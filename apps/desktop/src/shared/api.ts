@@ -319,9 +319,11 @@ export interface FactwrightApi {
   approveLinkRequest(id: string): Promise<EditResult>;
   /** With sync on: whether the emoji match, which approves the request or turns it down. */
   answerLinkRequest(matched: boolean): Promise<EditResult>;
-  /** With sync on: turns another device's request down. */
+  /** With sync on: turns another device's request down, leaving it signed in. */
   denyLinkRequest(id: string): Promise<EditResult>;
-  /** Puts an approval that's over away. */
+  /** Signs out the device whose request was just turned down: it isn't the person's. */
+  signOutTurnedDown(): Promise<EditResult>;
+  /** Puts away what's over: an approval that ended, or a request just turned down. */
   dismissLinkApproval(): void;
   syncNow(): void;
   /** Who the account is, its signed-in devices, and how much it stores. */

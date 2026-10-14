@@ -214,7 +214,19 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       onApprovals: (view) => {
         toWindow('sync:approvals', view);
-        notifyOfRequests(window, view.requests);
+        notifyOfRequests(view.requests, {
+          focused: () => !window.isDestroyed() && window.isFocused(),
+          show: () => {
+            // On a Mac the window may be closed, with the app still running.
+            if (window.isDestroyed()) {
+              window = createMainWindow(startUrl);
+              stopWithWindow(window);
+              return;
+            }
+            if (window.isMinimized()) window.restore();
+            window.focus();
+          },
+        });
       },
       otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.

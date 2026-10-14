@@ -25,6 +25,7 @@ const NO_APPROVALS: ApprovalsView = {
   asking: null,
   requests: [],
   approving: null,
+  turnedDown: null,
 };
 
 /** Linking devices by approval, as this computer takes part in it, kept up to date. */
