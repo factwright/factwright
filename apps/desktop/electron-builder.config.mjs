@@ -29,6 +29,14 @@ for (const name of [
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 const notes = `release-notes/${version}.md`;
 
+/**
+ * Where the Mac disk image's window puts the app and the Applications folder.
+ * scripts/installer-art.ts draws the window's background, build/background.png, to match.
+ */
+const diskImage = JSON.parse(
+  readFileSync(new URL('./build/disk-image.json', import.meta.url), 'utf8'),
+);
+
 /** Each run builds for one kind of computer, as the dist scripts say. */
 const windows = process.argv.includes('--win');
 
@@ -127,8 +135,17 @@ export default {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder fills in its own ${version} and ${ext}.
     artifactName: 'Factwright-${version}-mac.${ext}',
   },
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder fills in its own ${version} and ${ext}.
-  dmg: { artifactName: 'Factwright-${version}.${ext}' },
+  // The disk image opens on a window to drag the app onto Applications. The window takes the
+  // size of the picture behind it, which build/background.png and @2x hold.
+  dmg: {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder fills in its own ${version} and ${ext}.
+    artifactName: 'Factwright-${version}.${ext}',
+    iconSize: diskImage.iconSize,
+    contents: [
+      { ...diskImage.app, type: 'file' },
+      { ...diskImage.applications, type: 'link', path: '/Applications' },
+    ],
+  },
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: 'build/icon-win.png',

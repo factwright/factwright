@@ -152,7 +152,69 @@ export async function appIconPng({
       paint.write(pixels, (row * size + column) * 4);
     }
   }
-  return encodePng(size, pixels);
+  return encodePng(size, size, pixels);
+}
+
+/** The Mac disk image window's colors: the app's paper, with an arrow in its blue. */
+export const DISK_IMAGE = {
+  top: '#FAF9F6',
+  bottom: '#F1EFE8',
+  arrow: '#2F4BD0',
+} as const;
+
+/** Where the disk image's window shows its two icons, in points from its top left. */
+export interface DiskImageLayout {
+  window: { width: number; height: number };
+  /** The icons' width and height. */
+  iconSize: number;
+  /** The centers of the app's icon and of the Applications folder. */
+  app: { x: number; y: number };
+  applications: { x: number; y: number };
+}
+
+/**
+ * The picture behind the Mac disk image's window: an arrow from the app to the Applications
+ * folder, to drag it onto. Finder keeps a window with a picture light, even in dark mode, and
+ * labels its icons in black, so it's drawn for light. `scale` is pixels per point: 2 for Retina.
+ */
+export async function diskImagePng(layout: DiskImageLayout, scale: number): Promise<Uint8Array> {
+  const width = Math.round(layout.window.width * scale);
+  const height = Math.round(layout.window.height * scale);
+  const top = rgb(DISK_IMAGE.top);
+  const bottom = rgb(DISK_IMAGE.bottom);
+  const arrow = rgb(DISK_IMAGE.arrow);
+  // The arrow runs level between the icons, clear of each, in points.
+  const clear = layout.iconSize / 2 + 22;
+  const y = layout.app.y;
+  const tail = layout.app.x + clear;
+  const tip = layout.applications.x - clear;
+  const half = 1.25;
+  const head = 8;
+
+  const pixels = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row++) {
+    for (let column = 0; column < width; column++) {
+      // The pixel's middle, in points.
+      const [x, py] = [(column + 0.5) / scale, (row + 0.5) / scale];
+      const fromArrow = Math.min(
+        segmentDistance(x, py, tail, y, tip, y),
+        segmentDistance(x, py, tip, y, tip - head, y - head),
+        segmentDistance(x, py, tip, y, tip - head, y + head),
+      );
+      const paint = new Paint();
+      paint.over(mix(top, bottom, row / Math.max(height - 1, 1)), 1);
+      paint.over(arrow, cover((fromArrow - half) * scale));
+      paint.write(pixels, (row * width + column) * 4);
+    }
+  }
+  return encodePng(width, height, pixels);
+}
+
+/** How far a point is from a line segment. */
+function segmentDistance(x: number, y: number, ax: number, ay: number, bx: number, by: number) {
+  const [dx, dy] = [bx - ax, by - ay];
+  const along = Math.min(Math.max(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0), 1);
+  return Math.hypot(x - (ax + along * dx), y - (ay + along * dy));
 }
 
 /** How far a point is from the mark's ink, in the mark's units: negative inside. */
@@ -241,17 +303,17 @@ class Paint {
 }
 
 /** An 8-bit RGBA PNG. */
-async function encodePng(size: number, pixels: Uint8Array): Promise<Uint8Array> {
-  const stride = size * 4;
+async function encodePng(width: number, height: number, pixels: Uint8Array): Promise<Uint8Array> {
+  const stride = width * 4;
   // Each row starts with its filter type: none.
-  const rows = new Uint8Array((stride + 1) * size);
-  for (let row = 0; row < size; row++) {
+  const rows = new Uint8Array((stride + 1) * height);
+  for (let row = 0; row < height; row++) {
     rows.set(pixels.subarray(row * stride, (row + 1) * stride), row * (stride + 1) + 1);
   }
   const header = new Uint8Array(13);
   const view = new DataView(header.buffer);
-  view.setUint32(0, size);
-  view.setUint32(4, size);
+  view.setUint32(0, width);
+  view.setUint32(4, height);
   header[8] = 8; // bits per channel
   header[9] = 6; // RGBA
   return concat([

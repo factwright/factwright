@@ -1,13 +1,22 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { appIconPng, MARK, MARK_SMALL, markCut, markSvg } from './brand.ts';
+import {
+  appIconPng,
+  type DiskImageLayout,
+  diskImagePng,
+  MARK,
+  MARK_SMALL,
+  markCut,
+  markSvg,
+} from './brand.ts';
 
 /** Reads an 8-bit RGBA PNG back into its size and pixels. */
 async function decode(
   png: Uint8Array,
-): Promise<{ size: number; pixel: (x: number, y: number) => number[] }> {
+): Promise<{ width: number; height: number; pixel: (x: number, y: number) => number[] }> {
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
-  const size = view.getUint32(16);
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
   const data: number[] = [];
   for (let at = 8; at < png.length; ) {
     const length = view.getUint32(at);
@@ -20,9 +29,10 @@ async function decode(
       new Blob([new Uint8Array(data)]).stream().pipeThrough(new DecompressionStream('deflate')),
     ).arrayBuffer(),
   );
-  const stride = size * 4 + 1;
+  const stride = width * 4 + 1;
   return {
-    size,
+    width,
+    height,
     pixel: (x, y) => [...inflated.subarray(y * stride + 1 + x * 4, y * stride + 1 + x * 4 + 4)],
   };
 }
@@ -62,7 +72,7 @@ describe('the mark', () => {
 describe('the app icon', () => {
   it('sits on the Mac’s grid: clear corners, a blue body, and the mark in white', async () => {
     const icon = await decode(await appIconPng({ size: 256, shape: 'mac' }));
-    expect(icon.size).toBe(256);
+    expect([icon.width, icon.height]).toEqual([256, 256]);
     expect(icon.pixel(0, 0)[3]).toBe(0);
     // Apple's grid insets the body by 100 of 1024, and the mark sits 2 units right.
     const unit = (256 * 824) / 1024 / 120;
@@ -79,5 +89,27 @@ describe('the app icon', () => {
     const icon = await decode(await appIconPng({ size: 180, shape: 'square', markScale: 0.86 }));
     expect(icon.pixel(0, 0)[3]).toBe(255);
     expect(icon.pixel(179, 179)[3]).toBe(255);
+  });
+});
+
+describe('the Mac disk image’s window', () => {
+  const layout: DiskImageLayout = {
+    window: { width: 560, height: 340 },
+    iconSize: 96,
+    app: { x: 150, y: 160 },
+    applications: { x: 410, y: 160 },
+  };
+
+  it('fills the window, twice over for Retina, with an arrow from the app to Applications', async () => {
+    for (const scale of [1, 2]) {
+      const picture = await decode(await diskImagePng(layout, scale));
+      expect([picture.width, picture.height]).toEqual([560 * scale, 340 * scale]);
+      // The arrow, in the app's blue, halfway between the icons.
+      expect(picture.pixel(280 * scale, 160 * scale)).toEqual([0x2f, 0x4b, 0xd0, 255]);
+      // Light paper under the icons' labels, which Finder writes in black.
+      const [red = 0, green = 0, blue = 0, alpha] = picture.pixel(150 * scale, 215 * scale);
+      expect(alpha).toBe(255);
+      expect(Math.min(red, green, blue)).toBeGreaterThan(230);
+    }
   });
 });
