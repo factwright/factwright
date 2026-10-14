@@ -243,10 +243,13 @@ export class Approvals {
 
   // ---- Approving, on a computer that's set up ----
 
-  /** Looks again for other devices' requests to link. Without the account key, there are none. */
+  /**
+   * Looks again for other devices' requests to link. Without the account key, there are none.
+   * It asks whether the server can approve devices again too, if it hasn't said yet.
+   */
   async refresh(): Promise<void> {
     const client = this.client;
-    if (!client || !this.deps.accountKey() || !(await this.check(client))) {
+    if (!client || !(await this.check(client)) || !this.deps.accountKey()) {
       if (this.requests.length > 0) {
         this.requests = [];
         this.changed();
