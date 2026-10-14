@@ -5,13 +5,14 @@ import {
   type Contact,
   EMPLOYMENT,
   FIELDS,
+  type KindAnswers,
   LEVELS,
   labelOf,
   parseAnswerChanges,
   RELOCATE,
   WORKPLACES,
 } from '../../shared/about.ts';
-import { changeKind, hasKinds, type KindAnswers, kindsOf } from '../../shared/kinds.ts';
+import { changeKind, hasKinds, kindsOf } from '../../shared/kinds.ts';
 
 /** Indents a text's later lines under its first, to keep a list item whole. */
 const indented = (text: string) => text.trim().split(/\r?\n/).join('\n    ');
@@ -52,10 +53,12 @@ export function aboutYouText(answers: AboutYou): string {
     );
     for (const kind of kinds) {
       lines.push(`- ${kind.name} (\`${kind.id}\`):`);
+      const before = lines.length;
       item('Roles they want', kind.roles.join('; '), '    ');
       item('Kinds of work', list(FIELDS, kind.fields), '    ');
       item('Levels', list(LEVELS, kind.levels), '    ');
       pay(kind, '    ');
+      if (lines.length === before) lines.push('    - Nothing told yet.');
     }
   } else {
     item('Roles they want', answers.roles.join('; '));
@@ -121,7 +124,8 @@ const LABELS: Readonly<Record<(typeof SAVABLE_ANSWERS)[number], string>> = {
 };
 
 /** The answers each kind of job has its own of, which save_about_you saves for one kind. */
-const PAY_ANSWERS = ['targetPay', 'minPay'] as const;
+const PAY_ANSWERS: readonly string[] = ['targetPay', 'minPay'];
+const isPay = (key: string) => PAY_ANSWERS.includes(key);
 
 /**
  * The changes save_about_you was asked to make, checked like the window's own, with contact
@@ -137,10 +141,11 @@ export function aboutYouChanges(
   if (keys.length === 0) return null;
   if (keys.some((key) => !(SAVABLE_ANSWERS as readonly string[]).includes(key))) return null;
   const kinds = kindsOf(current);
+  const pays = keys.some(isPay);
+  // With more than one kind of job, pay is each kind's own, so it has to say which.
+  if (pays && hasKinds(current) && kindId === undefined) return null;
   const kind = kindId === undefined ? kinds[0] : kinds.find((each) => each.id === kindId);
-  if (!kind || (kindId !== undefined && !keys.some((key) => PAY_ANSWERS.includes(key as never)))) {
-    return null;
-  }
+  if (!kind || (kindId !== undefined && !pays)) return null;
   const raw: Record<string, unknown> = {};
   const contact: Partial<Contact> = {};
   for (const key of keys) {
@@ -154,12 +159,8 @@ export function aboutYouChanges(
   if (Object.keys(contact).length > 0) raw.you = { ...current.you, ...contact };
   const changes = parseAnswerChanges(raw);
   if (!changes) return null;
-  const pay = Object.fromEntries(
-    PAY_ANSWERS.filter((key) => key in changes).map((key) => [key, changes[key]]),
-  );
-  const shared = Object.fromEntries(
-    Object.entries(changes).filter(([key]) => !PAY_ANSWERS.includes(key as never)),
-  );
+  const pay = Object.fromEntries(Object.entries(changes).filter(([key]) => isPay(key)));
+  const shared = Object.fromEntries(Object.entries(changes).filter(([key]) => !isPay(key)));
   // Pay is each kind of job's own, so the first kind's is the answers' own, as before.
   const named = hasKinds(current) ? ` for ${kind.name}` : '';
   const saved = keys.map((key) => {
@@ -168,7 +169,7 @@ export function aboutYouChanges(
     if (key === 'relocate') {
       return `${label}: ${labelOf(RELOCATE, value as AboutYou['relocate'])}`;
     }
-    return `${label}${PAY_ANSWERS.includes(key as never) ? named : ''}: ${value}`;
+    return `${label}${isPay(key) ? named : ''}: ${value}`;
   });
   return { changes: { ...shared, ...changeKind(current, kind.id, pay) }, saved };
 }

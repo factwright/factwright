@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { type AboutYou, type AnswerChanges, NO_ANSWERS } from '../../shared/about.ts';
+import { type AboutYou, type AnswerChanges, applyChanges, NO_ANSWERS } from '../../shared/about.ts';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
@@ -28,7 +28,7 @@ let answers: AboutYou;
 const about = {
   answers: () => answers,
   saveAnswers: vi.fn((changes: AnswerChanges) => {
-    answers = { ...answers, ...changes };
+    answers = applyChanges(answers, changes);
     return answers;
   }),
 };
@@ -275,12 +275,22 @@ describe('job_details', () => {
         },
       ],
     };
+    // Nobody has said which it is yet, so it only counts as the first kind.
     expect(await tool('job_details').run({ job: id })).toContain(
-      '- Kind of job: Developer (`developer`)',
+      '- Kind of job: not set yet, so it counts as Developer (`developer`) until a fit check or the user decides',
+    );
+    expect(await tool('find_job').run({ company: 'Acme' })).toContain('kind of job not set yet');
+    writeFileSync(
+      join(root, 'applications', FOLDER, 'job.md'),
+      `${readFileSync(join(root, 'applications', FOLDER, 'job.md'), 'utf8')}\n- **Kind of job:** developer`,
+    );
+    jobs.read();
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Kind of job: Developer (`developer`), from its fit check or job search',
     );
     jobs.updateJob(id, { kind: 'project-manager' });
     expect(await tool('job_details').run({ job: id })).toContain(
-      '- Kind of job: Project manager (`project-manager`)',
+      '- Kind of job: Project manager (`project-manager`), as the user put it',
     );
     expect(await tool('find_job').run({ company: 'Acme' })).toContain(
       'kind of job Project manager (`project-manager`)',
@@ -368,6 +378,11 @@ describe('about_you', () => {
         '- Work authorization: US citizen',
       ].join('\n'),
     );
+    // A kind with nothing told yet says so, rather than a heading with nothing under it.
+    answers = { ...answers, roles: [], targetPay: '' };
+    expect(await tool('about_you').run({})).toContain(
+      '- Developer (`developer`):\n    - Nothing told yet.\n- Project manager',
+    );
   });
 
   it('says where else to look when the user hasn’t told it anything', async () => {
@@ -429,7 +444,11 @@ describe('save_about_you', () => {
       start: 'Right away',
       otherKinds: [{ id: 'project-manager', targetPay: '$170,000' }],
     });
-    await tool('save_about_you').run({ minPay: '$150,000' });
+    // Pay without the kind it's for is refused, saying which kinds there are.
+    await expect(tool('save_about_you').run({ minPay: '$150,000' })).rejects.toThrow(
+      'With pay, give kind too, the kind of job it’s for: developer, project-manager.',
+    );
+    await tool('save_about_you').run({ kind: 'developer', minPay: '$150,000' });
     expect(answers.minPay).toBe('$150,000');
     for (const input of [
       { kind: 'designer', targetPay: '$1' },

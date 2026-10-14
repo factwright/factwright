@@ -485,10 +485,19 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which they OK unless they chose otherwise.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input) => {
-        const read = aboutYouChanges(input, deps.about.answers());
+        const current = deps.about.answers();
+        const read = aboutYouChanges(input, current);
         if (!read) {
+          const ids = hasKinds(current) ? kindsOf(current).map((kind) => kind.id) : [];
           throw new Error(
-            `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text. relocate is no, maybe or yes. kind, with pay only, is the id of one of the kinds of job about_you lists.`,
+            [
+              `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text. relocate is no, maybe or yes.`,
+              ids.length > 0
+                ? `With pay, give kind too, the kind of job it’s for: ${ids.join(', ')}.`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' '),
           );
         }
         deps.about.saveAnswers(read.changes);

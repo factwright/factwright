@@ -13,7 +13,7 @@ import {
   type JobShot,
   jobProgress,
   type KindName,
-  kindOfJob,
+  kindNamed,
   localDate,
   normalizeUrl,
   readApplySteps,
@@ -59,19 +59,39 @@ export function findJobs(jobs: readonly Job[], query: JobQuery): Job[] {
 
 const name = (job: Job) => `${job.company}, ${job.role || 'the company itself'}`;
 
-/** The kind of job a job is under, by name and id, when the user wants more than one kind. */
-function kindLine(job: Job, kinds: readonly KindName[]): string | null {
+/** A kind of job by its name and id, as the skills write it back. */
+const kindText = (kind: KindName) => `${kind.name} (\`${kind.id}\`)`;
+
+/**
+ * The kind of job a job is under, when the user wants more than one kind, and who set it: the
+ * user, or its fit check or job search. A job neither set only counts as the first kind until
+ * one does, so its kind is null, for a fit check to judge which it is.
+ */
+function kindSet(job: Job, kinds: readonly KindName[]) {
   if (kinds.length < 2) return null;
-  const kind = kinds.find((each) => each.id === kindOfJob(job, kinds));
-  return kind ? `${kind.name} (\`${kind.id}\`)` : null;
+  const named = (id: string | null) => kinds.find((kind) => kind.id === id) ?? null;
+  const mine = named(kindNamed(job.kind, kinds));
+  if (mine) return { kind: mine, by: 'as the user put it' };
+  const found = named(kindNamed(job.kindFound, kinds));
+  if (found) return { kind: found, by: 'from its fit check or job search' };
+  return { kind: null, first: kinds[0] as KindName };
+}
+
+/** A job's kind of job, for its details, or null with only one kind. */
+function kindLine(job: Job, kinds: readonly KindName[]): string | null {
+  const set = kindSet(job, kinds);
+  if (!set) return null;
+  return set.kind
+    ? `${kindText(set.kind)}, ${set.by}`
+    : `not set yet, so it counts as ${kindText(set.first)} until a fit check or the user decides`;
 }
 
 /** One line on a job: where it stands, and what's on file. */
 function summary(job: Job, today: string, kinds: readonly KindName[]): string {
   const { status } = jobProgress(job, today);
-  const kind = kindLine(job, kinds);
+  const set = kindSet(job, kinds);
   const parts = [
-    kind && `kind of job ${kind}`,
+    set && `kind of job ${set.kind ? kindText(set.kind) : 'not set yet'}`,
     job.fit &&
       `fit check ${[job.fit.verdict, job.fit.score].filter((part) => part !== null).join(' ')}${job.fit.date ? ` on ${job.fit.date}` : ''}`,
     job.search?.tier &&

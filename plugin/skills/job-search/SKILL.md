@@ -23,9 +23,9 @@ Each place is a search of its own, with its own folder, so the app can show whic
 
 Before starting, read:
 - `searches/criteria.md`: the user's filters, preferences, pay rule, scoring and tiers. It's binding for searches. The app writes it from what the user told it (Profile → What you want); if the user asks to change it, edit it here, and the app leaves it as edited.
-  - With more than one kind of job, its **Kinds of job** section gives each kind's id, levels, kind of work and pay. A job of a kind must pass those lines too, and its role is scored against them.
+  - With more than one kind of job, its **Kinds of job** section gives each kind's id, levels, kind of work and pay. A job of a kind must pass those lines too, and its role is scored against them. The kinds are the ones `about_you` lists: a section for a kind it doesn't list is left over from before, so skip it.
   - If the user wants more than one kind (`about_you` lists them) but the file has no section for one, as when they edited it by hand before adding that kind: the file's filters and scoring are the first kind's. For another kind, use its own roles, levels and pay from `about_you` in place of the file's, and the rest of the file as written.
-  - If it's missing but `about-me/answers.json` has what they want (`roles`, `levels`, `workplaces`, `companies` and the rest), work from that, and say so in one line.
+  - If it's missing but `about_you` has what they want (roles, levels, where, kinds of company and the rest, and each kind of job's), work from that, and say so in one line.
   - If neither is there, ask the user in one round of AskUserQuestion: where they can work (remote from where, or which cities), the levels they want, and the kinds of role.
   - Save their answers as `searches/criteria.md`, with **Filters**, **Preferences** and the scoring below, then go on.
 - all of `facts/`. Fit is judged against facts only, the same bar as resumes. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
@@ -53,9 +53,9 @@ Before starting, read:
 - Apply the criteria.md **Filters** to every listing. Count the reasons for everything you drop, with a few example companies for each.
 - With more than one kind of job, a listing must also pass its kind's lines: the kind asked for, or for a search for every kind, the kind it fits best. One that fits no kind is dropped, counted as "not a kind of job they want".
 - With more than ~60 listings, split the reading across subagents, using the parts of 50 the tool listed (one or two parts each). Start them all at once. Give each one:
-  - criteria.md's filters
+  - criteria.md's filters, and with more than one kind of job, the Level, Kind of work and Pay lines of the kind asked for, or of every kind, with their ids
   - the file and its lines
-  - what to return: the listings that pass (number, company, roles, where, pay, link, HN id), the near misses, and the drop counts by reason with examples.
+  - what to return: the listings that pass (number, company, roles, where, pay, link, HN id, and with more than one kind, the kind each fits), the near misses, and the drop counts by reason with examples.
   - They don't need facts/.
 - **Near misses:** strong fits blocked only by location get their own list, with what blocked them.
 - Recruiter and hidden-employer listings stay in. Flag them, and suggest `/factwright:unmask-job` in their flags.
@@ -75,9 +75,9 @@ For each listing that passed:
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61. Below 50 goes to long shots.
 - With more than ~15 jobs to verify, split this step across subagents, ~8 jobs each, all at once. Give each one:
   - `searches/criteria.md`, all of `facts/`, and the search's folder
-  - its jobs: company, role, link and HN id
+  - its jobs: company, role, link and HN id, and with more than one kind of job, each job's kind, to score its role against
   - to call `find_job` for each job first, and flag the ones the user has seen before
-  - the jobs.json fields to return for each one
+  - the jobs.json fields to return for each one, `kind` included
   - Pages read with `read_page` may ask the user, so tell the user how many to expect.
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.
 

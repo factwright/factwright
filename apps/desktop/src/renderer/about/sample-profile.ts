@@ -1,5 +1,5 @@
 import { TEMPLATES } from '@factwright/engine/templates';
-import { type AboutYou, readAnswers, type SharedFile } from '../../shared/about.ts';
+import { type AboutYou, applyChanges, readAnswers, type SharedFile } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { Profile, ProfileStatus, TemplateInfo } from '../../shared/profile.ts';
 import { samplePdf } from '../jobs/sample-pdf.ts';
@@ -190,7 +190,7 @@ export function sampleProfile(state: string | null): ProfileApi {
   return {
     profile: async () => profile(),
     saveAnswers: async (changes) => {
-      answers = { ...answers, ...changes };
+      answers = applyChanges(answers, changes);
       return answers;
     },
     saveNotes: async (text) => {

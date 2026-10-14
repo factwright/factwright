@@ -116,17 +116,18 @@ function kindSections(kinds: readonly JobKind[]): string[] {
 export function criteriaMarkdown(answers: AboutYou): string {
   const place = where(answers);
   const kinds = hasKinds(answers) ? kindsOf(answers) : null;
-  const [only] = kindsOf(answers);
+  // With one kind of job, its own lines stay where they always were.
+  const only = kinds ? null : (kindsOf(answers)[0] as JobKind);
   const filters = [
     ...item('Where', place),
-    ...(kinds || !only ? [] : kindFilters(only)),
+    ...(only ? kindFilters(only) : []),
     ...item(
       'Employment',
       answers.employment.length > 0
         ? `${either(answers.employment.map((each) => labelOf(EMPLOYMENT, each)))}.`
         : null,
     ),
-    ...(kinds || !only ? [] : payFilter(only)),
+    ...(only ? payFilter(only) : []),
     ...item('Not in', answers.avoid.length > 0 ? `${either(lower(answers.avoid))}.` : null),
     ...item('Work authorization', answers.authorization ? typed(answers.authorization) : null),
     ...item('Deal-breakers', answers.dealBreakers ? typed(answers.dealBreakers) : null),
@@ -147,7 +148,7 @@ export function criteriaMarkdown(answers: AboutYou): string {
         ]
       : []),
   ];
-  const shape = kinds || !only ? '' : shapeOf(only);
+  const shape = only ? shapeOf(only) : '';
   const body = [
     '# Job search criteria',
     '',
@@ -160,7 +161,7 @@ export function criteriaMarkdown(answers: AboutYou): string {
     ...(preferences.length > 0 ? preferences : ['- None given yet.']),
     '',
     '## Pay',
-    ...(kinds || !only ? [] : kindPay(only)),
+    ...(only ? kindPay(only) : []),
     `- Show pay when the posting lists it.${kinds ? ' Each kind’s pay is in its section.' : ''} Pay never changes a fit score.`,
     '',
     ...(situation.length > 0 ? ['## Their situation', ...situation, ''] : []),

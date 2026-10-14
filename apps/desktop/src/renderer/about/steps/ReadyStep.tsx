@@ -5,11 +5,12 @@ import {
   type AboutYou,
   COMPANY_KINDS,
   FIELDS,
+  type KindAnswers,
   LEVELS,
   labelOf,
   wordCount,
 } from '../../../shared/about.ts';
-import { hasKinds, type KindAnswers, kindsOf } from '../../../shared/kinds.ts';
+import { hasKinds, kindsOf } from '../../../shared/kinds.ts';
 import { livePicks, templateName } from '../../../shared/looks.ts';
 import type { TemplateInfo } from '../../../shared/profile.ts';
 import ready from './ReadyStep.module.css';

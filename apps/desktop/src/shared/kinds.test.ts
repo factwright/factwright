@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { type AboutYou, ANSWER_LIMITS, NO_ANSWERS, readAnswers } from './about.ts';
+import {
+  type AboutYou,
+  ANSWER_LIMITS,
+  applyChanges,
+  mergeChanges,
+  NO_ANSWERS,
+  readAnswers,
+} from './about.ts';
 import {
   addKind,
   changeKind,
   firstKindName,
   hasKinds,
-  kindName,
   kindsOf,
   removeKind,
   renameKind,
@@ -16,7 +22,7 @@ const ONE = readAnswers({ roles: ['Staff Engineer'], levels: ['senior'], minPay:
 /** Applies a change that has to work. */
 function apply(answers: AboutYou, edit: ReturnType<typeof addKind>): AboutYou {
   if (!edit.ok) throw new Error(edit.message);
-  return readAnswers({ ...answers, ...edit.changes });
+  return applyChanges(answers, edit.changes);
 }
 
 const TWO = apply(ONE, addKind(ONE, 'Project manager', 'Developer'));
@@ -59,15 +65,51 @@ describe('kinds of job', () => {
   });
 
   it('each keep their own titles, levels and pay', () => {
-    const first = readAnswers({ ...TWO, ...changeKind(TWO, 'developer', { roles: ['Lead'] }) });
+    const first = applyChanges(TWO, changeKind(TWO, 'developer', { roles: ['Lead'] }));
     expect(first.roles).toEqual(['Lead']);
     expect(first.otherKinds[0]?.roles).toEqual([]);
-    const other = readAnswers({
-      ...TWO,
-      ...changeKind(TWO, 'project-manager', { roles: ['Program Manager'], payFilter: true }),
+    const change = changeKind(TWO, 'project-manager', { roles: ['Program Manager'] });
+    // Another kind's change goes by its id, a field at a time.
+    expect(change).toEqual({
+      kindChanges: [{ id: 'project-manager', roles: ['Program Manager'] }],
     });
+    const other = applyChanges(TWO, change);
     expect(other.roles).toEqual(['Staff Engineer']);
-    expect(other.otherKinds[0]).toMatchObject({ roles: ['Program Manager'], payFilter: true });
+    expect(other.otherKinds[0]).toMatchObject({ roles: ['Program Manager'], payFilter: false });
+  });
+
+  it('change a field at a time, so changes made elsewhere meanwhile stay', () => {
+    // The user changes the titles while Claude saves the same kind's pay.
+    const typed = changeKind(TWO, 'project-manager', { roles: ['Program Manager'] });
+    const elsewhere = applyChanges(TWO, changeKind(TWO, 'project-manager', { targetPay: '$170k' }));
+    expect(applyChanges(elsewhere, typed).otherKinds[0]).toMatchObject({
+      roles: ['Program Manager'],
+      targetPay: '$170k',
+    });
+    // Changes typed one after another join, by kind.
+    const joined = mergeChanges(
+      mergeChanges(typed, changeKind(TWO, 'project-manager', { levels: ['senior'] })),
+      { quiet: true },
+    );
+    expect(joined).toEqual({
+      quiet: true,
+      kindChanges: [{ id: 'project-manager', roles: ['Program Manager'], levels: ['senior'] }],
+    });
+    // A change to a kind removed meanwhile does nothing.
+    const removed = applyChanges(TWO, removeKind(TWO, 'project-manager'));
+    expect(applyChanges(removed, typed).otherKinds).toEqual([]);
+    // Adding a kind never undoes a change made to another meanwhile.
+    const adding = addKind(TWO, 'Designer');
+    if (!adding.ok) throw new Error(adding.message);
+    expect(applyChanges(elsewhere, adding.changes).otherKinds).toMatchObject([
+      { id: 'project-manager', targetPay: '$170k' },
+      { id: 'designer', name: 'Designer' },
+    ]);
+  });
+
+  it('get ids Windows can hold as folder names', () => {
+    const nurse = apply(ONE, addKind(ONE, 'PRN', 'Developer'));
+    expect(nurse.otherKinds[0]).toMatchObject({ id: 'prn-jobs', name: 'PRN' });
   });
 
   it('get a name of their own, and keep their id when renamed', () => {
@@ -100,7 +142,7 @@ describe('kinds of job', () => {
   });
 
   it('go back to one when the others are removed, with the first still named', () => {
-    const back = readAnswers({ ...TWO, ...removeKind(TWO, 'project-manager') });
+    const back = applyChanges(TWO, removeKind(TWO, 'project-manager'));
     expect(hasKinds(back)).toBe(false);
     expect(back.firstKind).toEqual({ id: 'developer', name: 'Developer' });
     // The first can't be removed this way.
@@ -109,11 +151,5 @@ describe('kinds of job', () => {
     const again = apply(back, addKind(back, 'Designer', 'Engineer'));
     expect(again.firstKind).toEqual({ id: 'developer', name: 'Engineer' });
     expect(apply(back, addKind(back, 'Designer')).firstKind?.name).toBe('Developer');
-  });
-
-  it('name a job’s kind by its id, or the first’s when it’s none of them', () => {
-    expect(kindName(TWO, 'project-manager')).toBe('Project manager');
-    expect(kindName(TWO, 'removed')).toBe('Developer');
-    expect(kindName(TWO, null)).toBe('Developer');
   });
 });

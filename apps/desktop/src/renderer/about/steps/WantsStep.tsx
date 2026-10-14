@@ -9,7 +9,7 @@ import {
   TextArea,
 } from '@factwright/ui';
 import { Plus } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   type AboutYou,
   ANSWER_LIMITS,
@@ -18,18 +18,13 @@ import {
   EMPLOYMENT,
   FIELDS,
   type JobKind,
+  type KindAnswers,
   LEVELS,
   RELOCATE,
   WORKPLACES,
 } from '../../../shared/about.ts';
-import {
-  changeKind,
-  hasKinds,
-  type KindAnswers,
-  kindsOf,
-  removeKind,
-} from '../../../shared/kinds.ts';
-import { AddKind, KindName, KindSwitcher, RemoveKind } from './KindsOfJob.tsx';
+import { changeKind, hasKinds, kindsOf, removeKind } from '../../../shared/kinds.ts';
+import { AddKind, KindNameField, KindSwitcher, RemoveKind } from './KindsOfJob.tsx';
 import styles from './steps.module.css';
 
 const options = <T extends string>(list: readonly (readonly [T, string, ...string[]])[]) =>
@@ -100,6 +95,16 @@ export function WantsStep({
   const [adding, setAdding] = useState(false);
   // A kind just added, whose titles are the next thing to fill in.
   const [added, setAdded] = useState<string | null>(null);
+  // Where focus goes once the button the user pressed has gone: back to adding a kind after
+  // Cancel, or to the kind now picked after removing one.
+  const work = useRef<HTMLDivElement>(null);
+  const [refocus, setRefocus] = useState<'add' | 'kinds' | null>(null);
+  useEffect(() => {
+    if (!refocus) return;
+    setRefocus(null);
+    const picked = refocus === 'kinds' ? 'input[type="radio"]:checked, ' : '';
+    work.current?.querySelector<HTMLElement>(`${picked}[data-add-kind]`)?.focus();
+  }, [refocus]);
   const kind = (kinds.find((each) => each.id === picked) ?? kinds[0]) as JobKind;
   const first = kinds[0] as JobKind;
   const change = (changes: Partial<KindAnswers>) => update(changeKind(answers, kind.id, changes));
@@ -112,7 +117,10 @@ export function WantsStep({
         setAdded(id);
         setAdding(false);
       }}
-      onCancel={() => setAdding(false)}
+      onCancel={() => {
+        setAdding(false);
+        setRefocus('add');
+      }}
     />
   );
   return (
@@ -127,7 +135,7 @@ export function WantsStep({
         </p>
       </div>
 
-      <div className={styles.section}>
+      <div ref={work} className={styles.section}>
         <h3 className={styles.sectionTitle}>The work</h3>
         {many && (
           <KindSwitcher
@@ -144,7 +152,9 @@ export function WantsStep({
         {many && addForm}
         {/* Each kind's panel is its own, so its name and its question about removing it start afresh. */}
         <div key={kind.id} className={many ? styles.kind : styles.section}>
-          {many && <KindName answers={answers} id={kind.id} name={kind.name} update={update} />}
+          {many && (
+            <KindNameField answers={answers} id={kind.id} name={kind.name} update={update} />
+          )}
           <Field
             label="Job titles you want"
             hint="Press Enter after each one. Close matches count too."
@@ -180,6 +190,7 @@ export function WantsStep({
               onRemove={() => {
                 update(removeKind(answers, kind.id));
                 setPicked(first.id);
+                setRefocus('kinds');
               }}
             />
           )}
@@ -192,6 +203,7 @@ export function WantsStep({
                 size="sm"
                 variant="quiet"
                 icon={<Plus size={14} aria-hidden="true" />}
+                data-add-kind
                 onClick={() => setAdding(true)}
               >
                 Add another kind of job

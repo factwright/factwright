@@ -12,12 +12,20 @@ describe('kindNamed', () => {
     expect(kindNamed('Project manager', KINDS)).toBe('project-manager');
     expect(kindNamed('PROJECT MANAGER', KINDS)).toBe('project-manager');
     expect(kindNamed(' `developer` ', KINDS)).toBe('developer');
+    // As the tools show a kind, its name and its id.
+    expect(kindNamed('Project manager (`project-manager`)', KINDS)).toBe('project-manager');
   });
 
   it('finds nothing for a kind the user doesn’t have, or for nothing said', () => {
     expect(kindNamed('designer', KINDS)).toBeNull();
     expect(kindNamed('', KINDS)).toBeNull();
     expect(kindNamed(null, KINDS)).toBeNull();
+    expect(kindNamed('Designer (`designer`)', KINDS)).toBeNull();
+    // Words slug can't keep match nothing, not a kind whose name it can't keep either.
+    const nurse = [...KINDS, { id: 'kind', name: '看護師' }];
+    expect(kindNamed('—', nurse)).toBeNull();
+    expect(kindNamed('?', nurse)).toBeNull();
+    expect(kindNamed('看護師', nurse)).toBe('kind');
   });
 });
 
@@ -38,7 +46,7 @@ describe('KIND_ID', () => {
   it('takes a few lowercase words with hyphens, and nothing that could leave a folder', () => {
     for (const id of ['developer', 'project-manager', 'kind-2'])
       expect(KIND_ID.test(id)).toBe(true);
-    for (const id of ['', '-lead', 'Developer', '../base', 'a/b', 'x'.repeat(41)]) {
+    for (const id of ['', '-lead', 'Developer', '../base', 'a/b', 'x'.repeat(41), 'prn', 'aux']) {
       expect(KIND_ID.test(id)).toBe(false);
     }
   });

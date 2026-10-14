@@ -85,8 +85,9 @@ export interface CollectedJob {
   /** Every job search that found it, oldest first. */
   searches: SearchRun[];
   /**
-   * The kind of job its newest fit check judged it as, or else the job search that rated it
-   * highest, by id or name. Null when none said, as with only one kind of job.
+   * The kind of job its newest fit check judged it as, or else the one the job search that rated
+   * it highest gave it, or else the newest search that gave one, by id or name. Null when none
+   * said, as with only one kind of job.
    */
   kindFound: string | null;
   /** Its folder under applications/, once a fit check has made one. */

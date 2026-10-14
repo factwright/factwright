@@ -4,7 +4,7 @@ import {
   type AnswerChanges,
   FIELDS,
   type JobKind,
-  type KIND_ANSWERS,
+  type KindAnswers,
   kindIdFor,
   labelOf,
 } from './about.ts';
@@ -29,9 +29,6 @@ export function kindsOf(answers: AboutYou): JobKind[] {
 
 /** Whether the user wants more than one kind of job, so the app shows their kinds. */
 export const hasKinds = (answers: Pick<AboutYou, 'otherKinds'>) => answers.otherKinds.length > 0;
-
-/** A kind of job's own answers, which each kind has apart from the others. */
-export type KindAnswers = Pick<JobKind, (typeof KIND_ANSWERS)[number]>;
 
 /** A change to the kinds of job, or why it can't be made, in words the user can act on. */
 export type KindEdit = { ok: true; changes: AnswerChanges } | { ok: false; message: string };
@@ -101,15 +98,12 @@ export function renameKind(answers: AboutYou, id: string, name: string): KindEdi
   if (answers.firstKind?.id === id) {
     return { ok: true, changes: { firstKind: { ...answers.firstKind, name: named } } };
   }
-  const otherKinds = answers.otherKinds.map((kind) =>
-    kind.id === id ? { ...kind, name: named } : kind,
-  );
-  return { ok: true, changes: { otherKinds } };
+  return { ok: true, changes: { kindChanges: [{ id, name: named }] } };
 }
 
 /**
  * The changes that set some of one kind of job's own answers. The first kind's are the answers'
- * own, as they were before there was a second.
+ * own, as they were before there was a second. Another kind's change goes by its id, alone.
  */
 export function changeKind(
   answers: AboutYou,
@@ -117,10 +111,7 @@ export function changeKind(
   changes: Partial<KindAnswers>,
 ): AnswerChanges {
   const other = answers.otherKinds.some((kind) => kind.id === id);
-  if (!other) return changes;
-  return {
-    otherKinds: answers.otherKinds.map((kind) => (kind.id === id ? { ...kind, ...changes } : kind)),
-  };
+  return other ? { kindChanges: [{ id, ...changes }] } : changes;
 }
 
 /**
@@ -129,10 +120,4 @@ export function changeKind(
  */
 export function removeKind(answers: AboutYou, id: string): AnswerChanges {
   return { otherKinds: answers.otherKinds.filter((kind) => kind.id !== id) };
-}
-
-/** A kind of job's name, by its id, or the first kind's when it's none of them. */
-export function kindName(answers: AboutYou, id: string | null): string {
-  const kinds = kindsOf(answers);
-  return (kinds.find((kind) => kind.id === id) ?? kinds[0])?.name ?? '';
 }

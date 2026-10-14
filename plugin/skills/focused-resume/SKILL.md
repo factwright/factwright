@@ -31,7 +31,7 @@ If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview
   - From a link: read it with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name.
   - Pasted text, or the link needs a sign-in: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
 - If the posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"), write `apply.md`, which the app shows as a How to apply alert. Skip it for a plain apply button. Its format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
-- Write (or update) `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Format:** <pdf, word or both>` and `- **Style / track:** <style> / <track>`, then:
+- Write (or update) `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Format:** <pdf, word or both>` and `- **Style / track:** <style> / <track>`, and the fit check's `- **Kind of job:**` line when it has one, then:
   - `## Job description`: "Saved word for word in posting.md."
   - `## The user's notes`, verbatim
 
@@ -74,7 +74,7 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
 
 ## 6. Draft `resume.json` in the folder
 - Copy the closest starting point: the style and track's starting resume (`base/<style>-<track>.json`, or the base the style file names), or a past `applications/*/resume.json` for a more similar role.
-  - When the user wants more than one kind of job, start from the job's kind's: `job_details` gives its kind. The first kind's starting resumes are at the top of `base/`, and each other kind's are in its own folder, `base/<kind>/<style>-<track>.json`. Another kind's resume is a starting point only when its own kind has none.
+  - When the user wants more than one kind of job, start from the job's kind's: `job_details` gives its kind. When it says the kind isn't set yet, use the kind the posting fits best, and say which. The first kind's starting resumes are at the top of `base/`, and each other kind's are in its own folder, `base/<kind>/<style>-<track>.json`. Another kind's resume is a starting point only when its own kind has none.
 - Set `layout`, `format` and `output_name`:
   - `layout`: if the user names a template, use it: `list_templates` gives each one's ID, built in or their own. Otherwise, the one `guide/templates.md` gives the job's kind of company (startups, established companies, or government, nonprofits and schools), or, with none for that kind, the one for any job. Without `guide/templates.md`, the starting point's. When it gives more than one for the job's kind, or none for its kind and more than one for any job, pick the one of those that suits the role, by what the user's guide says each is for (such as a layouts table in `guide/writing.md`, or a layout a style file names for the track). With nothing said, use the one the starting point uses if it's among them, otherwise the first listed.
   - `format`: what the user asked for, or what `guide/templates.md` says.

@@ -17,7 +17,7 @@ Read these, all at once:
   - `roles`, `fields`, `levels`, `workplaces`, `companies`, `industries` and the rest: what they want.
   - `looks`: the templates they picked, each with the kind of company it's for (`startup`, `established`, `public` or `any`).
   - `files`: what they shared, each with its `path`, its `kind` (`resume`, `linkedin-profile`, `linkedin-data`, `screenshot` or `document`) and its `textFile`, the text read out of it, when there is one.
-- `about-me/kinds-of-job.json`, if it's there: they want more than one kind of job, such as Developer and Project manager. `first` names the first kind, whose `roles`, `fields`, `levels` and pay are the ones in answers.json. `others` holds each other kind with its own `id`, `name`, `roles`, `fields`, `levels` and pay. Everything else in answers.json holds for every kind.
+- `about-me/kinds-of-job.json`, when its `others` lists any kind: they want more than one kind of job, such as Developer and Project manager, and `about_you` lists them too, as the app reads them. `first` names the first kind, whose `roles`, `fields`, `levels` and pay are the ones in answers.json. `others` holds each other kind with its own `id`, `name`, `roles`, `fields`, `levels` and pay. Everything else in answers.json holds for every kind.
 - `about-me/read.md`, if it's there: what's been read already, a line each: `- <path> · <YYYY-MM-DD>`.
 - `guide/rules.md`, `guide/writing.md`, `guide/styles/README.md`, `guide/templates.md` and `facts/README.md`. They're binding.
 - all of `facts/`, if there's anything in it.

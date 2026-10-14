@@ -1,15 +1,8 @@
 import { Button, Field, Input, SegmentedControl } from '@factwright/ui';
 import { Plus } from 'lucide-react';
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import { type AboutYou, ANSWER_LIMITS, type AnswerChanges } from '../../../shared/about.ts';
-import {
-  addKind,
-  firstKindName,
-  hasKinds,
-  type KindEdit,
-  kindsOf,
-  renameKind,
-} from '../../../shared/kinds.ts';
+import { addKind, firstKindName, hasKinds, kindsOf, renameKind } from '../../../shared/kinds.ts';
 import styles from './KindsOfJob.module.css';
 
 /**
@@ -41,6 +34,8 @@ export function KindSwitcher({
           size="sm"
           variant="quiet"
           icon={<Plus size={14} aria-hidden="true" />}
+          aria-label="Add another kind of job"
+          data-add-kind
           onClick={onAdd}
         >
           Add another
@@ -151,10 +146,11 @@ export function AddKind({
 }
 
 /**
- * A kind of job's name, changed as the user types. A name that won't do, such as one another
- * kind has, stays on screen with why, and isn't saved until it will.
+ * A kind of job's name. It's saved when the user moves on, by leaving the box, pressing Enter or
+ * closing, so a name on its way to another, such as "Develope" on the way to one that's taken,
+ * is never saved. A name that won't do stays on screen with why, and isn't saved.
  */
-export function KindName({
+export function KindNameField({
   answers,
   id,
   name,
@@ -166,20 +162,19 @@ export function KindName({
   update: (changes: AnswerChanges) => void;
 }) {
   const [typed, setTyped] = useState(name);
-  const [problem, setProblem] = useState<string | null>(null);
   const hintId = useId();
-  // Another kind picked, or the name changed elsewhere: show it as it is now.
-  useEffect(() => {
-    setTyped(name);
-    setProblem(null);
-  }, [name]);
-
-  const change = (text: string) => {
-    setTyped(text);
-    const edit: KindEdit = renameKind(answers, id, text);
-    setProblem(edit.ok ? null : edit.message);
-    if (edit.ok) update(edit.changes);
-  };
+  const edit = renameKind(answers, id, typed);
+  const problem = edit.ok ? null : edit.message;
+  // The name changed elsewhere, such as on another computer: show it as it is now.
+  useEffect(() => setTyped(name), [name]);
+  // What the latest render had, for saving when the box goes away.
+  const latest = useRef({ edit, typed, name, update });
+  latest.current = { edit, typed, name, update };
+  const save = useRef(() => {
+    const { edit, typed, name, update } = latest.current;
+    if (edit.ok && typed.trim() !== name) update(edit.changes);
+  }).current;
+  useEffect(() => save, [save]);
 
   return (
     <Field label="Name">
@@ -192,7 +187,9 @@ export function KindName({
             maxLength={ANSWER_LIMITS.kindName}
             aria-invalid={problem !== null}
             aria-describedby={problem ? hintId : undefined}
-            onChange={(event) => change(event.target.value)}
+            onChange={(event) => setTyped(event.target.value)}
+            onBlur={save}
+            onKeyDown={(event: KeyboardEvent) => event.key === 'Enter' && save()}
           />
           {problem && (
             <p id={hintId} className={styles.problem} role="alert">

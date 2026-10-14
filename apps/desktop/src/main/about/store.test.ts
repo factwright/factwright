@@ -149,6 +149,68 @@ describe('AboutStore', () => {
     expect(store.answers().otherKinds).toEqual([]);
   });
 
+  it('keeps what it doesn’t know in the kinds file, as a later version or a hand edit left it', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    const file = {
+      first: { id: 'developer', name: 'Developer', color: 'blue' },
+      others: [
+        { id: 'pm', name: 'Project manager', roles: ['TPM'], rate: 'hourly' },
+        { id: 'Bad Id', name: 'Broken' },
+        { id: 'pm-2', name: 'project manager' },
+      ],
+      version: 2,
+    };
+    writeFileSync(join(workspace(), KINDS_FILE), JSON.stringify(file));
+    expect(store.answers().otherKinds.map((kind) => kind.id)).toEqual(['pm']);
+    store.saveAnswers(changeKind(store.answers(), 'pm', { levels: ['senior'] }));
+    expect(json(KINDS_FILE)).toEqual({
+      first: { id: 'developer', name: 'Developer', color: 'blue' },
+      others: [
+        {
+          id: 'pm',
+          name: 'Project manager',
+          roles: ['TPM'],
+          rate: 'hourly',
+          fields: [],
+          levels: ['senior'],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+        { id: 'Bad Id', name: 'Broken' },
+        { id: 'pm-2', name: 'project manager' },
+      ],
+      version: 2,
+    });
+    // Removing a kind it read takes it out, and leaves the rest.
+    store.saveAnswers(removeKind(store.answers(), 'pm'));
+    expect(json(KINDS_FILE).others).toEqual([
+      { id: 'Bad Id', name: 'Broken' },
+      { id: 'pm-2', name: 'project manager' },
+    ]);
+  });
+
+  it('keeps a kinds file that doesn’t read, and puts it aside only once there are kinds to save', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    writeFileSync(join(workspace(), KINDS_FILE), '{ "first": oops');
+    store.saveAnswers({ roles: ['Staff Engineer'] });
+    expect(read(KINDS_FILE)).toBe('{ "first": oops');
+    const added = addKind(store.answers(), 'Project manager', 'Developer');
+    if (!added.ok) throw new Error(added.message);
+    store.saveAnswers(added.changes);
+    expect(read('about-me/kinds-of-job-before-2026-10-12.json')).toBe('{ "first": oops');
+    expect(json(KINDS_FILE).first).toEqual({ id: 'developer', name: 'Developer' });
+  });
+
+  it('sets the page count by every kind of job’s levels', () => {
+    store.start();
+    const added = addKind(store.answers(), 'Analyst', 'Engineer');
+    if (!added.ok) throw new Error(added.message);
+    store.saveAnswers(added.changes);
+    store.saveAnswers(changeKind(store.answers(), 'analyst', { levels: ['entry'] }));
+    expect(json('guide/lint.json').maxPages).toBe(1);
+  });
+
   it('gives criteria.md a section for each kind of job', () => {
     store.start();
     store.saveAnswers({ roles: ['Staff Engineer'], levels: ['senior'], workplaces: ['remote'] });
