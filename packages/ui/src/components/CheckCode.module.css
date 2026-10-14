@@ -40,7 +40,8 @@
   font-size: 12px;
   line-height: 1.2;
   text-align: center;
-  overflow-wrap: anywhere;
+  /* A name breaks between words, and inside one only when nothing else fits. */
+  overflow-wrap: break-word;
 }
 
 @container (max-width: 400px) {
@@ -48,7 +49,16 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .item {
+    padding-inline: 2px;
+  }
+
   .emoji {
     font-size: 34px;
+  }
+
+  /* Small enough that the longest name, such as "Headphones", fits on one line. */
+  .name {
+    font-size: 11px;
   }
 }
