@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KIND_ID, kindNamed, kindOfJob } from './kinds.ts';
+import { KIND_ID, KIND_LIMITS, kindIdFor, kindNamed, kindNamesIn, kindOfJob } from './kinds.ts';
 
 const KINDS = [
   { id: 'developer', name: 'Developer' },
@@ -42,6 +42,50 @@ describe('kindOfJob', () => {
     expect(kindOfJob({ kind: null, kindFound: null }, KINDS)).toBe('developer');
     expect(kindOfJob({ kind: 'removed-kind', kindFound: 'designer' }, KINDS)).toBe('developer');
     expect(kindOfJob({ kind: null, kindFound: null }, [])).toBeNull();
+  });
+});
+
+describe('kindNamesIn', () => {
+  it('reads the first kind and each other one, as the app keeps them', () => {
+    expect(
+      kindNamesIn({
+        first: { id: 'developer', name: 'Developer' },
+        others: [
+          { id: 'project-manager', name: ' Project\n manager ', roles: ['TPM'] },
+          { id: 'Bad Id', name: 'Broken' },
+          { id: 'pm-2', name: 'project manager' },
+          { id: 'developer', name: 'Another developer' },
+        ],
+      }),
+    ).toEqual([
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ]);
+  });
+
+  it('is none with one kind, and names a first kind the file leaves out for the first title', () => {
+    expect(kindNamesIn({ first: { id: 'developer', name: 'Developer' }, others: [] })).toEqual([]);
+    expect(kindNamesIn(null)).toEqual([]);
+    expect(
+      kindNamesIn({ others: [{ id: 'staff-engineer', name: 'PM' }] }, 'Staff Engineer'),
+    ).toEqual([
+      { id: 'staff-engineer-2', name: 'Staff Engineer' },
+      { id: 'staff-engineer', name: 'PM' },
+    ]);
+  });
+
+  it('keeps as many as the app keeps', () => {
+    const others = Array.from({ length: 9 }, (_, n) => ({ id: `kind-${n}`, name: `Kind ${n}` }));
+    expect(kindNamesIn({ first: { id: 'a', name: 'A' }, others })).toHaveLength(KIND_LIMITS.kinds);
+  });
+});
+
+describe('kindIdFor', () => {
+  it('makes an id from a name, unlike the ones taken, that Windows can hold as a folder', () => {
+    expect(kindIdFor('Project manager', [])).toBe('project-manager');
+    expect(kindIdFor('Project manager', ['project-manager'])).toBe('project-manager-2');
+    expect(kindIdFor('PRN', [])).toBe('prn-jobs');
+    expect(kindIdFor('看護師', [])).toBe('kind');
   });
 });
 

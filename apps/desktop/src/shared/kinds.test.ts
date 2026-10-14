@@ -1,3 +1,4 @@
+import { kindNamesIn } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   type AboutYou,
@@ -311,6 +312,26 @@ describe('kinds of job', () => {
       addedKinds: adding.changes.addedKinds,
       removedKinds: ['project-manager'],
     });
+  });
+
+  it('are named as core names them from the kinds file, for the web view', () => {
+    const file = {
+      first: TWO.firstKind,
+      others: [
+        ...TWO.otherKinds,
+        { id: 'bad id', name: 'x' },
+        { id: 'pm', name: 'project MANAGER' },
+      ],
+    };
+    const read = readAnswers({ ...TWO, firstKind: file.first, otherKinds: file.others });
+    expect(kindNamesIn(file, TWO.roles[0])).toEqual(
+      kindsOf(read).map(({ id, name }) => ({ id, name })),
+    );
+    // A first kind the file leaves out is named the same way in both.
+    const noFirst = readAnswers({ roles: ['Staff Engineer'], otherKinds: file.others });
+    expect(kindNamesIn({ others: file.others }, 'Staff Engineer')).toEqual(
+      kindsOf(noFirst).map(({ id, name }) => ({ id, name })),
+    );
   });
 
   it('get ids Windows can hold as folder names', () => {
