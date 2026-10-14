@@ -59,11 +59,14 @@ function choose<T extends string>(
 export function ClaudeSettingsDialog({
   api,
   onClose,
+  onSaved,
   plan,
   method,
 }: {
   api: SettingsApi;
   onClose: () => void;
+  /** Hears each choice of model or effort once it's saved. */
+  onSaved?: (saved: { models: ModelChoices } | { effort: EffortChoices }) => void;
   /** The user's Claude plan, such as "pro", when Claude Code says. */
   plan?: string | undefined;
   /** How Claude Code signs in, such as "api_key", when it says. */
@@ -96,7 +99,9 @@ export function ClaudeSettingsDialog({
   const changeModels = async (next: ModelChoices) => {
     setModels(next);
     try {
-      setModels(await api.setClaudeModels(next));
+      const saved = await api.setClaudeModels(next);
+      setModels(saved);
+      onSaved?.({ models: saved });
       setProblem(null);
     } catch {
       failed();
@@ -107,7 +112,9 @@ export function ClaudeSettingsDialog({
   const changeEffort = async (next: EffortChoices) => {
     setEffort(next);
     try {
-      setEffort(await api.setClaudeEffort(next));
+      const saved = await api.setClaudeEffort(next);
+      setEffort(saved);
+      onSaved?.({ effort: saved });
       setProblem(null);
     } catch {
       failed();
@@ -286,8 +293,8 @@ export function ClaudeSettingsDialog({
         </p>
       )}
       <p className={styles.note}>
-        Changes apply the next time Claude starts, or when a task needs another model or more effort
-        than Claude is open with.
+        Changes apply the next time Claude starts, or when a task needs a model you chose for it, or
+        a more careful model or more effort than Claude is open with.
       </p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>

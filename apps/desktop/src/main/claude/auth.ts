@@ -9,12 +9,12 @@ export function checkAuth(output: string): AuthCheck {
   const json = parseObject(output);
   if (typeof json?.loggedIn !== 'boolean') return { status: 'unreadable' };
   if (!json.loggedIn) return { status: 'signed-out' };
-  // Only these fields are kept, never the email or organization.
-  const method = asString(json.authMethod);
+  // Only these fields are kept, never the email or organization, and only as short names.
+  const method = asName(json.authMethod);
   return {
     status: 'signed-in',
     method: method === 'claude.ai' ? 'subscription' : method,
-    plan: asString(json.subscriptionType),
+    plan: asName(json.subscriptionType),
   };
 }
 
@@ -27,6 +27,7 @@ function parseObject(output: string): Record<string, unknown> | null {
   }
 }
 
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
+/** A name Claude Code gives a plan or a way of signing in, such as "max" or "api_key". */
+function asName(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-z][a-z0-9_.-]{0,31}$/.test(value) ? value : undefined;
 }

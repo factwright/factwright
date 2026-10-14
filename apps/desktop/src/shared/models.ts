@@ -104,3 +104,21 @@ export const modelFor = (
   task?: RunTask | null,
   levels?: PlanLevels,
 ): Model => (task && choices.tasks[task.skill]) || modelWithout(choices, task?.skill, levels);
+
+/**
+ * Whether a task needs another model than the one the open run is on: one the user chose, for it
+ * or for everything, or a more careful one. A lighter model that's only recommended runs in the
+ * open run, as a task that needs less effort does, so Claude doesn't start over between tasks.
+ */
+export function needsModel(
+  open: Model,
+  choices: ModelChoices,
+  task: RunTask,
+  levels?: PlanLevels,
+): boolean {
+  const wanted = modelFor(choices, task, levels);
+  if (wanted === open) return false;
+  const chosen = (choices.tasks[task.skill] ?? choices.main) !== null;
+  // MODELS lists the most careful first.
+  return chosen || MODELS.indexOf(wanted) < MODELS.indexOf(open);
+}

@@ -11,26 +11,28 @@ export interface LevelChoices {
 
 /**
  * The user's choices of model and effort, for showing the levels Claude runs at, or null until
- * they've loaded. Reload them after Claude's settings change them.
+ * they've loaded. Claude's settings pass on each choice they save, so it shows as it's made.
  */
 export function useLevelChoices(api: Pick<FactwrightApi, 'claudeModels' | 'claudeEffort'>): {
   choices: LevelChoices | null;
-  reload: () => void;
+  saved: (choices: Partial<LevelChoices>) => void;
 } {
   const [choices, setChoices] = useState<LevelChoices | null>(null);
-  // Only the newest load's answer counts, if two overlap.
-  const latest = useRef(0);
+  // What was saved while the first load was on its way, which is newer than what it read.
+  const saves = useRef<Partial<LevelChoices>>({});
 
-  const reload = useCallback(() => {
-    const id = ++latest.current;
+  useEffect(() => {
     Promise.all([api.claudeModels(), api.claudeEffort()]).then(
-      ([models, effort]) => id === latest.current && setChoices({ models, effort }),
-      // What showed stays, until the next load.
+      ([models, effort]) => setChoices({ models, effort, ...saves.current }),
+      // Without them, the levels don't show.
       () => {},
     );
   }, [api]);
 
-  useEffect(reload, [reload]);
+  const saved = useCallback((next: Partial<LevelChoices>) => {
+    saves.current = { ...saves.current, ...next };
+    setChoices((now) => now && { ...now, ...next });
+  }, []);
 
-  return { choices, reload };
+  return { choices, saved };
 }

@@ -118,6 +118,24 @@ describe('Tooltip', () => {
     expect(shown()).not.toBeNull();
   });
 
+  it('doesn’t count a shortcut, such as switching apps, as using the keyboard', async () => {
+    const { user, trigger } = renderTooltip();
+    await user.click(screen.getByRole('button', { name: 'Elsewhere' }));
+    // Cmd and Tab, away to another app and back, which focuses the trigger again.
+    await user.keyboard('{Meta>}{Tab}{/Meta}');
+    act(() => trigger.focus());
+    expect(shown()).toBeNull();
+  });
+
+  it('says which side it’s on, for the bridge over the gap to its trigger', async () => {
+    const { user, wait, trigger } = renderTooltip();
+    await user.hover(trigger);
+    await wait(400);
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip.dataset.side).toMatch(/^(top|right|bottom|left)$/);
+    expect(tooltip.style.getPropertyValue('--tooltip-gap')).toBe('8px');
+  });
+
   it('makes way for a click, which does what the trigger is for', async () => {
     const { user, wait, trigger, onClick } = renderTooltip();
     await user.hover(trigger);
@@ -152,17 +170,46 @@ describe('placeTooltip', () => {
 
   it('opens on the side asked for, centered on the trigger', () => {
     const trigger = { top: 300, left: 400, width: 200, height: 40 };
-    expect(placeTooltip(trigger, tip, view, 'top')).toEqual({ top: 172, left: 360 });
-    expect(placeTooltip(trigger, tip, view, 'bottom')).toEqual({ top: 348, left: 360 });
-    expect(placeTooltip(trigger, tip, view, 'right')).toEqual({ top: 260, left: 608 });
-    expect(placeTooltip(trigger, tip, view, 'left')).toEqual({ top: 260, left: 112 });
+    expect(placeTooltip(trigger, tip, view, 'top')).toEqual({ top: 172, left: 360, side: 'top' });
+    expect(placeTooltip(trigger, tip, view, 'bottom')).toEqual({
+      top: 348,
+      left: 360,
+      side: 'bottom',
+    });
+    expect(placeTooltip(trigger, tip, view, 'right')).toEqual({
+      top: 260,
+      left: 608,
+      side: 'right',
+    });
+    expect(placeTooltip(trigger, tip, view, 'left')).toEqual({ top: 260, left: 112, side: 'left' });
   });
 
   it('opens on the opposite side when the one asked for has no room', () => {
     const nearTop = { top: 20, left: 400, width: 200, height: 40 };
-    expect(placeTooltip(nearTop, tip, view, 'top')).toEqual({ top: 68, left: 360 });
+    expect(placeTooltip(nearTop, tip, view, 'top')).toEqual({
+      top: 68,
+      left: 360,
+      side: 'bottom',
+    });
     const nearRight = { top: 300, left: 800, width: 180, height: 40 };
-    expect(placeTooltip(nearRight, tip, view, 'right').left).toBe(512);
+    expect(placeTooltip(nearRight, tip, view, 'right')).toMatchObject({ left: 512, side: 'left' });
+  });
+
+  it('opens above or below when neither side has room, as in a zoomed window', () => {
+    // The levels chip at the bottom of a sidebar, in a 900 px window at 175%.
+    const chip = { top: 380, left: 12, width: 192, height: 50 };
+    const zoomed = { width: 514, height: 457 };
+    expect(placeTooltip(chip, { width: 300, height: 170 }, zoomed, 'right', 21)).toEqual({
+      top: 189,
+      left: 8,
+      side: 'top',
+    });
+  });
+
+  it('stays inside the window when it fits beside its trigger nowhere', () => {
+    const small = { width: 200, height: 150 };
+    const trigger = { top: 60, left: 80, width: 40, height: 30 };
+    expect(placeTooltip(trigger, tip, small, 'top')).toEqual({ top: 8, left: 8, side: 'top' });
   });
 
   it('sits farther from its trigger when asked', () => {
@@ -173,7 +220,7 @@ describe('placeTooltip', () => {
   it('stays inside the window, along the side it opens on', () => {
     // A sidebar's last card, at the bottom left: beside it on the right, moved up to fit.
     const card = { top: 640, left: 12, width: 192, height: 50 };
-    expect(placeTooltip(card, tip, view, 'right')).toEqual({ top: 572, left: 212 });
+    expect(placeTooltip(card, tip, view, 'right')).toEqual({ top: 572, left: 212, side: 'right' });
     const corner = { top: 300, left: 0, width: 40, height: 40 };
     expect(placeTooltip(corner, tip, view, 'top').left).toBe(8);
   });

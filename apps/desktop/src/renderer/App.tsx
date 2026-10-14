@@ -319,11 +319,9 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           plan={ready ? status.plan : undefined}
           method={ready ? status.method : undefined}
-          onClose={() => {
-            setDialog(null);
-            // The levels under Your Claude show what was chosen.
-            levels.reload();
-          }}
+          // The levels under Your Claude show each choice as it's saved.
+          onSaved={levels.saved}
+          onClose={() => setDialog(null)}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type FocusEvent,
   type PointerEvent,
   type ReactNode,
@@ -44,11 +45,12 @@ const GAP = 8;
 /** Whether the browser can show it as a popover, above everything else on the page. */
 const POPS = typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype;
 
-const OPPOSITE: Readonly<Record<TooltipSide, TooltipSide>> = {
-  top: 'bottom',
-  bottom: 'top',
-  left: 'right',
-  right: 'left',
+/** The sides to try, in turn: the one asked for, the opposite one, then the two across. */
+const TRY: Readonly<Record<TooltipSide, readonly TooltipSide[]>> = {
+  top: ['top', 'bottom', 'right', 'left'],
+  bottom: ['bottom', 'top', 'right', 'left'],
+  left: ['left', 'right', 'top', 'bottom'],
+  right: ['right', 'left', 'top', 'bottom'],
 };
 
 interface Size {
@@ -56,10 +58,17 @@ interface Size {
   height: number;
 }
 
+/** Where a tooltip goes: its top left corner in the window, and the side of its trigger it's on. */
+export interface TooltipPlace {
+  top: number;
+  left: number;
+  side: TooltipSide;
+}
+
 /**
- * Where a tooltip goes, as its top left corner in the window: beside its trigger on the side
- * asked for, or the opposite side when it only fits there, and moved along that side to stay in
- * the window.
+ * Where a tooltip goes: beside its trigger, on the first side it fits, starting with the one asked
+ * for, as a narrow or zoomed window may leave room only above or below. It's centered on the
+ * trigger along that side, and always kept inside the window.
  */
 export function placeTooltip(
   trigger: { top: number; left: number } & Size,
@@ -67,33 +76,42 @@ export function placeTooltip(
   view: Size,
   side: TooltipSide,
   gap = GAP,
-): { top: number; left: number } {
+): TooltipPlace {
   const fits: Readonly<Record<TooltipSide, boolean>> = {
     top: trigger.top - gap - tip.height >= GAP,
     bottom: trigger.top + trigger.height + gap + tip.height <= view.height - GAP,
     left: trigger.left - gap - tip.width >= GAP,
     right: trigger.left + trigger.width + gap + tip.width <= view.width - GAP,
   };
-  const chosen = !fits[side] && fits[OPPOSITE[side]] ? OPPOSITE[side] : side;
-  // Along the side, centered on the trigger, but never past the window's edges.
-  const along = (start: number, length: number, room: number, own: number) =>
-    Math.max(GAP, Math.min(start + length / 2 - own / 2, room - own - GAP));
-  if (chosen === 'top' || chosen === 'bottom') {
-    return {
-      top: chosen === 'top' ? trigger.top - gap - tip.height : trigger.top + trigger.height + gap,
-      left: along(trigger.left, trigger.width, view.width, tip.width),
-    };
-  }
+  const chosen = TRY[side].find((each) => fits[each]) ?? side;
+  const centered = (start: number, length: number, own: number) => start + length / 2 - own / 2;
+  const top =
+    chosen === 'top'
+      ? trigger.top - gap - tip.height
+      : chosen === 'bottom'
+        ? trigger.top + trigger.height + gap
+        : centered(trigger.top, trigger.height, tip.height);
+  const left =
+    chosen === 'left'
+      ? trigger.left - gap - tip.width
+      : chosen === 'right'
+        ? trigger.left + trigger.width + gap
+        : centered(trigger.left, trigger.width, tip.width);
+  // Inside the window, even where it fits beside its trigger nowhere.
+  const inside = (value: number, room: number, own: number) =>
+    Math.max(GAP, Math.min(value, room - own - GAP));
   return {
-    top: along(trigger.top, trigger.height, view.height, tip.height),
-    left: chosen === 'left' ? trigger.left - gap - tip.width : trigger.left + trigger.width + gap,
+    top: inside(top, view.height, tip.height),
+    left: inside(left, view.width, tip.width),
+    side: chosen,
   };
 }
 
 /**
  * Whether the keyboard was used since the pointer last was, which is how browsers judge whether
  * focus should show. So a tooltip shows for focus from Tab, but not for a click's focus, or focus
- * coming back to its trigger after a click closes a dialog.
+ * coming back to its trigger after a click closes a dialog. A shortcut doesn't count, as it
+ * doesn't for browsers, so switching apps with Cmd or Alt and Tab doesn't show one on coming back.
  */
 let keyboardLast = false;
 let watching = false;
@@ -101,7 +119,13 @@ let watching = false;
 function watchInput() {
   if (watching) return;
   watching = true;
-  document.addEventListener('keydown', () => (keyboardLast = true), true);
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (!event.metaKey && !event.ctrlKey && !event.altKey) keyboardLast = true;
+    },
+    true,
+  );
   document.addEventListener('pointerdown', () => (keyboardLast = false), true);
 }
 
@@ -120,7 +144,7 @@ export function Tooltip({ content, side = 'top', gap = GAP, children }: TooltipP
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
+  const [place, setPlace] = useState<TooltipPlace | null>(null);
   const open = (hovered || focused) && !dismissed;
 
   const wait = (ms: number, then: () => void) => {
@@ -170,7 +194,9 @@ export function Tooltip({ content, side = 'top', gap = GAP, children }: TooltipP
         side,
         gap,
       );
-      setPlace((now) => (now?.top === next.top && now.left === next.left ? now : next));
+      setPlace((now) =>
+        now?.top === next.top && now.left === next.left && now.side === next.side ? now : next,
+      );
     };
     follow();
     window.addEventListener('resize', follow);
@@ -218,7 +244,13 @@ export function Tooltip({ content, side = 'top', gap = GAP, children }: TooltipP
         popover={POPS ? 'manual' : undefined}
         hidden={!open}
         className={styles.tooltip}
-        style={place ?? undefined}
+        // Which side it's on, for the bridge over the gap to its trigger.
+        data-side={place?.side}
+        style={
+          place
+            ? ({ top: place.top, left: place.left, '--tooltip-gap': `${gap}px` } as CSSProperties)
+            : undefined
+        }
         onPointerEnter={() => clearTimeout(timer.current)}
         onPointerLeave={leave}
       >

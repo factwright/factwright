@@ -64,12 +64,21 @@ describe('ClaudeSettingsDialog', () => {
 
   it('saves the model for everything, and goes back to recommended', async () => {
     const api = apiWith();
-    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
+    const onSaved = vi.fn();
+    render(<ClaudeSettingsDialog api={api} onSaved={onSaved} onClose={vi.fn()} />);
     await userEvent.selectOptions(
       await screen.findByRole('combobox', { name: 'Model for everything' }),
       'sonnet',
     );
     expect(api.setClaudeModels).toHaveBeenLastCalledWith({ main: 'sonnet', tasks: {} });
+    // Passed on once saved, for the levels under Your Claude.
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenLastCalledWith({ models: { main: 'sonnet', tasks: {} } }),
+    );
+    await userEvent.selectOptions(select('Effort for everything'), 'high');
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenLastCalledWith({ effort: { main: 'high', tasks: {} } }),
+    );
     await userEvent.selectOptions(select('Model for everything'), '');
     expect(api.setClaudeModels).toHaveBeenLastCalledWith({ main: null, tasks: {} });
   });
@@ -164,6 +173,20 @@ describe('ClaudeSettingsDialog', () => {
     expect(api.setClaudePermissions).toHaveBeenLastCalledWith({ anyFile: true, anySite: false });
     await userEvent.click(box('Read any website'));
     expect(api.setClaudePermissions).toHaveBeenLastCalledWith({ anyFile: true, anySite: true });
+  });
+
+  it('passes on only what saved', async () => {
+    const api = apiWith();
+    api.setClaudeModels.mockRejectedValueOnce(new Error('disk full'));
+    const onSaved = vi.fn();
+    render(<ClaudeSettingsDialog api={api} onSaved={onSaved} onClose={vi.fn()} />);
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: 'Model for everything' }),
+      'haiku',
+    );
+    expect((await screen.findByRole('alert')).textContent).toBe('That didn’t save. Try again.');
+    expect(onSaved).not.toHaveBeenCalled();
+    await waitFor(() => expect(select('Model for everything').value).toBe(''));
   });
 
   it('says when a choice didn’t save, and shows what’s really saved', async () => {

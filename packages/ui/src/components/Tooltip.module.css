@@ -28,6 +28,40 @@
   display: none;
 }
 
+/* A bridge over the gap to its trigger, so the pointer can cross onto it without it closing. */
+.tooltip::before {
+  position: absolute;
+  content: "";
+}
+
+.tooltip[data-side="top"]::before {
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--tooltip-gap);
+}
+
+.tooltip[data-side="bottom"]::before {
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: var(--tooltip-gap);
+}
+
+.tooltip[data-side="left"]::before {
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: var(--tooltip-gap);
+}
+
+.tooltip[data-side="right"]::before {
+  top: 0;
+  right: 100%;
+  bottom: 0;
+  width: var(--tooltip-gap);
+}
+
 .tooltip > p {
   margin: 0;
 }
