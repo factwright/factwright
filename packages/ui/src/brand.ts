@@ -210,6 +210,40 @@ export async function diskImagePng(layout: DiskImageLayout, scale: number): Prom
   return encodePng(width, height, pixels);
 }
 
+/** The Windows install window's header, in points at 100% scaling: the app icon's blue. */
+export const INSTALL_HEADER = { width: 440, height: 148 } as const;
+
+/**
+ * The header of the window Windows shows while Factwright installs: the app icon's blue, deeper
+ * toward the bottom, with the mark in white in the middle. A BMP, which is what the installer
+ * can show. `scale` is the screen's scaling, such as 1.5 at 150%.
+ */
+export function installHeaderBmp(scale: number): Uint8Array {
+  const width = Math.round(INSTALL_HEADER.width * scale);
+  const height = Math.round(INSTALL_HEADER.height * scale);
+  const top = rgb(APP_ICON.top);
+  const bottom = rgb(APP_ICON.bottom);
+  const mark = rgb(APP_ICON.mark);
+  const shade = rgb(APP_ICON.shade);
+  // The mark's ink spans about 80 of its 120 units: 64 points tall, centered on the header.
+  const unit = (64 / 80) * scale;
+  const fromMark = (x: number, y: number) =>
+    markDistance(MARK, 59.5 + (x - width / 2) / unit, 60 + (y - height / 2) / unit) * unit;
+
+  const pixels = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row++) {
+    for (let column = 0; column < width; column++) {
+      const [x, y] = [column + 0.5, row + 0.5];
+      const paint = new Paint();
+      paint.over(mix(top, bottom, row / Math.max(height - 1, 1)), 1);
+      paint.over(shade, 0.28 * fade(fromMark(x, y - 1.2 * unit), 1.6 * unit));
+      paint.over(mark, cover(fromMark(x, y)));
+      paint.write(pixels, (row * width + column) * 4);
+    }
+  }
+  return encodeBmp(width, height, pixels);
+}
+
 /** How far a point is from a line segment. */
 function segmentDistance(x: number, y: number, ax: number, ay: number, bx: number, by: number) {
   const [dx, dy] = [bx - ax, by - ay];
@@ -300,6 +334,38 @@ class Paint {
     const byte = (value: number) => Math.round(this.alpha > 0 ? (value / this.alpha) * 255 : 0);
     into.set([byte(this.red), byte(this.green), byte(this.blue), Math.round(this.alpha * 255)], at);
   }
+}
+
+/**
+ * A 24-bit BMP, as Windows reads it: rows bottom up, each padded to four bytes, blue first.
+ * The picture is opaque, so alpha is left out.
+ */
+function encodeBmp(width: number, height: number, pixels: Uint8Array): Uint8Array {
+  const stride = Math.ceil((width * 3) / 4) * 4;
+  const out = new Uint8Array(54 + stride * height);
+  const view = new DataView(out.buffer);
+  out.set([0x42, 0x4d]);
+  view.setUint32(2, out.length, true);
+  view.setUint32(10, 54, true);
+  // The BITMAPINFOHEADER: its size, the picture's size, one plane, 24 bits, and 72 dpi.
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, height, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, 24, true);
+  view.setUint32(34, stride * height, true);
+  view.setInt32(38, 2835, true);
+  view.setInt32(42, 2835, true);
+  for (let row = 0; row < height; row++) {
+    const into = 54 + (height - 1 - row) * stride;
+    for (let column = 0; column < width; column++) {
+      const from = (row * width + column) * 4;
+      out[into + column * 3] = pixels[from + 2] ?? 0;
+      out[into + column * 3 + 1] = pixels[from + 1] ?? 0;
+      out[into + column * 3 + 2] = pixels[from] ?? 0;
+    }
+  }
+  return out;
 }
 
 /** An 8-bit RGBA PNG. */

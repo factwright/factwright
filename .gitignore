@@ -5,6 +5,8 @@ node_modules/
 dist/
 out/
 coverage/
+# The Windows install window's header pictures, drawn by each Windows build
+apps/desktop/build/install-header-*.bmp
 
 # Logs and local settings
 *.log

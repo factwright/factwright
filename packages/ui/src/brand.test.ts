@@ -1,9 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import {
+  APP_ICON,
   appIconPng,
   type DiskImageLayout,
   diskImagePng,
+  INSTALL_HEADER,
+  installHeaderBmp,
   MARK,
   MARK_SMALL,
   markCut,
@@ -110,6 +113,41 @@ describe('the Mac disk image’s window', () => {
       const [red = 0, green = 0, blue = 0, alpha] = picture.pixel(150 * scale, 215 * scale);
       expect(alpha).toBe(255);
       expect(Math.min(red, green, blue)).toBeGreaterThan(230);
+    }
+  });
+});
+
+describe('the Windows install window’s header', () => {
+  it('is a 24-bit BMP at each scaling, in the icon’s blue with the mark in white', () => {
+    for (const scale of [1, 1.5, 2]) {
+      const bmp = installHeaderBmp(scale);
+      const view = new DataView(bmp.buffer, bmp.byteOffset, bmp.byteLength);
+      const width = Math.round(INSTALL_HEADER.width * scale);
+      const height = Math.round(INSTALL_HEADER.height * scale);
+      expect(String.fromCharCode(bmp[0] ?? 0, bmp[1] ?? 0)).toBe('BM');
+      expect([view.getInt32(18, true), view.getInt32(22, true), view.getUint16(28, true)]).toEqual([
+        width,
+        height,
+        24,
+      ]);
+      // Rows run bottom up, each padded to four bytes, blue first.
+      const stride = Math.ceil((width * 3) / 4) * 4;
+      expect(bmp.length).toBe(54 + stride * height);
+      const pixel = (x: number, y: number) => {
+        const at = 54 + (height - 1 - y) * stride + x * 3;
+        return [bmp[at + 2], bmp[at + 1], bmp[at]];
+      };
+      const hex = (color: string) =>
+        [1, 3, 5].map((i) => Number.parseInt(color.slice(i, i + 2), 16));
+      expect(pixel(0, 0)).toEqual(hex(APP_ICON.top));
+      // The mark's dot, 64 points of mark centered on the header, is white.
+      const [dotX, dotY] = MARK.dot;
+      const unit = (64 / 80) * scale;
+      const dot = pixel(
+        Math.floor(width / 2 + (dotX - 59.5) * unit),
+        Math.floor(height / 2 + (dotY - 60) * unit),
+      );
+      expect(dot).toEqual([255, 255, 255]);
     }
   });
 });
