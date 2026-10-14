@@ -1,6 +1,7 @@
 import {
   type Job,
   type JobStatus,
+  type KindName,
   type PassReason,
   payLabel,
   readApplySteps,
@@ -12,6 +13,7 @@ import {
   Markdown,
   MarkdownLine,
   Notice,
+  Select,
   StatusSelect,
 } from '@factwright/ui';
 import {
@@ -105,6 +107,8 @@ export interface PanelNavigation {
 export interface JobPanelProps {
   row: JobRow | null;
   api: FactwrightApi;
+  /** The kinds of job the user wants, when there's more than one, to put the job under one. */
+  kinds?: readonly KindName[];
   today: string;
   onClose: () => void;
   /** Claude's panel, so the job's Run buttons can start skills. */
@@ -122,6 +126,7 @@ export interface JobPanelProps {
 export function JobPanel({
   row,
   api,
+  kinds = [],
   today,
   onClose,
   run,
@@ -358,6 +363,20 @@ export function JobPanel({
               onChange={changeStatus}
             />
             <FitBadge score={progress.score} tier={progress.tier} />
+            {kinds.length > 1 && row.kind && (
+              <Select
+                className={styles.kind}
+                aria-label={`Kind of job for ${job.company}`}
+                value={row.kind.id}
+                onChange={(event) => change({ kind: event.target.value })}
+              >
+                {kinds.map((kind) => (
+                  <option key={kind.id} value={kind.id}>
+                    {kind.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
           {problem?.jobId === job.id && (
             <p className={styles.problem} role="alert">

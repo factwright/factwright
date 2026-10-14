@@ -203,6 +203,31 @@
   white-space: nowrap;
 }
 
+/* The role, and the kind of job it's under while every kind shows. */
+.roleLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  min-width: 0;
+}
+
+/* Which kind of job it is: an outline, to tell it from the search that found it. */
+.kind {
+  flex: 0 100 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 550;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The calls so far, as a line of small steps. */
 .steps {
   display: flex;

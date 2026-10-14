@@ -251,6 +251,26 @@ describe('journeyCsv', () => {
     );
   });
 
+  it('says which kind of job each is under, with more than one kind', () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const csv = journeyCsv(
+      [journey(FULL), journey({ kindFound: 'project-manager' }), journey({ kind: 'gone' })],
+      kinds,
+    );
+    const [head, ...rows] = csv.slice(1).split('\r\n');
+    expect(head?.startsWith('Company,Role,Kind of job,Source,')).toBe(true);
+    expect(rows.map((row) => row.split(',')[2])).toEqual([
+      'Developer',
+      'Project manager',
+      'Developer',
+    ]);
+    // With one kind, the spreadsheet is as it was.
+    expect(journeyCsv([journey(FULL)], kinds.slice(0, 1))).toBe(journeyCsv([journey(FULL)]));
+  });
+
   it('quotes commas and quotes, and stops spreadsheets from running text as formulas', () => {
     const [, row] = journeyCsv([
       journey({ company: '=HYPERLINK("x")', role: 'Engineer, "Platform"' }),

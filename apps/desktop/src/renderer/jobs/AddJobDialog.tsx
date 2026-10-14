@@ -1,4 +1,4 @@
-import type { JobStatus } from '@factwright/core';
+import type { JobStatus, KindName } from '@factwright/core';
 import {
   Button,
   Dialog,
@@ -17,15 +17,24 @@ import styles from './AddJobDialog.module.css';
 /** The statuses a job added by hand can start at. */
 const STARTING: readonly JobStatus[] = ['new', 'review', 'apply', 'applied', 'screen', 'interview'];
 
-/** Adds a job the user found on their own. Only the company is needed. */
+/**
+ * Adds a job the user found on their own. Only the company is needed. A user who wants more than
+ * one kind of job puts it under one.
+ */
 export function AddJobDialog({
   api,
+  kinds = [],
+  kind: startingKind = null,
   onAdded,
   onClose,
 }: {
   api: FactwrightApi;
-  /** Called with the new job's ID and status, so it can be shown. */
-  onAdded: (jobId: string, status: JobStatus) => void;
+  /** The kinds of job the user wants, when there's more than one. */
+  kinds?: readonly KindName[];
+  /** The kind of job it starts under, by id. */
+  kind?: string | null;
+  /** Called with the new job's ID, status and kind, so it can be shown. */
+  onAdded: (jobId: string, status: JobStatus, kind: string | null) => void;
   onClose: () => void;
 }) {
   const [company, setCompany] = useState('');
@@ -33,6 +42,10 @@ export function AddJobDialog({
   const [link, setLink] = useState('');
   const [pay, setPay] = useState('');
   const [status, setStatus] = useState<JobStatus>('new');
+  const hasKinds = kinds.length > 1;
+  const [kind, setKind] = useState(
+    kinds.some((each) => each.id === startingKind) ? startingKind : (kinds[0]?.id ?? null),
+  );
   const [notes, setNotes] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -40,13 +53,21 @@ export function AddJobDialog({
   const add = async (event: FormEvent, close: () => void) => {
     event.preventDefault();
     setSaving(true);
-    const result = await api.addJob({ company, role, link, pay, status, notes });
+    const result = await api.addJob({
+      company,
+      role,
+      link,
+      pay,
+      status,
+      notes,
+      ...(hasKinds && { kind }),
+    });
     setSaving(false);
     if (!result.ok) {
       setProblem(result.message);
       return;
     }
-    onAdded(result.jobId, status);
+    onAdded(result.jobId, status, hasKinds ? kind : null);
     close();
   };
 
@@ -70,7 +91,7 @@ export function AddJobDialog({
               />
             )}
           </Field>
-          <Field label="Role" className={styles.wide}>
+          <Field label="Role" className={hasKinds ? undefined : styles.wide}>
             {(control) => (
               <Input
                 {...control}
@@ -80,6 +101,23 @@ export function AddJobDialog({
               />
             )}
           </Field>
+          {hasKinds && (
+            <Field label="Kind of job">
+              {(control) => (
+                <Select
+                  {...control}
+                  value={kind ?? ''}
+                  onChange={(event) => setKind(event.target.value)}
+                >
+                  {kinds.map((each) => (
+                    <option key={each.id} value={each.id}>
+                      {each.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          )}
           <Field label="Link to the posting" className={styles.wide}>
             {(control) => (
               <Input

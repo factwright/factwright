@@ -1,4 +1,4 @@
-import { JOB_VIEW_LABELS, JOB_VIEWS, jobStats } from '@factwright/core';
+import { JOB_VIEW_LABELS, JOB_VIEWS, jobStats, type KindName } from '@factwright/core';
 import { Button, Checkbox, EmptyState, SegmentedControl, Select, Stat } from '@factwright/ui';
 import { Activity, Briefcase, Search, SearchX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -16,6 +16,7 @@ import {
   type ListFilter,
   laterRows,
   NO_FILTERS,
+  ofKind,
   viewCounts,
   visibleRows,
 } from './rows.ts';
@@ -62,12 +63,50 @@ function FoundBy({
   );
 }
 
+/**
+ * The kind of job to show, for a user who wants more than one, such as only their project
+ * manager jobs. The numbers above the list follow it.
+ */
+function KindOf({
+  rows,
+  kinds,
+  filter,
+  onFilter,
+}: {
+  rows: readonly JobRow[];
+  kinds: readonly KindName[];
+  filter: ListFilter;
+  onFilter: (filter: ListFilter) => void;
+}) {
+  if (kinds.length < 2) return null;
+  const open = rows.filter((row) => !row.job.archived);
+  return (
+    <Select
+      className={`${styles.foundBy} ${filter.kind ? styles.foundOn : ''}`}
+      aria-label="Kind of job"
+      value={filter.kind ?? ''}
+      onChange={(event) => onFilter({ ...filter, kind: event.target.value || null })}
+    >
+      <option value="">Every kind of job</option>
+      {kinds.map((kind) =>
+        option({
+          value: kind.id,
+          label: kind.name,
+          count: open.filter((row) => row.kind?.id === kind.id).length,
+        }),
+      )}
+    </Select>
+  );
+}
+
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 export interface JobsPageProps {
   jobs: JobsState;
   api: FactwrightApi;
   rows: readonly JobRow[];
+  /** The kinds of job the user wants, when there's more than one. None with one. */
+  kinds?: readonly KindName[];
   today: string;
   filter: ListFilter;
   onFilter: (filter: ListFilter) => void;
@@ -120,7 +159,7 @@ function usePicks(view: string) {
 
 /** The jobs page: the numbers that matter, the views, and the list of jobs. */
 export function JobsPage(props: JobsPageProps) {
-  const { jobs, rows, today, filter, onFilter } = props;
+  const { jobs, rows, today, filter, onFilter, kinds = [] } = props;
   const picks = usePicks(filter.view);
   const [moved, setMoved] = useState<Moved | null>(null);
   const [laterOpen, setLaterOpen] = usePref('jobs.laterOpen', false, isBoolean);
@@ -160,12 +199,17 @@ export function JobsPage(props: JobsPageProps) {
   }
 
   const open = rows.filter((row) => !row.job.archived);
-  const stats = jobStats(rows, today);
+  // With a kind of job picked, the numbers are that kind's.
+  const kindRows = ofKind(rows, filter.kind);
+  const kindOpen = kindRows.filter((row) => !row.job.archived);
+  const stats = jobStats(kindRows, today);
   const counts = viewCounts(rows, filter);
   const shown = visibleRows(rows, filter);
   const later = laterRows(rows, filter);
   const heardBack = stats.applied ? `${Math.round((100 * stats.heardBack) / stats.applied)}%` : '—';
-  const narrowed = Boolean(filter.query || filter.needsYou || filter.found || filterCount(filter));
+  const narrowed = Boolean(
+    filter.query || filter.needsYou || filter.kind || filter.found || filterCount(filter),
+  );
   // The jobs in the order they show, for picking a run of them, and those picked among them.
   // Jobs folded away under Later aren't moved, even if they were picked before it folded.
   const listed = [...shown, ...(laterOpen ? later : [])];
@@ -181,7 +225,13 @@ export function JobsPage(props: JobsPageProps) {
       <div className={styles.head}>
         <div>
           <h1 className={styles.title}>Jobs</h1>
-          {open.length > 0 && <p className={styles.summary}>{plural(open.length, 'job')}</p>}
+          {open.length > 0 && (
+            <p className={styles.summary}>
+              {filter.kind
+                ? `${kindOpen.length} of ${plural(open.length, 'job')}`
+                : plural(open.length, 'job')}
+            </p>
+          )}
         </div>
         <div className={styles.headActions}>
           <Button
@@ -281,7 +331,8 @@ export function JobsPage(props: JobsPageProps) {
               />
             </div>
             <div className={styles.narrowing}>
-              <FoundBy rows={rows} today={today} filter={filter} onFilter={onFilter} />
+              <KindOf rows={rows} kinds={kinds} filter={filter} onFilter={onFilter} />
+              <FoundBy rows={kindRows} today={today} filter={filter} onFilter={onFilter} />
               <Checkbox
                 label="Needs you"
                 checked={filter.needsYou}
@@ -300,6 +351,8 @@ export function JobsPage(props: JobsPageProps) {
                 rows={shown}
                 view={filter.view}
                 today={today}
+                // Each job's kind, while every kind shows.
+                showKind={kinds.length > 1 && !filter.kind}
                 // Only when the jobs come from more than one search: otherwise it's only noise.
                 showFound={
                   (filter.view === 'new' || filter.view === 'review') &&
