@@ -47,7 +47,7 @@ test('shows the jobs on file, your Claude ready, a way to support Factwright, an
   // Not clicked: it would open Buy Me a Coffee in the browser of whoever runs the tests.
   await expect(window.getByRole('link', { name: 'Support Factwright' })).toHaveAttribute(
     'href',
-    'https://buymeacoffee.com/factwright',
+    'https://buymeacoffee.com/stevehillyer',
   );
   await expect(window.getByText(`Factwright ${version}`)).toBeVisible();
   await pickView(/^To review/);

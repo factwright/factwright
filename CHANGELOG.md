@@ -5,7 +5,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
-- A Support Factwright link at the bottom of the sidebar, above the version, which opens Factwright's page on Buy Me a Coffee in your browser, for anyone who'd like to chip in.
+- A Support Factwright link at the bottom of the sidebar, above the version, which opens the Buy Me a Coffee page of Factwright's maker, Steve Hillyer, in your browser, for anyone who'd like to chip in.
 
 ## 0.1.1 - 2026-10-13
 

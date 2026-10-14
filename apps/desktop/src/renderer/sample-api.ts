@@ -168,6 +168,7 @@ export function sampleApi(): FactwrightApi {
         setTimeout(() => {
           print(run.question);
           waitingForAnswer = true;
+          afterAnswer = 'opening';
           signal('needs-answer');
         }, 1800);
       };

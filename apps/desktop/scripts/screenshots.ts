@@ -2,7 +2,8 @@
 // jobs while Claude asks a question, the fact bank, and the journey. They come from the screens
 // preview's made-up job hunt, so no one's real data is in them. Take them again after a change
 // they show, on a Mac so the app gets the system font: `pnpm --filter @factwright/desktop
-// screenshots`. It needs Playwright's Chromium, once: `pnpm exec playwright install chromium`.
+// screenshots`. It needs Playwright's Chromium, once:
+// `pnpm --filter @factwright/desktop exec playwright install chromium`.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';

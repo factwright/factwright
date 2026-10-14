@@ -12,8 +12,8 @@ import type { ClaudeStatusView } from './useClaudeStatus.ts';
 /** The app's places: the jobs, the fact bank, and everything else about the user. */
 export type Page = 'jobs' | 'facts' | 'profile';
 
-/** Factwright's page on Buy Me a Coffee, where anyone can chip in with a card and no account. */
-const COFFEE_URL = 'https://buymeacoffee.com/factwright';
+/** Steve Hillyer's page on Buy Me a Coffee, where anyone can chip in with a card and no account. */
+const COFFEE_URL = 'https://buymeacoffee.com/stevehillyer';
 
 /**
  * The sidebar: the app's places, then an update when there's one, sync, the user's Claude, a way
