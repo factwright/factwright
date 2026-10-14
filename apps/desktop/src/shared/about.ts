@@ -2,10 +2,10 @@ import {
   KIND_ID,
   KIND_LIMITS,
   type KindName,
-  kindIdFor,
   kindNameText,
   readKindName,
   sameKind,
+  unnamedFirstKind,
 } from '@factwright/core';
 import { TEMPLATE_ID } from '@factwright/engine/templates';
 
@@ -540,10 +540,9 @@ function withKinds(answers: AboutYou): AboutYou {
     (kind) => kind.id !== first?.id && kind.name.toLowerCase() !== first?.name.toLowerCase(),
   );
   if (others.length === 0 || first) return { ...answers, otherKinds: others };
-  // Others with no first named, as after a hand edit: the first is named for its titles.
-  const name = answers.roles[0]?.slice(0, ANSWER_LIMITS.kindName) || 'Your first kind of job';
-  const taken = others.map((kind) => kind.id);
-  return { ...answers, firstKind: { id: kindIdFor(name, taken), name }, otherKinds: others };
+  // Others with no first named, as after a hand edit, the way the web view reads the file too.
+  const firstKind = unnamedFirstKind(others.map((kind) => kind.id));
+  return { ...answers, firstKind, otherKinds: others };
 }
 
 /**

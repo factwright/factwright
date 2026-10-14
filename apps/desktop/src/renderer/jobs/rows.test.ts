@@ -2,6 +2,7 @@ import { fileSize, localDate, payLabel, shortDate } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   filterCount,
+  filterForAdded,
   foundOptions,
   jobRows,
   laterRows,
@@ -12,6 +13,7 @@ import {
   viewCounts,
   viewNow,
   visibleRows,
+  withKnownKind,
 } from './rows.ts';
 import { sampleJobs } from './sample-jobs.ts';
 
@@ -202,6 +204,27 @@ describe('kinds of job', () => {
     expect([counts.all, counts.review]).toEqual([3, 1]);
     // It isn't one of the Filters button's filters: it has its own menu.
     expect(filterCount({ ...ALL, kind: 'developer' })).toBe(0);
+  });
+
+  it('shows every kind again once the kind picked is gone, and keeps one renamed', () => {
+    const picked = { ...ALL, kind: 'project-manager' };
+    expect(withKnownKind(picked, KINDS)).toBe(picked);
+    expect(withKnownKind(picked, [{ id: 'project-manager', name: 'Program manager' }])).toBe(
+      picked,
+    );
+    expect(withKnownKind(picked, KINDS.slice(0, 1)).kind).toBeNull();
+    expect(withKnownKind(ALL, [])).toBe(ALL);
+  });
+
+  it('shows a job just added, of the kind picked only when it’s that kind', () => {
+    const picked = { ...ALL, view: 'closed', kind: 'project-manager', query: 'acme' } as const;
+    expect(filterForAdded(picked, 'applied', 'project-manager')).toEqual({
+      ...ALL,
+      view: 'applied',
+      kind: 'project-manager',
+    });
+    expect(filterForAdded(picked, 'new', null)).toEqual({ ...ALL, view: 'new' });
+    expect(filterForAdded(picked, 'new', 'developer').kind).toBeNull();
   });
 });
 

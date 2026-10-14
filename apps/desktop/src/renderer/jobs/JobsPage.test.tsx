@@ -214,6 +214,28 @@ describe('JobsPage', () => {
     ).toContain('HN October 2026 (3)');
   });
 
+  it('keeps the name of a search picked for another kind of job, to clear it', () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const run = {
+      folder: '2026-10-12-hn-project-manager',
+      source: 'HN · Project manager',
+      date: null,
+    };
+    const jobs = sampleJobs().map((job) =>
+      job.company === 'Fernway' ? { ...job, searches: [run] } : job,
+    );
+    page({
+      rows: jobRows(jobs, TODAY, kinds),
+      kinds,
+      filter: { ...view('all'), kind: 'developer', found: `search:${run.folder}` },
+    });
+    const menu = screen.getByRole('combobox', { name: 'Found by' }) as HTMLSelectElement;
+    expect(menu.selectedOptions[0]?.textContent).toBe('HN · Project manager (0)');
+  });
+
   it('shows no kinds of job with one', () => {
     page({ filter: view('all') });
     expect(screen.queryByRole('combobox', { name: 'Kind of job' })).toBeNull();

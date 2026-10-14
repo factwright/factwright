@@ -17,8 +17,14 @@ export interface KindName {
 /** How many kinds of job the app keeps, the first included, and how long a kind's name runs. */
 export const KIND_LIMITS = { kinds: 6, name: 60 } as const;
 
-/** Where the kinds of job are kept in the workspace. */
+/**
+ * Where the kinds of job are kept in the workspace: apart from answers.json, which versions from
+ * before kinds rewrite with only the answers they know.
+ */
 export const KINDS_FILE = 'about-me/kinds-of-job.json';
+
+/** What the first kind of job is called until the user names it. */
+export const FIRST_KIND_NAME = 'Your first kind of job';
 
 /** A kind of job's name as it's kept: on one line, with single spaces. */
 export const kindNameText = (name: string) => name.replace(/\s+/g, ' ').trim();
@@ -51,12 +57,21 @@ export function readKindName(value: unknown): KindName | null {
 }
 
 /**
- * The kinds of job the kinds file holds, by id and name, as the app reads them: the first kind,
- * then each other one that holds up and isn't one before it, as many as the app keeps. None
- * when the file holds no other kind, since then there's one kind, unnamed. A first kind the file
- * doesn't name, as after a hand edit, is named for the user's first job title.
+ * The first kind of job, when the kinds file leaves it out, as after a hand edit: called what it
+ * is, with an id none of the others has.
  */
-export function kindNamesIn(file: unknown, firstTitle = ''): KindName[] {
+export const unnamedFirstKind = (taken: readonly string[]): KindName => ({
+  id: kindIdFor(FIRST_KIND_NAME, taken),
+  name: FIRST_KIND_NAME,
+});
+
+/**
+ * The kinds of job the kinds file holds, by id and name, as the app reads them: the first kind,
+ * then each other one that holds up and isn't one before it, as many as the app keeps, less any
+ * that's the first one over again. None when the file holds no other kind, since then there's
+ * one kind, unnamed.
+ */
+export function kindNamesIn(file: unknown): KindName[] {
   const { first, others } = (typeof file === 'object' && file !== null ? file : {}) as Record<
     string,
     unknown
@@ -66,22 +81,11 @@ export function kindNamesIn(file: unknown, firstTitle = ''): KindName[] {
   for (const each of Array.isArray(others) ? others : []) {
     if (kept.length === KIND_LIMITS.kinds - 1) break;
     const kind = readKindName(each);
-    const clashes = (other: KindName) => kind !== null && sameKind(other, kind);
-    if (kind && !kept.some(clashes) && !(named && clashes(named))) kept.push(kind);
+    if (kind && !kept.some((other) => sameKind(other, kind))) kept.push(kind);
   }
-  if (kept.length === 0) return [];
-  const name =
-    kindNameText(firstTitle).slice(0, KIND_LIMITS.name).trim() || 'Your first kind of job';
-  return [
-    named ?? {
-      id: kindIdFor(
-        name,
-        kept.map((kind) => kind.id),
-      ),
-      name,
-    },
-    ...kept,
-  ];
+  const rest = named ? kept.filter((kind) => !sameKind(kind, named)) : kept;
+  if (rest.length === 0) return [];
+  return [named ?? unnamedFirstKind(rest.map((kind) => kind.id)), ...rest];
 }
 
 /** The text between the first two backticks, as in "Project manager (`project-manager`)". */

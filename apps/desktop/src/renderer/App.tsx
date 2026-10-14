@@ -1,4 +1,4 @@
-import { JOB_VIEWS, type JobView, type KindName, LIVE_STATUSES, viewOf } from '@factwright/core';
+import { JOB_VIEWS, type JobView, type KindName, LIVE_STATUSES } from '@factwright/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
@@ -23,6 +23,7 @@ import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
+  filterForAdded,
   type JobRow,
   jobRows,
   type ListFilter,
@@ -31,6 +32,7 @@ import {
   stepFrom,
   viewNow,
   visibleRows,
+  withKnownKind,
 } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useToday } from './jobs/useToday.ts';
@@ -92,10 +94,7 @@ export function App({ api }: { api: FactwrightApi }) {
     ...NO_FILTERS,
   }));
   // A kind of job picked, then removed, shows every kind again.
-  const filter =
-    chosen.kind === null || kinds.some((kind) => kind.id === chosen.kind)
-      ? chosen
-      : { ...chosen, kind: null };
+  const filter = withKnownKind(chosen, kinds);
   const changeFilter = (next: ListFilter) => {
     if (next.view !== filter.view) writePref(VIEW_PREF, next.view);
     setFilter(next);
@@ -334,16 +333,10 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           kinds={kinds}
           // A job added while one kind shows is that kind's, to begin with.
-          kind={filter.kind ?? kinds[0]?.id ?? null}
+          kind={filter.kind}
           onAdded={(jobId, status, kind) => {
-            // Show the new job in the list as well as the panel, keeping its kind when it shows.
-            changeFilter({
-              ...NO_FILTERS,
-              kind: kind === filter.kind ? kind : null,
-              view: viewOf(status),
-              query: '',
-              needsYou: false,
-            });
+            // Show the new job in the list as well as the panel.
+            changeFilter(filterForAdded(filter, status, kind));
             setSelectedId(jobId);
           }}
           onClose={() => setDialog(null)}

@@ -323,15 +323,25 @@ describe('kinds of job', () => {
         { id: 'pm', name: 'project MANAGER' },
       ],
     };
-    const read = readAnswers({ ...TWO, firstKind: file.first, otherKinds: file.others });
-    expect(kindNamesIn(file, TWO.roles[0])).toEqual(
-      kindsOf(read).map(({ id, name }) => ({ id, name })),
-    );
-    // A first kind the file leaves out is named the same way in both.
-    const noFirst = readAnswers({ roles: ['Staff Engineer'], otherKinds: file.others });
-    expect(kindNamesIn({ others: file.others }, 'Staff Engineer')).toEqual(
-      kindsOf(noFirst).map(({ id, name }) => ({ id, name })),
-    );
+    // The kinds as the app reads them from the file, beside these answers.
+    const inApp = (kinds: { first?: unknown; others: unknown[] }, answers = {}) => {
+      const read = readAnswers({
+        ...answers,
+        firstKind: kinds.first ?? null,
+        otherKinds: kinds.others,
+      });
+      return hasKinds(read) ? kindsOf(read).map(({ id, name }) => ({ id, name })) : [];
+    };
+    expect(kindNamesIn(file)).toEqual(inApp(file, TWO));
+    // A first kind the file leaves out is named the same way in both, whatever the titles.
+    const noFirst = { others: file.others };
+    expect(kindNamesIn(noFirst)).toEqual(inApp(noFirst, { roles: ['', 'Staff Engineer'] }));
+    // One that repeats the first counts toward as many as the app keeps, in both.
+    const many = Array.from({ length: 6 }, (_, n) => ({ id: `kind-${n}`, name: `Kind ${n}` }));
+    const repeats = { first: TWO.firstKind, others: [{ id: 'dev', name: 'developer' }, ...many] };
+    expect(kindNamesIn(repeats)).toHaveLength(5);
+    expect(kindNamesIn(repeats)).toEqual(inApp(repeats, TWO));
+    expect(kindNamesIn({ first: TWO.firstKind, others: [] })).toEqual(inApp({ others: [] }, TWO));
   });
 
   it('get ids Windows can hold as folder names', () => {

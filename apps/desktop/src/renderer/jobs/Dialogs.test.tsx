@@ -86,6 +86,28 @@ describe('FiltersPanel', () => {
     expect(onFilter).toHaveBeenLastCalledWith(expect.objectContaining(NO_FILTERS));
   });
 
+  it('keeps the kind of job picked when it clears the filters', async () => {
+    const onFilter = vi.fn();
+    render(
+      <FiltersPanel
+        filter={{
+          view: 'all',
+          query: '',
+          needsYou: false,
+          ...NO_FILTERS,
+          kind: 'project-manager',
+          hasResume: true,
+        }}
+        onFilter={onFilter}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Filters · 1' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: 'project-manager', hasResume: false }),
+    );
+  });
+
   it('closes with Escape, Done, or a click elsewhere', async () => {
     render(
       <>
@@ -162,20 +184,26 @@ describe('AddJobDialog', () => {
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
     cleanup();
-    // With every kind showing, or one since removed, it starts on the first.
+    // With every kind showing, or one since removed, its fit check decides, unless the user picks.
+    const addAgain = vi.fn(async () => ({ ok: true as const, jobId: 'kite--staff' }));
+    const onAddedAgain = vi.fn();
     render(
       <AddJobDialog
-        api={{ addJob } as unknown as FactwrightApi}
+        api={{ addJob: addAgain } as unknown as FactwrightApi}
         kinds={KINDS}
         kind="gone"
-        onAdded={() => {}}
+        onAdded={onAddedAgain}
         onClose={() => {}}
       />,
     );
-    const first = screen.getByRole('combobox', { name: 'Kind of job' }) as HTMLSelectElement;
-    expect(first.value).toBe('developer');
-    await userEvent.selectOptions(first, 'Project manager');
-    expect(first.value).toBe('project-manager');
+    const open = screen.getByRole('combobox', { name: 'Kind of job' }) as HTMLSelectElement;
+    expect(open.selectedOptions[0]?.textContent).toBe('Let its fit check decide');
+    await userEvent.keyboard('Kite');
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addAgain.mock.calls[0]).toEqual([
+      expect.not.objectContaining({ kind: expect.anything() }),
+    ]);
+    expect(onAddedAgain).toHaveBeenCalledWith('kite--staff', 'new', null);
   });
 
   it('starts a job at New, or wherever the user already is with it', () => {

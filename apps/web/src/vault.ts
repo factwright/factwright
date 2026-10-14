@@ -12,7 +12,6 @@ import {
   kindNamesIn,
   noteOrder,
   readJobExtras,
-  readKindName,
   readRecords,
   type StoredRow,
   type TrackedRow,
@@ -78,32 +77,13 @@ const PAGE_CODE_LENGTH = 16;
 const READ_FOR_JOBS =
   /^(applications\/[^/]+\/[^/]+\.md|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json|asked\/[^/]+\/[^/]+\.md)$/;
 
-/** Where the user's answers are kept, which name a first kind of job the kinds file leaves out. */
-const ANSWERS_FILE = 'about-me/answers.json';
-
-const json = (text: string | null): unknown => {
+/** The kinds of job the user wants, as the desktop app reads them, or none from a broken file. */
+function readKinds(text: string | null): KindName[] {
   try {
-    return JSON.parse(text ?? 'null');
+    return kindNamesIn(JSON.parse(text ?? 'null'));
   } catch {
-    return null;
+    return [];
   }
-};
-
-/**
- * The kinds of job the user wants, as the desktop app reads them. Only a kinds file that leaves
- * out the first kind, as after a hand edit, needs the user's answers: it's named for their first
- * job title.
- */
-async function readKinds(
-  kindsFile: string | null,
-  answersFile: () => Promise<string | null>,
-): Promise<KindName[]> {
-  const file = json(kindsFile) as { first?: unknown } | null;
-  const kinds = kindNamesIn(file);
-  if (kinds.length === 0 || readKindName(file?.first)) return kinds;
-  const answers = json(await answersFile()) as { roles?: unknown } | null;
-  const title = Array.isArray(answers?.roles) ? answers.roles[0] : '';
-  return kindNamesIn(file, typeof title === 'string' ? title : '');
 }
 
 /** How many files download at once. */
@@ -252,10 +232,14 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
       ),
     ),
   );
-  const kinds = await readKinds(texts.get(KINDS_FILE) ?? null, async () => {
-    const answers = files.get(ANSWERS_FILE);
-    const contents = answers && (await fileContents(client, keys, answers.id));
-    return contents ? fromUtf8(contents) : null;
-  });
-  return { jobs, kinds, files, docs, asked, rows, unreadable, pages };
+  return {
+    jobs,
+    kinds: readKinds(texts.get(KINDS_FILE) ?? null),
+    files,
+    docs,
+    asked,
+    rows,
+    unreadable,
+    pages,
+  };
 }

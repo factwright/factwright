@@ -31,7 +31,7 @@ export function AddJobDialog({
   api: FactwrightApi;
   /** The kinds of job the user wants, when there's more than one. */
   kinds?: readonly KindName[];
-  /** The kind of job it starts under, by id. */
+  /** The kind of job it starts under, by id: the one the list shows, if it shows one. */
   kind?: string | null;
   /** Called with the new job's ID, status and kind, so it can be shown. */
   onAdded: (jobId: string, status: JobStatus, kind: string | null) => void;
@@ -43,8 +43,9 @@ export function AddJobDialog({
   const [pay, setPay] = useState('');
   const [status, setStatus] = useState<JobStatus>('new');
   const hasKinds = kinds.length > 1;
+  // None picked leaves it for its fit check to say, as for a job a search found without one.
   const [kind, setKind] = useState(
-    kinds.some((each) => each.id === startingKind) ? startingKind : (kinds[0]?.id ?? null),
+    kinds.some((each) => each.id === startingKind) ? (startingKind ?? '') : '',
   );
   const [notes, setNotes] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
@@ -60,14 +61,14 @@ export function AddJobDialog({
       pay,
       status,
       notes,
-      ...(hasKinds && { kind }),
+      ...(hasKinds && kind && { kind }),
     });
     setSaving(false);
     if (!result.ok) {
       setProblem(result.message);
       return;
     }
-    onAdded(result.jobId, status, hasKinds ? kind : null);
+    onAdded(result.jobId, status, (hasKinds && kind) || null);
     close();
   };
 
@@ -104,11 +105,8 @@ export function AddJobDialog({
           {hasKinds && (
             <Field label="Kind of job">
               {(control) => (
-                <Select
-                  {...control}
-                  value={kind ?? ''}
-                  onChange={(event) => setKind(event.target.value)}
-                >
+                <Select {...control} value={kind} onChange={(event) => setKind(event.target.value)}>
+                  <option value="">Let its fit check decide</option>
                   {kinds.map((each) => (
                     <option key={each.id} value={each.id}>
                       {each.name}

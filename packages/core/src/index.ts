@@ -112,6 +112,7 @@ export {
 } from './journey.ts';
 export { companyKey, roleKey, slug } from './keys.ts';
 export {
+  FIRST_KIND_NAME,
   KIND_ID,
   KIND_LIMITS,
   KINDS_FILE,
@@ -124,6 +125,7 @@ export {
   kindOfJob,
   readKindName,
   sameKind,
+  unnamedFirstKind,
 } from './kinds.ts';
 export { PRIVACY_URL, TERMS_URL } from './legal.ts';
 export { hostOf, isJobLink, type Link, linksFrom, normalizeUrl } from './links.ts';

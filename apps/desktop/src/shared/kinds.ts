@@ -1,4 +1,4 @@
-import { kindIdFor, kindNameKey, kindNameText } from '@factwright/core';
+import { FIRST_KIND_NAME, kindIdFor, kindNameKey, kindNameText } from '@factwright/core';
 import {
   type AboutYou,
   ANSWER_LIMITS,
@@ -66,7 +66,7 @@ export function addKind(answers: AboutYou, name: string, firstName = ''): KindEd
     (second && kindNameText(firstName)) ||
     answers.firstKind?.name ||
     firstKindName(answers) ||
-    'Your first kind of job';
+    FIRST_KIND_NAME;
   const firstKind = {
     id: answers.firstKind?.id ?? kindIdFor(firstNamed, []),
     name: firstNamed,

@@ -34,19 +34,27 @@ const option = ({ value, label, count }: FoundOption) => (
  */
 function FoundBy({
   rows,
+  all,
   today,
   filter,
   onFilter,
 }: {
+  /** The jobs it counts: those of the kind of job picked, if one is. */
   rows: readonly JobRow[];
+  /** Every job, of every kind. */
+  all: readonly JobRow[];
   today: string;
   filter: ListFilter;
   onFilter: (filter: ListFilter) => void;
 }) {
-  const { searches, others } = foundOptions(rows, today);
+  const listed = foundOptions(rows, today);
+  const { searches, others } = listed;
   const { found } = filter;
-  // What's picked always shows, even once nothing is left with it, so it can be cleared.
-  const gone = found && ![...searches, ...others].some((each) => each.value === found);
+  const labelIn = (options: typeof listed) =>
+    [...options.searches, ...options.others].find((each) => each.value === found)?.label;
+  // What's picked always shows, even once nothing is left with it, or nothing of the kind of
+  // job picked, so it can be cleared. It keeps its name while another kind has its jobs.
+  const gone = found && !labelIn(listed);
   if (searches.length === 0 && others.length < 2 && !found) return null;
   return (
     <Select
@@ -56,7 +64,12 @@ function FoundBy({
       onChange={(event) => onFilter({ ...filter, found: event.target.value || null })}
     >
       <option value="">Found anywhere</option>
-      {gone && option({ value: found, label: found.replace(/^(search|from):/, ''), count: 0 })}
+      {gone &&
+        option({
+          value: found,
+          label: labelIn(foundOptions(all, today)) ?? found.replace(/^(search|from):/, ''),
+          count: 0,
+        })}
       {searches.length > 0 && <optgroup label="Job searches">{searches.map(option)}</optgroup>}
       {others.length > 0 && <optgroup label="Other ways">{others.map(option)}</optgroup>}
     </Select>
@@ -332,7 +345,13 @@ export function JobsPage(props: JobsPageProps) {
             </div>
             <div className={styles.narrowing}>
               <KindOf rows={rows} kinds={kinds} filter={filter} onFilter={onFilter} />
-              <FoundBy rows={kindRows} today={today} filter={filter} onFilter={onFilter} />
+              <FoundBy
+                rows={kindRows}
+                all={rows}
+                today={today}
+                filter={filter}
+                onFilter={onFilter}
+              />
               <Checkbox
                 label="Needs you"
                 checked={filter.needsYou}

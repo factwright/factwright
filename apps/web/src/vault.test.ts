@@ -266,20 +266,19 @@ describe('opening the job hunt in the browser', () => {
       { id: 'project-manager', name: 'Project manager' },
     ]);
     expect(vault.jobs[0]?.kindFound).toBe('Project manager');
-    // The job's notes and posting, and the kinds file: the answers aren't needed.
+    // The job's notes and posting, and the kinds file, but never the answers.
     expect(downloaded).toHaveLength(3);
   });
 
-  it('names a first kind of job the kinds file leaves out for the first job title', async () => {
+  it('names a first kind of job the kinds file leaves out, as the desktop app does', async () => {
     await pushFiles(sam.client, keys, {
       ...FILES,
       'about-me/kinds-of-job.json': JSON.stringify({
         others: [{ id: 'project-manager', name: 'Project manager' }],
       }),
-      'about-me/answers.json': JSON.stringify({ roles: ['Staff Engineer'] }),
     });
     expect((await openVault(sam.client, keys)).kinds).toEqual([
-      { id: 'staff-engineer', name: 'Staff Engineer' },
+      { id: 'your-first-kind-of-job', name: 'Your first kind of job' },
       { id: 'project-manager', name: 'Project manager' },
     ]);
   });

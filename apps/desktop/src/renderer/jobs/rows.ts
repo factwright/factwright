@@ -6,12 +6,14 @@ import {
   JOB_VIEWS,
   type Job,
   type JobProgress,
+  type JobStatus,
   type JobView,
   jobProgress,
   type KindName,
   kindOfJob,
   nextStep,
   shortDate,
+  viewOf,
   startingView as viewToOpen,
 } from '@factwright/core';
 import { FIT_TIER_DISPLAY, JOB_STATUS_DISPLAY, MOOD_DISPLAY } from '@factwright/ui';
@@ -125,6 +127,31 @@ export function foundOptions(
     others: [...others.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([source, count]) => ({ value: `from:${source}`, label: source, count })),
+  };
+}
+
+/** The filter, with a kind of job the user no longer wants, such as one removed, back to every kind. */
+export function withKnownKind(filter: ListFilter, kinds: readonly KindName[]): ListFilter {
+  return filter.kind === null || kinds.some((kind) => kind.id === filter.kind)
+    ? filter
+    : { ...filter, kind: null };
+}
+
+/**
+ * What the list shows once a job is added, so it's there: all of the view it starts in, still of
+ * the kind of job picked when the job is that kind.
+ */
+export function filterForAdded(
+  filter: ListFilter,
+  status: JobStatus,
+  kind: string | null,
+): ListFilter {
+  return {
+    ...NO_FILTERS,
+    kind: kind === filter.kind ? kind : null,
+    view: viewOf(status),
+    query: '',
+    needsYou: false,
   };
 }
 

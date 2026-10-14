@@ -22,14 +22,19 @@
   width: 100%;
 }
 
-/* The kind of job a row is under, while every kind shows. */
+/* The kind of job a row is under, while every kind shows, on one line however long. */
 .kind {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   padding: 0 6px;
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-full);
   font-size: var(--fw-text-xs);
   font-weight: 550;
   line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stats {

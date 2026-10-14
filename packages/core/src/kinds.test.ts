@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { KIND_ID, KIND_LIMITS, kindIdFor, kindNamed, kindNamesIn, kindOfJob } from './kinds.ts';
+import {
+  KIND_ID,
+  KIND_LIMITS,
+  kindIdFor,
+  kindNamed,
+  kindNamesIn,
+  kindOfJob,
+  unnamedFirstKind,
+} from './kinds.ts';
 
 const KINDS = [
   { id: 'developer', name: 'Developer' },
@@ -63,20 +71,25 @@ describe('kindNamesIn', () => {
     ]);
   });
 
-  it('is none with one kind, and names a first kind the file leaves out for the first title', () => {
+  it('is none with one kind, and names a first kind the file leaves out for what it is', () => {
     expect(kindNamesIn({ first: { id: 'developer', name: 'Developer' }, others: [] })).toEqual([]);
     expect(kindNamesIn(null)).toEqual([]);
-    expect(
-      kindNamesIn({ others: [{ id: 'staff-engineer', name: 'PM' }] }, 'Staff Engineer'),
-    ).toEqual([
-      { id: 'staff-engineer-2', name: 'Staff Engineer' },
-      { id: 'staff-engineer', name: 'PM' },
+    const pm = { id: 'project-manager', name: 'Project manager' };
+    expect(kindNamesIn({ first: { id: 'Bad Id', name: 'Developer' }, others: [pm] })).toEqual([
+      { id: 'your-first-kind-of-job', name: 'Your first kind of job' },
+      pm,
     ]);
+    expect(unnamedFirstKind(['your-first-kind-of-job']).id).toBe('your-first-kind-of-job-2');
   });
 
-  it('keeps as many as the app keeps', () => {
+  it('keeps as many as the app keeps, counting one that repeats the first, as the app does', () => {
     const others = Array.from({ length: 9 }, (_, n) => ({ id: `kind-${n}`, name: `Kind ${n}` }));
-    expect(kindNamesIn({ first: { id: 'a', name: 'A' }, others })).toHaveLength(KIND_LIMITS.kinds);
+    const first = { id: 'a', name: 'A' };
+    expect(kindNamesIn({ first, others })).toHaveLength(KIND_LIMITS.kinds);
+    // The first over again takes a place in the count, then is left out.
+    expect(kindNamesIn({ first, others: [{ id: 'b', name: 'a' }, ...others] })).toHaveLength(
+      KIND_LIMITS.kinds - 1,
+    );
   });
 });
 
