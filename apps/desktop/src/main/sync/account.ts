@@ -88,8 +88,11 @@ export class SyncAccount {
   private accountKey: Bytes | null = null;
   private runner: SyncRunner | null = null;
   private signIn: DeviceSignIn | null = null;
-  /** The account key made for a first device, kept until its recovery key is saved. */
-  private pending: { accountKey: Bytes; recovery: Bytes } | null = null;
+  /**
+   * The account key a first device sets up with, kept until its recovery key is saved: a new
+   * one, or the one this computer synced with, for an account that has none on the server.
+   */
+  private pending: { accountKey: Bytes; recovery: Bytes | null } | null = null;
   private device = 'This computer';
   /** Once the app is closing, nothing more happens. */
   private closed = false;
@@ -234,7 +237,8 @@ export class SyncAccount {
    * - The same key: sync carries on.
    * - No key: the account is new, or was deleted and made again. This computer makes a new
    *   account key and recovery key, as a first device does, so the old ones, which a lost or
-   *   stolen device may still hold, open nothing of it.
+   *   stolen device may still hold, open nothing of it. But when it's the account this computer
+   *   was syncing, as `checkKey` found, it saves a recovery key for the key it has.
    * - Another key: the account isn't this computer's to sync with until it links, and linking
    *   adds this computer's job hunt to it. Nothing goes up before that.
    * When the server can't be asked, sign-in says why, and nothing syncs.
@@ -254,12 +258,26 @@ export class SyncAccount {
       return failed(reason(error));
     }
     this.pending = null;
+    const email = account.user.email;
+    // Whether this computer synced this very account, and not one before it.
+    const synced = this.state.meta('account') === account.user.id;
     if (saved === null) {
-      this.set({ state: 'setting-up', email: account.user.email, firstDevice: true, again: true });
+      if (synced) this.pending = { accountKey, recovery: null };
+      this.set({
+        state: 'setting-up',
+        email,
+        firstDevice: true,
+        again: synced ? 'unsaved' : 'remade',
+      });
       return { ok: true };
     }
     if (saved.keyId !== (await accountKeys(accountKey)).id) {
-      this.set({ state: 'setting-up', email: account.user.email, firstDevice: false });
+      this.set({
+        state: 'setting-up',
+        email,
+        firstDevice: false,
+        ...(synced && { again: 'changed' as const }),
+      });
       return { ok: true };
     }
     // The same key. A key belongs to the one account it was made for, so this is the account
@@ -320,8 +338,9 @@ export class SyncAccount {
 
   /** On the first device, once the recovery key is saved: turns sync on. */
   async turnOn(): Promise<EditResult> {
-    if (!this.client || !this.pending) return failed('Make your recovery key first.');
-    const { accountKey, recovery } = this.pending;
+    const recovery = this.pending?.recovery;
+    if (!this.client || !this.pending || !recovery) return failed('Make your recovery key first.');
+    const { accountKey } = this.pending;
     try {
       const keys = await accountKeys(accountKey);
       const locked = await lockWithRecoveryKey(accountKey, recovery);
@@ -415,7 +434,8 @@ export class SyncAccount {
       message: null,
       skipped,
     });
-    this.runner = new SyncRunner({
+    let checked = false;
+    const runner: SyncRunner = new SyncRunner({
       engine,
       client: this.client,
       state: this.state,
@@ -424,6 +444,13 @@ export class SyncAccount {
         skipped = report.skipped.length;
         lastSynced = new Date().toISOString();
         if (report.pulled > 0 || report.conflicts > 0) this.deps.onApplied();
+        // Once the server answers, the account's key is checked, until the check gets through.
+        if (!checked) {
+          checked = true;
+          void this.checkKey(runner, accountKey, keys.id).then((done) => {
+            checked = done;
+          });
+        }
       },
       onActivity: (activity, message) =>
         this.set({ state: 'on', email: this.email(), activity, lastSynced, message, skipped }),
@@ -433,17 +460,55 @@ export class SyncAccount {
         this.set({ state: 'signed-out', email: this.email() });
       },
     });
-    this.runner.start();
-    // Fill in the account's email, for a computer that set up before it was known.
-    void this.client
-      .account()
-      .then((account) => {
-        if (this.closed) return;
-        this.state.setMeta('email', account.user.email);
-        this.state.setMeta('account', account.user.id);
-        if (this.current.state === 'on') this.set({ ...this.current, email: account.user.email });
-      })
-      .catch(() => {});
+    this.runner = runner;
+    runner.start();
+  }
+
+  /**
+   * Once sync is running: notes the account's email, for a computer that set up before it was
+   * known, and checks the account still uses this computer's key. Version 0.1.0 didn't check
+   * when it signed in again, so after an account was deleted and made again, it synced under its
+   * old key without saving that key to the account. A computer that set up later then made
+   * another key, and each skipped what the other sent. So a key the account doesn't use stops
+   * sync here, even after a restart, until:
+   * - the account has no key: this computer saves a recovery key for the key it has. It sends
+   *   everything again, since what it knew of the account may be from the one before.
+   * - the account has another key: this computer links to it.
+   * Returns whether the server answered. If it didn't, the next round asks again.
+   */
+  private async checkKey(runner: SyncRunner, accountKey: Bytes, keyId: string): Promise<boolean> {
+    const client = this.client;
+    if (!client) return true;
+    let account: Awaited<ReturnType<SyncClient['account']>>;
+    let saved: Awaited<ReturnType<SyncClient['keys']>>;
+    try {
+      [account, saved] = await Promise.all([client.account(), client.keys()]);
+    } catch {
+      return false;
+    }
+    if (this.closed || this.runner !== runner) return true;
+    const before = this.state.meta('account');
+    const email = account.user.email;
+    this.state.setMeta('email', email);
+    this.state.setMeta('account', account.user.id);
+    if (saved?.keyId === keyId) {
+      if (this.current.state === 'on') this.set({ ...this.current, email });
+      return true;
+    }
+    this.state.setMeta(UNCHECKED, '1');
+    await runner.stop();
+    if (this.closed || this.runner !== runner) return true;
+    this.runner = null;
+    this.keys = null;
+    this.accountKey = null;
+    if (saved === null) {
+      if (before !== account.user.id) this.startOver();
+      this.pending = { accountKey, recovery: null };
+      this.set({ state: 'setting-up', email, firstDevice: true, again: 'unsaved' });
+    } else {
+      this.set({ state: 'setting-up', email, firstDevice: false, again: 'changed' });
+    }
+    return true;
   }
 
   /** Syncs now, such as after an edit. */

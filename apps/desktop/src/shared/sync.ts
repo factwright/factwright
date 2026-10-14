@@ -3,6 +3,16 @@ import type { AccountInfo } from '@factwright/sync';
 /** What sync is doing right now: syncing, done, unable to reach the server, or stuck. */
 export type SyncActivity = 'syncing' | 'idle' | 'offline' | 'problem';
 
+/**
+ * Why a computer that synced before sets up again:
+ * - `remade`: the account has no key on the server, such as after it was deleted and made again.
+ *   A new account key and recovery key, which the old ones won't open.
+ * - `unsaved`: the account has no key on the server, though this computer has synced it under
+ *   its own, as version 0.1.0 did after an account was made again. A recovery key for that key.
+ * - `changed`: the account this computer synced uses another key now. It links again.
+ */
+export type SetUpAgain = 'remade' | 'unsaved' | 'changed';
+
 /** Where sync stands on this computer, as the sidebar and the sync dialog show it. */
 export type SyncStatus =
   | { state: 'off' }
@@ -18,12 +28,7 @@ export type SyncStatus =
       state: 'setting-up';
       email: string;
       firstDevice: boolean;
-      /**
-       * This computer synced before, but the account has no key on the server, such as after it
-       * was deleted and made again: a new account key and recovery key, which the old ones won't
-       * open.
-       */
-      again?: boolean;
+      again?: SetUpAgain;
     }
   | {
       state: 'on';

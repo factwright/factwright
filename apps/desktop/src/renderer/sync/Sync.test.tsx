@@ -143,12 +143,51 @@ describe('SyncDialog', () => {
     render(
       <SyncDialog
         api={api}
-        status={{ state: 'setting-up', email: 'sam@example.com', firstDevice: true, again: true }}
+        status={{
+          state: 'setting-up',
+          email: 'sam@example.com',
+          firstDevice: true,
+          again: 'remade',
+        }}
         onClose={vi.fn()}
       />,
     );
     expect(screen.getByRole('heading', { name: 'Save a new recovery key' })).toBeTruthy();
     expect(screen.getByText(/a key you saved before won’t open it/)).toBeTruthy();
+  });
+
+  it('says why a computer that was syncing stopped, and what carries it on', async () => {
+    const api = apiFor('off');
+    const { unmount } = render(
+      <SyncDialog
+        api={api}
+        status={{
+          state: 'setting-up',
+          email: 'sam@example.com',
+          firstDevice: true,
+          again: 'unsaved',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Save your recovery key' })).toBeTruthy();
+    expect(screen.getByText(/the account has no recovery key/)).toBeTruthy();
+    unmount();
+
+    render(
+      <SyncDialog
+        api={api}
+        status={{
+          state: 'setting-up',
+          email: 'sam@example.com',
+          firstDevice: false,
+          again: 'changed',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Link this computer again' })).toBeTruthy();
+    expect(screen.getByText(/Another device set up a new key/)).toBeTruthy();
   });
 
   it('ends a sign-in with the wrong account, from either step', async () => {

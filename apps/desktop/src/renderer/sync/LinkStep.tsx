@@ -65,11 +65,20 @@ function CodeForm({
  * On any device after the first: links it with a code from a device that's set up, or, with
  * every other device lost, with the recovery key.
  */
-export function LinkStep({ api }: { api: FactwrightApi }) {
+export function LinkStep({
+  api,
+  changed = false,
+}: {
+  api: FactwrightApi;
+  /** This computer synced the account, which uses another key now. */
+  changed?: boolean;
+}) {
   return (
     <>
       <p className={styles.lead}>
-        Sync is already on for your account on another device. There, open Sync, choose{' '}
+        {changed
+          ? 'Another device set up a new key for your account, so syncing stopped here. On that device, open Sync, choose '
+          : 'Sync is already on for your account on another device. There, open Sync, choose '}
         <strong>Link a phone or computer</strong>, and type the code it shows.
       </p>
       <CodeForm

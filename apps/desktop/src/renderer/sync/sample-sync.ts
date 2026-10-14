@@ -45,6 +45,9 @@ const STARTS: Readonly<Record<string, SyncStatus>> = {
   },
   first: { state: 'setting-up', email: EMAIL, firstDevice: true },
   link: { state: 'setting-up', email: EMAIL, firstDevice: false },
+  remade: { state: 'setting-up', email: EMAIL, firstDevice: true, again: 'remade' },
+  unsaved: { state: 'setting-up', email: EMAIL, firstDevice: true, again: 'unsaved' },
+  changed: { state: 'setting-up', email: EMAIL, firstDevice: false, again: 'changed' },
   on: ON,
   syncing: { ...ON, activity: 'syncing' },
   offline: {

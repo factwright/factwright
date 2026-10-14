@@ -23,10 +23,13 @@ function heading(status: SyncStatus): { title: string; description?: string } {
     case 'setting-up':
       return status.firstDevice
         ? {
-            title: status.again ? 'Save a new recovery key' : 'Save your recovery key',
+            title: status.again === 'remade' ? 'Save a new recovery key' : 'Save your recovery key',
             description: `Signed in as ${status.email}.`,
           }
-        : { title: 'Link this computer', description: `Signed in as ${status.email}.` };
+        : {
+            title: status.again === 'changed' ? 'Link this computer again' : 'Link this computer',
+            description: `Signed in as ${status.email}.`,
+          };
     case 'on':
       return {
         title: 'Sync',
@@ -55,9 +58,13 @@ export function SyncDialog({
         switch (status.state) {
           case 'setting-up':
             return status.firstDevice ? (
-              <RecoveryKeyStep api={api} email={status.email} again={status.again ?? false} />
+              <RecoveryKeyStep
+                api={api}
+                email={status.email}
+                {...(status.again && { again: status.again })}
+              />
             ) : (
-              <LinkStep api={api} />
+              <LinkStep api={api} changed={status.again === 'changed'} />
             );
           case 'on':
             return <ManageSync api={api} status={status} close={close} />;
