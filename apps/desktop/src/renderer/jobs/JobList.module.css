@@ -203,19 +203,28 @@
   white-space: nowrap;
 }
 
-/* The role, and the kind of job it's under while every kind shows. */
-.roleLine {
-  display: flex;
-  align-items: baseline;
-  gap: var(--fw-space-2);
+/* With the kind of job beside it, the labels go under the company's name when there isn't room
+   for them, rather than shrink to a letter. */
+.withKind {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+.withKind .company {
+  flex: 0 1 auto;
   min-width: 0;
 }
 
-/* Which kind of job it is: an outline, to tell it from the search that found it. */
+.withKind .found {
+  max-width: 100%;
+}
+
+/* Which kind of job it's under, while every kind shows: an outline, to tell it from the search
+   that found it. */
 .kind {
-  flex: 0 100 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 50%;
+  max-width: 100%;
   overflow: hidden;
   padding: 0 6px;
   border: 1px solid var(--fw-border);

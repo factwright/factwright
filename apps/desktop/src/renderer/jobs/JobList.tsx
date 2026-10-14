@@ -134,21 +134,19 @@ export function JobList({
           onClick={() => onSelect(job.id)}
         >
           <span className={styles.job}>
-            <span className={styles.companyLine}>
+            <span className={`${styles.companyLine} ${showKind ? styles.withKind : ''}`}>
               <span className={styles.company}>{job.company}</span>
-              {showFound && job.searches[0] && (
-                <span className={styles.found}>{job.searches[0].source}</span>
-              )}
-            </span>
-            <span className={styles.roleLine}>
-              <span className={styles.role}>{job.role || 'Company outreach'}</span>
               {showKind && row.kind && (
                 <span className={styles.kind}>
                   <VisuallyHidden>, </VisuallyHidden>
                   {row.kind.name}
                 </span>
               )}
+              {showFound && job.searches[0] && (
+                <span className={styles.found}>{job.searches[0].source}</span>
+              )}
             </span>
+            <span className={styles.role}>{job.role || 'Company outreach'}</span>
             {view === 'interviewing' && <CallSteps calls={job.calls} today={today} />}
           </span>
           <span className={styles.status}>
