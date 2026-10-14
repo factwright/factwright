@@ -256,7 +256,7 @@ describe('Profiles, as the window uses them', () => {
     const working = profiles(profileToOpen(home), { busy: () => true });
     expect(working.opened.open(sam.id)).toEqual({
       ok: false,
-      message: 'Your Claude is working. Switch once it’s done.',
+      message: 'Stop Claude’s run first, as switching restarts Factwright.',
     });
     expect(working.restart).not.toHaveBeenCalled();
     expect(profileToOpen(home).id).toBe(FIRST_PROFILE);

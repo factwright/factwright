@@ -115,7 +115,11 @@ export function AddProfileDialog({
             <li>Factwright restarts to open it. Switch back from the top of the sidebar.</li>
           </ul>
           <NotPrivate />
-          {busy && <p className={styles.hint}>Your Claude is working. Add it once it’s done.</p>}
+          {busy && (
+            <p className={styles.hint}>
+              Stop Claude’s run first, as opening the new profile restarts Factwright.
+            </p>
+          )}
           {problem && (
             <p className={styles.problem} role="alert">
               {problem}

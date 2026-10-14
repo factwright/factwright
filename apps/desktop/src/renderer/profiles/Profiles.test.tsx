@@ -110,7 +110,9 @@ describe('ProfileSwitcher', () => {
     await user.click(screen.getByRole('button', { name: 'Profile: Alex Rivera' }));
     const sam = screen.getByRole('menuitemradio', { name: 'Sam' });
     expect(sam.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByText('Your Claude is working. Switch once it’s done.')).toBeTruthy();
+    expect(
+      screen.getByText('Stop Claude’s run first, as switching restarts Factwright.'),
+    ).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
     await user.click(sam);
     expect(onOpen).not.toHaveBeenCalled();
@@ -205,7 +207,9 @@ describe('AddProfileDialog', () => {
     expect(
       (screen.getByRole('button', { name: 'Add and open' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    expect(screen.getByText('Your Claude is working. Add it once it’s done.')).toBeTruthy();
+    expect(
+      screen.getByText('Stop Claude’s run first, as opening the new profile restarts Factwright.'),
+    ).toBeTruthy();
   });
 });
 

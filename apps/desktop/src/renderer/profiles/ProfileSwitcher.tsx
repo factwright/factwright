@@ -155,7 +155,7 @@ export function ProfileSwitcher({
           </div>
           {busy && (
             <p id={noteId} className={styles.menuNote}>
-              Your Claude is working. Switch once it’s done.
+              Stop Claude’s run first, as switching restarts Factwright.
             </p>
           )}
         </div>

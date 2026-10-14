@@ -308,7 +308,8 @@ export class Profiles {
     const profile = isId(id) ? readProfile(home, id) : null;
     if (!profile) return failed('That profile isn’t on this computer anymore.');
     if (profile.id === open.id) return { ok: true };
-    if (this.deps.busy()) return failed('Your Claude is working. Switch once it’s done.');
+    if (this.deps.busy())
+      return failed('Stop Claude’s run first, as switching restarts Factwright.');
     chooseProfile(home, profile.id);
     this.deps.restart();
     return { ok: true };
