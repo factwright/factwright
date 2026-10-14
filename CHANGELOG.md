@@ -12,6 +12,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Changed
 - The terms say Factwright's code is under the AGPL-3.0, which they don't limit, and that their rules cover the services Neatifai runs. Supporting Factwright goes to Steve Hillyer, isn't a payment to Neatifai, and buys nothing. The privacy policy says what supporting it shares, and with whom.
 
+### Fixed
+- Re-running a release's failed jobs long after it began can no longer put an older version out over a newer one that's gone out since.
+
 ## 0.1.1 - 2026-10-13
 
 Steadier sync, the version in the sidebar, the privacy policy and terms, and installers in Factwright's colors.

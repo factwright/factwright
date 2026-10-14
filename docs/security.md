@@ -135,9 +135,12 @@ If you lose every device and your recovery key, your data can't be recovered, by
   Signing. A release that isn't signed is never published.
 - **Where an installer came from.** While the repository is public, each release's installers
   come with an attestation: a record, signed through Sigstore and kept by GitHub, of the commit
-  and workflow run that built them. `gh attestation verify <installer> -R factwright/factwright`
-  checks a download against it, so anyone can confirm it was built from this repository's code by
-  its release workflow. Versions released while the repository was private don't have one.
+  and workflow run that built them. With the GitHub CLI signed in, `gh attestation verify
+  <installer> -R factwright/factwright --signer-workflow
+  factwright/factwright/.github/workflows/release.yml --source-ref refs/tags/v<version>` checks a
+  download against it, so anyone can confirm it was built from that version's code by the release
+  workflow, not uploaded from somewhere else. It shows where an installer came from, not that the
+  code is free of mistakes. Versions released while the repository was private don't have one.
 - **Locked down.** The installed app can't take Node's options from the environment, open Node's
   debugger from the command line, or load code from anywhere but its own archive, which it
   checks. On a Mac it can't be started as plain Node either. On Windows it can, because the

@@ -34,16 +34,20 @@ repository's Releases page.
   - `latest-mac.yml` and `latest.yml` say which version is newest, with each file's checksum.
     They're uploaded last, so nothing finds a version before its files are there.
 - **On GitHub.** Once both computers' installers are out, the version gets a release on the
-  repository's Releases page: its notes from `apps/desktop/release-notes`, where to download it,
-  and how to check an installer. Its files stay on downloads.factwright.com, where updates look.
+  repository's Releases page: its notes from `apps/desktop/release-notes`, links to its own
+  installers on downloads.factwright.com, where updates look, and, while the repository is public,
+  how to check one.
 - **Where each installer came from.** While the repository is public, each installer gets an
   attestation before it goes out: a record, signed through Sigstore and kept by GitHub, of the
-  commit, tag and workflow run that built it. Anyone can check a download against it:
+  commit, tag and workflow run that built it. Anyone with the GitHub CLI, signed in to any GitHub
+  account, can check a download against it:
   ```bash
-  gh attestation verify Factwright.dmg -R factwright/factwright
+  gh attestation verify Factwright-0.1.2.dmg -R factwright/factwright \
+    --signer-workflow factwright/factwright/.github/workflows/release.yml --source-ref refs/tags/v0.1.2
   ```
-  GitHub's free plan makes attestations for public repositories only, so versions released while
-  the repository was private have none.
+  `--signer-workflow` makes it fail for a record that any other workflow in the repository made,
+  and `--source-ref` for one from another version. GitHub's free plan makes attestations for public
+  repositories only, so versions released while the repository was private have none.
 - **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
   minutes, and straight away when the user comes back to it or the computer wakes, at most once a
   minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new
@@ -127,7 +131,8 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
    Apple usually notarizes in minutes, but can hold an app for hours, especially the first time.
    The Mac job gives up after an hour, so a slow Apple can't use up the month's free GitHub minutes
    (Mac minutes count ten times). Apple carries on checking. Once it's done (`xcrun notarytool
-   history` says Accepted), choose **Re-run failed jobs** on the run, and the Mac installers go out.
+   history` says Accepted), choose **Re-run failed jobs** on the run, and the Mac installers go out,
+   unless a newer version has gone out since: an older version never replaces a newer one.
 5. **Check it:** `https://downloads.factwright.com/latest-mac.yml` and `latest.yml` name the new
    version, the two downloads open, and the release is on the repository's Releases page.
 

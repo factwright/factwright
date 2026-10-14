@@ -34,6 +34,14 @@ esac
 
 upload() { aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" --no-progress "${@:3}"; }
 
+# The release's check did this when the run began, but re-running its failed jobs can come much
+# later: a newer version that went out since mustn't be replaced by this one.
+live=$(curl --silent --fail "https://downloads.factwright.com/$feed?check=${GITHUB_RUN_ID:-$$}" | sed -n 's/^version: //p' || true)
+if [ -n "$live" ] && [ "$(printf '%s\n%s\n' "$live" "$version" | sort -V | tail -1)" != "$version" ]; then
+  echo "::error::Factwright $live is out already, so $version can't go out after it."
+  exit 1
+fi
+
 # A version's files never change once out, as browsers and Cloudflare keep them for good.
 if aws s3api head-object --bucket "$BUCKET" --key "$installer" --endpoint-url "$ENDPOINT" > /dev/null 2>&1; then
   echo "::error::$installer is out already. Release the next version instead."

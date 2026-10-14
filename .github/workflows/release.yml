@@ -25,7 +25,8 @@ on:
 permissions:
   contents: read
 
-# Releases go one at a time, whatever their tag, so an older one can't land after a newer one.
+# Releases go one at a time, whatever their tag, and publishing refuses a version older than the
+# one out, so an older one can't land after a newer one, even from a late re-run.
 # A pull request's run gives way to its next push.
 concurrency:
   group: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-publish' || format('release-{0}', github.ref) }}
@@ -233,15 +234,6 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    env: &r2
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: auto
-      # R2 doesn't take the checksums newer AWS tools add to every upload unless asked.
-      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-      BUCKET: factwright-downloads
-      ENDPOINT: https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -252,8 +244,8 @@ jobs:
           path: dist
       # A record, signed through Sigstore and kept by GitHub, of the commit, tag and run that built
       # each installer, so anyone can check a download came from here. It's made before anything
-      # goes out, so every published file has one. GitHub's free plan only keeps these for public
-      # repositories, so while this one is private there's nothing to make.
+      # goes out, so every published installer has one. GitHub's free plan only keeps these for
+      # public repositories, so while this one is private there's nothing to make.
       - name: Record where the installers came from
         if: ${{ !github.event.repository.private }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -261,7 +253,17 @@ jobs:
           subject-path: |
             dist/*.dmg
             dist/*.zip
+      # R2's keys reach only this step.
       - run: apps/desktop/scripts/publish.sh mac "${GITHUB_REF_NAME#v}" dist
+        env: &r2
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 doesn't take the checksums newer AWS tools add to every upload unless asked.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          BUCKET: factwright-downloads
+          ENDPOINT: https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
 
   publish-windows:
     name: Publish the Windows installer
@@ -269,7 +271,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions: *attest
-    env: *r2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -284,11 +285,12 @@ jobs:
         with:
           subject-path: dist/*.exe
       - run: apps/desktop/scripts/publish.sh windows "${GITHUB_REF_NAME#v}" dist
+        env: *r2
 
-  # Once both computers' installers are out, the version gets a release on GitHub: its notes, where
-  # to download it, and how to check an installer. The files stay on downloads.factwright.com,
-  # where installed copies look. Re-running failed jobs reaches this too, and updates the release
-  # if it's there already.
+  # Once both computers' installers are out, the version gets a release on GitHub: its notes, links
+  # to its own installers on downloads.factwright.com, where installed copies look for updates, and
+  # while the repository is public, how to check one. Re-running failed jobs reaches this too, and
+  # updates the release if it's there already.
   github-release:
     name: Release on GitHub
     needs: [publish-mac, publish-windows]
@@ -308,18 +310,23 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           notes="$RUNNER_TEMP/notes.md"
           cp "apps/desktop/release-notes/$version.md" "$notes"
-          cat >> "$notes" <<'NOTES'
+          cat >> "$notes" <<NOTES
 
           ## Download
-          - [Factwright for Mac](https://factwright.com/download/mac), for Apple silicon and Intel, on macOS 12 or later
-          - [Factwright for Windows](https://factwright.com/download/windows), for 64-bit Windows 10 and 11
+          - **Mac:** [Factwright-$version.dmg](https://downloads.factwright.com/Factwright-$version.dmg), for Apple silicon and Intel, on macOS 12 or later
+          - **Windows:** [Factwright-Setup-$version.exe](https://downloads.factwright.com/Factwright-Setup-$version.exe), for 64-bit Windows 10 and 11
 
           Copies already installed update on their own.
           NOTES
+          # The check names this workflow and tag, so it fails for a record any other run made.
           if [ "$ATTESTED" = true ]; then
             cat >> "$notes" <<NOTES
 
-          Each installer comes with a signed record of the commit and run that built it. To check one: \`gh attestation verify <installer> -R $GITHUB_REPOSITORY\`
+          Each installer comes with a signed record of the commit and run that built it. To check one, with the GitHub CLI signed in:
+
+          \`\`\`
+          gh attestation verify Factwright-$version.dmg -R $GITHUB_REPOSITORY --signer-workflow ${GITHUB_WORKFLOW_REF%@*} --source-ref $GITHUB_REF
+          \`\`\`
           NOTES
           fi
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
