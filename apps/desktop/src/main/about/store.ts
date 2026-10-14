@@ -128,7 +128,9 @@ export class AboutStore {
 
   /** Keeps a file's old contents beside it, as <name>-before-<date>, numbered after the first. */
   private keepOld(file: string, contents: string): void {
-    const [, stem = file, extension = ''] = /^(.*?)(\.[a-z]+)?$/.exec(file) ?? [];
+    const dot = file.lastIndexOf('.');
+    const stem = dot > file.lastIndexOf('/') ? file.slice(0, dot) : file;
+    const extension = file.slice(stem.length);
     let name = `${stem}-before-${this.today()}${extension}`;
     for (let n = 2; this.read(name) !== null; n++) {
       name = `${stem}-before-${this.today()}-${n}${extension}`;

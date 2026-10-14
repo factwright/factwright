@@ -14,6 +14,19 @@ export interface KindName {
   name: string;
 }
 
+/** The text between the first two backticks, as in "Project manager (`project-manager`)". */
+function quoted(text: string): string {
+  const open = text.indexOf('`');
+  const close = open < 0 ? -1 : text.indexOf('`', open + 1);
+  return close < 0 ? '' : text.slice(open + 1, close).trim();
+}
+
+/** The text before a "(…)" that ends it, as the name in "Project manager (`pm`)". */
+function beforeParentheses(text: string): string {
+  const open = text.lastIndexOf('(');
+  return text.endsWith(')') && open > 0 ? text.slice(0, open).trim() : text;
+}
+
 /**
  * The kind of job a job search or fit check named: by its id, as in "Project manager
  * (`project-manager`)", which is how Factwright's tools show a kind, or by its name written any
@@ -23,11 +36,7 @@ export function kindNamed(word: string | null, kinds: readonly KindName[]): stri
   const said = word?.trim();
   if (!said) return null;
   // What's in backticks first, then the whole, then the name before an id in parentheses.
-  const tries = [
-    said.match(/`([^`]+)`/)?.[1]?.trim(),
-    said,
-    said.replace(/\s*\([^()]*\)\s*$/, ''),
-  ].filter((each): each is string => Boolean(each));
+  const tries = [quoted(said), said, beforeParentheses(said)].filter(Boolean);
   for (const each of tries) {
     const key = slug(each);
     const found =

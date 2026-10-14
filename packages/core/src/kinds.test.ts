@@ -54,3 +54,13 @@ describe('KIND_ID', () => {
     }
   });
 });
+
+describe('kindNamed on long text', () => {
+  it('reads text of any length at once', () => {
+    const tabs = `${'\t'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(kindNamed(tabs, KINDS)).toBeNull();
+    expect(kindNamed(`Project manager ${'('.repeat(50_000)}`, KINDS)).toBe('project-manager');
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
