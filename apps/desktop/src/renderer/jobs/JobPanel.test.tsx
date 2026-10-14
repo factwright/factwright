@@ -265,6 +265,21 @@ describe('JobPanel', () => {
     expect(screen.queryByRole('combobox', { name: /Kind of job/ })).toBeNull();
   });
 
+  it('says a job is under the first kind of job until a fit check, and keeps it there', async () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const job = byCompany('Acme Robotics');
+    const { api } = panel(job, {}, { kinds, row: jobRows([job], TODAY, kinds)[0] });
+    const menu = screen.getByRole('combobox', {
+      name: 'Kind of job for Acme Robotics',
+    }) as HTMLSelectElement;
+    expect(menu.selectedOptions[0]?.textContent).toBe('Developer, until a fit check');
+    await userEvent.selectOptions(menu, 'Developer');
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { kind: 'developer' });
+  });
+
   it('changes the status', async () => {
     const { api } = panel(byCompany('Acme Robotics'));
     await userEvent.selectOptions(

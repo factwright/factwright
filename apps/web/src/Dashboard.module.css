@@ -110,6 +110,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--fw-space-2);
+  /* So a long kind of job ends in an ellipsis rather than widen the page. */
+  min-width: 0;
   margin-top: 2px;
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
