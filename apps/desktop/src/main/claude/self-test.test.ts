@@ -13,7 +13,8 @@ const LAUNCH: Launch = {
   cwd: '/workspace',
   env: {},
   token: 'a'.repeat(64),
-  plan: 'max',
+  levels: 'best',
+  model: undefined,
   effort: undefined,
 };
 const CTRL_C = '\x03';

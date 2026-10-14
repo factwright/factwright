@@ -34,6 +34,15 @@ describe('checkAuth', () => {
     expect(checkAuth(output)).toEqual({ status: 'signed-in', method: 'api_key' });
   });
 
+  it('keeps the plan and method only as short names', () => {
+    const output = JSON.stringify({
+      loggedIn: true,
+      authMethod: 'someone@example.com',
+      subscriptionType: 'A plan named for someone',
+    });
+    expect(checkAuth(output)).toEqual({ status: 'signed-in' });
+  });
+
   it('reads a sign-in with no method or plan', () => {
     expect(checkAuth('{"loggedIn":true}')).toEqual({ status: 'signed-in' });
   });

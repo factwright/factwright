@@ -4,6 +4,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
 import type { Effort } from '../../shared/effort.ts';
+import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
@@ -26,10 +27,17 @@ export interface Launch {
   env: NodeJS.ProcessEnv;
   /** The run's own token, which its hooks and tool calls carry. */
   token: string;
-  /** The user's Claude plan, such as "max", when Claude Code says. */
-  plan: string | undefined;
-  /** How hard it thinks, when it was given an effort. */
+  /** The levels that suit the user's plan, as Claude Code reported it just before. */
+  levels: PlanLevels;
+  /** Which model it runs on and how hard it thinks, when it was given them. */
+  model: Model | undefined;
   effort: Effort | undefined;
+}
+
+/** Which model a run uses, and how hard it thinks. */
+export interface RunLevels {
+  model: Model;
+  effort: Effort;
 }
 
 export interface LaunchOptions {
@@ -40,13 +48,11 @@ export interface LaunchOptions {
   dark: boolean;
   /** Names the run's settings files, so runs that overlap don't share them. */
   name: string;
-  /** Which model to run on. Without one, Claude Code picks. */
-  model?: Model;
   /**
-   * How hard it thinks, from the user's plan, which only the check before it starts knows.
-   * Without it, Claude Code's default for the model.
+   * Which model it runs on and how hard it thinks, from the levels that suit the user's plan,
+   * which only the check before it starts knows. Without them, Claude Code picks.
    */
-  effort?: (plan: string | undefined) => Effort;
+  choose?: (levels: PlanLevels) => RunLevels;
   /** What it may change without asking. Every run but getting started is "hunt". */
   scope?: RunScope;
   prompt?: string;
@@ -60,8 +66,8 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
   const claude = await findClaude(nodeFindDeps());
   const status = claude ? await claudeStatus(nodeStatusDeps()) : null;
   if (!claude || status?.state !== 'ready') return null;
-  const plan = status.plan;
-  const effort = options.effort?.(plan);
+  const levels = planLevels(status.plan, status.method);
+  const chosen = options.choose?.(levels);
 
   const workspace = workspaceDir(options.dataDir);
   const runDir = join(options.dataDir, 'run');
@@ -83,8 +89,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     mcpConfig,
     settings,
     permissionMode: 'default',
-    ...(options.model ? { model: options.model } : {}),
-    ...(effort ? { effort } : {}),
+    ...chosen,
     ...(options.prompt ? { prompt: options.prompt } : {}),
   });
   const command = claudeCommand(claude, args, process.platform);
@@ -97,8 +102,9 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
     env: { ...launchEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
     token,
-    plan,
-    effort,
+    levels,
+    model: chosen?.model,
+    effort: chosen?.effort,
   };
 }
 
@@ -115,9 +121,8 @@ export const startHidden = (launch: Launch): IPty =>
 /** What a run is for: its first prompt, its model and effort, and what it may change. */
 export interface RunOptions {
   prompt?: string | undefined;
-  model?: Model | undefined;
-  /** How hard it thinks, from the user's plan. */
-  effort?: ((plan: string | undefined) => Effort) | undefined;
+  /** Its model and effort, from the levels that suit the user's plan. */
+  choose?: ((levels: PlanLevels) => RunLevels) | undefined;
   scope?: RunScope;
 }
 
@@ -140,10 +145,10 @@ interface Run {
   stopListening: () => void;
   /** Set when the user stops the run, so its exit doesn't read as a failure. */
   stopping: boolean;
-  /** The model it runs on, how hard it thinks, and the plan it runs on. */
+  /** The model it runs on, how hard it thinks, and the levels that suited the plan it runs on. */
   model: Model | undefined;
   effort: Effort | undefined;
-  plan: string | undefined;
+  levels: PlanLevels;
   scope: RunScope;
   /** Settles once it has exited. */
   exited: Promise<void>;
@@ -174,9 +179,12 @@ export class ClaudeSession {
     return this.run?.effort;
   }
 
-  /** The user's Claude plan, as of the open run's start, or undefined when none is open. */
-  plan(): string | undefined {
-    return this.run?.plan;
+  /**
+   * The levels that suited the user's plan at the open run's start, or undefined when none is
+   * open.
+   */
+  levels(): PlanLevels | undefined {
+    return this.run?.levels;
   }
 
   /** What the open run may change without asking, or undefined when none is open. */
@@ -197,7 +205,7 @@ export class ClaudeSession {
   }
 
   private async launch(size: TerminalSize, options: RunOptions): Promise<StartResult> {
-    const { prompt, model, effort, scope = 'hunt' } = options;
+    const { prompt, choose, scope = 'hunt' } = options;
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,
@@ -205,8 +213,7 @@ export class ClaudeSession {
       dark: this.deps.dark(),
       name: 'panel',
       scope,
-      ...(model ? { model } : {}),
-      ...(effort ? { effort } : {}),
+      ...(choose ? { choose } : {}),
       ...(prompt ? { prompt } : {}),
     });
     if (!launch) return { ok: false, reason: 'not-ready' };
@@ -242,9 +249,9 @@ export class ClaudeSession {
       terminal,
       stopListening,
       stopping: false,
-      model,
+      model: launch.model,
       effort: launch.effort,
-      plan: launch.plan,
+      levels: launch.levels,
       scope,
       exited: new Promise((resolve) => {
         exited = resolve;

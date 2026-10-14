@@ -12,6 +12,7 @@ import {
   RECOMMENDED_EFFORT,
   recommendedEffort,
 } from '../../shared/effort.ts';
+import { planLevels } from '../../shared/levels.ts';
 import { MODEL_TASKS } from '../../shared/models.ts';
 import { loadEffort, saveEffort } from './effort.ts';
 
@@ -29,24 +30,33 @@ describe('how hard Claude thinks', () => {
   it('is extra high for most tasks, and high for job searches, until the user chooses', async () => {
     expect(await loadEffort(dataDir)).toEqual(DEFAULT_EFFORT);
     const resume = { skill: 'focused-resume' as const, jobId: 'acme--staff' };
-    expect(effortFor(DEFAULT_EFFORT, resume, 'max')).toBe('xhigh');
+    expect(effortFor(DEFAULT_EFFORT, resume, planLevels('max'))).toBe('xhigh');
     expect(effortFor(DEFAULT_EFFORT, { skill: 'salary-check', jobId: 'acme--staff' })).toBe(
       'xhigh',
     );
-    expect(effortFor(DEFAULT_EFFORT, { skill: 'job-search' }, 'max')).toBe('high');
-    expect(effortFor(DEFAULT_EFFORT, null, 'team')).toBe('xhigh');
+    expect(effortFor(DEFAULT_EFFORT, { skill: 'job-search' }, planLevels('max'))).toBe('high');
+    expect(effortFor(DEFAULT_EFFORT, null, planLevels('team'))).toBe('xhigh');
   });
 
   it('asks less on a Pro plan, whose limits are tightest: high, and medium for lookups', () => {
+    const pro = planLevels('pro', 'subscription');
     const resume = { skill: 'focused-resume' as const, jobId: 'acme--staff' };
-    expect(effortFor(DEFAULT_EFFORT, resume, 'pro')).toBe('high');
-    expect(effortFor(DEFAULT_EFFORT, { skill: 'salary-check', jobId: 'acme--staff' }, 'pro')).toBe(
+    expect(effortFor(DEFAULT_EFFORT, resume, pro)).toBe('high');
+    expect(effortFor(DEFAULT_EFFORT, { skill: 'salary-check', jobId: 'acme--staff' }, pro)).toBe(
       'medium',
     );
-    expect(effortFor(DEFAULT_EFFORT, { skill: 'job-search' }, 'pro')).toBe('medium');
-    expect(recommendedEffort(undefined, 'pro')).toBe('high');
+    expect(effortFor(DEFAULT_EFFORT, { skill: 'job-search' }, pro)).toBe('medium');
+    expect(recommendedEffort(undefined, pro)).toBe('high');
     // A choice of the user's own counts on any plan.
-    expect(effortFor({ main: 'max', tasks: {} }, resume, 'pro')).toBe('max');
+    expect(effortFor({ main: 'max', tasks: {} }, resume, pro)).toBe('max');
+  });
+
+  it('asks as little with an API key, where every token is billed', () => {
+    const resume = { skill: 'focused-resume' as const, jobId: 'acme--staff' };
+    expect(effortFor(DEFAULT_EFFORT, resume, planLevels(undefined, 'api_key'))).toBe('high');
+    expect(
+      effortFor(DEFAULT_EFFORT, { skill: 'job-search' }, planLevels(undefined, 'api_key')),
+    ).toBe('medium');
   });
 
   it('recommends a level for every task the app starts, on every plan, short of max', () => {

@@ -27,7 +27,7 @@ export async function claudeStatus(deps: StatusDeps): Promise<ClaudeStatus> {
   const auth = checkAuth(await deps.run(claude, ['auth', 'status', '--json']));
   if (auth.status === 'unreadable') return { state: 'unknown' };
   if (auth.status === 'signed-out') return { state: 'signed-out', version: version.version };
-  return { state: 'ready', version: version.version, plan: auth.plan };
+  return { state: 'ready', version: version.version, plan: auth.plan, method: auth.method };
 }
 
 const RUN_TIMEOUT_MS = 15_000;

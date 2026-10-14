@@ -20,7 +20,22 @@ describe('claudeStatus', () => {
     const status = await claudeStatus(
       deps(CLAUDE, { '--version': '2.1.296 (Claude Code)', 'auth status --json': SIGNED_IN }),
     );
-    expect(status).toEqual({ state: 'ready', version: '2.1.296', plan: 'max' });
+    expect(status).toEqual({
+      state: 'ready',
+      version: '2.1.296',
+      plan: 'max',
+      method: 'subscription',
+    });
+  });
+
+  it('says how it signs in, when that isn’t a plan', async () => {
+    const status = await claudeStatus(
+      deps(CLAUDE, {
+        '--version': '2.1.296 (Claude Code)',
+        'auth status --json': JSON.stringify({ loggedIn: true, authMethod: 'api_key' }),
+      }),
+    );
+    expect(status).toEqual({ state: 'ready', version: '2.1.296', method: 'api_key' });
   });
 
   it('says when claude is missing', async () => {
