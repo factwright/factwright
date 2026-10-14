@@ -62,13 +62,23 @@ jobs:
             exit 1
           fi
           node apps/desktop/scripts/release-check.ts "$GITHUB_REF_NAME"
-      # A release built without them would leave everyone who installs it unable to sync, and
-      # stuck on it for good, as it would never look for updates.
+      # A release built without them, or with either one wrong, would leave everyone who installs
+      # it unable to sync, and stuck on it for good, as it would never find an update. So each must
+      # answer as Factwright's own: the sync server with its ways to sign in, as its web view asks
+      # for them, and the download site with the update feed.
       - name: It's built with Factwright's sync server and download site
         if: env.RELEASING == 'true'
         run: |
           if [ -z "$FACTWRIGHT_SYNC_SERVER" ] || [ -z "$FACTWRIGHT_DOWNLOADS_URL" ]; then
             echo "::error::Releases are built only in factwright/factwright, which gets Factwright's sync server and download site."
+            exit 1
+          fi
+          if ! curl --fail --silent --max-time 30 --retry 2 "$FACTWRIGHT_SYNC_SERVER/api/sign-in-options" | grep -q '"providers"'; then
+            echo "::error::$FACTWRIGHT_SYNC_SERVER doesn't answer as Factwright's sync server."
+            exit 1
+          fi
+          if ! curl --fail --silent --max-time 30 --retry 2 "${FACTWRIGHT_DOWNLOADS_URL}latest.yml" | grep -q '^version: '; then
+            echo "::error::$FACTWRIGHT_DOWNLOADS_URL doesn't give Factwright's update feed."
             exit 1
           fi
       # Each computer's version is checked, as each goes out on its own. A version taken back stops

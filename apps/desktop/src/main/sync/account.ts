@@ -131,7 +131,7 @@ export class SyncAccount {
 
   /**
    * The sync server, for the steps past signing in. Only a copy built with a server gets that far,
-   * as signing in and picking sync up both stop without one.
+   * as signing in, picking sync up and signing out all stop without one.
    */
   private server(): string {
     if (!this.deps.server) throw new Error(NO_SERVER);
@@ -344,6 +344,9 @@ export class SyncAccount {
    * account key this computer has, and what sync knows, stay for the right account.
    */
   async useDifferentAccount(): Promise<EditResult> {
+    // A copy with no server never signed in. What sync keeps here is a copy with one's, such as
+    // one installed that shares this data folder, so it stays as it is.
+    if (!this.deps.server) return failed(NO_SERVER);
     const token = this.secrets.get('session');
     // First, so a step still waiting on the server for this sign-in does nothing more.
     this.client = null;
@@ -631,6 +634,8 @@ export class SyncAccount {
    * key. The job hunt here stays as it is, and so does the account's data on other devices.
    */
   async signOut(): Promise<EditResult> {
+    // As with signing in to a different account, a copy with no server leaves sync's keys alone.
+    if (!this.deps.server) return failed(NO_SERVER);
     const token = this.secrets.get('session');
     await this.forget();
     if (token) await this.signOutOnServer(token);
@@ -639,7 +644,8 @@ export class SyncAccount {
 
   /** Ends a session on the server, as far as it can be reached. */
   private async signOutOnServer(token: string): Promise<void> {
-    await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', this.server()), {
+    if (!this.deps.server) return;
+    await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', this.deps.server), {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: '{}',

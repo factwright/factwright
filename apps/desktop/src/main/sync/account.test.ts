@@ -254,10 +254,10 @@ async function remadeUnderMacAndPc() {
 }
 
 describe('a copy built without a sync server', () => {
-  it('says sync isn’t in it, and never signs in or asks the keychain', async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-'));
-    folders.push(dataDir);
-    const asked = vi.spyOn(keychain, 'isEncryptionAvailable');
+  const refused = { ok: false, message: 'This copy of Factwright has no sync server.' };
+
+  /** The app, built with no sync server, on a data folder. */
+  function withoutServer(dataDir: string) {
     const openUrl = vi.fn();
     const sync = new SyncAccount({
       dataDir,
@@ -272,17 +272,50 @@ describe('a copy built without a sync server', () => {
       computerName: async () => 'Sam’s Mac',
     });
     opened.push(sync);
+    return { sync, openUrl };
+  }
+
+  it('says sync isn’t in it, and never signs in', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-'));
+    folders.push(dataDir);
+    const { sync, openUrl } = withoutServer(dataDir);
     await sync.start();
     expect(sync.status()).toEqual({ state: 'no-server' });
-    expect(await sync.signInWithBrowser()).toEqual({
-      ok: false,
-      message: 'This copy of Factwright has no sync server.',
-    });
+    expect(await sync.signInWithBrowser()).toEqual(refused);
     expect(sync.status()).toEqual({ state: 'no-server' });
     await sync.openAccountPage();
     expect(openUrl).not.toHaveBeenCalled();
-    expect(asked).not.toHaveBeenCalled();
-    asked.mockRestore();
+  });
+
+  // Such as one run from the code on the data folder of a copy installed from factwright.com.
+  it('leaves sync as a copy with a server set it up, without asking the keychain', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpFirst(mac);
+    await mac.synced();
+    await mac.sync.stop();
+    const secrets = join(mac.dataDir, 'sync', 'secrets.json');
+    const kept = readFileSync(secrets, 'utf8');
+    const asked = [
+      vi.spyOn(keychain, 'isEncryptionAvailable'),
+      vi.spyOn(keychain, 'decryptString'),
+    ];
+    try {
+      const { sync } = withoutServer(mac.dataDir);
+      await sync.start();
+      expect(sync.status()).toEqual({ state: 'no-server' });
+      expect(await sync.signOut()).toEqual(refused);
+      expect(await sync.useDifferentAccount()).toEqual(refused);
+      expect(sync.status()).toEqual({ state: 'no-server' });
+      await sync.stop();
+      for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of asked) spy.mockRestore();
+    }
+    expect(readFileSync(secrets, 'utf8')).toBe(kept);
+    // The copy with the server picks sync up where it left off.
+    const again = computer('Sam’s Mac', mac.dataDir);
+    await again.sync.start();
+    expect(again.sync.status()).toMatchObject({ state: 'on', email: person.email });
   });
 });
 

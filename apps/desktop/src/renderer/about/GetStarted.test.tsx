@@ -104,12 +104,14 @@ function Harness({
   onStart = () => {},
   onMakeTemplate = () => {},
   onSkip = () => {},
+  onOpenSync = () => {},
 }: {
   api: Api;
   claude?: ClaudeStatusView;
   onStart?: () => void;
   onMakeTemplate?: (source: string) => void;
   onSkip?: () => void;
+  onOpenSync?: (() => void) | null;
 }) {
   const state = useProfile(api as unknown as FactwrightApi);
   if (!state.profile) return null;
@@ -123,7 +125,7 @@ function Harness({
       onStart={onStart}
       onMakeTemplate={onMakeTemplate}
       onSkip={onSkip}
-      onOpenSync={() => {}}
+      onOpenSync={onOpenSync}
     />
   );
 }
@@ -151,6 +153,21 @@ describe('GetStarted', () => {
     expect((await axe.run(container)).violations).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
     expect(onSkip).toHaveBeenCalledOnce();
+  });
+
+  it('offers sync to bring a job hunt from another computer, unless this copy can’t sync', async () => {
+    const onOpenSync = vi.fn();
+    render(<Harness api={profileApi()} onOpenSync={onOpenSync} />);
+    expect(await screen.findByText(/Turn on sync later to see your job hunt/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Turn on sync' }));
+    expect(onOpenSync).toHaveBeenCalledOnce();
+    cleanup();
+    render(<Harness api={profileApi()} onOpenSync={null} />);
+    expect(
+      await screen.findByText(/built without sync, so your job hunt is kept here/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Turn on sync later/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Turn on sync' })).toBeNull();
   });
 
   it('shows how to install Claude Code when it’s missing, with the command to copy', async () => {

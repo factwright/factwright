@@ -53,8 +53,6 @@ pnpm --filter @factwright/server dev
 
 It builds the web view, then serves everything at http://localhost:8787. Signing in needs a GitHub OAuth app of your own, with the callback in `.dev.vars.example`. To try the desktop app against it, start the app with `FACTWRIGHT_SERVER_URL=http://localhost:8787`.
 
-Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one: deploy this server to a Cloudflare account of your own, as below, and build the app with `FACTWRIGHT_SYNC_SERVER` set to its address.
-
 `dev` keeps the local address on each request (`--local-upstream`). Without it, Wrangler rewrites requests to the production address in `wrangler.jsonc`, and sign-in turns them away as coming from somewhere else.
 
 The tests run the real Worker in workerd, through Wrangler's test harness, and talk to it with the same client the apps use:
@@ -73,6 +71,12 @@ It runs on Cloudflare's free plan. The first deploy creates the database, the fi
 5. Make a GitHub OAuth app (in the factwright org's settings, under Developer settings) with the callback `https://app.factwright.com/api/auth/callback/github`, then set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` with `wrangler secret put`.
 6. Optional: a Google OAuth client, with the callback `https://app.factwright.com/api/auth/callback/google`, as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 7. An `ADMIN_TOKEN` secret, to restore an account's store from a backup, or delete an account for someone who asked. Without it, neither works.
+
+### Running your own
+Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one. To run your own:
+1. In `wrangler.jsonc`, change the `routes` pattern and `APP_URL` to an address on a domain in your own Cloudflare account. They must match: the app opens sign-in pages only from its server's own address.
+2. Follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
+3. Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://sync.example.com pnpm --filter @factwright/desktop build`.
 
 ### Restoring an account
 Each store is backed up to R2 every day, and kept for 14 days. To put one back as it was on a day, with `ADMIN_TOKEN` set:
