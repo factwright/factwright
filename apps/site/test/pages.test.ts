@@ -66,7 +66,7 @@ const releaseLine = (computer: string) => `<p class="get-meta" data-release="${c
 /** Whether a file the page asks for, such as /templates/modern.webp, is in the site's public folder. */
 const published = (path: string) => existsSync(join(SITE, 'public', path));
 
-/** The companies and the person the drawings of the app make up, whom search results mustn't quote. */
+/** The companies and the person the drawings of the app make up. Search results mustn't quote them. */
 const MADE_UP = [
   'Lumen Health',
   'Fernway',
