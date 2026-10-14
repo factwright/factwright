@@ -144,7 +144,9 @@ export function App({ api }: { api: FactwrightApi }) {
   // Restarts the app on another profile, once what's waiting to save is saved.
   const switchTo = async (target: ProfileEntry) => {
     await about.flush();
-    const result = await api.openProfile(target.id);
+    const result = await api
+      .openProfile(target.id)
+      .catch(() => ({ ok: false as const, message: 'Factwright couldn’t switch. Try again.' }));
     if (!result.ok) setProfileProblem(result.message);
   };
   const askToSwitch = (target: ProfileEntry) => {
@@ -235,7 +237,15 @@ export function App({ api }: { api: FactwrightApi }) {
           gettingStarted={gettingStarted}
           claude={status}
           onRecheckClaude={recheck}
-          claudeSignIn={ownSignIn ? { command: ownSignIn, copy: api.copyText } : undefined}
+          claudeSignIn={
+            ownSignIn
+              ? {
+                  command: ownSignIn,
+                  copy: api.copyText,
+                  terminal: api.platform === 'win32' ? 'PowerShell' : 'Terminal',
+                }
+              : undefined
+          }
           setup={setup}
           sync={sync}
           onOpenSync={() => setDialog('sync')}
@@ -397,7 +407,17 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           profiles={profileList}
           onChanged={profiles.reload}
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            setDialog(null);
+            // Removing down to one profile takes away what opened the dialog, so focus goes back
+            // to the page the user is on.
+            requestAnimationFrame(() => {
+              if (document.activeElement !== document.body) return;
+              document
+                .querySelector<HTMLElement>('nav[aria-label="Main"] [aria-current="page"]')
+                ?.focus();
+            });
+          }}
         />
       )}
       {switching && (

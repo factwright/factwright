@@ -1,7 +1,12 @@
 import { Button, Dialog, DialogActions, Field, Input, Notice } from '@factwright/ui';
 import { type FormEvent, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { PROFILE_NAME_LIMIT, type ProfileEntry, parseProfileName } from '../../shared/profiles.ts';
+import {
+  type AddProfileResult,
+  PROFILE_NAME_LIMIT,
+  type ProfileEntry,
+  parseProfileName,
+} from '../../shared/profiles.ts';
 import styles from './Profiles.module.css';
 
 /** What every profile on a shared computer should know: they aren't private from each other. */
@@ -49,11 +54,16 @@ export function AddProfileDialog({
     const tidy = parseProfileName(name);
     const tidyOwn = naming ? parseProfileName(own) : null;
     if (!tidy || (naming && !tidyOwn)) {
-      setProblem('Give each profile a name of up to 40 letters.');
+      setProblem('Give each profile a name of 40 characters or fewer.');
       return;
     }
     setSaving(true);
-    const result = tidyOwn ? await api.addProfile(tidy, tidyOwn) : await api.addProfile(tidy);
+    let result: AddProfileResult;
+    try {
+      result = tidyOwn ? await api.addProfile(tidy, tidyOwn) : await api.addProfile(tidy);
+    } catch {
+      result = { ok: false, message: 'The profile couldn’t be added. Try again.' };
+    }
     if (!result.ok) {
       setSaving(false);
       setProblem(result.message);

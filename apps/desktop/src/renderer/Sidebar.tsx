@@ -1,10 +1,10 @@
 import { NavItem } from '@factwright/ui';
 import { BookCheck, Briefcase, Heart, UserRound } from 'lucide-react';
-import type { EditResult, SetupCheck } from '../shared/api.ts';
+import type { SetupCheck } from '../shared/api.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import type { SyncStatus } from '../shared/sync.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
-import { ClaudeCard } from './ClaudeCard.tsx';
+import { ClaudeCard, type OwnSignIn } from './ClaudeCard.tsx';
 import { ProfileSwitcher } from './profiles/ProfileSwitcher.tsx';
 import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
@@ -54,7 +54,7 @@ export function Sidebar({
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
   /** An added profile's own Claude sign-in, for its card to copy when it's signed out. */
-  claudeSignIn?: { command: string; copy: (text: string) => Promise<EditResult> } | undefined;
+  claudeSignIn?: OwnSignIn | undefined;
   /** The latest check of Factwright's setup, and how to run it again. */
   setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
   sync: SyncStatus | 'checking';

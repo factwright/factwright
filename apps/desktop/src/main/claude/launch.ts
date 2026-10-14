@@ -75,12 +75,22 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
   return prompt ? [...args, prompt] : args;
 }
 
-/** Variables that sign Claude Code in by themselves, whichever profile it runs for. */
+/**
+ * Variables that sign Claude Code in by themselves, whichever profile it runs for: a key or
+ * token, a cloud provider's account in place of a Claude login, or where Claude Code keeps its
+ * sign-in.
+ */
 const CLAUDE_LOGINS = new Set([
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'AWS_BEARER_TOKEN_BEDROCK',
+  'ANTHROPIC_FOUNDRY_API_KEY',
+  'CLAUDE_SECURESTORAGE_CONFIG_DIR',
 ]);
 
 /**

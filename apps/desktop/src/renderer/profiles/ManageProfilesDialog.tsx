@@ -1,10 +1,14 @@
 import { Button, Dialog, Input } from '@factwright/ui';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
-import type { FactwrightApi } from '../../shared/api.ts';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { PROFILE_NAME_LIMIT, type ProfileEntry, parseProfileName } from '../../shared/profiles.ts';
 import { NotPrivate } from './AddProfileDialog.tsx';
 import { ProfileAvatar } from './ProfileAvatar.tsx';
 import styles from './Profiles.module.css';
+
+/** A change's answer, or what to say when it never came, so the dialog never waits for good. */
+const settled = (answer: Promise<EditResult>, message: string): Promise<EditResult> =>
+  answer.catch(() => ({ ok: false, message: `${message} Try again.` }));
 
 /**
  * Renames profiles, and removes the ones that aren't open. A profile removed goes to the trash
@@ -30,6 +34,7 @@ export function ManageProfilesDialog({
   const [saving, setSaving] = useState(false);
   const nameBox = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
+  const confirmText = useId();
   // Where focus goes once the row it was on changes, so the keyboard never loses its place.
   const [focusOn, setFocusOn] = useState<string | null>(null);
 
@@ -58,12 +63,14 @@ export function ManageProfilesDialog({
     event.preventDefault();
     const name = parseProfileName(draft);
     if (!name) {
-      setProblem('Give it a name of up to 40 letters.');
+      setProblem('Give it a name of 40 characters or fewer.');
       return;
     }
     setSaving(true);
     const result =
-      name === profile.name ? { ok: true as const } : await api.renameProfile(profile.id, name);
+      name === profile.name
+        ? { ok: true as const }
+        : await settled(api.renameProfile(profile.id, name), 'The new name couldn’t be saved.');
     setSaving(false);
     if (!result.ok) {
       setProblem(result.message);
@@ -76,7 +83,10 @@ export function ManageProfilesDialog({
 
   const remove = async (profile: ProfileEntry) => {
     setSaving(true);
-    const result = await api.removeProfile(profile.id);
+    const result = await settled(
+      api.removeProfile(profile.id),
+      'That profile couldn’t be removed.',
+    );
     setSaving(false);
     setRemoving(null);
     setFocusOn('button');
@@ -130,8 +140,13 @@ export function ManageProfilesDialog({
                 </form>
               ) : removing === profile.id ? (
                 // biome-ignore lint/a11y/useSemanticElements: a group of two buttons, not a form.
-                <div className={styles.confirm} role="group" aria-label={`Remove ${profile.name}?`}>
-                  <p className={styles.confirmText}>
+                <div
+                  className={styles.confirm}
+                  role="group"
+                  aria-label={`Remove ${profile.name}?`}
+                  aria-describedby={confirmText}
+                >
+                  <p id={confirmText} className={styles.confirmText}>
                     Remove {profile.name}? Its job hunt on this computer goes to the trash, where it
                     can be restored. What it synced stays in its sync account.
                   </p>

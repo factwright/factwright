@@ -264,12 +264,16 @@ export class SyncAccount {
     }
     // Before anything is kept: an account another profile here uses stays that profile's.
     const taken = await this.usedByAnotherProfile(result.token);
-    if (overtaken()) return OVERTAKEN;
+    if (overtaken()) {
+      // A sign-in that's dropped is ended, so it isn't left signed in on the server.
+      void this.signOutOnServer(result.token);
+      return OVERTAKEN;
+    }
     this.signIn = null;
-    if (taken) {
+    if (taken || flow.canceled) {
       this.set(before);
       await this.signOutOnServer(result.token);
-      return failed(taken);
+      return failed(taken ?? 'Signing in was canceled.');
     }
     const saved = this.secrets.get('accountKey');
     const accountKey = saved ? fromBase64Url(saved) : null;

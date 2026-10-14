@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -5,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +18,7 @@ import {
   claudeFolder,
   FIRST_PROFILE,
   listProfiles,
+  noteStarting,
   type ProfileFolder,
   Profiles,
   type ProfilesDeps,
@@ -28,11 +31,17 @@ let home: string;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'factwright-profiles-'));
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-14T12:00:00Z'));
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   rmSync(home, { recursive: true, force: true });
 });
+
+/** A second later, so profiles added one after another keep their order. */
+const tick = () => vi.setSystemTime(new Date(Date.now() + 1000));
 
 const readJson = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
 
@@ -70,6 +79,36 @@ describe('the profile the app opens', () => {
     expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
   });
 
+  it('is the first when the chosen one’s last start never got as far as its window', () => {
+    const sam = addProfile(home, 'Sam');
+    chooseProfile(home, sam.id);
+    noteStarting(home, sam);
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+    // Until another is chosen, or it starts as far as its window.
+    expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+    chooseProfile(home, sam.id);
+    noteStarting(home, sam);
+    profiles(sam).opened.started();
+    expect(profileToOpen(home).id).toBe(sam.id);
+    // The first profile is where the others fall back to, so its starts aren't noted.
+    noteStarting(home, { id: FIRST_PROFILE });
+    expect(readJson(join(home, 'profiles.json'))).toEqual({ open: sam.id });
+  });
+
+  it('never opens a profile folder that’s a link to a folder somewhere else', () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), 'factwright-elsewhere-'));
+    try {
+      writeFileSync(join(elsewhere, 'profile.json'), JSON.stringify({ name: 'Linked' }));
+      mkdirSync(join(home, 'Profiles'));
+      symlinkSync(elsewhere, join(home, 'Profiles', 'abcdefabcdef'));
+      chooseProfile(home, 'abcdefabcdef');
+      expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
+      expect(listProfiles(home).map((profile) => profile.id)).toEqual([FIRST_PROFILE]);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
   it('is the first when the choice can’t be read, or names no profile', () => {
     writeFileSync(join(home, 'profiles.json'), 'not json');
     expect(profileToOpen(home).id).toBe(FIRST_PROFILE);
@@ -98,6 +137,7 @@ describe('adding a profile', () => {
 
   it('lists profiles in the order they came, and skips folders that were never finished', () => {
     const sam = addProfile(home, 'Sam');
+    tick();
     const testing = addProfile(home, 'Testing');
     mkdirSync(join(home, 'Profiles', '0123456789ab'));
     mkdirSync(join(home, 'Profiles', 'not-a-profile'));
@@ -136,8 +176,9 @@ describe('Claude Code for a profile', () => {
     ).toBe(
       "CLAUDE_CONFIG_DIR='/Users/o'\\''neil/Library/Application Support/Factwright/claude' claude auth login",
     );
+    // PowerShell keeps the folder for the rest of the window, so the command clears it again.
     expect(signInCommand('win32', 'C:\\Users\\O’Neil\\AppData\\Roaming\\Factwright\\claude')).toBe(
-      "$env:CLAUDE_CONFIG_DIR='C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login",
+      "$env:CLAUDE_CONFIG_DIR='C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login; Remove-Item Env:CLAUDE_CONFIG_DIR",
     );
   });
 });
@@ -201,6 +242,7 @@ describe('Profiles, as the window uses them', () => {
     const { opened } = profiles(profileToOpen(home), { ownName: () => '' });
     expect(opened.add('Sam').ok).toBe(true);
     expect(opened.rename(FIRST_PROFILE, 'Alex')).toEqual({ ok: true });
+    tick();
     expect(opened.add('Testing').ok).toBe(true);
     expect(listProfiles(home).map((profile) => profile.name)).toEqual(['Alex', 'Sam', 'Testing']);
   });
@@ -237,6 +279,23 @@ describe('Profiles, as the window uses them', () => {
     expect(trash).toHaveBeenCalledWith(testing.dir);
   });
 
+  it('won’t remove a profile another copy of the app has open', async () => {
+    const testing = addProfile(home, 'Testing');
+    const { opened, trash } = profiles(profileToOpen(home));
+    // Chromium's lock names the host and process that hold the folder.
+    symlinkSync(`this-mac-${process.pid}`, join(testing.dir, 'SingletonLock'));
+    expect(await opened.remove(testing.id)).toEqual({
+      ok: false,
+      message: 'That profile is open in another Factwright window. Close it first.',
+    });
+    expect(trash).not.toHaveBeenCalled();
+    // A lock left by a copy that's no longer running doesn't count.
+    const gone = spawnSync(process.execPath, ['-e', '']).pid;
+    rmSync(join(testing.dir, 'SingletonLock'));
+    symlinkSync(`this-mac-${gone}`, join(testing.dir, 'SingletonLock'));
+    expect(await opened.remove(testing.id)).toEqual({ ok: true });
+  });
+
   it('says so when the trash won’t take a profile', async () => {
     const sam = addProfile(home, 'Sam');
     const { opened } = profiles(profileToOpen(home), {
@@ -268,6 +327,29 @@ describe('Profiles, as the window uses them', () => {
     expect(opened.open(sam.id)).toEqual({ ok: true });
     expect(restart).toHaveBeenCalledOnce();
     expect(profileToOpen(home).id).toBe(sam.id);
+  });
+
+  it('says so when a profile can’t be added, and leaves the first profile as it was', () => {
+    writeFileSync(join(home, 'Profiles'), 'not a folder');
+    const { opened } = profiles(profileToOpen(home));
+    expect(opened.add('Sam', 'Alex')).toEqual({
+      ok: false,
+      message: 'The new profile’s folder couldn’t be made. Try again.',
+    });
+    expect(listProfiles(home)).toEqual([profileToOpen(home)]);
+    expect(existsSync(join(home, 'profile.json'))).toBe(false);
+  });
+
+  it('notes a sync account again when it couldn’t be kept the first time', () => {
+    const first = profiles(profileToOpen(home));
+    // The first profile's file can't be written for now.
+    mkdirSync(join(home, 'profile.json'));
+    first.opened.noteSync('alex@example.com');
+    expect(first.opened.add('Sam').ok).toBe(true);
+    rmSync(join(home, 'profile.json'), { recursive: true });
+    first.opened.noteSync('alex@example.com');
+    expect(readJson(join(home, 'profile.json'))).toMatchObject({ sync: 'alex@example.com' });
+    expect(readdirSync(home).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 
   it('notes the sync account a profile uses only once there are others, for them to turn away', () => {

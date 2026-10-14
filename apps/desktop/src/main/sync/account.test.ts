@@ -464,6 +464,37 @@ describe('a computer with sync on', () => {
     expect(macs).toHaveLength(1);
   });
 
+  it('keeps nothing of a sign-in canceled while its account is checked', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpFirst(mac);
+    const checking = gate();
+    const other = computer(
+      'Sam’s Mac',
+      undefined,
+      async (input, init) => {
+        if (new URL(String(input)).pathname === '/api/account' && !checking.waiting) {
+          checking.waiting = true;
+          await checking.opened;
+        }
+        return fetch(input, init);
+      },
+      () => [{ name: 'Alex', email: 'alex@example.com' }],
+    );
+    await other.sync.start();
+    const signingIn = other.sync.signInWithBrowser();
+    await vi.waitFor(() => expect(checking.waiting).toBe(true), { timeout: 10_000 });
+    other.sync.cancelSignIn();
+    checking.open();
+    expect(await signingIn).toEqual({ ok: false, message: 'Signing in was canceled.' });
+    expect(other.sync.status()).toEqual({ state: 'off' });
+    expect(new Secrets(join(other.dataDir, 'sync', 'secrets.json'), keychain).get('session')).toBe(
+      null,
+    );
+    const listed = await person.client.account();
+    const macs = listed.devices.filter((device) => device.name === 'Factwright on Sam’s Mac');
+    expect(macs).toHaveLength(1);
+  });
+
   it('signs another profile in to an account of its own', async () => {
     const sam = person;
     await setUpFirst(computer('Sam’s Mac'));

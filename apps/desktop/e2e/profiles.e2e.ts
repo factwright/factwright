@@ -42,7 +42,7 @@ test.afterAll(async () => {
 test('with one profile, shows no switcher, and offers a profile for someone else', async () => {
   const { window } = await open();
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
-  await expect(window.getByRole('button', { name: /^Profile:/ })).toHaveCount(0);
+  await expect(window.getByRole('button', { name: /switch profiles$/ })).toHaveCount(0);
   // Nothing is written for profiles until one is added.
   expect(existsSync(join(dataDir, 'profiles.json'))).toBe(false);
   expect(existsSync(join(dataDir, 'profile.json'))).toBe(false);
@@ -65,14 +65,23 @@ test('adds a profile, and opens on it: empty, with its own Claude login', async 
   const profile = join(dataDir, 'Profiles', id as string);
   const { window: added } = await open();
   await expect(added.getByRole('heading', { name: 'Let’s get you set up' })).toBeVisible();
-  await expect(added.getByRole('button', { name: 'Profile: Testing' })).toBeVisible();
+  await expect(added.getByRole('button', { name: 'Testing, switch profiles' })).toBeVisible();
+  // Its window showed, so it opens again next time, rather than falling back to the first.
+  await expect
+    .poll(() => JSON.parse(readFileSync(join(dataDir, 'profiles.json'), 'utf8')))
+    .toEqual({ open: id });
   await expect(added).toHaveTitle('Factwright · Testing');
   // Claude Code for this profile keeps its login in the profile's own folder.
   await expect(added.getByText('Not signed in', { exact: true })).toBeVisible();
-  await expect(added.getByText(`Profiles/${id}/claude' claude auth login`)).toBeVisible();
+  // Its sign-in command names that folder, quoted for Terminal or PowerShell.
+  await expect(
+    added.getByText(new RegExp(`Profiles[\\\\/]${id}[\\\\/]claude'.* claude auth login`)),
+  ).toBeVisible();
   // Its own data, in its own folder.
   expect(existsSync(join(profile, 'workspace'))).toBe(true);
   expect(existsSync(join(profile, 'tracker.db'))).toBe(true);
+  // Chromium's own storage moved with it, so the window's choices are the profile's own too.
+  expect(existsSync(join(profile, 'Local Storage'))).toBe(true);
   expect(JSON.parse(readFileSync(join(profile, 'claude', '.claude.json'), 'utf8'))).toEqual({
     hasCompletedOnboarding: true,
   });
@@ -86,7 +95,7 @@ test('adds a profile, and opens on it: empty, with its own Claude login', async 
 test('switches back to the first profile, whose job hunt is as it was', async () => {
   if (!opened) throw new Error('The app isn’t open.');
   const { app, window } = opened;
-  await window.getByRole('button', { name: 'Profile: Testing' }).click();
+  await window.getByRole('button', { name: 'Testing, switch profiles' }).click();
   const menu = window.getByRole('menu', { name: 'Profiles' });
   await expect(menu.getByRole('menuitemradio')).toHaveText(['AAlex', 'TTesting']);
   await menu.getByRole('menuitemradio', { name: 'Alex' }).click();
@@ -94,7 +103,7 @@ test('switches back to the first profile, whose job hunt is as it was', async ()
 
   const { window: first } = await open();
   await expect(first.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
-  await expect(first.getByRole('button', { name: 'Profile: Alex' })).toBeVisible();
+  await expect(first.getByRole('button', { name: 'Alex, switch profiles' })).toBeVisible();
   await expect(first.getByText('Signed in · Max plan')).toBeVisible();
   // The added profile's folder holds only its own job hunt: none of the first profile's jobs.
   const [id] = addedProfiles();
@@ -110,9 +119,14 @@ test('switches back to the first profile, whose job hunt is as it was', async ()
 test('renames a profile, and won’t remove the open one or the first', async () => {
   if (!opened) throw new Error('The app isn’t open.');
   const { window } = opened;
-  await window.getByRole('button', { name: 'Profile: Alex' }).click();
+  await window.getByRole('button', { name: 'Alex, switch profiles' }).click();
   await window.getByRole('menuitem', { name: 'Manage profiles…' }).click();
   const dialog = window.getByRole('dialog', { name: 'Manage profiles' });
+  // Escape stops renaming, and leaves the dialog open.
+  await dialog.getByRole('button', { name: 'Rename Alex' }).click();
+  await dialog.getByRole('textbox', { name: 'New name for Alex' }).press('Escape');
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);
+  await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Rename Alex' }).click();
   await dialog.getByRole('textbox', { name: 'New name for Alex' }).fill('Alex Rivera');
   await dialog.getByRole('button', { name: 'Save' }).click();
@@ -121,6 +135,6 @@ test('renames a profile, and won’t remove the open one or the first', async ()
   // Removing Testing would put its folder in this computer's real trash, so the tests stop there.
   await expect(dialog.getByRole('button', { name: 'Remove Testing' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Close' }).click();
-  await expect(window.getByRole('button', { name: 'Profile: Alex Rivera' })).toBeVisible();
+  await expect(window.getByRole('button', { name: 'Alex Rivera, switch profiles' })).toBeVisible();
   await expect(window).toHaveTitle('Factwright · Alex Rivera');
 });

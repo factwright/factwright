@@ -11,6 +11,8 @@ const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 export interface OwnSignIn {
   command: string;
   copy: (text: string) => Promise<EditResult>;
+  /** The terminal it runs in: PowerShell on Windows, Terminal on a Mac. */
+  terminal: string;
 }
 
 /** Copies an added profile's sign-in command, read as a link in the card's help. */
@@ -71,8 +73,8 @@ function describe(
         line: 'Not signed in',
         help: signIn ? (
           <>
-            This profile has its own Claude login. In Terminal, run its sign-in command, then come
-            back. <CopySignIn signIn={signIn} />
+            This profile has its own Claude login. In {signIn.terminal}, run its sign-in command,
+            then come back. <CopySignIn signIn={signIn} />
           </>
         ) : (
           <>
@@ -97,7 +99,17 @@ function describe(
       return {
         tone: 'need',
         line: 'Claude Code isn’t installed',
-        help: (
+        help: signIn ? (
+          // Signing in as the install guide says would sign in the first profile, not this one.
+          <>
+            Factwright works with your own Claude Code.{' '}
+            <a href={INSTALL_URL} target="_blank" rel="noreferrer">
+              How to install it
+            </a>
+            . Then sign in with this profile’s own command, not plain <code>claude</code>.{' '}
+            <CopySignIn signIn={signIn} />
+          </>
+        ) : (
           <>
             Factwright works with your own Claude Code.{' '}
             <a href={INSTALL_URL} target="_blank" rel="noreferrer">

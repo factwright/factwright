@@ -65,7 +65,7 @@ describe('ProfileSwitcher', () => {
   it('shows the open profile, and switches to another from its menu', async () => {
     const user = userEvent.setup();
     const { container, onOpen } = switcher();
-    const button = screen.getByRole('button', { name: 'Profile: Alex Rivera' });
+    const button = screen.getByRole('button', { name: 'Alex Rivera, switch profiles' });
     expect(button.getAttribute('aria-expanded')).toBe('false');
     await user.click(button);
     const menu = screen.getByRole('menu', { name: 'Profiles' });
@@ -83,7 +83,7 @@ describe('ProfileSwitcher', () => {
   it('moves with the arrow keys, and closes with Escape, back on its button', async () => {
     const user = userEvent.setup();
     const { onAdd, onManage } = switcher();
-    const button = screen.getByRole('button', { name: 'Profile: Alex Rivera' });
+    const button = screen.getByRole('button', { name: 'Alex Rivera, switch profiles' });
     button.focus();
     await user.keyboard('{ArrowDown}');
     expect(document.activeElement?.textContent).toBe('AAlex Rivera');
@@ -107,7 +107,7 @@ describe('ProfileSwitcher', () => {
   it('waits to switch while Claude is working, and says so', async () => {
     const user = userEvent.setup();
     const { container, onOpen } = switcher(true);
-    await user.click(screen.getByRole('button', { name: 'Profile: Alex Rivera' }));
+    await user.click(screen.getByRole('button', { name: 'Alex Rivera, switch profiles' }));
     const sam = screen.getByRole('menuitemradio', { name: 'Sam' });
     expect(sam.getAttribute('aria-disabled')).toBe('true');
     expect(
@@ -121,7 +121,7 @@ describe('ProfileSwitcher', () => {
   it('closes when the user clicks elsewhere', async () => {
     const user = userEvent.setup();
     switcher();
-    await user.click(screen.getByRole('button', { name: 'Profile: Alex Rivera' }));
+    await user.click(screen.getByRole('button', { name: 'Alex Rivera, switch profiles' }));
     expect(screen.getByRole('menu')).toBeTruthy();
     await user.click(document.body);
     expect(screen.queryByRole('menu')).toBeNull();
@@ -177,6 +177,23 @@ describe('AddProfileDialog', () => {
     await user.type(own, 'Alex');
     await user.click(screen.getByRole('button', { name: 'Add and open' }));
     expect(addProfile).toHaveBeenCalledWith('Sam', 'Alex');
+  });
+
+  it('says so when adding doesn’t go through, and can try again', async () => {
+    const user = userEvent.setup();
+    const addProfile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('No answer'))
+      .mockResolvedValueOnce({ ok: true, id: '00000000beef' });
+    const onAdded = vi.fn();
+    render(
+      <AddProfileDialog api={{ addProfile }} busy={false} onAdded={onAdded} onClose={() => {}} />,
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Sam');
+    await user.click(screen.getByRole('button', { name: 'Add and open' }));
+    expect(screen.getByRole('alert').textContent).toBe('The profile couldn’t be added. Try again.');
+    await user.click(screen.getByRole('button', { name: 'Add and open' }));
+    expect(onAdded).toHaveBeenCalledOnce();
   });
 
   it('says why a profile couldn’t be added', async () => {
@@ -271,14 +288,30 @@ describe('ManageProfilesDialog', () => {
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Rename Sam');
   });
 
-  it('stops renaming with Escape, leaving the dialog open', async () => {
+  // That Escape leaves the dialog open, the end-to-end tests check: jsdom never closes one.
+  it('stops renaming with Escape', async () => {
     const user = userEvent.setup();
     const { api } = manage();
     await user.click(screen.getByRole('button', { name: 'Rename Sam' }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Manage profiles' })).toBeTruthy();
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Rename Sam');
     expect(api.renameProfile).not.toHaveBeenCalled();
+  });
+
+  it('says so when a change doesn’t go through, and can try again', async () => {
+    const user = userEvent.setup();
+    const { api, onChanged } = manage();
+    api.removeProfile.mockRejectedValueOnce(new Error('No answer') as never);
+    await user.click(screen.getByRole('button', { name: 'Remove Testing' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByRole('alert').textContent).toBe(
+      'That profile couldn’t be removed. Try again.',
+    );
+    expect(onChanged).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Remove Testing' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(onChanged).toHaveBeenCalledOnce();
   });
 });
 
@@ -312,14 +345,34 @@ describe('ClaudeCard, for an added profile', () => {
       <ClaudeCard
         status={{ state: 'signed-out', version: '2.1.296' }}
         onRecheck={() => {}}
-        signIn={{ command, copy }}
+        signIn={{ command, copy, terminal: 'PowerShell' }}
       />,
     );
-    expect(container.textContent).toContain('This profile has its own Claude login.');
+    expect(container.textContent).toContain(
+      'This profile has its own Claude login. In PowerShell, run its sign-in command',
+    );
     expect(container.textContent).not.toContain('claude auth login');
     await user.click(screen.getByRole('button', { name: 'Copy the command' }));
     expect(copy).toHaveBeenCalledWith(command);
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('says to sign in with the profile’s own command once Claude Code is installed', async () => {
+    const user = userEvent.setup();
+    const copy = vi.fn(async () => ({ ok: true as const }));
+    const command = "CLAUDE_CONFIG_DIR='/profiles/sam/claude' claude auth login";
+    const { container } = render(
+      <ClaudeCard
+        status={{ state: 'missing' }}
+        onRecheck={() => {}}
+        signIn={{ command, copy, terminal: 'Terminal' }}
+      />,
+    );
+    // Signing in as the install guide says would sign in the first profile.
+    expect(container.textContent).toContain('Then sign in with this profile’s own command');
+    await user.click(screen.getByRole('button', { name: 'Copy the command' }));
+    expect(copy).toHaveBeenCalledWith(command);
     expect((await axe.run(container)).violations).toEqual([]);
   });
 });

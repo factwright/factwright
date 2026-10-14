@@ -26,6 +26,7 @@ import { notifyIfAway } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
   claudeFolder,
+  noteStarting,
   type ProfileFolder,
   Profiles,
   prepareClaudeFolder,
@@ -87,25 +88,26 @@ function realFolder(folder: string): string {
  * Whether the app was asked to let another program drive it, through Chromium's debugging port,
  * while using the user's own data: their own data folder, or a profile in it. Like Chrome, an
  * installed copy then won't start: with a folder of its own, as the tests give it, it's an empty
- * app, with no job hunt and no sync to reach.
+ * app, with no job hunt and no sync to reach. Each folder is checked as it really is, through
+ * any links.
  */
-function debuggingTheUsersData(home: string): boolean {
+function debuggingTheUsersData(folders: string[]): boolean {
   const debugging = ['remote-debugging-port', 'remote-debugging-pipe'].some((name) =>
     app.commandLine.hasSwitch(name),
   );
   if (!app.isPackaged || !debugging) return false;
   const usersOwn = realFolder(join(app.getPath('appData'), app.getName()));
-  const folder = realFolder(home);
-  return folder === usersOwn || folder.startsWith(usersOwn + sep);
+  return folders
+    .map(realFolder)
+    .some((folder) => folder === usersOwn || folder.startsWith(usersOwn + sep));
 }
 
 /**
- * Opens the profile chosen last. Its folder becomes the data folder for everything, Chromium's
- * own storage and the lock that keeps one copy of the app on it included, and an added profile's
- * Claude Code gets a folder of its own. So this comes before anything uses either.
+ * Opens a profile. Its folder becomes the data folder for everything, Chromium's own storage and
+ * the lock that keeps one copy of the app on it included, and an added profile's Claude Code
+ * gets a folder of its own. So this comes before anything uses either.
  */
-function openProfile(home: string): ProfileFolder {
-  const profile = profileToOpen(home);
+function openProfile(home: string, profile: ProfileFolder): void {
   if (profile.dir !== home) app.setPath('userData', profile.dir);
   const claude = claudeFolder(profile);
   if (claude) {
@@ -116,7 +118,6 @@ function openProfile(home: string): ProfileFolder {
     }
   }
   useClaudeFolder(claude);
-  return profile;
 }
 
 // On Windows, the installer's shortcuts carry this ID, and notifications need the app to match it.
@@ -124,12 +125,19 @@ if (process.platform === 'win32') app.setAppUserModelId('com.factwright.app');
 
 // The app's own data folder, as Electron gives it: the first profile's, which holds the others.
 const home = app.getPath('userData');
+// The profile chosen last, read before anything uses the data folder.
+const profile = profileToOpen(home);
 
-if (debuggingTheUsersData(home)) {
+if (debuggingTheUsersData([home, profile.dir])) {
   app.exit(1);
 } else {
-  const profile = openProfile(home);
+  openProfile(home, profile);
   if (app.requestSingleInstanceLock()) {
+    try {
+      noteStarting(home, profile);
+    } catch {
+      // Without the note, a profile that can't start opens again next time.
+    }
     start(home, profile);
   } else {
     // Factwright is already open on this profile, and that copy brings its window forward.
@@ -226,6 +234,8 @@ function start(home: string, profile: ProfileFolder): void {
     await server.start();
 
     let window = createMainWindow(startUrl);
+    // Once the window shows, the profile has started, so it opens again next time.
+    window.once('ready-to-show', () => profiles.started());
     jobs.watch();
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
     // so the profile follows the workspace too.
@@ -288,7 +298,8 @@ function start(home: string, profile: ProfileFolder): void {
             macInstaller: process.platform === 'darwin' ? macInstaller : null,
             busy: () => claude.busy(),
             onStatus: (status) => toWindow('updates:changed', status),
-            log: (message) => logUpdate(dataDir, message),
+            // Updates are the app's, not a profile's, so their log is in the app's own folder.
+            log: (message) => logUpdate(home, message),
           })
         : null;
     if (updates) {

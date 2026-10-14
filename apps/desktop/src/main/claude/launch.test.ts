@@ -152,6 +152,9 @@ describe('launchEnv', () => {
         ANTHROPIC_AUTH_TOKEN: 'token',
         CLAUDE_CODE_OAUTH_TOKEN: 'oauth',
         CLAUDE_CODE_OAUTH_REFRESH_TOKEN: 'refresh',
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_BEARER_TOKEN_BEDROCK: 'bedrock',
+        CLAUDE_SECURESTORAGE_CONFIG_DIR: '/Users/someone/.claude',
         ANTHROPIC_BASE_URL: 'https://llm.example.com',
       };
       expect(launchEnv(base, '/usr/bin')).toEqual({

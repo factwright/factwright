@@ -1,10 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -22,8 +25,9 @@ import {
  *
  * The first profile is the app's own data folder, as it was before there were profiles, so a job
  * hunt from an earlier version is the first profile, untouched and where it was. Each profile
- * added later gets a folder inside it, under Profiles, named by a random ID that's never used
- * again. Its own Claude Code folder sits in there too, so its Claude login is its own.
+ * added later gets a folder inside it, under Profiles, named by a random ID, so a new profile
+ * never lands in a removed one's place. Its own Claude Code folder sits in there too, so its
+ * Claude login is its own.
  *
  * Profiles aren't private from each other, like a browser's: anyone who can use this computer
  * login can open any of them. Separate computer logins keep job hunts private.
@@ -52,6 +56,9 @@ const FIRST_NAME = 'First profile';
 
 /** What a profile whose name can't be read is called, so it still shows, to open or remove. */
 const NO_NAME = 'Unnamed profile';
+
+/** What the window says when a name won't do. */
+const NAME_IT = 'Give it a name of 40 characters or fewer.';
 
 /** A profile's folder, and what's kept about it there. */
 export interface ProfileFolder {
@@ -84,20 +91,37 @@ function readJson(file: string): Record<string, unknown> | null {
 /** Writes a small file whole, or not at all, so a crash never leaves half of one. */
 function writeJson(file: string, value: object): void {
   const draft = `${file}.${randomBytes(4).toString('hex')}.tmp`;
-  writeFileSync(draft, `${JSON.stringify(value, null, 2)}\n`);
-  renameSync(draft, file);
+  try {
+    writeFileSync(draft, `${JSON.stringify(value, null, 2)}\n`);
+    renameSync(draft, file);
+  } catch (error) {
+    rmSync(draft, { force: true });
+    throw error;
+  }
 }
 
 /** The folder a profile's data is in. */
 const folderOf = (home: string, id: string) =>
   id === FIRST_PROFILE ? home : join(home, ADDED_FOLDER, id);
 
-/** A profile, from its folder, or null for an added one that's missing or was never finished. */
+/** Whether a path is a folder itself, not a link to one somewhere else. */
+function isFolder(path: string): boolean {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A profile, from its folder, or null for an added one that's missing or was never finished. An
+ * added profile's folder is a folder of its own, never a link to one elsewhere.
+ */
 function readProfile(home: string, id: string): ProfileFolder | null {
   const dir = folderOf(home, id);
   const file = join(dir, PROFILE_FILE);
   // An added profile's file is written first, so a folder without one was never finished.
-  if (id !== FIRST_PROFILE && !existsSync(file)) return null;
+  if (id !== FIRST_PROFILE && !(isFolder(dir) && existsSync(file))) return null;
   const kept = readJson(file);
   const name = parseProfileName(kept?.name);
   const sync = typeof kept?.sync === 'string' && kept.sync ? kept.sync : null;
@@ -109,6 +133,29 @@ function readProfile(home: string, id: string): ProfileFolder | null {
 function keep(profile: ProfileFolder, changes: Record<string, unknown>): void {
   const file = join(profile.dir, PROFILE_FILE);
   writeJson(file, { ...readJson(file), ...changes });
+}
+
+/**
+ * Whether another copy of the app has a profile open. On a Mac, Chromium's lock in the folder
+ * names the process that holds it. On Windows, a folder in use can't be moved, which the trash
+ * says instead.
+ */
+function openElsewhere(dir: string): boolean {
+  let holder: string;
+  try {
+    holder = readlinkSync(join(dir, 'SingletonLock'));
+  } catch {
+    return false;
+  }
+  const pid = Number(holder.slice(holder.lastIndexOf('-') + 1));
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // A process this user can't signal is still running.
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 /** Every profile: the first, then the rest in the order they were added. */
@@ -135,18 +182,30 @@ export function listProfiles(home: string): ProfileFolder[] {
 }
 
 /**
- * The profile the app opens: the one chosen last, while it's still there, or else the first.
- * Read once, as the app starts, before anything uses the data folder.
+ * The profile the app opens: the one chosen last, while it's still there, or else the first. One
+ * whose last start never got as far as its window opens the first instead, so a profile that
+ * can't start never shuts the others out. Read once, as the app starts, before anything uses the
+ * data folder.
  */
 export function profileToOpen(home: string): ProfileFolder {
-  const open = readJson(join(home, OPEN_FILE))?.open;
-  const chosen = isId(open) ? readProfile(home, open) : null;
+  const choice = readJson(join(home, OPEN_FILE));
+  const open = choice?.open;
+  const chosen = isId(open) && choice?.starting !== true ? readProfile(home, open) : null;
   return chosen ?? (readProfile(home, FIRST_PROFILE) as ProfileFolder);
 }
 
 /** Notes which profile the app opens from now on. */
 export function chooseProfile(home: string, id: string): void {
   writeJson(join(home, OPEN_FILE), { open: id });
+}
+
+/**
+ * Notes that the app is starting on an added profile, until its window shows. If it never does,
+ * the next start opens the first profile.
+ */
+export function noteStarting(home: string, profile: Pick<ProfileFolder, 'id'>): void {
+  if (profile.id === FIRST_PROFILE) return;
+  writeJson(join(home, OPEN_FILE), { open: profile.id, starting: true });
 }
 
 /** Adds a profile with its own empty folder, and Claude Code's folder ready in it. */
@@ -193,12 +252,14 @@ const powerShellQuoted = (text: string) => `'${text.replace(/['‘’‚‛]/g, 
 
 /**
  * The command that signs a profile in to Claude Code, for the user to run in their terminal:
- * with the profile's own Claude Code folder, when it has one.
+ * with the profile's own Claude Code folder, when it has one. On a Mac the folder holds for that
+ * one command. PowerShell would keep it for the rest of the window, where someone signing in to
+ * another profile next would sign in to this one, so the command clears it again.
  */
 export function signInCommand(platform: NodeJS.Platform, folder: string | null): string {
   if (!folder) return 'claude auth login';
   return platform === 'win32'
-    ? `$env:CLAUDE_CONFIG_DIR=${powerShellQuoted(folder)}; claude auth login`
+    ? `$env:CLAUDE_CONFIG_DIR=${powerShellQuoted(folder)}; claude auth login; Remove-Item Env:CLAUDE_CONFIG_DIR`
     : `CLAUDE_CONFIG_DIR=${shellQuoted(folder)} claude auth login`;
 }
 
@@ -223,6 +284,8 @@ export class Profiles {
   private readonly deps: ProfilesDeps;
   /** The sync account the open profile uses, as sync last said. */
   private syncAccount: string | null;
+  /** Whether that's kept with the profile, or doesn't need to be yet. */
+  private syncKept = true;
 
   constructor(deps: ProfilesDeps) {
     this.deps = deps;
@@ -243,6 +306,17 @@ export class Profiles {
     };
   }
 
+  /** The open profile's window showed, so it started, and opens again next time. */
+  started(): void {
+    const { home, open } = this.deps;
+    if (open.id === FIRST_PROFILE) return;
+    try {
+      chooseProfile(home, open.id);
+    } catch {
+      // The next start opens the first profile, which can switch back.
+    }
+  }
+
   /**
    * Adds a profile for someone else, or a fresh start. It opens once the window asks. Until now
    * the first profile was the only one, with no need of a name, so it gets one too: the name the
@@ -250,43 +324,54 @@ export class Profiles {
    */
   add(value: unknown, firstValue?: unknown): AddProfileResult {
     const name = parseProfileName(value);
-    if (!name) return failed('Give it a name of up to 40 letters.');
+    if (!name) return failed(NAME_IT);
     const { home, open } = this.deps;
     const profiles = listProfiles(home);
     const taken = sameName(name, profiles);
     if (taken) return failed(`There’s already a profile called ${taken.name}.`);
     const first = profiles[0] as ProfileFolder;
-    if (open.id === FIRST_PROFILE && !first.named) {
-      const own =
-        parseProfileName(firstValue) ?? parseProfileName(this.deps.ownName()) ?? first.name;
-      if (sameName(own, [{ id: '', name }]))
-        return failed('Give the two profiles different names.');
-      keep(first, { name: own });
+    const naming = open.id === FIRST_PROFILE && !first.named;
+    const own = naming
+      ? (parseProfileName(firstValue) ?? parseProfileName(this.deps.ownName()) ?? first.name)
+      : null;
+    if (own && sameName(own, [{ id: '', name }])) {
+      return failed('Give the two profiles different names.');
+    }
+    let added: ProfileFolder;
+    try {
+      added = addProfile(home, name);
+    } catch {
+      return failed('The new profile’s folder couldn’t be made. Try again.');
     }
     try {
-      const added = addProfile(home, name);
-      this.keepSyncAccount();
-      return { ok: true, id: added.id };
+      if (own) keep(first, { name: own });
     } catch {
-      return failed('The new profile’s folder couldn’t be made.');
+      // It goes by First profile until it's renamed.
     }
+    this.keepSyncAccount();
+    return { ok: true, id: added.id };
   }
 
   rename(id: unknown, value: unknown): EditResult {
     const name = parseProfileName(value);
-    if (!name) return failed('Give it a name of up to 40 letters.');
+    if (!name) return failed(NAME_IT);
     const profiles = listProfiles(this.deps.home);
     const profile = profiles.find((each) => each.id === id);
     if (!profile) return failed('That profile isn’t on this computer anymore.');
     const taken = sameName(name, profiles, profile.id);
     if (taken) return failed(`There’s already a profile called ${taken.name}.`);
-    keep(profile, { name });
+    try {
+      keep(profile, { name });
+    } catch {
+      return failed('The new name couldn’t be saved. Try again.');
+    }
     return { ok: true };
   }
 
   /**
    * Moves an added profile's folder to the trash, where it can be restored. Never the open one,
-   * which is in use, or the first, whose folder holds the others.
+   * which is in use, the first, whose folder holds the others, or one open in another copy of the
+   * app.
    */
   async remove(id: unknown): Promise<EditResult> {
     const { home, open } = this.deps;
@@ -294,6 +379,9 @@ export class Profiles {
     if (id === open.id) return failed('Open another profile, then remove this one.');
     const profile = isId(id) ? readProfile(home, id) : null;
     if (!profile) return failed('That profile isn’t on this computer anymore.');
+    if (openElsewhere(profile.dir)) {
+      return failed('That profile is open in another Factwright window. Close it first.');
+    }
     try {
       await this.deps.trash(profile.dir);
     } catch {
@@ -308,9 +396,14 @@ export class Profiles {
     const profile = isId(id) ? readProfile(home, id) : null;
     if (!profile) return failed('That profile isn’t on this computer anymore.');
     if (profile.id === open.id) return { ok: true };
-    if (this.deps.busy())
+    if (this.deps.busy()) {
       return failed('Stop Claude’s run first, as switching restarts Factwright.');
-    chooseProfile(home, profile.id);
+    }
+    try {
+      chooseProfile(home, profile.id);
+    } catch {
+      return failed('Factwright couldn’t note which profile to open. Try again.');
+    }
     this.deps.restart();
     return { ok: true };
   }
@@ -320,7 +413,7 @@ export class Profiles {
    * It's kept with the profile only once there are others, so they can turn it away.
    */
   noteSync(email: string | null): void {
-    if (email === this.syncAccount) return;
+    if (email === this.syncAccount && this.syncKept) return;
     this.syncAccount = email;
     this.keepSyncAccount();
   }
@@ -337,12 +430,14 @@ export class Profiles {
   private keepSyncAccount(): void {
     const { home, open } = this.deps;
     const profiles = listProfiles(home);
-    const kept = profiles.find((profile) => profile.id === open.id);
-    if (profiles.length < 2 || !kept || kept.sync === this.syncAccount) return;
+    const mine = profiles.find((profile) => profile.id === open.id);
+    this.syncKept = true;
+    if (profiles.length < 2 || !mine || mine.sync === this.syncAccount) return;
     try {
-      keep(kept, { sync: this.syncAccount });
+      keep(mine, { sync: this.syncAccount });
     } catch {
-      // Noted again the next time sync says where it stands.
+      // Tried again the next time sync says where it stands.
+      this.syncKept = false;
     }
   }
 }

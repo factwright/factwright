@@ -86,7 +86,7 @@ export function ProfileSwitcher({
         aria-haspopup="menu"
         aria-expanded={expanded}
         aria-controls={expanded ? menuId : undefined}
-        aria-label={`Profile: ${current.name}`}
+        aria-label={`${current.name}, switch profiles`}
         onClick={() => setExpanded(!expanded)}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

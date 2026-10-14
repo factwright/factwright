@@ -33,7 +33,7 @@ function Command({
         size="sm"
         variant="quiet"
         icon={<Copy size={14} aria-hidden="true" />}
-        aria-label={copied ? 'Copied' : `Copy ${text}`}
+        aria-label={copied ? 'Copied' : long ? 'Copy the sign-in command' : `Copy ${text}`}
         onClick={() =>
           void api.copyText(text).then((result) => {
             if (result.ok) setCopied(true);
@@ -134,7 +134,7 @@ export function ClaudeReady({
         ? {
             title: 'Sign in to Claude Code',
             lead: signIn
-              ? 'This profile has its own Claude login, so it signs in on its own. You sign in yourself, so Factwright never sees your login.'
+              ? 'This profile has a Claude login of its own. You sign in yourself, so Factwright never sees your login.'
               : 'Claude Code is installed, but it isn’t signed in. You sign in yourself, so Factwright never sees your login.',
             items: [
               <>
