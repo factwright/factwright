@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_MODELS, type ModelChoices, parseModels } from '../../shared/models.ts';
-import { saveJson } from './save.ts';
+import { saveJson, settled } from './save.ts';
 
 /** The file that holds which model Claude runs on, in the app's data folder. */
 const FILE = 'claude-models.json';
@@ -43,6 +43,7 @@ function fromOlder(saved: unknown): unknown {
  */
 export async function loadModels(dataDir: string): Promise<ModelChoices> {
   try {
+    await settled(join(dataDir, FILE));
     const saved: unknown = JSON.parse(await readFile(join(dataDir, FILE), 'utf8'));
     return parseModels(fromOlder(saved)) ?? DEFAULT_MODELS;
   } catch {

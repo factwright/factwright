@@ -70,8 +70,9 @@ export interface TooltipPlace {
 
 /**
  * Where a tooltip goes: beside its trigger, on the first side it fits, starting with the one asked
- * for, as a narrow or zoomed window may leave room only above or below. It's centered on the
- * trigger along that side, but kept inside the window.
+ * for, as a narrow or zoomed window may leave room only above or below. Where it fits nowhere, it
+ * takes the side with the most room and runs past the window's edge there. Along that side, it's
+ * centered on the trigger but kept inside the window.
  */
 export function placeTooltip(
   trigger: { top: number; left: number } & Size,
