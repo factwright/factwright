@@ -66,7 +66,6 @@ const api: FactwrightApi = {
   onLinkApprovals: (listener) => subscribe('sync:approvals', listener),
   askToLink: () => ipcRenderer.invoke('sync:ask'),
   confirmLinkCheck: (matched) => ipcRenderer.send('sync:confirm-check', matched),
-  stopAskingToLink: () => ipcRenderer.send('sync:stop-asking'),
   approveLinkRequest: (id) => ipcRenderer.invoke('sync:approve', id),
   answerLinkRequest: (matched) => ipcRenderer.invoke('sync:answer', matched),
   denyLinkRequest: (id) => ipcRenderer.invoke('sync:deny', id),

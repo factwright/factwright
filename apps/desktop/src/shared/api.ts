@@ -313,8 +313,6 @@ export interface FactwrightApi {
   askToLink(): Promise<EditResult>;
   /** On the computer asking: whether its emoji match the other device's. */
   confirmLinkCheck(matched: boolean): void;
-  /** Stops asking to be linked. */
-  stopAskingToLink(): void;
   /** With sync on: starts approving another device's request, up to showing its emoji. */
   approveLinkRequest(id: string): Promise<EditResult>;
   /** With sync on: whether the emoji match, which approves the request or turns it down. */

@@ -745,11 +745,6 @@ export class SyncAccount {
     this.approvals.confirm(matched);
   }
 
-  /** Stops asking to be linked. */
-  stopAsking(): void {
-    this.approvals.stopAsking();
-  }
-
   /** With sync on: starts approving another device's request, up to showing its emoji. */
   approveRequest(id: string): Promise<EditResult> {
     return this.approvals.approve(id);

@@ -434,9 +434,6 @@ export function registerIpc({
   ipcMain.on('sync:confirm-check', (event, matched: unknown) => {
     if (fromApp(event) && typeof matched === 'boolean') sync.confirmLinkCheck(matched);
   });
-  ipcMain.on('sync:stop-asking', (event) => {
-    if (fromApp(event)) sync.stopAsking();
-  });
   answer('sync:approve', (id) => (isRequestId(id) ? sync.approveRequest(id) : REFUSED));
   answer('sync:answer', (matched) =>
     typeof matched === 'boolean' ? sync.answerApproval(matched) : REFUSED,

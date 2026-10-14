@@ -24,7 +24,6 @@ type SyncApi = Pick<
   | 'onLinkApprovals'
   | 'askToLink'
   | 'confirmLinkCheck'
-  | 'stopAskingToLink'
   | 'approveLinkRequest'
   | 'answerLinkRequest'
   | 'denyLinkRequest'
@@ -266,7 +265,6 @@ export function sampleSync(start: string | null, approve: string | null = null):
         set(ON);
       }, 2500);
     },
-    stopAskingToLink: () => show({ asking: null }),
     approveLinkRequest: async (id) => {
       const request = approvals.requests.find((each) => each.id === id);
       if (!request) return { ok: false, message: 'That request to link is gone.' };
