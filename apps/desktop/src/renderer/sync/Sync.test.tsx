@@ -442,7 +442,7 @@ describe('linking by approval', () => {
     const panel = await screen.findByRole('region', { name: 'A new device wants to link' });
     await user.click(within(panel).getByRole('button', { name: 'Turn down' }));
     const done = await screen.findByRole('region', { name: 'Turned down' });
-    expect(within(done).getByText(/If it isn’t yours, sign it out/)).toBeTruthy();
+    expect(within(done).getByText(/If Chrome on Windows isn’t yours, sign it out/)).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
     await user.click(within(done).getByRole('button', { name: 'Sign it out' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Turned down' })).toBeNull());

@@ -179,7 +179,7 @@ function TurnedDown({ api, device }: { api: FactwrightApi; device: string }) {
     <div aria-live="polite">
       <div className={styles.ended}>
         <p className={styles.endedText}>
-          Turned down {device}. If it isn’t yours, sign it out of your account.
+          If {device} isn’t yours, sign it out of your account.
         </p>
         <div className={styles.requestActions}>
           <Button size="sm" variant="quiet" onClick={() => api.dismissLinkApproval()}>
