@@ -53,7 +53,9 @@ repository's Releases page.
 - **Only Factwright's own.** The workflow builds with `FACTWRIGHT_SYNC_SERVER`
   (https://app.factwright.com) and `FACTWRIGHT_DOWNLOADS_URL` (https://downloads.factwright.com/)
   only when it runs in factwright/factwright, outside pull requests. Builds anywhere else, a fork's
-  or a pull request's included, have no sync server and never look for updates.
+  or a pull request's included, have no sync server and never look for updates. A release without
+  them stops before it builds, as everyone who installed it couldn't sync, and would be stuck on it
+  for good. Each build's own tests check it syncs and looks for updates only if it was built to.
 - **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
   minutes, and straight away when the user comes back to it or the computer wakes, at most once a
   minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new

@@ -217,9 +217,9 @@ function start(): void {
       }),
     });
     await setup.load();
-    // A copy installed from GitHub's build keeps itself up to date. One being developed, or
-    // built on this computer, has no update settings and doesn't, and the end-to-end tests turn
-    // it off.
+    // A copy installed from Factwright's own release keeps itself up to date. One being
+    // developed, or built anywhere else, such as from a fork, has no update settings and doesn't,
+    // and the end-to-end tests turn it off.
     const updates =
       app.isPackaged &&
       existsSync(join(process.resourcesPath, 'app-update.yml')) &&

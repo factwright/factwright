@@ -62,6 +62,15 @@ jobs:
             exit 1
           fi
           node apps/desktop/scripts/release-check.ts "$GITHUB_REF_NAME"
+      # A release built without them would leave everyone who installs it unable to sync, and
+      # stuck on it for good, as it would never look for updates.
+      - name: It's built with Factwright's sync server and download site
+        if: env.RELEASING == 'true'
+        run: |
+          if [ -z "$FACTWRIGHT_SYNC_SERVER" ] || [ -z "$FACTWRIGHT_DOWNLOADS_URL" ]; then
+            echo "::error::Releases are built only in factwright/factwright, which gets Factwright's sync server and download site."
+            exit 1
+          fi
       # Each computer's version is checked, as each goes out on its own. A version taken back stops
       # here, before any build, as publishing would refuse it anyway.
       - name: It's newer than the version out now, and wasn't taken back

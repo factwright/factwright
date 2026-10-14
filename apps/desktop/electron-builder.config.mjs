@@ -1,8 +1,8 @@
 // How the app becomes installers: `pnpm dist:mac` or `pnpm dist:win`, after `pnpm build`.
 // Signing and notarizing happen only when their credentials are in the environment, as in the
 // release workflow. Without them, a Mac build is signed only for this computer, and a Windows
-// build isn't signed: both are for trying out, never for sending to anyone. Only GitHub's
-// builds look for updates: one made on this computer never updates itself.
+// build isn't signed: both are for trying out, never for sending to anyone. Only Factwright's
+// own releases look for updates, as `publish` below says.
 
 import { existsSync, readFileSync } from 'node:fs';
 
