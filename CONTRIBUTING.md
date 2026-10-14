@@ -1,6 +1,6 @@
 # Contributing to Factwright
 
-Thanks for your interest. Factwright is in early development, so here's what's open right now.
+Thanks for your interest. Factwright is in beta, so here's what's open right now.
 
 ## What's open
 - **Issues: yes.** Bug reports and ideas are welcome. Use the templates when you open one.

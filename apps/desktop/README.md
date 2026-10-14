@@ -2,10 +2,10 @@
 
 The Factwright app for Mac and Windows, built with Electron and TypeScript.
 
-It will:
-- run your own installed Claude Code in a built-in terminal you can watch, without touching your login
-- give Claude the tools it needs over MCP, from saving postings to rendering resumes
-- keep your workspace and tracker on your computer, and sync them, locked, to your other computers and your phone
+It:
+- runs your own installed Claude Code in a built-in terminal you can watch, without touching your login
+- gives Claude the tools it needs over MCP, from saving postings to rendering resumes
+- keeps your workspace and tracker on your computer, and syncs them, locked, to your other computers and your phone
 
 ## How it's put together
 | Folder | What's there |
@@ -14,7 +14,7 @@ It will:
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
-| [`scripts`](scripts) | The development runner, the app icons' drawing, a fix node-pty needs after every install, and a release's check |
+| [`scripts`](scripts) | The development runner, the app icons' drawing, the README's screenshots, a fix node-pty needs after every install, and a release's check |
 | [`build`](build) | The app icons, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`), and what the Mac's hardened runtime allows. The installers build them in, and the app shows the icon in the Dock while you develop |
 | [`release-notes`](release-notes) | What's new in each version, which installed copies show as they update |
 
@@ -158,6 +158,7 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
+- **The README's screenshots:** `pnpm --filter @factwright/desktop screenshots` takes them again from the same sample data, each framed as a Mac window, in light and dark, into [`docs/images`](../../docs/images). Take them on a Mac, after a change they show.
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`).
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
