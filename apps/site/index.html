@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Factwright · Your job hunt, run by your own Claude</title>
+    <title>Factwright · Your job hunt and resumes, run by your own Claude</title>
     <meta
       name="description"
       content="Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes and answers from facts you confirmed, and gets you ready for the interview."
@@ -30,6 +30,20 @@
       content="Factwright: tailored to the job, true to the facts. A resume line linked to the fact behind it."
     />
     <meta name="twitter:card" content="summary_large_image" />
+    <!-- For search engines. It's data, not a script, so the page's security policy doesn't apply to it. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Factwright",
+        "url": "https://factwright.com/",
+        "description": "Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes and answers from facts you confirmed, and gets you ready for the interview.",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "macOS, Windows",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Organization", "name": "Neatifai LLC" }
+      }
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body>
@@ -156,13 +170,16 @@
           </div>
         </div>
 
+        <!-- Each drawing of the app has data-nosnippet, which keeps its made-up jobs out of search result snippets. -->
         <figure class="wrap hero-shot">
           <figcaption class="visually-hidden">
-            The Factwright app: a list of jobs with their status and fit, the Lumen Health job open
-            with a Run button for each task, and Claude’s panel at the bottom, where your own Claude
-            Code writes an interview prep sheet and asks you one question along the way.
+            <span data-nosnippet>
+              The Factwright app: a list of jobs with their status and fit, the Lumen Health job open
+              with a Run button for each task, and Claude’s panel at the bottom, where your own
+              Claude Code writes an interview prep sheet and asks you one question along the way.
+            </span>
           </figcaption>
-          <div class="window" aria-hidden="true" data-demo>
+          <div class="window" aria-hidden="true" data-demo data-nosnippet>
             <div class="win-bar">
               <span class="lights"><i></i><i></i><i></i></span>
               <span class="win-brand">
@@ -354,7 +371,7 @@
                   Getting started in Factwright: three files shared, some notes in your own words,
                   and what you’re looking for.
                 </figcaption>
-                <div class="card card-start" aria-hidden="true">
+                <div class="card card-start" aria-hidden="true" data-nosnippet>
                   <div class="mini-steps">
                     <span class="is-done"><i class="step-dot">✓</i>About you</span>
                     <span class="is-current"><i class="step-dot">3</i>Your files</span>
@@ -413,7 +430,7 @@
                   Claude asks what your part in a project was. Your answer confirms the claim, with
                   how sure it is and what to say and not say.
                 </figcaption>
-                <div class="confirm" aria-hidden="true" data-confirm>
+                <div class="confirm" aria-hidden="true" data-confirm data-nosnippet>
                   <div class="term term-card">
                     <p class="t-line t-bold">What was your part in the repeat booking program?</p>
                     <p class="t-line t-pick">❯ 1. I led it, and built much of it</p>
@@ -467,7 +484,7 @@
                   A fit check: 86 out of 100, strong, split into work, role, stack and requirements,
                   plus what people say about the company.
                 </figcaption>
-                <div class="card fit" aria-hidden="true">
+                <div class="card fit" aria-hidden="true" data-nosnippet>
                   <div class="fit-head">
                     <div>
                       <p class="fit-company">Lumen Health</p>
@@ -531,7 +548,7 @@
                   A job’s Run buttons, with a tailored resume running in Claude’s panel. Claude asks
                   about something the job wants that isn’t in your fact bank yet.
                 </figcaption>
-                <div class="run-demo" aria-hidden="true">
+                <div class="run-demo" aria-hidden="true" data-nosnippet>
                   <div class="card run-card">
                     <p class="panel-heading">Run with your Claude</p>
                     <div class="runs">
@@ -581,7 +598,7 @@
                 <figcaption class="visually-hidden">
                   A finished resume that passed its fact check, and the job list on a phone.
                 </figcaption>
-                <div class="send" aria-hidden="true">
+                <div class="send" aria-hidden="true" data-nosnippet>
                   <div class="paper">
                     <img src="/templates/classic.webp" width="612" height="792" alt="" loading="lazy" decoding="async" />
                     <span class="paper-badge badge-check"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Every line fact-checked</span>
@@ -631,7 +648,7 @@
             </p>
           </header>
 
-          <div class="trace reveal" data-trace>
+          <div class="trace reveal" data-trace data-nosnippet>
             <p class="visually-hidden" role="status" data-trace-status></p>
             <div class="resume">
               <div class="resume-head">
