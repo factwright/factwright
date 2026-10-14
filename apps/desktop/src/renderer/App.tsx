@@ -204,6 +204,7 @@ export function App({ api }: { api: FactwrightApi }) {
               void about.flush().finally(() => api.installUpdate());
             },
           }}
+          version={api.version}
         />
         <div className={styles.content}>
           <div className={styles.work}>

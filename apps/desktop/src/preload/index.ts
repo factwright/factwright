@@ -1,9 +1,12 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from 'electron';
-import type { FactwrightApi } from '../shared/api.ts';
+import { type FactwrightApi, VERSION_ARGUMENT } from '../shared/api.ts';
 
 // The window's only way to reach the main process. Each call maps to one checked handler.
 const api: FactwrightApi = {
   platform: process.platform,
+  version:
+    process.argv.find((arg) => arg.startsWith(VERSION_ARGUMENT))?.slice(VERSION_ARGUMENT.length) ??
+    '',
   claudeStatus: () => ipcRenderer.invoke('claude:status'),
   setupCheck: () => ipcRenderer.invoke('setup:latest'),
   checkSetup: () => ipcRenderer.invoke('setup:check'),
