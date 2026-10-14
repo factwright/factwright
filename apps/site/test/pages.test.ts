@@ -42,7 +42,7 @@ const SOURCE = 'https://github.com/factwright/factwright';
 /** Factwright's maker, and the two ways to support Factwright. */
 const MAKER = [
   'https://github.com/steve1two',
-  'https://buymeacoffee.com/factwright',
+  'https://buymeacoffee.com/stevehillyer',
   'https://github.com/sponsors/steve1two',
 ];
 

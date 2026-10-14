@@ -28,6 +28,7 @@
 }
 
 .repo {
+  container: repo / inline-size;
   overflow: hidden;
   padding: 22px 22px 0;
   border: 1px solid var(--fw-border);
@@ -113,6 +114,11 @@
   background: var(--fw-hover);
 }
 
+/* The rows reach the card's edges, which would cut off the usual ring around the outside. */
+.repo-files a:focus-visible {
+  outline-offset: -2px;
+}
+
 .repo-files .icon {
   width: 18px;
   height: 18px;
@@ -175,8 +181,9 @@
   }
 }
 
-/* On a phone, each folder's description goes under its name instead of beside it. */
-@media (max-width: 520px) {
+/* In a narrow card, on a phone or beside the text on a small laptop, each folder's description
+   goes under its name instead of beside it. */
+@container repo (max-width: 470px) {
   .repo-files a {
     grid-template-columns: 18px minmax(0, 1fr);
     row-gap: 2px;
@@ -187,7 +194,9 @@
     text-align: left;
     white-space: normal;
   }
+}
 
+@media (max-width: 520px) {
   .source-maker {
     text-align: left;
   }

@@ -315,6 +315,17 @@ img {
   }
 }
 
+/* The narrowest phones need tighter spacing too. */
+@media (max-width: 360px) {
+  .header-inner {
+    gap: 12px;
+  }
+
+  .header-cta {
+    padding: 0 10px;
+  }
+}
+
 .lede {
   margin-top: 20px;
   color: var(--fw-muted);
