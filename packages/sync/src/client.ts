@@ -114,9 +114,21 @@ export class SyncClient {
     return (await (await this.request(path, init)).json()) as T;
   }
 
-  /** The locked account key, or null before any device has set up sync. */
+  /**
+   * The locked account key, or null before any device has set up sync. An answer that's neither
+   * is the server's problem, not a sign the account has no key.
+   */
   async keys(): Promise<KeyRecord | null> {
-    return (await this.json<{ keys: KeyRecord | null }>(API.keys)).keys;
+    const { keys } = await this.json<{ keys?: unknown }>(API.keys);
+    if (keys === null) return null;
+    const record = keys as Partial<KeyRecord> | undefined;
+    if (typeof record?.keyId !== 'string' || typeof record.recovery !== 'string') {
+      throw new SyncError(
+        'server',
+        'The sync server’s answer about the account key didn’t make sense.',
+      );
+    }
+    return keys as KeyRecord;
   }
 
   /**
@@ -204,8 +216,15 @@ export class SyncClient {
     await this.request(`${API.links}/${id}`, { method: 'DELETE' });
   }
 
-  account(): Promise<AccountInfo> {
-    return this.json(API.account);
+  async account(): Promise<AccountInfo> {
+    const info = await this.json<Partial<AccountInfo> | undefined>(API.account);
+    if (typeof info?.user?.id !== 'string' || typeof info.user.email !== 'string') {
+      throw new SyncError(
+        'server',
+        'The sync server’s answer about the account didn’t make sense.',
+      );
+    }
+    return info as AccountInfo;
   }
 
   /** Signs a device out of the account. */

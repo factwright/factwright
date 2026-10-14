@@ -54,7 +54,13 @@ export interface LinkCode {
   expiresAt: string;
 }
 
-export type RecoveryKeyResult = { ok: true; recoveryKey: string } | { ok: false; message: string };
+/**
+ * A recovery key to save, or null when there's none to make: another computer that kept the same
+ * account key saved its recovery key first, and sync carries on.
+ */
+export type RecoveryKeyResult =
+  | { ok: true; recoveryKey: string | null }
+  | { ok: false; message: string };
 
 export type LinkCodeResult = { ok: true; link: LinkCode } | { ok: false; message: string };
 

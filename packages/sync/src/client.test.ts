@@ -53,6 +53,22 @@ describe('SyncClient', () => {
     await expect(offline).rejects.toMatchObject({ kind: 'offline' });
   });
 
+  it('takes an answer about the account or its key that doesn’t make sense as a server problem', async () => {
+    const { client } = fakeServer(
+      json({ keys: null }),
+      json({ keys: { keyId: 'key-id', recovery: 'locked', savedAt: '2026-10-13T00:00:00Z' } }),
+      json({}),
+      json({ keys: { keyId: 7 } }),
+      json({ devices: [] }),
+    );
+    expect(await client.keys()).toBeNull();
+    expect(await client.keys()).toMatchObject({ keyId: 'key-id' });
+    // Nothing about the key isn't the same as no key: only null says no device set up sync.
+    await expect(client.keys()).rejects.toMatchObject({ kind: 'server' });
+    await expect(client.keys()).rejects.toMatchObject({ kind: 'server' });
+    await expect(client.account()).rejects.toMatchObject({ kind: 'server' });
+  });
+
   it('tells when another device already set up the keys', async () => {
     const { client } = fakeServer(new Response(null, { status: 204 }), json({}, 409));
     expect(await client.saveKeys('key-id', 'locked')).toBe('saved');

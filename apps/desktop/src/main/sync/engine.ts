@@ -87,6 +87,15 @@ interface Incoming {
 const isSyncTable = (table: string): table is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(table);
 
+const emptyReport = (): SyncReport => ({
+  pulled: 0,
+  pushed: 0,
+  conflicts: 0,
+  unreadable: 0,
+  skipped: [],
+  full: false,
+});
+
 /** Rows come in jobs first, so calls and history find their job. */
 const APPLY_ORDER = (item: Incoming) =>
   item.record.kind === 'row' ? SYNC_TABLES.indexOf(item.record.table as SyncTable) : 9;
@@ -129,18 +138,22 @@ export class SyncEngine {
 
   /** Syncs until both sides agree, or a few rounds have passed. */
   async syncOnce(): Promise<SyncReport> {
-    const report: SyncReport = {
-      pulled: 0,
-      pushed: 0,
-      conflicts: 0,
-      unreadable: 0,
-      skipped: [],
-      full: false,
-    };
+    const report = emptyReport();
     for (let round = 0; round < 5; round++) {
       await this.pull(report);
       if (!(await this.push(report))) break;
     }
+    return report;
+  }
+
+  /**
+   * Takes in what the account holds and sends nothing, as after what sync knew here was
+   * forgotten: the server's versions become what's known to be synced, so whatever changes here
+   * after this goes up as a change made from them.
+   */
+  async pullOnly(): Promise<SyncReport> {
+    const report = emptyReport();
+    await this.pull(report);
     return report;
   }
 

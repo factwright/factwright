@@ -90,9 +90,12 @@ export class SyncAccount {
   private signIn: DeviceSignIn | null = null;
   /**
    * The account key a first device sets up with, kept until its recovery key is saved: a new
-   * one, or the one this computer synced with, for an account that has none on the server.
+   * one, or, `kept`, the one this computer synced with, for an account that has none on the
+   * server.
    */
-  private pending: { accountKey: Bytes; recovery: Bytes | null } | null = null;
+  private pending: { accountKey: Bytes; recovery: Bytes | null; kept: boolean } | null = null;
+  /** A rebuild of what sync knows, while it runs: signing out and closing wait for it. */
+  private rebuilding: Promise<void> | null = null;
   private device = 'This computer';
   /** Once the app is closing, nothing more happens. */
   private closed = false;
@@ -259,10 +262,16 @@ export class SyncAccount {
     }
     this.pending = null;
     const email = account.user.email;
-    // Whether this computer synced this very account, and not one before it.
+    const keys = await accountKeys(accountKey);
+    // Whether a check found this computer syncing this very account under the key it has.
     const synced = this.state.meta('account') === account.user.id;
     if (saved === null) {
-      if (synced) this.pending = { accountKey, recovery: null };
+      if (synced) {
+        // If the app closed before what sync knew was rebuilt, it's rebuilt now, before anything
+        // changes here. Saving the recovery key tries again if this can't.
+        await this.rebuildNotes(this.client, keys).catch(() => {});
+        this.pending = { accountKey, recovery: null, kept: true };
+      }
       this.set({
         state: 'setting-up',
         email,
@@ -271,7 +280,7 @@ export class SyncAccount {
       });
       return { ok: true };
     }
-    if (saved.keyId !== (await accountKeys(accountKey)).id) {
+    if (saved.keyId !== keys.id) {
       this.set({
         state: 'setting-up',
         email,
@@ -289,6 +298,42 @@ export class SyncAccount {
     this.state.setMeta('email', account.user.email);
     await this.turnOnWith(accountKey);
     return { ok: true };
+  }
+
+  /**
+   * For a key this computer keeps, when what sync knew may be from the account before this one
+   * was made again: rebuilds it from the server's versions, sending nothing, so what changes here
+   * from now on syncs as a change, not a conflict. It's noted done only for the sign-in it was
+   * done for, so one cut short by signing out or closing is done again.
+   */
+  private async rebuildNotes(client: SyncClient, keys: AccountKeys): Promise<void> {
+    while (this.rebuilding) await this.rebuilding;
+    if (this.state.meta('keyId') === keys.id) return;
+    const work = (async () => {
+      this.startOver();
+      const { tracker, workspace } = this.deps;
+      const engine = new SyncEngine({
+        client,
+        keys,
+        state: this.state,
+        tracker,
+        workspace,
+        device: this.device,
+      });
+      const report = await engine.pullOnly();
+      if (report.pulled > 0 || report.conflicts > 0) this.deps.onApplied();
+      if (!this.closed && this.client === client) this.state.setMeta('keyId', keys.id);
+    })();
+    const settled = work.then(
+      () => {},
+      () => {},
+    );
+    this.rebuilding = settled;
+    try {
+      await work;
+    } finally {
+      if (this.rebuilding === settled) this.rebuilding = null;
+    }
   }
 
   /** Forgets what sync knew of the account's history, keeping who's signed in. */
@@ -328,10 +373,28 @@ export class SyncAccount {
   /** On the first device: makes the account key and its recovery key, to save before going on. */
   async newRecoveryKey(): Promise<RecoveryKeyResult> {
     if (this.current.state !== 'setting-up') return failed('Sign in first.');
+    const kept = this.pending?.kept ? this.pending.accountKey : null;
+    if (kept && this.client) {
+      // Another computer that kept this same key may have saved a recovery key for it since.
+      // That one works, so this computer carries on without making another.
+      const client = this.client;
+      try {
+        const keys = await accountKeys(kept);
+        if ((await client.keys())?.keyId === keys.id) {
+          await this.rebuildNotes(client, keys);
+          this.pending = null;
+          await this.turnOnWith(kept);
+          return { ok: true, recoveryKey: null };
+        }
+      } catch {
+        // Saving the recovery key asks again.
+      }
+    }
     const recovery = newRecoveryKey();
     this.pending = {
-      accountKey: this.pending?.accountKey ?? newAccountKey(),
+      accountKey: kept ?? this.pending?.accountKey ?? newAccountKey(),
       recovery: recovery.bytes,
+      kept: kept !== null,
     };
     return { ok: true, recoveryKey: recovery.text };
   }
@@ -340,12 +403,21 @@ export class SyncAccount {
   async turnOn(): Promise<EditResult> {
     const recovery = this.pending?.recovery;
     if (!this.client || !this.pending || !recovery) return failed('Make your recovery key first.');
-    const { accountKey } = this.pending;
+    const { accountKey, kept } = this.pending;
+    const client = this.client;
     try {
       const keys = await accountKeys(accountKey);
+      // A kept key syncs on from what the server has, once that's rebuilt here.
+      if (kept) await this.rebuildNotes(client, keys);
       const locked = await lockWithRecoveryKey(accountKey, recovery);
-      if ((await this.client.saveKeys(keys.id, locked)) === 'taken') {
+      if ((await client.saveKeys(keys.id, locked)) === 'taken') {
         this.pending = null;
+        // Another computer that kept this same key saved its recovery key first: that's the
+        // one that works, and sync carries on here.
+        if ((await client.keys())?.keyId === keys.id) {
+          await this.turnOnWith(accountKey);
+          return { ok: true };
+        }
         this.set({ state: 'setting-up', email: this.email(), firstDevice: false });
         return failed(
           'Another device turned on sync for this account first. Link this computer to it instead.',
@@ -408,8 +480,12 @@ export class SyncAccount {
   private async turnOnWith(accountKey: Bytes): Promise<void> {
     if (!this.client) return;
     const keys = await accountKeys(accountKey);
-    // Another account's data must never mix in: a different key starts over.
-    if (this.state.meta('keyId') !== keys.id) this.startOver();
+    // Another account's data must never mix in: a different key starts over. The account is
+    // noted again once a check finds it uses this key.
+    if (this.state.meta('keyId') !== keys.id) {
+      this.startOver();
+      this.state.forgetMeta('account');
+    }
     this.state.setMeta('keyId', keys.id);
     this.state.setMeta(UNCHECKED, '0');
     this.secrets.set('accountKey', toBase64Url(accountKey));
@@ -435,27 +511,36 @@ export class SyncAccount {
       skipped,
     });
     let checked = false;
+    // A runner that's been replaced or stopped speaks for nothing.
     const runner: SyncRunner = new SyncRunner({
       engine,
       client: this.client,
       state: this.state,
       onReport: (report) => {
-        if (this.closed) return;
+        if (this.closed || this.runner !== runner) return;
         skipped = report.skipped.length;
         lastSynced = new Date().toISOString();
         if (report.pulled > 0 || report.conflicts > 0) this.deps.onApplied();
         // Once the server answers, the account's key is checked, until the check gets through.
         if (!checked) {
           checked = true;
-          void this.checkKey(runner, accountKey, keys.id).then((done) => {
-            checked = done;
-          });
+          void this.checkKey(runner, accountKey, keys).then(
+            (done) => {
+              checked = done;
+            },
+            () => {
+              checked = false;
+            },
+          );
         }
       },
-      onActivity: (activity, message) =>
-        this.set({ state: 'on', email: this.email(), activity, lastSynced, message, skipped }),
+      onActivity: (activity, message) => {
+        if (this.runner !== runner) return;
+        this.set({ state: 'on', email: this.email(), activity, lastSynced, message, skipped });
+      },
       onSignedOut: () => {
-        if (this.closed) return;
+        if (this.closed || this.runner !== runner) return;
+        this.runner = null;
         this.secrets.delete('session');
         this.set({ state: 'signed-out', email: this.email() });
       },
@@ -465,20 +550,27 @@ export class SyncAccount {
   }
 
   /**
-   * Once sync is running: notes the account's email, for a computer that set up before it was
-   * known, and checks the account still uses this computer's key. Version 0.1.0 didn't check
-   * when it signed in again, so after an account was deleted and made again, it synced under its
-   * old key without saving that key to the account. A computer that set up later then made
-   * another key, and each skipped what the other sent. So a key the account doesn't use stops
-   * sync here, even after a restart, until:
-   * - the account has no key: this computer saves a recovery key for the key it has. It sends
-   *   everything again, since what it knew of the account may be from the one before.
+   * Once a round of sync has run: notes the account's email, for a computer that set up before
+   * it was known, and checks the account still uses this computer's key. Version 0.1.0 didn't
+   * check when it signed in again, so after an account was deleted and made again, it synced
+   * under its old key without saving that key to the account. A computer that set up later then
+   * made another key, and each skipped what the other sent. So a key the account doesn't use
+   * stops sync here, even after a restart, until:
+   * - the account has no key: this computer saves a recovery key for the key it has. What sync
+   *   knew may be from the account before, so first it's rebuilt from what the server has, before
+   *   anything changes here; then what the server lacks goes up.
    * - the account has another key: this computer links to it.
    * Returns whether the server answered. If it didn't, the next round asks again.
    */
-  private async checkKey(runner: SyncRunner, accountKey: Bytes, keyId: string): Promise<boolean> {
+  private async checkKey(
+    runner: SyncRunner,
+    accountKey: Bytes,
+    keys: AccountKeys,
+  ): Promise<boolean> {
     const client = this.client;
     if (!client) return true;
+    // Whether this check still speaks for the sign-in and the sync it was made for.
+    const current = () => !this.closed && this.client === client && this.runner === runner;
     let account: Awaited<ReturnType<SyncClient['account']>>;
     let saved: Awaited<ReturnType<SyncClient['keys']>>;
     try {
@@ -486,24 +578,27 @@ export class SyncAccount {
     } catch {
       return false;
     }
-    if (this.closed || this.runner !== runner) return true;
+    if (!current()) return true;
     const before = this.state.meta('account');
     const email = account.user.email;
     this.state.setMeta('email', email);
     this.state.setMeta('account', account.user.id);
-    if (saved?.keyId === keyId) {
+    if (saved?.keyId === keys.id) {
       if (this.current.state === 'on') this.set({ ...this.current, email });
       return true;
     }
     this.state.setMeta(UNCHECKED, '1');
+    // Noted before anything else, so the rebuild happens even if the app closes first.
+    if (saved === null && before !== account.user.id) this.state.forgetMeta('keyId');
     await runner.stop();
-    if (this.closed || this.runner !== runner) return true;
+    if (!current()) return true;
     this.runner = null;
     this.keys = null;
     this.accountKey = null;
     if (saved === null) {
-      if (before !== account.user.id) this.startOver();
-      this.pending = { accountKey, recovery: null };
+      await this.rebuildNotes(client, keys).catch(() => {});
+      if (this.closed || this.client !== client) return true;
+      this.pending = { accountKey, recovery: null, kept: true };
       this.set({ state: 'setting-up', email, firstDevice: true, again: 'unsaved' });
     } else {
       this.set({ state: 'setting-up', email, firstDevice: false, again: 'changed' });
@@ -589,6 +684,7 @@ export class SyncAccount {
 
   private async forget(): Promise<void> {
     await this.runner?.stop();
+    while (this.rebuilding) await this.rebuilding;
     this.runner = null;
     this.client = null;
     this.keys = null;
@@ -605,6 +701,7 @@ export class SyncAccount {
     this.closed = true;
     this.signIn?.cancel();
     await this.runner?.stop();
+    while (this.rebuilding) await this.rebuilding;
     this.state.close();
   }
 }
