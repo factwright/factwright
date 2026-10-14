@@ -8,6 +8,7 @@ import {
   type Job,
   type JobDocKind,
   jobProgress,
+  kindNamed,
   kindOfJob,
   nextStep,
   PASS_REASON_LABELS,
@@ -77,6 +78,8 @@ export function JobView({
     vault.kinds.length > 1
       ? vault.kinds.find((each) => each.id === kindOfJob(job, vault.kinds))
       : undefined;
+  // Under the first kind only because nothing has said otherwise yet, as the computer says too.
+  const undecided = !(kindNamed(job.kind, vault.kinds) ?? kindNamed(job.kindFound, vault.kinds));
 
   const openResume = async (path: string, format: 'pdf' | 'docx', name: string) => {
     setProblem(null);
@@ -159,7 +162,10 @@ export function JobView({
           {kind && (
             <div>
               <dt>Kind of job</dt>
-              <dd>{kind.name}</dd>
+              <dd>
+                {kind.name}
+                {undecided && ', until a fit check'}
+              </dd>
             </div>
           )}
           {progress.status === 'later' && job.backOn && (

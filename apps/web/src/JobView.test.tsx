@@ -115,6 +115,12 @@ describe('a job on the phone', () => {
       within(section('Where it stands')).getByText('Kind of job').nextSibling?.textContent,
     ).toBe('Project manager');
     cleanup();
+    // One nothing has put under a kind is under the first, until a fit check says.
+    render(<JobView job={ACME} vault={{ ...vault, kinds }} keys={keys} today={TODAY} />);
+    expect(
+      within(section('Where it stands')).getByText('Kind of job').nextSibling?.textContent,
+    ).toBe('Developer, until a fit check');
+    cleanup();
     render(<JobView job={ACME} vault={vault} keys={keys} today={TODAY} />);
     expect(screen.queryByText('Kind of job')).toBeNull();
   });
