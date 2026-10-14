@@ -327,13 +327,9 @@
   padding: 16px 20px;
 }
 
-.fit .psec {
+.fit .job-section {
   margin: 0;
   padding: 0 20px;
-}
-
-.fit-body {
-  padding-bottom: 18px;
 }
 
 .fit-sub {
@@ -491,7 +487,7 @@
   padding: 16px;
 }
 
-.run-card .psec-head {
+.run-card .job-section-head {
   min-height: 0;
   margin: -2px 0 12px;
 }
@@ -772,11 +768,15 @@
 .phone-meta,
 .phone-row em {
   overflow: hidden;
-  color: var(--fw-muted);
   font-size: 0.95em;
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.phone-role,
+.phone-meta {
+  color: var(--fw-muted);
 }
 
 .phone-meta {

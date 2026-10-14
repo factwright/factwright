@@ -128,6 +128,7 @@
   gap: 10px;
   height: 38px;
   padding: 0 8px 0 7px;
+  font-weight: 600;
 }
 
 .side-profile .icon {
@@ -473,17 +474,21 @@
 }
 
 /* The box that selects a job, or every job, ahead of each row. */
-.t-pick {
+.t-select {
   display: flex;
   flex: none;
   align-items: center;
   padding-left: 16px;
 }
 
+/* As the app lays out a list this wide: the next step goes under the role. */
 .t-cells {
   display: grid;
   flex: 1;
   grid-template-columns: minmax(0, 1fr) 88px 100px 104px;
+  grid-template-areas:
+    "job status fit pay"
+    "next status fit pay";
   gap: 2px 12px;
   align-items: center;
   min-width: 0;
@@ -491,6 +496,7 @@
 }
 
 .t-head .t-cells {
+  grid-template-areas: "job status fit pay";
   padding-block: 10px;
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
@@ -505,10 +511,28 @@
 .t-job {
   display: flex;
   flex-direction: column;
+  grid-area: job;
   min-width: 0;
 }
 
-.t-job > * {
+.t-status {
+  grid-area: status;
+}
+
+.t-fit {
+  grid-area: fit;
+}
+
+.t-pay {
+  grid-area: pay;
+}
+
+.t-next {
+  grid-area: next;
+}
+
+.t-job > *,
+.t-next {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -519,21 +543,44 @@
 }
 
 .t-job span,
-.t-job em {
+.t-next {
+  min-width: 0;
   color: var(--fw-muted);
   font-size: 13px;
-  font-style: normal;
 }
 
-.t-job .is-need {
+.t-next.is-need {
   color: var(--fw-need);
   font-weight: 600;
 }
 
-.t-pay {
+.t-row .t-pay {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Narrower, the pay goes under the role too, as it does in the app. */
+@container list (max-width: 580px) {
+  .t-cells {
+    grid-template-columns: minmax(0, 1fr) 88px 100px;
+    grid-template-areas:
+      "job status fit"
+      "pay status fit"
+      "next status fit";
+  }
+
+  .t-head .t-cells {
+    grid-template-areas: "job status fit";
+  }
+
+  .t-head .t-pay {
+    display: none;
+  }
+
+  .t-row .t-pay {
+    color: var(--fw-muted);
+  }
 }
 
 /* The job picked in the list: its name and status stay put while its sections scroll. */
@@ -629,7 +676,7 @@
 }
 
 /* The first section starts right under the job's name, so it needs no line of its own. */
-.panel-body > .psec:first-child {
+.panel-body > .job-section:first-child {
   border-top: 0;
 }
 
@@ -648,13 +695,13 @@
   margin-top: 4px;
 }
 
-.pfiles {
+.job-files {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.pfile {
+.job-file {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -663,20 +710,20 @@
   border-radius: 10px;
 }
 
-.pfile > .icon {
+.job-file > .icon {
   width: 16px;
   height: 16px;
   color: var(--fw-muted);
 }
 
-.pfile-text {
+.job-file-text {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
 }
 
-.pfile-text b {
+.job-file-text b {
   overflow: hidden;
   font-size: 13px;
   font-weight: 600;
@@ -684,17 +731,17 @@
   white-space: nowrap;
 }
 
-.pfile-text span {
+.job-file-text span {
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
 }
 
 /* The prep sheet lands in the job's files once the drawing's run is done. */
-[data-demo] .pfile.is-new {
+[data-demo] .job-file.is-new {
   display: none;
 }
 
-[data-demo] .pfile.is-new.is-shown {
+[data-demo] .job-file.is-new.is-shown {
   display: flex;
   animation: pop 420ms var(--ease-out);
 }
@@ -751,21 +798,20 @@
 .claude-panel .term {
   height: 0;
   padding: 0 16px;
-  transition:
-    height 520ms var(--ease-out),
-    padding 520ms var(--ease-out);
+}
+
+/* With reduced motion, it opens at once, so the job's sections scroll to where they end up. */
+@media (prefers-reduced-motion: no-preference) {
+  .claude-panel .term {
+    transition:
+      height 520ms var(--ease-out),
+      padding 520ms var(--ease-out);
+  }
 }
 
 .is-open > .term {
   height: 184px;
   padding-block: 12px;
-}
-
-/* Without motion, it opens at once, so the job's sections scroll to where they end up. */
-@media (prefers-reduced-motion: reduce) {
-  .claude-panel .term {
-    transition-property: none;
-  }
 }
 
 .claude-panel .t-line:not([hidden]) {
@@ -779,36 +825,22 @@
   }
 }
 
-/* The views fade out at the edge once there's no room for all seven. */
-@container list (max-width: 560px) {
-  .views {
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+/* A narrower list sets the views a little closer together, so all seven still fit. */
+@container list (max-width: 570px) {
+  .seg-option {
+    padding: 0 6px;
   }
 }
 
 /* Narrower windows drop what the app drops first: the sidebar, then the list. */
-@container win (max-width: 1040px) {
+@container win (max-width: 1150px) {
   .win-side {
     display: none;
   }
 }
 
-@container win (max-width: 900px) {
-  .list-buttons,
-  .claude-plan,
-  .claude-stop {
-    display: none;
-  }
-
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container win (max-width: 760px) {
-  .win-list,
-  .win-search {
+@container win (max-width: 940px) {
+  .win-list {
     display: none;
   }
 
@@ -816,7 +848,17 @@
     flex: 1;
     border-left: 0;
   }
+}
 
+@container win (max-width: 900px) {
+  .claude-plan,
+  .claude-stop {
+    display: none;
+  }
+}
+
+@container win (max-width: 760px) {
+  .win-search,
   .claude-hint {
     display: none;
   }
@@ -856,10 +898,10 @@
 }
 
 /*
- * On a phone, the drawing grows to fit the job instead of keeping the window's height, so it keeps
- * to the runs this one is about, and the files they made.
+ * Once it's down to the job's panel, the drawing grows to fit the job instead of keeping the
+ * window's height, so it keeps to the runs this one is about, and the files they made.
  */
-@container shot (max-width: 760px) {
+@container shot (max-width: 940px) {
   .window {
     height: auto;
   }
@@ -868,10 +910,8 @@
     flex: none;
   }
 
-  .run-extra,
   .ask,
-  .pfile-extra,
-  .psec-extra {
+  .extra {
     display: none;
   }
 }

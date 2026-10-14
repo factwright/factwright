@@ -182,7 +182,7 @@
         <figure class="wrap hero-shot">
           <figcaption class="visually-hidden">
             <span data-nosnippet>
-              The Factwright app: your jobs in seven views, from New to Closed, each with its
+              The Factwright app: your jobs in seven views, from New to All, each job with its
               status, fit and pay. The Lumen Health job is open, with a Run button for each task,
               and Claude’s panel at the bottom, where your own Claude Code writes an interview prep
               sheet and asks you one question along the way.
@@ -287,52 +287,57 @@
                     </div>
                     <div class="table">
                       <div class="t-head">
-                        <span class="t-pick"><i class="box"></i></span>
-                        <span class="t-cells"><span>Job</span><span>Status</span><span>Fit</span><span>Pay</span></span>
+                        <span class="t-select"><i class="box"></i></span>
+                        <span class="t-cells"><span class="t-job">Job</span><span class="t-status">Status</span><span class="t-fit">Fit</span><span class="t-pay">Pay</span></span>
                       </div>
                       <div class="t-row is-selected">
-                        <span class="t-pick"><i class="box"></i></span>
+                        <span class="t-select"><i class="box"></i></span>
                         <span class="t-cells">
-                          <span class="t-job"><b>Lumen Health</b><span>Senior Product Manager, Growth</span><em>Panel interview Friday</em></span>
-                          <span class="pill tone-purple">Interview</span>
-                          <span class="pill tone-green">86 · Strong</span>
+                          <span class="t-job"><b>Lumen Health</b><span>Senior Product Manager, Growth</span></span>
+                          <span class="pill tone-purple t-status">Interview</span>
+                          <span class="pill tone-green t-fit">86 · Strong</span>
                           <span class="t-pay">$165k–$190k</span>
+                          <span class="t-next">Panel interview Friday</span>
                         </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-pick"><i class="box"></i></span>
+                        <span class="t-select"><i class="box"></i></span>
                         <span class="t-cells">
-                          <span class="t-job"><b>Fernway</b><span>Product Lead, Payments</span><em class="is-need">Due today: Reply to the offer</em></span>
-                          <span class="pill tone-green">Offer</span>
-                          <span class="pill tone-green">81 · Strong</span>
+                          <span class="t-job"><b>Fernway</b><span>Product Lead, Payments</span></span>
+                          <span class="pill tone-green t-status">Offer</span>
+                          <span class="pill tone-green t-fit">81 · Strong</span>
                           <span class="t-pay">$175k–$205k</span>
+                          <span class="t-next is-need">Due today: Reply to the offer</span>
                         </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-pick"><i class="box"></i></span>
+                        <span class="t-select"><i class="box"></i></span>
                         <span class="t-cells">
-                          <span class="t-job"><b>Brightpath Learning</b><span>Product Manager III</span><em>Run a fit check</em></span>
-                          <span class="pill tone-gray">New</span>
-                          <span class="pill tone-blue">64 · Good</span>
+                          <span class="t-job"><b>Brightpath Learning</b><span>Product Manager III</span></span>
+                          <span class="pill tone-gray t-status">New</span>
+                          <span class="pill tone-blue t-fit">64 · Good</span>
                           <span class="t-pay">$140k–$160k</span>
+                          <span class="t-next">Run a fit check</span>
                         </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-pick"><i class="box"></i></span>
+                        <span class="t-select"><i class="box"></i></span>
                         <span class="t-cells">
-                          <span class="t-job"><b>Harbor &amp; Pine</b><span>Group Product Manager, Marketplace</span><em>Tailor a resume</em></span>
-                          <span class="pill tone-violet">To apply</span>
-                          <span class="pill tone-blue">72 · Good</span>
+                          <span class="t-job"><b>Harbor &amp; Pine</b><span>Group Product Manager, Marketplace</span></span>
+                          <span class="pill tone-violet t-status">To apply</span>
+                          <span class="pill tone-blue t-fit">72 · Good</span>
                           <span class="t-pay">$170k–$195k est.</span>
+                          <span class="t-next">Tailor a resume</span>
                         </span>
                       </div>
                       <div class="t-row">
-                        <span class="t-pick"><i class="box"></i></span>
+                        <span class="t-select"><i class="box"></i></span>
                         <span class="t-cells">
-                          <span class="t-job"><b>Tidewater Analytics</b><span>Senior Product Manager, Data</span><em>Recruiter screen Wednesday</em></span>
-                          <span class="pill tone-teal">Screen</span>
-                          <span class="pill tone-blue">74 · Good</span>
+                          <span class="t-job"><b>Tidewater Analytics</b><span>Senior Product Manager, Data</span></span>
+                          <span class="pill tone-teal t-status">Screen</span>
+                          <span class="pill tone-blue t-fit">74 · Good</span>
                           <span class="t-pay">$150k–$175k</span>
+                          <span class="t-next">Recruiter screen Wednesday</span>
                         </span>
                       </div>
                     </div>
@@ -358,90 +363,92 @@
                     </div>
                     <!-- The job's sections, scrolled to Your Claude. The script keeps the run in view, then shows where the prep sheet lands. -->
                     <div class="panel-body" data-demo-scroll>
-                      <div class="psec">
-                        <p class="psec-head">
-                          <svg aria-hidden="true" class="icon psec-chevron"><use href="#i-chevron" /></svg>
+                      <div class="job-section">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                           <svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg>
-                          <b>Your Claude</b><span class="psec-sum">Fit checked · Resume ready</span>
+                          <b>Your Claude</b><span class="job-section-sum">Fit checked · Resume ready</span>
                         </p>
-                        <div class="runs" data-demo-runs>
-                          <div class="run">
-                            <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
-                            <span class="run-state is-ok" data-demo-before>Done</span>
+                        <div class="job-section-body">
+                          <div class="runs" data-demo-runs>
+                            <div class="run">
+                              <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
+                              <span class="run-state is-ok" data-demo-before>Done</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
+                              <span class="run-state is-quiet">Ran</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Salary check</b><span>Estimate the pay when the posting doesn’t say</span></span>
+                              <span class="run-state">Run</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Who to message</b><span>People worth contacting, with drafts you send</span></span>
+                              <span class="run-state">Run</span>
+                            </div>
+                            <div class="run" data-demo-run>
+                              <span class="run-text"><b>Interview prep</b><span>A prep sheet for a call or an interview</span></span>
+                              <span class="run-state" data-demo-run-state>Run</span>
+                            </div>
+                            <div class="run extra">
+                              <span class="run-text"><b>Application questions</b><span>Answers to the form, in your own voice</span></span>
+                              <span class="run-state">Run</span>
+                            </div>
                           </div>
-                          <div class="run run-extra">
-                            <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
-                            <span class="run-state is-quiet">Ran</span>
+                          <div class="ask">
+                            <p class="ask-head"><span class="subheading">Ask Claude</span><span class="ui-button ui-secondary ui-sm" data-demo-wait>Ask a question</span></p>
+                            <p class="quiet">Ask anything about this job, such as what to expect from a call. The answers stay here.</p>
                           </div>
-                          <div class="run run-extra">
-                            <span class="run-text"><b>Salary check</b><span>Estimate the pay when the posting doesn’t say</span></span>
-                            <span class="run-state">Run</span>
-                          </div>
-                          <div class="run run-extra">
-                            <span class="run-text"><b>Who to message</b><span>People worth contacting, with drafts you send</span></span>
-                            <span class="run-state">Run</span>
-                          </div>
-                          <div class="run" data-demo-run>
-                            <span class="run-text"><b>Interview prep</b><span>A prep sheet for a call or an interview</span></span>
-                            <span class="run-state" data-demo-run-state><i class="run-dot"></i><span data-demo-run-label>Run</span></span>
-                          </div>
-                          <div class="run run-extra">
-                            <span class="run-text"><b>Application questions</b><span>Answers to the form, in your own voice</span></span>
-                            <span class="run-state">Run</span>
-                          </div>
-                        </div>
-                        <div class="ask">
-                          <p class="ask-head"><span class="subheading">Ask Claude</span><span class="ui-button ui-secondary ui-sm" data-demo-wait>Ask a question</span></p>
-                          <p class="quiet">Ask anything about this job, such as what to expect from a call. The answers stay here.</p>
                         </div>
                       </div>
-                      <div class="psec is-closed">
-                        <p class="psec-head">
-                          <svg aria-hidden="true" class="icon psec-chevron"><use href="#i-chevron" /></svg>
+                      <div class="job-section is-closed">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                           <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
-                          <b>Fit</b><span class="psec-sum">Strong 86</span>
+                          <b>Fit</b><span class="job-section-sum">Strong 86</span>
                         </p>
                       </div>
-                      <div class="psec" data-demo-files>
-                        <p class="psec-head">
-                          <svg aria-hidden="true" class="icon psec-chevron"><use href="#i-chevron" /></svg>
+                      <div class="job-section" data-demo-files>
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                           <svg aria-hidden="true" class="icon"><use href="#i-folder" /></svg>
-                          <b>Files</b><span class="psec-sum" data-demo-files-count>1 resume · 3 documents</span>
+                          <b>Files</b><span class="job-section-sum extra" data-demo-files-count="1 resume · 4 documents">1 resume · 3 documents</span>
                         </p>
-                        <div class="pfiles">
-                          <div class="pfile">
+                        <div class="job-section-body job-files">
+                          <div class="job-file">
                             <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="pfile-text"><b>Resume - Lumen Health.pdf</b><span>PDF · 52 KB · Oct&nbsp;13</span></span>
+                            <span class="job-file-text"><b>Resume - Lumen Health.pdf</b><span>PDF · 52 KB · Oct&nbsp;12</span></span>
                             <span class="ui-button ui-quiet ui-sm">Preview</span>
                             <span class="ui-button ui-quiet ui-sm">Open</span>
                           </div>
-                          <div class="pfile is-new" data-demo-doc>
+                          <div class="job-file is-new" data-demo-doc>
                             <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="pfile-text"><b>Interview prep</b><span>For your calls and interviews</span></span>
+                            <span class="job-file-text"><b>Interview prep</b><span>For your calls and interviews</span></span>
                             <span class="ui-button ui-quiet ui-sm">Open</span>
                           </div>
-                          <div class="pfile pfile-extra">
+                          <div class="job-file extra">
                             <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="pfile-text"><b>Posting</b><span>Saved word for word</span></span>
+                            <span class="job-file-text"><b>Posting</b><span>Saved word for word</span></span>
                             <span class="ui-button ui-quiet ui-sm">Open</span>
                           </div>
-                          <div class="pfile pfile-extra">
+                          <div class="job-file extra">
                             <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="pfile-text"><b>Fit check report</b><span>The full write-up</span></span>
+                            <span class="job-file-text"><b>Fit check report</b><span>The full write-up</span></span>
                             <span class="ui-button ui-quiet ui-sm">Open</span>
                           </div>
-                          <div class="pfile pfile-extra">
+                          <div class="job-file extra">
                             <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="pfile-text"><b>Job notes</b><span>What Claude noted about the job</span></span>
+                            <span class="job-file-text"><b>Job notes</b><span>What Claude noted about the job</span></span>
                             <span class="ui-button ui-quiet ui-sm">Open</span>
                           </div>
                         </div>
                       </div>
-                      <div class="psec is-closed psec-extra">
-                        <p class="psec-head">
-                          <svg aria-hidden="true" class="icon psec-chevron"><use href="#i-chevron" /></svg>
+                      <div class="job-section is-closed extra">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                           <svg aria-hidden="true" class="icon"><use href="#i-history" /></svg>
-                          <b>Activity</b><span class="psec-sum">9 things so far</span>
+                          <b>Activity</b><span class="job-section-sum">9 things so far</span>
                         </p>
                       </div>
                     </div>
@@ -609,8 +616,8 @@
                 <p>
                   Point it at Hacker News’s monthly “Who is hiring?” thread, a company’s job board or
                   a careers page, or paste any posting. Every job gets scored against your facts, and
-                  a fit check adds what people say about working there. Then sort each one with a
-                  click: to apply, later or pass.
+                  a fit check adds what people say about working there. Then decide on each with a
+                  click: apply, later or pass.
                 </p>
                 <p class="step-aside">
                   A salary check estimates pay a posting hides, and an unmask finds the company behind
@@ -620,8 +627,8 @@
               <figure class="step-visual">
                 <figcaption class="visually-hidden">
                   A job to review, with its fit check: 86 out of 100, strong, split into work, role,
-                  stack and requirements, plus what people say about the company, and a button each
-                  to apply, set it aside for later or pass.
+                  stack and requirements, plus what people say about the company. Under its name, a
+                  button each to apply, set it aside for later or pass.
                 </figcaption>
                 <div class="card fit" aria-hidden="true" data-nosnippet>
                   <div class="fit-top">
@@ -637,14 +644,14 @@
                     <span class="ui-button ui-secondary ui-sm">Later</span>
                     <span class="ui-button ui-secondary ui-sm">Pass</span>
                   </div>
-                  <div class="psec">
-                    <p class="psec-head">
-                      <svg aria-hidden="true" class="icon psec-chevron"><use href="#i-chevron" /></svg>
+                  <div class="job-section">
+                    <p class="job-section-head">
+                      <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                       <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
-                      <b>Fit</b><span class="psec-sum">Strong 86</span>
+                      <b>Fit</b><span class="job-section-sum">Strong 86</span>
                     </p>
-                    <div class="fit-body">
-                      <p class="fit-sub"><span class="subheading">Why it scored 86</span><span class="fit-from">From the fit check · Oct 12</span></p>
+                    <div class="job-section-body">
+                      <p class="fit-sub"><span class="subheading">Why it scored 86</span><span class="fit-from">From the fit check</span></p>
                       <div class="scores">
                         <div class="score" data-share="85">
                           <p class="score-head"><b>Work</b><span class="score-points">34 of 40</span></p>
@@ -673,7 +680,7 @@
                         <li><svg aria-hidden="true" class="icon fit-no"><use href="#i-x" /></svg><span><b>HIPAA:</b> missing, so it won’t be claimed</span></li>
                       </ul>
                       <div class="mood">
-                        <p class="fit-sub"><span class="subheading">What people say</span><span class="fit-from">From the fit check · Oct 12</span></p>
+                        <p class="fit-sub"><span class="subheading">What people say</span><span class="fit-from">From the fit check</span></p>
                         <p class="mood-text"><span class="pill tone-green">People like it</span>Praise for the team and a steady pace. Pay sits at the top of the band.</p>
                       </div>
                     </div>
@@ -706,15 +713,15 @@
                 </figcaption>
                 <div class="run-demo" aria-hidden="true" data-nosnippet>
                   <div class="card run-card">
-                    <p class="psec-head">
-                      <svg aria-hidden="true" class="icon psec-chevron"><use href="#i-chevron" /></svg>
+                    <p class="job-section-head">
+                      <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                       <svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg>
-                      <b>Your Claude</b><span class="psec-sum">Fit checked</span>
+                      <b>Your Claude</b><span class="job-section-sum">Fit checked</span>
                     </p>
                     <div class="runs is-busy">
                       <div class="run is-suggested">
                         <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
-                        <span class="run-state is-running"><i class="run-dot"></i>Running</span>
+                        <span class="run-state">Running</span>
                       </div>
                       <div class="run">
                         <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
