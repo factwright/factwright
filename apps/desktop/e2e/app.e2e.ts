@@ -39,11 +39,16 @@ async function closeRun() {
   await expect(panel).toHaveCount(0);
 }
 
-test('shows the jobs on file, your Claude ready, and Factwright’s version', async () => {
+test('shows the jobs on file, your Claude ready, a way to support Factwright, and its version', async () => {
   const { window } = opened;
   // It opens on the jobs furthest along: Acme, checked with a resume, is the next to apply to.
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
   await expect(window.getByText('Signed in · Max plan')).toBeVisible();
+  // Not clicked: it would open Buy Me a Coffee in the browser of whoever runs the tests.
+  await expect(window.getByRole('link', { name: 'Support Factwright' })).toHaveAttribute(
+    'href',
+    'https://buymeacoffee.com/stevehillyer',
+  );
   await expect(window.getByText(`Factwright ${version}`)).toBeVisible();
   await pickView(/^To review/);
   await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toBeVisible();

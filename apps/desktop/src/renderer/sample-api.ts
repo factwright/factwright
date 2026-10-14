@@ -61,6 +61,19 @@ function sampleRun(dark: boolean) {
       `${color(secondary, '  ⎿  · Which role is the call about? → Tidewater Analytics')}\r\n\r\n`,
       `${color('34', '✻')} ${color(secondary, 'Reading the posting and your facts…')}\r\n`,
     ],
+    /** Interview prep stopping to ask which round it's for, with ?run=asks. */
+    round: [
+      `\r\n${color('32', '⏺')} ${color(main, 'Read the posting, your fit check, the resume you sent and your notes.')}\r\n\r\n`,
+      ` ${color(`1;${main}`, 'Which round is the interview?')}\r\n\r\n`,
+      ` ${color('34', '❯ 1. Panel with the platform team')}\r\n`,
+      `   ${color(main, '2. Hiring manager, one on one')}\r\n`,
+      `   ${color(main, '3. Type something else')}\r\n`,
+    ],
+    roundAnswered: [
+      `\r\n${color(secondary, '⏺ User answered Claude’s questions:')}\r\n`,
+      `${color(secondary, '  ⎿  · Which round is the interview? → Panel with the platform team')}\r\n\r\n`,
+      `${color('34', '✻')} ${color(secondary, 'Checking company news and writing your prep sheet…')}\r\n`,
+    ],
     finished: [
       `\r\n${color(main, '⏺ Your prep sheet is ready: likely questions, your best stories, and')}`,
       `${color(main, ' three questions to ask them.')}\r\n\r\n${color(secondary, '❯')} `,
@@ -87,7 +100,8 @@ function sampleRun(dark: boolean) {
  * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?jobs picks
  * the jobs: none, failed or loading. ?profile picks how far the user's profile has come: new,
  * started or done. Starting Claude plays a short made-up run, so every state
- * of the panel can be seen, and status changes stick until the page reloads.
+ * of the panel can be seen, and status changes stick until the page reloads. With ?run=asks,
+ * interview prep stops to ask a question, as the README's screenshots show it.
  */
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
@@ -101,6 +115,9 @@ export function sampleApi(): FactwrightApi {
     for (const listener of signalListeners) listener(value);
   };
   let waitingForAnswer = false;
+  // What answering plays: the opening run's question, or interview prep's, with ?run=asks.
+  let afterAnswer: 'opening' | 'round' = 'opening';
+  const asks = query.get('run') === 'asks';
   // ?trust=ask starts with Claude Code's question about trusting the folder, once.
   let waitingForTrust = false;
   let trusted = query.get('trust') !== 'ask';
@@ -113,6 +130,15 @@ export function sampleApi(): FactwrightApi {
   const playTask = (task: RunTask) => {
     signal('working');
     print(run.task(task));
+    if (asks && task.skill === 'interview-prep') {
+      setTimeout(() => {
+        print(run.round);
+        waitingForAnswer = true;
+        afterAnswer = 'round';
+        signal('needs-answer');
+      }, 1200);
+      return;
+    }
     setTimeout(() => {
       print(run.taskDone(task));
       signal('done');
@@ -142,6 +168,7 @@ export function sampleApi(): FactwrightApi {
         setTimeout(() => {
           print(run.question);
           waitingForAnswer = true;
+          afterAnswer = 'opening';
           signal('needs-answer');
         }, 1800);
       };
@@ -171,7 +198,7 @@ export function sampleApi(): FactwrightApi {
       }
       if (!waitingForAnswer || !data.includes('\r')) return;
       waitingForAnswer = false;
-      print(run.answered);
+      print(afterAnswer === 'round' ? run.roundAnswered : run.answered);
       signal('working');
       setTimeout(() => {
         print(run.finished);

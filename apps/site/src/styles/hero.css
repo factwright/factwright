@@ -113,6 +113,7 @@
   color: var(--fw-accent-text);
   font-weight: 550;
   text-underline-offset: 3px;
+  white-space: nowrap;
 }
 
 /* Both downloads, until the page knows which computer it's on, or when it's neither. */
