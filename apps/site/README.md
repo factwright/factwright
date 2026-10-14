@@ -34,11 +34,11 @@ pnpm --filter @factwright/site images
 The pages run only the site's own scripts and styles, connect nowhere (the Worker reads the update feeds, not the page), can't be shown inside another site, and keep to https. The site has its own address, apart from the web view at app.factwright.com, so nothing on it shares the address where the web view keeps its keys.
 
 ## Search
-Every page has a title, a description and a canonical address, and the home page has the card that link previews show. `public/robots.txt` lets search engines in, and `public/sitemap.xml` lists the pages worth finding.
+Every page has a title. Every page but the "not found" page, which asks search engines to skip it, also has a description and a canonical address, and the home page has the card that link previews show. `public/robots.txt` lets search engines in, and `public/sitemap.xml` lists the pages worth finding.
 
 The home page also tells search engines what Factwright is, in a block of JSON-LD in its `<head>`: free, for macOS and Windows, from Neatifai LLC. It's data, not a script, so the security policy above doesn't apply to it and stays as it is.
 
-The drawings of the app show made-up jobs, so each one carries `data-nosnippet`, which keeps those companies out of the text search results quote. When you redraw one, keep it, and add any new made-up company to `MADE_UP` in `test/pages.test.ts`, which checks that none shows up outside a marked drawing.
+The drawings of the app show made-up jobs, so each one carries `data-nosnippet`, which asks Google and Bing to leave those companies out of the snippets they show. When you redraw one, keep it, and add any new made-up company or person to `MADE_UP` in `test/pages.test.ts`. The tests check that each drawing carries it, and that no made-up name sits outside a marked part of the page, not even in the title or a description.
 
 ## Deploying
 It runs on Cloudflare's free plan, in the same account as factwright.com. Only the pages go through the Worker: built files and template previews skip it, so a busy day on the site barely touches the daily Worker requests the account's sync server shares.

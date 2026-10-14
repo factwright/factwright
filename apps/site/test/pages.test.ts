@@ -66,7 +66,7 @@ const releaseLine = (computer: string) => `<p class="get-meta" data-release="${c
 /** Whether a file the page asks for, such as /templates/modern.webp, is in the site's public folder. */
 const published = (path: string) => existsSync(join(SITE, 'public', path));
 
-/** The companies the drawings of the app make up, which search results mustn't quote. */
+/** The companies and the person the drawings of the app make up, whom search results mustn't quote. */
 const MADE_UP = [
   'Lumen Health',
   'Fernway',
@@ -74,7 +74,27 @@ const MADE_UP = [
   'Tidewater Analytics',
   'Brightpath Learning',
   'Northwind',
+  'Jordan Avery',
 ];
+
+/** The start of an element's markup, for a failing test to show. */
+const markup = (element: Element) => element.outerHTML.replace(/\s+/g, ' ').slice(0, 80);
+
+/** Whether some text has a made-up name in it. */
+const namesMadeUp = (text: string) =>
+  MADE_UP.some((name) => text.replace(/\s+/g, ' ').includes(name));
+
+/**
+ * The elements that hold a made-up name, in an attribute or in their text. For text, only the
+ * innermost element counts, so a name split by markup, such as `<b>Harbor</b> & Pine`, is found too.
+ */
+const holdingMadeUp = (doc: Document) =>
+  [...doc.querySelectorAll('*')].filter(
+    (element) =>
+      [...element.attributes].some((attribute) => namesMadeUp(attribute.value)) ||
+      (namesMadeUp(element.textContent ?? '') &&
+        ![...element.children].some((child) => namesMadeUp(child.textContent ?? ''))),
+  );
 
 describe.each([
   'index.html',
@@ -159,14 +179,10 @@ describe.each([
     expect(footer).toContain('Claude and Claude Code are trademarks of Anthropic, PBC.');
   });
 
-  it('keeps the made-up companies out of the text a search result could quote', () => {
-    const doc = open(page);
-    const text = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-    for (let node = text.nextNode(); node; node = text.nextNode()) {
-      const words = node.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-      if (MADE_UP.some((company) => words.includes(company))) {
-        expect(node.parentElement?.closest('[data-nosnippet]'), words).not.toBeNull();
-      }
+  it('keeps made-up names out of anything a search result could quote', () => {
+    // The title and the descriptions can't be marked, so a name there is never allowed.
+    for (const element of holdingMadeUp(open(page))) {
+      expect(element.closest('[data-nosnippet]'), markup(element)).not.toBeNull();
     }
   });
 
@@ -222,8 +238,13 @@ describe('the home page', () => {
     ];
     expect(drawings.length).toBeGreaterThan(0);
     for (const drawing of drawings) {
-      expect(drawing.hasAttribute('data-nosnippet'), drawing.className).toBe(true);
+      expect(drawing.hasAttribute('data-nosnippet'), markup(drawing)).toBe(true);
     }
+  });
+
+  it('still shows every name on the made-up list, so the list can’t go stale', () => {
+    const text = open('index.html').body.textContent?.replace(/\s+/g, ' ') ?? '';
+    for (const name of MADE_UP) expect(text, name).toContain(name);
   });
 
   it('shows the fact behind each resume line it offers', () => {
