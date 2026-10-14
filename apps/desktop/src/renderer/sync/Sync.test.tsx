@@ -74,6 +74,7 @@ describe('SyncCard', () => {
     [{ ...ON, activity: 'offline', message: 'Can’t reach the sync server.' }, 'Offline', 'Manage'],
     [{ state: 'signed-out', email: 'a' }, 'Sign in again', 'Sign in…'],
     [{ state: 'unavailable' }, 'Can’t turn on here', null],
+    [{ state: 'no-server' }, 'Not in this copy', null],
   ] as [SyncStatus | 'checking', string, string | null][])(
     'says how sync stands, and what to do (%o)',
     async (status, line, action) => {

@@ -38,6 +38,7 @@ const ON: Extract<SyncStatus, { state: 'on' }> = {
 const STARTS: Readonly<Record<string, SyncStatus>> = {
   off: { state: 'off' },
   unavailable: { state: 'unavailable' },
+  'no-server': { state: 'no-server' },
   'signing-in': {
     state: 'signing-in',
     code: 'WDJB-MJHT',

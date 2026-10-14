@@ -16,6 +16,8 @@ function heading(status: SyncStatus): { title: string; description?: string } {
       };
     case 'unavailable':
       return { title: 'Sync can’t turn on here' };
+    case 'no-server':
+      return { title: 'Sync isn’t in this copy' };
     case 'signing-in':
       return { title: 'Sign in with your browser' };
     case 'signed-out':

@@ -50,6 +50,10 @@ repository's Releases page.
   `--signer-workflow` makes it fail for a record that any other workflow in the repository made,
   and `--source-ref` for one from another version. GitHub's free plan makes attestations for public
   repositories only, so versions released while the repository was private have none.
+- **Only Factwright's own.** The workflow builds with `FACTWRIGHT_SYNC_SERVER`
+  (https://app.factwright.com) and `FACTWRIGHT_DOWNLOADS_URL` (https://downloads.factwright.com/)
+  only when it runs in factwright/factwright, outside pull requests. Builds anywhere else, a fork's
+  or a pull request's included, have no sync server and never look for updates.
 - **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
   minutes, and straight away when the user comes back to it or the computer wakes, at most once a
   minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new

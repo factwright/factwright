@@ -154,6 +154,7 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
 - **When:** a moment after each change here, right away when another device changes something (the server tells each listening device), and every ten minutes anyway. Offline, it waits and tries again, and your changes stay safe here.
 - **When both changed something,** nothing is lost. A file keeps both: the other device's version in its place, and this computer's beside it, named with the computer and the day, like `notes (Sam’s Mac, Oct 12).md`. A tracked job merges: its links, questions, the answers you sent, your questions for Claude, and its notes keep both sides, and the later change wins a clash. A note changed elsewhere shows up in the job panel unless you're typing in it.
 - **Managing it:** the Sync dialog lists your signed-in devices, signs any of them out, makes link codes, turns sync off on this computer (its job hunt stays), and opens your account on the web, to download everything or delete the account.
+- **Only Factwright's own releases** are built with its sync server, app.factwright.com, and its download site. A copy built anywhere else, such as from a fork or on your own computer, has neither: its Sync card says sync isn't in that copy, and it never looks for updates. To sync a copy you build, run a [sync server](../server) of your own, and build with `FACTWRIGHT_SYNC_SERVER` set to its address; `FACTWRIGHT_DOWNLOADS_URL` does the same for updates.
 
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`.
@@ -161,12 +162,12 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`).
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
-  - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out` and `unavailable`). Turning it on plays through each step.
+  - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out`, `unavailable` and `no-server`). Turning it on plays through each step.
   - `?profile=done` shows a finished profile (also `new` and `started`).
   - Start Claude plays a short made-up run, including a question. With `?run=asks`, interview prep stops to ask one too.
 - **The README's screenshots:** `pnpm --filter @factwright/desktop screenshots` takes them again from the same sample data, each framed as a Mac window, in light and dark, into [`docs/images`](../../docs/images). Take them on a Mac, after a change they show. It needs Playwright's Chromium, once: `pnpm --filter @factwright/desktop exec playwright install chromium`.
 - **The built app:** `pnpm --filter @factwright/desktop build`, then `start`.
-- **Sync against a server on this computer:** set `FACTWRIGHT_SERVER_URL`, such as `http://localhost:8787` for the [sync server](../server) run with `pnpm --filter @factwright/server dev`.
+- **Sync against a server on this computer:** set `FACTWRIGHT_SERVER_URL`, such as `http://localhost:8787` for the [sync server](../server) run with `pnpm --filter @factwright/server dev`. Without it, a copy you run from the code has no sync server, as no copy built outside Factwright's releases does.
 - **End-to-end tests:** after a build, `e2e` drives the built app with [Playwright](https://playwright.dev) through its main flows ([`e2e`](e2e)):
   - It runs on a made-up job hunt in a fresh data folder.
   - A stand-in for Claude Code ([`e2e/fake-claude`](e2e/fake-claude)) comes first on PATH. It answers the version and sign-in checks, and in a run reaches Factwright's tools and sends its hooks as Claude Code does. It never reaches Anthropic, so the tests use no plan.

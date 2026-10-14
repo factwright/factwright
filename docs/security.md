@@ -147,6 +147,13 @@ If you lose every device and your recovery key, your data can't be recovered, by
   terminal library stops a run through a helper started that way.
 - **Settings for testing are ignored.** The variables that point the app at other screens or
   another sync server, for development and tests, do nothing in an installed copy.
+- **Only Factwright's own releases use its servers.** The release workflow builds them with the
+  sync server, app.factwright.com, and the download site, downloads.factwright.com, only when it
+  runs in this repository, outside pull requests. A copy built anywhere else, such as from a fork,
+  has neither: its Sync card says sync isn't in that copy, and it never looks for updates. Its
+  builder can set up their own, as `apps/server` says. No one else's build can sign as Neatifai,
+  either: the signing keys are secrets of this repository, which GitHub never gives to a fork or
+  to a pull request.
 - **No debugging the user's data.** Chromium, which the app is built on, can let another program
   drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
   user's own data folder: only with a folder of its own, as the tests give it, where there's no

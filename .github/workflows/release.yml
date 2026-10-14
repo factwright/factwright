@@ -36,6 +36,11 @@ env:
   RELEASING: ${{ startsWith(github.ref, 'refs/tags/v') }}
   # Signing keys never reach a pull request's run.
   SIGNING: ${{ github.event_name != 'pull_request' }}
+  # Only Factwright's own builds, made here outside pull requests, get its sync server and download
+  # site. A fork's, or a pull request's, are built without them, so they never sync or look for
+  # updates through Factwright's.
+  FACTWRIGHT_SYNC_SERVER: ${{ github.repository == 'factwright/factwright' && github.event_name != 'pull_request' && 'https://app.factwright.com' || '' }}
+  FACTWRIGHT_DOWNLOADS_URL: ${{ github.repository == 'factwright/factwright' && github.event_name != 'pull_request' && 'https://downloads.factwright.com/' || '' }}
 
 jobs:
   check:
@@ -214,8 +219,11 @@ jobs:
             if ($name -ne $expected) { throw "$($file.Name) is signed by $name, not $expected" }
           }
           Write-Output "$($all.Count) files signed; the app and its installer by $expected."
-          $settings = Get-Content apps/desktop/dist/win-unpacked/resources/app-update.yml -Raw
-          if (-not $settings.Contains($expected)) { throw "Installed copies wouldn't check updates against $expected" }
+          # A build with a download site looks for updates, and takes only this publisher's.
+          if ($env:FACTWRIGHT_DOWNLOADS_URL) {
+            $settings = Get-Content apps/desktop/dist/win-unpacked/resources/app-update.yml -Raw
+            if (-not $settings.Contains($expected)) { throw "Installed copies wouldn't check updates against $expected" }
+          }
       # The built app, started as a user would, with a stand-in Claude Code (claude.cmd).
       - run: pnpm --filter @factwright/desktop e2e:packaged
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

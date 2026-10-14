@@ -25,6 +25,12 @@ function describe(status: SyncStatus | 'checking'): CardView {
         line: 'Can’t turn on here',
         help: 'Sync needs this computer’s keychain, which isn’t available.',
       };
+    case 'no-server':
+      return {
+        tone: 'off',
+        line: 'Not in this copy',
+        help: 'This copy of Factwright was built without a sync server.',
+      };
     case 'signing-in':
       return {
         tone: 'need',

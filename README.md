@@ -103,7 +103,7 @@ pnpm check   # format, lint, typecheck and test
 pnpm fix     # apply formatting and safe lint fixes
 ```
 
-Each folder's README says how its part works and how to run it. Releases are built, signed and published by GitHub when a version is tagged: see [docs/releasing.md](docs/releasing.md).
+Each folder's README says how its part works and how to run it. A copy you build doesn't sync or update through Factwright's servers: [`apps/server`](apps/server) says how to run your own. Releases are built, signed and published by GitHub when a version is tagged: see [docs/releasing.md](docs/releasing.md).
 
 ## Contributing
 Pull requests aren't open yet, but bug reports and ideas are welcome as issues. See [CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems privately, as [SECURITY.md](SECURITY.md) explains.

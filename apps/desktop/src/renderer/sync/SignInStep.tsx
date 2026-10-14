@@ -50,6 +50,23 @@ export function SignInStep({
     );
   }
 
+  if (status.state === 'no-server') {
+    return (
+      <>
+        <p className={styles.lead}>
+          This copy of Factwright was built from its code without a sync server, so it can’t sync.
+          Factwright from factwright.com syncs, and a copy you build can sync through a server of
+          your own. Your job hunt stays on this computer.
+        </p>
+        <DialogActions>
+          <Button variant="primary" onClick={close}>
+            OK
+          </Button>
+        </DialogActions>
+      </>
+    );
+  }
+
   if (status.state === 'unavailable') {
     return (
       <>

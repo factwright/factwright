@@ -53,6 +53,8 @@ pnpm --filter @factwright/server dev
 
 It builds the web view, then serves everything at http://localhost:8787. Signing in needs a GitHub OAuth app of your own, with the callback in `.dev.vars.example`. To try the desktop app against it, start the app with `FACTWRIGHT_SERVER_URL=http://localhost:8787`.
 
+Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one: deploy this server to a Cloudflare account of your own, as below, and build the app with `FACTWRIGHT_SYNC_SERVER` set to its address.
+
 `dev` keeps the local address on each request (`--local-upstream`). Without it, Wrangler rewrites requests to the production address in `wrangler.jsonc`, and sign-in turns them away as coming from somewhere else.
 
 The tests run the real Worker in workerd, through Wrangler's test harness, and talk to it with the same client the apps use:

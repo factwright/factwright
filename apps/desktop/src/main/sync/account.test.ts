@@ -253,6 +253,39 @@ async function remadeUnderMacAndPc() {
   return { mac, pc, keyId };
 }
 
+describe('a copy built without a sync server', () => {
+  it('says sync isn’t in it, and never signs in or asks the keychain', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-'));
+    folders.push(dataDir);
+    const asked = vi.spyOn(keychain, 'isEncryptionAvailable');
+    const openUrl = vi.fn();
+    const sync = new SyncAccount({
+      dataDir,
+      server: null,
+      version: '0.0.0',
+      keychain,
+      tracker: new Tracker(join(dataDir, 'tracker.db')),
+      workspace: join(dataDir, 'workspace'),
+      openUrl,
+      onStatus: () => {},
+      onApplied: vi.fn(),
+      computerName: async () => 'Sam’s Mac',
+    });
+    opened.push(sync);
+    await sync.start();
+    expect(sync.status()).toEqual({ state: 'no-server' });
+    expect(await sync.signInWithBrowser()).toEqual({
+      ok: false,
+      message: 'This copy of Factwright has no sync server.',
+    });
+    expect(sync.status()).toEqual({ state: 'no-server' });
+    await sync.openAccountPage();
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(asked).not.toHaveBeenCalled();
+    asked.mockRestore();
+  });
+});
+
 describe('turning on sync', () => {
   it('starts off, and turns on once signed in with a recovery key saved', async () => {
     const mac = computer('Sam’s Mac');

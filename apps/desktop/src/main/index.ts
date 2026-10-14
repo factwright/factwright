@@ -42,8 +42,12 @@ const develop = (name: string) => (app.isPackaged ? undefined : process.env[name
 const devUrl = develop('FACTWRIGHT_DEV_URL');
 const startUrl = devUrl ?? `${APP_ORIGIN}/index.html`;
 
-/** The sync server. Development and tests point it at one running locally. */
-const syncServer = develop('FACTWRIGHT_SERVER_URL') ?? 'https://app.factwright.com';
+/**
+ * The sync server: Factwright's own, built into its releases, or none in a copy built anywhere
+ * else, such as from a fork, so that copy never syncs through Factwright's. Development and tests
+ * point it at one, such as one running locally.
+ */
+const syncServer = develop('FACTWRIGHT_SERVER_URL') || __SYNC_SERVER__ || null;
 
 /** The most an update's log keeps before it starts again, as it only helps with the latest problem. */
 const UPDATE_LOG_BYTES = 200_000;
