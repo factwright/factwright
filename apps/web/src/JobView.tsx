@@ -8,6 +8,7 @@ import {
   type Job,
   type JobDocKind,
   jobProgress,
+  kindOfJob,
   nextStep,
   PASS_REASON_LABELS,
   payLabel,
@@ -72,6 +73,10 @@ export function JobView({
   const documents = DOCUMENTS.filter(({ kind }) => docs[kind]);
   const answers = applicationAnswers(job.questions, readSuggestedAnswers(docs.answers), job.sent);
   const asked = vault.asked.get(job.id) ?? {};
+  const kind =
+    vault.kinds.length > 1
+      ? vault.kinds.find((each) => each.id === kindOfJob(job, vault.kinds))
+      : undefined;
 
   const openResume = async (path: string, format: 'pdf' | 'docx', name: string) => {
     setProblem(null);
@@ -151,6 +156,12 @@ export function JobView({
               {job.statusOn && ` since ${shortDate(job.statusOn, today)}`}
             </dd>
           </div>
+          {kind && (
+            <div>
+              <dt>Kind of job</dt>
+              <dd>{kind.name}</dd>
+            </div>
+          )}
           {progress.status === 'later' && job.backOn && (
             <div>
               <dt>Comes back</dt>

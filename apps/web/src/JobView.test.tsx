@@ -1,5 +1,5 @@
 import { accountKeys, newAccountKey, sameBytes, sealFile } from '@factwright/sync';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { describe, expect, it, vi } from 'vitest';
@@ -95,6 +95,28 @@ describe('a job on the phone', () => {
     expect(posting.getAttribute('href')).toBe('https://jobs.ashbyhq.com/acme/7f3a');
     expect(posting.getAttribute('rel')).toBe('noopener noreferrer');
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('says which kind of job it is, for a user who wants more than one', async () => {
+    const { keys, vault } = await setUp();
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    render(
+      <JobView
+        job={{ ...ACME, kind: 'project-manager' }}
+        vault={{ ...vault, kinds }}
+        keys={keys}
+        today={TODAY}
+      />,
+    );
+    expect(
+      within(section('Where it stands')).getByText('Kind of job').nextSibling?.textContent,
+    ).toBe('Project manager');
+    cleanup();
+    render(<JobView job={ACME} vault={vault} keys={keys} today={TODAY} />);
+    expect(screen.queryByText('Kind of job')).toBeNull();
   });
 
   it('shows what the user sent on the application, and their questions with Claude’s answers', async () => {

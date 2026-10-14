@@ -12,6 +12,26 @@
   letter-spacing: -0.015em;
 }
 
+/* The kind of job to show, for a user who wants more than one. */
+.kindOf {
+  display: flex;
+  margin-top: var(--fw-space-3);
+}
+
+.kindOf select {
+  width: 100%;
+}
+
+/* The kind of job a row is under, while every kind shows. */
+.kind {
+  padding: 0 6px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  font-size: var(--fw-text-xs);
+  font-weight: 550;
+  line-height: 16px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

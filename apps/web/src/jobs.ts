@@ -7,6 +7,8 @@ import {
   type JobProgress,
   type JobView,
   jobProgress,
+  type KindName,
+  kindOfJob,
   nextStep,
   startingView as viewToOpen,
 } from '@factwright/core';
@@ -16,6 +18,8 @@ export interface PhoneRow {
   job: Job;
   progress: JobProgress;
   next: Attention | null;
+  /** The kind of job it's under, when the user wants more than one. Null with one. */
+  kind: KindName | null;
 }
 
 const URGENCY = { urgent: 0, action: 1, info: 2 } as const;
@@ -31,16 +35,29 @@ function byUrgency(a: PhoneRow, b: PhoneRow): number {
   );
 }
 
-/** Every job that isn't archived, as rows, most pressing first. */
-export function phoneRows(jobs: readonly Job[], today: string): PhoneRow[] {
+/**
+ * Every job that isn't archived, as rows, most pressing first. With more than one kind of job,
+ * each is under one of them, as on the computer.
+ */
+export function phoneRows(
+  jobs: readonly Job[],
+  today: string,
+  kinds: readonly KindName[] = [],
+): PhoneRow[] {
   return jobs
     .filter((job) => !job.archived)
     .map((job) => {
       const progress = jobProgress(job, today);
-      return { job, progress, next: nextStep(job, progress, today) };
+      const id = kinds.length > 1 ? kindOfJob(job, kinds) : null;
+      const kind = kinds.find((each) => each.id === id) ?? null;
+      return { job, progress, next: nextStep(job, progress, today), kind };
     })
     .sort(byUrgency);
 }
+
+/** The rows of one kind of job, or every row for every kind. */
+export const ofKind = (rows: readonly PhoneRow[], kind: string | null): PhoneRow[] =>
+  kind ? rows.filter((row) => row.kind?.id === kind) : [...rows];
 
 /** Whether a row is in a view's list, leaving out To review's jobs set aside for later. */
 const listed = (view: JobView, row: PhoneRow) =>

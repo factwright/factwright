@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { phoneRows, setAside, startingView, viewCounts, visible } from './jobs.ts';
+import { ofKind, phoneRows, setAside, startingView, viewCounts, visible } from './jobs.ts';
 import { job } from './testing.ts';
 
 const TODAY = '2026-10-10';
@@ -54,6 +54,21 @@ describe('the phone’s job list', () => {
     expect(rows[0]?.next).toEqual({ level: 'urgent', text: 'Overdue: Send references' });
     expect(rows[1]?.next).toEqual({ level: 'action', text: 'Applied 12 days ago. Follow up?' });
     expect(rows[2]?.next).toEqual({ level: 'info', text: 'Applied yesterday' });
+  });
+
+  it('puts each job under a kind of job, for a user who wants more than one', () => {
+    const kinds = [
+      { id: 'developer', name: 'Developer' },
+      { id: 'project-manager', name: 'Project manager' },
+    ];
+    const jobs = JOBS.map((each) =>
+      each.id === 'birch--lead' ? { ...each, kind: 'project-manager' } : each,
+    );
+    const rows = phoneRows(jobs, TODAY, kinds);
+    expect(companies(ofKind(rows, 'project-manager'))).toEqual(['Birch Health']);
+    expect(ofKind(rows, 'developer')).toHaveLength(4);
+    expect(ofKind(rows, null)).toHaveLength(5);
+    expect(phoneRows(jobs, TODAY).every((row) => row.kind === null)).toBe(true);
   });
 
   it('leaves archived jobs out', () => {

@@ -5,13 +5,22 @@ import {
   FitBadge,
   SearchField,
   SegmentedControl,
+  Select,
   Stat,
   StatusPill,
 } from '@factwright/ui';
 import { Briefcase, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import styles from './Dashboard.module.css';
-import { type PhoneRow, phoneRows, setAside, startingView, viewCounts, visible } from './jobs.ts';
+import {
+  ofKind,
+  type PhoneRow,
+  phoneRows,
+  setAside,
+  startingView,
+  viewCounts,
+  visible,
+} from './jobs.ts';
 import { navigate } from './route.ts';
 import type { Vault } from './vault.ts';
 
@@ -19,7 +28,27 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: undefined } as const;
 
-function JobRow({ row, page }: { row: PhoneRow; page: string }) {
+/** Where the kind of job picked is kept, so it's still picked on coming back from a job. */
+const KIND_KEY = 'jobs.kind';
+
+function keptKind(): string | null {
+  try {
+    return sessionStorage.getItem(KIND_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function keepKind(kind: string | null) {
+  try {
+    if (kind) sessionStorage.setItem(KIND_KEY, kind);
+    else sessionStorage.removeItem(KIND_KEY);
+  } catch {
+    // Kept only until the page goes, then.
+  }
+}
+
+function JobRow({ row, page, showKind }: { row: PhoneRow; page: string; showKind: boolean }) {
   const { job, progress, next } = row;
   const pay = payLabel(job.pay);
   const address = `/jobs/${page}`;
@@ -43,6 +72,7 @@ function JobRow({ row, page }: { row: PhoneRow; page: string }) {
             <FitBadge score={progress.score} tier={progress.tier} />
           )}
           {pay && <span>{pay}</span>}
+          {showKind && row.kind && <span className={styles.kind}>{row.kind.name}</span>}
         </span>
         {next && (
           <span className={`${styles.next} ${NEXT_TONE[next.level] ?? ''}`}>{next.text}</span>
@@ -64,13 +94,18 @@ export function Dashboard({
   refreshing: boolean;
   onRefresh: () => void;
 }) {
-  const rows = useMemo(() => phoneRows(vault.jobs, today), [vault, today]);
-  const [view, setView] = useState<JobView>(() => startingView(rows));
+  const rows = useMemo(() => phoneRows(vault.jobs, today, vault.kinds), [vault, today]);
+  const [picked, setPicked] = useState(keptKind);
+  // A kind of job picked, then removed on the computer, shows every kind again.
+  const kind = vault.kinds.some((each) => each.id === picked) ? picked : null;
+  const kindRows = ofKind(rows, kind);
+  const [view, setView] = useState<JobView>(() => startingView(kindRows));
   const [query, setQuery] = useState('');
-  const counts = viewCounts(rows);
-  const shown = visible(rows, view, query);
-  const later = setAside(rows, view, query);
-  const stats = jobStats(rows, today);
+  const counts = viewCounts(kindRows);
+  const shown = visible(kindRows, view, query);
+  const later = setAside(kindRows, view, query);
+  const stats = jobStats(kindRows, today);
+  const showKind = vault.kinds.length > 1 && !kind;
   const heardBack = stats.applied ? `${Math.round((stats.heardBack / stats.applied) * 100)}%` : '—';
 
   if (rows.length === 0) {
@@ -103,6 +138,25 @@ export function Dashboard({
           {refreshing ? 'Updating…' : 'Update'}
         </Button>
       </div>
+      {vault.kinds.length > 1 && (
+        <Select
+          className={styles.kindOf}
+          aria-label="Kind of job"
+          value={kind ?? ''}
+          onChange={(event) => {
+            const next = event.target.value || null;
+            setPicked(next);
+            keepKind(next);
+          }}
+        >
+          <option value="">Every kind of job</option>
+          {vault.kinds.map((each) => (
+            <option key={each.id} value={each.id}>
+              {each.name} ({rows.filter((row) => row.kind?.id === each.id).length})
+            </option>
+          ))}
+        </Select>
+      )}
       <div className={styles.stats}>
         <Stat
           label="Needs you"
@@ -163,7 +217,12 @@ export function Dashboard({
       ) : (
         <ul className={styles.list} aria-label="Jobs">
           {shown.map((row) => (
-            <JobRow key={row.job.id} row={row} page={vault.pages.get(row.job.id) ?? ''} />
+            <JobRow
+              key={row.job.id}
+              row={row}
+              page={vault.pages.get(row.job.id) ?? ''}
+              showKind={showKind}
+            />
           ))}
         </ul>
       )}
@@ -174,7 +233,12 @@ export function Dashboard({
           </summary>
           <ul className={styles.list} aria-label="Set aside for later">
             {later.map((row) => (
-              <JobRow key={row.job.id} row={row} page={vault.pages.get(row.job.id) ?? ''} />
+              <JobRow
+                key={row.job.id}
+                row={row}
+                page={vault.pages.get(row.job.id) ?? ''}
+                showKind={showKind}
+              />
             ))}
           </ul>
         </details>
