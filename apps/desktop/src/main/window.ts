@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { DARK, LIGHT } from '@factwright/ui/tokens';
 import { app, BrowserWindow, nativeTheme } from 'electron';
+import { VERSION_ARGUMENT } from '../shared/api.ts';
 
 /** The height of the window's top bar, which the title bar buttons sit in. */
 const TOP_BAR_HEIGHT = 52;
@@ -32,6 +33,8 @@ export function createMainWindow(url: string): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      // The window shows the app's version, which only the main process knows.
+      additionalArguments: [`${VERSION_ARGUMENT}${app.getVersion()}`],
     },
   });
 

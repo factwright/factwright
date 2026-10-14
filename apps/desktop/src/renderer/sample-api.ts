@@ -120,6 +120,7 @@ export function sampleApi(): FactwrightApi {
   };
   return {
     platform: query.get('platform') ?? 'darwin',
+    version: query.get('version') ?? '0.1.0',
     claudeStatus: () =>
       claude === 'checking' ? new Promise(() => {}) : Promise.resolve(SAMPLES[claude] ?? READY),
     setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
