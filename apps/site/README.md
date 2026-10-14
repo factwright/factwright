@@ -37,5 +37,5 @@ The pages run only the site's own scripts and styles, connect nowhere (the Worke
 It runs on Cloudflare's free plan, in the same account as factwright.com. Only the pages go through the Worker: built files and template previews skip it, so a busy day on the site barely touches the daily Worker requests the account's sync server shares.
 
 1. Sign in to that Cloudflare account, with only what a deploy needs: `pnpm --filter @factwright/site exec wrangler login --scopes account:read user:read workers:write workers_scripts:write workers_routes:write zone:read`.
-2. `pnpm --filter @factwright/site deploy` builds the site and deploys the `factwright-site` Worker. Its first deploy sets up factwright.com and www.factwright.com on their own.
+2. `pnpm --filter @factwright/site run deploy` builds the site and deploys the `factwright-site` Worker. It needs `run`, as `pnpm deploy` on its own is a different pnpm command. Its first deploy set up factwright.com and www.factwright.com on their own.
 3. `pnpm --filter @factwright/site exec wrangler logout`.
