@@ -4,7 +4,8 @@ import { Button, DialogActions } from '@factwright/ui';
 import { Smartphone } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { LinkCode, SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, LinkCode, SyncStatus } from '../../shared/sync.ts';
+import { RequestsPanel } from './Approve.tsx';
 import { Groups } from './Groups.tsx';
 import { QrCode } from './QrCode.tsx';
 import styles from './SyncDialog.module.css';
@@ -95,10 +96,12 @@ function LinkPanel({ api }: { api: FactwrightApi }) {
 export function ManageSync({
   api,
   status,
+  approvals,
   close,
 }: {
   api: FactwrightApi;
   status: On;
+  approvals: ApprovalsView;
   close: () => void;
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null);
@@ -128,6 +131,7 @@ export function ManageSync({
 
   return (
     <>
+      <RequestsPanel api={api} approvals={approvals} />
       <p className={styles.standing} aria-live="polite">
         <span className={`${styles.dot} ${DOTS[status.activity]}`} aria-hidden="true" />
         {standing(status)}
@@ -213,7 +217,11 @@ export function ManageSync({
             Turn off on this computer
           </Button>
           <Button onClick={() => api.openAccountPage()}>Your account on the web</Button>
-          <Button variant="primary" onClick={close}>
+          {/* While a device waits to be approved, approving it is the main thing to do. */}
+          <Button
+            variant={approvals.requests.length > 0 || approvals.approving ? 'secondary' : 'primary'}
+            onClick={close}
+          >
             Done
           </Button>
         </DialogActions>

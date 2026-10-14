@@ -67,6 +67,7 @@ export interface SeenRequest {
   path: string;
   query: URLSearchParams;
   body: unknown;
+  headers: Headers;
 }
 
 /**
@@ -83,6 +84,7 @@ export function fakeServer(routes: Record<string, (request: SeenRequest) => unkn
       path: url.pathname,
       query: url.searchParams,
       body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      headers: new Headers(init.headers),
     };
     requests.push(request);
     const route = routes[`${request.method} ${request.path}`];

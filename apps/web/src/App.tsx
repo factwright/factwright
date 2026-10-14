@@ -12,7 +12,14 @@ import page from './page.module.css';
 import { navigate, replace, usePath } from './route.ts';
 import { PageLink, Shell } from './Shell.tsx';
 import { SignIn } from './SignIn.tsx';
-import { client, getSession, type Provider, type Session, signInOptions } from './server.ts';
+import {
+  client,
+  getSession,
+  type Provider,
+  type ServerOptions,
+  type Session,
+  signInOptions,
+} from './server.ts';
 import { openVault, type Vault } from './vault.ts';
 
 type State =
@@ -20,7 +27,13 @@ type State =
   /** The server couldn't say who's signed in: offline, or busy. */
   | { stage: 'unreachable' }
   | { stage: 'signed-out'; providers: Provider[] }
-  | { stage: 'signed-in'; session: Session; providers: Provider[]; keys: AccountKeys | null };
+  | {
+      stage: 'signed-in';
+      session: Session;
+      providers: Provider[];
+      features: ServerOptions['features'];
+      keys: AccountKeys | null;
+    };
 
 const LINK_CODE = 'factwright-link-code';
 
@@ -57,7 +70,7 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const [session, providers] = await Promise.all([getSession(), signInOptions()]);
+      const [session, { providers, features }] = await Promise.all([getSession(), signInOptions()]);
       if (session === undefined) {
         setState({ stage: 'unreachable' });
         return;
@@ -71,7 +84,13 @@ export function App() {
       }
       // Signed in, the code is used from here, once. A code that didn't work isn't tried again.
       sessionStorage.removeItem(LINK_CODE);
-      setState({ stage: 'signed-in', session, providers, keys: await savedKeys(session.user.id) });
+      setState({
+        stage: 'signed-in',
+        session,
+        providers,
+        features,
+        keys: await savedKeys(session.user.id),
+      });
     })();
   }, []);
 
@@ -186,7 +205,7 @@ export function App() {
     );
   }
 
-  const { session, providers } = state;
+  const { session, providers, features } = state;
   const nav = (
     <>
       <PageLink to="/" current={path === '/' || path.startsWith('/jobs/')}>
@@ -226,6 +245,8 @@ export function App() {
       <Shell nav={nav}>
         <LinkBrowser
           account={session.user.id}
+          email={session.user.email}
+          canApprove={features.includes('approve')}
           code={linkCode}
           onLinked={(linked) => {
             setState({ ...state, keys: linked });

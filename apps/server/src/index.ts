@@ -1,4 +1,4 @@
-import { utf8 } from '@factwright/sync';
+import { type Feature, utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
@@ -48,13 +48,17 @@ async function signIn(request: Request, env: Env, pathname: string): Promise<Res
   return authFor(env).handler(request);
 }
 
-/** The ways to sign in this server has set up, for the web view's buttons. */
+/**
+ * The ways to sign in this server has set up, for the web view's buttons, and what it can do
+ * beyond the basics, so devices offer only that. Older servers list no features.
+ */
 function signInOptions(env: Env): Response {
   const providers = [
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? ['github'] : []),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
   ];
-  return json({ providers });
+  const features: Feature[] = ['approve'];
+  return json({ providers, features });
 }
 
 /** Whether a request carries the operator's token. Without one set, nothing does. */

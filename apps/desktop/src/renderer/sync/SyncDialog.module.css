@@ -258,3 +258,139 @@
     opacity: 0.35;
   }
 }
+
+/* Asking to be approved from a device that's set up, on a computer that isn't linked yet. */
+.approve {
+  margin-top: var(--fw-space-4);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.approveLead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+}
+
+.approveLead svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--fw-accent-text);
+}
+
+.approveText {
+  margin: 0 0 var(--fw-space-3);
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+}
+
+.approveLead .approveText {
+  margin: 0;
+}
+
+.approveActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-4);
+}
+
+.waiting {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+  margin: var(--fw-space-3) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+/* The dot sits on the first line, however many the words take. */
+.waiting .dot {
+  margin-top: calc((1.45em - 8px) / 2);
+}
+
+/* Other devices asking to link, at the top of Sync, with a mark in the color of things to do. */
+.requests {
+  margin: 0 0 22px;
+  padding: 14px var(--fw-space-4) var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: inset 3px 0 0 var(--fw-need);
+}
+
+.requests > .heading {
+  color: var(--fw-need);
+}
+
+.requestsLinked {
+  box-shadow: inset 3px 0 0 var(--fw-ok);
+}
+
+.requestsLinked > .heading {
+  color: var(--fw-ok);
+}
+
+.requestsOver {
+  box-shadow: inset 3px 0 0 var(--fw-control-border);
+}
+
+.requestsOver > .heading {
+  color: var(--fw-text);
+}
+
+.requestList {
+  display: grid;
+  gap: var(--fw-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2) var(--fw-space-3);
+}
+
+.requestWho {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.requestActions {
+  display: flex;
+  gap: var(--fw-space-2);
+}
+
+.request .problem {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.linked {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  margin: 0;
+  color: var(--fw-ok);
+  font-size: var(--fw-text-md);
+  font-weight: 550;
+}
+
+.codeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+.codeRow > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

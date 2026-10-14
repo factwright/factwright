@@ -1,5 +1,6 @@
 import { app, type BrowserWindow, Notification } from 'electron';
 import type { RunSignal } from '../shared/api.ts';
+import type { RequestView } from '../shared/sync.ts';
 
 const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
   'needs-answer': { title: 'Claude needs your answer', body: 'Open Factwright to reply.' },
@@ -9,6 +10,29 @@ const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
     body: 'It closed before finishing. Open Factwright to see why.',
   },
 };
+
+/** The requests to link the user has been told about already. */
+const toldOf = new Set<string>();
+
+/**
+ * Tells the user when another device asks to link, if they're looking somewhere else, once for
+ * each request. They approve it in the app, never from the notification.
+ */
+export function notifyOfRequests(window: BrowserWindow, requests: RequestView[]): void {
+  const fresh = requests.filter((request) => !request.elsewhere && !toldOf.has(request.id));
+  for (const request of requests) toldOf.add(request.id);
+  const first = fresh[0];
+  if (!first || window.isDestroyed() || window.isFocused()) return;
+  const notification = new Notification({
+    title: 'A new device wants to link',
+    body: `${first.device} asked to sync your job hunt. Open Factwright to check it’s yours.`,
+  });
+  notification.on('click', () => {
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  });
+  notification.show();
+}
 
 /** Tells the user when Claude needs them or finishes, if they're looking somewhere else. */
 export function notifyIfAway(window: BrowserWindow, signal: RunSignal): void {

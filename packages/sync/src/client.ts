@@ -5,7 +5,9 @@ import {
   type Change,
   type ChangesPage,
   type ErrorBody,
+  type Feature,
   type KeyRecord,
+  type LinkRequest,
   type PushChange,
   type PushResponse,
   type VersionInfo,
@@ -214,6 +216,72 @@ export class SyncClient {
 
   async cancelLink(id: string): Promise<void> {
     await this.request(`${API.links}/${id}`, { method: 'DELETE' });
+  }
+
+  /**
+   * What the server can do beyond the basics, from the ways to sign in it lists. Anything that
+   * isn't a list, from a server too old to say, is none.
+   */
+  async features(): Promise<Feature[]> {
+    const answer = await this.json<{ features?: unknown } | null>('/api/sign-in-options');
+    const features = answer?.features;
+    return Array.isArray(features) ? features.filter((each) => each === 'approve') : [];
+  }
+
+  /** On a new device: asks to link, with a hash of its one-time key. */
+  async askToLink(id: string, commitment: string): Promise<void> {
+    await this.request(API.requests, { method: 'POST', json: { id, commitment } });
+  }
+
+  /** The account's requests to link that are waiting, from this device and others. */
+  async linkRequests(): Promise<LinkRequest[]> {
+    return (await this.json<{ requests: LinkRequest[] }>(API.requests)).requests;
+  }
+
+  /** One request to link, or null once it's gone: picked up, called off or run out. */
+  async linkRequest(id: string): Promise<LinkRequest | null> {
+    try {
+      return await this.json<LinkRequest>(`${API.requests}/${id}`);
+    } catch (error) {
+      if (error instanceof SyncError && error.kind === 'not-found') return null;
+      throw error;
+    }
+  }
+
+  /** On a device that's set up: offers to approve a request, with a one-time key of its own. */
+  async offerToApprove(id: string, key: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/approver`, { method: 'POST', json: { key } });
+  }
+
+  /** On the new device, once a device offers to approve: shows its one-time key. */
+  async showKey(id: string, key: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/key`, { method: 'POST', json: { key } });
+  }
+
+  /** On the approving device: leaves the account key, sealed for the new device. */
+  async approveRequest(id: string, sealed: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/approve`, { method: 'POST', json: { sealed } });
+  }
+
+  /** On a device that's set up: turns a request down. */
+  async denyRequest(id: string): Promise<void> {
+    await this.request(`${API.requests}/${id}/deny`, { method: 'POST' });
+  }
+
+  /** On the new device: picks up the sealed account key, once, or null when it isn't there. */
+  async takeApproval(id: string): Promise<string | null> {
+    try {
+      return (await this.json<{ sealed: string }>(`${API.requests}/${id}/take`, { method: 'POST' }))
+        .sealed;
+    } catch (error) {
+      if (error instanceof SyncError && error.kind === 'not-found') return null;
+      throw error;
+    }
+  }
+
+  /** On the new device: calls its request off. */
+  async cancelRequest(id: string): Promise<void> {
+    await this.request(`${API.requests}/${id}`, { method: 'DELETE' });
   }
 
   async account(): Promise<AccountInfo> {

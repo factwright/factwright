@@ -4,6 +4,7 @@ import {
   type ChangesPage,
   type KeyRecord,
   LIMITS,
+  type LinkRequest,
   type PushChange,
   type PushResult,
   type VersionInfo,
@@ -14,8 +15,10 @@ import {
   DAY_MS,
   filesPrefix,
   Meta,
+  type RequestRow,
   SCHEMA,
   toChange,
+  toRequest,
   type VersionRow,
 } from './store-tables.ts';
 import { backUp, cleanUp, deletePrefix, restore, type Upkeep } from './store-upkeep.ts';
@@ -36,11 +39,20 @@ export const DELETED = 'deleted';
 /** When a deleted account's files are swept once more, for an upload that was on its way. */
 const SWEEP_AGAIN_MS = 10 * 60 * 1000;
 
+const HOUR_MS = 60 * 60 * 1000;
+
+/** A session taking part in linking a device, with its device's name, as the account page shows it. */
+export interface Asker {
+  session: string;
+  device: string;
+}
+
 /**
  * One account's store: its locked records with their history, which file contents they point
- * to, its locked account key, and links waiting for new devices. Each account gets its own,
- * named by its account ID, with its own database. Only the Worker reaches it, after checking
- * the session, and every call names the account it's for: a store answers only its own.
+ * to, its locked account key, and links and requests to link waiting for new devices. Each
+ * account gets its own, named by its account ID, with its own database. Only the Worker reaches
+ * it, after checking the session, and every call names the account it's for: a store answers
+ * only its own.
  */
 export class UserStore extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -322,6 +334,206 @@ export class UserStore extends DurableObject<Env> {
     this.sql.exec('DELETE FROM links WHERE id = ?', id);
   }
 
+  /** A request to link, once those that ran out are gone. */
+  private liveRequest(id: string): RequestRow | undefined {
+    this.sql.exec('DELETE FROM requests WHERE expires <= ?', Date.now());
+    return this.sql.exec<RequestRow>('SELECT * FROM requests WHERE id = ?', id).toArray()[0];
+  }
+
+  /** Requests still waiting for an answer or to be picked up: not turned down, not linked. */
+  private waitingRequests(): number {
+    return this.sql
+      .exec<{ n: number }>('SELECT COUNT(*) AS n FROM requests WHERE denied = 0 AND linked = 0')
+      .one().n;
+  }
+
+  /**
+   * Tells each listening device the account's requests to link changed, so it looks again. It
+   * says how many are waiting and nothing else, since listeners aren't told apart by session.
+   */
+  private requestsChanged(): void {
+    const message = JSON.stringify({ requests: this.waitingRequests() });
+    for (const socket of this.ctx.getWebSockets()) {
+      try {
+        socket.send(message);
+      } catch {
+        // It closed: the runtime drops it.
+      }
+    }
+  }
+
+  /**
+   * A new device asks to link, with a hash of its one-time key. A session has one request at a
+   * time: asking again replaces the last. Only a few wait at once, and only so many come in an
+   * hour, so nobody can keep a person's devices asking them to approve.
+   */
+  askToLink(
+    owner: string,
+    asker: Asker,
+    id: string,
+    commitment: string,
+  ): 'made' | 'taken' | 'too-many' | 'too-often' {
+    this.claim(owner);
+    this.spend();
+    const now = Date.now();
+    const result = this.ctx.storage.transactionSync(() => {
+      this.sql.exec('DELETE FROM requests WHERE expires <= ? OR session = ?', now, asker.session);
+      this.sql.exec('DELETE FROM requests_made WHERE at <= ?', now - HOUR_MS);
+      if (this.sql.exec('SELECT id FROM requests WHERE id = ?', id).toArray().length > 0) {
+        return 'taken';
+      }
+      const made = this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM requests_made').one().n;
+      if (this.waitingRequests() >= LIMITS.requestsAtOnce) return 'too-many';
+      if (made >= LIMITS.requestsPerHour) return 'too-often';
+      this.sql.exec(
+        `INSERT INTO requests (id, session, device, commitment, asked, expires)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        id,
+        asker.session,
+        asker.device,
+        commitment,
+        now,
+        now + LIMITS.requestMinutes * 60_000,
+      );
+      this.sql.exec('INSERT INTO requests_made (at) VALUES (?)', now);
+      return 'made';
+    });
+    this.requestsChanged();
+    return result;
+  }
+
+  /** The account's requests to link that are still waiting, newest first. */
+  linkRequests(owner: string, session: string): LinkRequest[] {
+    this.claim(owner);
+    this.spend();
+    this.sql.exec('DELETE FROM requests WHERE expires <= ?', Date.now());
+    return this.sql
+      .exec<RequestRow>(
+        'SELECT * FROM requests WHERE denied = 0 AND linked = 0 ORDER BY asked DESC',
+      )
+      .toArray()
+      .map((row) => toRequest(row, session));
+  }
+
+  /** One request to link, or null once it's gone. */
+  linkRequest(owner: string, session: string, id: string): LinkRequest | null {
+    this.claim(owner);
+    this.spend();
+    const row = this.liveRequest(id);
+    return row ? toRequest(row, session) : null;
+  }
+
+  /**
+   * Another device of the account offers to approve a request, with a one-time key of its own.
+   * The first to offer is the only one. Offering again with the same key changes nothing.
+   */
+  offerToApprove(
+    owner: string,
+    approver: Asker,
+    id: string,
+    key: string,
+  ): 'offered' | 'not-found' | 'own' | 'taken' {
+    this.claim(owner);
+    this.spend();
+    const row = this.liveRequest(id);
+    if (!row || row.denied || row.linked) return 'not-found';
+    if (row.session === approver.session) return 'own';
+    if (row.approver !== null) {
+      return row.approver === approver.session && row.approver_key === key ? 'offered' : 'taken';
+    }
+    this.sql.exec(
+      'UPDATE requests SET approver = ?, approver_device = ?, approver_key = ? WHERE id = ?',
+      approver.session,
+      approver.device,
+      key,
+      id,
+    );
+    this.requestsChanged();
+    return 'offered';
+  }
+
+  /**
+   * The new device shows its one-time key, once a device has offered to approve. Only the
+   * session that asked can, once. Showing the same key again changes nothing.
+   */
+  showKey(
+    owner: string,
+    session: string,
+    id: string,
+    key: string,
+  ): 'shown' | 'not-found' | 'refused' {
+    this.claim(owner);
+    this.spend();
+    const row = this.liveRequest(id);
+    if (!row || row.denied || row.linked) return 'not-found';
+    if (row.session !== session || row.approver === null) return 'refused';
+    if (row.key !== null) return row.key === key ? 'shown' : 'refused';
+    this.sql.exec('UPDATE requests SET key = ? WHERE id = ?', key, id);
+    this.requestsChanged();
+    return 'shown';
+  }
+
+  /**
+   * The approving device leaves the account key, sealed for the new device. Only the session
+   * that offered to approve can, and only once the new device has shown its key.
+   */
+  approveRequest(
+    owner: string,
+    session: string,
+    id: string,
+    sealed: string,
+  ): 'approved' | 'not-found' | 'refused' {
+    this.claim(owner);
+    this.spend();
+    const row = this.liveRequest(id);
+    if (!row || row.denied || row.linked) return 'not-found';
+    if (row.approver !== session || row.key === null) return 'refused';
+    if (row.sealed !== null) return row.sealed === sealed ? 'approved' : 'refused';
+    this.sql.exec('UPDATE requests SET sealed = ? WHERE id = ?', sealed, id);
+    this.requestsChanged();
+    return 'approved';
+  }
+
+  /**
+   * Another device of the account turns a request down, approved or not, so nothing is handed
+   * over. The new device sees it was turned down. It calls its own request off instead.
+   */
+  denyRequest(owner: string, session: string, id: string): 'denied' | 'not-found' | 'own' {
+    this.claim(owner);
+    this.spend();
+    const row = this.liveRequest(id);
+    if (!row || row.linked) return 'not-found';
+    if (row.session === session) return 'own';
+    this.sql.exec('UPDATE requests SET denied = 1, sealed = NULL WHERE id = ?', id);
+    this.requestsChanged();
+    return 'denied';
+  }
+
+  /**
+   * Hands the sealed account key to the new device, once. It's gone from the server then, and the
+   * request says it's linked, so the approving device can tell. Only the session that asked gets
+   * it. Null before it's approved, after it's turned down, or once it's been picked up.
+   */
+  takeApproval(owner: string, session: string, id: string): string | null {
+    this.claim(owner);
+    this.spend();
+    const row = this.liveRequest(id);
+    if (!row || row.session !== session || row.denied || row.sealed === null) return null;
+    this.sql.exec('UPDATE requests SET sealed = NULL, linked = 1 WHERE id = ?', id);
+    this.requestsChanged();
+    return row.sealed;
+  }
+
+  /** The new device calls its request off. Only the session that asked can. */
+  cancelRequest(owner: string, session: string, id: string): void {
+    this.claim(owner);
+    this.spend();
+    const gone = this.sql
+      .exec('DELETE FROM requests WHERE id = ? AND session = ? RETURNING id', id, session)
+      .toArray();
+    if (gone.length > 0) this.requestsChanged();
+  }
+
   usage(owner: string): { bytes: number; limit: number; records: number; files: number } {
     this.claim(owner);
     this.spend();
@@ -407,7 +619,7 @@ export class UserStore extends DurableObject<Env> {
     return restored;
   }
 
-  /** The daily cleanup of old versions, unused files and links that ran out. */
+  /** The daily cleanup of old versions, unused files, and links and requests that ran out. */
   async cleanup(now = Date.now()): Promise<void> {
     await cleanUp(this.upkeep, now);
   }

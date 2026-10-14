@@ -22,6 +22,8 @@ export interface RunnerDeps {
   onActivity: (activity: SyncActivity, message: string | null) => void;
   /** When the session has ended, so sync stops until the user signs in again. */
   onSignedOut: () => void;
+  /** When the server says the account's requests to link changed. */
+  onRequests?: () => void;
   /** For tests. */
   WebSocket?: typeof WebSocket;
 }
@@ -145,8 +147,12 @@ export class SyncRunner {
       this.socket = socket;
       socket.addEventListener('message', (event) => {
         try {
-          const { cursor } = JSON.parse(String(event.data)) as { cursor?: unknown };
+          const { cursor, requests } = JSON.parse(String(event.data)) as {
+            cursor?: unknown;
+            requests?: unknown;
+          };
           if (typeof cursor === 'number' && cursor !== this.deps.state.cursor()) this.request(300);
+          if (typeof requests === 'number') this.deps.onRequests?.();
         } catch {
           // A pong.
         }

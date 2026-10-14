@@ -1,4 +1,4 @@
-import type { SyncStatus } from '../../shared/sync.ts';
+import type { RequestView, SyncStatus } from '../../shared/sync.ts';
 import { type CardTone, SidebarCard } from '../SidebarCard.tsx';
 
 interface CardView {
@@ -9,8 +9,21 @@ interface CardView {
 }
 
 /** How sync reads in the sidebar, in plain words, with what to do next. */
-function describe(status: SyncStatus | 'checking'): CardView {
+function describe(status: SyncStatus | 'checking', requests: RequestView[]): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…' };
+  // Another device asking to link comes first: the person is waiting at it.
+  const asking = requests.filter((request) => !request.elsewhere);
+  if (status.state === 'on' && asking.length > 0) {
+    return {
+      tone: 'need',
+      line: asking.length === 1 ? 'A device wants to link' : 'Devices want to link',
+      help:
+        asking.length === 1
+          ? `${asking[0]?.device} asked to sync your job hunt.`
+          : `${asking.length} devices asked to sync your job hunt.`,
+      action: 'Review',
+    };
+  }
   switch (status.state) {
     case 'off':
       return {
@@ -78,12 +91,15 @@ function describe(status: SyncStatus | 'checking'): CardView {
 /** Sync's card in the sidebar: whether it's on and up to date, and a way to set it up or manage it. */
 export function SyncCard({
   status,
+  requests = [],
   onOpen,
 }: {
   status: SyncStatus | 'checking';
+  /** Other devices asking to link, which this computer can approve. */
+  requests?: RequestView[];
   onOpen: () => void;
 }) {
-  const view = describe(status);
+  const view = describe(status, requests);
   return (
     <SidebarCard
       title="Sync"

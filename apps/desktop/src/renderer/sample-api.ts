@@ -237,7 +237,7 @@ export function sampleApi(): FactwrightApi {
       return () => trustListeners.delete(listener);
     },
     ...sampleTracker(query.get('jobs')),
-    ...sampleSync(query.get('sync')),
+    ...sampleSync(query.get('sync'), query.get('approve')),
     ...sampleProfile(query.get('profile')),
     ...sampleFacts(query.get('profile')),
     ...sampleProfiles(query.get('profiles')),

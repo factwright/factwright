@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, SyncStatus } from '../../shared/sync.ts';
 import { SyncCard } from './SyncCard.tsx';
 import { SyncDialog } from './SyncDialog.tsx';
 import { sampleSync } from './sample-sync.ts';
@@ -21,7 +21,13 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+/** Stops each open dialog following sync, so nothing updates it once it's gone. */
+const following: (() => void)[] = [];
+
+afterEach(() => {
+  for (const stop of following.splice(0)) stop();
+  cleanup();
+});
 
 const ON: SyncStatus = {
   state: 'on',
@@ -32,9 +38,17 @@ const ON: SyncStatus = {
   skipped: 0,
 };
 
+/** What a sync server too old to approve devices says: only codes work. */
+const OLD_SERVER: ApprovalsView = {
+  supported: false,
+  asking: null,
+  requests: [],
+  approving: null,
+};
+
 /** The window's API, with sample sync and spies for the rest it uses here. */
-function apiFor(start: string) {
-  const sync = sampleSync(start);
+function apiFor(start: string, approve: string | null = 'old') {
+  const sync = sampleSync(start, approve);
   const api = {
     ...sync,
     copyText: vi.fn(async () => ({ ok: true as const })),
@@ -43,14 +57,28 @@ function apiFor(start: string) {
   return api;
 }
 
-/** The dialog, following sync as it moves along, as the app shows it. */
+/** The dialog, following sync and linking by approval as they move along, as the app shows it. */
 async function openDialog(api: FactwrightApi) {
   let status = await api.syncStatus();
-  const view = render(<SyncDialog api={api} status={status} onClose={vi.fn()} />);
-  api.onSyncStatus((next) => {
-    status = next;
-    view.rerender(<SyncDialog api={api} status={status} onClose={vi.fn()} />);
-  });
+  let approvals = await api.linkApprovals();
+  const dialog = () => (
+    <SyncDialog api={api} status={status} approvals={approvals} onClose={vi.fn()} />
+  );
+  // Listening first, so what the dialog sets off as it opens shows.
+  let view: ReturnType<typeof render> | null = null;
+  following.push(
+    api.onSyncStatus((next) => {
+      status = next;
+      view?.rerender(dialog());
+    }),
+    api.onLinkApprovals((next) => {
+      approvals = next;
+      view?.rerender(dialog());
+    }),
+  );
+  view = render(dialog());
+  // Anything that changed while it first rendered shows too.
+  view.rerender(dialog());
   return view;
 }
 
@@ -150,6 +178,7 @@ describe('SyncDialog', () => {
           firstDevice: true,
           again: 'remade',
         }}
+        approvals={OLD_SERVER}
         onClose={vi.fn()}
       />,
     );
@@ -167,6 +196,7 @@ describe('SyncDialog', () => {
           firstDevice: false,
           again: 'changed',
         }}
+        approvals={OLD_SERVER}
         onClose={vi.fn()}
       />,
     );
@@ -184,6 +214,7 @@ describe('SyncDialog', () => {
           firstDevice: false,
           again: 'taken',
         }}
+        approvals={OLD_SERVER}
         onClose={vi.fn()}
       />,
     );
@@ -202,6 +233,7 @@ describe('SyncDialog', () => {
         <SyncDialog
           api={api}
           status={{ state: 'setting-up', email: 'work@example.com', firstDevice }}
+          approvals={OLD_SERVER}
           onClose={vi.fn()}
         />,
       );
@@ -233,10 +265,13 @@ describe('SyncDialog', () => {
     const user = userEvent.setup();
     await openDialog(api);
     await user.click(screen.getByText('Lost your other devices? Use your recovery key'));
-    await user.type(
-      screen.getByRole('textbox', { name: 'Recovery key' }),
-      '7KQ2-M9XD-4RTB-HP0E-WN3C-8YVA-G5KS-21FJ',
-    );
+    const field = screen.getByLabelText('Recovery key') as HTMLInputElement;
+    // A password field, so a password manager can fill it, with a way to see what's typed.
+    expect(field.type).toBe('password');
+    expect(field.autocomplete).toBe('current-password');
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    expect(field.type).toBe('text');
+    await user.type(field, '7KQ2-M9XD-4RTB-HP0E-WN3C-8YVA-G5KS-21FJ');
     await user.click(screen.getByRole('button', { name: 'Unlock with recovery key' }));
     expect(await screen.findByRole('heading', { name: 'Sync' })).toBeTruthy();
   });
@@ -266,7 +301,14 @@ describe('SyncDialog', () => {
   it('says a copy built without a sync server can’t sync, with nothing to sign in to', async () => {
     const onClose = vi.fn();
     const api = apiFor('no-server');
-    render(<SyncDialog api={api} status={await api.syncStatus()} onClose={onClose} />);
+    render(
+      <SyncDialog
+        api={api}
+        status={await api.syncStatus()}
+        approvals={OLD_SERVER}
+        onClose={onClose}
+      />,
+    );
     expect(screen.getByRole('heading', { name: 'Sync isn’t in this copy' })).toBeTruthy();
     expect(screen.getByText(/built from its code without a sync server/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Sign in with your browser' })).toBeNull();
@@ -281,5 +323,124 @@ describe('SyncDialog', () => {
     expect(timeAgo('2026-10-12T11:59:00', now)).toBe('1 minute ago');
     expect(timeAgo('2026-10-12T09:00:00', now)).toBe('3 hours ago');
     expect(timeAgo('2026-10-10T09:00:00', now)).toMatch(/^on /);
+  });
+});
+
+describe('linking by approval', () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** Fake time, moved on by hand, so the sample's waits pass at once. */
+  function fakeTime() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    return {
+      user: userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),
+      later: (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms)),
+    };
+  }
+
+  it('asks a device that’s set up, and says what to do there', async () => {
+    const api = apiFor('link', null);
+    const { container } = await openDialog(api);
+    expect(await screen.findByText(/On your other computer, open Factwright/)).toBeTruthy();
+    expect(screen.getByText('Waiting for your other device…')).toBeTruthy();
+    // The code and the recovery key are still there, out of the way.
+    expect(screen.getByText('Or type a code from your other device')).toBeTruthy();
+    expect(screen.getByText('Lost your other devices? Use your recovery key')).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('links once the person says the emoji match here too', async () => {
+    const { user, later } = fakeTime();
+    const api = apiFor('link', null);
+    const { container } = await openDialog(api);
+    await later(3000);
+    const code = await screen.findByRole('list', { name: 'Check code' });
+    expect(
+      within(code)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['🐶Dog', '🔑Key', '🚀Rocket', '🍕Pizza', '🎸Guitar', '⚓Anchor']);
+    expect(screen.getByText(/offered to approve this computer/)).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'They match' }));
+    expect(screen.getByText(/Now say they match on/)).toBeTruthy();
+    await later(2500);
+    expect(await screen.findByRole('heading', { name: 'Sync' })).toBeTruthy();
+  });
+
+  it('links nothing when the emoji don’t match, and can ask again', async () => {
+    const api = apiFor('link', 'check');
+    const user = userEvent.setup();
+    await openDialog(api);
+    await user.click(await screen.findByRole('button', { name: 'They don’t match' }));
+    expect(await screen.findByText(/Nothing was linked/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Ask again' }));
+    expect(await screen.findByRole('button', { name: 'They match' })).toBeTruthy();
+  });
+
+  it('still takes a code', async () => {
+    const api = apiFor('link', null);
+    const user = userEvent.setup();
+    await openDialog(api);
+    await user.click(screen.getByText('Or type a code from your other device'));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Code from your other device' }),
+      'M4XP—2KQD—9TRB—HN0W—C3ZA—8YVG—5KSP—1FJ7',
+    );
+    await user.click(screen.getByRole('button', { name: 'Link this computer' }));
+    expect(await screen.findByRole('heading', { name: 'Sync' })).toBeTruthy();
+  });
+
+  it('approves another device once the person says the emoji match', async () => {
+    const { user, later } = fakeTime();
+    const api = apiFor('on', 'request');
+    const { container } = await openDialog(api);
+    const panel = await screen.findByRole('region', { name: 'A new device wants to link' });
+    expect(within(panel).getByText('Chrome on Windows')).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.click(within(panel).getByRole('button', { name: 'Approve…' }));
+    expect(await screen.findByText('Waiting for Chrome on Windows…')).toBeTruthy();
+    await later(1500);
+    const asking = await screen.findByRole('region', { name: 'Approve Chrome on Windows?' });
+    expect(within(asking).getByRole('list', { name: 'Check code' })).toBeTruthy();
+    expect(within(asking).getByText(/Only link a device you’re using right now/)).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.click(within(asking).getByRole('button', { name: 'They match, link it' }));
+    expect(await screen.findByText(/Approved\. Chrome on Windows links once/)).toBeTruthy();
+    await later(2500);
+    expect(await screen.findByText('Chrome on Windows is linked.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'OK' }));
+    expect(screen.queryByRole('region', { name: /link/i })).toBeNull();
+  });
+
+  it('turns a request down that isn’t the person’s', async () => {
+    const api = apiFor('on', 'request');
+    const user = userEvent.setup();
+    await openDialog(api);
+    const panel = await screen.findByRole('region', { name: 'A new device wants to link' });
+    await user.click(within(panel).getByRole('button', { name: 'Not mine' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'A new device wants to link' })).toBeNull(),
+    );
+  });
+
+  it('says on the Sync card when a device wants to link', () => {
+    render(
+      <SyncCard
+        status={ON}
+        requests={[
+          {
+            id: 'r',
+            device: 'Chrome on Windows',
+            asked: new Date().toISOString(),
+            elsewhere: false,
+          },
+        ]}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('A device wants to link')).toBeTruthy();
+    expect(screen.getByText('Chrome on Windows asked to sync your job hunt.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review' })).toBeTruthy();
   });
 });

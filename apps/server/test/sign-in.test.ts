@@ -204,9 +204,9 @@ describe('signing in on the web', () => {
     expect(started.status).toBe(403);
   });
 
-  it('tells the web view which ways it has to sign in', async () => {
+  it('tells the web view which ways it has to sign in, and what more it can do', async () => {
     const response = await fetch(new URL('/api/sign-in-options', server.url));
-    expect(await response.json()).toEqual({ providers: ['github'] });
+    expect(await response.json()).toEqual({ providers: ['github'], features: ['approve'] });
   });
 
   it('has no Google until it’s set up', async () => {

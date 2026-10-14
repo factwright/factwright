@@ -22,7 +22,7 @@ import { registerIpc } from './ipc.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
-import { notifyIfAway } from './notify.ts';
+import { notifyIfAway, notifyOfRequests } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
   chooseProfile,
@@ -211,6 +211,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         // Which account this profile syncs with, so no other profile here signs in to it.
         if (status.state === 'off') profiles.noteSync(null);
         else if ('email' in status && status.email) profiles.noteSync(status.email);
+      },
+      onApprovals: (view) => {
+        toWindow('sync:approvals', view);
+        notifyOfRequests(window, view.requests);
       },
       otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.

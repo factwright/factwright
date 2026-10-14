@@ -1,6 +1,6 @@
 import { Dialog } from '@factwright/ui';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, SyncStatus } from '../../shared/sync.ts';
 import { LinkStep } from './LinkStep.tsx';
 import { ManageSync } from './ManageSync.tsx';
 import { RecoveryKeyStep } from './RecoveryKeyStep.tsx';
@@ -47,10 +47,13 @@ function heading(status: SyncStatus): { title: string; description?: string } {
 export function SyncDialog({
   api,
   status,
+  approvals,
   onClose,
 }: {
   api: FactwrightApi;
   status: SyncStatus;
+  /** Linking devices by approval: this computer asking, or other devices' requests. */
+  approvals: ApprovalsView;
   onClose: () => void;
 }) {
   const { title, description } = heading(status);
@@ -66,10 +69,15 @@ export function SyncDialog({
                 {...(status.again && { again: status.again })}
               />
             ) : (
-              <LinkStep api={api} again={status.again} />
+              <LinkStep
+                api={api}
+                again={status.again}
+                canApprove={approvals.supported}
+                asking={approvals.asking}
+              />
             );
           case 'on':
-            return <ManageSync api={api} status={status} close={close} />;
+            return <ManageSync api={api} status={status} approvals={approvals} close={close} />;
           default:
             return <SignInStep api={api} status={status} close={close} />;
         }

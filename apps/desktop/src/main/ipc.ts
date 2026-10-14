@@ -2,6 +2,7 @@ import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ASK_ID } from '@factwright/core';
+import { isRequestId } from '@factwright/sync';
 import {
   app,
   BrowserWindow,
@@ -427,6 +428,22 @@ export function registerIpc({
   answer('sync:link-code', () => sync.makeLinkCode());
   ipcMain.on('sync:cancel-link-code', (event, id: unknown) => {
     if (fromApp(event) && isId(id)) void sync.cancelLinkCode(id);
+  });
+  answer('sync:approvals', () => sync.approvalsView());
+  answer('sync:ask', () => sync.askToLink());
+  ipcMain.on('sync:confirm-check', (event, matched: unknown) => {
+    if (fromApp(event) && typeof matched === 'boolean') sync.confirmLinkCheck(matched);
+  });
+  ipcMain.on('sync:stop-asking', (event) => {
+    if (fromApp(event)) sync.stopAsking();
+  });
+  answer('sync:approve', (id) => (isRequestId(id) ? sync.approveRequest(id) : REFUSED));
+  answer('sync:answer', (matched) =>
+    typeof matched === 'boolean' ? sync.answerApproval(matched) : REFUSED,
+  );
+  answer('sync:deny', (id) => (isRequestId(id) ? sync.denyRequest(id) : REFUSED));
+  ipcMain.on('sync:dismiss-approval', (event) => {
+    if (fromApp(event)) sync.dismissApproval();
   });
   ipcMain.on('sync:now', (event) => {
     if (fromApp(event)) sync.requestSync();

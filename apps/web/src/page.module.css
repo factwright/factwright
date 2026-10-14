@@ -78,3 +78,64 @@
   font-size: 13px;
   font-weight: 650;
 }
+
+/* Asking a computer that's set up to approve this browser. */
+.ask {
+  display: grid;
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.ask .actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.ask .actions > * {
+  flex: 0 1 auto;
+}
+
+.waiting {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: calc((1.45em - 8px) / 2);
+  border-radius: 50%;
+  background: var(--fw-muted);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}
+
+.codeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+.codeRow > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
