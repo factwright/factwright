@@ -6,8 +6,21 @@ export const escapeHtml = (value: unknown) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
+/** **Bold** text, as a resume marks it. */
+export const BOLD = String.raw`\*\*.+?\*\*`;
+
+/**
+ * A [[placeholder]], for what a resume still needs filled in. Placeholders are short, so one is
+ * read to at most 200 characters, and a "[[" left open is found out without reading to the end of
+ * the text each time.
+ */
+export const PLACEHOLDER = String.raw`\[\[.{1,200}?\]\]`;
+
 /** Text with **bold** and [[placeholders]] marked up. */
 export const md = (value: unknown) =>
   escapeHtml(value)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\[\[(.+?)\]\]/g, '<mark class="ph">[$1]</mark>');
+    .replace(new RegExp(BOLD, 'g'), (bold) => `<strong>${bold.slice(2, -2)}</strong>`)
+    .replace(
+      new RegExp(PLACEHOLDER, 'g'),
+      (placeholder) => `<mark class="ph">[${placeholder.slice(2, -2)}]</mark>`,
+    );

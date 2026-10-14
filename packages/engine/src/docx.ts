@@ -14,6 +14,7 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
+import { BOLD, PLACEHOLDER } from './markup.ts';
 import type { Bullet, Resume } from './schema.ts';
 import { sectionTitles } from './template/render.ts';
 import type { Template, WordTheme } from './templates.ts';
@@ -25,14 +26,18 @@ const CONTENT_W = PAGE_W - 2 * MARGIN;
 
 type RunOptions = { bold?: boolean; italics?: boolean; color?: string; size?: number };
 
+const MARKED = new RegExp(`(${BOLD}|${PLACEHOLDER})`, 'g');
+const IS_BOLD = new RegExp(`^${BOLD}$`);
+const IS_PLACEHOLDER = new RegExp(`^${PLACEHOLDER}$`);
+
 /** Text runs with **bold** and highlighted [[placeholders]]. */
 function runs(value: unknown, t: WordTheme, base: RunOptions = {}): TextRun[] {
   return String(value ?? '')
-    .split(/(\*\*.+?\*\*|\[\[.+?\]\])/g)
+    .split(MARKED)
     .filter(Boolean)
     .map((part) => {
-      const bold = /^\*\*.+\*\*$/.test(part);
-      const placeholder = /^\[\[.+\]\]$/.test(part);
+      const bold = IS_BOLD.test(part);
+      const placeholder = IS_PLACEHOLDER.test(part);
       return new TextRun({
         text: bold ? part.slice(2, -2) : placeholder ? `[${part.slice(2, -2)}]` : part,
         font: t.body,

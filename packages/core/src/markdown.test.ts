@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { markdownItems, markdownSections, markdownTable } from './markdown.ts';
+import { markdownItems, markdownSections, markdownTable, sectionHeading } from './markdown.ts';
+
+/** How long something takes, in milliseconds. */
+function timed(work: () => unknown): number {
+  const start = Date.now();
+  work();
+  return Date.now() - start;
+}
 
 describe('markdownTable', () => {
   it('reads rows keyed by lowercase column heading', () => {
@@ -76,5 +83,34 @@ describe('markdownItems', () => {
       { text: 'Thin data on this company.', sub: [] },
       { text: 'Another line', sub: [] },
     ]);
+  });
+});
+
+describe('sectionHeading', () => {
+  it('reads a "## " heading’s words, and nothing else', () => {
+    expect(sectionHeading('## Why it fits  ')).toBe('Why it fits');
+    expect(sectionHeading('##\tTabs')).toBe('Tabs');
+    expect(sectionHeading('### Smaller')).toBeUndefined();
+    expect(sectionHeading('##NoSpace')).toBeUndefined();
+    expect(sectionHeading('## ')).toBeUndefined();
+    // Words can't run across a line break.
+    expect(sectionHeading('## a\rb')).toBeUndefined();
+  });
+});
+
+describe('Markdown written to keep the app busy', () => {
+  it('reads headings, list items and tables in a moment, however many spaces they hold', () => {
+    const tabs = (count: number) => '\t'.repeat(count);
+    // A lone carriage return stops each line matching, which made the old patterns try every
+    // way to split the tabs: these took seconds before, the first one minutes at its full length.
+    expect(timed(() => markdownSections(`##\t${tabs(2_500)}\rx\ry`))).toBeLessThan(1000);
+    expect(timed(() => markdownSections(`## ${'('.repeat(80_000)}`))).toBeLessThan(1000);
+    expect(timed(() => markdownItems([`*\t${tabs(100_000)}\rx\ry`]))).toBeLessThan(1000);
+    expect(timed(() => markdownTable(`| a |\n${' '.repeat(120_000)}x`))).toBeLessThan(1000);
+  });
+
+  it('still keys a heading without its last "(…)", from its first "(" after any other ")"', () => {
+    const sections = markdownSections('## Fit (a (b)\n## Pay (a) (b)  \n## Plain\n');
+    expect([...sections.keys()]).toEqual(['', 'fit', 'pay (a)', 'plain']);
   });
 });

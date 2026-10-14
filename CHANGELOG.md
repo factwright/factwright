@@ -10,6 +10,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A Support Factwright link at the bottom of the sidebar, above the version, which opens the Buy Me a Coffee page of Factwright's maker, Steve Hillyer, in your browser, for anyone who'd like to chip in.
 - factwright.com says Factwright is fully open source: a GitHub link in its header and under the download buttons, a section on what anyone can check in the code, with the folders worth opening first, a question about it, and a link to the code in every page's footer. It also says who builds Factwright, and how to support it with a coffee or on GitHub Sponsors.
 - Each release appears on the repository's Releases page on GitHub, with its notes. While the repository is public, its installers also come with a signed record of the commit and run that built them, which `gh attestation verify` checks.
+- factwright.com helps search engines understand its home page: the title now mentions resumes, and a block of data says Factwright is free, for macOS and Windows, from Neatifai LLC. It's data, not a script, so the site's security rules don't change. The made-up jobs in the page's drawings are marked, so Google and Bing leave those companies out of the snippets they show.
 
 ### Changed
 - Claude's levels start where your plan suits them. On a Pro plan, and with an API key, a Console account or a cloud provider, where every token is billed, fit checks, salary checks, job searches and who to message start on Sonnet, and the writing on Opus at High effort. Claude settings has a Recommended model, as effort already did: a model you never picked follows your plan when it changes, and one you picked stays yours. A task that's only recommended a lighter model than Claude is open on runs there, as one that needs less effort does, rather than starting Claude over.
@@ -18,6 +19,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The terms say Factwright's code is under the AGPL-3.0, which they don't limit, and that their rules cover the services Neatifai runs. Supporting Factwright goes to Steve Hillyer, isn't a payment to Neatifai, and buys nothing. The privacy policy says what supporting it shares, and with whom.
 
 ### Fixed
+- A job page, Hacker News post, note or fit report made to keep the app busy can no longer freeze it while Factwright reads it. Reading one with thousands of tags left open, or a line of thousands of spaces, took minutes, or far longer, and now takes a moment. A page with a character number past the last one, such as `&#x110000;`, is read with "�" in its place instead of failing. Found by GitHub's code scanning.
+- A link counts as a Hacker News thread only when it's on news.ycombinator.com itself, not on a site whose name merely starts that way.
 - Re-running a release's failed jobs long after it began can no longer put an older version out over a newer one that's gone out since.
 - A release whose uploads stopped partway can be finished by re-running its failed jobs, instead of needing a new version. Each file goes up with its sha256, so a re-run leaves the files that are up, and refuses one with other contents. A version that's been taken back, as docs/releasing.md says, can never be put out again, or get a release on GitHub, by re-running its release.
 

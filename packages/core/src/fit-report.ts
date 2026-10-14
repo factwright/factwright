@@ -61,8 +61,11 @@ const PART_NAMES: Readonly<Record<string, ScorePartKey>> = {
   requirements: 'reqs',
 };
 
-/** A part as fit checks write it: "work 33/40", "Role shape: 15/25" or "reqs 15 / 15". */
-const PART = String.raw`(work|role|stack|reqs?|requirements)(?:\s+(?:match|shape))?\s*:?\s*(\d{1,3})\s*\/\s*(\d{1,3})`;
+/**
+ * A part as fit checks write it: "work 33/40", "Role shape: 15/25" or "reqs 15 / 15". The spaces
+ * around a ":" are read one way only, so a long run of them isn't read again for each way.
+ */
+const PART = String.raw`(work|role|stack|reqs?|requirements)(?:\s+(?:match|shape))?\s*(?::\s*)?(\d{1,3})\s*\/\s*(\d{1,3})`;
 
 const MOODS: Readonly<Record<string, Mood>> = {
   loved: 'loved',
@@ -99,7 +102,8 @@ function field(text: string, name: string): string | null {
 export function parseVerdict(
   text: string | null | undefined,
 ): { verdict: string; score: number } | null {
-  const match = text?.match(/^\s*([A-Za-z][A-Za-z ]*?)\s*,\s*(\d+)/);
+  // The verdict ends on a letter, so the spaces before the comma can only be read one way.
+  const match = text?.match(/^\s*([A-Za-z](?:[A-Za-z ]*[A-Za-z])?)\s*,\s*(\d+)/);
   if (!match?.[1] || !match[2]) return null;
   return { verdict: match[1], score: Number(match[2]) };
 }
@@ -167,7 +171,8 @@ export function parseFitReport(text: string | null | undefined): FitReport | nul
   const date = firstDate(field(text, 'Date'));
 
   const parts = partsFrom(verdictLine);
-  const scoreLine = new RegExp(`^${PART}\\s*[:.–—-]?\\s*(.*)$`, 'i');
+  // After the score, a separator, then why, which starts at a visible character.
+  const scoreLine = new RegExp(`^${PART}\\s*(?:[:.–—-]\\s*)?((?:\\S.*)?)$`, 'i');
   for (const item of list((key) => key.startsWith('score'))) {
     const match = item.text.replace(/\*\*/g, '').match(scoreLine);
     const key = PART_NAMES[(match?.[1] ?? '').toLowerCase()];
@@ -209,7 +214,10 @@ export function parseFitReport(text: string | null | undefined): FitReport | nul
 
 /** Older job notes (job.md) carry one "- **Sentiment (fit check, 2026-10-06):** …" line. */
 export function jobNotesSentiment(text: string | null | undefined): Sentiment | null {
-  const match = text?.match(/^- \*\*Sentiment(?:\s*\(([^)]*)\))?:\*\*\s*(.+)$/im);
+  // The "(…)" is read to at most 200 characters, and the text starts at its first visible one, so
+  // a "(" left open, or a long run of spaces, isn't read again and again. A line with no text
+  // after it has no sentiment.
+  const match = text?.match(/^- \*\*Sentiment(?:\s*\(([^)]{0,200})\))?:\*\*\s*(\S.*)$/im);
   if (!match?.[2]) return null;
   const { mood, text: summary } = moodOf(match[2]);
   return { date: firstDate(match[1]), from: 'job-notes', mood, summary, points: [] };
