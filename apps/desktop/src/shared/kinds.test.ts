@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type AboutYou,
   ANSWER_LIMITS,
+  type AnswerChanges,
   applyChanges,
   type JobKind,
   mergeChanges,
@@ -14,6 +15,7 @@ import {
   changeKind,
   firstKindName,
   hasKinds,
+  type KindEdit,
   kindsOf,
   removeKind,
   renameKind,
@@ -196,6 +198,47 @@ describe('kinds of job', () => {
     expect(applyChanges(three, changeKind(three, 'gone', { roles: ['UX'] }))).toEqual(three);
   });
 
+  it('add a kind as it’s now named when it was renamed before saving', () => {
+    // Changes typed one after another before a save, as the window joins and shows them.
+    const typing = () => {
+      let typed: AnswerChanges = {};
+      return {
+        type(change: AnswerChanges | KindEdit) {
+          if ('ok' in change && !change.ok) throw new Error(change.message);
+          typed = mergeChanges(typed, 'ok' in change ? change.changes : change);
+          return applyChanges(TWO, typed);
+        },
+      };
+    };
+    // Added as Gamma, given a title, renamed Delta, and then another kind takes Gamma: the new
+    // kind keeps its name and title.
+    const one = typing();
+    let shown = one.type(addKind(TWO, 'Gamma'));
+    shown = one.type(changeKind(shown, 'gamma', { roles: ['Analyst'] }));
+    shown = one.type(renameKind(shown, 'gamma', 'Delta'));
+    shown = one.type(renameKind(shown, 'project-manager', 'Gamma'));
+    expect(shown.otherKinds).toMatchObject([
+      { id: 'project-manager', name: 'Gamma' },
+      { id: 'gamma', name: 'Delta', roles: ['Analyst'] },
+    ]);
+    // Added as Gamma, renamed Delta, and Gamma added again: both are there.
+    const two = typing();
+    shown = two.type(addKind(TWO, 'Gamma'));
+    shown = two.type(renameKind(shown, 'gamma', 'Delta'));
+    shown = two.type(addKind(shown, 'Gamma'));
+    expect(kindsOf(shown).map((kind) => kind.name)).toEqual([
+      'Developer',
+      'Project manager',
+      'Delta',
+      'Gamma',
+    ]);
+  });
+
+  it('keep the first kind’s id when another computer names it otherwise', () => {
+    const renamed = applyChanges(TWO, { firstKind: { id: 'engineer', name: 'Engineer' } });
+    expect(renamed.firstKind).toEqual({ id: 'developer', name: 'Engineer' });
+  });
+
   it('never let the first kind and another share a name or an id', () => {
     const names = (answers: AboutYou) => kindsOf(answers).map((kind) => kind.name);
     // The first takes a name another kind holds, while that kind takes the first's: neither lands.
@@ -204,9 +247,12 @@ describe('kinds of job', () => {
       kindChanges: [{ id: 'project-manager', name: 'Developer' }],
     });
     expect(names(crossed)).toEqual(['Developer', 'Project manager']);
-    expect(
-      applyChanges(TWO, { firstKind: { id: 'project-manager', name: 'Lead' } }).firstKind,
-    ).toEqual(TWO.firstKind);
+    // A first kind sent with another kind's id only renames the first, which keeps its own id.
+    const lead = applyChanges(TWO, { firstKind: { id: 'project-manager', name: 'Lead' } });
+    expect(kindsOf(lead).map(({ id, name }) => [id, name])).toEqual([
+      ['developer', 'Lead'],
+      ['project-manager', 'Project manager'],
+    ]);
   });
 
   it('leave out adds that clash or run past the limit, without refusing the rest', () => {

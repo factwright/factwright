@@ -630,10 +630,11 @@ export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYo
   const clashes = (kind: KindName, except?: string) =>
     (first !== null && first.id !== except && sameKind(first, kind)) ||
     others.some((other) => other.id !== except && sameKind(other, kind));
-  // The first kind named for the first time, as when the second kind is added.
-  if (firstKind && firstKind.id !== first?.id && !clashes(firstKind)) first = firstKind;
+  // The first kind named for the first time, as when the second kind is added. Once it's named,
+  // a first kind sent from elsewhere renames it, and it keeps its id for its jobs.
+  if (firstKind && first === null && !clashes(firstKind)) first = firstKind;
   const renames: KindName[] = [
-    ...(firstKind && firstKind.id === first?.id ? [firstKind] : []),
+    ...(firstKind && first ? [{ id: first.id, name: firstKind.name }] : []),
     ...changed.flatMap(({ id, name }) => (name ? [{ id, name }] : [])),
   ];
   // A name lands once its kind is there and no other kind has the name, so names handed along
@@ -668,6 +669,7 @@ export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYo
 /**
  * Changes made one after another, as one: the later wins, changes to one kind join, and a kind
  * removed takes its earlier changes with it, and its add, when it was added since the last save.
+ * A kind added since the last save carries its own changes, so it's added as it's now named.
  */
 export function mergeChanges(earlier: AnswerChanges, later: AnswerChanges): AnswerChanges {
   const removed = later.removedKinds ?? [];
@@ -679,8 +681,10 @@ export function mergeChanges(earlier: AnswerChanges, later: AnswerChanges): Answ
   const gone = [...new Set([...(earlier.removedKinds ?? []), ...removed])];
   const changed = (earlier.kindChanges ?? []).filter((change) => !removed.includes(change.id));
   for (const change of later.kindChanges ?? []) {
+    const fresh = added.findIndex((kind) => kind.id === change.id);
     const at = changed.findIndex((each) => each.id === change.id);
-    if (at < 0) changed.push(change);
+    if (fresh >= 0) added[fresh] = { ...(added[fresh] as JobKind), ...change };
+    else if (at < 0) changed.push(change);
     else changed[at] = { ...changed[at], ...change };
   }
   const rest = Object.fromEntries(
