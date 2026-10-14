@@ -2,6 +2,7 @@ import {
   type Attention,
   type FitTier,
   isInView,
+  isSetAside,
   JOB_VIEWS,
   type Job,
   type JobProgress,
@@ -155,33 +156,66 @@ function matching(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
   });
 }
 
+/** Whether a row is in a view's list, leaving out To review's jobs set aside for later. */
+const listed = (view: JobView, row: JobRow) =>
+  isInView(view, row.progress.status) && !(view === 'review' && isSetAside(row.progress));
+
+const recent = (row: JobRow) => row.progress.lastActivity ?? '';
+
+const byActivity = (a: JobRow, b: JobRow) =>
+  recent(b).localeCompare(recent(a)) ||
+  a.job.company.localeCompare(b.job.company) ||
+  a.job.role.localeCompare(b.job.role);
+
 /** The rows to show, most recent activity first. */
 export function visibleRows(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
-  const recent = (row: JobRow) => row.progress.lastActivity ?? '';
   return matching(rows, filter)
-    .filter((row) => isInView(filter.view, row.progress.status))
-    .sort(
-      (a, b) =>
-        recent(b).localeCompare(recent(a)) ||
-        a.job.company.localeCompare(b.job.company) ||
-        a.job.role.localeCompare(b.job.role),
-    );
+    .filter((row) => listed(filter.view, row))
+    .sort(byActivity);
 }
 
-/** How many rows each view would show with the same search and "Needs you". */
+/**
+ * The jobs set aside for later, folded at the bottom of To review: those coming back soonest
+ * first, then those with no day to come back. Other views have none.
+ */
+export function laterRows(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
+  if (filter.view !== 'review') return [];
+  const back = (row: JobRow) => row.job.backOn ?? '9999';
+  return matching(rows, filter)
+    .filter((row) => isSetAside(row.progress))
+    .sort((a, b) => back(a).localeCompare(back(b)) || byActivity(a, b));
+}
+
+/**
+ * How many rows each view would show with the same search and "Needs you". To review doesn't
+ * count the jobs set aside, so it can be worked down to nothing.
+ */
 export function viewCounts(rows: readonly JobRow[], filter: ListFilter): Record<JobView, number> {
   const shown = matching(rows, filter);
   return Object.fromEntries(
-    JOB_VIEWS.map((view) => [
-      view,
-      shown.filter((row) => isInView(view, row.progress.status)).length,
-    ]),
+    JOB_VIEWS.map((view) => [view, shown.filter((row) => listed(view, row)).length]),
   ) as Record<JobView, number>;
 }
 
-/** The view to open on: the furthest along with jobs in it, where things move fastest. */
+/**
+ * The view that holds now what a view kept by an earlier version held, before New was a view:
+ * its To review held the jobs new to the user, and its To apply those Claude had worked on.
+ */
+export function viewNow(earlier: JobView | null): JobView | null {
+  if (earlier === 'review') return 'new';
+  return earlier === 'apply' ? 'review' : earlier;
+}
+
+/**
+ * The view to open on: the furthest along with jobs in it, where things move fastest. Jobs set
+ * aside for later count only when they're all there is, so it opens on To review, which folds
+ * them away, only then.
+ */
 export function startingView(rows: readonly JobRow[]): JobView {
-  return viewToOpen(rows.filter((row) => !row.job.archived).map((row) => row.progress.status));
+  const open = rows.filter((row) => !row.job.archived);
+  const counted = open.filter((row) => !isSetAside(row.progress));
+  if (counted.length === 0 && open.length > 0) return 'review';
+  return viewToOpen(counted.map((row) => row.progress.status));
 }
 
 /**

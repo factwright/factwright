@@ -137,6 +137,8 @@ function untracked(job: CollectedJob): TrackedRow {
     firstSeen: job.firstSeen,
     status: null,
     statusOn: null,
+    backOn: null,
+    passReason: null,
     appliedOn: null,
     nextAction: null,
     nextOn: null,

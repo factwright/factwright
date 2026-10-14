@@ -57,7 +57,7 @@ describe('JobsService', () => {
     expect(list.jobs[0]).toMatchObject({
       id: 'acme-robotics--staff-engineer',
       company: 'Acme Robotics',
-      stage: 'resume',
+      stage: 'review',
       pay: { min: 185_000, max: 215_000, source: 'listed' },
       folder: '2026-10-07-acme-staff-engineer',
       docKinds: ['posting', 'job'],

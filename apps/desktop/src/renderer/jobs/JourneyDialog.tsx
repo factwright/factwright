@@ -33,13 +33,14 @@ const STEPS: readonly { step: Step; label: string; tone: Tone }[] = [
   { step: 'offers', label: 'Offer', tone: 'green' },
 ];
 
-/** How jobs ended, in words, for the ones that applied. */
-const ENDINGS: readonly { outcome: JourneyOutcome; words: string; tone: Tone }[] = [
+/** How jobs ended, in words, for the ones that applied, with the words for more than one. */
+const ENDINGS: readonly { outcome: JourneyOutcome; words: string; many?: string; tone: Tone }[] = [
   { outcome: 'Accepted offer', words: 'accepted an offer', tone: 'green' },
   { outcome: 'Declined offer', words: 'declined an offer', tone: 'gray' },
   { outcome: 'Rejected', words: 'rejected', tone: 'red' },
   { outcome: 'No response', words: 'no reply', tone: 'gray' },
   { outcome: 'Withdrew', words: 'withdrew', tone: 'gray' },
+  { outcome: 'Role closed', words: 'role closed', many: 'roles closed', tone: 'gray' },
   { outcome: 'Passed', words: 'passed', tone: 'gray' },
   { outcome: 'In progress', words: 'still in play', tone: 'blue' },
 ];
@@ -149,13 +150,16 @@ function Summary({ summary, endings }: { summary: JourneySummary; endings: typeo
       <h3 className={styles.heading}>How they ended</h3>
       {endings.length > 0 ? (
         <ul className={styles.endings}>
-          {endings.map(({ outcome, words, tone }) => (
-            <li key={outcome}>
-              <Pill tone={tone}>
-                {summary.outcomes[outcome]} {words}
-              </Pill>
-            </li>
-          ))}
+          {endings.map(({ outcome, words, many, tone }) => {
+            const count = summary.outcomes[outcome] ?? 0;
+            return (
+              <li key={outcome}>
+                <Pill tone={tone}>
+                  {count} {count === 1 ? words : (many ?? words)}
+                </Pill>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className={styles.hint}>None yet. Jobs show here once you apply.</p>

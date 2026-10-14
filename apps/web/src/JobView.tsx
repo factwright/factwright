@@ -9,6 +9,7 @@ import {
   type JobDocKind,
   jobProgress,
   nextStep,
+  PASS_REASON_LABELS,
   payLabel,
   questionKey,
   readSuggestedAnswers,
@@ -150,6 +151,18 @@ export function JobView({
               {job.statusOn && ` since ${shortDate(job.statusOn, today)}`}
             </dd>
           </div>
+          {progress.status === 'later' && job.backOn && (
+            <div>
+              <dt>Comes back</dt>
+              <dd>{shortDate(job.backOn, today)}</dd>
+            </div>
+          )}
+          {progress.status === 'passed' && job.passReason && (
+            <div>
+              <dt>Why you passed</dt>
+              <dd>{PASS_REASON_LABELS[job.passReason]}</dd>
+            </div>
+          )}
           {job.appliedOn && (
             <div>
               <dt>Applied</dt>

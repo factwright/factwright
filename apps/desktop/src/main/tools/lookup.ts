@@ -8,14 +8,19 @@ import {
   CALL_STATE_LABELS,
   companyKey,
   JOB_DOCS,
+  JOB_STATUS_LABELS,
   type Job,
   type JobDocKind,
   type JobShot,
+  type JobStatus,
   jobProgress,
   type KindName,
   kindNamed,
   localDate,
   normalizeUrl,
+  PASS_REASON_LABELS,
+  PASS_REASONS,
+  type PassReason,
   readApplySteps,
   readJobExtras,
   roleKey,
@@ -86,6 +91,38 @@ function kindLine(job: Job, kinds: readonly KindName[]): string | null {
     : `not set yet, so it counts as ${kindText(set.first)} until a fit check or the user decides`;
 }
 
+const reasonWords = (reason: PassReason) => PASS_REASON_LABELS[reason].toLowerCase();
+
+/**
+ * Where a job stands, in the app's words: "Passed since 2026-10-14, why: pay", or "Later since
+ * 2026-10-14, back 2026-11-02".
+ */
+function standing(job: Job, status: JobStatus): string {
+  return [
+    JOB_STATUS_LABELS[status],
+    job.statusOn && ` since ${job.statusOn}`,
+    status === 'passed' && job.passReason && `, why: ${reasonWords(job.passReason)}`,
+    status === 'later' && job.backOn && `, back ${job.backOn}`,
+  ]
+    .filter(Boolean)
+    .join('');
+}
+
+/**
+ * Why the user passed on jobs, when they said, for a skill to spot a pattern worth a deal-breaker:
+ * "pay 4, location 2". Only reasons given more than once.
+ */
+function passReasons(jobs: readonly Job[]): string | null {
+  const counts = PASS_REASONS.map((reason) => ({
+    reason,
+    count: jobs.filter((job) => job.status === 'passed' && job.passReason === reason).length,
+  }))
+    .filter(({ count }) => count > 1)
+    .sort((a, b) => b.count - a.count);
+  if (counts.length === 0) return null;
+  return counts.map(({ reason, count }) => `${reasonWords(reason)} ${count}`).join(', ');
+}
+
 /** One line on a job: where it stands, and what's on file. */
 function summary(job: Job, today: string, kinds: readonly KindName[]): string {
   const { status } = jobProgress(job, today);
@@ -97,7 +134,7 @@ function summary(job: Job, today: string, kinds: readonly KindName[]): string {
     job.search?.tier &&
       `job search ${job.search.tier}${job.search.score !== null ? ` ${job.search.score}` : ''}`,
     job.folder && `folder ${WORKSPACE_PATHS.jobs}/${job.folder}`,
-    `status ${status}${job.statusOn ? ` since ${job.statusOn}` : ''}`,
+    `status ${standing(job, status)}`,
     job.appliedOn && `applied ${job.appliedOn}`,
     job.archived && 'archived',
   ].filter(Boolean);
@@ -105,8 +142,9 @@ function summary(job: Job, today: string, kinds: readonly KindName[]): string {
 }
 
 /**
- * Whether the user has seen a job before, for a skill to say so up front. With more than one
- * kind of job, each says which it's under.
+ * Whether the user has seen a job before, for a skill to say so up front, and why they passed on
+ * jobs, when they've given the same reason more than once. With more than one kind of job, each
+ * job says which it's under.
  */
 export function findJob(
   jobs: readonly Job[],
@@ -118,11 +156,14 @@ export function findJob(
   const asked = query.company
     ? `${query.company}${query.role ? `, ${query.role}` : ''}`
     : (query.link ?? '');
-  if (found.length === 0) return `Not seen before: ${asked}.`;
+  const reasons = passReasons(jobs);
+  const passes = reasons ? [`Why the user passed on jobs before: ${reasons}.`] : [];
+  if (found.length === 0) return [`Not seen before: ${asked}.`, ...passes].join('\n');
   return [
     'Seen before:',
     ...found.map((job) => summary(job, today, kinds)),
     'For everything on file, call job_details with the job’s id.',
+    ...passes,
   ].join('\n');
 }
 
@@ -230,11 +271,7 @@ export async function jobDetails(
   };
   add(
     'Status',
-    [
-      `${status}${job.statusOn ? ` since ${job.statusOn}` : ''}`,
-      job.appliedOn && `applied ${job.appliedOn}`,
-      job.archived && 'archived',
-    ]
+    [standing(job, status), job.appliedOn && `applied ${job.appliedOn}`, job.archived && 'archived']
       .filter(Boolean)
       .join('; '),
   );
@@ -296,7 +333,9 @@ export async function jobDetails(
   if (search?.apply) add('How to apply (job search)', search.apply);
   const history = [
     ...job.events.map((event) => `    ${event.date ?? '(no date)'}  ${event.title}`),
-    ...job.statusLog.map((change) => `    ${change.at}  The user marked it ${change.status}`),
+    ...job.statusLog.map(
+      (change) => `    ${change.at}  The user marked it ${JOB_STATUS_LABELS[change.status]}`,
+    ),
   ].sort();
   if (history.length > 0) out.push('- History:', ...history);
 

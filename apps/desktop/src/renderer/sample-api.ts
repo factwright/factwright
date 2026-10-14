@@ -102,7 +102,7 @@ function sampleRun(dark: boolean) {
             `${color('34', '✻')} ${color(secondary, 'Reading the newest “Who is hiring?” thread…')}\r\n`,
           ],
     taskDone: (task: RunTask) => [
-      `\r\n${color(main, `⏺ Done. ${'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under To review.'}`)}\r\n\r\n${color(secondary, '❯')} `,
+      `\r\n${color(main, `⏺ Done. ${'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under New.'}`)}\r\n\r\n${color(secondary, '❯')} `,
     ],
   };
 }

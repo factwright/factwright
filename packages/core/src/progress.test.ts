@@ -6,13 +6,16 @@ import {
   dayFrom,
   fitTier,
   isInView,
+  isSetAside,
   JOB_VIEWS,
   jobProgress,
   jobStats,
   nextStep,
+  STATUS_GROUPS,
   startingView,
   viewOf,
 } from './progress.ts';
+import type { JobFile } from './records.ts';
 import { type Call, JOB_STATUSES } from './tracker.ts';
 
 const TODAY = '2026-10-10';
@@ -45,6 +48,8 @@ function job(extra: Partial<Job> = {}): Job {
     outreach: [],
     status: null,
     statusOn: null,
+    backOn: null,
+    passReason: null,
     appliedOn: null,
     nextAction: null,
     nextOn: null,
@@ -77,6 +82,14 @@ function call(extra: Partial<Call> = {}): Call {
 }
 
 const progressOf = (extra: Partial<Job>) => jobProgress(job(extra), TODAY);
+
+const pdf: JobFile = {
+  path: 'applications/acme/resume.pdf',
+  name: 'resume.pdf',
+  format: 'pdf',
+  size: 1000,
+  modified: '2026-10-04T10:00:00.000Z',
+};
 
 describe('times and days', () => {
   it.each([
@@ -131,9 +144,26 @@ describe('fitTier', () => {
 });
 
 describe('jobProgress', () => {
-  it('shows the skills’ stage until the user sets a status', () => {
-    expect(progressOf({ stage: 'resume' }).status).toBe('resume');
-    expect(progressOf({ stage: 'resume', status: 'applied' }).status).toBe('applied');
+  it('shows what Claude’s work did until the user sets a status', () => {
+    expect(progressOf({}).status).toBe('new');
+    expect(progressOf({ stage: 'review' }).status).toBe('review');
+    expect(progressOf({ stage: 'review', status: 'apply' }).status).toBe('apply');
+    expect(progressOf({ stage: 'review', status: 'applied' }).status).toBe('applied');
+  });
+
+  it('brings a job set aside back on its day', () => {
+    const later = (backOn: string | null) => progressOf({ status: 'later', backOn });
+    expect(later(null)).toMatchObject({ status: 'later', backFromLater: false });
+    expect(later('2026-10-11').backFromLater).toBe(false);
+    expect(later(TODAY).backFromLater).toBe(true);
+    expect(later('2026-10-01').backFromLater).toBe(true);
+    expect(isSetAside(later('2026-10-11'))).toBe(true);
+    expect(isSetAside(later(TODAY))).toBe(false);
+    // A date kept from before means nothing once the job moved on.
+    expect(progressOf({ status: 'review', backOn: '2026-10-01' }).backFromLater).toBe(false);
+    // Coming back counts as something happening, so it sorts with the latest.
+    expect(later('2026-10-09').lastActivity).toBe('2026-10-09');
+    expect(later('2026-10-11').lastActivity).toBe('2026-10-01');
   });
 
   it('counts the furthest step reached, from history and calls too', () => {
@@ -210,10 +240,26 @@ describe('attention', () => {
     expect(attention({ status: 'interview', statusOn: '2026-10-02' })?.text).toBe(
       'No update in 8 days',
     );
-    expect(attention({ stage: 'resume', lastActivity: '2026-10-04' })?.text).toBe(
-      'Resume ready for 6 days. Apply or pass?',
-    );
     expect(attention({ status: 'applied', statusOn: '2026-10-05' })).toBeNull();
+  });
+
+  it('nudges about a resume that’s waiting, and a job back from later', () => {
+    const resume: Partial<Job> = { stage: 'review', files: [pdf], lastActivity: '2026-10-04' };
+    expect(attention(resume)).toEqual({
+      level: 'info',
+      text: 'Resume ready for 6 days. Apply or pass?',
+    });
+    expect(attention({ ...resume, status: 'apply', statusOn: '2026-10-03' })?.text).toBe(
+      'Resume ready for 6 days. Apply?',
+    );
+    // Marking it To apply is something happening.
+    expect(attention({ ...resume, status: 'apply', statusOn: '2026-10-08' })).toBeNull();
+    expect(attention({ stage: 'review', lastActivity: '2026-10-01' })).toBeNull();
+    expect(attention({ status: 'later', backOn: '2026-10-10' })).toEqual({
+      level: 'action',
+      text: 'Back from Later. Apply or pass?',
+    });
+    expect(attention({ status: 'later', backOn: '2026-10-11' })).toBeNull();
   });
 
   it('leaves archived jobs alone', () => {
@@ -223,26 +269,39 @@ describe('attention', () => {
 
 describe('isInView', () => {
   it.each([
-    ['new', ['review', 'all']],
-    ['checked', ['apply', 'all']],
-    ['resume', ['apply', 'all']],
+    ['new', ['new', 'all']],
+    ['review', ['review', 'all']],
+    ['later', ['review', 'all']],
+    ['apply', ['apply', 'all']],
     ['applied', ['applied', 'all']],
     ['screen', ['interviewing', 'all']],
     ['interview', ['interviewing', 'all']],
     ['offer', ['interviewing', 'all']],
     ['ghosted', ['closed', 'all']],
     ['accepted', ['closed', 'all']],
+    ['passed', ['closed', 'all']],
+    ['role-closed', ['closed', 'all']],
   ] as const)('puts %s in %j', (status, views) => {
     expect(JOB_VIEWS.filter((view) => isInView(view, status))).toEqual(views);
   });
 
   it('opens on the furthest view with jobs in it', () => {
     expect(startingView(['new', 'applied', 'screen', 'rejected'])).toBe('interviewing');
-    expect(startingView(['new', 'resume', 'applied'])).toBe('applied');
-    expect(startingView(['new', 'checked'])).toBe('apply');
+    expect(startingView(['new', 'apply', 'applied'])).toBe('applied');
+    expect(startingView(['new', 'review', 'apply'])).toBe('apply');
+    expect(startingView(['new', 'later'])).toBe('review');
     expect(startingView(['rejected'])).toBe('closed');
-    expect(startingView(['rejected', 'new'])).toBe('review');
-    expect(startingView([])).toBe('review');
+    expect(startingView(['rejected', 'new'])).toBe('new');
+    expect(startingView([])).toBe('new');
+  });
+
+  it('groups every status once, in the order of the list of statuses', () => {
+    expect(STATUS_GROUPS.map((group) => group.label)).toEqual([
+      'Before applying',
+      'After applying',
+      'Closed',
+    ]);
+    expect(STATUS_GROUPS.flatMap((group) => group.statuses)).toEqual([...JOB_STATUSES]);
   });
 
   it('puts every status in one view besides all, and says which', () => {
@@ -268,8 +327,6 @@ describe('nextStep', () => {
   it('suggests what usually comes next', () => {
     expect(step({})).toBe('Run a fit check');
     expect(step({ company: 'Bluewave Staffing' })).toBe('Find the real employer');
-    expect(step({ stage: 'checked' })).toBe('Tailor a resume');
-    expect(step({ stage: 'resume', lastActivity: TODAY })).toBe('Ready to apply');
     expect(step({ status: 'applied', appliedOn: '2026-10-07', statusOn: '2026-10-07' })).toBe(
       'Applied 3 days ago',
     );
@@ -277,8 +334,28 @@ describe('nextStep', () => {
     expect(step({ status: 'offer', statusOn: TODAY })).toBe('Decide on the offer');
   });
 
+  it('says what’s left to decide before applying', () => {
+    const fit = (verdict: string) => ({ verdict, score: 70, date: null });
+    // Claude's work takes a job to To review. Only the user takes it further.
+    expect(step({ stage: 'review' })).toBe('Run a fit check');
+    expect(step({ stage: 'review', fit: fit('Good') })).toBe('Apply or pass?');
+    expect(step({ stage: 'review', fit: fit('Skip: hybrid in Austin') })).toBe(
+      'Fit check says skip. Pass?',
+    );
+    expect(step({ stage: 'review', files: [pdf], lastActivity: TODAY })).toBe(
+      'Resume ready. Apply or pass?',
+    );
+    expect(step({ status: 'apply', statusOn: TODAY })).toBe('Tailor a resume');
+    expect(step({ status: 'apply', statusOn: TODAY, files: [pdf] })).toBe('Ready to apply');
+    expect(step({ status: 'later', backOn: '2026-10-15' })).toBe('Back Thursday');
+    expect(step({ status: 'later', backOn: '2026-10-11' })).toBe('Back tomorrow');
+    expect(step({ status: 'later' })).toBeUndefined();
+    expect(step({ status: 'later', backOn: TODAY })).toBe('Back from Later. Apply or pass?');
+  });
+
   it('suggests nothing for closed jobs, skips, or jobs without a role', () => {
     expect(step({ status: 'rejected' })).toBeUndefined();
+    expect(step({ status: 'role-closed' })).toBeUndefined();
     expect(step({ fit: { verdict: 'Skip', score: 30, date: null } })).toBeUndefined();
     expect(step({ role: '' })).toBeUndefined();
   });
@@ -291,7 +368,7 @@ describe('jobStats', () => {
       job({ status: 'screen', appliedOn: '2026-09-20', statusOn: TODAY, calls: [call()] }),
       job({ status: 'rejected', appliedOn: '2026-09-01' }),
       job({ status: 'ghosted', appliedOn: '2026-08-01' }),
-      job({ stage: 'checked', nextOn: '2026-10-01' }),
+      job({ stage: 'review', nextOn: '2026-10-01' }),
       job(),
     ].map((each) => ({ job: each, progress: jobProgress(each, TODAY) }));
     expect(jobStats(jobs, TODAY)).toEqual({

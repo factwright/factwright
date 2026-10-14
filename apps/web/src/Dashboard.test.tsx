@@ -56,7 +56,7 @@ describe('the jobs page on the phone', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'Applied 1' }));
     expect(shownCompanies()).toEqual(['Acme Robotics']);
     expect(screen.getByText('$185k–$215k')).toBeTruthy();
-    await userEvent.click(screen.getByRole('radio', { name: 'To review 1' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'New 1' }));
     expect(shownCompanies()).toEqual(['Cobalt']);
 
     await userEvent.click(screen.getByRole('radio', { name: 'All 3' }));
@@ -65,6 +65,22 @@ describe('the jobs page on the phone', () => {
 
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search jobs' }), ' nobody');
     expect(screen.getByText('No jobs here match that search.')).toBeTruthy();
+  });
+
+  it('folds the jobs set aside at the bottom of To review', async () => {
+    const vault = vaultOf([
+      job({ id: 'kite--staff', company: 'Kite', role: 'Staff Engineer', status: 'review' }),
+      job({ id: 'lark--staff', company: 'Lark', role: 'Staff Engineer', status: 'later' }),
+    ]);
+    render(<Dashboard vault={vault} today={TODAY} refreshing={false} onRefresh={vi.fn()} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'To review 1' }));
+    expect(shownCompanies()).toEqual(['Kite']);
+    const later = screen.getByText('Later', { selector: 'summary' }).closest('details');
+    if (!later) throw new Error('No folded group');
+    expect(later.open).toBe(false);
+    expect(within(later).getByRole('list', { name: 'Set aside for later' }).textContent).toContain(
+      'Lark',
+    );
   });
 
   it('opens a job on its own page', async () => {

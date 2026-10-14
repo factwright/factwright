@@ -18,6 +18,13 @@ export function localDate(date: Date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/** The date some whole days after another, as YYYY-MM-DD: "2026-10-17" a week after "2026-10-10". */
+export function addDays(date: string, days: number): string {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + days);
+  return day.toISOString().slice(0, 10);
+}
+
 /** Whole days from one YYYY-MM-DD date to another: 1 from "2026-10-09" to "2026-10-10". */
 export function daysBetween(from: string, to: string): number {
   const day = (date: string) =>

@@ -6,6 +6,7 @@ import type {
   JobDocs,
   JobShot,
   JobStatus,
+  PassReason,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
@@ -95,6 +96,10 @@ export interface JobChanges {
   status?: JobStatus | null;
   /** With a status, when it happened. On its own, when the current status started. */
   statusOn?: string;
+  /** For a job set aside for later, the day it comes back to review, or null for none. */
+  backOn?: string | null;
+  /** Why the user passed on the job, or null for no reason given. */
+  passReason?: PassReason | null;
   appliedOn?: string | null;
   nextAction?: string | null;
   nextOn?: string | null;
@@ -220,6 +225,8 @@ export interface FactwrightApi {
   /** The text of a job's documents, such as its posting and fit check. */
   jobDocs(jobId: string): Promise<JobDocs | null>;
   updateJob(jobId: string, changes: JobChanges): Promise<EditResult>;
+  /** Makes the same change to several jobs at once, such as moving them all to To review. */
+  updateJobs(jobIds: string[], changes: JobChanges): Promise<EditResult>;
   addJob(job: NewJob): Promise<AddJobResult>;
   addCall(jobId: string, call: NewCall): Promise<EditResult>;
   updateCall(callId: string, changes: CallChanges): Promise<EditResult>;

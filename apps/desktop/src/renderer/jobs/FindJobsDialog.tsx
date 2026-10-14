@@ -104,7 +104,7 @@ export function FindJobsDialog({
   return (
     <Dialog
       title="Find jobs"
-      description="Pick where your Claude looks. It checks each job against what you want and your fact bank, and the ones that fit land in To review."
+      description="Pick where your Claude looks. It checks each job against what you want and your fact bank, and the ones that fit land in New."
       onClose={onClose}
     >
       {(close) => (

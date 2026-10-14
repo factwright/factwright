@@ -19,7 +19,7 @@ export {
   boardSystem,
   readBoard,
 } from './boards.ts';
-export { daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
+export { addDays, daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 export {
   askAnswer,
   askedFile,
@@ -136,6 +136,7 @@ export {
 export {
   type Attention,
   type AttentionLevel,
+  BEFORE_APPLYING,
   CALL_KIND_LABELS,
   CALL_OUTCOME_LABELS,
   CALL_STATE_LABELS,
@@ -145,6 +146,7 @@ export {
   dayFrom,
   fitTier,
   isInView,
+  isSetAside,
   JOB_VIEW_LABELS,
   JOB_VIEWS,
   type JobProgress,
@@ -155,6 +157,7 @@ export {
   LIVE_STATUSES,
   looksHidden,
   nextStep,
+  STATUS_GROUPS,
   startingView,
   VIEW_STATUSES,
   viewOf,
@@ -198,10 +201,15 @@ export {
   type CallOutcome,
   type CallState,
   effectiveStatus,
+  JOB_STATUS_LABELS,
   JOB_STATUSES,
   type JobStage,
   type JobStatus,
   type Note,
+  PASS_REASON_LABELS,
+  PASS_REASONS,
+  type PassReason,
+  readStatus,
   SETTLED_STATUSES,
   type SentAnswer,
   STATUS_RANK,

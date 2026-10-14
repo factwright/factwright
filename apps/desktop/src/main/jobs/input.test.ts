@@ -45,8 +45,26 @@ describe('parseJobChanges', () => {
     expect(parseJobChanges({ kind: null })).toEqual({ kind: null });
   });
 
+  it('takes the day a job set aside comes back, and why the user passed', () => {
+    expect(parseJobChanges({ status: 'later', backOn: '2026-11-02' })).toEqual({
+      status: 'later',
+      backOn: '2026-11-02',
+    });
+    expect(parseJobChanges({ status: 'passed', passReason: 'work' })).toEqual({
+      status: 'passed',
+      passReason: 'work',
+    });
+    expect(parseJobChanges({ backOn: null, passReason: null })).toEqual({
+      backOn: null,
+      passReason: null,
+    });
+  });
+
   it.each([
     { status: 'hired' },
+    { status: 'checked' },
+    { backOn: 'next week' },
+    { passReason: 'vibes' },
     { statusOn: null },
     { statusOn: '2026-02-30' },
     { appliedOn: 'yesterday' },

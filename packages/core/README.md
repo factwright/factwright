@@ -7,9 +7,9 @@ Shared logic for the desktop app, the web view and the sync server. It runs anyw
 | `records` | Reads what the skills saved in the workspace: the fit check log, each job's folder, job searches, salary and employer checks, and drafted messages |
 | `jobs` | Folds those records into one job each, matching them by the job's own link or by role, keeps known jobs' IDs, and notes each job search that found a job |
 | `fit-report` | Reads a fit check's write-up: the score's parts with their evidence, and what people say about the company |
-| `tracker` | Job statuses, calls, dated notes, the status a job shows, and how far along each status is |
+| `tracker` | Job statuses and the words for them, calls, dated notes, the status a job shows, how far along each status is, and why the user passed on a job |
 | `tracked` | Reads the tracker's rows as stored, on this computer or synced from another, and joins them with what the workspace says |
-| `progress` | Where each job stands: what needs your attention, its next step, the stats, and the views it moves through, from To review to Closed |
+| `progress` | Where each job stands: what needs your attention, its next step, the stats, and the views it moves through, from New to Closed, with the jobs set aside for later folded under To review |
 | `journey` | How far each job got and how it ended, as the paths of a flow chart, text for sankeymatic.com, or a spreadsheet |
 | `flows` | Lays out a flow chart (a Sankey diagram): each step a bar as tall as its count, each path a band as thick as its count |
 | `apply-steps` | Special steps for applying, from a job's `apply.md` |

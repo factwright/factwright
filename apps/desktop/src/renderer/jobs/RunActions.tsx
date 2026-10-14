@@ -87,11 +87,12 @@ export function RunActions({
           const running = mine && busy;
           const done = mine && run.phase === 'done';
           const [state, tone] = stateOf(job, skill, running, done);
+          // A fit check helps decide on a job, and a resume comes once the user will apply.
           const suggested =
             running ||
             (!done &&
-              ((status === 'new' && skill === 'fit-check') ||
-                (status === 'checked' && skill === 'focused-resume')));
+              ((skill === 'fit-check' && !job.fit && (status === 'new' || status === 'review')) ||
+                (skill === 'focused-resume' && status === 'apply' && job.files.length === 0)));
           return (
             <button
               key={skill}

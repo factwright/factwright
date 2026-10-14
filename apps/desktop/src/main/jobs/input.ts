@@ -5,6 +5,7 @@ import {
   isIsoDate,
   JOB_STATUSES,
   KIND_ID,
+  PASS_REASONS,
 } from '@factwright/core';
 import type {
   CallChanges,
@@ -91,6 +92,8 @@ export function parseJobChanges(value: unknown): JobChanges | null {
   return readFields<Required<JobChanges>>(value, {
     status: orNull(oneOf(JOB_STATUSES)),
     statusOn: date,
+    backOn: orNull(date),
+    passReason: orNull(oneOf(PASS_REASONS)),
     appliedOn: orNull(date),
     nextAction: textUpTo(LIMITS.nextAction),
     nextOn: orNull(date),

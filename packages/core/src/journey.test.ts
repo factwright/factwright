@@ -41,6 +41,8 @@ function job(extra: Partial<Job> = {}): Job {
     outreach: [],
     status: null,
     statusOn: null,
+    backOn: null,
+    passReason: null,
     appliedOn: null,
     nextAction: null,
     nextOn: null,
@@ -77,7 +79,7 @@ const journey = (extra: Partial<Job>) => {
 
 /** A job that went all the way: checked, resume, applied, screen, interviews, final, offer. */
 const FULL = {
-  stage: 'resume' as const,
+  stage: 'review' as const,
   fit: { verdict: 'Strong', score: 86, date: '2026-09-03' },
   folder: 'acme',
   files: [{ path: 'a.pdf', name: 'a.pdf', format: 'pdf' as const, size: 1, modified: '' }],
@@ -131,6 +133,37 @@ describe('journeyOf', () => {
     expect(journey({}).outcome).toBe('Not applied');
     expect(journey({ status: 'ghosted', appliedOn: '2026-08-01' }).outcome).toBe('No response');
   });
+
+  it('tells a role that closed from a no, before or after applying', () => {
+    const closed = journey({
+      status: 'role-closed',
+      statusOn: '2026-09-20',
+      appliedOn: '2026-09-05',
+      statusLog: [
+        { id: '1', status: 'applied', at: '2026-09-05' },
+        { id: '2', status: 'role-closed', at: '2026-09-20' },
+      ],
+    });
+    expect(closed).toMatchObject({ outcome: 'Role closed', outcomeOn: '2026-09-20' });
+    expect(closed.stages).toEqual(['found', 'checked', 'applied']);
+    const gone = journey({ status: 'role-closed', statusOn: '2026-09-03' });
+    expect(gone).toMatchObject({ outcome: 'Role closed', stages: ['found'] });
+  });
+
+  it('counts a job as checked once Claude worked on it or the user took it on', () => {
+    expect(journey({ stage: 'review' }).stages).toEqual(['found', 'checked']);
+    expect(journey({ status: 'apply' }).stages).toEqual(['found', 'checked']);
+    // With no work of Claude's to date it by, it's checked when the user took it on.
+    const taken = journey({
+      status: 'apply',
+      statusOn: '2026-09-12',
+      statusLog: [{ id: '1', status: 'apply', at: '2026-09-12' }],
+    });
+    expect(taken.dates.checked).toBe('2026-09-12');
+    // Passing on a job at a glance, or setting it aside, isn't checking it.
+    expect(journey({ status: 'passed' }).stages).toEqual(['found']);
+    expect(journey({ status: 'later' }).stages).toEqual(['found']);
+  });
 });
 
 describe('journeys and the summary', () => {
@@ -138,7 +171,7 @@ describe('journeys and the summary', () => {
     [
       job(FULL),
       job({ id: 'b', status: 'rejected', appliedOn: '2026-09-02' }),
-      job({ id: 'c', stage: 'checked', fit: { verdict: 'Good', score: 70, date: '2026-09-02' } }),
+      job({ id: 'c', stage: 'review', fit: { verdict: 'Good', score: 70, date: '2026-09-02' } }),
       job({ id: 'd', status: 'applied', appliedOn: '2026-09-09' }),
       job({ id: 'outreach', role: '' }),
     ].map((each) => ({ job: each, progress: jobProgress(each, TODAY) })),

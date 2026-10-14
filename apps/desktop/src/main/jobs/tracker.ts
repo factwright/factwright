@@ -12,6 +12,7 @@ import {
   type KnownJob,
   type Note,
   questionKey,
+  readStatus,
   roleKey,
   SETTLED_STATUSES,
   type SentAnswer,
@@ -116,6 +117,9 @@ const MIGRATIONS = [
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS notes_job ON notes(job_id);`,
+  // For a job set aside for later, the day it comes back to review. For a job passed on, why.
+  `ALTER TABLE jobs ADD COLUMN back_on TEXT;
+  ALTER TABLE jobs ADD COLUMN pass_reason TEXT;`,
   // The kind of job the user put a job under, such as "project-manager", when they want more
   // than one kind. Empty goes by what the job search or fit check found it as.
   `ALTER TABLE jobs ADD COLUMN kind TEXT;`,
@@ -358,6 +362,28 @@ export class Tracker {
     if (changes.status === undefined && changes.statusOn !== undefined) {
       return this.redateStatus(job, changes.statusOn, context.now);
     }
+    this.transaction(() => this.change(job, changes, context));
+    return DONE;
+  }
+
+  /**
+   * Makes the same change to several jobs at once, such as moving them all to To review, each
+   * as updateJob would. Jobs no longer in the tracker are passed over.
+   */
+  updateJobs(ids: readonly string[], changes: JobChanges, context: EditContext): EditResult {
+    const jobs = [...new Set(ids)].flatMap((id) => this.row(id) ?? []);
+    if (jobs.length === 0) return NOT_FOUND;
+    this.transaction(() => {
+      for (const job of jobs) this.change(job, changes, context);
+    });
+    return DONE;
+  }
+
+  /**
+   * Changes one job, inside a transaction. Setting a job aside for later keeps the day it comes
+   * back, and passing on one keeps why, each when given: a later choice of either replaces it.
+   */
+  private change(job: TrackedRow, changes: JobChanges, context: EditContext): void {
     const sets: string[] = [];
     const values: (string | number | null)[] = [];
     const set = (column: string, value: string | number | null) => {
@@ -382,13 +408,16 @@ export class Tracker {
         set('applied_on', on);
       }
     }
-    if (sets.length === 0) return DONE;
+    if (changes.backOn !== undefined || (statusChanged && status === 'later')) {
+      set('back_on', changes.backOn ?? null);
+    }
+    if (changes.passReason !== undefined || (statusChanged && status === 'passed')) {
+      set('pass_reason', changes.passReason ?? null);
+    }
+    if (sets.length === 0) return;
     set('updated_at', context.now);
-    this.transaction(() => {
-      this.db.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
-      if (statusChanged && status) this.logStatus(id, status, on);
-    });
-    return DONE;
+    this.db.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values, job.id);
+    if (statusChanged && status) this.logStatus(job.id, status, on);
   }
 
   /**
@@ -468,7 +497,7 @@ export class Tracker {
         .prepare('UPDATE jobs SET status_on = ?, updated_at = ? WHERE id = ?')
         .run(at, now, job.id);
       const latest = this.latestChange(job.id);
-      if (latest?.status === status) {
+      if (latest && readStatus(latest.status) === status) {
         this.db.prepare('UPDATE status_log SET at = ? WHERE id = ?').run(at, required(latest.id));
       }
       if (status === 'applied') {
@@ -647,7 +676,7 @@ export class Tracker {
     const latest = this.latestChange(jobId);
     this.transaction(() => {
       this.db.prepare('UPDATE status_log SET at = ? WHERE id = ?').run(at, entryId);
-      if (latest?.id === entryId && job?.status === entry.status) {
+      if (latest?.id === entryId && job?.status === readStatus(entry.status)) {
         this.db
           .prepare('UPDATE jobs SET status_on = ?, updated_at = ? WHERE id = ?')
           .run(at, now, jobId);
@@ -673,7 +702,7 @@ export class Tracker {
     const latest = this.latestChange(jobId);
     this.transaction(() => {
       this.db.prepare('DELETE FROM status_log WHERE id = ?').run(entryId);
-      if (latest?.id === entryId && job?.status === entry.status) {
+      if (latest?.id === entryId && job?.status === readStatus(entry.status)) {
         const previous = this.latestChange(jobId);
         this.db
           .prepare('UPDATE jobs SET status = ?, status_on = ?, updated_at = ? WHERE id = ?')

@@ -31,7 +31,10 @@ export interface BuildResumeDeps {
   now?: () => Date;
 }
 
-/** Statuses a job only reaches once the user has applied, and sent its resume. */
+/**
+ * Statuses a job only reaches once the user has applied, and sent its resume. Passed and Role
+ * closed can come before applying, so they go by the applied date alone.
+ */
 const SENT: readonly JobStatus[] = [
   'applied',
   'screen',
@@ -41,6 +44,7 @@ const SENT: readonly JobStatus[] = [
   'declined',
   'rejected',
   'ghosted',
+  'withdrawn',
 ];
 
 async function readText(path: string): Promise<string | null> {

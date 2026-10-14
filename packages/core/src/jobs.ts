@@ -330,12 +330,10 @@ function build(draft: Draft): CollectedJob {
   const dates = records.flatMap((record) => (record.date ? [record.date] : [])).sort(compare);
   const files = folders.flatMap((record) => record.files);
   const onlyOutreach = outreach.length === records.length;
-  const stage: JobStage =
-    files.length > 0
-      ? 'resume'
-      : fits.length > 0 || folders.length > 0 || onlyOutreach
-        ? 'checked'
-        : 'new';
+  // Claude's work takes a job out of New: anything but finding it, or messages drafted for its
+  // company, which join every job there, even one found long after.
+  const worked = records.some((record) => record.tool !== 'search' && record.tool !== 'outreach');
+  const stage: JobStage = worked || onlyOutreach ? 'review' : 'new';
   const first = [...records].sort(
     (a, b) => byDate(a, b) || ORIGIN.indexOf(a.tool) - ORIGIN.indexOf(b.tool),
   )[0];
