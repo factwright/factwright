@@ -6,7 +6,7 @@
 
 **Tailored to the job. True to the facts.**
 
-An open-source job hunt app for Mac and Windows, run by your own Claude, and free during the beta.<br>
+A free, open-source job hunt app for Mac and Windows, run by your own Claude.<br>
 Every resume line and application answer traces back to a fact you've confirmed.
 
 [Download for Mac](https://factwright.com/download/mac) · [Download for Windows](https://factwright.com/download/windows) · [Website](https://factwright.com) · [How your data is protected](docs/security.md)
@@ -74,7 +74,7 @@ More in [architecture](docs/architecture.md) and [security](docs/security.md).
 You also need [Claude Code](https://code.claude.com/docs/en/setup), signed in with a Claude plan or an API key. Factwright checks your setup when it opens, walks you through anything that's missing, and keeps itself up to date.
 
 ## Support Factwright
-Factwright is open source, and free during the beta. It's built by [Steve Hillyer](https://github.com/steve1two). If it helps your job hunt, you can support it:
+Factwright is free and open source. It's built by [Steve Hillyer](https://github.com/steve1two). If it helps your job hunt, you can support it:
 
 <a href="https://github.com/sponsors/steve1two"><img src="https://img.shields.io/badge/Sponsor_on_GitHub-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
 <a href="https://buymeacoffee.com/stevehillyer"><img src="https://img.shields.io/badge/Buy_Steve_a_coffee-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Steve a coffee"></a>
