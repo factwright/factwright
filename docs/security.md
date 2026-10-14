@@ -72,6 +72,9 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - A computer that signs in again checks the account's key on the server before it syncs anything, and asks again after a restart until it has.
   - If the account has none, such as after it was deleted and made again, the computer makes a new account key and recovery key, as a first device does. The old ones, which a lost or stolen device may still hold, open nothing of it, and the computer's other devices link again.
   - If the account uses another key, the computer asks to be linked to it and sends nothing until it is. Linking adds this computer's job hunt to that account, so signing in with the wrong one can be undone with **Use a different account**, which ends only that sign-in.
+- A computer that's syncing checks the account's key too, after its first round each time sync starts there (opening the app, signing in, turning on or linking), and after each round that follows until the server answers. Until then, its rounds run under the key it hasn't checked. Version 0.1.0 didn't check when it signed in again. After an account was deleted and made again, it synced under its old key without saving that key to the account, and a computer that set up later made another key. Each then skipped what the other sent, and both said they were up to date. Now a key the account doesn't use stops sync on that computer, even across a restart, and it does what signing in again does:
+  - If the account has no key, the computer makes a new account key and recovery key, and sends its job hunt again under the new key. What it sent under the old key stays on the server, where only that key opens it, and the account's other devices skip it.
+  - If the account uses another key, the computer links to it, as above.
 
 ### Adding a device
 - On a device that's set up, **Link a phone or computer** makes a link code: 160 random bits, shown as a QR code and as 32 characters to type.

@@ -19,6 +19,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Fixed
 - Signing in to sync again checks the account's key before anything syncs, and asks again after a restart until it has. An account deleted and made again gets a new account key and recovery key, which the old ones and any lost device can't open. Another account that uses another key is linked to only when asked, with **Use a different account** to end that sign-in instead.
+- A computer that's syncing checks that the account still uses its key. 0.1.0 could sync a deleted-and-remade account under its old key while a newer computer used a new one: each skipped what the other sent, while both said they were up to date. Now that computer stops and does what signing in again does: it makes a new account key and recovery key when the account has none, or links again to the account's new key.
+- Each sync step that waits on the server gives up once another sign-in, or closing the app, overtakes it, so a late answer can't change the sign-in that came after it.
 
 ## 0.1.0 - 2026-10-13
 

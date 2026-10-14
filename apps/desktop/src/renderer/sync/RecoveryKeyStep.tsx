@@ -2,6 +2,7 @@ import { Button, Checkbox, DialogActions } from '@factwright/ui';
 import { Check, Copy, Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import type { SetUpAgain } from '../../shared/sync.ts';
 import { Groups } from './Groups.tsx';
 import styles from './SyncDialog.module.css';
 
@@ -33,12 +34,12 @@ function keyFile(recoveryKey: string, email: string): string {
 export function RecoveryKeyStep({
   api,
   email,
-  again = false,
+  again,
 }: {
   api: FactwrightApi;
   email: string;
-  /** The account has no key on the server though this computer synced before. */
-  again?: boolean;
+  /** Why this computer, which synced before, makes a recovery key again. */
+  again?: SetUpAgain;
 }) {
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -81,7 +82,7 @@ export function RecoveryKeyStep({
 
   return (
     <>
-      {again && (
+      {again === 'remade' && (
         <p className={styles.lead}>
           This account has no recovery key yet, such as after it was deleted and made again, so a
           key you saved before won’t open it. This computer makes a new one, and your other devices
