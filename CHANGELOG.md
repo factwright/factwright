@@ -2,6 +2,11 @@
 
 Notable changes to Factwright, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+- Each release appears on the repository's Releases page on GitHub, with its notes. While the repository is public, its installers also come with a signed record of the commit and run that built them, which `gh attestation verify` checks.
+
 ## 0.1.1 - 2026-10-13
 
 Steadier sync, the version in the sidebar, the privacy policy and terms, and installers in Factwright's colors.

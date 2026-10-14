@@ -1,7 +1,8 @@
 # Releasing
 
 How a version of Factwright reaches people: installers built and signed by GitHub, put on
-`downloads.factwright.com`, and picked up by the copies already installed.
+`downloads.factwright.com`, picked up by the copies already installed, and listed on the
+repository's Releases page.
 
 ## How it fits together
 - **Installers.** [electron-builder](https://www.electron.build) packages the desktop app
@@ -32,6 +33,17 @@ How a version of Factwright reaches people: installers built and signed by GitHu
   - `Factwright.dmg` and `Factwright-Setup.exe` are always the newest. The website links to them.
   - `latest-mac.yml` and `latest.yml` say which version is newest, with each file's checksum.
     They're uploaded last, so nothing finds a version before its files are there.
+- **On GitHub.** Once both computers' installers are out, the version gets a release on the
+  repository's Releases page: its notes from `apps/desktop/release-notes`, where to download it,
+  and how to check an installer. Its files stay on downloads.factwright.com, where updates look.
+- **Where each installer came from.** While the repository is public, each installer gets an
+  attestation before it goes out: a record, signed through Sigstore and kept by GitHub, of the
+  commit, tag and workflow run that built it. Anyone can check a download against it:
+  ```bash
+  gh attestation verify Factwright.dmg -R factwright/factwright
+  ```
+  GitHub's free plan makes attestations for public repositories only, so versions released while
+  the repository was private have none.
 - **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
   minutes, and straight away when the user comes back to it or the computer wakes, at most once a
   minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new
@@ -74,6 +86,9 @@ the value; nobody else ever sees them.
 The app registration needs the **Artifact Signing Certificate Profile Signer** role on
 `asa-neatifaisigning`.
 
+The release on GitHub and the installers' attestations use the run's own token, so they need
+nothing set up.
+
 Only the Account Holder can make the Developer ID certificate. Make it on Apple's website, as the
 table says, choosing G2 Sub-CA: a certificate from Apple's previous authority can't sign after
 2027-02-01. To tell the two apart, open the certificate in Keychain Access: under Issuer Name, the
@@ -103,16 +118,18 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
    - the Mac app's certificate is from Apple's G2 authority, and Apple's ticket is stapled to it
    - each built app starts with a stand-in Claude Code
 
-   Only then does it upload, refusing to replace a version that's out already. A release that
-   isn't signed is never published. Each computer's installers go out as soon as its own build
-   passes, so Windows never waits on Apple, and for a while the two can be on different versions.
+   Only then does it upload, refusing to replace a version that's out already, and first records
+   where each installer came from if the repository is public. A release that isn't signed is
+   never published. Each computer's installers go out as soon as its own build passes, so Windows
+   never waits on Apple, and for a while the two can be on different versions. Once both are out,
+   the version's release appears on GitHub.
 
    Apple usually notarizes in minutes, but can hold an app for hours, especially the first time.
    The Mac job gives up after an hour, so a slow Apple can't use up the month's free GitHub minutes
    (Mac minutes count ten times). Apple carries on checking. Once it's done (`xcrun notarytool
    history` says Accepted), choose **Re-run failed jobs** on the run, and the Mac installers go out.
 5. **Check it:** `https://downloads.factwright.com/latest-mac.yml` and `latest.yml` name the new
-   version, and the two downloads open.
+   version, the two downloads open, and the release is on the repository's Releases page.
 
 Running the workflow by hand on a branch builds and tests the installers without publishing them.
 If signing is set up, they're signed, notarized and checked as a release's are: run it before a

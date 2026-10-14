@@ -2,13 +2,15 @@ name: Release
 
 # Builds, signs and publishes Factwright's installers. Pushing a tag such as v0.1.0 on main
 # releases that version: the installers go to downloads.factwright.com, where installed copies
-# find them as an update. A run by hand on a tag does the same, and like any release refuses to
-# replace a version already published. Run by hand on a branch, or on a pull request that changes
-# how the installers are made, it builds and tests them without publishing them, as the run's
-# artifacts: on a branch, signed and checked as a release is if signing is set up, and on a pull
-# request, which never gets the signing keys, signed only for the computer it's on. Mac minutes
-# cost ten times as much on the free plan, so it runs only for these. docs/releasing.md has the
-# steps.
+# find them as an update, and once both computers' are out, the version gets a release on GitHub
+# with its notes. While the repository is public, each installer also gets a signed record of the
+# commit and run that built it, which `gh attestation verify` checks. A run by hand on a tag does
+# the same, and like any release refuses to replace a version already published. Run by hand on a
+# branch, or on a pull request that changes how the installers are made, it builds and tests them
+# without publishing them, as the run's artifacts: on a branch, signed and checked as a release is
+# if signing is set up, and on a pull request, which never gets the signing keys, signed only for
+# the computer it's on. Mac minutes cost ten times as much on the free plan, so it runs only for
+# these. docs/releasing.md has the steps.
 on:
   push:
     tags: ['v*']
@@ -226,6 +228,11 @@ jobs:
     needs: mac
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # Signing an installer's record needs a token from GitHub, and somewhere to keep the record.
+    permissions: &attest
+      contents: read
+      id-token: write
+      attestations: write
     env: &r2
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -243,6 +250,17 @@ jobs:
         with:
           name: mac
           path: dist
+      # A record, signed through Sigstore and kept by GitHub, of the commit, tag and run that built
+      # each installer, so anyone can check a download came from here. It's made before anything
+      # goes out, so every published file has one. GitHub's free plan only keeps these for public
+      # repositories, so while this one is private there's nothing to make.
+      - name: Record where the installers came from
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.dmg
+            dist/*.zip
       - run: apps/desktop/scripts/publish.sh mac "${GITHUB_REF_NAME#v}" dist
 
   publish-windows:
@@ -250,6 +268,7 @@ jobs:
     needs: windows
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions: *attest
     env: *r2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -259,4 +278,52 @@ jobs:
         with:
           name: windows
           path: dist
+      - name: Record where the installer came from
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*.exe
       - run: apps/desktop/scripts/publish.sh windows "${GITHUB_REF_NAME#v}" dist
+
+  # Once both computers' installers are out, the version gets a release on GitHub: its notes, where
+  # to download it, and how to check an installer. The files stay on downloads.factwright.com,
+  # where installed copies look. Re-running failed jobs reaches this too, and updates the release
+  # if it's there already.
+  github-release:
+    name: Release on GitHub
+    needs: [publish-mac, publish-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTED: ${{ !github.event.repository.private }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$RUNNER_TEMP/notes.md"
+          cp "apps/desktop/release-notes/$version.md" "$notes"
+          cat >> "$notes" <<'NOTES'
+
+          ## Download
+          - [Factwright for Mac](https://factwright.com/download/mac), for Apple silicon and Intel, on macOS 12 or later
+          - [Factwright for Windows](https://factwright.com/download/windows), for 64-bit Windows 10 and 11
+
+          Copies already installed update on their own.
+          NOTES
+          if [ "$ATTESTED" = true ]; then
+            cat >> "$notes" <<NOTES
+
+          Each installer comes with a signed record of the commit and run that built it. To check one: \`gh attestation verify <installer> -R $GITHUB_REPOSITORY\`
+          NOTES
+          fi
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Factwright $version" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Factwright $version" --notes-file "$notes"
+          fi
