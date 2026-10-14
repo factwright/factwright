@@ -85,7 +85,7 @@ const STATUS: Readonly<Record<string, Partial<ProfileStatus>>> = {
   new: { facts: { claims: 0, unconfirmed: 0, files: 0 } },
   started: { facts: { claims: 24, unconfirmed: 18, files: 5 }, unread: [] },
   done: {
-    facts: { claims: 41, unconfirmed: 0, files: 7 },
+    facts: { claims: 5, unconfirmed: 2, files: 5 },
     starting: [
       {
         path: 'base/startup-builder.json',

@@ -21,6 +21,7 @@
     "dist:win": "node scripts/installer-art.ts --win && electron-builder --config electron-builder.config.mjs --win --publish never",
     "start": "electron .",
     "screens": "vite -c vite.renderer.config.ts",
+    "screenshots": "node scripts/screenshots.ts",
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "e2e:packaged": "playwright test -c e2e/playwright.packaged.config.ts",
     "typecheck": "tsc && tsc -p src/renderer",
