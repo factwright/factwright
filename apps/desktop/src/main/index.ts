@@ -355,7 +355,17 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     // A run belongs to its window, so closing the window or quitting stops it.
     const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
     stopWithWindow(window);
-    app.on('before-quit', () => {
+    // A request to link this computer is called off before the app goes, so it doesn't wait on
+    // the other devices. Quitting waits for that once, for a moment at most.
+    let calledOff = false;
+    app.on('before-quit', (event) => {
+      const callingOff = calledOff ? null : sync.callOffBeforeQuit();
+      if (callingOff) {
+        calledOff = true;
+        event.preventDefault();
+        void callingOff.finally(() => app.quit());
+        return;
+      }
       profiles.started();
       updates?.stop();
       claude.stop();

@@ -834,6 +834,14 @@ export class SyncAccount {
     this.set({ state: 'off' });
   }
 
+  /**
+   * Before the app quits, when this computer has a request to link out: calls it off, so it
+   * doesn't wait on the other devices, taking a moment at most. Null when there's none.
+   */
+  callOffBeforeQuit(): Promise<void> | null {
+    return this.approvals.hasRequest() ? this.approvals.stop() : null;
+  }
+
   /** Stops sync as the app closes, once a round that's running has finished. */
   async stop(): Promise<void> {
     if (this.closed) return;

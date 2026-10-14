@@ -113,7 +113,7 @@ Who can approve, and who can ask:
 - Any device signed in to the account can ask, including one signed in by tricking someone into approving its sign-in code. The emoji can't tell a person's own device from someone else's, so the approving computer does more:
   - It shows the device asking by name, with when it asked and when it signed in. A device can ask only within 30 minutes of signing in, so a sign-in someone was tricked into long ago can't ask at all.
   - It won't approve while more than one device is asking, so a request made alongside the person's own can't slip in. The person turns down any that aren't theirs first.
-  - **Turn down** turns a request down, then offers to sign that device out of the account, for one that isn't the person's. A request turned down stays turned down, and the device asking says so.
+  - **Turn down** turns a request down, and the device asking says so. Then it offers to sign that device out of the account, for one that isn't the person's. That goes by the ID the account lists the device under, so it can't dodge it by calling its request off.
   - It says to approve only a device that's in front of you, and that nobody from Factwright will ever ask for the emoji.
 - The server keeps one request per device at a time, five waiting per account, and ten an hour from each device.
 - A computer that's set up hears of a request as it's made, and shows it on its Sync card, with a notification if Factwright isn't in front.

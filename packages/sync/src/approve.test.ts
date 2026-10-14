@@ -26,6 +26,7 @@ class FakeServer {
     return {
       id: row.id,
       device: 'Chrome on Windows',
+      deviceId: row.session,
       asked: new Date().toISOString(),
       expires: new Date(Date.now() + 600_000).toISOString(),
       signedIn: new Date().toISOString(),
@@ -65,7 +66,9 @@ class FakeServer {
       },
       offerToApprove: async (id, key) => {
         const found = row(id);
-        if (found.session === session || found.approver) throw new Error('refused');
+        if (found.session === session) throw new Error('refused');
+        if (found.approver?.session === session && found.approver.key === key) return;
+        if (found.approver) throw new Error('refused');
         found.approver = { session, device, key };
       },
       showKey: async (id, key) => {
@@ -338,13 +341,29 @@ describe('a server in the middle', () => {
     const serversKey = newAccountKey();
     await fakeApprover.approve(serversKey);
     expect(await ask.finish()).toBeNull();
-    // Said to match anyway, the server's key would open. But it isn't the account's: its ID
-    // differs from the account's key record, which the apps check before using a key.
+    // Said to match anyway, the server's key would open. Its ID differs from the account's key
+    // record here, which the apps check before using a key, but a server in the middle controls
+    // that record too: against one, it's the person comparing the emoji that protects them.
     ask.confirm();
     const taken = await ask.finish();
     if (!taken) throw new Error('Nothing was picked up.');
     expect(taken).toEqual(serversKey);
     expect((await accountKeys(taken)).id).not.toBe(server.keyId);
+  });
+
+  it('offers the same key again when the first answer was lost', async () => {
+    const server = new FakeServer();
+    const ask = await LinkAsk.start(server.as('new'));
+    const approval = await LinkApproval.prepare(
+      server.as('mac'),
+      await listed(server, ask.id),
+      server.keyId,
+    );
+    await approval.offer();
+    await ask.step();
+    // The new device has shown its key since: the same offer is still taken.
+    await approval.offer();
+    expect(await approval.step()).toMatchObject({ state: 'check' });
   });
 
   it('seals the same thing again when the first answer was lost', async () => {

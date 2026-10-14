@@ -179,7 +179,8 @@ export function LinkStep({
             <button
               type="button"
               className={styles.link}
-              onClick={() => void api.useDifferentSyncAccount()}
+              // Ends the old sign-in, then starts a new one in the browser.
+              onClick={() => void api.useDifferentSyncAccount().then(() => api.signInToSync())}
             >
               Sign in again
             </button>{' '}

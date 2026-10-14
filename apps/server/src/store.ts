@@ -513,14 +513,10 @@ export class UserStore extends DurableObject<Env> {
 
   /**
    * Another device of the account turns a request down, approved or not, so nothing is handed
-   * over. The new device sees it was turned down. It calls its own request off instead. Answers
-   * with the session that asked, which the Worker signs out when the person says it isn't theirs.
+   * over. The new device sees it was turned down. It calls its own request off instead. A device
+   * that isn't the person's is signed out separately, by the ID the request names it by.
    */
-  denyRequest(
-    owner: string,
-    session: string,
-    id: string,
-  ): { denied: string } | 'not-found' | 'own' {
+  denyRequest(owner: string, session: string, id: string): 'denied' | 'not-found' | 'own' {
     this.claim(owner);
     this.spend();
     const row = this.liveRequest(id);
@@ -528,7 +524,7 @@ export class UserStore extends DurableObject<Env> {
     if (row.session === session) return 'own';
     this.sql.exec('UPDATE requests SET denied = 1, sealed = NULL WHERE id = ?', id);
     this.requestsChanged();
-    return { denied: row.session };
+    return 'denied';
   }
 
   /**

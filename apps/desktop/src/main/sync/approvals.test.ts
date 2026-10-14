@@ -213,7 +213,9 @@ describe('linking a computer from one that’s set up', () => {
         message: expect.stringContaining('turned this down'),
       }),
     );
-    // Not the person's: signed out, and that computer says to sign in again.
+    // Not the person's: signed out, and that computer says to sign in again. Asking again first,
+    // which drops the request turned down, doesn't save it.
+    await pc.sync.askToLink();
     expect(await mac.sync.signOutTurnedDown()).toEqual({ ok: true });
     expect(mac.approvals().turnedDown).toBeNull();
     const devices = (await mac.sync.account()) as { ok: true; account: { devices: unknown[] } };
@@ -295,6 +297,36 @@ describe('linking a computer from one that’s set up', () => {
       }),
     );
     await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'ended' }));
+  });
+
+  it('offers the same key again after an answer that was lost', async () => {
+    // The offer reaches the server, but its answer doesn't come back.
+    let lose = true;
+    const losing: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      if (lose && /\/approver$/.test(String(input))) {
+        lose = false;
+        throw new TypeError('fetch failed');
+      }
+      return response;
+    };
+    const mac = computer('Sam’s Mac', losing);
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    await mac.sync.newRecoveryKey();
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    const pc = await newComputer();
+    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await pc.sync.askToLink();
+    const id = (await mac.sync.approvalsView()).requests[0]?.id ?? '';
+    expect(await mac.sync.approveRequest(id)).toMatchObject({ ok: false });
+    // The new device has seen the offer and shown its key by now.
+    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'check' }));
+    expect(await mac.sync.approveRequest(id)).toEqual({ ok: true });
+    await vi.waitFor(() => expect(mac.approvals().approving).toMatchObject({ step: 'check' }));
+    const onMac = mac.approvals().approving;
+    const onPc = pc.approvals().asking;
+    expect(onMac?.step === 'check' && onMac.check).toEqual(onPc?.step === 'check' && onPc.check);
   });
 
   it('calls its request off as the app quits', async () => {

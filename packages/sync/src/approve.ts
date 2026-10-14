@@ -334,17 +334,34 @@ export class LinkApproval {
   }
 
   /**
-   * Offers to approve a request, with a one-time key of its own. The key ID is the one of the
-   * account key this device holds.
+   * Makes the one-time key to approve a request with, without offering it yet. The key ID is the
+   * one of the account key this device holds.
    */
+  static async prepare(
+    client: ApproveClient,
+    request: LinkRequest,
+    keyId: string,
+  ): Promise<LinkApproval> {
+    return new LinkApproval(client, request, keyId, await oneTimeKey());
+  }
+
+  /** Offers to approve a request, with a one-time key of its own. */
   static async start(
     client: ApproveClient,
     request: LinkRequest,
     keyId: string,
   ): Promise<LinkApproval> {
-    const own = await oneTimeKey();
-    await client.offerToApprove(request.id, own.publicKey);
-    return new LinkApproval(client, request, keyId, own);
+    const approval = await LinkApproval.prepare(client, request, keyId);
+    await approval.offer();
+    return approval;
+  }
+
+  /**
+   * Offers this device's one-time key. Offering it again, such as after an answer that was lost,
+   * is fine: the server takes the same key again, whatever the new device has done since.
+   */
+  offer(): Promise<void> {
+    return this.client.offerToApprove(this.id, this.own.publicKey);
   }
 
   /** Where approving stands now. Steps taken at once wait for each other. */

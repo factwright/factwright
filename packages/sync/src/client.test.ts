@@ -102,6 +102,7 @@ describe('SyncClient', () => {
     const good = {
       id,
       device: 'Chrome on Windows',
+      deviceId: 'session-1',
       asked: '2026-10-14T18:00:00.000Z',
       expires: '2026-10-14T18:10:00.000Z',
       signedIn: '2026-10-14T17:58:00.000Z',

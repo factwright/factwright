@@ -481,6 +481,35 @@ describe('linking by approval', () => {
     await user.click(within(asking).getByRole('button', { name: 'They don’t match' }));
   });
 
+  it('counts a device being approved elsewhere as asking too, and lets it be turned down', async () => {
+    const api = apiFor('on', 'check');
+    const view = await openDialog(api);
+    view.rerender(
+      <SyncDialog
+        api={api}
+        status={ON}
+        approvals={{
+          ...(await api.linkApprovals()),
+          requests: [
+            {
+              id: 'other',
+              device: 'Factwright on Sam’s MacBook',
+              asked: new Date().toISOString(),
+              signedIn: new Date().toISOString(),
+              elsewhere: true,
+            },
+          ],
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    const asking = screen.getByRole('region', { name: 'Approve Chrome on Windows?' });
+    expect(within(asking).getByText('Being approved on another device')).toBeTruthy();
+    expect(within(asking).getByRole('button', { name: 'Turn down' })).toBeTruthy();
+    const link = within(asking).getByRole('button', { name: 'They match, link it' });
+    expect((link as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('says when this computer signed in too long ago to ask, with a way to sign in again', async () => {
     const api = {
       ...apiFor('link', 'stale'),

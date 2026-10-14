@@ -330,29 +330,13 @@ const postApprove: Handler = async ({ request, store, account, session }, [id]) 
       );
 };
 
-const postDeny: Handler = async ({ request, env, store, account, session }, [id]) => {
+const postDeny: Handler = async ({ store, account, session }, [id]) => {
   if (!isRequestId(id)) return GONE();
-  // Older devices turn a request down with nothing more to say.
-  if (Number(request.headers.get('content-length') ?? 0) > SMALL_BODY) throw new TooBig();
-  const text = await request.text();
-  if (text.length > SMALL_BODY) throw new TooBig();
-  let signOut = false;
-  try {
-    signOut = text !== '' && (JSON.parse(text) as { signOut?: unknown }).signOut === true;
-  } catch {
-    throw new Refused('That wasn’t the JSON the server takes.');
-  }
   const denied = await store.denyRequest(account, session.id, id);
-  if (denied === 'not-found') return GONE();
-  if (denied === 'own')
-    return failure(403, 'refused', 'A device calls its own request off instead.');
-  // Not the person's device: it's signed out of the account too.
-  if (signOut) {
-    await env.DB.prepare('DELETE FROM "session" WHERE id = ? AND userId = ?')
-      .bind(denied.denied, account)
-      .run();
-  }
-  return empty();
+  if (denied === 'denied') return empty();
+  return denied === 'not-found'
+    ? GONE()
+    : failure(403, 'refused', 'A device calls its own request off instead.');
 };
 
 const postTake: Handler = async ({ store, account, session }, [id]) => {

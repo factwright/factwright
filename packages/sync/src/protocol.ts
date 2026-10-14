@@ -182,6 +182,8 @@ export interface LinkRequest {
   id: string;
   /** The device asking, as the account page names it, such as "Chrome on Windows". */
   device: string;
+  /** The ID the account page lists the device asking under, to sign it out by. */
+  deviceId: string;
   /** When it asked, and when the request runs out, as ISO times. */
   asked: string;
   expires: string;
@@ -222,6 +224,8 @@ export function isLinkRequest(value: unknown): value is LinkRequest {
   return (
     isRequestId(request.id) &&
     isName(request.device) &&
+    typeof request.deviceId === 'string' &&
+    /^[A-Za-z0-9_-]{1,100}$/.test(request.deviceId) &&
     isTime(request.asked) &&
     isTime(request.expires) &&
     isTime(request.signedIn) &&

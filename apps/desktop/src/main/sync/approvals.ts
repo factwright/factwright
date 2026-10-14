@@ -80,8 +80,13 @@ export class Approvals {
   private asking: Asking | null = null;
   private requests: LinkRequest[] = [];
   private approving: { approval: LinkApproval; view: ApprovingView } | null = null;
-  /** The request this computer turned down last, which the person can still sign out. */
-  private turnedDown: { id: string; device: string } | null = null;
+  /**
+   * The request this computer turned down last, with the ID the account lists its device under,
+   * so the person can still sign that device out, whatever it does with its request.
+   */
+  private turnedDown: { id: string; device: string; deviceId: string } | null = null;
+  /** A one-time key made to approve a request, kept until it's offered, to offer it again. */
+  private prepared: { id: string; approval: LinkApproval } | null = null;
 
   constructor(deps: ApprovalsDeps) {
     this.deps = deps;
@@ -102,7 +107,7 @@ export class Approvals {
           elsewhere: request.approver !== null && !request.approving,
         })),
       approving: this.approving?.view ?? null,
-      turnedDown: this.turnedDown,
+      turnedDown: this.turnedDown && { id: this.turnedDown.id, device: this.turnedDown.device },
     };
   }
 
@@ -129,8 +134,14 @@ export class Approvals {
     this.requests = [];
     this.approving = null;
     this.turnedDown = null;
+    this.prepared = null;
     this.changed();
     if (client) void this.check(client);
+  }
+
+  /** Whether this computer has a request out that quitting would leave behind. */
+  hasRequest(): boolean {
+    return Boolean(this.asking?.ask && !this.asking.finishing);
   }
 
   /** As the app quits: calls this computer's own request off, as far as there's time to. */
@@ -161,9 +172,12 @@ export class Approvals {
     }
   }
 
-  /** Handles a request that failed, and says what went wrong. Signed out, it's signed out. */
-  private failure(error: unknown): string {
-    if (isSignedOut(error)) this.deps.signedOut();
+  /**
+   * Handles a request that failed, and says what went wrong. Signed out, it's signed out, if it
+   * was this sign-in's: a late answer to one that came before says nothing about this one.
+   */
+  private failure(error: unknown, client: SyncClient | null): string {
+    if (isSignedOut(error) && client !== null && client === this.client) this.deps.signedOut();
     return this.deps.reason(error);
   }
 
@@ -195,7 +209,7 @@ export class Approvals {
         this.changed();
         return failed(error.message);
       }
-      const message = this.failure(error);
+      const message = this.failure(error, client);
       this.endAsking(message);
       return failed(message);
     }
@@ -229,6 +243,7 @@ export class Approvals {
 
   /** Follows the request until it's linked or over, a step at a time. */
   private async followAsking(asking: Asking, ask: LinkAsk): Promise<void> {
+    const client = this.client;
     while (this.asking === asking) {
       let step: Awaited<ReturnType<LinkAsk['step']>>;
       try {
@@ -239,7 +254,7 @@ export class Approvals {
           await this.wait(OFFLINE_MS);
           continue;
         }
-        this.endAsking(this.failure(error));
+        this.endAsking(this.failure(error, client));
         return;
       }
       if (this.asking !== asking) return;
@@ -273,7 +288,7 @@ export class Approvals {
       accountKey = await ask.finish();
     } catch (error) {
       asking.finishing = false;
-      if (this.asking === asking) this.endAsking(this.failure(error));
+      if (this.asking === asking) this.endAsking(this.failure(error, client));
       return;
     }
     // Picked up, so it's never called off: the approving device sees it linked.
@@ -338,7 +353,7 @@ export class Approvals {
       await this.lookAgain(client);
     } catch (error) {
       // Kept as they were: the next look tries again.
-      if (isSignedOut(error)) this.deps.signedOut();
+      this.failure(error, client);
     }
   }
 
@@ -369,13 +384,20 @@ export class Approvals {
       // Read again, so the hash it's checked against is the one the server holds now.
       const requests = await this.lookAgain(client);
       const request = requests.find((each) => each.id === id);
+      // Still waiting, which it is after an offer whose answer was lost too.
       if (request?.state !== 'waiting') return failed(ENDED.gone);
       if (requests.length > 1) return failed(ENDED.crowded);
       device = request.device;
-      approval = await LinkApproval.start(client, request, keyId);
+      // After a lost answer, the same one-time key is offered again: the server keeps the first.
+      if (this.prepared?.id !== id) {
+        this.prepared = { id, approval: await LinkApproval.prepare(client, request, keyId) };
+      }
+      approval = this.prepared.approval;
+      await approval.offer();
+      this.prepared = null;
     } catch (error) {
       void this.refresh();
-      return failed(this.failure(error));
+      return failed(this.failure(error, client));
     }
     if (this.client !== client) return failed('Signing in was canceled.');
     this.turnedDown = null;
@@ -414,7 +436,7 @@ export class Approvals {
           await this.wait(OFFLINE_MS);
           continue;
         }
-        this.endApproving(false, this.failure(error));
+        this.endApproving(false, this.failure(error, this.client));
         return;
       }
       if (this.approving !== approving) return;
@@ -472,7 +494,7 @@ export class Approvals {
       if (!accountKey) return failed('Turn on sync first.');
       await approving.approval.approve(accountKey);
     } catch (error) {
-      return failed(this.failure(error));
+      return failed(this.failure(error, client));
     }
     if (this.approving === approving) {
       approving.view = { id, device, step: 'sent' };
@@ -489,34 +511,36 @@ export class Approvals {
   async deny(id: string): Promise<EditResult> {
     const client = this.client;
     if (!client) return failed('Sign in first.');
-    const device = this.requests.find((request) => request.id === id)?.device ?? 'That device';
+    const request = this.requests.find((each) => each.id === id);
     try {
       await client.denyRequest(id);
     } catch (error) {
       if (!(error instanceof SyncError && error.kind === 'not-found')) {
-        return failed(this.failure(error));
+        return failed(this.failure(error, client));
       }
     }
-    this.turnedDown = { id, device };
+    if (request) this.turnedDown = { id, device: request.device, deviceId: request.deviceId };
     await this.refresh();
     this.changed();
     return { ok: true };
   }
 
-  /** Signs out the device whose request this computer just turned down: it isn't the person's. */
+  /**
+   * Signs out the device whose request this computer just turned down: it isn't the person's.
+   * It goes by the ID the account lists that device under, as signing a device out from the
+   * account does, so the device can't dodge it by calling its request off first.
+   */
   async signOutTurnedDown(): Promise<EditResult> {
     const client = this.client;
     const turnedDown = this.turnedDown;
     if (!client || !turnedDown) return failed('There’s nothing to sign out.');
     try {
-      await client.denyRequest(turnedDown.id, true);
+      await client.removeDevice(turnedDown.deviceId);
     } catch (error) {
-      const gone = error instanceof SyncError && error.kind === 'not-found';
-      return failed(
-        gone
-          ? 'That request ran out, so it can’t sign the device out from here. Sign it out under Signed-in devices.'
-          : this.failure(error),
-      );
+      // Signed out already, or run out: either way it's not signed in now.
+      if (!(error instanceof SyncError && error.kind === 'not-found')) {
+        return failed(this.failure(error, client));
+      }
     }
     this.turnedDown = null;
     this.changed();

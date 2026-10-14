@@ -156,6 +156,7 @@ function requestServer(saved: object, { stale = false } = {}) {
   const view = (row: Record<string, unknown>, session: string) => ({
     id: row.id,
     device: 'Chrome on Windows',
+    deviceId: String(row.session),
     asked: new Date().toISOString(),
     expires: new Date(Date.now() + 600_000).toISOString(),
     signedIn: new Date().toISOString(),

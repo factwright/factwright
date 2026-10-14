@@ -103,6 +103,7 @@ export type FileRow = { id: string; key: string; size: number; at: number };
 export const toRequest = (row: RequestRow, session: string): LinkRequest => ({
   id: row.id,
   device: row.device,
+  deviceId: row.session,
   asked: new Date(row.asked).toISOString(),
   expires: new Date(row.expires).toISOString(),
   signedIn: new Date(row.signed_in).toISOString(),

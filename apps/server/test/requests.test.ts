@@ -366,16 +366,18 @@ describe('approving a new device', () => {
     expect(await mac.client.linkRequests()).toEqual([]);
   });
 
-  it('signs a device that asked out, when the person says it isn’t theirs', async () => {
+  it('names the device asking by the ID the account lists it under, to sign it out by', async () => {
     const { mac, pc } = await twoDevices();
     const ask = await LinkAsk.start(pc.client);
-    await mac.client.denyRequest(ask.id, true);
+    const request = await listed(mac.client, ask.id);
+    expect(request.deviceId).toBe(pc.sessionId);
+    // Turned down, the device that asked stays signed in, and says so.
+    await mac.client.denyRequest(ask.id);
+    expect(await ask.step()).toEqual({ state: 'denied' });
+    // It can't dodge being signed out by calling its request off first.
+    await ask.cancel();
+    await mac.client.removeDevice(request.deviceId);
     await expect(pc.client.linkRequests()).rejects.toMatchObject({ kind: 'signed-out' });
-    // Turned down without that, the device that asked stays signed in.
-    const again = await server.newSession(mac.id, WINDOWS_CHROME);
-    const second = await LinkAsk.start(again.client);
-    await mac.client.denyRequest(second.id);
-    expect(await second.step()).toEqual({ state: 'denied' });
   });
 
   it('says the server can approve devices', async () => {

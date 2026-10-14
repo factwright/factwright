@@ -145,28 +145,26 @@ function Request({
             : `Asked ${timeAgo(request.asked)} · signed in ${timeAgo(request.signedIn)}`}
         </span>
       </div>
-      {!request.elsewhere && (
-        <div className={styles.requestActions}>
+      <div className={styles.requestActions}>
+        <Button
+          size="sm"
+          variant="quiet"
+          disabled={step.busy}
+          onClick={() => step.run(() => api.denyLinkRequest(request.id))}
+        >
+          Turn down
+        </Button>
+        {approve !== 'no' && !request.elsewhere && (
           <Button
             size="sm"
-            variant="quiet"
-            disabled={step.busy}
-            onClick={() => step.run(() => api.denyLinkRequest(request.id))}
+            variant="primary"
+            disabled={step.busy || approve === 'not-while-crowded'}
+            onClick={() => step.run(() => api.approveLinkRequest(request.id))}
           >
-            Turn down
+            Approve…
           </Button>
-          {approve !== 'no' && (
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={step.busy || approve === 'not-while-crowded'}
-              onClick={() => step.run(() => api.approveLinkRequest(request.id))}
-            >
-              Approve…
-            </Button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
       <Problem text={step.problem} />
     </li>
   );
@@ -178,9 +176,7 @@ function TurnedDown({ api, device }: { api: FactwrightApi; device: string }) {
   return (
     <div aria-live="polite">
       <div className={styles.ended}>
-        <p className={styles.endedText}>
-          If {device} isn’t yours, sign it out of your account.
-        </p>
+        <p className={styles.endedText}>If {device} isn’t yours, sign it out of your account.</p>
         <div className={styles.requestActions}>
           <Button size="sm" variant="quiet" onClick={() => api.dismissLinkApproval()}>
             OK
@@ -216,10 +212,9 @@ export function RequestsPanel({
   if (requests.length === 0 && !approving && !turnedDown) return null;
 
   const ended = approving?.step === 'ended';
-  // While approving, the requests listed are the others: another device asked meanwhile.
-  const others = approving
-    ? requests.filter((request) => !request.elsewhere && request.id !== approving.id)
-    : [];
+  // While approving, the requests listed are the others: another device asked meanwhile, or
+  // one another device is approving. Either way the person checks which is theirs first.
+  const others = approving ? requests.filter((request) => request.id !== approving.id) : [];
   return (
     <section
       className={`${styles.requests} ${ended ? (approving.linked ? styles.requestsLinked : styles.requestsOver) : ''} ${!approving && requests.length === 0 ? styles.requestsOver : ''}`}
@@ -256,6 +251,7 @@ export function RequestsPanel({
             Only link a device that’s in front of you: it gets your whole job hunt. Nobody from
             Factwright will ever ask you for these emoji.
           </p>
+          {turnedDown && <TurnedDown api={api} device={turnedDown.device} />}
           {others.length > 0 && (
             <div className={styles.crowded} role="alert">
               <p>
