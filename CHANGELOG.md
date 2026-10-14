@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-14
+
 ### Added
 - Link a new computer or browser without typing a code: approve it from a computer that's set up. Sign in to sync on the new one, and Factwright on your other computer shows that a device wants to link. Check both show the same six emoji, say so on each, and it's linked, with your key sealed so the server can't open it. Only the Factwright app approves, never a browser. The code and the recovery key still work. Approving needs the sync server's next update, and this version or later on the computer that approves.
 - Profiles, for people who share a computer, or a fresh start: each profile is its own job hunt, with its own sync account and its own Claude login, and one is open at a time. Add one from the bottom of Profile, or Get started's first step, and switch at the top of the sidebar, which restarts Factwright on the other. Your job hunt so far is the first profile, untouched and where it was. Profiles aren't private from each other, as a browser's aren't: separate logins on the computer are. Signing in to sync with an account another profile on the computer uses is turned away.
