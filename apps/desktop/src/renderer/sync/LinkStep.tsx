@@ -1,9 +1,21 @@
 import { Button, DialogActions, Field, Input } from '@factwright/ui';
 import { type FormEvent, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
+import type { SetUpAgain } from '../../shared/sync.ts';
 import styles from './SyncDialog.module.css';
 
 const TYPED = 'Dashes and spaces don’t matter, and neither do capitals.';
+
+/** Why this computer links, up to where it says what to do on the other device. */
+function lead(again: SetUpAgain | undefined): string {
+  if (again === 'changed') {
+    return 'Another device set up a new key for your account, so syncing stopped here. On that device, open Sync, choose ';
+  }
+  if (again === 'taken') {
+    return 'Another device turned on sync for your account first, so the recovery key shown here won’t open it: keep that device’s recovery key instead. There, open Sync, choose ';
+  }
+  return 'Sync is already on for your account on another device. There, open Sync, choose ';
+}
 
 /** A field for a 32-character code, and the button that uses it. */
 function CodeForm({
@@ -65,20 +77,11 @@ function CodeForm({
  * On any device after the first: links it with a code from a device that's set up, or, with
  * every other device lost, with the recovery key.
  */
-export function LinkStep({
-  api,
-  changed = false,
-}: {
-  api: FactwrightApi;
-  /** This computer synced the account, which uses another key now. */
-  changed?: boolean;
-}) {
+export function LinkStep({ api, again }: { api: FactwrightApi; again?: SetUpAgain | undefined }) {
   return (
     <>
       <p className={styles.lead}>
-        {changed
-          ? 'Another device set up a new key for your account, so syncing stopped here. On that device, open Sync, choose '
-          : 'Sync is already on for your account on another device. There, open Sync, choose '}
+        {lead(again)}
         <strong>Link a phone or computer</strong>, and type the code it shows.
       </p>
       <CodeForm

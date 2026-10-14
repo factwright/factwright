@@ -64,7 +64,7 @@ export function SyncDialog({
                 {...(status.again && { again: status.again })}
               />
             ) : (
-              <LinkStep api={api} changed={status.again === 'changed'} />
+              <LinkStep api={api} again={status.again} />
             );
           case 'on':
             return <ManageSync api={api} status={status} close={close} />;

@@ -173,6 +173,23 @@ describe('SyncDialog', () => {
     expect(screen.getByText(/Another device set up a new key/)).toBeTruthy();
   });
 
+  it('says which recovery key to keep when another device turned on sync first', async () => {
+    render(
+      <SyncDialog
+        api={apiFor('off')}
+        status={{
+          state: 'setting-up',
+          email: 'sam@example.com',
+          firstDevice: false,
+          again: 'taken',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Link this computer' })).toBeTruthy();
+    expect(screen.getByText(/the recovery key shown here won’t open it/)).toBeTruthy();
+  });
+
   it('ends a sign-in with the wrong account, from either step', async () => {
     const user = userEvent.setup();
     for (const firstDevice of [true, false]) {

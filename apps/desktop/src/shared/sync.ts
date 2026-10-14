@@ -4,12 +4,14 @@ import type { AccountInfo } from '@factwright/sync';
 export type SyncActivity = 'syncing' | 'idle' | 'offline' | 'problem';
 
 /**
- * Why a computer that synced before sets up again:
- * - `remade`: the account has no key on the server, such as after it was deleted and made again.
- *   A new account key and recovery key, which the old ones won't open.
- * - `changed`: the account this computer synced uses another key now. It links again.
+ * Why a computer sets up again, or links after all:
+ * - `remade`: it synced before, but the account has no key on the server, such as after it was
+ *   deleted and made again. A new account key and recovery key, which the old ones won't open.
+ * - `changed`: the account it synced uses another key now. It links again.
+ * - `taken`: another device turned on sync for the account first, as this one saved its recovery
+ *   key. That device's recovery key is the one that works, and this one links to it.
  */
-export type SetUpAgain = 'remade' | 'changed';
+export type SetUpAgain = 'remade' | 'changed' | 'taken';
 
 /** Where sync stands on this computer, as the sidebar and the sync dialog show it. */
 export type SyncStatus =

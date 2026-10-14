@@ -315,7 +315,47 @@ describe('turning on sync', () => {
       ok: false,
       message: expect.stringContaining('Link this computer'),
     });
-    expect(pc.sync.status()).toMatchObject({ state: 'setting-up', firstDevice: false });
+    // The link step then says the PC's recovery key won't open the account.
+    expect(pc.sync.status()).toMatchObject({
+      state: 'setting-up',
+      firstDevice: false,
+      again: 'taken',
+    });
+  });
+
+  it('stops a step still waiting on the server when the sign-in ends', async () => {
+    const save = gate();
+    const signOut = gate();
+    const mac = computer('Sam’s Mac', undefined, async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/sync/keys' && init?.method === 'PUT' && !save.waiting) {
+        save.waiting = true;
+        await save.opened;
+      }
+      if (path === '/api/auth/sign-out' && !signOut.waiting) {
+        signOut.waiting = true;
+        await signOut.opened;
+      }
+      return fetch(input, init);
+    });
+    mac.write('facts/skills.md', 'Stays on the Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    await recoveryKey(mac.sync);
+    const turningOn = mac.sync.turnOn();
+    await vi.waitFor(() => expect(save.waiting).toBe(true), { timeout: 10_000 });
+    // Not the account Sam meant: that sign-in ends while the key is still being saved, and the
+    // key is saved before the server hears of the sign-out.
+    const ending = mac.sync.useDifferentAccount();
+    await vi.waitFor(() => expect(signOut.waiting).toBe(true), { timeout: 10_000 });
+    save.open();
+    expect(await turningOn).toMatchObject({ ok: false });
+    signOut.open();
+    expect(await ending).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({ state: 'off' });
+    // Nothing went up to the account Sam left.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect((await person.client.changes(0)).changes).toEqual([]);
   });
 });
 

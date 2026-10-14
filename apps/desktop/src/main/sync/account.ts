@@ -206,13 +206,17 @@ export class SyncAccount {
       ...(this.deps.sleep && { sleep: this.deps.sleep }),
     });
     this.signIn = flow;
+    // Another sign-in, or closing the app, took over: that says how things stand.
+    const overtaken = () => this.closed || this.signIn !== flow;
     let pending: Awaited<ReturnType<DeviceSignIn['start']>>;
     try {
       pending = await flow.start();
     } catch (error) {
+      if (overtaken()) return OVERTAKEN;
       this.signIn = null;
       return failed(reason(error));
     }
+    if (overtaken()) return OVERTAKEN;
     // Only the sync server's own pages open: never another site, or a file on this computer.
     if (new URL(pending.url).origin !== new URL(this.deps.server).origin) {
       flow.cancel();
@@ -221,10 +225,9 @@ export class SyncAccount {
     }
     this.set({ state: 'signing-in', code: pending.code, url: pending.url });
     await this.deps.openUrl(pending.url);
+    if (overtaken()) return OVERTAKEN;
     const result = await flow.finish();
-    // Another sign-in took over: it says how things stand.
-    if (this.signIn !== flow)
-      return failed(result.ok ? 'Signing in was canceled.' : result.message);
+    if (overtaken()) return result.ok ? OVERTAKEN : failed(result.message);
     this.signIn = null;
     if (!result.ok) {
       this.set(before);
@@ -318,10 +321,13 @@ export class SyncAccount {
    */
   async useDifferentAccount(): Promise<EditResult> {
     const token = this.secrets.get('session');
-    if (token) await this.signOutOnServer(token);
-    this.secrets.delete('session');
+    // First, so a step still waiting on the server for this sign-in does nothing more.
     this.client = null;
     this.pending = null;
+    await this.runner?.stop();
+    this.runner = null;
+    this.secrets.delete('session');
+    if (token) await this.signOutOnServer(token);
     this.set(
       this.secrets.get('accountKey')
         ? { state: 'signed-out', email: this.email() }
@@ -359,7 +365,7 @@ export class SyncAccount {
       if (this.overtaken(client)) return OVERTAKEN;
       if (saved === 'taken') {
         this.pending = null;
-        this.set({ state: 'setting-up', email: this.email(), firstDevice: false });
+        this.set({ state: 'setting-up', email: this.email(), firstDevice: false, again: 'taken' });
         return failed(
           'Another device turned on sync for this account first. Link this computer to it instead.',
         );
@@ -417,7 +423,8 @@ export class SyncAccount {
     const keys = await client.keys();
     const keyId = (await accountKeys(accountKey)).id;
     if (this.overtaken(client)) return OVERTAKEN;
-    if (keys && keys.keyId !== keyId) return failed('That key belongs to a different account.');
+    if (!keys) return failed('No device has turned on sync for this account yet.');
+    if (keys.keyId !== keyId) return failed('That key belongs to a different account.');
     await this.turnOnWith(client, accountKey);
     return { ok: true };
   }
@@ -545,11 +552,12 @@ export class SyncAccount {
 
   /** A link code for adding a phone or computer, good for 10 minutes and one use. */
   async makeLinkCode(): Promise<LinkCodeResult> {
-    if (!this.client || !this.accountKey) return failed('Turn on sync first.');
+    const { client, accountKey } = this;
+    if (!client || !accountKey) return failed('Turn on sync first.');
     const code = newLinkCode();
     try {
-      const link = await lockForLink(this.accountKey, code.bytes);
-      await this.client.saveLink(link.id, link.data);
+      const link = await lockForLink(accountKey, code.bytes);
+      await client.saveLink(link.id, link.data);
       const url = new URL('/link', this.deps.server);
       url.hash = code.text.replaceAll('-', '');
       return {
@@ -600,8 +608,8 @@ export class SyncAccount {
    */
   async signOut(): Promise<EditResult> {
     const token = this.secrets.get('session');
-    if (token) await this.signOutOnServer(token);
     await this.forget();
+    if (token) await this.signOutOnServer(token);
     return { ok: true };
   }
 
