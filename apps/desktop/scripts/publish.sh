@@ -37,6 +37,7 @@ esac
 # fail R2's signature checks on downloads.
 AWS_CONFIG_FILE=$(mktemp)
 export AWS_CONFIG_FILE
+trap 'rm -f "$AWS_CONFIG_FILE"' EXIT
 printf '[default]\ns3 =\n  preferred_transfer_client = classic\n' > "$AWS_CONFIG_FILE"
 
 upload() { aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" --no-progress "${@:3}"; }
