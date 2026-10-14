@@ -81,6 +81,7 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
 - When you turn on sync, your first device shows a **recovery key** once: 160 random bits, written as 32 characters to print or keep in a password manager.
 - The server keeps the account key locked with a key made from the recovery key (HKDF, then AES-256-GCM). It can't open it.
 - With the recovery key, any device you sign in on can unlock the account key. Since the recovery key is random and long, guessing it is out of reach, so it needs no slow key derivation.
+- Where you type it in, its box is a password box, so a password manager can fill it in. In the web view it's filed under your account's email.
 - A computer that signs in again checks the account's key on the server before it syncs anything, and asks again after a restart until it has.
   - If the account has none, such as after it was deleted and made again, the computer makes a new account key and recovery key, as a first device does. The old ones, which a lost or stolen device may still hold, open nothing of it, and the computer's other devices link again.
   - If the account uses another key, the computer asks to be linked to it and sends nothing until it is. Linking adds this computer's job hunt to that account, so signing in with the wrong one can be undone with **Use a different account**, which ends only that sign-in.
@@ -89,10 +90,28 @@ Each device makes four keys from the account key with HKDF-SHA-256, one for each
   - If the account uses another key, the computer links to it, as above.
 
 ### Adding a device
+A new device signs in to the same account, then gets the account key in one of three ways. In none of them can the server open it.
+
+**Approved from a device that's set up.** Nothing to type. It works as Matrix's emoji check (`m.sas.v1`) and Bluetooth's number comparison do:
+1. The new device asks to link. It makes a one-time key pair for this request alone (ECDH on P-256), and sends the server only a hash of its public key (SHA-256, with a random ID for the request). The hash fixes the key before anyone sees it.
+2. A device that's set up shows the request, with the name of the device asking, such as "Chrome on Windows". When the person chooses **Approve…**, it sends a one-time public key of its own.
+3. Only then does the new device send its public key. The approving device checks it matches the hash, and stops if it doesn't.
+4. Each device works out the same secret from its own private key and the other's public key, and shows six emoji made from it, from Matrix's list. The person checks both screens show the same six, in the same order, and says so on each.
+5. Once they say so on the device that's set up, it seals the account key with a key made from the secret (HKDF, then AES-256-GCM, bound to the request and both public keys) and leaves it on the server. Once they say so on the new device, it picks the sealed key up, once, and opens it. A request runs out 10 minutes after it's made.
+
+What stops a server in the middle: to get the account key, or to slip the new device a key of its own, it would have to swap its own keys in for both devices' and still make both screens show the same emoji. The hash fixes the key it shows the approving device before it sees that device's key, and the new device shows its key only after the server has passed one along. So whatever it swaps in, the emoji on the two screens are each down to chance, and match once in 2^36 (about 69 billion) tries. Each try needs the person to start linking, and a miss shows them two different sets of emoji. That's why both screens ask: the approving device seals the key only once the person says they match there, and the new device takes a key only once they say so there.
+
+- Any device signed in to the account can ask, including one signed in by tricking someone into approving its sign-in code. So the approving device names the device asking, and says to approve only a device you're using right now. The server keeps one request per device at a time, five waiting per account, and ten an hour.
+- A device that's set up hears of a request as it's made, and shows it on its Sync card, with a notification if Factwright isn't in front.
+- A sync server from before this doesn't offer it, so the app and the web view offer it only when the server says it can.
+
+**With a link code.**
 - On a device that's set up, **Link a phone or computer** makes a link code: 160 random bits, shown as a QR code and as 32 characters to type.
 - It leaves the account key on the server for 10 minutes, locked with a key made from the code, under an ID that's a hash of the code. The server never sees the code.
-- The new device signs in to the same account, then scans or types the code. It picks the link up once, and the link is gone.
+- The new device scans or types the code. It picks the link up once, and the link is gone.
 - A phone scans the QR code with its camera. The code is in the link's `#` part, which browsers don't send to the server.
+
+**With the recovery key**, as above.
 
 ### Signing in
 - Signing in is separate from the keys: it proves who you are to the server, and the keys never touch it. You sign in with GitHub or Google, through [Better Auth](https://www.better-auth.com) running in the sync server.
@@ -119,6 +138,7 @@ The web view opens your job hunt in the browser, so the page that holds your key
 - Sign-in's limits, which count each IP address's requests to sign in or check a sign-in. Those counts are deleted within a day.
 - For each record: an opaque ID, its version numbers, sizes, times, whether it's deleted, which file contents it points to, and which session made each version.
 - For each file: an opaque ID, its size and when it was uploaded.
+- For each request to link: which devices asked and approved it, with their names, two one-time public keys and a hash, when it was made, and once it's approved, the account key sealed for the new device alone. It's gone once picked up, turned down or 10 minutes old, apart from a note that it was picked up, which goes when the 10 minutes are up.
 - Never your file names, the files' contents, what you track, or any key that opens them.
 - Its own logs keep only what it writes itself, such as a backup that failed. Cloudflare's log of every request is off, and a ticket to listen for changes says nothing about the account. Cloudflare, which runs the server, still sees each request's IP address and address as it passes through, as any host does.
 - Sizes and times aren't padded, so they show roughly how much you keep and when you change it.

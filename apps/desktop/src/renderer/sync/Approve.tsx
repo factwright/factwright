@@ -214,16 +214,14 @@ export function RequestsPanel({
       )}
 
       {approving?.step === 'ended' && (
-        <div aria-live="polite">
-          <p className={approving.linked ? styles.linked : styles.approveText}>
+        <div className={styles.ended} aria-live="polite">
+          <p className={approving.linked ? styles.linked : styles.endedText}>
             {approving.linked && <CircleCheck size={16} aria-hidden="true" />}
             {approving.message}
           </p>
-          <div className={styles.approveActions}>
-            <Button size="sm" onClick={() => api.dismissLinkApproval()}>
-              OK
-            </Button>
-          </div>
+          <Button size="sm" onClick={() => api.dismissLinkApproval()}>
+            OK
+          </Button>
         </div>
       )}
 

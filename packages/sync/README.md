@@ -7,6 +7,8 @@ It uses only Web Crypto, so the same code runs in Node, browsers and Workers.
 | Module | What it does |
 |---|---|
 | `keys` | The account key and the four keys made from it, the recovery key, link codes for adding a device, and locking with AES-256-GCM |
+| `approve` | Approving a new device from one that's set up: one-time keys, the commitment, the emoji check, and sealing the account key for the new device |
+| `emoji` | The 64 emoji a check code is shown as, with their names |
 | `seal` | Record and file IDs, and locking each version of a record and each file's contents |
 | `record` | What a record says once opened: a file in the workspace, or a row in the tracker, with checks before anything acts on one |
 | `merge` | Merges two devices' changes to the same row: lists and notes keep both, and the later change wins a clash |
