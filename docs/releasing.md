@@ -160,21 +160,31 @@ they have no update settings, so they never update themselves.
 ## If a release goes wrong
 **If publishing stops partway,** such as an upload failing, choose **Re-run failed jobs** on the
 run. It leaves the files already up, uploads the rest, and puts the update feed up last. It
-refuses if a file that's up has other contents, which is what **Re-run all jobs** would bring, as
-it builds new files: then release the next version. Publishing reads the update feed from R2
-before it uploads anything, and stops if it can't tell what's out.
+refuses if a file that's up has other contents, as after **Re-run all jobs**, which builds new
+files: then release the next version. Publishing reads the update feed from R2 before it uploads
+anything, and stops if it can't tell what's out.
 
-An installed copy only moves forward, so a bad version is fixed by releasing the next one. To stop
-a bad version spreading first, put the previous version's files back where the newest go. Each
-release keeps its update feeds under `feeds/<version>/`:
+**To take a bad version back:** an installed copy only moves forward, so a bad version is fixed by
+releasing the next one. To stop it spreading first, put the previous version's files back where the
+newest go, and mark the bad one as taken back, so that re-running its run can never put it out
+again. Each release keeps its update feeds under `feeds/<version>/`. To take 0.1.1 back to 0.1.0:
 
 ```bash
-aws s3 cp s3://factwright-downloads/feeds/0.1.0/latest-mac.yml s3://factwright-downloads/latest-mac.yml --endpoint-url https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com --cache-control no-cache --content-type text/yaml
+endpoint=https://c4df27faf7b8fc65b74097415e723d3e.r2.cloudflarestorage.com
+echo "taken back" | aws s3 cp - s3://factwright-downloads/feeds/0.1.1/withdrawn --endpoint-url "$endpoint"
+for feed in latest-mac.yml latest.yml; do
+  aws s3 cp "s3://factwright-downloads/feeds/0.1.0/$feed" "s3://factwright-downloads/$feed" \
+    --endpoint-url "$endpoint" --copy-props none --cache-control no-cache --content-type text/yaml
+done
+for pair in Factwright-0.1.0.dmg:Factwright.dmg Factwright-Setup-0.1.0.exe:Factwright-Setup.exe; do
+  aws s3 cp "s3://factwright-downloads/${pair%%:*}" "/tmp/${pair##*:}" --endpoint-url "$endpoint"
+  aws s3 cp "/tmp/${pair##*:}" "s3://factwright-downloads/${pair##*:}" --endpoint-url "$endpoint" --cache-control no-cache
+done
 ```
 
-Do the same for `latest.yml`, and copy `Factwright-0.1.0.dmg` and `Factwright-Setup-0.1.0.exe`
-over `Factwright.dmg` and `Factwright-Setup.exe` with `--cache-control no-cache`. Copies that
-haven't updated yet stay where they are.
+The installers are downloaded and uploaded again rather than copied within R2, because a large copy
+there asks for the source's tags, which R2 doesn't support. Copies that haven't updated yet stay where
+they are.
 
 ## The website
 The download pages, `factwright.com/download/mac` and `/download/windows`, offer the newest

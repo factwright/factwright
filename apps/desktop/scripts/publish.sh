@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Publishes one computer's installers for a release to downloads.factwright.com, as the release
-# workflow does once that computer's build has passed. It never replaces a version that's out or a
-# file that's up, keeps each version's files for good, and puts the update feed up last, so an
-# installed copy finds a version only once its files are there. If it stops partway, running it
-# again with the same files finishes the job.
+# workflow does once that computer's build has passed. It never puts out a version that's been taken
+# back or is older than the one out, never changes a version's files once they're up, and puts the
+# update feed up last, so an installed copy finds a version only once its files are there. If it
+# stops partway, running it again with the same files finishes the job.
 #
 #   publish.sh mac|windows <version> <folder with that computer's built files>
 #
@@ -40,13 +40,13 @@ digest() {
   if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
 
-# The sha256 a file is up with: nothing if it isn't up, or None if it went up without one. Any other
-# problem asking stops the publish, rather than taking the file for missing and replacing it.
+# What R2 has under a key: its sha256, None if it's up without one, or nothing if it isn't up. Any
+# other problem asking stops the publish, rather than taking the file for missing and replacing it.
 stored() {
   local answer
   if answer=$(aws s3api head-object --bucket "$BUCKET" --key "$1" --endpoint-url "$ENDPOINT" \
     --query Metadata.sha256 --output text 2>&1); then
-    printf '%s' "$answer"
+    printf '%s' "${answer:-None}"
   elif [[ "$answer" == *"(404)"* ]]; then
     printf ''
   else
@@ -74,9 +74,35 @@ live_version() {
   fi
 }
 
+# Stops unless the update feed installed copies read, through Cloudflare, names this version.
+check_live() {
+  local served
+  served=$(curl --fail --silent --max-time 30 --retry 2 \
+    "https://downloads.factwright.com/$feed?check=${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}" || true)
+  if ! printf '%s\n' "$served" | tr -d '\r' | grep -q "^version: $version$"; then
+    echo "::error::downloads.factwright.com doesn't give $feed for Factwright $version yet."
+    exit 1
+  fi
+}
+
+# The folder must hold this version's files: its update feed names it, and its installer is there.
+if [ "$(tr -d '\r' < "$dist/$feed" | sed -n 's/^version: //p')" != "$version" ] || [ ! -f "$dist/$installer" ]; then
+  echo "::error::$dist doesn't hold Factwright $version's $feed and $installer."
+  exit 1
+fi
+
+# A version taken back, as docs/releasing.md says under "If a release goes wrong", never goes out
+# again: re-running its run would otherwise find its files up, and put its feed back.
+withdrawn=$(stored "feeds/$version/withdrawn")
+if [ -n "$withdrawn" ]; then
+  echo "::error::Factwright $version was taken back, so it can't go out again. Release the next version instead."
+  exit 1
+fi
+
 live=$(live_version)
-# The update feed goes up last, so once it names this version, there's nothing left to do.
+# The update feed goes up last, so once it names this version, there's nothing left to put up.
 if [ "$live" = "$version" ]; then
+  check_live
   echo "Factwright $version for $computer is out already."
   exit 0
 fi
@@ -89,25 +115,30 @@ fi
 
 # A version's files never change once up, as browsers and Cloudflare keep them for good. So every
 # file is checked before any goes up: one that's up already with the same sha256 is left as it is,
-# as after a publish that stopped partway, and one that's up with other contents stops it all, as
-# after "Re-run all jobs", which builds new files.
+# as after a publish that stopped partway, and one that's up with other contents, or none to check
+# by, stops it all, as after "Re-run all jobs", which builds new files.
 missing=()
+sums=()
 for file in "${files[@]}"; do
   key=$(basename "$file")
   sum=$(digest "$file")
   up=$(stored "$key")
   if [ -z "$up" ]; then
     missing+=("$file")
+    sums+=("$sum")
   elif [ "$up" = "$sum" ]; then
     echo "$key is up already."
+  elif [ "$up" = None ]; then
+    echo "::error::$key is up already, without a sha256 to check it by. Release the next version instead."
+    exit 1
   else
     echo "::error::$key is up already, with other contents. Release the next version instead."
     exit 1
   fi
 done
-for file in ${missing[@]+"${missing[@]}"}; do
-  upload "$file" "$(basename "$file")" --cache-control "public, max-age=31536000, immutable" \
-    --metadata "sha256=$(digest "$file")"
+for i in ${missing[@]+"${!missing[@]}"}; do
+  upload "${missing[$i]}" "$(basename "${missing[$i]}")" \
+    --cache-control "public, max-age=31536000, immutable" --metadata "sha256=${sums[$i]}"
 done
 # The version's update feed, kept, to put back if a later version has to be taken back.
 upload "$dist/$feed" "feeds/$version/$feed" --cache-control no-cache --content-type text/yaml
@@ -116,8 +147,5 @@ upload "$dist/$installer" "$newest" --cache-control no-cache
 # The update feed goes last.
 upload "$dist/$feed" "$feed" --cache-control no-cache --content-type text/yaml
 
-# What installed copies will see, through Cloudflare.
-curl --fail --silent --max-time 30 --retry 2 \
-  "https://downloads.factwright.com/$feed?check=${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}" |
-  grep -q "^version: $version$"
+check_live
 echo "Factwright $version for $computer is out."
