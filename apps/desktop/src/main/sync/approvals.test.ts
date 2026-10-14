@@ -244,6 +244,8 @@ describe('linking a computer from one that’s set up', () => {
     await mac.sync.denyRequest(theirs?.id ?? '');
     const ours = requests.find((request) => request.device === 'Factwright on SAM-PC');
     expect(await mac.sync.approveRequest(ours?.id ?? '')).toEqual({ ok: true });
+    // The one turned down can still be signed out, beside the emoji.
+    expect(mac.approvals().turnedDown).toMatchObject({ device: 'Factwright on SAM-LAPTOP' });
   });
 
   it('won’t seal the key while another device asks meanwhile', async () => {

@@ -85,7 +85,10 @@ export class Approvals {
    * so the person can still sign that device out, whatever it does with its request.
    */
   private turnedDown: { id: string; device: string; deviceId: string } | null = null;
-  /** A one-time key made to approve a request, kept until it's offered, to offer it again. */
+  /**
+   * The one-time key made to approve a request, kept until that request is over, so trying
+   * again after an answer that was lost, or an error along the way, offers the same key.
+   */
   private prepared: { id: string; approval: LinkApproval } | null = null;
 
   constructor(deps: ApprovalsDeps) {
@@ -394,13 +397,11 @@ export class Approvals {
       }
       approval = this.prepared.approval;
       await approval.offer();
-      this.prepared = null;
     } catch (error) {
       void this.refresh();
       return failed(this.failure(error, client));
     }
     if (this.client !== client) return failed('Signing in was canceled.');
-    this.turnedDown = null;
     const approving = { approval, view: { id, device, step: 'waiting' } as ApprovingView };
     this.approving = approving;
     this.changed();
@@ -408,9 +409,14 @@ export class Approvals {
     return { ok: true };
   }
 
-  private endApproving(linked: boolean, message: string): void {
+  /**
+   * Ends approving a request. "over" says the request is done with, so its one-time key goes;
+   * after an error along the way it stays, to take up again.
+   */
+  private endApproving(linked: boolean, message: string, over = true): void {
     const approving = this.approving;
     if (!approving) return;
+    if (over && this.prepared?.id === approving.view.id) this.prepared = null;
     this.approving = {
       ...approving,
       view: {
@@ -436,7 +442,7 @@ export class Approvals {
           await this.wait(OFFLINE_MS);
           continue;
         }
-        this.endApproving(false, this.failure(error, this.client));
+        this.endApproving(false, this.failure(error, this.client), false);
         return;
       }
       if (this.approving !== approving) return;
