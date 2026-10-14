@@ -76,9 +76,11 @@ export function BulkBar({
     setProblem(result.ok ? null : result.message);
     return result.ok;
   };
+  // Only the jobs not there already move, so Undo and what follows touch only them.
   const move = async (status: JobStatus) => {
-    const jobIds = picked.map((row) => row.job.id);
-    if (await run(() => api.updateJobs(jobIds, { status }))) onMoved({ status, jobIds });
+    const jobIds = picked.filter((row) => row.job.status !== status).map((row) => row.job.id);
+    if (jobIds.length === 0) onClear();
+    else if (await run(() => api.updateJobs(jobIds, { status }))) onMoved({ status, jobIds });
   };
   const after = (changes: JobChanges) => moved && run(() => api.updateJobs(moved.jobIds, changes));
   // Undoes the move for each job still where it went, in turn.

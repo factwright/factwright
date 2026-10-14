@@ -222,6 +222,10 @@ describe('JobsPage', () => {
         .getAllByRole('button')
         .map((button) => button.textContent),
     ).toEqual(['To review', 'To apply', 'Later', 'Pass', 'Clear']);
+    const results = await axe.run(document.body, {
+      rules: { 'color-contrast': { enabled: false } },
+    });
+    expect(results.violations).toEqual([]);
     await userEvent.click(within(bar).getByRole('button', { name: 'To review' }));
     expect(props.api.updateJobs).toHaveBeenCalledWith(
       [
@@ -255,6 +259,28 @@ describe('JobsPage', () => {
     page({ filter: view('applied') });
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select every job in Applied' }));
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
+  });
+
+  it('moves only the selected jobs not there already, so Undo leaves the others be', async () => {
+    const props = page({ filter: view('all') });
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Lumen Health/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Acme Robotics/ }));
+    const menu = screen.getByRole('combobox', { name: 'Move the selected jobs to' });
+    await userEvent.selectOptions(menu, 'Applied');
+    expect(props.api.updateJobs).toHaveBeenCalledWith(
+      ['acme-robotics--staff-engineer-developer-tools'],
+      { status: 'applied' },
+    );
+    expect(screen.getByRole('status').textContent).toBe('Moved 1 job to Applied.');
+    // With every one there already, nothing moves.
+    vi.mocked(props.api.updateJobs).mockClear();
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Select Lumen Health/ }));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Move the selected jobs to' }),
+      'Applied',
+    );
+    expect(props.api.updateJobs).not.toHaveBeenCalled();
     expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
   });
 

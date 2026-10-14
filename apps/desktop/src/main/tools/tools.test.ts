@@ -738,9 +738,7 @@ describe('build_resume', () => {
     jobs.updateJob('acme-robotics--staff-engineer', { status: 'withdrawn' });
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('stays as sent');
     jobs.updateJob('acme-robotics--staff-engineer', { status: 'role-closed' });
-    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
-      'Built applications/',
-    );
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Built applications/');
   });
 });
 

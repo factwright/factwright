@@ -156,8 +156,10 @@ export function JobsPage(props: JobsPageProps) {
   const heardBack = stats.applied ? `${Math.round((100 * stats.heardBack) / stats.applied)}%` : '—';
   const narrowed = Boolean(filter.query || filter.needsYou || filter.found || filterCount(filter));
   // The jobs in the order they show, for picking a run of them, and those picked among them.
-  const order = [...shown, ...(laterOpen ? later : [])].map((row) => row.job.id);
-  const picked = [...shown, ...later].filter((row) => picks.ids.has(row.job.id));
+  // Jobs folded away under Later aren't moved, even if they were picked before it folded.
+  const listed = [...shown, ...(laterOpen ? later : [])];
+  const order = listed.map((row) => row.job.id);
+  const picked = listed.filter((row) => picks.ids.has(row.job.id));
   const changeView = (view: ListFilter['view']) => {
     setMoved(null);
     onFilter({ ...filter, view });
