@@ -258,16 +258,22 @@ const namesFact = (question: string, title: string) => {
   return QUOTES.some(([open, close]) => asked.includes(`${open}${named}${close}`));
 };
 
+/** What can come before an answer's no, such as "Unfortunately," "Probably", "Hmm..." or "I'm". */
+const LEAD = String.raw`(?:(?:unfortunately|sadly|sorry|honestly|actually|well|um|uh|hmm|probably|maybe|likely|i[’']d say|i would say|(?:i[’']m |i am )?afraid)(?:\s*[,.!?…–—-]+)?\s+)?(?:(?:i|we|i[’']ve|we[’']ve|i have|we have|i[’']m|i am|we[’']re|we are)\s+)?`;
+
 /**
- * An answer that starts with a no, such as "No", "No, I haven't" or "Never used it", which goes
- * under Doesn't have rather than becoming a fact. Anything more they have, they say in answer to
- * a question about it.
+ * An answer that starts with a no, such as "No", "No, I haven't", "Never used it", "I'm not
+ * familiar with it", "Probably not", "I doubt it" or "Just read about it", which goes under
+ * Doesn't have rather than becoming a fact. Anything more they have, they say in answer to a
+ * question about it.
  */
-const SAYS_NO =
-  /^(?:(?:i|we|i[’']ve|we[’']ve|i have|we have)\s+)?(?:no|nope|nah|not|never|none|nothing|don[’']?t|do not|haven[’']?t|have not|hasn[’']?t|has not|didn[’']?t|did not|wasn[’']?t|was not|isn[’']?t|is not|can[’']?t|cannot|won[’']?t)\b/;
+const SAYS_NO = new RegExp(
+  String.raw`^${LEAD}(?:no|nope|nah|not|never|none|nothing|neither|unlikely|doubt(?:ful)?|(?:only|just) (?:read|heard) (?:about|of)|don[’']?t|do not|haven[’']?t|have not|hasn[’']?t|has not|didn[’']?t|did not|wasn[’']?t|was not|isn[’']?t|is not|aren[’']?t|are not|can[’']?t|cannot|won[’']?t)\b`,
+);
 
 /** An answer that starts with a yes, which is never something the user doesn't have. */
-const SAYS_YES = /^(?:yes|yeah|yep|yup|sure|definitely|absolutely|of course)\b/;
+const SAYS_YES =
+  /^(?:yes|yeah|yep|yup|sure|definitely|absolutely|of course|not (?:too |that |so )?bad)\b/;
 
 /** Whether an answer is one of the picks for using a fact that waits, not news of experience. */
 const isUseChoice = (answer: string) =>
@@ -333,28 +339,57 @@ function numbersIn(text: string): Set<string> {
   return found;
 }
 
-/**
- * An answer that says the user isn't sure, such as to how many people used something, which
- * is neither a fact nor something they don't have.
- */
-const UNSURE =
-  /\b(?:not sure|unsure|no idea|don[’']?t know|do not know|can[’']?t (?:recall|remember|say)|not certain|hard to say|no clue)\b/;
+/** Not being sure, in so many words: "Not sure", "Not 100% certain", "Not too confident". */
+const NOT_SURE =
+  'not (?:(?:very|too|that|so|quite|really|entirely|exactly|totally|completely|100%) )?(?:sure|certain|confident|positive)';
 
 /**
- * An answer that gives an amount with a no or a not in front, such as "No more than 500" or
- * "Not many, maybe 5", in the user's own words.
+ * An answer that says the user isn't sure, such as to how many people used something, or just
+ * "Maybe", which is neither a fact nor something they don't have.
  */
-const AMOUNT =
-  /^(?:(?:no|not) (?:more|fewer|less|over|under|above|below) than|not (?:many|much|a lot|that many|that much))\b/;
+const UNSURE = new RegExp(
+  String.raw`\b(?:${NOT_SURE}|unsure|no idea|not much idea|no clue|not a clue|(?:don[’']?t|do not) know(?! (?:it|that|this|them|anything)\b)|can[’']?t say(?! (?:i|we) (?:have|had|did|do|am|was|were)\b)|can[’']?t (?:recall|remember)|hard to say)\b|^(?:maybe|perhaps|possibly)\W*$`,
+);
 
 /**
- * Whether an answer is the user saying no to having something, judged only by what they picked
- * or typed: never by what an option said under it, their notes, or the question's words, which
- * Claude writes. An amount, or not being sure, isn't a no.
+ * An answer that leads with not being sure, such as "Not sure, maybe 18%" or "I don't know,
+ * about 5": a guess, not a no. "Don't know Kafka" and "No idea what that is" go on from it, so
+ * they're still nos.
  */
-const saysNo = (each: Answered) => {
-  const said = questionKey(each.answer);
-  return SAYS_NO.test(said) && !AMOUNT.test(said) && !saysUnsure(each);
+const GUESS = new RegExp(
+  String.raw`^${LEAD}(?:${NOT_SURE}|unsure|no idea|no clue|not a clue|(?:don[’']?t|do not) know|can[’']?t (?:say|recall|remember)|hard to say)(?=\s*(?:$|[,.;:!?()…–—-])|\s+(?:but\s+)?(?:maybe|perhaps|probably|about|around|roughly|approximately|i[’']d (?:say|guess)|i (?:think|guess))\b)`,
+);
+
+/**
+ * An answer that says how much the user has with a no or a not in front, such as "No more than
+ * 500", "Not many, maybe 5", "Not long, about a year" or just "Not very", in their own words.
+ * "Not very relevant" and "Not much of a Kafka person" name no amount, and "Not much, if at all"
+ * allows none, so each stays a no.
+ */
+const AMOUNT = new RegExp(
+  String.raw`^${LEAD}(?!.*\bif (?:any(?:thing)?|at all|ever)\b)(?:(?:no|not|never) (?:(?:more|fewer|less|longer) than|(?:over|under|above|below) \d)|not (?:for )?(?:(?:very|too|that) )?(?:many|much|long|often)\b(?! (?:of|call)\b)|not a (?:lot|ton|great deal)\b|not very(?=$|[,.;:!?]))`,
+);
+
+/** Whether words start with a no: not a yes such as "Not bad", nor how much the user has. */
+const startsNo = (said: string) => SAYS_NO.test(said) && !SAYS_YES.test(said) && !AMOUNT.test(said);
+
+/** Where an answer's parts start: after a comma, a stop, a dash or a bracket, or "but". */
+const PARTS = /[,;:.!?()…–—]|\s-\s|\b(?:but|though|and|so)\b/;
+
+/**
+ * Whether an answer is the user saying no to having something, in full or in part, judged only by
+ * what they picked or typed: never by what an option said under it, their notes, or the question's
+ * words, which Claude writes. How much they have, or a guess, isn't a no, unless they go on to say
+ * no, as in "Not much, never in production" or "Not sure, I've never used it".
+ */
+const saysNo = ({ answer }: Answered) => {
+  const said = questionKey(answer);
+  const opening = said.match(GUESS)?.[0] ?? said.match(AMOUNT)?.[0];
+  if (opening === undefined) return startsNo(said);
+  return said
+    .slice(opening.length)
+    .split(PARTS)
+    .some((part) => startsNo(part.trim()));
 };
 
 /** Whether an answer is the user saying they aren't sure, in what they picked or typed. */
@@ -362,6 +397,13 @@ const saysUnsure = ({ answer }: Answered) => {
   const said = questionKey(answer);
   return UNSURE.test(said) && !SAYS_YES.test(said);
 };
+
+/** Whether an answer is a plain no, which goes under Doesn't have: it starts with one, and is sure. */
+const isPlainNo = (each: Answered) => startsNo(questionKey(each.answer)) && !saysUnsure(each);
+
+/** The numbers an answer gives, besides any in how it says it isn't sure, as in "Not 100% sure". */
+const guessedNumbers = ({ answer }: Answered) =>
+  numbersIn(questionKey(answer).replace(new RegExp(UNSURE.source, 'g'), ' '));
 
 /** Everything the user saw and said in the questions a fact rests on, to check it against. */
 const askedText = (answers: readonly Answered[]) =>
@@ -450,14 +492,16 @@ export async function saveFact(
     checkBacking(answers, correcting);
     const [first] = answers;
     if (first && !(isUseChoice(first.answer) && correcting(first))) {
-      if (saysUnsure(first) && numbersIn(first.answer).size === 0) {
+      if (saysUnsure(first) && guessedNumbers(first).size === 0) {
         throw new Error(
           `Not saved: the user wasn’t sure (“${first.answer}”). Claim nothing from that answer, and leave out a number they didn’t give.`,
         );
       }
       if (saysNo(first)) {
         throw new Error(
-          `Not saved: the user answered “${first.answer}” to “${first.question}”. Save that no with save_gap, and claim nothing from it.`,
+          isPlainNo(first)
+            ? `Not saved: the user answered “${first.answer}” to “${first.question}”. Save that no with save_gap, and claim nothing from it. If they said they have something near it, ask about that in a question of its own.`
+            : `Not saved: the user answered “${first.answer}” to “${first.question}”, which says no in part. Claim nothing from it, and ask about what they have in a question of its own.`,
         );
       }
     }
@@ -579,7 +623,7 @@ export async function saveGap(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,
       );
     }
-    if (saysUnsure(answer) || AMOUNT.test(questionKey(answer.answer))) {
+    if (!isPlainNo(answer)) {
       throw new Error(
         `Not saved: “${answer.answer}” isn’t a no to whether they have it. Note under Doesn’t have only what the user said they don’t have.`,
       );

@@ -506,6 +506,18 @@ describe('save_fact', () => {
         questions: [howLong],
       }),
     ).rejects.toThrow('Save that no with save_gap');
+    // Nor is a not that names no amount, such as "Not that I recall".
+    const onCall = 'Have you been on call for Kafka?';
+    answered({ [onCall]: 'Not that I recall' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Kafka on call',
+        wording: 'Was on call for Kafka.',
+        keywords: 'Kafka',
+        questions: [onCall],
+      }),
+    ).rejects.toThrow('Save that no with save_gap');
     // A no with a number in passing is still a no, and is something they don't have.
     const backend = 'Have you used Kafka at all?';
     answered({ [backend]: 'No, never used it in 10 years of backend work' });
@@ -521,7 +533,7 @@ describe('save_fact', () => {
     expect(await tool('save_gap')({ topic: 'Kafka', question: backend })).toMatch(/^Noted/);
   });
 
-  it('takes a hedged or unsure answer to how many as just that, never as a no', async () => {
+  it('takes a hedged or unsure answer to how many or how long as just that, never as a no', async () => {
     const rough = 'Roughly how many teams used the GraphQL API?';
     answered({ [rough]: 'Not many, maybe 5' });
     expect(
@@ -553,19 +565,77 @@ describe('save_fact', () => {
         questions: [many],
       }),
     ).toMatch(/^Saved/);
+    // Not long is some, said plainly.
+    const howLong = 'How long have you run the GraphQL API in production?';
+    answered({ [howLong]: 'Not long, about 6 months' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'GraphQL in production',
+        wording: 'Ran the GraphQL API in production for about 6 months.',
+        questions: [howLong],
+      }),
+    ).toMatch(/^Saved/);
     const unsure = 'About how many requests a day did the GraphQL API serve?';
     answered({ [unsure]: 'Not sure, no idea really' });
     await expect(
       tool('save_fact')({ ...FACT, title: 'GraphQL load', questions: [unsure] }),
     ).rejects.toThrow('Not saved: the user wasn’t sure (“Not sure, no idea really”).');
-    // Nor is either something they don't have.
-    await expect(tool('save_gap')({ topic: 'GraphQL', question: unsure })).rejects.toThrow(
-      'isn’t a no to whether they have it',
-    );
-    await expect(tool('save_gap')({ topic: 'GraphQL', question: many })).rejects.toThrow(
-      'isn’t a no to whether they have it',
-    );
+    const tooSure = 'Did other companies call the GraphQL API?';
+    answered({ [tooSure]: 'Not too sure' });
+    await expect(
+      tool('save_fact')({ ...FACT, title: 'GraphQL for other companies', questions: [tooSure] }),
+    ).rejects.toThrow('Not saved: the user wasn’t sure (“Not too sure”).');
+    // Nor is any of them something they don't have.
+    for (const question of [unsure, tooSure, many, howLong]) {
+      await expect(tool('save_gap')({ topic: 'GraphQL', question })).rejects.toThrow(
+        'isn’t a no to whether they have it',
+      );
+    }
     expect(read('facts/gaps.md')).toBe(GAPS);
+  });
+
+  it('tells a no from a guess or how much they have, however the user puts it', async () => {
+    const NO = 'Save that no with save_gap';
+    const IN_PART = 'which says no in part';
+    const UNSURE = 'the user wasn’t sure';
+    const cases: [answer: string, fact: string | null, gap: boolean][] = [
+      ["I'm not familiar with it", NO, true],
+      ['Unfortunately not', NO, true],
+      ['Sorry, no', NO, true],
+      ['Probably not', NO, true],
+      ['I doubt it', NO, true],
+      ['Hmm... no', NO, true],
+      ['Not very relevant to my work, so no', NO, true],
+      ['Not much, if at all', NO, true],
+      ['Not often, if ever', NO, true],
+      ['I’m not much of a GraphQL person', NO, true],
+      ['No, I don’t know it, 10 years of Go though', NO, true],
+      ['Can’t say I have, not in 12 years of backend work', NO, true],
+      ['Not sure, I’ve never used it in 10 years', IN_PART, false],
+      ['Not much, never in production', IN_PART, false],
+      ['No more than 500, not counting tests', IN_PART, false],
+      ['Not long, about 6 months', null, false],
+      ['Not over 500 users', null, false],
+      ['Not too bad', null, false],
+      ['About a year', null, false],
+      ['Not exactly sure, maybe 18%', null, false],
+      ['Not sure — maybe 18%', null, false],
+      ["I don't know, about 5", null, false],
+      ['Not 100% sure', UNSURE, false],
+      ['Not too confident', UNSURE, false],
+      ['Maybe', UNSURE, false],
+    ];
+    for (const [index, [answer, fact, gap]] of cases.entries()) {
+      answered({ [GRAPHQL]: answer });
+      const title = `GraphQL ${String.fromCharCode(65 + index)}`;
+      const save = tool('save_fact')({ ...FACT, title });
+      if (fact) await expect(save, answer).rejects.toThrow(fact);
+      else expect(await save, answer).toMatch(/^Saved/);
+      const note = tool('save_gap')({ topic: 'GraphQL', question: GRAPHQL });
+      if (gap) expect(await note, answer).toMatch(/^Noted|already\.$/);
+      else await expect(note, answer).rejects.toThrow('Not saved');
+    }
   });
 
   it('lets one answer back a few facts, and no more, even all at once', async () => {
