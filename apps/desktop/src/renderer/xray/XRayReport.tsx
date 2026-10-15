@@ -7,8 +7,36 @@ import {
   type XRay,
 } from '@factwright/xray';
 import { CircleCheck, Info, Minus, Check as Tick, TriangleAlert } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import styles from './XRay.module.css';
+
+/** A part of the report under its heading, which names it for screen readers. */
+function Group({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  /** A count after the heading, such as how many jobs it found. */
+  count?: number | string;
+  children: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id}>
+      <h4 className={styles.groupTitle}>
+        <span id={id}>{title}</span>
+        {count !== undefined && (
+          <>
+            {' '}
+            <span className={styles.groupCount}>{count}</span>
+          </>
+        )}
+      </h4>
+      {children}
+    </section>
+  );
+}
 
 const STATUS_ICON: Readonly<Record<CheckStatus, ReactNode>> = {
   fix: <TriangleAlert size={16} />,
@@ -81,8 +109,7 @@ export function ChecksView({
   return (
     <div className={styles.groups}>
       {groups.map(({ status, checks }) => (
-        <section key={status} aria-label={STATUS_WORDS[status]}>
-          <h4 className={styles.groupTitle}>{STATUS_WORDS[status]}</h4>
+        <Group key={status} title={STATUS_WORDS[status]}>
           {status === 'pass' ? (
             <ul className={styles.passes}>
               {checks.map((check) => (
@@ -107,7 +134,7 @@ export function ChecksView({
               ))}
             </ul>
           )}
-        </section>
+        </Group>
       ))}
     </div>
   );
@@ -120,18 +147,36 @@ const ADVICE = {
     tone: styles.add,
     why: (where: string) => `Your fact bank backs it: ${where}.`,
   },
-  unconfirmed: {
-    label: 'Confirm it first',
+  'to-check': {
+    label: 'Check it first',
     tone: styles.confirm,
     why: (where: string) =>
-      `Only a claim you haven’t confirmed has it: ${where}. Confirm it in the Fact bank, then add it.`,
+      `Only a claim you haven’t checked yet has it: ${where}. Check it in the Fact bank, then add it.`,
+  },
+  doubted: {
+    label: 'Check it first',
+    tone: styles.confirm,
+    why: (where: string) =>
+      `Your fact bank says it needs confirming: “${where}”. Confirm it in the Fact bank first.`,
   },
 } as const;
+
+/** Whether a missing term is one the fact bank has, to add now or once it's checked. */
+const toAdd = (term: KeyTerm) =>
+  !term.found &&
+  (term.backing.kind === 'facts' ||
+    term.backing.kind === 'to-check' ||
+    term.backing.kind === 'doubted');
+
+/** Whether a missing term is a real gap, or one the user said they don't have. */
+const isGap = (term: KeyTerm) =>
+  !term.found && (term.backing.kind === 'none' || term.backing.kind === 'said-no');
 
 /** A missing term the fact bank has: what to do, why, and where the posting asks for it. */
 function TermToAdd({ term }: { term: KeyTerm }) {
   const backing = term.backing;
-  if (backing.kind !== 'facts' && backing.kind !== 'unconfirmed') return null;
+  if (backing.kind !== 'facts' && backing.kind !== 'to-check' && backing.kind !== 'doubted')
+    return null;
   const advice = ADVICE[backing.kind];
   return (
     <li className={styles.term}>
@@ -161,28 +206,18 @@ function TermGroup({
 }) {
   if (terms.length === 0) return null;
   const found = terms.filter((term) => term.found);
-  const toAdd = terms
-    .filter(
-      (term) =>
-        !term.found && (term.backing.kind === 'facts' || term.backing.kind === 'unconfirmed'),
-    )
+  // Ones to add now come before ones to check first.
+  const adding = terms
+    .filter(toAdd)
     .sort((a, b) => (a.backing.kind === 'facts' ? 0 : 1) - (b.backing.kind === 'facts' ? 0 : 1));
-  const gaps = terms.filter(
-    (term) => !term.found && (term.backing.kind === 'none' || term.backing.kind === 'said-no'),
-  );
+  const gaps = terms.filter(isGap);
   const otherNames = found.filter((term) => term.otherName);
   return (
-    <section aria-label={title}>
-      <h4 className={styles.groupTitle}>
-        {title}
-        <span className={styles.groupCount}>
-          {found.length} of {terms.length} on your resume
-        </span>
-      </h4>
+    <Group title={title} count={`${found.length} of ${terms.length} on your resume`}>
       <div className={styles.termGroup}>
-        {toAdd.length > 0 && (
+        {adding.length > 0 && (
           <ul className={styles.terms} aria-label="To add">
-            {toAdd.map((term) => (
+            {adding.map((term) => (
               <TermToAdd key={term.term} term={term} />
             ))}
           </ul>
@@ -234,19 +269,21 @@ function TermGroup({
           </div>
         )}
       </div>
-    </section>
+    </Group>
   );
 }
 
 /** Whether any of the terms is a real gap, or one the user said they don't have. */
-const hasGap = (terms: readonly KeyTerm[]) =>
-  terms.some(
-    (term) => !term.found && (term.backing.kind === 'none' || term.backing.kind === 'said-no'),
-  );
+const hasGap = (terms: readonly KeyTerm[]) => terms.some(isGap);
 
 /** The posting's key terms, found or missing, and for each one missing, what's honest to do. */
 export function KeywordsView({ result, hasPosting }: { result: XRay; hasPosting: boolean }) {
   const keywords = result.keywords;
+  if (!result.readable) {
+    return (
+      <p className={styles.empty}>There’s no text in this file to check the posting’s terms in.</p>
+    );
+  }
   if (!keywords) {
     return (
       <p className={styles.empty}>
@@ -291,8 +328,7 @@ export function FieldsView({ result }: { result: XRay }) {
   const { fields, sections } = result;
   return (
     <div className={styles.groups}>
-      <section aria-label="Contact">
-        <h4 className={styles.groupTitle}>Contact</h4>
+      <Group title="Contact">
         <dl className={styles.rows}>
           <Row label="Name" value={fields.name} />
           <Row label="Email" value={fields.email} />
@@ -300,11 +336,8 @@ export function FieldsView({ result }: { result: XRay }) {
           <Row label="City" value={fields.location} />
           <Row label="Links" value={fields.links.length > 0 ? fields.links.join(', ') : null} />
         </dl>
-      </section>
-      <section aria-label="Jobs">
-        <h4 className={styles.groupTitle}>
-          Jobs<span className={styles.groupCount}>{fields.jobs.length}</span>
-        </h4>
+      </Group>
+      <Group title="Jobs" count={fields.jobs.length}>
         {fields.jobs.length === 0 ? (
           <p className={styles.empty}>None found.</p>
         ) : (
@@ -323,10 +356,9 @@ export function FieldsView({ result }: { result: XRay }) {
             ))}
           </ul>
         )}
-      </section>
+      </Group>
       {fields.education.length > 0 && (
-        <section aria-label="Education">
-          <h4 className={styles.groupTitle}>Education</h4>
+        <Group title="Education">
           <ul className={styles.entries}>
             {fields.education.map((school) => (
               <li key={school.line} className={styles.entry}>
@@ -337,12 +369,9 @@ export function FieldsView({ result }: { result: XRay }) {
               </li>
             ))}
           </ul>
-        </section>
+        </Group>
       )}
-      <section aria-label="Skills">
-        <h4 className={styles.groupTitle}>
-          Skills<span className={styles.groupCount}>{fields.skills.length}</span>
-        </h4>
+      <Group title="Skills" count={fields.skills.length}>
         {fields.skills.length === 0 ? (
           <p className={styles.empty}>None found under a skills heading.</p>
         ) : (
@@ -352,9 +381,8 @@ export function FieldsView({ result }: { result: XRay }) {
             ))}
           </ul>
         )}
-      </section>
-      <section aria-label="Sections it recognizes">
-        <h4 className={styles.groupTitle}>Sections it recognizes</h4>
+      </Group>
+      <Group title="Sections it recognizes">
         <ul className={styles.entries}>
           {sections.map((section) => (
             <li key={section.line} className={styles.sectionRow}>
@@ -367,7 +395,7 @@ export function FieldsView({ result }: { result: XRay }) {
             </li>
           ))}
         </ul>
-      </section>
+      </Group>
     </div>
   );
 }

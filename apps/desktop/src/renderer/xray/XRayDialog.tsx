@@ -1,4 +1,4 @@
-import { Button, Dialog, DialogActions, SegmentedControl } from '@factwright/ui';
+import { Button, Dialog, DialogActions, SegmentedControl, VisuallyHidden } from '@factwright/ui';
 import { type CheckId, SECTION_NAMES, textMarks, type XRay, type XRayLine } from '@factwright/xray';
 import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -67,8 +67,20 @@ function TextPane({ result, showing }: { result: XRay; showing: CheckId | null }
   useEffect(() => {
     const [box, line] = [pane.current, first.current];
     if (firstShown < 0 || !box || !line) return;
-    box.scrollTo({ top: line.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    box.scrollTo({
+      top: line.offsetTop - box.clientHeight / 3,
+      behavior: still ? 'auto' : 'smooth',
+    });
   }, [firstShown]);
+  if (result.lines.length === 0) {
+    return (
+      <div className={styles.text}>
+        <p className={styles.empty}>No text to read.</p>
+      </div>
+    );
+  }
+  const names = new Map(result.checks.map((check) => [check.id, check.name]));
   const pages = [...new Set(result.lines.map((line) => line.page))];
   // Lines can repeat word for word, so each is known by its place in the file.
   const numbered = result.lines.map((line, at) => ({ line, at }));
@@ -99,6 +111,11 @@ function TextPane({ result, showing }: { result: XRay; showing: CheckId | null }
                   >
                     <span className={styles.lineText}>
                       <MarkedText text={line.text} />
+                      {line.marks.length > 0 && (
+                        <VisuallyHidden>
+                          {` (flagged: ${line.marks.map((id) => names.get(id) ?? id).join(', ')})`}
+                        </VisuallyHidden>
+                      )}
                     </span>
                     {tag && (
                       <span className={tag.known ? styles.tag : styles.tagQuiet}>{tag.text}</span>

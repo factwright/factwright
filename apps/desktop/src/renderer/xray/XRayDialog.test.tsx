@@ -153,10 +153,34 @@ describe('XRayDialog', () => {
     await userEvent.click(show);
     expect(show.getAttribute('aria-pressed')).toBe('true');
     const text = screen.getByRole('region', { name: 'The text' });
-    expect(
-      within(text).getByText('jordan@example.com', { exact: false }).closest('li')?.className,
-    ).toMatch(/shown/);
+    const line = within(text).getByText('jordan@example.com', { exact: false }).closest('li');
+    expect(line?.className).toMatch(/shown/);
+    // A screen reader hears what's flagged, too.
+    expect(line?.textContent).toContain('(flagged: Headers and footers)');
     expect(within(text).getAllByText('Header')).toHaveLength(2);
+  });
+
+  it('says when a file has no text to read, as a scanned page has none', async () => {
+    const w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const empty = zipSync({
+      'word/document.xml': strToU8(`<w:document ${w}><w:body></w:body></w:document>`),
+    });
+    render(
+      <XRayDialog
+        api={apiStub({ ok: true, data: empty })}
+        files={[WORD]}
+        start={WORD.path}
+        posting={async () => POSTING}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('No text to read.')).toBeTruthy();
+    expect(screen.getByText('1 problem reading it')).toBeTruthy();
+    expect((await axe.run(screen.getByRole('dialog'))).violations).toEqual([]);
+    await userEvent.click(screen.getByText('Keywords'));
+    expect(
+      screen.getByText('There’s no text in this file to check the posting’s terms in.'),
+    ).toBeTruthy();
   });
 
   it('says keywords need a job’s posting, for a starting resume', async () => {
