@@ -10,6 +10,7 @@ What Factwright loads into each Claude Code run, through Claude Code's own `--pl
 |---|---|---|
 | `/factwright:fit-check` | A quick verdict on one job, scored against your fact bank, plus what people say about the company | The job's folder: `posting.md`, `job.md`, `fit-check.md`, and `apply.md` for special steps. A row in `searches/fit-checks.md` |
 | `/factwright:focused-resume` | A resume tailored to one job: maps the job to your facts, asks about what's missing, then builds and fact-checks the PDF or Word file | The job's `resume.json`, `notes.md` and the resume files. New facts in `facts/` |
+| `/factwright:cover-letter` | A cover letter for one job, in your voice, from your facts and everything on file for the job, addressed to the hiring manager when one is on file. It asks about what's missing, fact-checks every line, and builds it in your resume's template, so the two look like a set | The job's `cover-letter.json`, its PDF or Word file, and `notes.md`. New facts in `facts/` |
 | `/factwright:get-started` | Gets to know you from what you shared in the app: drafts your fact bank with every fact marked unconfirmed, interviews you to confirm it and fill the gaps, then builds and fact-checks a starting resume in each template you picked, a set for each kind of job you want | `facts/`, `guide/rules.md`, and `base/` with its resume files, with a folder in it for each kind of job after the first |
 | `/factwright:add-facts` | Adds or corrects facts about your experience. "Interview me" confirms drafted facts and fills gaps, or starts a fact bank, and it reads files and notes you've shared since | `facts/` |
 | `/factwright:answer-questions` | Answers an application form's questions, typed or in screenshots, in your voice, backed by your facts, what you told Factwright and what you sent on other applications | The job's `answers.md`. What forms ask again, such as your work authorization, in your profile |
@@ -35,6 +36,7 @@ The app passes the rest with each run:
   - `read_page`: any other web page as plain text
   - `save_posting`: a posting saved word for word in the job's folder, from what was read
   - `build_resume`: a job's resume, or a starting resume, built as a PDF or Word file, with how it fits the pages
+  - `build_cover_letter`: a job's cover letter, built as a PDF or Word file in its resume's template, with how it fits one page
   - `job_board`: every open job on a company's Greenhouse, Lever, Ashby or Gem board, saved word for word, and whether a posting is still open
   - `hn_jobs`: every post in Hacker News's "Who is hiring?" thread, saved word for word
 - **Hooks:** they tell the app when Claude finishes or needs you.

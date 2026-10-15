@@ -4,6 +4,7 @@
  */
 export const RUN_SKILLS = [
   'focused-resume',
+  'cover-letter',
   'fit-check',
   'salary-check',
   'who-to-message',

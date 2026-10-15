@@ -1,0 +1,31 @@
+/* The letter as it reads, on the panel's sunken ground, as Claude's suggested answers are. */
+.letter {
+  padding: 12px 14px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.letter p {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.letter p:last-child {
+  margin-bottom: 0;
+}
+
+/* Who it's to, which the PDF sets above the greeting. */
+.to {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.sign {
+  margin-top: 14px;
+}
+
+.files {
+  margin-top: var(--fw-space-3);
+}

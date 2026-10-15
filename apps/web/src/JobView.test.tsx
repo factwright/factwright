@@ -171,6 +171,80 @@ describe('a job on the phone', () => {
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
+  it('shows its cover letter, copies its text, and opens its files', async () => {
+    const { keys, locked, vault } = await setUp();
+    const LETTER_PATH = 'applications/2026-10-07-acme-staff/AlexRiveraCoverLetter_Acme.pdf';
+    const written = {
+      ...ACME,
+      letters: [
+        {
+          path: LETTER_PATH,
+          name: 'AlexRiveraCoverLetter_Acme.pdf',
+          format: 'pdf' as const,
+          size: 9,
+          modified: TODAY,
+        },
+      ],
+      docKinds: ['posting' as const, 'letter' as const],
+    };
+    const letter = JSON.stringify({
+      name: 'Alex Rivera',
+      recipient: ['Sam Lee', 'Engineering Manager'],
+      greeting: 'Dear Sam Lee,',
+      paragraphs: ['I cut deploy time by **~40%**.', 'Talk soon?'],
+      closing: 'Best regards,',
+    });
+    const withLetter = {
+      ...vault,
+      files: new Map([
+        ...vault.files,
+        [LETTER_PATH, { path: LETTER_PATH, id: locked.id, size: 9, modified: TODAY }],
+      ]),
+      docs: new Map([[ACME.id, { ...vault.docs.get(ACME.id), letter }]]),
+    };
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const { container } = render(
+      <JobView job={written} vault={withLetter} keys={keys} today={TODAY} />,
+    );
+    const shown = within(section('Cover letter'));
+    expect(shown.getByText('To Sam Lee, Engineering Manager')).toBeTruthy();
+    expect(shown.getByText('~40%').tagName).toBe('STRONG');
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.click(shown.getByRole('button', { name: 'Copy text' }));
+    expect(writeText).toHaveBeenCalledWith(
+      'Dear Sam Lee,\n\nI cut deploy time by ~40%.\n\nTalk soon?\n\nBest regards,\nAlex Rivera',
+    );
+    expect(shown.getByRole('button', { name: 'Copied' })).toBeTruthy();
+    // The letter's file is with the resume too, as the computer lists them.
+    expect(
+      within(section('Resumes and documents')).getByText('AlexRiveraCoverLetter_Acme.pdf'),
+    ).toBeTruthy();
+    fakeServer({ [`GET /api/sync/files/${locked.id}`]: () => new Response(locked.data) });
+    const { tab } = newTab();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:letter');
+    await userEvent.click(
+      shown.getByRole('button', { name: 'Open AlexRiveraCoverLetter_Acme.pdf' }),
+    );
+    await waitFor(() => expect(tab.location.href).toBe('blob:letter'));
+  });
+
+  it('says when the browser won’t copy the letter', async () => {
+    const { keys, vault } = await setUp();
+    const letter = JSON.stringify({ greeting: 'Dear Sam,', paragraphs: ['Hello.'] });
+    const written = { ...ACME, docKinds: ['letter' as const] };
+    const withLetter = { ...vault, docs: new Map([[ACME.id, { letter }]]) };
+    const writeText = vi.fn(async () => {
+      throw new Error('Not allowed');
+    });
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<JobView job={written} vault={withLetter} keys={keys} today={TODAY} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy text' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'This browser wouldn’t copy it. Select the letter’s text and copy that instead.',
+    );
+  });
+
   it('reads a document right on the page', async () => {
     const { keys, vault } = await setUp();
     render(<JobView job={ACME} vault={vault} keys={keys} today={TODAY} />);

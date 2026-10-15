@@ -47,6 +47,7 @@ describe('the plugin’s skills', () => {
       'add-facts',
       'answer-questions',
       'ask',
+      'cover-letter',
       'fit-check',
       'focused-resume',
       'get-started',

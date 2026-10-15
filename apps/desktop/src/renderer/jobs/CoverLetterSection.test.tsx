@@ -1,0 +1,114 @@
+// @vitest-environment jsdom
+import { localDate } from '@factwright/core';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
+import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
+import type { FactwrightApi } from '../../shared/api.ts';
+import { CoverLetterSection } from './CoverLetterSection.tsx';
+import { sampleJob } from './sample-jobs.ts';
+
+const TODAY = localDate();
+
+afterEach(cleanup);
+
+const LETTER = JSON.stringify({
+  name: 'Alex Rivera',
+  date: 'October 14, 2026',
+  recipient: ['Sam Lee', 'Engineering Manager', 'Acme'],
+  greeting: 'Dear Sam Lee,',
+  paragraphs: [
+    'Acme wants deploys to be boring. I cut deploy time by **~40%** at Tidewater.',
+    'Talk soon?',
+  ],
+  closing: 'Best regards,',
+});
+
+const file = (name: string, format: 'pdf' | 'docx') => ({
+  path: `applications/acme/${name}`,
+  name,
+  format,
+  size: 38_100,
+  modified: `${TODAY}T16:00:00.000Z`,
+});
+
+const job = sampleJob({
+  id: 'acme--staff-engineer',
+  company: 'Acme',
+  role: 'Staff Engineer',
+  docKinds: ['letter'],
+  letters: [
+    file('AlexRiveraCoverLetter_Acme.pdf', 'pdf'),
+    file('AlexRiveraCoverLetter_Acme.docx', 'docx'),
+  ],
+});
+
+function apiStub(letter: string | undefined = LETTER) {
+  return {
+    jobDocs: vi.fn(async () => ({ letter })),
+    copyText: vi.fn(async () => ({ ok: true }) as const),
+    openFile: vi.fn(async () => ({ ok: true }) as const),
+  } as unknown as FactwrightApi & {
+    copyText: Mock<FactwrightApi['copyText']>;
+    openFile: Mock<FactwrightApi['openFile']>;
+  };
+}
+
+describe('CoverLetterSection', () => {
+  it('shows the letter, who it’s to, and its files', async () => {
+    const { container } = render(<CoverLetterSection job={job} api={apiStub()} today={TODAY} />);
+    expect(screen.getByRole('heading', { name: 'Cover letter' })).toBeTruthy();
+    const letter = await screen.findByRole('article', { name: 'Cover letter for Acme' });
+    expect(within(letter).getByText('To Sam Lee, Engineering Manager, Acme')).toBeTruthy();
+    expect(within(letter).getByText('Dear Sam Lee,')).toBeTruthy();
+    // Its bold shows as bold, not as marks.
+    expect(within(letter).getByText('~40%').tagName).toBe('STRONG');
+    expect(letter.textContent).toContain('Best regards,Alex Rivera');
+    expect(screen.getByText('16 words · PDF and Word')).toBeTruthy();
+    const files = screen.getByRole('list', { name: 'The cover letter’s files' });
+    expect(within(files).getAllByRole('listitem')).toHaveLength(2);
+    expect(
+      within(files).getByRole('button', { name: 'Preview AlexRiveraCoverLetter_Acme.pdf' }),
+    ).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('copies the letter as plain text, for a form’s cover letter box', async () => {
+    const api = apiStub();
+    render(<CoverLetterSection job={job} api={api} today={TODAY} />);
+    await screen.findByRole('article', { name: 'Cover letter for Acme' });
+    await userEvent.click(screen.getByRole('button', { name: 'Copy text of the cover letter' }));
+    expect(api.copyText).toHaveBeenCalledWith(
+      [
+        'Dear Sam Lee,',
+        'Acme wants deploys to be boring. I cut deploy time by ~40% at Tidewater.',
+        'Talk soon?',
+        'Best regards,\nAlex Rivera',
+      ].join('\n\n'),
+    );
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
+  });
+
+  it('opens a file in the user’s own app, and says when it can’t', async () => {
+    const api = apiStub();
+    api.openFile.mockResolvedValueOnce({ ok: false, message: 'That file isn’t there anymore.' });
+    render(<CoverLetterSection job={job} api={api} today={TODAY} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open AlexRiveraCoverLetter_Acme.docx' }),
+    );
+    expect(api.openFile).toHaveBeenCalledWith('applications/acme/AlexRiveraCoverLetter_Acme.docx');
+    expect(screen.getByRole('alert').textContent).toBe('That file isn’t there anymore.');
+  });
+
+  it('shows the files alone for a letter the user made, and nothing without a letter', async () => {
+    const own = { ...job, docKinds: [] };
+    render(<CoverLetterSection job={own} api={apiStub()} today={TODAY} />);
+    expect(screen.getByText('PDF and Word')).toBeTruthy();
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Copy text/ })).toBeNull();
+    cleanup();
+    const none = { ...job, docKinds: [], letters: [] };
+    const { container } = render(<CoverLetterSection job={none} api={apiStub()} today={TODAY} />);
+    expect(container.textContent).toBe('');
+  });
+});

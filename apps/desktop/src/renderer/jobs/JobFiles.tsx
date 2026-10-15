@@ -19,7 +19,56 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
 
-/** A job's resumes, which open in the user's own app, and its documents, which open here. */
+/**
+ * A resume's or cover letter's file: a PDF previews here, and either opens in the user's own app,
+ * ready to attach.
+ */
+export function FileRow({
+  file,
+  today,
+  onPreview,
+  onOpen,
+}: {
+  file: JobFile;
+  today: string;
+  onPreview: (file: JobFile) => void;
+  onOpen: (path: string) => void;
+}) {
+  return (
+    <li className={styles.file}>
+      <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
+      <span className={styles.fileText}>
+        <span className={styles.fileName}>{file.name}</span>
+        <span className={styles.fileMeta}>
+          {file.format.toUpperCase()} · {fileSize(file.size)} · {shortDate(file.modified, today)}
+        </span>
+      </span>
+      {file.format === 'pdf' && (
+        <Button
+          size="sm"
+          variant="quiet"
+          aria-label={`Preview ${file.name}`}
+          onClick={() => onPreview(file)}
+        >
+          Preview
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="quiet"
+        aria-label={`Open ${file.name}`}
+        onClick={() => onOpen(file.path)}
+      >
+        Open
+      </Button>
+    </li>
+  );
+}
+
+/**
+ * A job's resumes and cover letters, which open in the user's own app, and its documents, which
+ * open here.
+ */
 export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
@@ -47,9 +96,11 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
   };
 
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const built = [...job.files, ...job.letters];
   const summary =
     [
       job.files.length > 0 && count(job.files.length, 'resume'),
+      job.letters.length > 0 && count(job.letters.length, 'cover letter'),
       documents.length > 0 && count(documents.length, 'document'),
     ]
       .filter(Boolean)
@@ -57,39 +108,18 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
 
   return (
     <PanelSection id="files" title="Files" icon={<FolderOpen size={15} />} summary={summary}>
-      {job.files.length === 0 && documents.length === 0 ? (
+      {built.length === 0 && documents.length === 0 ? (
         <p className={styles.quiet}>No files yet.</p>
       ) : (
         <ul className={styles.files}>
-          {job.files.map((file) => (
-            <li key={file.path} className={styles.file}>
-              <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
-              <span className={styles.fileText}>
-                <span className={styles.fileName}>{file.name}</span>
-                <span className={styles.fileMeta}>
-                  {file.format.toUpperCase()} · {fileSize(file.size)} ·{' '}
-                  {shortDate(file.modified, today)}
-                </span>
-              </span>
-              {file.format === 'pdf' && (
-                <Button
-                  size="sm"
-                  variant="quiet"
-                  aria-label={`Preview ${file.name}`}
-                  onClick={() => setPreview(file)}
-                >
-                  Preview
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="quiet"
-                aria-label={`Open ${file.name}`}
-                onClick={() => openFile(file.path)}
-              >
-                Open
-              </Button>
-            </li>
+          {built.map((file) => (
+            <FileRow
+              key={file.path}
+              file={file}
+              today={today}
+              onPreview={setPreview}
+              onOpen={openFile}
+            />
           ))}
           {documents.map(({ kind, name, about }) => (
             <li key={kind} className={styles.file}>

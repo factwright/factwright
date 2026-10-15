@@ -150,7 +150,7 @@ Apply the fixes and build again. Skip this step only if the user asks for speed.
   - the questions asked and where each answer was filed
   - anything the user should double-check before sending
 - The app shows the resume in the job's panel, ready to open.
-- Reply in 6 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, the facts added, and anything to confirm.
+- Reply in 6 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, the facts added, and anything to confirm. When the posting or `apply.md` asks for a cover letter, add that `/factwright:cover-letter` writes one to match.
 
 ## 10. Feedback (now or in a later session)
 When the user reacts to the resume:

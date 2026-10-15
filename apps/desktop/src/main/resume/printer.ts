@@ -10,10 +10,13 @@ export interface PrintedResume {
   lastFill: number | null;
 }
 
-/** Prints resume pages to PDF and measures how their lines fit. Tests pass their own. */
+/**
+ * Prints resume and cover letter pages to PDF and measures how their lines fit, with the
+ * engine's script for a resume unless given a letter's. Tests pass their own.
+ */
 export interface ResumePrinter {
   print(html: string): Promise<PrintedResume>;
-  measure(html: string): Promise<FitRow[]>;
+  measure(html: string, script?: string): Promise<FitRow[]>;
 }
 
 /** Prints a page to PDF and nothing more, such as a template's preview. */
@@ -125,10 +128,10 @@ export class ElectronResumePrinter implements ResumePrinter, PdfPrinter {
     });
   }
 
-  measure(html: string): Promise<FitRow[]> {
+  measure(html: string, script = MEASURE_SCRIPT): Promise<FitRow[]> {
     return this.inTurn(async (window) => {
       await loadPage(window, measurableHtml(html));
-      const rows: unknown = await window.webContents.executeJavaScript(MEASURE_SCRIPT);
+      const rows: unknown = await window.webContents.executeJavaScript(script);
       return Array.isArray(rows) ? rows.filter(isFitRow) : [];
     });
   }

@@ -47,7 +47,7 @@ const SENT: readonly JobStatus[] = [
   'withdrawn',
 ];
 
-async function readText(path: string): Promise<string | null> {
+export async function readText(path: string): Promise<string | null> {
   try {
     return await readFile(path, 'utf8');
   } catch {
@@ -65,7 +65,9 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /** The user's resume rules, or why they can't be read. */
-async function rulesIn(workspace: string): Promise<{ rules: LintConfig; problem: string | null }> {
+export async function rulesIn(
+  workspace: string,
+): Promise<{ rules: LintConfig; problem: string | null }> {
   const text = await readText(join(workspace, 'guide', 'lint.json'));
   if (text === null) return { rules: {}, problem: null };
   try {
@@ -76,6 +78,21 @@ async function rulesIn(workspace: string): Promise<{ rules: LintConfig; problem:
       problem: 'guide/lint.json isn’t valid JSON, so its rules weren’t checked.',
     };
   }
+}
+
+/**
+ * Which of a job's files would be built over ones that went out with the application: any that
+ * are there once the user has applied. Those stay as sent.
+ */
+export async function keptAsSent(
+  job: Job | undefined,
+  dir: string,
+  files: readonly string[],
+): Promise<string[]> {
+  if (!job || !(job.appliedOn || (job.status && SENT.includes(job.status)))) return [];
+  const sent = [];
+  for (const file of files) if (await exists(join(dir, file))) sent.push(file);
+  return sent;
 }
 
 /**
@@ -146,12 +163,9 @@ export async function buildResume(
   ];
 
   const job = at.isJob ? deps.jobs().find((each) => each.folder === folder) : undefined;
-  if (job && (job.appliedOn || (job.status && SENT.includes(job.status)))) {
-    const sent = [];
-    for (const file of files) if (await exists(join(dir, file))) sent.push(file);
-    if (sent.length > 0) {
-      return `Not built: ${sent.join(' and ')} went out with the application, so it stays as sent. Give ${at.data} a new output_name to build another.`;
-    }
+  const sent = await keptAsSent(job, dir, files);
+  if (sent.length > 0) {
+    return `Not built: ${sent.join(' and ')} went out with the application, so it stays as sent. Give ${at.data} a new output_name to build another.`;
   }
 
   const { rules, problem: rulesProblem } = await rulesIn(deps.workspace);
