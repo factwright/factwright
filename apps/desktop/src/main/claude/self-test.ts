@@ -95,10 +95,12 @@ export async function checkSetup(deps: CheckDeps): Promise<SetupFinding | null> 
           ended = true;
         }
       },
-      (method) => {
-        if (method !== 'tools/list' || connected) return;
-        connected = true;
-        close();
+      {
+        tools: (method) => {
+          if (method !== 'tools/list' || connected) return;
+          connected = true;
+          close();
+        },
       },
     );
 

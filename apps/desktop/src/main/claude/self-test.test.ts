@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SetupCheck } from '../../shared/api.ts';
-import type { HookListener, ToolsListener } from './run-server.ts';
+import type { HookListener, ListenOptions, ToolsListener } from './run-server.ts';
 import { type CheckProcess, checkSetup, SetupChecker, type SetupFinding } from './self-test.ts';
 import type { Launch } from './session.ts';
 
@@ -26,9 +26,9 @@ function fakeServer() {
   };
   return {
     heard,
-    listen: vi.fn((_token: string, hooks: HookListener, tools?: ToolsListener) => {
+    listen: vi.fn((_token: string, hooks: HookListener, options: ListenOptions = {}) => {
       heard.hooks = hooks;
-      heard.tools = tools;
+      heard.tools = options.tools;
       return () => {
         heard.stopped = true;
       };
@@ -86,11 +86,9 @@ describe('checkSetup', () => {
   it('passes when Claude Code reaches the tools, and its hook arrives as it closes', async () => {
     const { server, claude, start, found } = await begin();
     expect(start).toHaveBeenCalledWith(LAUNCH);
-    expect(server.listen).toHaveBeenCalledWith(
-      LAUNCH.token,
-      expect.any(Function),
-      expect.any(Function),
-    );
+    expect(server.listen).toHaveBeenCalledWith(LAUNCH.token, expect.any(Function), {
+      tools: expect.any(Function),
+    });
     server.heard.tools?.('initialize');
     expect(claude.written).toEqual([]);
     server.heard.tools?.('tools/list');

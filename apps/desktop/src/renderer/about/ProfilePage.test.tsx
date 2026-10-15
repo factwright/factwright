@@ -156,12 +156,12 @@ describe('ProfilePage', () => {
     const { container } = render(<Harness api={profileApi()} onRun={onRun} />);
     const progress = await screen.findByRole('region', { name: 'Getting to know you' });
     expect(within(progress).getByText(/Read what you shared and drafted 24 facts/)).toBeTruthy();
-    expect(within(progress).getByText('Confirming with you: 6 facts still to check')).toBeTruthy();
+    expect(within(progress).getByText('Checking with you: 6 facts to verify')).toBeTruthy();
     expect(within(progress).getByText('Building your starting resumes')).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Carry on with your Claude' }));
     expect(onRun).toHaveBeenLastCalledWith({ skill: 'get-started' });
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm your facts' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Verify your facts' }));
     expect(onRun).toHaveBeenLastCalledWith({ skill: 'add-facts', mode: 'interview' });
   });
 
@@ -171,7 +171,7 @@ describe('ProfilePage', () => {
       await screen.findByText('Your Claude is working on it in the panel below.'),
     ).toBeTruthy();
     expect(
-      (screen.getByRole('button', { name: 'Confirm your facts' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Verify your facts' }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 

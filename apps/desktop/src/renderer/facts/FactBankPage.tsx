@@ -1,4 +1,16 @@
-import { claimParts, type FactBlock, findBlock, sameBlock } from '@factwright/core';
+import {
+  claimParts,
+  confirmClaim,
+  doesntHave,
+  type FactBlock,
+  findBlock,
+  GAPS_FILE,
+  type GapRow,
+  isDoesntHave,
+  sameBlock,
+  shortDate,
+  UNCONFIRMED,
+} from '@factwright/core';
 import {
   Button,
   EmptyState,
@@ -9,7 +21,7 @@ import {
   SearchField,
   VisuallyHidden,
 } from '@factwright/ui';
-import { BookCheck, Check, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookCheck, Check, MessageSquareQuote, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FactBank, FactResult, FactTarget, SkipReason } from '../../shared/facts.ts';
 import { usePref } from '../prefs.ts';
@@ -18,23 +30,32 @@ import { ClaimForm, type EditNotice, forgetDraft, SectionForm } from './FactEdit
 import {
   bankCounts,
   blockKey,
+  detailsWithoutOrigin,
   factCount,
   findFacts,
   hasContent,
   isClaim,
   isUnconfirmed,
+  type OriginView,
+  originOf,
   tagInfo,
+  type Unverified,
+  unverifiedFacts,
 } from './factView.ts';
 import { type FactBankApi, useFactBank } from './useFactBank.ts';
 
 const isPath = (value: unknown): value is string | null =>
   value === null || typeof value === 'string';
 
+/** Where on the page a block shows: in the list of facts to verify, or in its file. */
+type Place = 'unverified' | 'file';
+
 /**
  * A block as it was when the user acted on it, with how it can be told apart in its file, to
- * find it again however the file has changed since.
+ * find it again however the file has changed since, and where on the page they acted on it.
  */
 interface Held {
+  place: Place;
   path: string;
   block: FactBlock;
   /** Whether no other block in the file read the same, so it can be found by its text if it moved. */
@@ -59,11 +80,19 @@ type Changing = Extract<Editing, { kind: 'change' }>;
 let edits = 0;
 const nextDraft = () => `edit-${++edits}`;
 
+/** How many facts to verify show before the rest are asked for. */
+const FIRST_TO_VERIFY = 4;
+
 const sameHeading = (a: FactBlock, b: FactBlock) => a.level === b.level && a.title === b.title;
 
+/** A block's key in one place on the page: a fact to verify shows in its file too. */
+const placedKey = (place: Place, path: string, block: Pick<FactBlock, 'index'>) =>
+  place === 'unverified' ? `unverified:${blockKey(path, block)}` : blockKey(path, block);
+
 /** A block held as it is now, with how it can be told apart among its file's blocks. */
-function hold(path: string, block: FactBlock, blocks: readonly FactBlock[]): Held {
+function hold(place: Place, path: string, block: FactBlock, blocks: readonly FactBlock[]): Held {
   return {
+    place,
     path,
     block,
     unique: blocks.filter((each) => sameBlock(each.text, block.text)).length === 1,
@@ -122,6 +151,9 @@ const SKIPPED: Readonly<Record<SkipReason, string>> = {
 const toolOf = (key: string, tool: 'change' | 'delete' | 'confirm') =>
   `[data-key="${key.replace(/["\\]/g, '\\$&')}"] [data-tool="${tool}"]`;
 
+/** The Remove button of something the user said they don't have, by its row. */
+const gapToolOf = (index: number) => `[data-gap="${index}"] [data-tool="remove-gap"]`;
+
 /**
  * Each block with its heading's level on the page, under the file's title: a section is one
  * below the section before it at most, and a claim one below the section it's in, so no level is
@@ -136,20 +168,47 @@ function headingsOf(blocks: readonly FactBlock[]): [FactBlock, number][] {
   });
 }
 
+/** Where a fact to verify came from, and the questions and answers it rests on. */
+function OriginLine({ origin }: { origin: OriginView }) {
+  return (
+    <div className={styles.origin}>
+      <p className={styles.originText}>
+        <MessageSquareQuote size={14} aria-hidden="true" className={styles.originIcon} />
+        {origin.text}
+      </p>
+      {origin.asked.length > 0 && (
+        <dl className={styles.asked}>
+          {origin.asked.map(({ question, answer }, i) => (
+            <div key={`${i}.${question}`} className={styles.askedPair}>
+              <dt>{question}</dt>
+              <dd>“{answer}”</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 /** One claim, or one section such as an overview, with its buttons. */
 function BlockView({
+  place,
   path,
   block,
   heading,
   opening = false,
   deleting,
   trouble,
+  fileTitle,
+  origin,
+  onOpenFile,
   onChange,
   onDelete,
   onKeep,
   onRemove,
   onConfirm,
 }: {
+  place: Place;
   path: string;
   block: FactBlock;
   /** Its heading's level on the page, one below the heading it's under. */
@@ -158,6 +217,10 @@ function BlockView({
   opening?: boolean;
   deleting: boolean;
   trouble: string | null;
+  /** For a fact to verify: the title of the file it's in, and where it came from. */
+  fileTitle?: string;
+  origin?: OriginView | null;
+  onOpenFile?: () => void;
   onChange: () => void;
   onDelete: () => void;
   onKeep: () => void;
@@ -166,7 +229,7 @@ function BlockView({
 }) {
   const id = useId();
   const asked = useId();
-  const key = blockKey(path, block);
+  const key = placedKey(place, path, block);
   const problem = trouble && (
     <p className={styles.problem} role="alert">
       {trouble}
@@ -176,32 +239,75 @@ function BlockView({
   const Heading = `h${Math.min(6, heading)}` as 'h3';
   if (block.tags) {
     const { wording, details } = claimParts(block);
+    const toVerify = place === 'unverified';
+    // The list of facts to verify says what they are, so each leaves its own tag out.
+    const tags = toVerify ? block.tags.filter((tag) => tag !== UNCONFIRMED) : block.tags;
+    const shownDetails = toVerify ? detailsWithoutOrigin(details) : details;
     return (
       <article className={styles.fact} data-key={key} aria-labelledby={id}>
         <div className={styles.factHead}>
-          <Heading id={id} className={styles.factTitle}>
-            {block.title}
-          </Heading>
-          <div className={styles.tools}>
-            {isUnconfirmed(block) && (
-              <Button
-                size="sm"
-                data-tool="confirm"
-                icon={<Check size={14} aria-hidden="true" />}
-                aria-label={`Confirm “${block.title}”`}
-                onClick={onConfirm}
+          <div className={styles.factTitles}>
+            <Heading id={id} className={styles.factTitle}>
+              {block.title}
+            </Heading>
+            {toVerify && fileTitle && (
+              <button
+                type="button"
+                className={styles.inFile}
+                aria-label={`${fileTitle}: show the whole file`}
+                title="Show the whole file"
+                onClick={onOpenFile}
               >
-                Confirm
-              </Button>
+                {fileTitle}
+              </button>
             )}
-            <IconButton
-              data-tool="change"
-              variant="quiet"
-              size="sm"
-              label={`Change “${block.title}”`}
-              icon={<Pencil size={14} aria-hidden="true" />}
-              onClick={onChange}
-            />
+          </div>
+          <div className={styles.tools}>
+            {toVerify ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  data-tool="confirm"
+                  icon={<Check size={14} aria-hidden="true" />}
+                  aria-label={`Verify “${block.title}”`}
+                  onClick={onConfirm}
+                >
+                  Verify
+                </Button>
+                <Button
+                  size="sm"
+                  data-tool="change"
+                  icon={<Pencil size={14} aria-hidden="true" />}
+                  aria-label={`Edit “${block.title}”, then verify it`}
+                  onClick={onChange}
+                >
+                  Edit
+                </Button>
+              </>
+            ) : (
+              <>
+                {isUnconfirmed(block) && (
+                  <Button
+                    size="sm"
+                    data-tool="confirm"
+                    icon={<Check size={14} aria-hidden="true" />}
+                    aria-label={`Verify “${block.title}”`}
+                    onClick={onConfirm}
+                  >
+                    Verify
+                  </Button>
+                )}
+                <IconButton
+                  data-tool="change"
+                  variant="quiet"
+                  size="sm"
+                  label={`Change “${block.title}”`}
+                  icon={<Pencil size={14} aria-hidden="true" />}
+                  onClick={onChange}
+                />
+              </>
+            )}
             <IconButton
               data-tool="delete"
               variant="quiet"
@@ -212,22 +318,25 @@ function BlockView({
             />
           </div>
         </div>
-        <ul className={styles.tags} aria-label="Tags">
-          {block.tags.map((tag, i) => {
-            const info = tagInfo(tag);
-            return (
-              <li key={`${tag}.${i}`} title={info.meaning || undefined}>
-                <Pill tone={info.tone}>{info.label}</Pill>
-              </li>
-            );
-          })}
-        </ul>
+        {tags.length > 0 && (
+          <ul className={styles.tags} aria-label="Tags">
+            {tags.map((tag, i) => {
+              const info = tagInfo(tag);
+              return (
+                <li key={`${tag}.${i}`} title={info.meaning || undefined}>
+                  <Pill tone={info.tone}>{info.label}</Pill>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         {wording && (
           <p className={styles.wording}>
             <MarkdownLine text={wording.replace(/\s*\n\s*/g, ' ')} />
           </p>
         )}
-        {details && <Markdown className={styles.details} text={details} />}
+        {shownDetails && <Markdown className={styles.details} text={shownDetails} />}
+        {toVerify && origin && <OriginLine origin={origin} />}
         {deleting && (
           <div className={styles.confirmDelete}>
             <span id={asked}>
@@ -291,28 +400,45 @@ function BlockView({
   );
 }
 
+/** A section's words other than its table or list, such as a note under the heading. */
+function besidesRows(body: string): string {
+  return body
+    .split(/\r?\n/)
+    .filter((line) => !/^ {0,3}(?:\||[-*+][ \t])/.test(line))
+    .join('\n')
+    .trim();
+}
+
 /**
- * The fact bank, where the user reads and fixes what Factwright knows about them: file by file,
- * or searched all at once, or just the facts still to confirm. A fact can be changed, confirmed,
- * deleted or added, and the page keeps up as Claude and other computers change the files.
+ * The fact bank, where the user reads and fixes what Factwright knows about them: what waits for
+ * them to verify, at the top, then file by file, or searched all at once. A fact can be verified,
+ * changed, deleted or added, something they said they don't have can be taken back, and the page
+ * keeps up as Claude and other computers change the files.
  */
 export function FactBankPage({
   api,
   today,
   onGetStarted,
+  show = null,
 }: {
   api: FactBankApi;
   today: string;
   /** Goes to getting started, where Claude builds the fact bank. */
   onGetStarted: () => void;
+  /**
+   * A part of the page to go to, such as the facts to verify after a run filed some, with a
+   * number that changes each time it's asked for.
+   */
+  show?: { part: 'unverified' | 'gaps'; at: number } | null;
 }) {
   const { bank, problem, reload, take } = useFactBank(api);
   const [query, setQuery] = useState('');
-  const [toConfirm, setToConfirm] = useState(false);
+  const [allToVerify, setAllToVerify] = useState(false);
   const [openPath, setOpenPath] = usePref<string | null>('facts.file', null, isPath);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleting, setDeleting] = useState<Held | null>(null);
   const [trouble, setTrouble] = useState<(Held & { message: string }) | null>(null);
+  const [gapTrouble, setGapTrouble] = useState<string | null>(null);
   // What just happened, for screen readers, as the focus moves on.
   const [said, setSaid] = useState('');
   const page = useRef<HTMLElement>(null);
@@ -332,6 +458,23 @@ export function FactBankPage({
   const focusSoon = (...selectors: string[]) => {
     focusing.current = { selectors, until: Date.now() + 3000 };
   };
+
+  // Going to a part of the page, as asked, once the bank has loaded. It comes before the focus
+  // moves, so the focus moves there in the same go.
+  const shown = useRef<number | null>(null);
+  useEffect(() => {
+    if (!show || !bank || shown.current === show.at) return;
+    shown.current = show.at;
+    setQuery('');
+    if (show.part === 'gaps') {
+      setOpenPath(GAPS_FILE);
+      // The gaps file's own title, once it's open, if it has no Doesn't have section.
+      focusSoon('#facts-doesnt-have', `#facts-file-title[data-path="${GAPS_FILE}"]`);
+    } else {
+      focusSoon('#facts-unverified-title', '#facts-search');
+    }
+  });
+
   useEffect(() => {
     const wanted = focusing.current;
     if (!wanted) return;
@@ -359,12 +502,6 @@ export function FactBankPage({
     setSaid(`“${deleting.block.title}” changed, so it wasn’t deleted.`);
     focusSoon('#facts-search');
   });
-
-  // With nothing left to confirm, the page shows the files again, and stays there.
-  const unconfirmed = bank ? bankCounts(bank).unconfirmed : 0;
-  useEffect(() => {
-    if (toConfirm && bank && unconfirmed === 0) setToConfirm(false);
-  }, [toConfirm, bank, unconfirmed]);
 
   /** Says something to screen readers, even the same thing twice. */
   const announce = (text: string) =>
@@ -410,8 +547,8 @@ export function FactBankPage({
   }
 
   const counts = bankCounts(bank);
-  const confirming = toConfirm && counts.unconfirmed > 0;
-  const searching = query.trim() !== '' || confirming;
+  const searching = query.trim() !== '';
+  const toVerify = unverifiedFacts(bank);
   // The file the user last had open, or else the first with facts in it.
   const file =
     bank.files.find((each) => each.path === openPath) ??
@@ -419,26 +556,47 @@ export function FactBankPage({
     bank.files[0];
   const claimFiles = bank.files.filter((each) => each.kind === 'claims');
   const source = `${bank.firstName ?? 'confirmed'} ${today}`;
+  const textOf = (blocks: readonly FactBlock[]) => blocks.map((block) => block.text).join('');
+  const gapsIn = (each: (typeof bank.files)[number]) =>
+    each.kind === 'gaps' ? (doesntHave(textOf(each.blocks))?.rows ?? []) : [];
 
   // Where the block being changed is now, so its form shows in its place.
   const editingAt =
     editing?.kind === 'change' ? changedPlaceOf(blocksOf(editing.path), editing) : -1;
   const editingKey =
     editing?.kind === 'change' && editingAt >= 0
-      ? blockKey(editing.path, { index: editingAt })
+      ? placedKey(editing.place, editing.path, { index: editingAt })
       : null;
   const deletingKey =
-    deleting && deletingAt >= 0 ? blockKey(deleting.path, { index: deletingAt }) : null;
+    deleting && deletingAt >= 0
+      ? placedKey(deleting.place, deleting.path, { index: deletingAt })
+      : null;
   const troubleAt = trouble ? changedPlaceOf(blocksOf(trouble.path), trouble) : -1;
   const troubleKey =
-    trouble && troubleAt >= 0 ? blockKey(trouble.path, { index: troubleAt }) : null;
+    trouble && troubleAt >= 0 ? placedKey(trouble.place, trouble.path, { index: troubleAt }) : null;
   const found = searching
     ? findFacts(bank, {
         query,
-        toConfirm: confirming,
-        keep: (path, block) => blockKey(path, block) === editingKey,
+        keep: (path, block) => placedKey('file', path, block) === editingKey,
       })
     : [];
+  // A fact in the list that's being changed, asked about deleting, or showing what stopped it
+  // stays in it, whatever else comes in ahead of it, and while the user searches.
+  const pinned = new Set([editingKey, deletingKey, troubleKey]);
+  const isPinned = ({ file: each, block }: Unverified) =>
+    pinned.has(placedKey('unverified', each.path, block));
+  const toVerifyShown = toVerify.filter((each, i) =>
+    searching ? isPinned(each) : allToVerify || i < FIRST_TO_VERIFY || isPinned(each),
+  );
+  // An edit opened in the list stays open even once its fact leaves it, as when it's verified
+  // in its file meanwhile.
+  const strayEdit =
+    editing?.kind === 'change' &&
+    editing.place === 'unverified' &&
+    editingAt >= 0 &&
+    !toVerifyShown.some(
+      ({ file: each, block }) => placedKey('unverified', each.path, block) === editingKey,
+    );
 
   /** Ends the edit that's open, dropping what was typed for it. */
   const finish = () => {
@@ -446,12 +604,12 @@ export function FactBankPage({
     setEditing(null);
   };
 
-  const startChange = (path: string, block: FactBlock) => {
+  const startChange = (place: Place, path: string, block: FactBlock) => {
     if (editing) forgetDraft(editing.draft);
     setDeleting(null);
     setTrouble(null);
     setEditing({
-      ...hold(path, block, blocksOf(path)),
+      ...hold(place, path, block, blocksOf(path)),
       kind: 'change',
       notice: null,
       draft: nextDraft(),
@@ -468,26 +626,49 @@ export function FactBankPage({
   const openFile = (path: string) => {
     setOpenPath(path);
     setQuery('');
-    setToConfirm(false);
     setDeleting(null);
     setTrouble(null);
     focusSoon('#facts-file-title');
   };
 
+  /** Where a fact is in the list to verify, from 0, or -1. */
+  const placeToVerify = (path: string, block: FactBlock) =>
+    toVerify.findIndex((each) => each.file.path === path && each.block.index === block.index);
+
+  /**
+   * Once a fact leaves the list to verify, the focus goes to the one that took its place there,
+   * or the one before, as the bank is now: or else to the list's heading, or the search.
+   */
+  const focusToVerify = (after: FactBank, at: number) => {
+    const list = unverifiedFacts(after);
+    const next = list[at] ?? list[at - 1];
+    focusSoon(
+      ...(next ? [toolOf(placedKey('unverified', next.file.path, next.block), 'confirm')] : []),
+      '#facts-unverified-title',
+      '#facts-search',
+    );
+  };
+
   const saveChange = async (changing: Changing, next: string): Promise<string | null> => {
-    const { path, block } = changing;
-    const result = await api.changeFact({ ...targetOf(changing), next });
+    const { path, block, place } = changing;
+    // Editing a fact to verify verifies it on saving: the user just read and fixed it.
+    const verifying = place === 'unverified' && block.tags !== null;
+    const text = verifying ? (confirmClaim(next, source) ?? next) : next;
+    const at = placeToVerify(path, block);
+    const result = await api.changeFact({ ...targetOf(changing), next: text });
     if (result.ok) {
       take(result.bank);
       forgetDraft(changing.draft);
       setEditing(null);
       const now = result.bank.files.find((each) => each.path === path)?.blocks[block.index];
-      focusSoon(toolOf(blockKey(path, block), 'change'), '#facts-search');
-      announce(
-        next.trim()
-          ? `Saved “${now?.title || block.title || 'the opening text'}”.`
-          : 'Cleared the opening text.',
-      );
+      const title = now?.title || block.title || 'the opening text';
+      if (verifying) {
+        focusToVerify(result.bank, at);
+        announce(`Saved and verified “${title}”.`);
+        return null;
+      }
+      focusSoon(toolOf(placedKey(place, path, block), 'change'), '#facts-search');
+      announce(next.trim() ? `Saved “${title}”.` : 'Cleared the opening text.');
       return null;
     }
     if (!result.changed) return result.message;
@@ -505,7 +686,7 @@ export function FactBankPage({
     if (!now || (now.tags === null) !== (block.tags === null)) {
       return 'This was deleted while you had it open. Copy your words if you want them, then cancel.';
     }
-    setEditing({ ...changing, ...hold(path, now, blocks), notice: changedNotice(now) });
+    setEditing({ ...changing, ...hold(place, path, now, blocks), notice: changedNotice(now) });
     return null;
   };
 
@@ -516,11 +697,13 @@ export function FactBankPage({
     finish();
     setOpenPath(path);
     setQuery('');
-    setToConfirm(false);
     const added = result.bank.files
       .find((each) => each.path === path)
       ?.blocks.find((each) => each.text.replace(/\r\n/g, '\n').trimEnd() === text.trimEnd());
-    focusSoon(...(added ? [toolOf(blockKey(path, added), 'change')] : []), '#facts-file-title');
+    focusSoon(
+      ...(added ? [toolOf(placedKey('file', path, added), 'change')] : []),
+      '#facts-file-title',
+    );
     announce(`Added “${added?.title ?? 'your fact'}”.`);
     return null;
   };
@@ -539,11 +722,18 @@ export function FactBankPage({
   };
 
   const remove = async (held: Held) => {
-    const { path, block } = held;
+    const { place, path, block } = held;
     setDeleting(null);
+    const key = placedKey(place, path, block);
+    const at = placeToVerify(path, block);
     const after = await act(held, api.removeFact(targetOf(held)));
     if (!after) {
-      focusSoon(toolOf(blockKey(path, block), 'delete'), '#facts-search');
+      focusSoon(toolOf(key, 'delete'), '#facts-search');
+      return;
+    }
+    announce(`Deleted “${block.title}”.`);
+    if (place === 'unverified') {
+      focusToVerify(after, at);
       return;
     }
     // The focus goes to what took its place, or the one before it.
@@ -551,20 +741,37 @@ export function FactBankPage({
     const next =
       blocks.slice(block.index).find(hasContent) ??
       blocks.slice(0, block.index).reverse().find(hasContent);
-    focusSoon(...(next ? [toolOf(blockKey(path, next), 'change')] : []), '#facts-search');
-    announce(`Deleted “${block.title}”.`);
+    focusSoon(...(next ? [toolOf(placedKey('file', path, next), 'change')] : []), '#facts-search');
   };
 
-  const confirm = async (path: string, block: FactBlock) => {
-    const held = hold(path, block, blocksOf(path));
-    if (!(await act(held, api.confirmFact(targetOf(held))))) return;
-    // Among the facts still to confirm, it leaves the list, so the focus goes to the next one.
-    focusSoon(toolOf(blockKey(path, block), 'change'), '[data-tool="confirm"]', '#facts-search');
-    announce(`Confirmed “${block.title}”.`);
+  const confirm = async (place: Place, path: string, block: FactBlock) => {
+    const held = hold(place, path, block, blocksOf(path));
+    const at = placeToVerify(path, block);
+    const after = await act(held, api.confirmFact(targetOf(held)));
+    if (!after) return;
+    // A verified fact leaves the list to verify, so the focus goes to the next one there.
+    if (place === 'unverified') focusToVerify(after, at);
+    else focusSoon(toolOf(placedKey('file', path, block), 'change'), '#facts-search');
+    announce(`Verified “${block.title}”.`);
+  };
+
+  const removeGap = async (row: GapRow) => {
+    setGapTrouble(null);
+    const result = await api.removeGap({ index: row.index, line: row.line });
+    if (!result.ok) {
+      setGapTrouble(result.message);
+      if (result.changed) void reload();
+      return;
+    }
+    take(result.bank);
+    // The row after it takes its place, or else the one before.
+    focusSoon(gapToolOf(row.index), gapToolOf(row.index - 1), '#facts-doesnt-have');
+    announce(`Removed “${row.topic}”. Your Claude can ask about it again.`);
   };
 
   const changeForm = (changing: Changing) => {
-    const key = blockKey(changing.path, changing.block);
+    const key = placedKey(changing.place, changing.path, changing.block);
+    const verifying = changing.place === 'unverified' && changing.block.tags !== null;
     const common = {
       draftKey: changing.draft,
       block: changing.block,
@@ -577,7 +784,12 @@ export function FactBankPage({
     return (
       <div key={changing.draft} className={styles.editing} data-key={key}>
         {changing.block.tags ? (
-          <ClaimForm {...common} source={source} onSave={(text) => saveChange(changing, text)} />
+          <ClaimForm
+            {...common}
+            source={source}
+            {...(verifying && { saveLabel: 'Save and verify' })}
+            onSave={(text) => saveChange(changing, text)}
+          />
         ) : (
           <SectionForm {...common} onSave={(text) => saveChange(changing, text)} />
         )}
@@ -585,22 +797,35 @@ export function FactBankPage({
     );
   };
 
-  const renderBlock = (path: string, block: FactBlock, heading: number, opening = false) => {
-    const key = blockKey(path, block);
+  const renderBlock = (
+    place: Place,
+    path: string,
+    block: FactBlock,
+    heading: number,
+    opening = false,
+  ) => {
+    const key = placedKey(place, path, block);
     if (key === editingKey && editing?.kind === 'change') return changeForm(editing);
+    const inFile = bank.files.find((each) => each.path === path);
     return (
       <BlockView
         key={key}
+        place={place}
         path={path}
         block={block}
         heading={heading}
         opening={opening}
         deleting={key === deletingKey}
         trouble={key === troubleKey ? (trouble?.message ?? null) : null}
-        onChange={() => startChange(path, block)}
+        {...(place === 'unverified' && {
+          fileTitle: inFile?.title ?? path,
+          origin: originOf(block, today),
+          onOpenFile: () => openFile(path),
+        })}
+        onChange={() => startChange(place, path, block)}
         onDelete={() => {
           setTrouble(null);
-          setDeleting(hold(path, block, blocksOf(path)));
+          setDeleting(hold(place, path, block, blocksOf(path)));
         }}
         onKeep={() => {
           setDeleting(null);
@@ -609,15 +834,94 @@ export function FactBankPage({
         onRemove={() => {
           if (deleting) void remove(deleting);
         }}
-        onConfirm={() => void confirm(path, block)}
+        onConfirm={() => void confirm(place, path, block)}
       />
+    );
+  };
+
+  /** What the user said they don't have, each with a way to take it back. */
+  const renderDoesntHave = (path: string, block: FactBlock, heading: number) => {
+    const key = placedKey('file', path, block);
+    if (key === editingKey && editing?.kind === 'change') return changeForm(editing);
+    const rows = file ? gapsIn(file) : [];
+    const note = besidesRows(block.body);
+    const Heading = `h${Math.min(6, heading)}` as 'h3';
+    return (
+      <section
+        key={key}
+        className={styles.section}
+        data-key={key}
+        aria-labelledby="facts-doesnt-have"
+      >
+        <div className={styles.sectionHead}>
+          <Heading id="facts-doesnt-have" tabIndex={-1} className={styles.sectionTitle}>
+            Things you’ve said you don’t have
+          </Heading>
+          <IconButton
+            data-tool="change"
+            variant="quiet"
+            size="sm"
+            label="Change “Things you’ve said you don’t have”"
+            icon={<Pencil size={14} aria-hidden="true" />}
+            onClick={() => startChange('file', path, block)}
+          />
+        </div>
+        <p className={styles.sectionLead}>
+          Your Claude never claims these, and doesn’t ask about them again. Remove one that’s
+          changed, and it can ask you about it next time.
+        </p>
+        {rows.length > 0 ? (
+          <ul className={styles.gaps}>
+            {rows.map((row) => (
+              <li key={`${row.index}.${row.line}`} className={styles.gap} data-gap={row.index}>
+                <div className={styles.gapText}>
+                  <span className={styles.gapTopic}>
+                    <MarkdownLine text={row.topic} />
+                  </span>
+                  {row.answer && (
+                    <span className={styles.gapAnswer}>
+                      <MarkdownLine text={row.answer} />
+                    </span>
+                  )}
+                </div>
+                {row.date && <span className={styles.gapDate}>{shortDate(row.date, today)}</span>}
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  data-tool="remove-gap"
+                  aria-label={`Remove “${row.topic}”`}
+                  onClick={() => void removeGap(row)}
+                >
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={styles.quiet}>
+            Nothing yet. When you tell your Claude you don’t have something a job asks for, it’s
+            noted here.
+          </p>
+        )}
+        {note && <Markdown className={styles.sectionText} text={note} />}
+        {gapTrouble && (
+          <p className={styles.problem} role="alert">
+            {gapTrouble}
+          </p>
+        )}
+        {key === troubleKey && (
+          <p className={styles.problem} role="alert">
+            {trouble?.message}
+          </p>
+        )}
+      </section>
     );
   };
 
   // A file's first heading is its title, so what's under it shows under the file's name, after
   // any text that comes before it.
   const opening = file?.blocks.find((block) => block.level === 1);
-  const openingKey = file && opening ? blockKey(file.path, opening) : null;
+  const openingKey = file && opening ? placedKey('file', file.path, opening) : null;
   const before = file?.blocks.find((block) => block.level === 0 && hasContent(block));
   const fileClaims = file?.blocks.filter(isClaim).length ?? 0;
   const firstAside = bank.files.find((each) => each.kind !== 'claims');
@@ -633,9 +937,7 @@ export function FactBankPage({
           {counts.claims === 0
             ? 'No facts yet'
             : `${factCount(counts.claims)} in ${counts.files === 1 ? '1 file' : `${counts.files} files`} · ${
-                counts.unconfirmed > 0
-                  ? `${counts.unconfirmed} to confirm with you`
-                  : 'all confirmed with you'
+                counts.unconfirmed > 0 ? `${counts.unconfirmed} to verify` : 'all verified'
               }`}
         </p>
       </header>
@@ -643,6 +945,50 @@ export function FactBankPage({
         Every claim on your resumes and in your answers comes from here. Fix anything that isn’t
         right, and your Claude goes by it from its next task.
       </p>
+
+      {(toVerifyShown.length > 0 || strayEdit || (toVerify.length > 0 && !searching)) && (
+        <section className={styles.unverified} aria-labelledby="facts-unverified-title">
+          <div className={styles.unverifiedHead}>
+            <h2 id="facts-unverified-title" tabIndex={-1} className={styles.unverifiedTitle}>
+              Unverified
+            </h2>
+            {toVerify.length > 0 && (
+              <span className={styles.unverifiedCount}>{toVerify.length}</span>
+            )}
+          </div>
+          <p className={styles.unverifiedLead}>
+            Your Claude asks you before using these. Verify each one that’s right as written, or
+            edit it first.
+          </p>
+          <div className={styles.unverifiedList}>
+            {strayEdit && editing?.kind === 'change' && changeForm(editing)}
+            {toVerifyShown.map(({ file: each, block }) =>
+              renderBlock('unverified', each.path, block, 3),
+            )}
+          </div>
+          {!searching && toVerify.length > toVerifyShown.length && (
+            <div>
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() => {
+                  // The first fact it brings in takes the focus, in place of the button.
+                  const next = toVerify.find((each) => !toVerifyShown.includes(each));
+                  setAllToVerify(true);
+                  if (next) {
+                    focusSoon(
+                      toolOf(placedKey('unverified', next.file.path, next.block), 'confirm'),
+                    );
+                  }
+                }}
+              >
+                Show all {toVerify.length}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className={styles.toolbar}>
         <SearchField
           id="facts-search"
@@ -651,16 +997,6 @@ export function FactBankPage({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        {counts.unconfirmed > 0 && (
-          <Button
-            size="sm"
-            variant={confirming ? 'primary' : 'secondary'}
-            aria-pressed={confirming}
-            onClick={() => setToConfirm(!confirming)}
-          >
-            To confirm · {counts.unconfirmed}
-          </Button>
-        )}
       </div>
       {bank.skipped.length > 0 && (
         <p className={styles.quiet}>
@@ -673,16 +1009,20 @@ export function FactBankPage({
         <nav className={styles.files} aria-label="Your fact files">
           <ul className={styles.fileList}>
             {bank.files.map((each) => {
-              const shown = !searching && each === file;
-              const count = searching ? matches(each.path) : each.blocks.filter(isClaim).length;
+              const current = !searching && each === file;
+              const count = searching
+                ? matches(each.path)
+                : each.kind === 'gaps'
+                  ? gapsIn(each).length
+                  : each.blocks.filter(isClaim).length;
               return (
                 <li key={each.path} className={each === firstAside ? styles.aside : undefined}>
                   <button
                     type="button"
-                    className={`${styles.fileLink} ${shown ? styles.current : ''} ${
+                    className={`${styles.fileLink} ${current ? styles.current : ''} ${
                       searching && !found.some((one) => one.file === each) ? styles.dim : ''
                     }`}
-                    aria-current={shown ? 'true' : undefined}
+                    aria-current={current ? 'true' : undefined}
                     onClick={() => openFile(each.path)}
                   >
                     <span className={styles.fileName}>{each.title}</span>{' '}
@@ -704,17 +1044,11 @@ export function FactBankPage({
           {searching ? (
             <>
               <p className={styles.quiet} role="status">
-                {foundCount === 0
-                  ? ''
-                  : confirming && !query.trim()
-                    ? `${factCount(foundCount)} to confirm. Confirm each that’s right as written, or change it first.`
-                    : `${foundCount} found`}
+                {foundCount === 0 ? '' : `${foundCount} found`}
               </p>
               {found.length === 0 ? (
-                <EmptyState title={confirming ? 'Nothing left to confirm' : 'Nothing found'}>
-                  {query.trim()
-                    ? `Nothing in your fact bank has “${query.trim()}”.`
-                    : 'Every fact is confirmed.'}
+                <EmptyState title="Nothing found">
+                  {`Nothing in your fact bank has “${query.trim()}”.`}
                 </EmptyState>
               ) : (
                 found.map(({ file: each, blocks }, i) => (
@@ -733,7 +1067,9 @@ export function FactBankPage({
                         {each.title}
                       </button>
                     </h2>
-                    {blocks.map((block) => renderBlock(each.path, block, 3, block.level <= 1))}
+                    {blocks.map((block) =>
+                      renderBlock('file', each.path, block, 3, block.level <= 1),
+                    )}
                   </section>
                 ))
               )}
@@ -743,7 +1079,12 @@ export function FactBankPage({
               <section className={styles.file} aria-labelledby="facts-file-title">
                 <div className={styles.fileHead} data-key={openingKey ?? undefined}>
                   <div className={styles.fileTitles}>
-                    <h2 id="facts-file-title" tabIndex={-1} className={styles.fileTitle}>
+                    <h2
+                      id="facts-file-title"
+                      tabIndex={-1}
+                      className={styles.fileTitle}
+                      data-path={file.path}
+                    >
                       {file.title}
                     </h2>
                     <p className={styles.meta}>
@@ -759,7 +1100,7 @@ export function FactBankPage({
                         size="sm"
                         label="Change the title and opening"
                         icon={<Pencil size={14} aria-hidden="true" />}
-                        onClick={() => startChange(file.path, opening)}
+                        onClick={() => startChange('file', file.path, opening)}
                       />
                     )}
                     {file.kind === 'claims' && (
@@ -773,7 +1114,7 @@ export function FactBankPage({
                     )}
                   </div>
                 </div>
-                {before && renderBlock(file.path, before, 3)}
+                {before && renderBlock('file', file.path, before, 3)}
                 {editing?.kind === 'change' && openingKey !== null && openingKey === editingKey
                   ? changeForm(editing)
                   : opening?.body && (
@@ -805,7 +1146,11 @@ export function FactBankPage({
                   file.blocks.filter(
                     (block) => block !== opening && block !== before && hasContent(block),
                   ),
-                ).map(([block, heading]) => renderBlock(file.path, block, heading))}
+                ).map(([block, heading]) =>
+                  file.kind === 'gaps' && isDoesntHave(block)
+                    ? renderDoesntHave(file.path, block, heading)
+                    : renderBlock('file', file.path, block, heading),
+                )}
               </section>
             )
           )}

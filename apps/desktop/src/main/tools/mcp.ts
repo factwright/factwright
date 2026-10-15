@@ -1,14 +1,34 @@
+import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import { QuestionLog } from '../claude/questions.ts';
 
 /** The run calling a tool: what it was started for, and what it has saved so far. */
 export interface ToolCall {
   scope: RunScope;
   /** The templates this run saved, which it may change again. */
   templates: Set<string>;
+  /** The questions the user answered in this run, as Claude Code's hooks reported them. */
+  questions: QuestionLog;
+  /** What this run filed in the fact bank from the user's answers. */
+  filed: FiledFacts;
+  /** How many facts this run has saved, a correction counting as a save of its own. */
+  saves: number;
+  /** Hears each time the run files something, to tell the window. */
+  onFiled?: ((filed: FiledFacts) => void) | undefined;
 }
 
+/** A run's tool calls, before it has saved or been told anything. */
+export const newCall = (scope: RunScope, onFiled?: (filed: FiledFacts) => void): ToolCall => ({
+  scope,
+  templates: new Set(),
+  questions: new QuestionLog(),
+  filed: { facts: [], gaps: 0 },
+  saves: 0,
+  onFiled,
+});
+
 /** A call from no run in particular, such as a test's: a run on the job hunt. */
-export const huntCall = (): ToolCall => ({ scope: 'hunt', templates: new Set() });
+export const huntCall = (): ToolCall => newCall('hunt');
 
 /** A tool Claude can call: its name, what it's for, what it takes, and what it does. */
 export interface McpTool {

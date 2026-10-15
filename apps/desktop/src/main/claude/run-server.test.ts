@@ -11,8 +11,17 @@ const greet: McpTool = {
   run: async () => 'Hello',
 };
 
+/** Says what the user answered to a question, as the fact tools find it. */
+const recall: McpTool = {
+  name: 'recall',
+  description: 'Says what the user answered.',
+  inputSchema: { type: 'object', properties: { question: { type: 'string' } } },
+  run: async (input, call) =>
+    call?.questions.find(String(input.question))?.answer ?? 'Not answered in this run',
+};
+
 describe('RunServer', () => {
-  const server = new RunServer({ tools: [greet], version: '1.2.3' });
+  const server = new RunServer({ tools: [greet, recall], version: '1.2.3' });
   afterEach(() => server.stop());
 
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -34,7 +43,7 @@ describe('RunServer', () => {
   it("tells a run's tools listener which methods it calls, one at a time or in a batch", async () => {
     await server.start();
     const tools = vi.fn();
-    server.listen(TOKEN, () => {}, tools);
+    server.listen(TOKEN, () => {}, { tools });
     await post(server.toolsUrl, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
     await post(server.toolsUrl, [
       { jsonrpc: '2.0', id: 2, method: 'ping' },
@@ -70,6 +79,44 @@ describe('RunServer', () => {
       method: 'notifications/initialized',
     });
     expect(notified.status).toBe(202);
+  });
+
+  it("keeps the questions a run's user answered, from its hooks, for its own tool calls only", async () => {
+    await server.start();
+    const other = 'c'.repeat(64);
+    server.listen(TOKEN, () => {});
+    server.listen(other, () => {});
+    const question = 'Have you used GraphQL in production?';
+    const questions = [{ question, header: 'GraphQL', options: [] }];
+    await post(server.hookUrl, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'toolu_1',
+      tool_input: { questions },
+    });
+    await post(server.hookUrl, {
+      hook_event_name: 'PostToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'toolu_1',
+      tool_input: { questions },
+      tool_response: { questions, answers: { [question]: 'Yes, in production' } },
+    });
+    const recalled = async (token: string) => {
+      const response = await post(
+        server.toolsUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'recall', arguments: { question } },
+        },
+        { Authorization: `Bearer ${token}` },
+      );
+      return ((await response.json()) as { result: { content: { text: string }[] } }).result
+        .content[0]?.text;
+    };
+    expect(await recalled(TOKEN)).toBe('Yes, in production');
+    expect(await recalled(other)).toBe('Not answered in this run');
   });
 
   it('refuses requests without a live token, from a web page, or by other methods', async () => {

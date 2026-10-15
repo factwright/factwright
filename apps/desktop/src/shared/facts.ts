@@ -77,6 +77,22 @@ export interface NewFact {
   text: string;
 }
 
+/** Something the user said they don't have: its place among gaps.md's rows, and what it said. */
+export interface GapTarget {
+  index: number;
+  line: string;
+}
+
+/**
+ * What a run filed in the fact bank from the user's answers: the facts, which wait for the user
+ * to verify them, by file and title, and how many things the user said they don't have.
+ */
+export interface FiledFacts {
+  /** Each fact by its file and title, and which of the run's saves it was, from 1. */
+  facts: { path: string; title: string; save: number }[];
+  gaps: number;
+}
+
 /**
  * The bank as it is after a change, or what stopped it: `changed` when the block changed since
  * the window read it, such as by Claude or another computer.
@@ -135,6 +151,18 @@ export function parseFactChange(value: unknown): FactChange | null {
   const target = parseFactTarget(value);
   const next = isRecord(value) ? value.next : undefined;
   return target && isText(next, FACT_LIMITS.block) ? { ...target, next } : null;
+}
+
+export function parseGapTarget(value: unknown): GapTarget | null {
+  if (!isRecord(value)) return null;
+  const { index, line } = value;
+  return typeof index === 'number' &&
+    Number.isInteger(index) &&
+    index >= 0 &&
+    isText(line, FACT_LIMITS.block) &&
+    !/[\r\n]/.test(line)
+    ? { index, line }
+    : null;
 }
 
 export function parseNewFact(value: unknown): NewFact | null {
@@ -204,7 +232,7 @@ export const CHANGED_SINCE =
   'This changed since you opened it, maybe by your Claude or another computer. It shows as it is now: make your change again.';
 
 /** A claim with a code block it never closes runs on into what follows, so it stays as it is. */
-const RUNS_ON =
+export const RUNS_ON =
   'This fact has a code block (```) that isn’t closed, so it runs on into what follows. Close it in the fact’s details first.';
 
 /** A file's new text after a change, or what stopped it. */

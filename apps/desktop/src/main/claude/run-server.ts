@@ -1,9 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
-import { answerMcp, type McpAnswer, type McpTool, type ToolCall } from '../tools/mcp.ts';
+import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -24,8 +25,18 @@ export type ToolsListener = (method: string) => void;
 interface RunListeners {
   hooks: HookListener;
   tools: ToolsListener | undefined;
-  /** What the run is for, and what it's saved, which its tool calls carry. */
+  /** What the run is for, what it's saved, and what the user answered, which its tool calls carry. */
   call: ToolCall;
+}
+
+/** What else a run's listener hears, and what the run is for. */
+export interface ListenOptions {
+  /** Hears which MCP methods the run calls. */
+  tools?: ToolsListener;
+  /** What the run may change without asking. Every run but getting started is "hunt". */
+  scope?: RunScope;
+  /** Hears each time the run files something in the fact bank from the user's answers. */
+  onFiled?: (filed: FiledFacts) => void;
 }
 
 /**
@@ -61,15 +72,12 @@ export class RunServer {
 
   /**
    * Takes a run's hooks, and maybe its tool calls, by its token, until the returned function is
-   * called. Its tools know what it was started for.
+   * called. Its tools know what it was started for, and the questions the user answered in it,
+   * which its hooks report.
    */
-  listen(
-    token: string,
-    hooks: HookListener,
-    tools?: ToolsListener,
-    scope: RunScope = 'hunt',
-  ): () => void {
-    this.listeners.set(token, { hooks, tools, call: { scope, templates: new Set() } });
+  listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
+    const { tools, scope = 'hunt', onFiled } = options;
+    this.listeners.set(token, { hooks, tools, call: newCall(scope, onFiled) });
     return () => this.listeners.delete(token);
   }
 
@@ -96,9 +104,17 @@ export class RunServer {
     });
     request.on('end', () => {
       if (request.url === '/hook') {
+        const event = parseJson(body);
+        // Heard before Claude Code carries on, so an answer is on record before Claude reads it.
+        // A hook the record can't take is one it doesn't keep, and Claude Code still hears back.
+        try {
+          listener.call.questions.hear(event);
+        } catch {
+          // Nothing kept: a filing tool then finds no record, and saves nothing.
+        }
         // An empty answer lets Claude Code carry on as it would have.
         response.writeHead(204).end();
-        listener.hooks(parseJson(body));
+        listener.hooks(event);
         return;
       }
       if (listener.tools) {

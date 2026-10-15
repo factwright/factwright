@@ -1,6 +1,6 @@
 # Facts: what's true about the user
 
-The single source of truth for every resume, answer and message. If a claim isn't here, it doesn't go out. It grows over time: each gap a job turns up, and each answer the user gives, is filed here.
+The single source of truth for every resume, answer and message. If a claim isn't here, it doesn't go out. It grows over time: when a job asks for something that isn't here, Claude asks the user about it, and files each answer here.
 
 ## Files
 | File | What's in it |
@@ -9,7 +9,7 @@ The single source of truth for every resume, answer and message. If a claim isn'
 | one file per job, such as `acme-health.md` | An **Overview** (titles exactly as held, dates, place, what the company does, scope), then that job's claims |
 | `projects.md` | Work outside a job: side projects, volunteering, school projects |
 | `skills.md` | Each skill and tool, how deep it goes, and which file proves it |
-| `gaps.md` | **Doesn't have** (settled: don't claim it, don't ask again), **Needs confirmation** and **Open questions** |
+| `gaps.md` | **Doesn't have** (settled: don't claim it, don't ask again), a table with the columns Topic, Their answer and Date, then **Needs confirmation** and **Open questions** |
 
 ## Claim format
 Each claim gets its own `###` heading, so it can be cited as `file.md#claim-title`:
@@ -45,15 +45,16 @@ Each claim gets its own `###` heading, so it can be cited as `file.md#claim-titl
 - `medium`: hedge it ("about", "~"), and keep it out of the headline numbers.
 - `low`: ask before using it.
 
-**Unconfirmed:** `unconfirmed`, first among the tags, marks a claim drafted from the user's files or notes that they haven't checked yet. Never use it in anything that goes out until they confirm it. Once they do, drop the tag and set its Source to their first name and the date.
+**Unconfirmed:** `unconfirmed`, first among the tags, marks a claim the user hasn't verified yet: drafted from their files or notes, or saved from an answer they gave Claude while it worked on a job. The app lists these at the top of the Fact bank, as Unverified. An answer is used in the run the user gave it in; otherwise, Claude asks before using an unverified claim in anything that goes out. Once the user verifies it, the tag goes and its Source becomes their first name and the date.
 
 ## Sources
-- `<first name> <YYYY-MM-DD>`: the user said so.
-- `resume <file> <YYYY-MM-DD>`, `notes <YYYY-MM-DD>`, `LinkedIn <YYYY-MM-DD>`, `screenshot <file> <YYYY-MM-DD>`: drafted from what they shared, and `unconfirmed` until they confirm it.
+- `<first name> <YYYY-MM-DD>`: the user said so, or verified it.
+- `resume <file> <YYYY-MM-DD>`, `notes <YYYY-MM-DD>`, `LinkedIn <YYYY-MM-DD>`, `screenshot <file> <YYYY-MM-DD>`: drafted from what they shared, and `unconfirmed` until they verify it.
+- `answer <YYYY-MM-DD>, <what Claude was doing>`, such as `answer 2026-10-14, tailoring a resume for Acme Health`: the user's answer to Claude's question, `unconfirmed` until they verify it. Under it, a `- **Question:**` and `- **Answer:**` line for each question it rests on, word for word, written by the app from its own record of what the user answered.
 
 ## Adding facts
 - File each fact where it belongs, in the claim format.
-- "No, I haven't" answers go in `gaps.md` under **Doesn't have**, so nobody asks again.
+- While Claude works on a job, it saves the user's answers with Factwright's tools: a yes as a claim tagged `unconfirmed`, with its source and the questions it rests on, and a "No, I haven't" as a row under **Doesn't have** in `gaps.md`, so nobody asks again. The tools never change a verified claim.
 - When the user corrects a fact, edit it in place and update its Source. Never keep two versions.
 - Plain, active wording. No "I", no fluff.
 

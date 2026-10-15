@@ -78,6 +78,7 @@ beforeEach(() => {
   // Neither tool reads the tracker, prints or reads templates, so these stay stubs.
   tools = factwrightTools({
     about: {} as never,
+    facts: {} as never,
     jobs: {} as never,
     printer: {} as never,
     templates: {} as never,

@@ -108,13 +108,14 @@ describe('launchEnv', () => {
     expect(launchEnv({ Path: 'C:\\Windows' }, path)).toEqual({ PATH: path });
   });
 
-  it('removes what a parent Claude Code session sets for its children', () => {
+  it('removes what a parent Claude Code session sets for its children, and agent teams', () => {
     const base = {
       HOME: '/Users/someone',
       CLAUDECODE: '1',
       CLAUDE_CODE_ENTRYPOINT: 'cli',
       CLAUDE_CODE_SIMPLE: '1',
       CLAUDE_AGENT_SDK_VERSION: '0.1.0',
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
     };
     expect(launchEnv(base, '/usr/bin')).toEqual({ HOME: '/Users/someone', PATH: '/usr/bin' });
   });
