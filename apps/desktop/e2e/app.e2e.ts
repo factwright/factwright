@@ -382,7 +382,7 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   await expect
     .poll(() => terminalText(window))
     .toContain('Factwright has no record of the user answering');
-  await expect.poll(() => terminalText(window)).toContain('only for your own calls');
+  await expect.poll(() => terminalText(window)).toContain('only from your own call');
   const text = readFileSync(file, 'utf8');
   expect(text).toMatch(
     /### GraphQL for the driver app\n`unconfirmed` `live` `solo` `medium`\n> Built the driver app’s GraphQL API\.\n- \*\*Keywords:\*\* GraphQL\n- \*\*Source:\*\* answer \d{4}-\d{2}-\d{2}, tailoring a resume for Acme Robotics\n- \*\*Question:\*\* The posting wants GraphQL\. Have you used GraphQL\?\n- \*\*Answer:\*\* Yes, in production\n/,
