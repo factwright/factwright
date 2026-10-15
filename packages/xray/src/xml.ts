@@ -78,6 +78,8 @@ export function parseXml(xml: string): XmlElement {
   const root: XmlElement = { name: '', attrs: {}, children: [] };
   const open: XmlElement[] = [root];
   const top = () => open[open.length - 1] ?? root;
+  const openNames = new Map<string, number>();
+  const count = (name: string, by: number) => openNames.set(name, (openNames.get(name) ?? 0) + by);
   let i = 0;
   while (i < xml.length) {
     const lt = xml.indexOf('<', i);
@@ -104,8 +106,11 @@ export function parseXml(xml: string): XmlElement {
     if (tag.startsWith('?') || tag.startsWith('!')) continue;
     if (tag.startsWith('/')) {
       const name = tag.slice(1).trim();
+      // Only a name that's open is looked for, so an end tag that matches nothing costs nothing,
+      // and each element closes once.
+      if (!openNames.get(name)) continue;
       const at = open.findLastIndex((element) => element.name === name);
-      if (at > 0) open.length = at;
+      for (const closed of open.splice(at)) count(closed.name, -1);
       continue;
     }
     const selfClosing = tag.endsWith('/');
@@ -118,7 +123,10 @@ export function parseXml(xml: string): XmlElement {
       children: [],
     };
     top().children.push(element);
-    if (!selfClosing) open.push(element);
+    if (!selfClosing) {
+      open.push(element);
+      count(name, 1);
+    }
   }
   return root.children.find((node): node is XmlElement => typeof node !== 'string') ?? root;
 }
@@ -141,7 +149,8 @@ export function descendantsOf(element: XmlElement, name: string): XmlElement[] {
   const next = childrenOf(element).reverse();
   for (let node = next.pop(); node; node = next.pop()) {
     if (node.name === name) found.push(node);
-    next.push(...childrenOf(node).reverse());
+    const children = childrenOf(node);
+    for (let i = children.length - 1; i >= 0; i--) next.push(children[i] as XmlElement);
   }
   return found;
 }

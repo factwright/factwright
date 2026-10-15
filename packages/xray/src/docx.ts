@@ -2,8 +2,12 @@ import { unzipSync } from 'fflate';
 import { familyOf, type Line, type Part, type ReadFile, type Table } from './read.ts';
 import { childOf, childrenOf, descendantsOf, parseXml, type XmlElement } from './xml.ts';
 
-/** The most one part of a Word file may hold, unpacked. A resume's are far smaller. */
+/** The most one part of a Word file may hold, unpacked, and all of them together. */
 const MAX_PART_BYTES = 8_000_000;
+const MAX_TOTAL_BYTES = 24_000_000;
+
+/** The most headers and footers read. Word makes at most three of each for every section. */
+const MAX_HEADERS = 12;
 
 /** The parts read: the package's links, Word's page count, and the document's own XML parts. */
 const WANTED = /^(?:_rels\/\.rels|docProps\/app\.xml|word\/(?:theme\/)?[^/]+\.xml)$/;
@@ -14,14 +18,18 @@ const MAX_DEPTH = 32;
 /** Wrappers that hold a document's content without changing it, such as a content control. */
 const WRAPPERS = new Set(['w:sdt', 'w:sdtContent', 'w:customXml', 'w:smartTag']);
 
-/** What's inside a wrapper, or an AlternateContent's first choice, as if it stood there itself. */
-function unwrapped(element: XmlElement): XmlElement[] {
+/**
+ * What's inside a wrapper, or an AlternateContent's first choice, as if it stood there itself.
+ * Wrappers nested deeper than any real file has them are left out.
+ */
+function unwrapped(element: XmlElement, depth = 0): XmlElement[] {
+  if (depth > MAX_DEPTH) return [];
   return childrenOf(element).flatMap((child) => {
     if (child.name === 'mc:AlternateContent') {
       const choice = childOf(child, 'mc:Choice') ?? childOf(child, 'mc:Fallback');
-      return choice ? unwrapped(choice) : [];
+      return choice ? unwrapped(choice, depth + 1) : [];
     }
-    return WRAPPERS.has(child.name) ? unwrapped(child) : [child];
+    return WRAPPERS.has(child.name) ? unwrapped(child, depth + 1) : [child];
   });
 }
 
@@ -64,18 +72,23 @@ class WordReader {
     if (depth > MAX_DEPTH) return;
     for (const child of unwrapped(element)) {
       if (child.name === 'w:p') this.paragraph(child, part, depth);
-      else if (child.name === 'w:tbl') this.table(child, depth);
+      else if (child.name === 'w:tbl') this.table(child, part, depth);
     }
   }
 
-  private table(table: XmlElement, depth: number): void {
+  /**
+   * A table's rows and cells. In the body its lines are a table's, which the checks look at. In a
+   * header, footer or text box, they stay that part's, which is what matters there.
+   */
+  private table(table: XmlElement, part: Part, depth: number): void {
     const first = this.lines.length;
     const rows: string[][] = [];
+    const inside: Part = part === 'body' ? 'table' : part;
     for (const row of unwrapped(table).filter((child) => child.name === 'w:tr')) {
       const cells: string[] = [];
       for (const cell of unwrapped(row).filter((child) => child.name === 'w:tc')) {
         const from = this.lines.length;
-        this.blocks(cell, 'table', depth + 1);
+        this.blocks(cell, inside, depth + 1);
         cells.push(
           this.lines
             .slice(from)
@@ -85,7 +98,7 @@ class WordReader {
       }
       rows.push(cells);
     }
-    this.tables.push({ rows, first, end: this.lines.length });
+    if (inside === 'table') this.tables.push({ rows, first, end: this.lines.length });
   }
 
   private paragraph(paragraph: XmlElement, part: Part, depth: number): void {
@@ -126,13 +139,14 @@ class WordReader {
         }
       }
     };
-    const inline = (element: XmlElement) => {
+    const inline = (element: XmlElement, level = 0) => {
+      if (level > MAX_DEPTH) return;
       for (const child of unwrapped(element)) {
         if (child.name === 'w:r') run(child);
         else if (
           ['w:hyperlink', 'w:ins', 'w:fldSimple', 'w:bdo', 'w:dir', 'w:moveTo'].includes(child.name)
         )
-          inline(child);
+          inline(child, level + 1);
       }
     };
     inline(paragraph);
@@ -184,8 +198,18 @@ function mainPart(files: Record<string, Uint8Array>, decode: (bytes: Uint8Array)
  * too. Throws when the file isn't a Word file it can read.
  */
 export function readDocx(data: Uint8Array): ReadFile {
+  // Each part, and all of them, are capped by the size the file says they unpack to. A part
+  // that says less than it holds is cut off there, so the caps hold either way.
+  let total = 0;
+  let margins = 0;
   const files = unzipSync(data, {
-    filter: (file) => WANTED.test(file.name) && file.originalSize <= MAX_PART_BYTES,
+    filter: (file) => {
+      if (!WANTED.test(file.name) || file.originalSize > MAX_PART_BYTES) return false;
+      if (/^word\/(?:header|footer)\d*\.xml$/.test(file.name) && ++margins > MAX_HEADERS)
+        return false;
+      total += file.originalSize;
+      return total <= MAX_TOTAL_BYTES;
+    },
   });
   const decoder = new TextDecoder('utf-8');
   const decode = (bytes: Uint8Array) => decoder.decode(bytes);
@@ -215,6 +239,7 @@ export function readDocx(data: Uint8Array): ReadFile {
         .slice(from)
         .map((line) => line.text)
         .join('\n');
+      // The same header again, for the first page or for even pages, is read once.
       if (seen.has(text)) reader.lines.length = from;
       seen.add(text);
     }

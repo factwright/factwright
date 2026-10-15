@@ -68,6 +68,25 @@ describe('readDocx', () => {
     ]);
   });
 
+  it('keeps a table in a header as the header’s, apart from the body’s tables', () => {
+    const cell = (text: string) => `<w:tc>${p(text)}</w:tc>`;
+    const header = `<w:hdr ${W}><w:tbl><w:tr>${cell('Jordan Avery')}${cell('jordan@example.com')}</w:tr></w:tbl></w:hdr>`;
+    const file = readDocx(
+      word(p('Summary'), { 'word/header1.xml': header, 'word/header2.xml': header }),
+    );
+    expect(file.lines.map((line) => `${line.part}: ${line.text}`)).toEqual([
+      'header: Jordan Avery',
+      'header: jordan@example.com',
+      'body: Summary',
+    ]);
+    expect(file.tables).toEqual([]);
+  });
+
+  it('reads content nested deeper than any real file without running out of room', () => {
+    const deep = `${'<w:sdt><w:sdtContent>'.repeat(5000)}${p('Deep')}${'</w:sdtContent></w:sdt>'.repeat(5000)}`;
+    expect(() => readDocx(word(`${p('Top')}${deep}`))).not.toThrow();
+  });
+
   it('skips deleted text and field codes, and reads what’s inside links and content controls', () => {
     const body = [
       '<w:p><w:del><w:r><w:delText>gone</w:delText></w:r></w:del><w:r><w:t>kept</w:t></w:r></w:p>',
