@@ -144,11 +144,12 @@ export function ChecksView({
 /** A missing term's backing when the fact bank has it, to add now or once it's checked. */
 type ToAdd = Extract<
   Backing,
-  { kind: 'facts' | 'credential' | 'unread' | 'to-check' | 'doubted' | 'dont-claim' }
+  { kind: 'facts' | 'unsure' | 'credential' | 'unread' | 'to-check' | 'doubted' | 'dont-claim' }
 >;
 
 const TO_ADD: ReadonlySet<Backing['kind']> = new Set([
   'facts',
+  'unsure',
   'credential',
   'unread',
   'to-check',
@@ -168,6 +169,11 @@ function adviceOf(backing: ToAdd): { label: string; tone: string | undefined; wh
         tone: styles.add,
         why: `Your fact bank backs it: ${backing.where}.`,
       };
+    case 'unsure':
+      return {
+        ...check,
+        why: `${backing.where} says “${backing.said}”. Add it only if that means you have it.`,
+      };
     case 'credential':
       return {
         ...check,
@@ -181,7 +187,7 @@ function adviceOf(backing: ToAdd): { label: string; tone: string | undefined; wh
     case 'to-check':
       return {
         ...check,
-        why: `Only a claim you haven’t checked yet has it: ${backing.where}. Check it in the Fact bank, then add it.`,
+        why: `Only a fact you haven’t verified, or aren’t sure of, has it: ${backing.where}. Check it in the Fact bank first.`,
       };
     case 'doubted':
       return {
