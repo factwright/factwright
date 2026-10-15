@@ -1,21 +1,25 @@
 import { FACT_TAGS, type FactBlock, factBlocks, UNCONFIRMED } from '@factwright/core';
-import { findTerms, plain } from './terms.ts';
+import { findTerms, type Hit, plain } from './terms.ts';
 import { VOCABULARY } from './vocabulary.ts';
 
 /**
  * What the fact bank says about terms, read with the same parser the app's Fact bank uses, the
- * way the skills write it (facts/README.md). A term the bank backs can go on a resume; one it
- * doesn't back is a real gap. People write the bank in many ways, so it's read cautiously: a
- * line counts only when nothing on it, and nothing it's under, says it isn't had.
+ * way the skills write it (facts/README.md). People write the bank every which way, so no list
+ * of words could catch every way of saying a skill isn't had. Instead, a skill says "Add it"
+ * only where its line holds nothing but its name and words known to be harmless, such as other
+ * terms, years, "daily" or the file that proves it. A line with anything else on it, however
+ * it's put, only asks the user to check it, quoting it. (keywords.ts decides that, with
+ * `beside` below.)
  *
- * Each line is read with what it's under: its headings, a bold or "…:" label, a table's header,
- * and the list items it's nested in. Then:
- * - skills.md's skills, by name, where nothing says the user is learning, wants or lacks them
+ * Each line is read with what it's under: its headings, a label ("**Want to learn**", "Want to
+ * learn:", "- Want to learn:"), the skill column's header, and the list items it's nested in.
+ * What's under a part for skills to come, or not had, isn't read as a skill at all. Then:
+ * - skills.md's skills, each with its name: a table row's first cell, or a list item's words
+ *   before any ":" or dash
  * - the degrees, certifications and licenses profile.md lists, as written. These only ever ask
  *   the user to check: whether one is earned and current is theirs to say
- * - each confirmed claim's Keywords, term by term, leaving out any it says the claim isn't
- *   about. A plan never backs anything. A claim that's unconfirmed, low confidence or without a
- *   status waits for the user to check it first
+ * - each confirmed claim's Keywords, term by term. A plan never backs anything. A claim that's
+ *   unconfirmed, low confidence or without a status waits for the user to check it first
  * - gaps.md: all of it says what the user doesn't have, but what needs confirming and the open
  *   questions
  * - what a "Don't claim" part names, which is never added as it is
@@ -29,13 +33,21 @@ export interface FactFile {
 
 /** Words in the fact bank that can back a term, and where they are. */
 export interface Source {
+  /** The whole of what the user wrote: a skill's line, or one of a claim's Keywords. */
   text: string;
+  /** The skill's name in it, without its notes: "Kubernetes" in "Kubernetes: 4 years". */
+  name: string;
   /** Where they are, such as "skills.md" or "acme-health.md · Cut wait times". */
   where: string;
+  /**
+   * False when something around the line leaves doubt: a heading for skills to confirm, a
+   * comment beside it, or a sub-item that says otherwise. Then a term in it is only a check.
+   */
+  sure: boolean;
 }
 
 export interface FactTerms {
-  /** Each skill the user has, from skills.md, by name. */
+  /** Each skill in skills.md that isn't under a part for skills to come or not had. */
   skills: Source[];
   /** Each degree, certification and license profile.md lists, as written. */
   credentials: Source[];
@@ -51,28 +63,47 @@ export interface FactTerms {
   dontClaim: Source[];
 }
 
-/** Words that say something isn't had: "no", "never used", "not Kubernetes", "Growth areas". */
-const NEGATIVE =
-  /\b(?:no|none|never|not|nor|without|cannot|can['’]t|don['’]t|doesn['’]t|didn['’]t|haven['’]t|hasn['’]t|isn['’]t|wasn['’]t|lacks?|lacking|gaps?|growth areas?|to improve|weak|weakness(?:es)?|unfamiliar)\b/i;
+/** A heading's or label's words that say what's under it isn't had: "Gaps", "Not yet". */
+const NOT_HAD_PART =
+  /\b(?:gaps?|not yet|(?:don|doesn|didn|haven|hasn|can|won|wouldn)['’]?t (?:have|know|used?|claim|touched)|do not have|does not have|have not used|never used|no experience|growth areas?|areas? to (?:grow|improve)|to improve|weak(?:ness|nesses)?|lacking|missing|without)\b/i;
 
-/** Words that say something's still to come: learning it, wanting it, planning to get it. */
-const LATER =
-  /\b(?:learning|learn|studying|want|wants|wanted|wanting|plans?|planned|someday|wishlist|interested|interests?|exploring|in progress|practicing|courses?|bootcamp|boot camp|tutorials?|exams?|next(?!\.)|hope|hoping|goals?|future|upcoming|pending|working on|to get|pursu\w*|aspir\w*|consider\w*)\b/i;
+/** A heading's or label's words that say what's under it is still to come: "Want to learn". */
+const LATER_PART =
+  /\b(?:learn|learning|studying|want|wants|wanted|wish|wishlist|plans?|planned|planning to|goals?|future|someday|next(?!\.)|upcoming|interests?|interested|exploring|in progress|working on|to get|to pursue|pursuing|aspir\w*|considering|on my list|maybe|soon)\b/i;
+
+/** A heading's or label's words that say what's under it needs a check. */
+const CHECK_PART =
+  /\b(?:confirm\w*|unconfirmed|unverified|verify|questions?|tbd|unsure|not sure)\b/i;
+
+/** Words that, anywhere on a line, may say it isn't had, is to come, or isn't sure. */
+const DOUBT =
+  /\b(?:no|non|none|never|not|nor|without|n\/a|tbd|tbc|maybe|soon|later|learn\w*|studying|want\w*|wish\w*|plans?|planned|goals?|someday|interest\w*|exploring|practic\w*|course\w*|bootcamp|tutorials?|exams?|next(?!\.)|hop(?:e|ing)|future|upcoming|pending|unconfirmed|unverified|confirm\w*|verify|expected|booked|scheduled|candidate|enroll\w*|incomplete|unfinished|expired|lapsed|dropped|withdr\w*|attended|failed|inactive|rusty|dabbled|exposure|theory|academic|hobby|once|only|lacks?|lacking|gaps?|(?:don|doesn|didn|haven|hasn|can|won|wouldn|isn|wasn)['’]?t|cannot)\b|\?/i;
+
+/**
+ * Words in a skill's notes that plainly say it isn't had or is to come: "never used", "learning
+ * it now", "(no hands-on experience)". When the notes name no other term, they're about the
+ * skill, so it isn't one.
+ */
+const NOT_HAD_NOTE =
+  /\b(?:no|none|never|not|nor|without|n\/a|learn\w*|studying|want\w*|wish\w*|plans?|planned|goals?|someday|interest\w*|exploring|practic\w*|course\w*|bootcamp|tutorials?|exams?|next(?!\.)|hop(?:e|ing)|future|upcoming|pending|maybe|soon|later|in progress|(?:don|doesn|didn|haven|hasn|can|won|wouldn)['’]?t|cannot)\b/i;
 
 /** More words that say a degree, certification or license isn't earned, or isn't held anymore. */
 const NOT_EARNED =
-  /\b(?:expected|booked|scheduled|working towards?|candidate|enroll\w*|incomplete|not completed|unfinished|exams?|not yet|awaiting|expired|lapsed|did not|didn['’]t|dropped|withdrew|withdrawn|attended|no degree|to take|preparing|failed|retak\w*|inactive|renew\w*|admitted|starting|deferred|coursework|class|minor|started|thinking)\b/i;
+  /\b(?:expected|booked|scheduled|working towards?|candidate|enroll\w*|incomplete|not completed|unfinished|exams?|not yet|awaiting|expired|lapsed|did not|didn['’]?t|dropped|withdrew|withdrawn|attended|no degree|to take|preparing|failed|retak\w*|inactive|renew\w*|admitted|starting|deferred|coursework|class|minor|started|thinking)\b/i;
 
 /** A table cell that says its row isn't had, as in "| PMP | No |" or "| Rust | ❌ |". */
-const NOT_HAD =
-  /^(?:(?:no|none|never|not|nor)\b.*|n\/a|pending|in progress|planned|wanted|learning|expired|lapsed|incomplete|[❌✗✘✖×])$/iu;
+const NOT_HAD_CELL =
+  /^(?:(?:no|none|never|not|nor|nope)\b.*|n|0|n\/a|todo|pending|in progress|planned|wanted|learning|expired|lapsed|incomplete|[❌✗✘✖×🚫✕])$/iu;
+
+/** A table's column for where a skill is proven, which says nothing about having it. */
+const PROOF = /proven|proof|source|where|file|claim|evidence/i;
 
 /** A cell with no answer, which in a column for depth or status says it isn't had. */
 const BLANK = /^[—–-]*$/;
 const SAYS_HAVING = /depth|level|experience|have|has|held|earned|status|years|proficiency/i;
 
 /** A heading over degrees, certifications and licenses. */
-const CREDENTIAL_PART = /educat|degree|certif|licen[cs]|qualification|credential/i;
+const CREDENTIAL_PART = /educat|degree|certif|\bcerts?\b|licen[cs]|qualification|credential/i;
 
 /** gaps.md's parts: what the user doesn't have, what needs confirming, and open questions. */
 const SAID_NO_PART =
@@ -81,7 +112,10 @@ const CONFIRM_PART = /\bconfirm/i;
 const OPEN_PART = /\bquestions?\b/i;
 
 /** A part, a label or a line that says what not to claim: "Don't claim", "What never to claim". */
-const DONT_CLAIM = /\b(?:don['’]t|do not|never|not|avoid)\b[\s\w'’-]{0,20}?\bclaim/i;
+const DONT_CLAIM = /\b(?:don['’]?t|do not|never|not|avoid)\b[\s\w'’-]{0,20}?\bclaim/i;
+
+/** Words in a heading that say nothing about what's under it: "(in no particular order)". */
+const ASIDE = /\b(?:in no particular order|no particular order|not exhaustive|non-exhaustive)\b/gi;
 
 /** The statuses a claim can go on a resume with: all but a plan. */
 const STATUSES: ReadonlySet<string> = new Set(
@@ -94,15 +128,37 @@ const SURE: ReadonlySet<string> = new Set(['high', 'medium']);
 /** How deep nested list items are followed. Deeper ones count as the deepest. */
 const MAX_NESTING = 8;
 
+/** The longest line read for what it holds beside a term. A skill's line is far shorter. */
+export const MAX_SOURCE = 300;
+
 const fileName = (path: string) => path.split('/').at(-1) ?? path;
+
+/** Text with each "(…)" left out, read with indexOf. */
+function withoutBrackets(text: string): string {
+  let kept = '';
+  let at = 0;
+  for (let open = text.indexOf('('); open >= 0; open = text.indexOf('(', at)) {
+    const close = text.indexOf(')', open + 1);
+    if (close < 0) break;
+    kept += `${text.slice(at, open)} `;
+    at = close + 1;
+  }
+  return kept + text.slice(at);
+}
+
+/** Emphasis marks left off: "**Want to learn:**" is "Want to learn:". */
+const withoutEmphasis = (text: string) =>
+  text.replace(/\*\*|__|(?<![\p{L}\p{N}])[*_]|[*_](?![\p{L}\p{N}])/gu, '').trim();
 
 /** The terms the X-ray knows whose names hold a word these look for: "Machine learning". */
 const LOOK_ALIKES = VOCABULARY.filter((term) =>
-  term.forms.some((form) => [NEGATIVE, LATER, NOT_EARNED].some((words) => words.test(form.text))),
+  term.forms.some((form) =>
+    [NOT_HAD_PART, LATER_PART, NOT_EARNED, DOUBT].some((words) => words.test(form.text)),
+  ),
 );
 
 /** Text with those terms left out, so "Machine learning" isn't "learning". */
-function withoutKnownTerms(text: string): string {
+function withoutLookAlikes(text: string): string {
   const source = plain(text);
   let kept = '';
   let at = 0;
@@ -115,12 +171,13 @@ function withoutKnownTerms(text: string): string {
 
 /** Whether text says what a pattern finds, apart from the names of terms it holds. */
 const says = (pattern: RegExp, text: string) =>
-  pattern.test(text) && pattern.test(withoutKnownTerms(text));
+  pattern.test(text) && pattern.test(withoutLookAlikes(text));
 
 /** What a heading, a label or a list item says about what's under it, worked out once. */
 interface Marks {
   later: boolean;
-  negative: boolean;
+  notHad: boolean;
+  check: boolean;
   credential: boolean;
   notEarned: boolean;
   saidNo: boolean;
@@ -130,29 +187,43 @@ interface Marks {
 }
 
 function marksOf(text: string): Marks {
+  // An aside in brackets, or "in no particular order", says nothing about what's under it.
+  const title = withoutBrackets(withoutEmphasis(text)).replace(ASIDE, ' ');
   return {
-    later: says(LATER, text),
-    negative: says(NEGATIVE, text),
-    credential: CREDENTIAL_PART.test(text),
+    later: says(LATER_PART, title),
+    notHad: says(NOT_HAD_PART, title),
+    check: says(CHECK_PART, title),
+    credential: CREDENTIAL_PART.test(title),
     notEarned: says(NOT_EARNED, text),
-    saidNo: SAID_NO_PART.test(text),
-    confirm: CONFIRM_PART.test(text),
-    open: OPEN_PART.test(text),
+    saidNo: SAID_NO_PART.test(title),
+    confirm: CONFIRM_PART.test(title),
+    open: OPEN_PART.test(title),
     dontClaim: DONT_CLAIM.test(text),
   };
 }
+
+/** Whether a part's marks say anything about what's under it. */
+const saysAnything = (marks: Marks) =>
+  marks.later || marks.notHad || marks.check || marks.saidNo || marks.confirm || marks.open;
 
 /** A code block's opening and closing, as core reads them. */
 const FENCE_OPEN = /^( {0,3})(`{3,}(?=[^`]*$)|~{3,})/;
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 
+/** A line as it reads: its words, and whether a comment beside them was left out. */
+interface Readable {
+  text: string;
+  commented: boolean;
+}
+
 /**
  * A block's lines as they read: not in a code block, a comment or front matter, and without
- * struck-out words. A line left out stays as a blank one.
+ * struck-out words. A line left out stays as a blank one. A line underlined with "---" or "==="
+ * is a heading, so it's read as a label.
  */
-function readable(text: string, first: boolean): string[] {
+function readable(text: string, first: boolean): Readable[] {
   const lines = text.split(/\r?\n/);
-  const kept: string[] = [];
+  const kept: Readable[] = [];
   let fence: string | null = null;
   let comment = false;
   // Front matter, between "---" lines at the very start of a file.
@@ -160,24 +231,26 @@ function readable(text: string, first: boolean): string[] {
   for (const [index, line] of lines.entries()) {
     if (front) {
       if (index > 0 && line.trim() === '---') front = false;
-      kept.push('');
+      kept.push({ text: '', commented: false });
       continue;
     }
     if (fence) {
       const close = line.match(FENCE_CLOSE)?.[1];
       if (close && close[0] === fence[0] && close.length >= fence.length) fence = null;
-      kept.push('');
+      kept.push({ text: '', commented: false });
       continue;
     }
     const open = comment ? null : line.match(FENCE_OPEN)?.[2];
     if (open) {
       fence = open;
-      kept.push('');
+      kept.push({ text: '', commented: false });
       continue;
     }
     // Comments, read with indexOf: "<!-- … -->", across lines too.
+    const started = comment;
     let rest = line;
     let out = '';
+    let removed = started;
     while (rest) {
       const mark = rest.indexOf(comment ? '-->' : '<!--');
       if (mark < 0) {
@@ -187,8 +260,21 @@ function readable(text: string, first: boolean): string[] {
       if (!comment) out += rest.slice(0, mark);
       rest = rest.slice(mark + (comment ? 3 : 4));
       comment = !comment;
+      removed = true;
     }
-    kept.push(out.replace(/~~[^~]*~~/g, ''));
+    const words = out.replace(/~~[^~]*~~|<del>[^<]*<\/del>/g, '');
+    // A heading underlined with "===" or "---", as "Want to learn" over "-------".
+    const before = kept.at(-1);
+    if (
+      /^ {0,3}(?:=+|-+)\s*$/.test(words) &&
+      before?.text.trim() &&
+      !/^\s*(?:[-*+|]|\d+[.)])/.test(before.text)
+    ) {
+      before.text = `**${before.text.trim()}**`;
+      kept.push({ text: '', commented: false });
+      continue;
+    }
+    kept.push({ text: words, commented: removed && words.trim() !== '' });
   }
   return kept;
 }
@@ -206,7 +292,7 @@ function cells(line: string): string[] | null {
     .trim()
     .replace(/^\||\|$/g, '')
     .split('|')
-    .map((cell) => cell.replace(/\*\*/g, '').trim());
+    .map((cell) => withoutEmphasis(cell));
 }
 
 /** A list item's words, or null. */
@@ -223,51 +309,56 @@ function deeperHeading(line: string): { level: number; title: string } | null {
   return title ? { level: marks.length, title } : null;
 }
 
-/** A bold line on its own, which labels the lines after it: "**Doesn't have**". */
-const boldLabel = (line: string) =>
-  line
-    .match(/^(?:\*\*([^*]+)\*\*|__([^_]+)__):?$/)
-    ?.slice(1)
-    .find(Boolean)
-    ?.replace(/:$/, '')
-    .trim() ?? null;
+/** A line in bold or italics on its own, which labels the lines after it: "**Doesn't have**". */
+const emphasized = (line: string) =>
+  /^(?:\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_):?$/.test(line) ? withoutEmphasis(line) : null;
 
 /** A line of a file, with what it's under. */
 interface Placed {
-  /** A list item's words, a table row's first cell, a heading's words, or the line. */
+  /** A list item's words, a table row's first cell, a heading's or a label's words, or the line. */
   text: string;
   /** The whole line, as written: for a row, its cells with commas between. */
   line: string;
-  kind: 'item' | 'row' | 'heading' | 'line';
+  kind: 'item' | 'row' | 'heading' | 'label' | 'header' | 'line';
   /** A table row's other cells, each with its column's header. */
   cells: { header: string; value: string }[];
-  /** What it's under, outermost first: headings, labels, a table's header, list items. */
+  /** What it's under, outermost first: headings, labels, the skill column's header, list items. */
   under: Marks[];
-  /** What its own words say. */
+  /** What its own words say, read as a heading's would be. */
   own: Marks;
   /** The list item it's nested in, by its place among the lines, or -1. */
   parent: number;
+  /** Whether a comment beside it was left out, which may have said something about it. */
+  commented: boolean;
+  /** A task not done, as in "- [ ] Kubernetes". */
+  todo: boolean;
 }
+
+/** A list item that labels the items after it, as "- Want to learn:" or "- **Learning:**" does. */
+const isLabelItem = (line: Placed) => line.kind === 'item' && line.text.endsWith(':');
 
 /**
  * A file's lines, each with what it's under: a heading's, from core's blocks and the deeper
- * headings in them; a label's, a bold line or a line that ends in ":", up to the next heading;
- * a table's header; and for a list item, the items it's nested in, and a label item before it,
- * as "Rust" is under "- Want to learn:". A table's first row names its columns.
+ * headings in them; a label's, up to the next heading; the skill column's header, for a table's
+ * rows; and for a list item, the items it's nested in, and a label item before it at its depth,
+ * as "Rust" is under "- Want to learn:". Labels and table headers are lines too, for gaps.md.
  */
 function placedLines(text: string): Placed[] {
   const placed: Placed[] = [];
   const outer: { level: number; marks: Marks }[] = [];
+  const add = (line: Omit<Placed, 'commented' | 'todo'> & Partial<Placed>) =>
+    placed.push({ commented: false, todo: false, ...line });
   for (const [index, block] of factBlocks(text, { claims: false }).entries()) {
     while (outer.length > 0 && (outer.at(-1)?.level ?? 0) >= block.level) outer.pop();
     if (block.level > 0) {
       const own = marksOf(block.title);
-      placed.push({
+      const under = outer.map((each) => each.marks);
+      add({
         text: block.title,
         line: block.title,
         kind: 'heading',
         cells: [],
-        under: outer.map((each) => each.marks),
+        under,
         own,
         parent: -1,
       });
@@ -294,7 +385,20 @@ function placedLines(text: string): Placed[] {
       items = [];
       group = null;
     };
-    for (const line of readable(block.body, index === 0)) {
+    const labelWith = (words: string, line: string) => {
+      label = marksOf(words);
+      endList();
+      add({
+        text: words,
+        line,
+        kind: 'label',
+        cells: [],
+        under: context(),
+        own: label,
+        parent: -1,
+      });
+    };
+    for (const { text: line, commented } of readable(block.body, index === 0)) {
       const trimmed = line.trim();
       const heading = deeperHeading(trimmed);
       if (heading) {
@@ -304,7 +408,7 @@ function placedLines(text: string): Placed[] {
         headerNext = true;
         endList();
         const own = marksOf(heading.title);
-        placed.push({
+        add({
           text: heading.title,
           line: trimmed,
           kind: 'heading',
@@ -320,20 +424,31 @@ function placedLines(text: string): Placed[] {
       if (row) {
         endList();
         if (headerNext) {
-          header = { names: row, marks: marksOf(row.join(' ')) };
+          // The skill column's header says what the rows are: "| Learning next | Why |".
+          header = { names: row, marks: marksOf(row[0] ?? '') };
           headerNext = false;
+          add({
+            text: row.join(', '),
+            line: row.join(', '),
+            kind: 'header',
+            cells: [],
+            under: context(),
+            own: header.marks,
+            parent: -1,
+          });
           continue;
         }
         const [first = '', ...rest] = row;
         if (first) {
-          placed.push({
+          add({
             text: first,
             line: row.join(', '),
             kind: 'row',
             cells: rest.map((value, at) => ({ header: header?.names[at + 1] ?? '', value })),
             under: context(),
-            own: marksOf(row.join(' ')),
+            own: marksOf(first),
             parent: -1,
+            commented,
           });
         }
         continue;
@@ -342,51 +457,62 @@ function placedLines(text: string): Placed[] {
       headerNext = true;
       header = null;
       if (!trimmed) continue;
-      const bold = boldLabel(trimmed);
-      if (bold) {
-        label = marksOf(bold);
-        endList();
-        continue;
-      }
       const indent = line.length - line.trimStart().length;
       // Indented four spaces with no list to be in, it's code, whatever it looks like.
       if (indent >= 4 && items.length === 0) continue;
+      const bold = indent === 0 ? emphasized(trimmed) : null;
+      if (bold) {
+        labelWith(bold.replace(/:$/, ''), trimmed);
+        continue;
+      }
       const words = item(line);
       if (!words) {
-        // At the margin, a line ends the list.
+        // At the margin, a line ends the list. One that ends in ":", or a few words that say
+        // what follows is to come or not had, labels what follows.
         if (indent === 0) endList();
-        if (indent === 0 && trimmed.endsWith(':')) {
-          label = marksOf(trimmed);
+        const plainWords = withoutEmphasis(trimmed);
+        const short = plainWords.split(/\s+/).length <= 6 && !/[.!?]$/.test(plainWords);
+        if (
+          indent === 0 &&
+          (plainWords.endsWith(':') || (short && saysAnything(marksOf(plainWords))))
+        ) {
+          labelWith(plainWords.replace(/:$/, ''), trimmed);
           continue;
         }
-        placed.push({
-          text: trimmed.replace(/\*\*/g, ''),
+        add({
+          text: plainWords,
           line: trimmed,
           kind: 'line',
           cells: [],
           under: listContext(),
-          own: marksOf(trimmed),
+          own: marksOf(plainWords),
           parent: items.at(-1)?.at ?? -1,
+          commented,
         });
         continue;
       }
       items = items.filter((each) => each.indent < indent);
       if (group && indent < group.indent) group = null;
       const grouped = group && group.indent === indent ? group : null;
-      const own = marksOf(words);
+      // A task list's box: "[ ]" isn't done, "[x]" is.
+      const box = words.match(/^\[([ xX])\]\s+/);
+      const itemWords = withoutEmphasis(box ? words.slice(box[0].length) : words);
+      const own = marksOf(itemWords);
       const at = placed.length;
-      placed.push({
-        text: words.replace(/\*\*/g, '').trim(),
+      add({
+        text: itemWords,
         line: trimmed,
         kind: 'item',
         cells: [],
         under: listContext(),
         own,
         parent: items.at(-1)?.at ?? grouped?.at ?? -1,
+        commented,
+        todo: box?.[1] === ' ',
       });
       if (items.length < MAX_NESTING) items.push({ indent, marks: own, at });
       // An item that ends in ":" labels the items after it, at its own depth and deeper.
-      if (words.endsWith(':')) group = { indent, marks: own, at };
+      if (itemWords.endsWith(':')) group = { indent, marks: own, at };
     }
   }
   return placed;
@@ -395,28 +521,18 @@ function placedLines(text: string): Placed[] {
 /** Whether anything a line is under says so. */
 const underAny = (line: Placed, mark: keyof Marks) => line.under.some((marks) => marks[mark]);
 
-/** Whether a row has a cell that says it isn't had. */
+/** Whether a row has a cell that says it isn't had: "No", "❌", or "—" under Depth. */
 const hasNoCell = (line: Placed) =>
   line.cells.some(
-    (cell) => NOT_HAD.test(cell.value) || (BLANK.test(cell.value) && SAYS_HAVING.test(cell.header)),
+    (cell) =>
+      NOT_HAD_CELL.test(cell.value) || (BLANK.test(cell.value) && SAYS_HAVING.test(cell.header)),
   );
 
-/** Whether a line's own words, or a row's cells, say it isn't had or is still to come. */
-const saysNotHad = (line: Placed) => line.own.negative || line.own.later || hasNoCell(line);
-
-/** The longest note read for another term's name. A note about one is short. */
-const MAX_NOTE = 200;
-
-/** Whether a short note names a term the X-ray knows, so what it says is about that term. */
-const namesTerm = (note: string) =>
-  note.length <= MAX_NOTE && findTerms(note, VOCABULARY).length > 0;
-
-/** The items a line nested under them makes doubtful, so they don't count either. */
-function doubtedItems(lines: readonly Placed[], bad: (line: Placed) => boolean): Set<number> {
+/** The items with a line nested under them that may say otherwise, as "  - Depth: learning". */
+function doubtedItems(lines: readonly Placed[], doubt: (line: Placed) => boolean): Set<number> {
   const doubted = new Set<number>();
   for (const line of lines) {
-    // "  - Depth: learning" is about the item it's under; "  - Django (learning)" is about Django.
-    if (line.parent < 0 || !bad(line) || namesTerm(line.text)) continue;
+    if (line.parent < 0 || !doubt(line)) continue;
     for (let at = line.parent; at >= 0 && !doubted.has(at); at = lines[at]?.parent ?? -1) {
       doubted.add(at);
     }
@@ -442,72 +558,142 @@ function pieces(text: string): string[] {
   return [...found, piece].map((each) => each.trim()).filter(Boolean);
 }
 
+/** Words beside a term that leave no doubt that it's had: how often, how deep, where. */
+const HARMLESS = new Set(
+  (
+    'a an and or with in at on for of the to via by from as e.g eg etc incl including also plus ' +
+    'daily weekly monthly regularly regular every day days expert expertise advanced ' +
+    'intermediate proficient proficiency fluent strong solid deep deeply heavy extensive ' +
+    'extensively hands-on experienced experience production prod professional professionally ' +
+    'primary main core lead led senior used use uses using work worked works year years yr yrs ' +
+    'month months since current currently day-to-day frequent frequently built shipped ran run ' +
+    'runs own owned wrote maintain maintained apps app apis services service team teams project ' +
+    'projects systems system tools tool stack platform platforms data web mobile cloud backend ' +
+    'frontend back-end front-end infrastructure infra'
+  ).split(' '),
+);
+
+/** Whether a word beside a term leaves no doubt, as "daily", "4 years", "2021" or "acme.md" do. */
+function harmless(word: string): boolean {
+  if (DOUBT.test(word) || /^0+(?:\.0+)?$/.test(word)) return false;
+  // A number of years or a version, a date, the file that proves it, or an acronym.
+  if (/^\d/.test(word) || /\.md$/i.test(word) || /^\p{Lu}{2,}\d*s?$/u.test(word)) return true;
+  return HARMLESS.has(word.toLowerCase());
+}
+
 /**
- * A skill's name and its notes: what's after a ":" or a dash, and what's in brackets. A note
- * that says the skill isn't had, or is to come, leaves it out, as in "Kubernetes: never used" or
- * "Rust (learning)". One that names another term is about that term, so it's left off the name
- * and the skill stays: "Docker (but not Kubernetes)" is Docker, and backs nothing else.
+ * Whether what the user wrote holds nothing but these terms and harmless words, so a term in
+ * it is had beyond doubt. Anything else, however it's put ("havent used it", "only ECS",
+ * "maybe later", a "?"), leaves a doubt the user should settle.
  */
-function skillName(text: string): string | null {
-  const [head = '', ...after] = text.split(/:|\s[—–-]\s/);
-  const notes = after.length > 0 ? [after.join(':')] : [];
+export function onlyHarmless(text: string, terms: readonly Hit[]): boolean {
+  if (text.length > MAX_SOURCE) return false;
+  const source = plain(text);
+  let rest = '';
+  let at = 0;
+  for (const hit of [...terms].sort((a, b) => a.at - b.at)) {
+    if (hit.at < at) continue;
+    rest += ` ${source.slice(at, hit.at)} `;
+    at = hit.at + hit.text.length;
+  }
+  rest += source.slice(at);
+  // A mark that isn't punctuation or a tick, such as "?", "❌" or "🚫", may say otherwise.
+  if (/[^\p{L}\p{N}\s.,;:()[\]/&+'’"*_#|—–✓✔✅☑-]/u.test(rest)) return false;
+  return (rest.match(/[\p{L}\p{N}][\p{L}\p{N}'’.+#/-]*/gu) ?? []).every(harmless);
+}
+
+/** The terms the X-ray knows in a text, found once for each text. */
+const knownIn = new Map<string, Hit[]>();
+export function knownTerms(text: string): Hit[] {
+  let found = knownIn.get(text);
+  if (!found) {
+    found = text.length > MAX_SOURCE ? [] : findTerms(plain(text), VOCABULARY);
+    if (knownIn.size > 5_000) knownIn.clear();
+    knownIn.set(text, found);
+  }
+  return found;
+}
+
+/**
+ * A skill's name: a line's words before any ":" or dash, and of what's in brackets, only what
+ * names terms, so "Amplitude (product analytics)" names product analytics too, and "Docker (but
+ * not Kubernetes)" names only Docker.
+ */
+function nameOf(text: string): string {
+  const head = text.split(/:|\s[—–-]\s/)[0] ?? '';
   let name = '';
   let at = 0;
   for (let open = head.indexOf('('); open >= 0; open = head.indexOf('(', at)) {
     const close = head.indexOf(')', open + 1);
     if (close < 0) break;
-    const note = head.slice(open + 1, close);
-    const own = marksOf(note);
-    // A note that says nothing against the skill stays with it: "Amplitude (product analytics)".
-    const against = own.negative || own.later;
-    name += head.slice(at, against ? open : close + 1);
-    if (against) notes.push(note);
+    const inside = head.slice(open + 1, close);
+    const named = knownTerms(inside);
+    name += `${head.slice(at, open)} ${named.length > 0 && onlyHarmless(inside, named) ? inside : ''} `;
     at = close + 1;
   }
-  name = (name + head.slice(at)).replace(/\s+/g, ' ').trim();
-  const named = marksOf(name);
-  if (!name || named.negative || named.later) return null;
-  for (const note of notes) {
-    const own = marksOf(note);
-    if ((own.negative || own.later) && !namesTerm(note)) return null;
-  }
-  return name;
+  return (name + head.slice(at)).replace(/\s+/g, ' ').trim();
 }
+
+/** Whether a source's notes, what it says beside the skill's name, say something isn't had. */
+export const notesRuleOut = (source: Source) =>
+  says(NOT_HAD_NOTE, source.text.replace(source.name, ' '));
+
+/** Whether a note names a term the X-ray knows, other than the skill's own, so it's about that. */
+const namesOther = (notes: string, name: string) =>
+  knownTerms(notes).some((hit) => !wordsIn(name).includes(hit.text.toLowerCase()));
+
+/** A text's words in small letters, to look for another's in. */
+const wordsIn = (text: string) => plain(text).toLowerCase();
 
 /** A list item's lead in bold, as "**Languages:** Python, Go", and the words after it. */
 const boldLead = (line: string) =>
   line.match(/^\s*(?:[-*+]|\d+[.)])\s+\*\*([^*]{1,80})\*\*:?\s*(\S.*)?$/);
 
 /**
- * The skills in skills.md, by name: a table row's first cell, a list item's words before any
- * ":" or dash, so "Python: daily" is Python, or each of the terms after a bold lead, as in
- * "**Languages:** Python, Go". One that anything says isn't had, or is to come, is left out.
+ * The skills in skills.md: each list item or table row, with its name, that isn't under a part
+ * for skills to come or not had, isn't a task to do, and has no cell that says it isn't had.
+ * "**Languages:** Python, Go" gives each of its terms. A line under a part to confirm, beside a
+ * comment, or over a sub-item that may say otherwise isn't sure.
  */
 function skillsIn(path: string, text: string): Source[] {
   const lines = placedLines(text);
-  const doubted = doubtedItems(lines, saysNotHad);
-  const skills: string[] = [];
+  // A sub-item such as "Depth: learning" says the item isn't had; one that may say otherwise,
+  // or is about another term, as "Django (learning)" is, leaves a doubt.
+  const ruledOut = doubtedItems(
+    lines,
+    (line) => says(NOT_HAD_NOTE, line.line) && knownTerms(line.text).length === 0,
+  );
+  const doubted = doubtedItems(lines, (line) => DOUBT.test(line.line));
+  const sources: Source[] = [];
+  const where = fileName(path);
   for (const [at, line] of lines.entries()) {
     if (line.kind !== 'item' && line.kind !== 'row') continue;
-    if (underAny(line, 'later') || underAny(line, 'negative') || doubted.has(at)) continue;
+    if (line.todo || isLabelItem(line) || hasNoCell(line) || ruledOut.has(at)) continue;
+    if (underAny(line, 'later') || underAny(line, 'notHad')) continue;
+    const sure =
+      !line.commented && !doubted.has(at) && !underAny(line, 'check') && !underAny(line, 'open');
     const lead = line.kind === 'item' ? boldLead(line.line) : null;
-    if (lead) {
-      const named = marksOf(lead[1] ?? '');
-      if (named.later || named.negative) continue;
-      for (const piece of pieces(lead[2] ?? '')) {
-        const own = marksOf(piece);
-        if (!own.later && !own.negative) skills.push(piece);
-      }
+    const listed = lead ? pieces(lead[2] ?? '') : [];
+    // "**Languages:** Python, Go" lists skills; "**Python:** daily" is Python, with a note.
+    if (lead && listed.length > 1 && knownTerms(lead[1] ?? '').length === 0) {
+      for (const piece of listed) sources.push({ text: piece, name: nameOf(piece), where, sure });
       continue;
     }
-    if (hasNoCell(line) || line.text.endsWith(':')) continue;
-    // A row's other cells are its notes, as "| Rust | learning |".
-    const notes = line.cells.map((cell) => marksOf(cell.value));
-    if (notes.some((marks) => marks.negative || marks.later)) continue;
-    const name = skillName(line.text);
-    if (name) skills.push(name);
+    // A row's column for where it's proven, such as "Proven in", says nothing about having it.
+    const whole =
+      line.kind === 'row'
+        ? [
+            line.text,
+            ...line.cells.filter((cell) => !PROOF.test(cell.header)).map((cell) => cell.value),
+          ].join(', ')
+        : line.text;
+    const name = nameOf(line.text);
+    // Notes that say the skill itself isn't had, naming nothing else, leave it out.
+    const notes = whole.replace(name, ' ');
+    if (says(NOT_HAD_NOTE, notes) && !namesOther(notes, name)) continue;
+    sources.push({ text: whole, name, where, sure });
   }
-  return skills.map((skill) => ({ text: skill, where: fileName(path) }));
+  return sources;
 }
 
 /** A year after this one, as in "MBA, 2028", which isn't earned yet. */
@@ -522,17 +708,23 @@ const laterYear = (text: string) =>
 function credentialsIn(path: string, text: string): Source[] {
   const lines = placedLines(text);
   const notEarned = (line: Placed) =>
-    line.own.notEarned || saysNotHad(line) || laterYear(line.line);
+    line.own.notEarned ||
+    DOUBT.test(line.line) ||
+    NOT_EARNED.test(line.line) ||
+    hasNoCell(line) ||
+    laterYear(line.line);
   const doubted = doubtedItems(lines, notEarned);
   return lines
     .filter((line, at) => {
-      if (line.kind === 'heading' || !underAny(line, 'credential') || doubted.has(at)) return false;
-      if (line.text.endsWith(':') || notEarned(line)) return false;
-      return (
-        !underAny(line, 'later') && !underAny(line, 'negative') && !underAny(line, 'notEarned')
-      );
+      if (line.kind !== 'item' && line.kind !== 'row' && line.kind !== 'line') return false;
+      if (!underAny(line, 'credential') || doubted.has(at) || line.todo) return false;
+      if (isLabelItem(line) || notEarned(line)) return false;
+      return !underAny(line, 'later') && !underAny(line, 'notHad') && !underAny(line, 'notEarned');
     })
-    .map((line) => ({ text: line.kind === 'row' ? line.line : line.text, where: fileName(path) }));
+    .map((line) => {
+      const text = line.kind === 'row' ? line.line : line.text;
+      return { text, name: text, where: fileName(path), sure: false };
+    });
 }
 
 /** gaps.md's part a line is in, by the nearest heading or label above it that names one. */
@@ -546,16 +738,18 @@ function gapPart(line: Placed): 'no' | 'confirm' | 'open' {
 }
 
 /**
- * What gaps.md says: every line, heading and table row says what the user doesn't have, but
- * what's under a part for what needs confirming, and the open questions.
+ * What gaps.md says: every line, heading, label and table row says what the user doesn't have,
+ * but what's under a part for what needs confirming, and the open questions.
  */
 function gapsIn(text: string): { saidNo: string[]; toConfirm: string[] } {
   const saidNo: string[] = [];
   const toConfirm: string[] = [];
   for (const line of placedLines(text)) {
-    // A heading or label item that names a part, such as "Needs confirmation", says nothing.
+    // A heading or label that only names a part, such as "Needs confirmation", says nothing.
     const names = line.own.confirm || line.own.open || line.own.saidNo;
-    if (names && (line.kind === 'heading' || line.text.endsWith(':'))) continue;
+    const titled = line.kind === 'heading' || line.kind === 'label' || isLabelItem(line);
+    // A table's header names its columns, not something the user doesn't have.
+    if ((names && titled) || line.kind === 'header') continue;
     const words = line.kind === 'row' ? line.line : line.text;
     const part = gapPart(line);
     if (part === 'no') saidNo.push(words);
@@ -566,26 +760,30 @@ function gapsIn(text: string): { saidNo: string[]; toConfirm: string[] } {
 
 /** What a file says not to claim: every line under such a part, and any line that says so. */
 function dontClaimIn(path: string, text: string): Source[] {
+  const where = `${fileName(path)} · Don’t claim`;
   return placedLines(text)
     .filter((line) => line.own.dontClaim || underAny(line, 'dontClaim'))
-    .map((line) => ({
-      text: line.kind === 'row' ? line.line : line.text,
-      where: `${fileName(path)} · Don’t claim`,
-    }));
+    .map((line) => {
+      const said = line.kind === 'row' ? line.line : line.text;
+      return { text: said, name: said, where, sure: false };
+    });
 }
 
-/** A claim's Keywords, term by term, leaving out any the line says the claim isn't about. */
+/** A claim's Keywords, term by term. */
 function keywordsOf(block: FactBlock): string[] {
-  for (const line of readable(block.body, false)) {
+  for (const { text: line } of readable(block.body, false)) {
     const keywords = line.match(/^\s*[-*+]\s+\*\*Keywords:?\*\*:?\s*(\S.*)$/i)?.[1];
-    if (!keywords) continue;
-    return pieces(keywords).filter((piece) => {
-      const own = marksOf(piece);
-      return !own.negative && !own.later;
-    });
+    if (keywords) return pieces(keywords);
   }
   return [];
 }
+
+/** Which of the bank's own files a path is, at its top: "facts/skills.md" is skills.md. */
+const bankFile = (path: string) =>
+  path
+    .replace(/\\/g, '/')
+    .toLowerCase()
+    .replace(/^facts\//, '');
 
 /** What the fact bank's files say about terms. */
 export function readFacts(files: readonly FactFile[]): FactTerms {
@@ -599,8 +797,8 @@ export function readFacts(files: readonly FactFile[]): FactTerms {
     dontClaim: [],
   };
   for (const file of files) {
-    const name = fileName(file.path).toLowerCase();
-    if (name === 'readme.md') continue;
+    const name = bankFile(file.path);
+    if (fileName(name) === 'readme.md') continue;
     terms.dontClaim.push(...dontClaimIn(file.path, file.text));
     if (name === 'gaps.md') {
       const gaps = gapsIn(file.text);
@@ -623,7 +821,8 @@ export function readFacts(files: readonly FactFile[]): FactTerms {
         tags.some((tag) => STATUSES.has(tag)) &&
         tags.some((tag) => SURE.has(tag));
       for (const keyword of keywordsOf(block)) {
-        (confirmed ? terms.keywords : terms.toCheck).push({ text: keyword, where });
+        const source = { text: keyword, name: nameOf(keyword), where, sure: true };
+        (confirmed ? terms.keywords : terms.toCheck).push(source);
       }
     }
   }

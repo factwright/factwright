@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFacts } from './facts.ts';
 
 const texts = (sources: readonly { text: string }[]) => sources.map((source) => source.text);
+/** Each skill's name, as a term is looked for in it. */
+const names = (sources: readonly { name: string }[]) => sources.map((source) => source.name);
 
 describe('readFacts', () => {
   it('reads skills from a table, past its header row, and by name from a list', () => {
@@ -24,7 +26,8 @@ describe('readFacts', () => {
         ].join('\n'),
       },
     ]);
-    expect(texts(facts.skills)).toEqual(['Go', 'Kubernetes (EKS)', 'Terraform', 'Python']);
+    // A term in brackets names it too, so "Kubernetes (EKS)" names Kubernetes and EKS.
+    expect(names(facts.skills)).toEqual(['Go', 'Kubernetes EKS', 'Terraform', 'Python']);
     expect(facts.skills[0]?.where).toBe('skills.md');
   });
 
@@ -62,13 +65,12 @@ describe('readFacts', () => {
         ].join('\n'),
       },
     ]);
-    expect(facts.keywords).toEqual([
-      { text: 'CI/CD', where: 'acme.md · Cut deploy time' },
-      { text: 'platform engineering', where: 'acme.md · Cut deploy time' },
-    ]);
-    expect(facts.toCheck).toEqual([
-      { text: 'incident management', where: 'acme.md · Ran the on-call rotation' },
-      { text: 'Splunk', where: 'acme.md · Moved logs to one place' },
+    expect(texts(facts.keywords)).toEqual(['CI/CD', 'platform engineering']);
+    expect(facts.keywords[0]?.where).toBe('acme.md · Cut deploy time');
+    expect(texts(facts.toCheck)).toEqual(['incident management', 'Splunk']);
+    expect(facts.toCheck.map((source) => source.where)).toEqual([
+      'acme.md · Ran the on-call rotation',
+      'acme.md · Moved logs to one place',
     ]);
   });
 
@@ -167,7 +169,7 @@ describe('readFacts, with what each line is under', () => {
         ].join('\n'),
       },
     ]);
-    expect(texts(facts.skills)).toEqual(['SQL', 'Go']);
+    expect(names(facts.skills)).toEqual(['SQL', 'Go']);
   });
 
   it('reads only the credentials profile.md says are earned and still held', () => {
@@ -234,10 +236,11 @@ describe('readFacts, with what each line is under', () => {
         text: '## Don’t claim\n- Kubernetes: only via the platform team',
       },
     ]);
-    expect(facts.dontClaim).toEqual([
-      { text: 'Don’t claim', where: 'acme.md · Don’t claim' },
-      { text: 'Kubernetes: only via the platform team', where: 'acme.md · Don’t claim' },
+    expect(texts(facts.dontClaim)).toEqual([
+      'Don’t claim',
+      'Kubernetes: only via the platform team',
     ]);
+    expect(facts.dontClaim[1]?.where).toBe('acme.md · Don’t claim');
   });
 
   it('backs terms only with a claim that says it’s confirmed, whatever its tags’ case', () => {

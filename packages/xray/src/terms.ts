@@ -116,13 +116,21 @@ export interface Hit {
   at: number;
 }
 
+/** Each form's first run of letters, worked out once. */
+const keys = new WeakMap<Form, string>();
+
 /** A quick look for a form's first letters, so most patterns never run on text that can't hold them. */
-const mayHold = (lower: string, form: Form) =>
-  lower.includes(
-    plain(form.text)
-      .toLowerCase()
-      .match(/[\p{L}\p{N}]+/u)?.[0] ?? '',
-  );
+function mayHold(lower: string, form: Form): boolean {
+  let key = keys.get(form);
+  if (key === undefined) {
+    key =
+      plain(form.text)
+        .toLowerCase()
+        .match(/[\p{L}\p{N}]+/u)?.[0] ?? '';
+    keys.set(form, key);
+  }
+  return lower.includes(key);
+}
 
 /**
  * Every term found in a text, the longest where two overlap, so "React Native" is one term and

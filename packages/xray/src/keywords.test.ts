@@ -420,7 +420,7 @@ describe('matchKeywords, on fact banks written every which way', () => {
     }
   });
 
-  it('backs what a line has and not what its note rules out', () => {
+  it('backs a skill only with nothing beside it, and never with a note that rules it out', () => {
     const skills = [
       '- Docker (but not Kubernetes)',
       '- SQL (Postgres; not Oracle)',
@@ -435,17 +435,21 @@ describe('matchKeywords, on fact banks written every which way', () => {
         'skills.md': skills,
       }),
     ).toEqual({
-      Docker: 'facts',
-      Kubernetes: 'none',
-      SQL: 'facts',
-      Oracle: 'none',
-      Python: 'facts',
-      Django: 'none',
-      Airflow: 'facts',
-      Jira: 'facts',
-      PyTorch: 'facts',
+      // Nothing beside these but other terms and harmless words: had beyond doubt.
       Go: 'facts',
       Rust: 'facts',
+      Jira: 'facts',
+      PyTorch: 'facts',
+      // A note beside these the user should read: "(but not Kubernetes)", "did not use Django",
+      // or words the X-ray can't vouch for, as "scheduled 200 DAGs".
+      Docker: 'unsure',
+      SQL: 'unsure',
+      Python: 'unsure',
+      Airflow: 'unsure',
+      // Only in a note that rules them out: nothing backs them.
+      Kubernetes: 'none',
+      Oracle: 'none',
+      Django: 'none',
     });
     expect(
       kinds(['Docker and Kubernetes'], {
@@ -487,5 +491,120 @@ describe('matchKeywords, on fact banks written every which way', () => {
     expect(
       kinds(['Go'], { 'skills.md': '- Go', 'gaps.md': '## Doesn’t have\n- Go-to-market strategy' }),
     ).toEqual({ Go: 'facts' });
+  });
+});
+
+describe('matchKeywords, beyond doubt', () => {
+  const kinds = (lines: string[], files: Record<string, string>) =>
+    Object.fromEntries(
+      matchKeywords(
+        posting(lines),
+        'Nothing.',
+        readFacts(Object.entries(files).map(([path, text]) => ({ path: `facts/${path}`, text }))),
+      ).terms.map(({ term, backing: { kind } }) => [term, kind]),
+    );
+  const claim = (keywords: string) =>
+    `### Work\n\`live\` \`solo\` \`high\`\n- **Keywords:** ${keywords}`;
+
+  it('never says to add a skill with anything beside it that may say otherwise', () => {
+    const skills = [
+      '- Kubernetes: never used, only ECS',
+      '- Kubernetes\n  - never used it, only ECS',
+      '## Needs confirmation\n- Kubernetes',
+      '## To confirm\n- Kubernetes',
+      '## Open questions\n- Kubernetes',
+      '- Kubernetes (unconfirmed)',
+      '- Kubernetes `unconfirmed`',
+      '- Kubernetes?',
+      '| Skill | Status |\n|---|---|\n| Kubernetes | To confirm |',
+      '- Kubernetes <!-- unconfirmed -->',
+      '- Kubernetes (havent used it)',
+      '## Havent used\n- Kubernetes',
+      '- Kubernetes (wouldn’t claim it)',
+      '- Kubernetes: N/A',
+      '- Kubernetes: 0 years',
+      '| Skill | Years |\n|---|---|\n| Kubernetes | 0 |',
+      '| Skill | Have? |\n|---|---|\n| Kubernetes | N |',
+      '- Kubernetes ❌',
+      '- Kubernetes 🚫',
+      '- Kubernetes ✕',
+      '- [ ] Kubernetes',
+      '- Kubernetes (soon)',
+      '- Kubernetes (maybe later)',
+      '- Kubernetes (on my list)',
+      '- Kubernetes (would like to try)',
+      '- Kubernetes (only read about it)',
+      '- Kubernetes (theory only)',
+      '- ECS (non-Kubernetes deploys)',
+      '- **Learning:**\n- Kubernetes',
+      '*Learning:*\n- Kubernetes',
+      '_Want to learn_\n- Kubernetes',
+      'Want to learn\n-------------\n- Kubernetes',
+      'Want to learn\n- Kubernetes',
+    ];
+    for (const text of skills) {
+      expect(kinds(['Kubernetes'], { 'skills.md': text }).Kubernetes, text).not.toBe('facts');
+    }
+    for (const keywords of ['Kubernetes (to confirm)', 'ECS (not Kubernetes)']) {
+      expect(kinds(['Kubernetes'], { 'acme.md': claim(keywords) }).Kubernetes, keywords).not.toBe(
+        'facts',
+      );
+    }
+    expect(
+      kinds(['Snowflake'], { 'skills.md': '- Snowflake: no — BigQuery only' }).Snowflake,
+    ).not.toBe('facts');
+    expect(kinds(['GraphQL'], { 'skills.md': '- GraphQL: no, REST only' }).GraphQL).not.toBe(
+      'facts',
+    );
+  });
+
+  it('never says to add a credential the user wrote inside a note or a phrase', () => {
+    expect(
+      kinds(['Kubernetes (CKA a plus)'], { 'acme.md': claim('Kubernetes, CKA prep') }).CKA,
+    ).not.toBe('facts');
+    expect(kinds(['CKA a plus'], { 'skills.md': '- Preparing for the CKA' }).CKA).not.toBe('facts');
+    expect(kinds(['CDL Class A'], { 'skills.md': '- Driving (CDL Class A, lapsed)' }).CDL).not.toBe(
+      'facts',
+    );
+    expect(kinds(['CKA required'], { 'skills.md': '- Kubernetes (CKA, 2021)' }).CKA).not.toBe(
+      'facts',
+    );
+    const certs = matchKeywords(
+      '## Must-have certs\n- AWS',
+      'Nothing.',
+      readFacts([{ path: 'facts/skills.md', text: '- AWS' }]),
+    );
+    expect(certs.terms[0]?.backing.kind).toBe('none');
+    expect(kinds(['Epic certification required'], { 'skills.md': '- Epic' }).Epic).toBe('unsure');
+  });
+
+  it('says to add a skill written plainly, in bold or with harmless notes', () => {
+    for (const text of [
+      '- **Python**',
+      '- **Python** — daily, 6 years',
+      '- **Python:** daily',
+      '- Python: 6 years, daily',
+      '| Skill | Depth | Proven in |\n|---|---|---|\n| Python | Daily | acme.md |',
+      '| Skill | Depth | Proven in |\n|---|---|---|\n| Python | 4 years | — (no claim yet) |',
+      '# Skills (not exhaustive)\n- Python',
+      '## Skills, in no particular order\n- Python',
+    ]) {
+      expect(kinds(['Python'], { 'skills.md': text }), text).toEqual({ Python: 'facts' });
+    }
+    expect(kinds(['Python'], { 'archive/skills.md': '- Python' })).toEqual({ Python: 'none' });
+  });
+
+  it('reads gaps.md’s and Don’t claim’s labels as what they name', () => {
+    expect(
+      kinds(['Kubernetes'], {
+        'skills.md': '- Kubernetes',
+        'gaps.md': '## Doesn’t have\n**Kubernetes in production**\nNo, only minikube.',
+      }),
+    ).toEqual({ Kubernetes: 'said-no' });
+    expect(
+      kinds(['Kubernetes'], {
+        'acme.md': `${claim('Kubernetes')}\n\n## Don’t claim\nKubernetes ownership:\n- only as a user`,
+      }),
+    ).toEqual({ Kubernetes: 'dont-claim' });
   });
 });

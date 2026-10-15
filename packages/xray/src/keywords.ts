@@ -1,4 +1,4 @@
-import type { FactTerms } from './facts.ts';
+import { type FactTerms, knownTerms, notesRuleOut, onlyHarmless, type Source } from './facts.ts';
 import { type Need, type PostingLine, readPosting } from './posting.ts';
 import {
   findTerm,
@@ -16,7 +16,10 @@ import { VOCABULARY } from './vocabulary.ts';
  * - said-no: gaps.md says the user doesn't have it. That's settled, whatever else says so.
  * - dont-claim: a "Don't claim" part names it, so check what it allows before adding it.
  * - doubted: gaps.md says it needs confirming, so check it before adding it.
- * - facts: skills.md or a confirmed claim backs it. So add it.
+ * - facts: skills.md or a confirmed claim backs it, with nothing beside it that leaves a doubt.
+ *   So add it.
+ * - unsure: skills.md or a confirmed claim has it, but with something beside it, such as "only
+ *   ECS" or "(maybe later)", that the user should read first. So check it first.
  * - credential: a certification, license or degree profile.md lists. Whether it's earned and
  *   current is the user's to say, so it's always a check, never just "add it".
  * - unread: the bank backs it, but some of its files couldn't be read, and one of those could
@@ -29,6 +32,7 @@ export type Backing =
   | { kind: 'dont-claim'; where: string; said: string }
   | { kind: 'doubted'; where: string }
   | { kind: 'facts'; where: string }
+  | { kind: 'unsure'; where: string; said: string }
   | { kind: 'credential'; where: string; said: string }
   | { kind: 'unread'; where: string }
   | { kind: 'to-check'; where: string }
@@ -89,7 +93,7 @@ const TOOLISH =
 
 /** Words that make a term, or a posting's clause, about a certification, license or degree. */
 const CREDENTIAL_WORDS =
-  /\b(?:certifi\w*|certificates?|licen[cs]\w*|credentials?|accredit\w*|registered|degrees?|diploma)\b/i;
+  /\b(?:certifi\w*|certificates?|certs?|licen[cs]\w*|credentials?|accredit\w*|registered|degrees?|diploma)\b/i;
 
 const CREDENTIALS = VOCABULARY.filter((each) => each.credential);
 
@@ -120,7 +124,7 @@ const credentialHere = (found: Term, line: PostingLine) =>
   (!VOCABULARY.includes(found) && CREDENTIAL_WORDS.test(line.text));
 
 /** A posting's part about certifications, licenses or education. */
-const CREDENTIAL_PART = /certif|licen[cs]|credential|educat|degree/i;
+const CREDENTIAL_PART = /certif|\bcerts?\b|licen[cs]|credential|educat|degree/i;
 
 /** State and province codes, which after a comma are a place: "Montreal, QC". */
 const PLACE_CODES = new Set(
@@ -162,8 +166,8 @@ function withoutParentheticals(text: string): string {
 /** The user's own terms, from skills.md and Keywords lines, split into single terms. */
 function factTerms(facts: FactTerms | null): Term[] {
   if (!facts) return [];
-  const items = [...facts.skills, ...facts.keywords, ...facts.toCheck].flatMap(({ text }) =>
-    withoutParentheticals(text)
+  const items = [...facts.skills, ...facts.keywords, ...facts.toCheck].flatMap(({ name }) =>
+    withoutParentheticals(name)
       // Split at commas, semicolons and dots, and at a slash with a space each side.
       .split(/[,;·•]|(?<=\s)\/(?=\s)/)
       .map((each) => each.replace(/\*\*/g, '').trim())
@@ -187,13 +191,47 @@ function toolish(line: string): Term[] {
     .map((word) => termOf(word));
 }
 
+/** Words as the user wrote them, to compare: in small letters, without marks or extra spaces. */
+const wordsOf = (text: string) =>
+  plain(text)
+    .toLowerCase()
+    .replace(/[*_`"']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.:;,]+$/, '');
+
+/**
+ * Whether what the user wrote has a term beyond doubt: as the skill's name, with nothing beside
+ * it but other terms and harmless words such as "daily" or "4 years". A term the X-ray doesn't
+ * know, such as an acronym, counts only as the whole of the name.
+ */
+function certain(source: Source, term: Term): boolean {
+  if (!source.sure) return false;
+  const known = VOCABULARY.includes(term);
+  if (
+    known
+      ? !findTerm(source.name, term)
+      : !term.forms.some((form) => wordsOf(form.text) === wordsOf(source.name))
+  ) {
+    return false;
+  }
+  const hits = [...knownTerms(source.text), ...findTerms(plain(source.text), [term])];
+  return onlyHarmless(source.text, hits);
+}
+
 /**
  * What the fact bank says about a term the resume doesn't have. What the user said no to, or
  * not to claim, comes first, found in any case. A credential, such as PMP or a degree, is only
  * ever a check, against what profile.md lists. A skill is backed only where skills.md or a
  * confirmed claim has it: a degree's college or a claim about work earns neither.
  */
-function backingOf(found: Term, facts: FactTerms | null, bank: BankRead): Backing {
+function backingOf(
+  found: Term,
+  facts: FactTerms | null,
+  bank: BankRead,
+  /** Whether the posting asks for it in a clause about a certification, license or degree. */
+  certified = false,
+): Backing {
   if (!facts) return { kind: 'none' };
   const mentions = (text: string) => findTermLoosely(text, found) !== null;
   const said = facts.saidNo.find(mentions);
@@ -209,8 +247,17 @@ function backingOf(found: Term, facts: FactTerms | null, bank: BankRead): Backin
       ? { kind: 'credential', where: listed.where, said: listed.text }
       : { kind: 'none' };
   }
-  const backed = [...facts.skills, ...facts.keywords].find((source) => has(source.text));
-  if (backed) return { kind: bank === 'all' ? 'facts' : 'unread', where: backed.where };
+  // A term only in notes that rule something out, as Django in "Python: never used Django",
+  // isn't backed at all.
+  const backing = [...facts.skills, ...facts.keywords].filter(
+    (source) =>
+      has(source.text) && (findTerm(source.name, found) !== null || !notesRuleOut(source)),
+  );
+  const sure = backing.find((source) => certain(source, found));
+  // A skill asked for as a credential, as "Epic certification", is the user's to weigh.
+  if (sure && !certified) return { kind: bank === 'all' ? 'facts' : 'unread', where: sure.where };
+  const first = sure ?? backing[0];
+  if (first) return { kind: 'unsure', where: first.where, said: first.text };
   const check = facts.toCheck.find((source) => has(source.text));
   if (check) return { kind: 'to-check', where: check.where };
   return { kind: 'none' };
@@ -233,21 +280,32 @@ export function matchKeywords(
   // line asks for it as a credential.
   const mentions = new Map<
     Term | string,
-    { term: Term; text: string; need: Need; context: string; credential: boolean }
+    {
+      term: Term;
+      text: string;
+      need: Need;
+      context: string;
+      credential: boolean;
+      certified: boolean;
+    }
   >();
   const mention = (term: Term, text: string, posted: PostingLine) => {
     const key = VOCABULARY.includes(term) ? term : term.name.toLowerCase();
     const credential = credentialHere(term, posted);
+    const certified = CREDENTIAL_WORDS.test(posted.text);
     const before = mentions.get(key);
     if (!before) {
-      mentions.set(key, { term, text, need: posted.need, context: posted.text, credential });
+      const context = posted.text;
+      mentions.set(key, { term, text, need: posted.need, context, credential, certified });
       return;
     }
     if (posted.need === 'must') before.need = 'must';
     if (credential) before.credential = true;
+    if (certified) before.certified = true;
   };
   for (const posted of lines) {
-    const hits = findTerms(posted.text, known).filter((hit) => !notATerm(hit, plain(posted.text)));
+    const words = plain(posted.text);
+    const hits = findTerms(posted.text, known).filter((hit) => !notATerm(hit, words));
     for (const hit of hits) mention(hit.term, hit.text, posted);
     const covered = (word: string) =>
       hits.some((hit) => plain(hit.text).toLowerCase().includes(word.toLowerCase()));
@@ -255,7 +313,8 @@ export function matchKeywords(
       if (!covered(extra.name)) mention(extra, extra.name, posted);
     }
   }
-  const terms = [...mentions.values()].map(({ term: named, text, need, context, credential }) => {
+  const terms = [...mentions.values()].map((each) => {
+    const { term: named, text, need, context, credential, certified } = each;
     const found = credential ? { ...named, credential } : named;
     const inResume = findTerm(resume, found);
     // The form the posting uses, which the resume may have by another name.
@@ -270,7 +329,7 @@ export function matchKeywords(
       need,
       found: inResume,
       otherName,
-      backing: inResume ? { kind: 'none' as const } : backingOf(found, facts, bank),
+      backing: inResume ? { kind: 'none' as const } : backingOf(found, facts, bank, certified),
       context: line(context),
     } satisfies KeyTerm;
   });
