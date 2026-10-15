@@ -2,7 +2,7 @@ import { type Check, type CheckId, marks, runChecks } from './checks.ts';
 import { type FactFile, readFacts } from './facts.ts';
 import { type Fields, readFields } from './fields.ts';
 import { type KeywordReport, matchKeywords } from './keywords.ts';
-import { type Line, type ReadFile, textOf } from './read.ts';
+import type { Line, ReadFile } from './read.ts';
 import { findSections, type Section, type SectionKind } from './sections.ts';
 
 /** A line as the X-ray shows it. */
@@ -29,6 +29,8 @@ export interface XRay {
   format: ReadFile['format'];
   /** How many pages, when the file says. */
   pageCount: number | null;
+  /** False when there's almost no text to read, as in a scanned page: then only that is checked. */
+  readable: boolean;
   lines: XRayLine[];
   sections: Section[];
   fields: Fields;
@@ -43,6 +45,9 @@ export interface XRayInput {
   /** The fact bank's files, to tell a term the user can add from a real gap. */
   facts?: readonly FactFile[] | null;
 }
+
+/** The checks that still mean something for a file with almost no text. */
+const TEXTLESS: ReadonlySet<CheckId> = new Set(['text', 'fonts', 'length']);
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -76,15 +81,26 @@ function summaryOf(checks: readonly Check[], keywords: KeywordReport | null): Su
 export function xray(file: ReadFile, input: XRayInput = {}): XRay {
   const sections = findSections(file.lines);
   const fields = readFields(file.lines, sections);
-  const checks = runChecks(file, sections, fields);
+  const all = runChecks(file, sections, fields);
+  // With almost no text, what else it finds is only for want of text, and it can't check terms.
+  const readable = !all.some((check) => check.id === 'text');
+  const checks = readable ? all : all.filter((check) => TEXTLESS.has(check.id));
   const marked = marks(checks);
   const headings = new Map(sections.map((section) => [section.line, section.kind]));
-  const keywords = input.posting
-    ? matchKeywords(input.posting, textOf(file), input.facts ? readFacts(input.facts) : null)
-    : null;
+  // The terms a system surely reads: a Word file's headers, footers and text boxes it may skip.
+  const read = file.lines.filter((line) => line.part === 'body' || line.part === 'table');
+  const keywords =
+    input.posting && readable
+      ? matchKeywords(
+          input.posting,
+          read.map((line) => line.text).join('\n'),
+          input.facts ? readFacts(input.facts) : null,
+        )
+      : null;
   return {
     format: file.format,
     pageCount: file.pageCount,
+    readable,
     lines: file.lines.map((line, index) => ({
       text: line.text,
       page: line.page,

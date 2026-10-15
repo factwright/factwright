@@ -5,15 +5,18 @@ import { VOCABULARY } from './vocabulary.ts';
 
 /**
  * What the fact bank says about a term missing from the resume. Honesty decides what to do:
- * - facts: a confirmed claim or skills.md backs it, so add it.
- * - unconfirmed: only a claim still waiting to be confirmed has it, so confirm it first.
- * - said-no: the user told Factwright they don't have it.
+ * - said-no: gaps.md says the user doesn't have it. That's settled, whatever else says so.
+ * - doubted: gaps.md says it needs confirming, so check it before adding it.
+ * - facts: skills.md, a claim that can go on a resume, or for a credential, profile.md, backs
+ *   it. So add it.
+ * - to-check: only a claim the user hasn't checked has it, unconfirmed or low confidence.
  * - none: nothing backs it. It's a real gap, so it stays off the resume.
  */
 export type Backing =
-  | { kind: 'facts'; where: string }
-  | { kind: 'unconfirmed'; where: string }
   | { kind: 'said-no'; where: string }
+  | { kind: 'doubted'; where: string }
+  | { kind: 'facts'; where: string }
+  | { kind: 'to-check'; where: string }
   | { kind: 'none' };
 
 export interface KeyTerm {
@@ -39,13 +42,23 @@ export interface KeywordReport {
 /** The most terms listed. Long postings name far more than matter. */
 const MAX_TERMS = 40;
 
-/** Acronyms postings use that aren't skills: places, titles, degrees and the like. */
+/**
+ * Acronyms postings use that aren't skills: places, regions, titles, degrees, business numbers
+ * and the like. A degree or a skill these could stand for is in the vocabulary by its full name.
+ */
 const NOT_TERMS = new Set(
-  (
-    'US USA UK EU EEO EOE EEOC ADA PTO OK ID CEO CFO CTO COO CMO CIO CPO VP SVP EVP AVP FTE HQ NYC SF LA DC ' +
-    'WFH OTE TBD ASAP FAQ ETA AM PM ET PT CT MT EST PST CST MST UTC GMT LLC INC LTD CO BA BS MA MS PHD BSC MSC ' +
-    'YOE NA AND OR THE FOR WITH YOU WE OUR ALL NOT MUST WILL ARE CAN NEW USD IC TL EM HR IT'
-  ).split(' '),
+  [
+    'US USA UK EU EEO EOE EEOC ADA PTO OK ID CEO CFO CTO COO CMO CIO CPO VP SVP EVP AVP FTE HQ NYC',
+    'SF LA DC WFH OTE TBD ASAP FAQ ETA AM PM ET PT CT MT EST PST CST MST UTC GMT LLC INC LTD CO BA',
+    'BS MA MS PHD BSC MSC YOE NA AND OR THE FOR WITH YOU WE OUR ALL NOT MUST WILL ARE CAN NEW USD',
+    'IC TL EM HR IT CS PR PRS EMEA APAC LATAM NAM AMER ANZ DACH ROI CAC LTV ARR MRR NPS CSAT GMV',
+    'ROAS CTR CPC CPM GPA FAANG MAANG SMB MBO EOD EOW',
+    // States and provinces, as in "Austin, TX".
+    'AL AK AZ AR CA CT DE FL GA HI IA IL IN KS KY ME MD MI MN MO NE NV NH NJ NM NY NC ND OH OR PA',
+    'RI SC SD TN TX UT VT VA WA WV WI WY PR AB BC MB NB NL NS ON PE QC SK',
+  ]
+    .join(' ')
+    .split(' '),
 );
 
 /** Words that look like a tool's name by their capitals or marks: "GraphQL", "Node.js", "C#", "HIPAA". */
@@ -65,7 +78,7 @@ const term = (text: string): Term => {
 /** The user's own terms, from skills.md and Keywords lines, split into single terms. */
 function factTerms(facts: FactTerms | null): Term[] {
   if (!facts) return [];
-  const items = [...facts.skills, ...facts.keywords.map((line) => line.text)].flatMap((text) =>
+  const items = [...facts.skills, ...facts.keywords, ...facts.toCheck].flatMap(({ text }) =>
     text
       .replace(/\([^)]*\)/g, ',')
       .split(/[,;·•]|\s+\/\s+/)
@@ -90,19 +103,25 @@ function toolish(line: string): Term[] {
     .map((word) => termOf(word));
 }
 
-/** What the fact bank says about a term the resume doesn't have. */
+/**
+ * What the fact bank says about a term the resume doesn't have. A credential, such as PMP or a
+ * degree, counts only where profile.md says the user has it: a skill or a claim about work
+ * doesn't earn one.
+ */
 function backingOf(found: Term, facts: FactTerms | null): Backing {
   if (!facts) return { kind: 'none' };
-  if (facts.skills.some((skill) => findTerm(skill, found)))
-    return { kind: 'facts', where: 'skills.md' };
-  if (facts.credentials.some((each) => findTerm(each, found)))
-    return { kind: 'facts', where: 'profile.md' };
-  const lines = facts.keywords.filter((line) => findTerm(line.text, found));
-  const confirmed = lines.find((line) => !line.unconfirmed);
-  if (confirmed) return { kind: 'facts', where: confirmed.where };
-  if (lines[0]) return { kind: 'unconfirmed', where: lines[0].where };
-  const said = facts.saidNo.find((topic) => findTerm(topic, found));
+  const has = (text: string) => findTerm(text, found) !== null;
+  const said = facts.saidNo.find(has);
   if (said) return { kind: 'said-no', where: said };
+  const doubt = facts.toConfirm.find(has);
+  if (doubt) return { kind: 'doubted', where: doubt };
+  const sources = found.credential
+    ? facts.credentials
+    : [...facts.skills, ...facts.keywords, ...facts.credentials];
+  const backed = sources.find((source) => has(source.text));
+  if (backed) return { kind: 'facts', where: backed.where };
+  const check = found.credential ? undefined : facts.toCheck.find((source) => has(source.text));
+  if (check) return { kind: 'to-check', where: check.where };
   return { kind: 'none' };
 }
 

@@ -62,8 +62,12 @@ const PLACE = new RegExp(
 const TITLE_WORDS =
   /\b(?:engineer|engineering|developer|manager|director|head|lead|leader|vp|vice president|president|chief|officer|founder|co-founder|owner|partner|principal|staff|senior|sr|junior|jr|analyst|scientist|designer|architect|consultant|specialist|coordinator|administrator|associate|assistant|intern|fellow|researcher|professor|lecturer|instructor|teacher|tutor|nurse|physician|therapist|counselor|technician|technologist|representative|agent|advisor|adviser|accountant|auditor|controller|attorney|paralegal|clerk|recruiter|generalist|strategist|planner|producer|editor|writer|marketer|marketing|sales|supervisor|operator|programmer|tester|owner|executive|ceo|cto|cfo|coo|cmo|cio|cpo|sre|devops|pharmacist|dietitian|aide|volunteer|apprentice|trainee|member|chair|mechanic|electrician|chef|cook|driver|buyer|broker|banker|trader|economist|statistician|investigator|officer)s?\b/i;
 
+/**
+ * A degree. Written plain, MA, MS and MD are states after a comma, as in "Boston, MA", so only
+ * elsewhere are they degrees.
+ */
 const DEGREE =
-  /\b(?:B\.?\s?[AS]\.?|B\.?Sc\.?|B\.?A\.?Sc\.?|B\.?Eng\.?|B\.?F\.?A\.?|BBA|BSN|M\.?\s?[AS]\.?|M\.?Sc\.?|M\.?Eng\.?|MBA|MSN|MPH|MFA|M\.?Ed\.?|Ph\.?\s?D\.?|Ed\.?D\.?|M\.?D\.?|J\.?D\.?|D\.?N\.?P\.?|A\.?A\.?S?\.?|A\.?S\.?N?\.?|Bachelor(?:'s|’s)?|Master(?:'s|’s)?|Doctor(?:ate)?|Associate(?:'s|’s)?|Diploma|Certificate|GED|High School)(?![\p{L}])/u;
+  /(?<!,\s*)\b(?:MA|MS|MD)\b|\b(?:B\.?\s?[AS]\.?|B\.?Sc\.?|B\.?A\.?Sc\.?|B\.?Eng\.?|B\.?F\.?A\.?|BBA|BSN|M\.\s?[AS]\.?|M\.?Sc\.?|M\.?Eng\.?|MBA|MSN|MPH|MFA|M\.?Ed\.?|Ph\.?\s?D\.?|Ed\.?D\.?|M\.D\.?|J\.?D\.?|D\.?N\.?P\.?|A\.?A\.?S?\.?|A\.?S\.?N?\.?|Bachelor(?:'s|’s)?|Master(?:'s|’s)?|Doctor(?:ate)?|Associate(?:'s|’s)?|Diploma|Certificate|GED|High School)(?![\p{L}])/u;
 
 const SCHOOL =
   /\b(?:University|College|Institute|School|Academy|Polytechnic|Conservatory|Seminary|Universidad|Université|Universität)\b/u;
@@ -93,6 +97,16 @@ export function piecesOf(line: Line): string[] {
   return pieces;
 }
 
+/**
+ * The name at the start of a line, when there is one: the whole line, or its first piece when
+ * marks set the name apart, as in "Jordan Avery | Senior Engineer".
+ */
+function nameIn(text: string): string | null {
+  const first = text.split(/\s+[|·•—–]\s+|\s*\|\s*/)[0]?.trim() ?? '';
+  if (looksLikeName(text)) return text.trim();
+  return first !== text.trim() && looksLikeName(first) ? first : null;
+}
+
 /** A name: two to five words of letters, with no digits, at signs or other marks. */
 function looksLikeName(text: string): boolean {
   if (/[\d@|·•:/]/.test(text) || headingKind(text)) return false;
@@ -107,6 +121,12 @@ function looksLikeName(text: string): boolean {
     )
   );
 }
+
+/**
+ * The longest line contact details are looked for in. A contact line is far shorter, and the
+ * patterns that find an email or a link take longer the longer a line runs.
+ */
+const MAX_CONTACT_LINE = 300;
 
 /** A phone number in a line, when one has 10 to 15 digits and isn't a span of years. */
 function phoneIn(text: string): string | null {
@@ -162,17 +182,30 @@ function jobAt(lines: readonly Line[], index: number, range: DateRange, section:
   return { title, company, location, dates: range, line: index };
 }
 
-/** The jobs in the experience sections: one for each span of dates, with what's around it. */
+/**
+ * The jobs in the experience sections: one for each span of dates on a line of its own or
+ * beside a title, with what's around it. A span inside a sentence, such as a bullet's "from 2019
+ * to 2021", isn't a job's.
+ */
 function jobsIn(lines: readonly Line[], sections: readonly Section[]): Job[] {
   const experience = sectionsOf(sections, 'experience');
   return experience.flatMap((section) => {
     const jobs: Job[] = [];
     for (let index = section.line + 1; index < section.end; index++) {
       const line = lines[index] as Line;
+      if (/[.;!?]$/.test(line.text) || line.text.split(/\s+/).length > 14) continue;
       for (const range of dateRanges(line.text)) jobs.push(jobAt(lines, index, range, section));
     }
     return jobs;
   });
+}
+
+/** A school's name without the place after it: "Boston University, Boston, MA" is the school. */
+function withoutPlace(school: string): string {
+  const place = school.match(PLACE);
+  if (!place || place.index === undefined) return school;
+  const before = school.slice(0, place.index).replace(/[\s,–—|·-]+$/, '');
+  return SCHOOL.test(before) ? before : school;
 }
 
 /** The degrees and schools in the education sections. */
@@ -184,10 +217,18 @@ function educationIn(lines: readonly Line[], sections: readonly Section[]): Scho
     let early: string | null = null;
     for (let index = section.line + 1; index < section.end; index++) {
       const text = (lines[index] as Line).text;
-      const degree = text.match(DEGREE) ? (piecesOf(lines[index] as Line)[0] ?? text) : null;
-      const school = SCHOOL.test(text)
+      let degree = text.match(DEGREE) ? (piecesOf(lines[index] as Line)[0] ?? text) : null;
+      let school = SCHOOL.test(text)
         ? (piecesOf(lines[index] as Line).find((piece) => SCHOOL.test(piece)) ?? text)
         : null;
+      // "B.S., Economics, University of Colorado, 2016" holds both: the degree comes before the
+      // school's name.
+      if (degree && school && degree === school) {
+        const parts = text.split(/,\s*|\s+[|·—–]\s+/);
+        const at = parts.findIndex((part) => SCHOOL.test(part));
+        degree = parts.slice(0, Math.max(at, 1)).join(', ');
+        school = parts[at] ?? school;
+      }
       const dates = dateRanges(text)[0]?.text ?? singleDates(text)[0] ?? null;
       const startsNew =
         !current || (degree && current.degree) || (school && current.school && !degree);
@@ -203,7 +244,7 @@ function educationIn(lines: readonly Line[], sections: readonly Section[]): Scho
       if (!current) continue;
       if (degree && !current.degree)
         current.degree = degree.replace(/[\s,–—-]*(?:19|20)\d{2}.*$/, '').trim();
-      if (school && !current.school) current.school = school;
+      if (school && !current.school) current.school = withoutPlace(school);
       if (dates && !current.dates) current.dates = dates;
     }
   }
@@ -251,7 +292,7 @@ export function readFields(lines: readonly Line[], sections: readonly Section[])
       lines.slice(section.line + 1, section.end),
     ),
   ];
-  const nameLine = top.findIndex((line) => looksLikeName(line.text));
+  const nameLine = top.findIndex((line) => nameIn(line.text) !== null);
   const all = lines.map((line) => line.text);
   const firstOf = <T>(find: (text: string) => T | null) => {
     for (const text of [...top.map((line) => line.text), ...all]) {
@@ -262,12 +303,17 @@ export function readFields(lines: readonly Line[], sections: readonly Section[])
   };
   const links = new Set<string>();
   for (const text of top.map((line) => line.text)) {
+    if (text.length > MAX_CONTACT_LINE) continue;
     for (const match of text.matchAll(LINK)) if (!EMAIL.test(match[0])) links.add(match[0]);
   }
   return {
-    name: nameLine >= 0 ? (top[nameLine] as Line).text : null,
+    name: nameLine >= 0 ? nameIn((top[nameLine] as Line).text) : null,
     nameLine: nameLine >= 0 ? nameLine : null,
-    email: firstOf((text) => text.match(EMAIL)?.[0] ?? null),
+    email: firstOf((text) =>
+      text.includes('@') && text.length <= MAX_CONTACT_LINE
+        ? (text.match(EMAIL)?.[0] ?? null)
+        : null,
+    ),
     phone: firstOf(phoneIn),
     location: top.map((line) => line.text.match(PLACE)?.[0] ?? null).find(Boolean) ?? null,
     links: [...links].filter((link) => !/@/.test(link)),

@@ -52,8 +52,11 @@ const SYMBOL =
 /** Letters joined into one character, as some fonts draw "fi" and "ff". */
 const JOINED = /[\u{FB00}-\u{FB06}]/u;
 
-/** Three or more letters with a space after each, as letter spacing can make a word read. */
-const SPACED = /(?<![\p{L}\p{N}])(?:\p{L} ){2,}\p{L}(?![\p{L}\p{N}])/gu;
+/**
+ * Four or more letters with a space after each, as letter spacing can make a word read. Three,
+ * as in a name's initials such as "A K M Rahman", are fine.
+ */
+const SPACED = /(?<![\p{L}\p{N}])(?:\p{L} ){3,}\p{L}(?![\p{L}\p{N}])/gu;
 
 /** A stretch of a line worth marking: a character systems can't read, joined letters, or spaced ones. */
 export interface TextMark {
@@ -124,13 +127,11 @@ const COMMON_FONTS = new Set(
     'Segoe UI',
     'Segoe UI Light',
     'Segoe UI Semibold',
-    'Symbol',
     'Tahoma',
     'Times',
     'Times New Roman',
     'Trebuchet MS',
     'Verdana',
-    'Wingdings',
   ].map((font) => font.toLowerCase()),
 );
 
@@ -411,7 +412,11 @@ function layoutCheck(file: ReadFile, sections: readonly Section[], fields: Field
     name,
     status: 'pass',
     summary:
-      small > 0 ? 'No text boxes. Its one small table reads in order' : 'No tables or text boxes',
+      small === 0
+        ? 'No tables or text boxes'
+        : small === 1
+          ? 'No text boxes. Its one small table reads in order'
+          : `No text boxes. Its ${small} small tables read in order`,
     lines: [],
   };
 }
@@ -614,9 +619,9 @@ function lengthCheck(file: ReadFile): Check {
   return { id: 'length', name, status: 'pass', summary: count(pages, 'page'), lines: [] };
 }
 
-/** Every check on a file, in the order the X-ray lists them. */
+/** Every check on a file, in the order the X-ray lists them, each example once. */
 export function runChecks(file: ReadFile, sections: readonly Section[], fields: Fields): Check[] {
-  return [
+  const checks = [
     textCheck(file),
     orderCheck(file, sections),
     marginsCheck(file, fields),
@@ -630,6 +635,9 @@ export function runChecks(file: ReadFile, sections: readonly Section[], fields: 
     fontsCheck(file),
     lengthCheck(file),
   ].filter((check): check is Check => check !== null);
+  return checks.map((check) =>
+    check.examples ? { ...check, examples: [...new Set(check.examples)] } : check,
+  );
 }
 
 /** The lines a set of checks are about, each with the checks that mark it. */

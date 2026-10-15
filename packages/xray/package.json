@@ -15,6 +15,7 @@
     "fixtures": "electron scripts/fixtures.ts"
   },
   "dependencies": {
+    "@factwright/core": "workspace:*",
     "fflate": "catalog:"
   },
   "devDependencies": {

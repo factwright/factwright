@@ -35,6 +35,16 @@ describe('contact details', () => {
     expect(fields.nameLine).toBe(1);
   });
 
+  it('finds the name before a title or contact details on the same line', () => {
+    for (const first of [
+      'Jordan Avery | Senior Engineer',
+      'Jordan Avery · jordan@example.com · (555) 014-2387',
+      'Jordan Avery — Product Manager',
+    ]) {
+      expect(fieldsOf([wordLine(first), heading('Experience')]).name).toBe('Jordan Avery');
+    }
+  });
+
   it('takes remote work for a place', () => {
     expect(fieldsOf([wordLine('Sam Lee'), wordLine('sam@example.com · Remote, US')]).location).toBe(
       'Remote, US',
@@ -98,6 +108,15 @@ describe('jobs', () => {
     });
   });
 
+  it('takes no span inside a sentence for a job', () => {
+    const fields = fieldsOf([
+      heading('Experience'),
+      wordLine('Staff Engineer\t03/2022 – Present'),
+      wordLine('Led the migration from 2019 to 2021, on time.'),
+    ]);
+    expect(fields.jobs.map((job) => job.dates.text)).toEqual(['03/2022 – Present']);
+  });
+
   it('reads only the experience sections for jobs', () => {
     const fields = fieldsOf([heading('Education'), wordLine('B.A., History 2010 – 2014')]);
     expect(fields.jobs).toEqual([]);
@@ -113,6 +132,18 @@ describe('education and skills', () => {
       wordLine('University of Colorado Boulder'),
     ]);
     expect(fields.education[0]).toMatchObject({ degree: 'B.S., Economics', dates: '2016' });
+  });
+
+  it('reads a degree and school on one line, and a state after a comma as a state', () => {
+    const fields = fieldsOf([
+      heading('Education'),
+      wordLine('B.S., Economics, University of Colorado Boulder, 2016'),
+      wordLine('Boston University, Boston, MA'),
+    ]);
+    expect(fields.education.map(({ degree, school, dates }) => [degree, school, dates])).toEqual([
+      ['B.S., Economics', 'University of Colorado Boulder', '2016'],
+      [null, 'Boston University', null],
+    ]);
   });
 
   it('reads a degree and school on separate lines as one', () => {

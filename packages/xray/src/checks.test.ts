@@ -86,6 +86,12 @@ describe('runChecks', () => {
     });
   });
 
+  it('takes three spaced capitals for a name’s initials, not spaced letters', () => {
+    expect(
+      check(fileOf(resume({ body: [wordLine('With A K M Rahman’s team')] })), 'spaced')?.status,
+    ).toBe('pass');
+  });
+
   it('wants a name and an email, and notes a missing phone or city', () => {
     expect(check(fileOf(resume({ top: [wordLine('Jordan Avery')] })), 'contact')).toMatchObject({
       status: 'fix',

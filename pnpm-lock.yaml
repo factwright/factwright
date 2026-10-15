@@ -560,6 +560,9 @@ importers:
 
   packages/xray:
     dependencies:
+      '@factwright/core':
+        specifier: workspace:*
+        version: link:../core
       fflate:
         specifier: 'catalog:'
         version: 0.8.3

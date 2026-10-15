@@ -30,6 +30,14 @@ describe('dateRanges', () => {
     expect(dateRanges('2019 — current')[0]?.end).toBe('current');
   });
 
+  it('reads whole dates too', () => {
+    expect(dateRanges('03/15/2019 – 05/01/2021')[0]).toMatchObject({
+      start: '03/15/2019',
+      end: '05/01/2021',
+    });
+    expect(formOf('March 15, 2019')).toBe('full');
+  });
+
   it('isn’t fooled by numbers that aren’t dates', () => {
     expect(dateRanges('Cut the time from 9 days to 3, for 200+ stores')).toEqual([]);
     expect(dateRanges('(555) 014-2387')).toEqual([]);

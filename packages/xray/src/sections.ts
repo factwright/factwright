@@ -26,7 +26,7 @@ export const SECTION_NAMES: Readonly<Record<SectionKind, string>> = {
   skills: 'Skills',
   projects: 'Projects',
   certifications: 'Certifications',
-  awards: 'Awards',
+  awards: 'Achievements',
   publications: 'Publications',
   volunteering: 'Volunteering',
   languages: 'Languages',
@@ -111,7 +111,7 @@ const HEADINGS: Readonly<Record<SectionKind, readonly string[]>> = {
     'qualifications',
     'capabilities',
   ],
-  projects: ['projects', 'key projects', 'selected projects', 'portfolio'],
+  projects: ['projects', 'key projects', 'selected projects', 'selected work', 'portfolio'],
   certifications: [
     'certifications',
     'certification',
@@ -127,8 +127,13 @@ const HEADINGS: Readonly<Record<SectionKind, readonly string[]>> = {
     'honors and awards',
     'awards and honors',
     'achievements',
+    'key achievements',
+    'selected achievements',
     'accomplishments',
     'recognition',
+    'highlights',
+    'career highlights',
+    'key highlights',
   ],
   publications: [
     'publications',
@@ -236,7 +241,7 @@ const inCapitals = (text: string) => /\p{L}/u.test(text) && !/\p{Ll}/u.test(text
 
 /**
  * The sections a parser finds: each line that's a heading it knows, and each line set exactly
- * like those, such as "Selected Work" in the same type as "Experience", which it can't place.
+ * like those, such as "What I Built" in the same type as "Experience", which it can't place.
  * Headings set the same way as at least one other are headings. So is one in capitals or larger
  * than the text. A line with a known name set like the text around it, such as a "Projects"
  * subheading inside a job, isn't taken for a section.
@@ -258,7 +263,7 @@ export function findSections(lines: readonly Line[]): Section[] {
     const within = starts.at(-1)?.kind;
     if (kind && (looks.size === 0 || looks.has(line.look) || standsOut(line)))
       starts.push({ line: index, kind });
-    // A heading set like the known ones, but not one, such as "Selected Work", starts a part of
+    // A heading set like the known ones, but not one, such as "What I Built", starts a part of
     // its own once the first known heading is past. Inside a job or a school, a parser that knows
     // its headings by name reads one, such as "Growth", as part of the job instead.
     else if (

@@ -53,10 +53,35 @@ function headingOf(line: string): string | null {
   if (/^[-*•+]|^\d+[.)]/.test(text)) return null;
   const words = text.split(/\s+/).length;
   if (words <= 8 && /:$/.test(text)) return text.slice(0, -1);
-  if (words <= 6 && /^[\p{Lu}][\p{Lu}\s&'’/,-]+$/u.test(text)) return text;
-  if (words <= 6 && !/[.!?,;]$/.test(text) && partOf(text)) return text;
+  // A line on its own, in capitals or not, is a heading only when every word in it is one a
+  // heading uses, so "Requirements" is, and "Strong SQL skills" or "SQL" stays a requirement.
+  if (words <= 6 && !/[.!?,;]$/.test(text) && headingWords(text)) return text;
   return null;
 }
+
+/** Words postings head their parts with, such as "what you'll need" or "bonus points". */
+const HEADING_WORDS = new Set(
+  (
+    'a about additional an and apply are background basic be benefits bonus bring candidate ' +
+    'company compensation core credit culture day desired do education essential experience ' +
+    'extra for from have haves how ideal impact in is it job join key location looking minimum ' +
+    'mission must need nice of offer on opportunity our outcomes perks plus pluses points ' +
+    'preferred process profile qualification qualifications requirement requirements ' +
+    'required responsibilities responsibility role should skills stack success team tech the ' +
+    'this to us values we what who why will with work would you your'
+  ).split(' '),
+);
+
+/** Whether every word of a line is one a heading uses. */
+const headingWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[’']ll\b/g, ' will')
+    .replace(/[’']re\b/g, ' are')
+    .replace(/[’']s\b/g, '')
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+    .every((word) => HEADING_WORDS.has(word));
 
 /** Lines a saved posting starts with, which are about the file rather than the job. */
 const SAVED_NOTE = /^(?:#\s+job posting\s*$|-\s+\*\*(?:source|saved):\*\*|-{3,}\s*$)/i;

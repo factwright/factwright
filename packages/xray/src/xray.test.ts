@@ -5,6 +5,7 @@ import type { CheckId } from './checks.ts';
 import { readDocx } from './docx.ts';
 import { readPdf } from './pdf.ts';
 import type { ReadFile } from './read.ts';
+import { fileOf, wordLine } from './testing.ts';
 import { xray } from './xray.ts';
 
 // The fixtures are real files: a made-up resume the engine printed in Classic and Minimal, as
@@ -70,12 +71,12 @@ describe('the templates the app comes with', () => {
       );
     });
 
-    it(`finds ${file}'s sections, with the highlight cards' own heading as one systems don't know`, async () => {
+    it(`finds ${file}'s sections, the highlight cards' heading among them`, async () => {
       const { sections } = xray(await read(file));
       expect(sections.map((section) => section.kind)).toEqual([
         'summary',
         'skills',
-        null,
+        'projects',
         'experience',
         'education',
         'skills',
@@ -185,6 +186,17 @@ describe('files with problems', () => {
   });
 });
 
+describe('a file with almost no text', () => {
+  it('says so, and nothing that only follows from it, and checks no terms', () => {
+    const file = fileOf([wordLine('Page 1')]);
+    const result = xray(file, { posting: '## Requirements\n- SQL', facts });
+    expect(result.readable).toBe(false);
+    expect(result.checks.map((check) => check.id)).toEqual(['text', 'fonts', 'length']);
+    expect(result.keywords).toBeNull();
+    expect(result.summary.text).toBe('1 problem reading it · 1 thing to fix');
+  });
+});
+
 describe('keywords against a posting', () => {
   it('sorts the posting’s terms into found, ones to add, ones to confirm, and real gaps', async () => {
     const result = xray(await read('classic.pdf'), { posting, facts });
@@ -202,7 +214,7 @@ describe('keywords against a posting', () => {
       'product analytics': 'must facts',
       OKRs: 'must facts',
       KPIs: 'must none',
-      'stakeholder management': 'must unconfirmed',
+      'stakeholder management': 'must to-check',
       roadmap: 'nice found',
       retention: 'nice facts',
       'A/B testing': 'nice found',
@@ -222,6 +234,15 @@ describe('keywords against a posting', () => {
       toFix: 3,
       text: 'Reads cleanly · 8 of 20 key terms · 3 things to fix',
     });
+  });
+
+  it('counts only words a system surely reads, not a Word file’s text boxes', async () => {
+    const withSkill = xray(await read('textbox.docx'), {
+      posting: '## Requirements\n- Certified ScrumMaster',
+    });
+    expect(withSkill.keywords?.terms.map((term) => [term.term, term.found])).toEqual([
+      ['Certified ScrumMaster', null],
+    ]);
   });
 
   it('says where the fact bank backs a term to add', async () => {

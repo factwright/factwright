@@ -9,16 +9,20 @@ const YEAR = '(?:19|20)\\d{2}';
 const SEASON = '(?:spring|summer|fall|autumn|winter)';
 
 /** How a date is written, and whether parsers read it. */
-export type DateForm = 'month-year' | 'year' | 'now' | 'season' | 'quarter' | 'short-year';
+export type DateForm = 'full' | 'month-year' | 'year' | 'now' | 'season' | 'quarter' | 'short-year';
 
-/** The forms parsers read well: a month and year, a year, or "Present". */
-export const READABLE: ReadonlySet<DateForm> = new Set(['month-year', 'year', 'now']);
+/** The forms parsers read well: a whole date, a month and year, a year, or "Present". */
+export const READABLE: ReadonlySet<DateForm> = new Set(['full', 'month-year', 'year', 'now']);
 
 /** Each form, most specific first, so "Jun 2019" is a month and year rather than a year. */
 const FORMS: readonly [DateForm, string][] = [
   ['season', `${SEASON}\\s+${YEAR}`],
   ['quarter', `q[1-4]\\s+${YEAR}`],
   ['short-year', `${MONTH}\\s*['’]\\d{2}(?!\\d)|\\d{1,2}/\\d{2}(?![\\d/])|['’]\\d{2}(?!\\d)`],
+  [
+    'full',
+    `(?:0?[1-9]|1[0-2])[/.-](?:0?[1-9]|[12]\\d|3[01])[/.-]${YEAR}|${MONTH}\\s+\\d{1,2},\\s+${YEAR}`,
+  ],
   [
     'month-year',
     `${MONTH},?\\s+${YEAR}|(?:0?[1-9]|1[0-2])[/.-]${YEAR}|${YEAR}[/.-](?:0?[1-9]|1[0-2])(?![\\d/.-])`,

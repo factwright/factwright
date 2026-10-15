@@ -17,6 +17,11 @@ export interface Term {
   /** Its name, the first of its forms. */
   name: string;
   forms: Form[];
+  /**
+   * A certification, license, degree or field of study, such as PMP or Computer Science, which
+   * only what profile.md says the user has earned can back.
+   */
+  credential?: boolean;
 }
 
 /** Text as it's matched: compatibility characters made plain, and quotes and dashes made one kind. */
@@ -76,7 +81,8 @@ export function patternOf(form: Form): RegExp {
     (words.length > 1 || /^[A-Z]{2,5}$/.test(form.text))
       ? '(?:s|es)?'
       : '';
-  const notBefore = NOT_BEFORE[form.text] ? `(?!\\s+(?:${NOT_BEFORE[form.text]})\\b)` : '';
+  // Joined to the next word by a hyphen, as in "Go-to-market" or "Go-live", it's the everyday word.
+  const notBefore = NOT_BEFORE[form.text] ? `(?!\\s+(?:${NOT_BEFORE[form.text]})\\b|-\\p{L})` : '';
   const pattern = form.listed
     ? `(?<=(?:^|[,(/;:]|\\band|\\bor)\\s*)${body}(?=\\s*(?:[,)/;]|$|and\\b|or\\b|programming\\b|language\\b))`
     : `(?<![\\p{L}\\p{N}_])${body}${plural}(?![\\p{L}\\p{N}_+#])${notBefore}`;

@@ -21,7 +21,7 @@ describe('headingKind', () => {
   it('takes only a whole line that’s a heading', () => {
     expect(headingKind('Skills: Python, SQL')).toBeNull();
     expect(headingKind('Experience with distributed systems at scale')).toBeNull();
-    expect(headingKind('Selected Work')).toBeNull();
+    expect(headingKind('Key Systems Built at Acme')).toBeNull();
   });
 });
 
@@ -47,7 +47,7 @@ describe('findSections', () => {
     const lines = [
       heading('SUMMARY'),
       body('Text.'),
-      heading('SELECTED WORK'),
+      heading('WHAT I BUILT'),
       body('A card'),
       heading('SKILLS'),
     ];
