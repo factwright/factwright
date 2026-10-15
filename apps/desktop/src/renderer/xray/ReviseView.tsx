@@ -87,30 +87,14 @@ function LastRevision({
   const { revision, rebuilt, outcomes, note } = last;
   return (
     <section className={styles.lastRevision} aria-labelledby={id}>
-      <div className={styles.lastHead}>
-        <h4 id={id} className={styles.lastTitle}>
-          {rebuilt ? 'Revised' : 'Sent for revision'} {sentAt(revision)}
-        </h4>
-        {onOpenPrevious && (
-          <Button
-            size="sm"
-            variant="quiet"
-            onClick={async () => setProblem(await onOpenPrevious())}
-          >
-            Open the previous version
-          </Button>
-        )}
-      </div>
+      <h4 id={id} className={styles.lastTitle}>
+        {rebuilt ? 'Revised' : 'Sent for revision'} {sentAt(revision)}
+      </h4>
       <p className={styles.lastBefore}>
         {outcomes && <span className={styles.lastFixed}>{fixedText(outcomes)}</span>}
         {outcomes && ' · '}
         {note}
       </p>
-      {problem && (
-        <p className={styles.sendProblem} role="alert">
-          {problem}
-        </p>
-      )}
       <ul className={styles.outcomes}>
         {revision.findings.map((finding) => {
           const outcome = outcomes?.get(finding.id);
@@ -126,6 +110,21 @@ function LastRevision({
           );
         })}
       </ul>
+      {onOpenPrevious && (
+        <Button
+          size="sm"
+          variant="quiet"
+          className={styles.openPrevious}
+          onClick={async () => setProblem(await onOpenPrevious())}
+        >
+          Open the previous version
+        </Button>
+      )}
+      {problem && (
+        <p className={styles.sendProblem} role="alert">
+          {problem}
+        </p>
+      )}
     </section>
   );
 }
