@@ -135,21 +135,27 @@ describe('withGap', () => {
 });
 
 describe('the shapes a gaps file comes in', () => {
-  it('finds the section under a deeper heading, or its name in bold, so a topic isn’t added twice', () => {
-    const deep =
-      '# Gaps\n\n## Notes\n\n#### Doesn’t have\n- **Rust:** No (2026-10-01)\n\n## Open questions\n';
-    expect(hasGap(deep, 'Rust')).toBe(true);
-    expect(withGap(deep, NO)).toBe(
-      deep.replace(
-        '(2026-10-01)\n',
-        '(2026-10-01)\n- **GraphQL:** No (asked “Have you used GraphQL?”) (2026-10-14)\n',
-      ),
+  it('reads the section as the window does: code blocks alike, and only a real heading', () => {
+    // A backtick in the words after a fence's backticks makes it no fence at all.
+    const fenced =
+      "# Gaps\n\n```js `x`\n## Doesn't have\n| Topic | Their answer | Date |\n|---|---|---|\n| Rust | No | 2026-10-01 |\n";
+    expect(doesntHave(fenced)?.rows.map((row) => row.topic)).toEqual(['Rust']);
+    expect(withGap(fenced, NO).match(/## Doesn't have/g)).toHaveLength(1);
+    // A name in bold, or a deeper heading, isn't a section the window shows: a new one is.
+    const bold = "# Gaps\n\n**Doesn't have**\n- Rust\n";
+    expect(doesntHave(bold)).toBeNull();
+    expect(withGap(bold, NO)).toBe(
+      "# Gaps\n\n**Doesn't have**\n- Rust\n\n## Doesn't have\n| Topic | Their answer | Date |\n|---|---|---|\n| GraphQL | No (asked “Have you used GraphQL?”) | 2026-10-14 |\n",
     );
-    const bold =
-      "# Gaps\n\n**Doesn't have** (settled)\n| Topic | Their answer | Date |\n|---|---|---|\n| Rust | No | 2026-10-01 |\n\n**Open questions**\n- One\n";
-    expect(doesntHave(bold)?.rows.map((row) => row.topic)).toEqual(['Rust']);
-    expect(withGap(bold, NO)).toContain('| Rust | No | 2026-10-01 |\n| GraphQL |');
-    expect(withGap(bold, NO).match(/Doesn't have/g)).toHaveLength(1);
+  });
+
+  it('adds an item to an indented list with the list’s own indent', () => {
+    const indented = "## Doesn't have\n  - Rust\n  - Go\n";
+    const next = withGap(indented, NO);
+    expect(next).toBe(
+      "## Doesn't have\n  - Rust\n  - Go\n  - **GraphQL:** No (asked “Have you used GraphQL?”) (2026-10-14)\n",
+    );
+    expect(hasGap(next, 'GraphQL')).toBe(true);
   });
 
   it('counts only a list’s own items, and numbers a new one in an ordered list', () => {
@@ -177,9 +183,11 @@ describe('the shapes a gaps file comes in', () => {
     );
   });
 
-  it('reads a long heading line in a moment', () => {
+  it('reads long lines in a moment', () => {
     const started = Date.now();
-    doesntHave(`##${' '.repeat(50_000)}x${' '.repeat(50_000)}#\n**${'a'.repeat(50_000)}`);
+    doesntHave(
+      `## Doesn't have${' '.repeat(80_000)}x${' '.repeat(80_000)}#\n- **${'a'.repeat(250)}** ${' '.repeat(80_000)}\u2028\n`,
+    );
     expect(Date.now() - started).toBeLessThan(200);
   });
 });

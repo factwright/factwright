@@ -131,12 +131,12 @@ export function App({ api }: { api: FactwrightApi }) {
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
   const [picked, setPicked] = useState<Page | null>(null);
-  // What the run filed in the fact bank from the user's answers, and how much of it the user
-  // has seen, by opening it or dismissing the note. A new run starts with nothing filed.
+  // What the run filed in the fact bank from the user's answers, and what of it the user has
+  // seen, by opening it or dismissing the note. A new run starts with nothing filed.
   const [filedIn, setFiled] = useState<{
     runId: number;
     facts: FiledFacts;
-    seen: { facts: number; gaps: number };
+    seen: { facts: string[]; gaps: number };
   } | null>(null);
   const runId = useRef(run.runId);
   runId.current = run.runId;
@@ -146,22 +146,24 @@ export function App({ api }: { api: FactwrightApi }) {
         setFiled((was) => ({
           runId: runId.current,
           facts,
-          seen: was?.runId === runId.current ? was.seen : { facts: 0, gaps: 0 },
+          seen: was?.runId === runId.current ? was.seen : { facts: [], gaps: 0 },
         })),
       ),
     [api],
   );
-  // Only what's new since the user last looked.
+  // Only what's new since the user last looked: a fact by its file and title, so one Claude
+  // corrected under a new title shows again.
+  const factKey = ({ path, title }: FiledFacts['facts'][number]) => `${path}#${title}`;
   const filed: FiledFacts | null =
     filedIn?.runId === run.runId
       ? {
-          facts: filedIn.facts.facts.slice(filedIn.seen.facts),
+          facts: filedIn.facts.facts.filter((each) => !filedIn.seen.facts.includes(factKey(each))),
           gaps: Math.max(0, filedIn.facts.gaps - filedIn.seen.gaps),
         }
       : null;
   const seeFiled = () =>
     setFiled((was) =>
-      was ? { ...was, seen: { facts: was.facts.facts.length, gaps: was.facts.gaps } } : was,
+      was ? { ...was, seen: { facts: was.facts.facts.map(factKey), gaps: was.facts.gaps } } : was,
     );
   // A part of the fact bank to go to, such as the facts a run just filed.
   const [factsShown, setFactsShown] = useState<{ part: 'unverified' | 'gaps'; at: number } | null>(

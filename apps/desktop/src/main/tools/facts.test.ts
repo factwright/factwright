@@ -51,7 +51,7 @@ const GAPS = [
 
 /** The question that offers the user a fact that waits to be verified, as the standing rules word it. */
 const OFFER =
-  'Your fact bank has “Reminder texts”, from your resume and not verified yet: “Shipped appointment reminder texts.” Can I use it?';
+  'Your fact bank has “Reminder texts” (shipped, solo, medium confidence), from your resume and not verified yet: “Shipped appointment reminder texts.” Can I use it?';
 
 let root: string;
 let tracker: Tracker;
@@ -221,8 +221,8 @@ describe('save_fact', () => {
       'Not saved: Factwright has no record of the user answering “Have you used GraphQL in production?” in this run. Facts from answers come only from questions you asked with AskUserQuestion, given word for word.',
     );
     answered({ [KAFKA]: 'No' });
-    // Nothing tells Claude which questions it could have used instead.
-    await expect(tool('save_fact')(FACT)).rejects.not.toThrow(KAFKA);
+    // Claude's own call hears which of its questions were answered, to give one word for word.
+    await expect(tool('save_fact')(FACT)).rejects.toThrow(`Answered in this run: “${KAFKA}”.`);
     expect(read('facts/acme.md')).toBe(ACME);
     expect(filed).not.toHaveBeenCalled();
   });
@@ -231,14 +231,14 @@ describe('save_fact', () => {
     answered({ [GRAPHQL]: 'Yes, in production' });
     const saveFact = tools.find((each) => each.name === 'save_fact');
     await expect(saveFact?.run(FACT, call)).rejects.toThrow(
-      'Not saved: Factwright files the user’s answers only for your own calls, as Claude Code shows them, never a subagent’s.',
+      'Not saved: Factwright takes this only from your own call, once Claude Code’s hook has shown it, and never from a subagent’s. If it was your own call, make it again.',
     );
     await expect(tool('save_fact')(FACT, { agent: 'agent-7' })).rejects.toThrow(
-      'never a subagent’s',
+      'never from a subagent’s',
     );
     // Shown with other words, it isn't this call.
     shown('save_fact', { ...FACT, wording: 'Something else.' });
-    await expect(saveFact?.run(FACT, call)).rejects.toThrow('never a subagent’s');
+    await expect(saveFact?.run(FACT, call)).rejects.toThrow('never from a subagent’s');
     expect(read('facts/acme.md')).toBe(ACME);
     // The answer is still there for the call that's shown.
     expect(await tool('save_fact')(FACT)).toMatch(/^Saved/);
@@ -288,6 +288,27 @@ describe('save_fact', () => {
     );
   });
 
+  it('saves a note the user added to their pick, as a correction of the fact it named', async () => {
+    answered({ [OFFER]: 'Use and verify' }, { [OFFER]: 'Only at two clinics' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'Reminder texts',
+        replaces: 'Reminder texts',
+        status: 'beta',
+        wording: 'Piloted appointment reminder texts at two clinics.',
+        keywords: 'appointment reminder texts',
+        questions: [OFFER],
+      }),
+    ).toMatch(/^Replaced “Reminder texts”/);
+    expect(read('facts/acme.md')).toContain('- **Answer:** Use and verify (Only at two clinics)\n');
+    // Without a note, the pick backs nothing, and neither does a note on a fact it didn't name.
+    answered({ [`${OFFER} `]: 'Use this once' });
+    await expect(
+      tool('save_fact')({ ...FACT, keywords: 'reminder texts', questions: [`${OFFER} `] }),
+    ).rejects.toThrow('answers whether to use a fact');
+  });
+
   it('files a fact only about what was asked, by its keywords', async () => {
     const asked = 'Shall I carry on with the resume?';
     answered({ [asked]: 'Yes, in production' });
@@ -299,16 +320,34 @@ describe('save_fact', () => {
         keywords: 'leadership, people management',
         questions: [asked],
       }),
-    ).rejects.toThrow(
-      'Not saved: none of its keywords (leadership, people management) is in the question or the user’s answer.',
-    );
+    ).rejects.toThrow('Not saved: “leadership” isn’t in the question or the user’s answer.');
     expect(read('facts/acme.md')).toBe(ACME);
     answered({ [KAFKA]: 'Yes, in production' });
+    // Every keyword is one the exchange used: an answer about Kafka proves nothing about Rust.
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Event streaming',
+        wording: 'Ran an event-streaming pipeline.',
+        keywords: 'Kafka, you, Rust',
+        questions: [KAFKA],
+      }),
+    ).rejects.toThrow('Not saved: “Rust” isn’t in the question or the user’s answer.');
+    // And the fact itself is about it.
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Platform work',
+        wording: 'Ran the data platform.',
+        keywords: 'Kafka',
+        questions: [KAFKA],
+      }),
+    ).rejects.toThrow('Not saved: the fact’s title and wording don’t say what you asked about');
     expect(
       await tool('save_fact')({
         ...FACT,
         title: 'Event streaming',
-        wording: 'Ran an event-streaming pipeline.',
+        wording: 'Ran an event-streaming pipeline on Kafka.',
         keywords: 'Kafka, event streaming',
         questions: [KAFKA],
       }),
@@ -329,6 +368,24 @@ describe('save_fact', () => {
     await expect(
       tool('save_fact')({ ...FACT, numbers: '5,000 users', questions: [GRAPHQL, WHERE] }),
     ).rejects.toThrow('Not saved: 5000 isn’t in the user’s answer');
+    // A number's scale counts, and so do numbers in words, and in every part of the fact.
+    answered({ [`${GRAPHQL} `]: 'Yes, for about 2 years' });
+    for (const wording of [
+      'Built the GraphQL API behind $2M in sales.',
+      'Built the GraphQL API with fifty engineers.',
+      'Built the GraphQL API, answering in 40ms.',
+    ]) {
+      await expect(
+        tool('save_fact')({ ...FACT, wording, questions: [`${GRAPHQL} `] }),
+      ).rejects.toThrow('isn’t in the user’s answer or your question');
+    }
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        say: '“led a 12-person team”',
+        questions: [`${GRAPHQL} `],
+      }),
+    ).rejects.toThrow('Not saved: 12 isn’t in the user’s answer');
     // Their own numbers, as they gave them or written another way, and names with digits in
     // them, such as S3 or OAuth2, are fine.
     expect(
@@ -354,9 +411,13 @@ describe('save_fact', () => {
     ).rejects.toThrow(
       'Not saved: “Use this once” answers whether to use a fact, not what the user has done.',
     );
-    // A no with more to it, or a no to a follow-up after a yes, can still back a fact.
-    answered({ [GRAPHQL]: 'No, but REST at scale' });
-    expect(await tool('save_fact')({ ...FACT, keywords: 'GraphQL, REST' })).toMatch(/^Saved/);
+    // A no in other words is still a no: what else they have, they say in answer to a
+    // question about it.
+    for (const no of ['No, I have not', 'Never used it', 'Not really', 'I don’t, sorry']) {
+      answered({ [GRAPHQL]: no });
+      await expect(tool('save_fact')(FACT)).rejects.toThrow('Save that with save_gap');
+    }
+    // A no to a follow-up after a yes can back a fact.
     const prod = 'Was that in production?';
     answered({ [WHERE]: 'The partner API', [prod]: 'No' });
     expect(
@@ -448,6 +509,7 @@ describe('save_fact', () => {
         ...FACT,
         replaces: 'Reminder texts',
         title: 'Texts',
+        wording: 'Shipped reminder texts.',
         keywords: 'reminder texts',
         questions: [passing],
       }),
@@ -617,6 +679,25 @@ describe('verify_fact', () => {
     answered({ [OFFER]: 'Use and verify' }, { [OFFER]: 'It was two clinics, not all' });
     await expect(tool('verify_fact')(VERIFY)).rejects.toThrow(
       'Not verified: the user added “It was two clinics, not all”. Correct the fact with save_fact and replaces',
+    );
+    expect(read('facts/acme.md')).toBe(ACME);
+  });
+
+  it('verifies only the tags the user saw, and only the one fact by that title', async () => {
+    const untagged =
+      'Your fact bank has “Reminder texts”: “Shipped appointment reminder texts.” Can I use it?';
+    answered({ [untagged]: 'Use and verify' });
+    await expect(tool('verify_fact')({ ...VERIFY, question: untagged })).rejects.toThrow(
+      'Not verified: the question doesn’t say the fact is solo.',
+    );
+    // A copy waiting elsewhere, with the same title and words, could be the one meant.
+    write(
+      'facts/projects.md',
+      '# Projects\n\n### Reminder texts\n`unconfirmed` `shipped` `led-team` `high`\n> Shipped appointment reminder texts.\n',
+    );
+    answered({ [OFFER]: 'Use and verify' });
+    await expect(tool('verify_fact')(VERIFY)).rejects.toThrow(
+      'Not verified: more than one fact waiting to be verified is titled “Reminder texts”.',
     );
     expect(read('facts/acme.md')).toBe(ACME);
   });

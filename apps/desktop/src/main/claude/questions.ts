@@ -70,12 +70,26 @@ function answerOf(value: unknown): string | null {
   return text(value, MAX_ANSWER);
 }
 
-/** JSON with every object's keys in order, so the same input reads the same however it's sent. */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (isRecord(value)) {
-    const keys = Object.keys(value).sort();
-    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+/** How deep a filing call's input can go: the tools take text, and lists of text. */
+const MAX_DEPTH = 4;
+
+/**
+ * JSON with every object's keys in order, so the same input reads the same however it's sent.
+ * Null for an input nested deeper than any filing tool takes.
+ */
+function canonical(value: unknown, depth = 0): string | null {
+  if (depth > MAX_DEPTH) return null;
+  if (Array.isArray(value) || isRecord(value)) {
+    const entries = Array.isArray(value)
+      ? value.map((each) => canonical(each, depth + 1))
+      : Object.keys(value)
+          .sort()
+          .map((key) => {
+            const each = canonical(value[key], depth + 1);
+            return each === null ? null : `${JSON.stringify(key)}:${each}`;
+          });
+    if (entries.some((each) => each === null)) return null;
+    return Array.isArray(value) ? `[${entries.join(',')}]` : `{${entries.join(',')}}`;
   }
   return JSON.stringify(value) ?? 'null';
 }
@@ -121,8 +135,9 @@ export class QuestionLog {
 
   /** A filing call Claude Code is about to make, for the tool to find. */
   private showCall(tool: FilingTool, input: unknown): void {
-    if (!isRecord(input)) return;
-    this.shown.push({ tool, input: canonical(input) });
+    const shown = isRecord(input) ? canonical(input) : null;
+    if (shown === null) return;
+    this.shown.push({ tool, input: shown });
     if (this.shown.length > MAX_SHOWN) this.shown.splice(0, this.shown.length - MAX_SHOWN);
   }
 
@@ -132,6 +147,7 @@ export class QuestionLog {
    */
   takeCall(tool: FilingTool, input: Record<string, unknown>): boolean {
     const wanted = canonical(input);
+    if (wanted === null) return false;
     const at = this.shown.findIndex((each) => each.tool === tool && each.input === wanted);
     if (at < 0) return false;
     this.shown.splice(at, 1);
@@ -242,5 +258,10 @@ export class QuestionLog {
       given = true;
       found.backed[what] -= 1;
     };
+  }
+
+  /** The questions answered in this run, oldest first, for Claude to give one word for word. */
+  questions(): string[] {
+    return [...new Set(this.heard.map((each) => each.question))];
   }
 }

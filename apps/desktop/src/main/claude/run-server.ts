@@ -106,7 +106,12 @@ export class RunServer {
       if (request.url === '/hook') {
         const event = parseJson(body);
         // Heard before Claude Code carries on, so an answer is on record before Claude reads it.
-        listener.call.questions.hear(event);
+        // A hook the record can't take is one it doesn't keep, and Claude Code still hears back.
+        try {
+          listener.call.questions.hear(event);
+        } catch {
+          // Nothing kept: a filing tool then finds no record, and saves nothing.
+        }
         // An empty answer lets Claude Code carry on as it would have.
         response.writeHead(204).end();
         listener.hooks(event);

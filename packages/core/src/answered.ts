@@ -37,11 +37,12 @@ export interface AnsweredClaim {
 const CONTROL = /[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g;
 
 /**
- * Marks that change how text shows without showing themselves: the ones that reorder it from
- * right to left, and a space of no width. Words in the fact bank could otherwise read one way
- * and say another.
+ * Characters that change how text shows without showing themselves: format characters, such as
+ * the ones that reorder text from right to left, spaces of no width and the tags that can hide
+ * words, and the selectors that change how the character before them looks. Words in the fact
+ * bank could otherwise read one way and say another.
  */
-const INVISIBLE = /[\u061c\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+const INVISIBLE = /[\p{Cf}\p{Variation_Selector}]/gu;
 
 /**
  * Text on one line: line breaks and other control characters become spaces, runs of spaces one,

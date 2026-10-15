@@ -171,22 +171,33 @@ async function fromRunsClaude(
     if (call.questions.takeCall(tool, input)) return;
     if (Date.now() >= until) {
       throw new Error(
-        'Not saved: Factwright files the user’s answers only for your own calls, as Claude Code shows them, never a subagent’s.',
+        'Not saved: Factwright takes this only from your own call, once Claude Code’s hook has shown it, and never from a subagent’s. If it was your own call, make it again.',
       );
     }
     await wait(100);
   }
 }
 
-/** What to say when an answer isn't on record. */
-const notAnswered = (question: string) =>
-  new Error(
+/** How many of the run's questions a refusal lists, so Claude can give one word for word. */
+const MAX_LISTED = 8;
+
+/**
+ * What to say when an answer isn't on record, with the questions that are. Only the run's own
+ * Claude gets this far, and those are its own questions.
+ */
+function notAnswered(question: string, call: ToolCall): Error {
+  const known = call.questions.questions().slice(-MAX_LISTED);
+  return new Error(
     [
       `Not saved: Factwright has no record of the user answering “${oneLine(question)}” in this run.`,
       'Facts from answers come only from questions you asked with AskUserQuestion, given word for word.',
+      known.length > 0
+        ? `Answered in this run: ${known.map((each) => `“${each}”`).join(', ')}.`
+        : 'The user hasn’t answered a question in this run yet.',
       'If they told you some other way, such as typing it in a message, ask them with AskUserQuestion first, then save what they say.',
     ].join(' '),
   );
+}
 
 /**
  * Each question's answer, waiting a moment for its hook, with what it backs taken at once, and a
@@ -206,7 +217,7 @@ async function answersTo(
   try {
     for (const question of questions) {
       const answer = await call.questions.wait(question, waitMs);
-      if (!answer) throw notAnswered(question);
+      if (!answer) throw notAnswered(question, call);
       const release = call.questions.reserve(question, backing);
       if (!release) {
         throw new Error(
@@ -247,11 +258,16 @@ const namesFact = (question: string, title: string) => {
   return QUOTES.some(([open, close]) => asked.includes(`${open}${named}${close}`));
 };
 
-/** An answer that's a plain no, which goes under Doesn't have rather than becoming a fact. */
-const PLAIN_NO = /^(?:no|nope|never|none|not really|no,? never)[.!]?$/;
+/**
+ * An answer that starts with a no, such as "No", "No, I haven't" or "Never used it", which goes
+ * under Doesn't have rather than becoming a fact. Anything more they have, they say in answer to
+ * a question about it.
+ */
+const SAYS_NO =
+  /^(?:(?:i|we|i[’']ve|we[’']ve|i have|we have)\s+)?(?:no|nope|nah|not|never|none|nothing|don[’']?t|do not|haven[’']?t|have not|hasn[’']?t|has not|didn[’']?t|did not|wasn[’']?t|was not|isn[’']?t|is not|can[’']?t|cannot|won[’']?t)\b/;
 
-/** An answer that's a plain yes, which is never something the user doesn't have. */
-const PLAIN_YES = /^yes\b/;
+/** An answer that starts with a yes, which is never something the user doesn't have. */
+const SAYS_YES = /^(?:yes|yeah|yep|yup|sure|definitely|absolutely|of course)\b/;
 
 /** Whether an answer is one of the picks for using a fact that waits, not news of experience. */
 const isUseChoice = (answer: string) =>
@@ -271,12 +287,27 @@ const hasTerm = (text: string, term: string) => {
 };
 
 /**
- * The numbers in some text, as a fact states them: "3,000", "~30%", "2M" and "1.5x" count, the
- * digits in a name such as "S3" or "HL7" don't. The pattern takes time in step with the text.
+ * A number as a fact states it, in digits of any script: "3,000", "~30%", "40ms" and "2M" count,
+ * the digits in a name such as "S3" or "HL7" don't. The letters after it go with it, so a
+ * thousand, a million or a billion ("10k", "2M", "2B") reads as more than the bare number. The
+ * pattern takes time in step with the text.
  */
-const NUMBER = /(?<![\p{L}\p{N}.,])\d+(?:[.,]\d+)*(?=[kmbx]?(?![\p{L}\p{N}]))/giu;
-const numbersIn = (text: string) =>
-  new Set([...text.matchAll(NUMBER)].map(([found]) => found.replaceAll(',', '')));
+const NUMBER = /(?<![\p{L}\p{N}.,])(\p{Nd}+(?:[.,]\p{Nd}+)*)(\p{L}*)/gu;
+/** Numbers in words, which count too. "One" is left out: it's in too many other words' places. */
+const NUMBER_WORDS =
+  /\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?|billions?|dozens?)\b/g;
+
+/** The numbers in some text, each as its digits and how many thousands it counts in. */
+function numbersIn(text: string): Set<string> {
+  const plain = text.normalize('NFKC');
+  const found = new Set<string>();
+  for (const [, digits = '', after = ''] of plain.matchAll(NUMBER)) {
+    const scale = /^[kmb]$/i.test(after) ? after.toLowerCase() : '';
+    found.add(`${digits.replaceAll(',', '')}${scale}`);
+  }
+  for (const [word] of plain.toLowerCase().matchAll(NUMBER_WORDS)) found.add(word);
+  return found;
+}
 
 /** Everything the user saw and said in the questions a fact rests on, to check it against. */
 const askedText = (answers: readonly Answered[]) =>
@@ -298,10 +329,17 @@ function targetOf(path: string, block: FactBlock, blocks: readonly FactBlock[]):
 const refused = (result: Extract<FactResult, { ok: false }>) =>
   new Error(`Not saved: ${result.message}`);
 
-/** What a fact may rest on: answers that are news of the user's experience, kept as they were. */
-function checkBacking(answers: readonly Answered[]): void {
+/**
+ * What a fact may rest on: answers that are news of the user's experience, kept as they were.
+ * A pick about using a fact backs nothing, unless the user added a note to it that corrects the
+ * fact the question named, which `correcting` says.
+ */
+function checkBacking(
+  answers: readonly Answered[],
+  correcting: (answer: Answered) => boolean = () => false,
+): void {
   for (const each of answers) {
-    if (isUseChoice(each.answer)) {
+    if (isUseChoice(each.answer) && !(each.notes && correcting(each))) {
       throw new Error(
         `Not saved: “${each.answer}” answers whether to use a fact, not what the user has done.`,
       );
@@ -347,22 +385,43 @@ export async function saveFact(
   const questions = questionsOf(input);
   const { answers, giveBack } = await answersTo(questions, call, 'fact', deps.answerWaitMs);
   try {
-    checkBacking(answers);
+    const bank = deps.facts.read();
+    const claims = claimsIn(bank, path);
+    // A note on a pick about a fact can correct it, when the question named it.
+    const corrected = replaces
+      ? (claims.find((block) => sameTitle(block.title, replaces))?.title ?? null)
+      : null;
+    const correcting = (each: Answered) =>
+      corrected !== null && namesFact(each.question, corrected);
+    checkBacking(answers, correcting);
     const [first] = answers;
-    if (first && PLAIN_NO.test(questionKey(first.answer))) {
+    if (
+      first &&
+      !(isUseChoice(first.answer) && correcting(first)) &&
+      SAYS_NO.test(questionKey(first.answer))
+    ) {
       throw new Error(
         `Not saved: the user answered “${first.answer}” to “${first.question}”. Save that with save_gap, and claim nothing from it.`,
       );
     }
     const asked = askedText(answers);
-    const terms = keywords.split(/[,;]/).map((term) => term.trim());
-    if (!terms.some((term) => hasTerm(asked, term))) {
+    const terms = keywords
+      .split(/[,;]/)
+      .map((term) => term.trim())
+      .filter(Boolean);
+    const unasked = terms.find((term) => !hasTerm(asked, term));
+    if (unasked || terms.length === 0) {
       throw new Error(
-        `Not saved: none of its keywords (${keywords}) is in the question or the user’s answer. A fact from an answer is about what you asked: give the term you asked about as a keyword.`,
+        `Not saved: “${unasked ?? keywords}” isn’t in the question or the user’s answer. A fact from an answer proves only what you asked about: give just those terms as its keywords.`,
+      );
+    }
+    if (!terms.some((term) => hasTerm(`${title} ${wording}`, term))) {
+      throw new Error(
+        `Not saved: the fact’s title and wording don’t say what you asked about (${keywords}). Word it as the user’s answer about that.`,
       );
     }
     const known = numbersIn(asked);
-    const stated = [title, wording, details.short, details.numbers]
+    const stated = [title, wording, details.short, details.numbers, details.say, keywords]
       .flatMap((each) => [...numbersIn(each ?? '')])
       .find((number) => !known.has(number));
     if (stated) {
@@ -371,8 +430,6 @@ export async function saveFact(
       );
     }
 
-    const bank = deps.facts.read();
-    const claims = claimsIn(bank, path);
     let replacing: FactTarget | null = null;
     let replaced: string | null = null;
     if (replaces) {
@@ -458,8 +515,8 @@ export async function saveGap(
   try {
     checkBacking(answers);
     const [answer] = answers;
-    if (!answer) throw notAnswered(question);
-    if (PLAIN_YES.test(questionKey(answer.answer))) {
+    if (!answer) throw notAnswered(question, call);
+    if (SAYS_YES.test(questionKey(answer.answer))) {
       throw new Error(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,
       );
@@ -509,7 +566,7 @@ export async function verifyFact(
   const { answers, giveBack } = await answersTo([question], call, 'verify', deps.answerWaitMs);
   try {
     const [answer] = answers;
-    if (!answer) throw notAnswered(question);
+    if (!answer) throw notAnswered(question, call);
     if (questionKey(answer.answer) !== questionKey(VERIFY_ANSWER)) {
       throw new Error(
         `Not verified: the user answered “${answer.answer}”, not “${VERIFY_ANSWER}”. It stays unverified.`,
@@ -542,11 +599,35 @@ export async function verifyFact(
       giveBack();
       return `“${claim.title}” is verified already.`;
     }
-    // The words the user verified are the words the fact has now, quoted in the question.
+    // The question named one fact: another waiting with the same title anywhere in the bank
+    // could be the one the user meant.
+    const alike = bank.files
+      .filter((each) => each.kind === 'claims')
+      .flatMap((each) => each.blocks)
+      .filter((block) => block.tags?.includes(UNCONFIRMED) && sameTitle(block.title, title));
+    if (alike.length > 1) {
+      throw new Error(
+        `Not verified: more than one fact waiting to be verified is titled “${title}”. The user verifies it in the Fact bank.`,
+      );
+    }
+    // The words and tags the user verified are the ones the fact has now, given in the question.
     const wording = claimParts(claim).wording.replace(/[.!?]+$/, '');
     if (wording && !questionKey(answer.question).includes(questionKey(wording))) {
       throw new Error(
         `Not verified: the question doesn’t quote what “${claim.title}” says now. Ask again, quoting its wording in full.`,
+      );
+    }
+    const standard: readonly string[] = [
+      ...FACT_TAGS.status,
+      ...FACT_TAGS.ownership,
+      ...FACT_TAGS.confidence,
+    ];
+    const unsaid = claim.tags.find(
+      (tag) => standard.includes(tag) && !hasTerm(answer.question, tag.replaceAll('-', ' ')),
+    );
+    if (unsaid) {
+      throw new Error(
+        `Not verified: the question doesn’t say the fact is ${unsaid.replaceAll('-', ' ')}. Ask again, giving its tags in words, such as “(shipped, solo, medium confidence)”.`,
       );
     }
     const result = deps.facts.confirm(targetOf(path, claim, claims));

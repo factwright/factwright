@@ -50,43 +50,17 @@ function endingOf(text: string): string {
   return windows > text.split('\n').length - 1 - windows ? '\r\n' : '\n';
 }
 
-/** Whether words are the Doesn't have section's title, however its apostrophe and note go. */
-const isDoesntHaveTitle = (title: string) =>
-  /^(?:does ?n[’']?t|does not) have\b/.test(title.toLowerCase().replace(/\s+/g, ' '));
-
-/** Whether a block is the Doesn't have section, as the window shows the file's blocks. */
+/** Whether a block is the Doesn't have section, however its apostrophe and note are written. */
 export const isDoesntHave = (block: Pick<FactBlock, 'level' | 'title'>) =>
-  block.level >= 1 && isDoesntHaveTitle(block.title);
+  block.level >= 1 &&
+  /^(?:does ?n[’']?t|does not) have\b/.test(block.title.toLowerCase().replace(/\s+/g, ' '));
 
 // Every pattern here takes time in step with the line it reads.
-const HEADING = /^ {0,3}(#{1,6})[ \t]+(\S.*)$/;
-/** A line that's a section's name in bold, such as "**Doesn't have** (settled)". */
-const BOLD_LINE = /^ {0,3}\*\*([^*\n]{1,200})\*\*/;
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const TABLE_ROW = /^ {0,3}\|/;
 /** A table's separator row, such as |---|:---:|. */
 const SEPARATOR = /^ {0,3}\|?[ \t]*:?-{2,}/;
 const LIST_ITEM = /^( {0,3})(?:[-*+]|(\d{1,9})([.)]))[ \t]+(\S.*)$/;
 const DATE = /\b(\d{4}-\d{2}-\d{2})\b/;
-
-/** A bold line's section level: below every heading, so any heading ends it. */
-const BOLD_LEVEL = 7;
-
-/** A line's heading, as a section starts: its level, and its words. Null for any other line. */
-function headingOf(line: string): { level: number; title: string } | null {
-  const heading = line.match(HEADING);
-  if (heading) {
-    return { level: heading[1]?.length ?? 1, title: (heading[2] ?? '').replace(/[ \t#]+$/, '') };
-  }
-  const bold = line.match(BOLD_LINE);
-  return bold ? { level: BOLD_LEVEL, title: (bold[1] ?? '').trim() } : null;
-}
-
-/** Whether a line closes a code block opened with a fence. */
-function closes(line: string, fence: string): boolean {
-  const match = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
-  return !!match?.[1] && match[1][0] === fence[0] && match[1].length >= fence.length;
-}
 
 /** A table row's cells, with an escaped pipe ("\|") kept inside its cell. */
 function cellsOf(line: string): string[] {
@@ -102,62 +76,40 @@ const cell = (text: string) => oneLine(text).replaceAll('|', '\\|');
 
 interface Found {
   title: string;
-  /** Where its lines start among the file's: its heading, or its name in bold. */
+  /** Where its lines start among the file's: its heading. */
   start: number;
   lines: string[];
   /** Each row's place among the section's lines, and what it says. */
   rows: { at: number; topic: string; answer: string; date: string | null }[];
   /** Where a new row goes among the section's lines, and in what form. */
-  next: { at: number; form: 'table' | 'list' | 'new'; ordered?: { number: number; mark: string } };
+  next: {
+    at: number;
+    form: 'table' | 'list' | 'new';
+    indent?: string;
+    ordered?: { number: number; mark: string };
+  };
 }
 
 /**
- * The Doesn't have section of a gaps file, with its rows, or null when it has none: under a
- * heading of any level, or a line with its name in bold, up to the next heading as high as its
- * own, or any heading for a bold one. A heading of three #s or fewer ends it too, as the window
- * shows each of those as a section of its own. Nothing in a code block counts.
+ * The Doesn't have section of a gaps file, with its rows, or null when it has none. It's read as
+ * the window reads the file, block by block, so the two always agree on where it is, and what's
+ * in a code block. A section the window doesn't show as one, such as a name in bold, isn't one
+ * here either: a new row then goes in a section of its own.
  */
 function find(text: string): Found | null {
-  const lines = linesOf(text);
-  let fence: string | null = null;
-  let start = -1;
-  let level = 0;
-  let title = '';
-  let end = lines.length;
-  for (const [i, line] of lines.entries()) {
-    const content = bare(line);
-    if (fence) {
-      if (closes(content, fence)) fence = null;
-      continue;
-    }
-    const open = content.match(FENCE_OPEN)?.[1];
-    if (open) {
-      fence = open;
-      continue;
-    }
-    const heading = headingOf(content);
-    if (!heading) continue;
-    if (start < 0) {
-      if (isDoesntHaveTitle(heading.title)) {
-        start = i;
-        level = heading.level;
-        title = heading.title;
-      }
-      continue;
-    }
-    if (heading.level <= Math.max(level, 3)) {
-      end = i;
-      break;
-    }
+  const blocks = factBlocks(text, { claims: false });
+  let start = 0;
+  for (const block of blocks) {
+    const lines = linesOf(block.text);
+    if (isDoesntHave(block)) return { title: block.title, start, lines, ...rowsOf(lines) };
+    start += lines.length;
   }
-  if (start < 0) return null;
-  const section = lines.slice(start, end);
-  return { title, start, lines: section, ...rowsOf(section) };
+  return null;
 }
 
 /** A list item's topic and answer: "**Topic:** answer (date)", "Topic: answer", or a topic alone. */
 function itemParts(item: string): { topic: string; answer: string } {
-  const bold = item.match(/^\*\*([^*]{1,300})\*\*:?[ \t]*(.*)$/);
+  const bold = item.match(/^\*\*([^*]{1,300})\*\*:?[ \t]*([^\n]*)$/);
   if (bold) {
     return { topic: (bold[1] ?? '').replace(/:$/, '').trim(), answer: (bold[2] ?? '').trim() };
   }
@@ -205,7 +157,10 @@ function rowsOf(lines: readonly string[]): Pick<Found, 'rows' | 'next'> {
   let after = last + 1;
   while (after < content.length && /^\s+\S/.test(content[after] ?? '')) after++;
   if (rows.length > 0) {
-    return { rows, next: { at: after, form: 'list', ...(ordered && { ordered }) } };
+    return {
+      rows,
+      next: { at: after, form: 'list', indent: indent ?? '', ...(ordered && { ordered }) },
+    };
   }
   // Nothing yet: a table goes after the heading and any words under it.
   let end = content.length;
@@ -287,9 +242,9 @@ export function withGap(text: string, gap: NewGap): string {
   const lines = linesOf(text);
   const topic = oneLine(gap.topic);
   const answer = oneLine(gap.answer);
-  const item = next.ordered
-    ? `${next.ordered.number + 1}${next.ordered.mark} **${topic}:** ${answer} (${gap.date})`
-    : `- **${topic}:** ${answer} (${gap.date})`;
+  // A new item has the list's own indent and marker, so it's one of its items.
+  const marker = next.ordered ? `${next.ordered.number + 1}${next.ordered.mark}` : '-';
+  const item = `${next.indent ?? ''}${marker} **${topic}:** ${answer} (${gap.date})`;
   // A new table can't run on from a line of words: Markdown would read it as more words.
   const before = bare(found.lines[next.at - 1] ?? '');
   const apart = next.form === 'new' && next.at > 1 && before.trim() !== '';

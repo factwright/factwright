@@ -40,10 +40,10 @@ Before starting, read:
 One AskUserQuestion round, up to 4 questions, as the standing rules say, for:
 - what the form asks that facts/ and `about_you` can't answer, such as "Do you have experience with HL7?" when the facts don't settle it
 - an experience question the form asks that the user plausibly has, judged from what's near it in the facts
-- an unverified fact an answer would use: a question naming it by its title in quotes and quoting its wording in full, with "Use and verify", "Use this once" and "Don't use"
+- an unverified fact an answer would use: a question naming it by its title in quotes, giving its tags in words and quoting its wording in full, with "Use and verify", "Use this once" and "Don't use"
 
 Give easy, neutral options, with "No" one of them. Save what they tell you before drafting, giving each question word for word as you asked it, with `job` (the job's id) and `task: "answers"`:
-- **New experience:** `save_fact`, in the file of the job where they did it, or `facts/projects.md` for work outside a job. Its tags and wording say what they said, and never more, with the term you asked about among its keywords and only their numbers. It's saved unverified, and these answers can use it.
+- **New experience:** `save_fact`, in the file of the job where they did it, or `facts/projects.md` for work outside a job. Its tags and wording say what they said, and never more, with the terms you asked about as its keywords and only their numbers. It's saved unverified, and these answers can use it.
 - **"No, I haven't":** `save_gap`, so nobody asks again.
 - **Use and verify:** `verify_fact`. **Use this once:** use it here only. **Don't use:** leave it out.
 - **What applications ask again:** their work authorization, when they can start, whether they'd relocate, their target pay or a contact detail. Save it with `save_about_you`, in their words, when it holds for every job. One job's pay stays with that job. With more than one kind of job, pay is each kind's own: save it with the kind it's for, the job's kind from `job_details`.

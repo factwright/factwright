@@ -132,9 +132,11 @@ describe('oneLine', () => {
     expect(oneLine(' a\n\tb\u0007c\u2028 d  ')).toBe('a b c d');
   });
 
-  it('drops marks that change how text shows, without showing', () => {
-    expect(oneLine('Led \u202ethe\u202c team\u200b of \u2066five\u2069\ufeff')).toBe(
-      'Led the team of five',
-    );
+  it('drops characters that change how text shows, without showing', () => {
+    expect(
+      oneLine('Led \u202ethe\u202c team\u200b of \u2066five\u2069\ufeff\u00ad\u2060\ufe0f'),
+    ).toBe('Led the team of five');
+    // Tag characters, which can spell out hidden words.
+    expect(oneLine('Kafka\u{e0049}\u{e0067}\u{e006e}\u{e006f}\u{e0072}\u{e0065}')).toBe('Kafka');
   });
 });

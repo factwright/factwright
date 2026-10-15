@@ -255,6 +255,22 @@ describe('QuestionLog', () => {
     expect(log.takeCall('save_gap', input)).toBe(false);
   });
 
+  it('keeps no call nested deeper than the tools take, without failing', () => {
+    const log = new QuestionLog();
+    let deep: unknown = 'x';
+    for (let i = 0; i < 20_000; i++) deep = [deep];
+    const input = { topic: 'Kafka', question: deep };
+    expect(() =>
+      log.hear({
+        hook_event_name: 'PreToolUse',
+        tool_name: hookToolName('save_gap'),
+        tool_use_id: 'toolu_1',
+        tool_input: input,
+      }),
+    ).not.toThrow();
+    expect(log.takeCall('save_gap', input)).toBe(false);
+  });
+
   it('waits a moment for an answer whose hook is still on its way', async () => {
     const log = new QuestionLog();
     setTimeout(() => round(log, [question(GRAPHQL)], { answers: { [GRAPHQL]: 'Some' } }), 150);
