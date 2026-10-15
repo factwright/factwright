@@ -24,7 +24,7 @@ const OTHER =
 const ROLE =
   /\b(?:responsibilit(?:y|ies)|what you(?:'ll| will) do|the role|your role|role|day[- ]to[- ]day|duties|in this role|the job|the work|what you(?:'ll| will) work on|key tasks|impact|you(?:'ll| will))\b/i;
 const MUST_LATE =
-  /\b(?:skills|experience|competenc(?:y|ies)|profile|background|knowledge|tech stack|stack)\b/i;
+  /\b(?:skills|experience|competenc(?:y|ies)|profile|background|knowledge|tech stack|stack|education|certifications?|licen[cs]es?|licensure|degrees?|credentials?)\b/i;
 
 /** Words in a line of a list that make it a nice-to-have, or a must-have, whatever its part. */
 const NICE_HERE =
@@ -108,7 +108,8 @@ const SAVED_NOTE = /^(?:#\s+job posting\s*$|-\s+\*\*(?:source|saved):\*\*|-{3,}\
  * read whole, as must-haves; `sectioned` says which it was.
  */
 export function readPosting(text: string): { lines: PostingLine[]; sectioned: boolean } {
-  const lines: { text: string; part: Part | null }[] = [];
+  // Each clause, with the text its markers are read in: its own, after its line's label.
+  const lines: { text: string; marked: string; part: Part | null }[] = [];
   let part: Part | null = null;
   let sectioned = false;
   for (const raw of text.split(/\r?\n/)) {
@@ -123,18 +124,22 @@ export function readPosting(text: string): { lines: PostingLine[]; sectioned: bo
       continue;
     }
     // Each clause asks on its own: "RN license; BSN preferred" needs the license, not the BSN.
-    for (const clause of line
-      .replace(/^[-*•+]\s+|^\d+[.)]\s+/, '')
-      .split(/;\s+|(?<=[\p{L})]{2}[.!?])\s+(?=\p{Lu})/u)) {
-      if (clause.trim()) lines.push({ text: clause.trim(), part });
+    // A label before them, as in "Bonus: Kafka; Flink", goes for every clause.
+    const body = line.replace(/^[-*•+]\s+|^\d+[.)]\s+/, '');
+    const label = /^([^:]{1,40}):\s/.exec(body)?.[1];
+    for (const [at, clause] of body.split(/;\s+|(?<=[\p{L})]{2}[.!?])\s+(?=\p{Lu})/u).entries()) {
+      const text = clause.trim();
+      if (text) lines.push({ text, marked: at > 0 && label ? `${label}: ${text}` : text, part });
     }
   }
-  const asked = lines.flatMap(({ text: line, part: where }): PostingLine[] => {
+  const asked = lines.flatMap(({ text: line, marked, part: where }): PostingLine[] => {
+    const nice = NICE_HERE.test(marked);
     if (!sectioned && where === 'other') return [];
-    if (!sectioned) return [{ text: line, need: NICE_HERE.test(line) ? 'nice' : 'must' }];
-    if (where === 'must') return [{ text: line, need: NICE_HERE.test(line) ? 'nice' : 'must' }];
+    if (!sectioned) return [{ text: line, need: nice ? 'nice' : 'must' }];
+    if (where === 'must') return [{ text: line, need: nice ? 'nice' : 'must' }];
     if (where === 'nice') return [{ text: line, need: 'nice' }];
-    if (where === 'role') return [{ text: line, need: MUST_HERE.test(line) ? 'must' : 'nice' }];
+    if (where === 'role')
+      return [{ text: line, need: !nice && MUST_HERE.test(marked) ? 'must' : 'nice' }];
     return [];
   });
   return { lines: asked, sectioned };

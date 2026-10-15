@@ -109,3 +109,29 @@ describe('text made to be slow to read', () => {
     ]);
   });
 });
+
+describe('readPosting’s parts', () => {
+  it('reads education, license and certification parts as must-haves, under a plain heading too', () => {
+    expect(
+      needs(
+        [
+          '## Responsibilities',
+          '- Care for patients',
+          'Education',
+          '- BS in Computer Science',
+          '## Licenses and certifications',
+          '- RN license',
+        ].join('\n'),
+      ),
+    ).toEqual(['nice: Care for patients', 'must: BS in Computer Science', 'must: RN license']);
+  });
+
+  it('carries a line’s label to each of its clauses', () => {
+    expect(needs('## Requirements\n- Go\n- Bonus: Kafka; Flink; Pulsar')).toEqual([
+      'must: Go',
+      'nice: Bonus: Kafka',
+      'nice: Flink',
+      'nice: Pulsar',
+    ]);
+  });
+});
