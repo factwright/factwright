@@ -1,4 +1,4 @@
-import { unzipSync } from 'fflate';
+import { Inflate } from 'fflate';
 import { familyOf, type Line, type Part, type ReadFile, type Table } from './read.ts';
 import { childOf, childrenOf, descendantsOf, parseXml, type XmlElement } from './xml.ts';
 
@@ -8,6 +8,12 @@ const MAX_TOTAL_BYTES = 24_000_000;
 
 /** The most headers and footers read. Word makes at most three of each for every section. */
 const MAX_HEADERS = 12;
+
+/** The most lines read. A resume has a few hundred; a file made to blow up stops here. */
+const MAX_LINES = 5_000;
+
+/** How much of a packed part is unpacked at a time, so one that holds too much stops soon. */
+const UNPACK_STEP = 4_096;
 
 /** The parts read: the package's links, Word's page count, and the document's own XML parts. */
 const WANTED = /^(?:_rels\/\.rels|docProps\/app\.xml|word\/(?:theme\/)?[^/]+\.xml)$/;
@@ -66,10 +72,12 @@ function lookOf(paragraph: XmlElement, run: XmlElement | undefined, text: string
 class WordReader {
   readonly lines: Line[] = [];
   readonly tables: Table[] = [];
+  /** Whether it stopped at the most lines it reads. */
+  full = false;
 
   /** Block content: paragraphs and tables, in order. */
   blocks(element: XmlElement, part: Part, depth = 0): void {
-    if (depth > MAX_DEPTH) return;
+    if (depth > MAX_DEPTH || this.full) return;
     for (const child of unwrapped(element)) {
       if (child.name === 'w:p') this.paragraph(child, part, depth);
       else if (child.name === 'w:tbl') this.table(child, part, depth);
@@ -134,7 +142,8 @@ class WordReader {
           case 'w:drawing':
           case 'w:pict':
           case 'w:object':
-            boxes.push(...descendantsOf(child, 'w:txbxContent'));
+            // A box inside this one is read with it, so each is read once.
+            boxes.push(...descendantsOf(child, 'w:txbxContent', { outermost: true }));
             break;
         }
       }
@@ -153,7 +162,12 @@ class WordReader {
     const { look, size } = lookOf(paragraph, firstRun, text);
     for (const piece of text.split('\n')) {
       const line = piece.replace(/[ \u{A0}]+$/u, '').replace(/^[ \u{A0}]+/u, '');
-      if (line.trim()) this.lines.push({ text: line, page: 1, part, look, size, runs: [] });
+      if (!line.trim()) continue;
+      if (this.lines.length >= MAX_LINES) {
+        this.full = true;
+        return;
+      }
+      this.lines.push({ text: line, page: 1, part, look, size, runs: [] });
     }
     for (const box of boxes) this.blocks(box, 'textbox', depth + 1);
   }
@@ -192,6 +206,74 @@ function mainPart(files: Record<string, Uint8Array>, decode: (bytes: Uint8Array)
   return link?.attrs.Target?.replace(/^\//, '') ?? null;
 }
 
+/** Two and four bytes of a zip, least significant first. */
+const u16 = (data: Uint8Array, at: number) => (data[at] ?? 0) | ((data[at + 1] ?? 0) << 8);
+const u32 = (data: Uint8Array, at: number) => (u16(data, at) | (u16(data, at + 2) << 16)) >>> 0;
+
+/** A part of a zip, as the list of its contents at its end gives it. */
+interface ZipEntry {
+  name: string;
+  /** 0 when it's stored as it is, 8 when it's deflated. */
+  method: number;
+  /** Its size packed, and the size it says it unpacks to. */
+  packed: number;
+  size: number;
+  /** Where its own header is. */
+  header: number;
+}
+
+/** A zip's list of its contents, from its end. Throws for a file that isn't a zip. */
+function zipEntries(data: Uint8Array): ZipEntry[] {
+  // The list's end record is the zip's last 22 bytes, or before a comment of up to 65,535.
+  let end = -1;
+  for (let at = data.length - 22; at >= 0 && at >= data.length - 22 - 65_535; at--) {
+    if (u32(data, at) === 0x06054b50) {
+      end = at;
+      break;
+    }
+  }
+  if (end < 0) throw new Error('This isn’t a Word file the X-ray can read.');
+  const names = new TextDecoder('utf-8');
+  const entries: ZipEntry[] = [];
+  let at = u32(data, end + 16);
+  for (let left = u16(data, end + 10); left > 0 && at + 46 <= data.length; left--) {
+    if (u32(data, at) !== 0x02014b50) break;
+    const length = u16(data, at + 28);
+    entries.push({
+      name: names.decode(data.subarray(at + 46, at + 46 + length)),
+      method: u16(data, at + 10),
+      packed: u32(data, at + 20),
+      size: u32(data, at + 24),
+      header: u32(data, at + 42),
+    });
+    at += 46 + length + u16(data, at + 30) + u16(data, at + 32);
+  }
+  return entries;
+}
+
+/**
+ * A part's bytes, unpacked no further than the size it says it holds. It's unpacked a little at
+ * a time, so one that holds far more than it says stops soon after, rather than unpacking for a
+ * minute only to be cut off.
+ */
+function unpack(data: Uint8Array, entry: ZipEntry): Uint8Array | null {
+  if (u32(data, entry.header) !== 0x04034b50) return null;
+  const start = entry.header + 30 + u16(data, entry.header + 26) + u16(data, entry.header + 28);
+  const packed = data.subarray(start, start + entry.packed);
+  if (entry.method === 0) return packed.slice(0, entry.size);
+  if (entry.method !== 8) return null;
+  const out = new Uint8Array(entry.size);
+  let length = 0;
+  const inflater = new Inflate((chunk) => {
+    if (length < out.length) out.set(chunk.subarray(0, out.length - length), length);
+    length += chunk.length;
+  });
+  for (let from = 0; from < packed.length && length <= out.length; from += UNPACK_STEP) {
+    inflater.push(packed.subarray(from, from + UNPACK_STEP), from + UNPACK_STEP >= packed.length);
+  }
+  return out.subarray(0, Math.min(length, out.length));
+}
+
 /**
  * Reads a Word file (.docx) as a parser gets it: the body's paragraphs and tables in order, then
  * its headers and footers, which many systems skip, marked as such. Text in text boxes is marked
@@ -199,18 +281,18 @@ function mainPart(files: Record<string, Uint8Array>, decode: (bytes: Uint8Array)
  */
 export function readDocx(data: Uint8Array): ReadFile {
   // Each part, and all of them, are capped by the size the file says they unpack to. A part
-  // that says less than it holds is cut off there, so the caps hold either way.
+  // that says less than it holds is cut off there, and soon, so the caps hold either way.
+  const files: Record<string, Uint8Array> = {};
   let total = 0;
   let margins = 0;
-  const files = unzipSync(data, {
-    filter: (file) => {
-      if (!WANTED.test(file.name) || file.originalSize > MAX_PART_BYTES) return false;
-      if (/^word\/(?:header|footer)\d*\.xml$/.test(file.name) && ++margins > MAX_HEADERS)
-        return false;
-      total += file.originalSize;
-      return total <= MAX_TOTAL_BYTES;
-    },
-  });
+  for (const entry of zipEntries(data)) {
+    if (!WANTED.test(entry.name) || entry.size > MAX_PART_BYTES) continue;
+    if (/^word\/(?:header|footer)\d*\.xml$/.test(entry.name) && ++margins > MAX_HEADERS) continue;
+    total += entry.size;
+    if (total > MAX_TOTAL_BYTES) break;
+    const bytes = unpack(data, entry);
+    if (bytes) files[entry.name] = bytes;
+  }
   const decoder = new TextDecoder('utf-8');
   const decode = (bytes: Uint8Array) => decoder.decode(bytes);
   const main = mainPart(files, decode);
@@ -263,7 +345,7 @@ export function readDocx(data: Uint8Array): ReadFile {
     lines: reader.lines,
     pages: [],
     pageCount: Number.isInteger(pages) && pages > 0 ? pages : null,
-    partial: false,
+    partial: reader.full,
     fonts: fontsOf([root, ...headers, ...footers, ...defaults], theme),
     tables: reader.tables,
     columns: Math.max(

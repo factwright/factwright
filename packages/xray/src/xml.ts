@@ -142,13 +142,23 @@ export function childrenOf(element: XmlElement, name?: string): XmlElement[] {
 export const childOf = (element: XmlElement, name: string): XmlElement | undefined =>
   childrenOf(element, name)[0];
 
-/** Every element of a name at any depth under an element, in document order. */
-export function descendantsOf(element: XmlElement, name: string): XmlElement[] {
+/**
+ * Every element of a name at any depth under an element, in document order. With `outermost`,
+ * not those inside one already found, as a text box inside a text box is read with its box.
+ */
+export function descendantsOf(
+  element: XmlElement,
+  name: string,
+  { outermost = false } = {},
+): XmlElement[] {
   const found: XmlElement[] = [];
   // A list to visit rather than calls within calls, so no file nests deep enough to overflow.
   const next = childrenOf(element).reverse();
   for (let node = next.pop(); node; node = next.pop()) {
-    if (node.name === name) found.push(node);
+    if (node.name === name) {
+      found.push(node);
+      if (outermost) continue;
+    }
     const children = childrenOf(node);
     for (let i = children.length - 1; i >= 0; i--) next.push(children[i] as XmlElement);
   }

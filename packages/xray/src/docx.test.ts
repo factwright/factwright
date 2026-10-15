@@ -199,3 +199,30 @@ describe('parseXml', () => {
     );
   });
 });
+
+describe('readDocx, on files made to blow up', () => {
+  it('reads a text box in a text box once', () => {
+    const box = (depth: number): string =>
+      depth === 0
+        ? ''
+        : `<w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>Box ${depth}</w:t></w:r>${box(depth - 1)}</w:p></w:txbxContent></w:drawing></w:r>`;
+    const lines = readDocx(word(`<w:p><w:r><w:t>Body</w:t></w:r>${box(16)}</w:p>`)).lines;
+    // Each box read its inner ones again: 65,536 lines.
+    expect(lines.map((line) => line.text)).toEqual([
+      'Body',
+      ...Array.from({ length: 16 }, (_, at) => `Box ${16 - at}`),
+    ]);
+  });
+
+  it('stops unpacking a part that holds far more than it says', () => {
+    const file = declaring(
+      zipSync({ 'word/document.xml': new Uint8Array(128_000_000) }),
+      'word/document.xml',
+      4_096,
+    );
+    const started = performance.now();
+    expect(() => readDocx(file)).toThrow();
+    // Unpacking all of it, only to cut it off, took 0.3 seconds, and a minute at 20 MB.
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+});
