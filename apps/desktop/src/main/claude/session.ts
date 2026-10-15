@@ -4,6 +4,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
 import type { Effort } from '../../shared/effort.ts';
+import type { FiledFacts } from '../../shared/facts.ts';
 import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunScope } from '../../shared/runs.ts';
@@ -138,6 +139,8 @@ export interface SessionDeps {
   onSignal: (signal: RunSignal) => void;
   /** Claude Code is asking whether to trust the workspace, which it does once. */
   onTrust: () => void;
+  /** The run filed facts from the user's answers, which wait for the user to verify them. */
+  onFiled?: (filed: FiledFacts) => void;
 }
 
 interface Run {
@@ -227,8 +230,7 @@ export class ClaudeSession {
         trust.pastIt();
         signals.hear(event);
       },
-      undefined,
-      scope,
+      { scope, onFiled: this.deps.onFiled },
     );
     let terminal: IPty;
     try {

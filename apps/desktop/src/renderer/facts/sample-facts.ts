@@ -1,9 +1,12 @@
+import { answeredClaimText, GAPS_FILE, withGap, withoutGap } from '@factwright/core';
 import type { FactwrightApi } from '../../shared/api.ts';
 import {
+  CHANGED_SINCE,
   type FactBank,
   type FactEdit,
   type FactFileKind,
   type FactResult,
+  type FiledFacts,
   factFile,
   factFileKind,
   inFactOrder,
@@ -58,6 +61,15 @@ const FILES: Readonly<Record<string, string>> = {
     '- **Numbers:** idle spend down ~18%',
     '- **Source:** resume alex-rivera.pdf 2026-10-12',
     '',
+    '### GraphQL for the partner API',
+    '`unconfirmed` `live` `solo` `medium`',
+    '> Built and ran the partner API in GraphQL, used by about 30 utility partners.',
+    '- **Numbers:** about 30 partners',
+    '- **Keywords:** GraphQL, API design',
+    '- **Source:** answer 2026-10-12, tailoring a resume for Lumen Health',
+    '- **Question:** The posting wants GraphQL. Your facts show REST APIs at Tidewater. Have you used GraphQL?',
+    '- **Answer:** Yes, in production (the partner API, since 2024)',
+    '',
     '## People',
     '',
     '### Hiring and mentoring',
@@ -107,7 +119,8 @@ const FILES: Readonly<Record<string, string>> = {
     "## Doesn't have",
     '| Topic | Their answer | Date |',
     '|---|---|---|',
-    '| Rust in production | No | 2026-10-12 |',
+    '| Rust in production | No | 2026-10-08 |',
+    '| Mobile apps | No (asked “Have you built mobile apps, for iOS or Android?” while tailoring a resume for Fernway) | 2026-10-12 |',
     '',
     '## Open questions',
     '- How many customers used the cost dashboards?',
@@ -117,7 +130,7 @@ const FILES: Readonly<Record<string, string>> = {
 
 type FactApi = Pick<
   FactwrightApi,
-  'factBank' | 'changeFact' | 'addFact' | 'removeFact' | 'confirmFact'
+  'factBank' | 'changeFact' | 'addFact' | 'removeFact' | 'confirmFact' | 'removeGap'
 >;
 
 /**
@@ -153,11 +166,58 @@ export function factsInMemory(
     removeFact: (target) => edit(target.path, (file, kind) => withoutClaim(file, kind, target)),
     confirmFact: (target) =>
       edit(target.path, (file, kind) => withConfirmed(file, kind, target, source)),
+    removeGap: (target) =>
+      edit(GAPS_FILE, (file) => withoutGap(file, target) ?? { problem: CHANGED_SINCE }),
   };
 }
 
-/** The made-up fact bank, for checking the page in a browser. ?profile=new has none yet. */
-export function sampleFacts(state: string | null): FactApi {
+/** The question the made-up run asks, and the user's made-up answer. */
+const STREAMING = {
+  question:
+    'The posting wants event streaming. Your facts show a deploy pipeline at Tidewater. Have you run Kafka, or another event-streaming platform?',
+  answer: 'Yes, in production',
+};
+
+/**
+ * The made-up fact bank, for checking the page in a browser, and what a made-up run files in it
+ * from the user's answers, as Claude would: a fact to verify, and something they don't have.
+ * ?profile=new has no fact bank yet.
+ */
+export function sampleFacts(state: string | null): { api: FactApi; fileAnswers: () => FiledFacts } {
   const files = new Map(state === 'new' ? [] : Object.entries(FILES));
-  return factsInMemory(files, { firstName: 'Alex', today: '2026-10-12' });
+  const path = 'facts/tidewater-analytics.md';
+  const title = 'Event streaming for sensor data';
+  return {
+    api: factsInMemory(files, { firstName: 'Alex', today: '2026-10-12' }),
+    fileAnswers: () => {
+      const tidewater = files.get(path);
+      const gaps = files.get(GAPS_FILE);
+      if (tidewater === undefined || gaps === undefined) return { facts: [], gaps: 0 };
+      const text = answeredClaimText({
+        title,
+        status: 'live',
+        ownership: 'led-and-built',
+        confidence: 'medium',
+        wording: 'Ran Kafka for sensor data from 400 utilities, about 2 million events a day.',
+        keywords: 'Kafka, event streaming',
+        date: '2026-10-12',
+        context: 'tailoring a resume for Lumen Health',
+        asked: [STREAMING],
+      });
+      if (!tidewater.includes(`### ${title}`)) {
+        const added = withClaim(tidewater, 'claims', text);
+        if (typeof added === 'string') files.set(path, added);
+      }
+      files.set(
+        GAPS_FILE,
+        withGap(gaps, {
+          topic: 'HIPAA compliance work',
+          answer:
+            'No (asked “The posting asks for HIPAA experience. Have you worked under HIPAA?” while tailoring a resume for Lumen Health)',
+          date: '2026-10-12',
+        }),
+      );
+      return { facts: [{ path, title, save: 1 }], gaps: 1 };
+    },
+  };
 }

@@ -13,7 +13,7 @@ Input: the job (company and role, maybe a link, or `job <id>` from the app), the
 Before starting, read:
 - `guide/rules.md`, if there is one. Every claim traces to `facts/`, with the same status, ownership and confidentiality limits as a resume.
 - `guide/preferences.md`, if there is one. Its application-answer nudges set the voice.
-- all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` aren't usable until the user confirms them: ask in step 3 when an answer needs one.
+- all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` are unverified: offer one in step 3 before an answer uses it.
 - `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation and pay.
 
 ## 1. Load everything on file
@@ -36,16 +36,22 @@ Before starting, read:
 - **Only the user knows:** hobbies, salary number, start date, notice period, work authorization, relocation, references. Take what `about_you` has; ask for the rest, and never invent.
 - Numbers only where they come up naturally, worded the way `facts/` approves.
 
-## 3. Ask (only if needed)
-One AskUserQuestion round, up to 4 questions, for whatever facts/ and `about_you` can't answer. Give easy options. File what they tell you before drafting:
-- **New experience:** a claim in the right facts file, in that file's format: a `### Short claim title` heading, then its tags (status, ownership, confidence) in backticks, the resume-ready wording as a `>` quote, and `- **Source:** <first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`). Record what they said, and never upgrade it.
-- **"No, I haven't":** a row under **Doesn't have** in `facts/gaps.md`, so nobody asks again.
+## 3. Ask (when it's worth it)
+One AskUserQuestion round, up to 4 questions, as the standing rules say, for:
+- what the form asks that facts/ and `about_you` can't answer, such as "Do you have experience with HL7?" when the facts don't settle it
+- an experience question the form asks that the user plausibly has, judged from what's near it in the facts
+- an unverified fact an answer would use: a question naming it by its title in quotes, giving its tags in words and quoting its wording in full, with "Use and verify", "Use this once" and "Don't use"
+
+Give easy, neutral options, with "No" one of them. Save what they tell you before drafting, giving each question word for word as you asked it, with `job` (the job's id) and `task: "answers"`:
+- **New experience:** `save_fact`, in the file of the job where they did it, or `facts/projects.md` for work outside a job. Its tags and wording say what they said, and never more, with the terms you asked about as its keywords and only their numbers. It's saved unverified, and these answers can use it.
+- **"No, I haven't":** `save_gap`, so nobody asks again.
+- **Use and verify:** `verify_fact`. **Use this once:** use it here only. **Don't use:** leave it out.
 - **What applications ask again:** their work authorization, when they can start, whether they'd relocate, their target pay or a contact detail. Save it with `save_about_you`, in their words, when it holds for every job. One job's pay stays with that job. With more than one kind of job, pay is each kind's own: save it with the kind it's for, the job's kind from `job_details`.
 
 ## 4. Save
 Write `applications/<folder>/answers.md`, or append to it if it exists. Each run's answers go together, under their own title, so the app knows a later answer replaces an earlier one:
 - `# Application questions: <Company>, <Role>`
-- `Drafted <YYYY-MM-DD>. Q1 traces to facts/<file>#<claim>, …; Q3 is from <first name> <YYYY-MM-DD>.`
+- `Drafted <YYYY-MM-DD>. Q1 traces to facts/<file>#<claim>, …; Q3 rests on today's answer (facts/<file>#<claim>).`
 - `## <question, word for word>` then the answer, for each question this run answered. A question the form asks twice gets a section each time, in the form's order. A table works for a batch of choice questions: `| Question | Pick | Why |`.
 
 When answers.md already answers a question, leave it out, unless the user asked for that one again.
@@ -53,6 +59,6 @@ When answers.md already answers a question, leave it out, unless the user asked 
 The app shows each answer under its question in the job's panel, where the user records what they actually sent. There's nothing to commit or sync.
 
 ## 5. Reply
-Each question in bold, its answer right under it, ready to paste. Then one line for anything they have to fill in themselves. Nothing else.
+Each question in bold, its answer right under it, ready to paste. Then one line for anything they have to fill in themselves, and one for the facts you saved from their answers, which they can verify in the Fact bank. Nothing else.
 
 If they say an answer sounds off, fix it, then save their words as a nudge in `guide/preferences.md`, and confirm in one line: "Saved as a nudge: …". Create the file if it's missing, with a `## Application answers` section. A nudge is one line, in the file's format: `- **<nudge>**: Seen N · last YYYY-MM-DD · scope: all · from: "<their words>" (<folder>)`. If the same nudge is there already, bump Seen and the date instead.

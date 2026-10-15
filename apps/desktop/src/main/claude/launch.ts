@@ -27,11 +27,14 @@ export interface LaunchOptions {
 }
 
 // Set by a Claude Code session for its own children. Left in, they'd change how this one starts.
+// Agent teams are off too: Factwright files the user's answers only for the run's own Claude,
+// which it tells apart from a subagent by Claude Code's hooks, and teammates are another kind.
 const PARENT_SESSION_VARIABLES = new Set([
   'CLAUDECODE',
   'CLAUDE_CODE_ENTRYPOINT',
   'CLAUDE_CODE_SIMPLE',
   'CLAUDE_AGENT_SDK_VERSION',
+  'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
 ]);
 
 /**

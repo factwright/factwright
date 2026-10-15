@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
+import { RUN_TOKEN_VARIABLE, sessionSettings, TOOLS_SERVER, toolsConfig } from './settings.ts';
 
 const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
 
@@ -28,6 +28,9 @@ describe('sessionSettings', () => {
       'mcp__factwright__save_answer',
       'mcp__factwright__list_templates',
       'mcp__factwright__read_template',
+      'mcp__factwright__save_fact',
+      'mcp__factwright__save_gap',
+      'mcp__factwright__verify_fact',
       'mcp__factwright__read_posting',
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
@@ -125,6 +128,23 @@ describe('sessionSettings', () => {
     expect(allow(false, 'template')).toContain('mcp__factwright__save_template');
   });
 
+  it('files what the user answers without asking, in a run on the job hunt', () => {
+    const allow = (scope: 'hunt' | 'profile' | 'template') =>
+      sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false, scope }).permissions
+        .allow;
+    const filing = [
+      'mcp__factwright__save_fact',
+      'mcp__factwright__save_gap',
+      'mcp__factwright__verify_fact',
+    ];
+    for (const tool of filing) {
+      expect(allow('hunt')).toContain(tool);
+      // Getting started and adding facts change the facts themselves, as the user confirms them.
+      expect(allow('profile')).not.toContain(tool);
+      expect(allow('template')).not.toContain(tool);
+    }
+  });
+
   it('lets a run for making a template read and save templates without asking, and nothing else', () => {
     const { allow, deny } = sessionSettings({
       hookUrl: 'http://127.0.0.1:4000/hook',
@@ -190,9 +210,12 @@ describe('sessionSettings', () => {
     }
   });
 
-  it('only hears about AskUserQuestion before a tool runs', () => {
+  it('hears before a tool runs only about AskUserQuestion and the tools that file answers', () => {
     expect(settings.hooks.PreToolUse).toEqual([
       expect.objectContaining({ matcher: 'AskUserQuestion' }),
+      expect.objectContaining({
+        matcher: `mcp__${TOOLS_SERVER}__save_fact|mcp__${TOOLS_SERVER}__save_gap|mcp__${TOOLS_SERVER}__verify_fact`,
+      }),
     ]);
   });
 });

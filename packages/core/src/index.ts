@@ -1,4 +1,14 @@
 export {
+  type AnsweredClaim,
+  type Asked,
+  answeredClaimText,
+  answerSource,
+  type ClaimOrigin,
+  claimOrigin,
+  oneLine,
+  type SharedKind,
+} from './answered.ts';
+export {
   type ApplicationAnswer,
   ASK_ID,
   applicationAnswers,
@@ -74,6 +84,18 @@ export {
   type PlacedNode,
 } from './flows.ts';
 export { fileSize, payLabel, shortDate } from './format.ts';
+export {
+  type DoesntHave,
+  doesntHave,
+  GAPS_FILE,
+  type GapRow,
+  hasGap,
+  isDoesntHave,
+  type NewGap,
+  newGapsFile,
+  withGap,
+  withoutGap,
+} from './gaps.ts';
 export {
   HN_THREADS_URL,
   type HnPost,

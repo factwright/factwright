@@ -71,6 +71,12 @@ function report(total: number, verdict: string, parts: ScorePart[], date: string
       { text: 'Led a build-system rewrite at a similar scale', sub: [] },
     ],
     gaps: [{ text: 'No production Rust', sub: [] }],
+    ask: [
+      {
+        text: 'GraphQL (nice-to-have): your facts show REST APIs at Tidewater. Have you used GraphQL?',
+        sub: [],
+      },
+    ],
     flags: [{ text: 'A few reviews say promotions are slow', sub: [] }],
     sentiment: null,
   };

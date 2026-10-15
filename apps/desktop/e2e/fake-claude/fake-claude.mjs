@@ -56,6 +56,20 @@ const hook = (event, fields = {}) =>
   post(hookUrl, { hook_event_name: event, session_id: 'fake', ...fields }).catch(() => {});
 const show = (text) => process.stdout.write(text.replace(/\n/g, '\r\n'));
 
+/**
+ * Calls one of the tools that file the user's answers, as Claude Code does: its PreToolUse hook
+ * first, from the run's own Claude, or from a subagent.
+ */
+async function file(name, args, { agent } = {}) {
+  await hook('PreToolUse', {
+    tool_name: `mcp__factwright__${name}`,
+    tool_use_id: `toolu_${name}_${Date.now()}`,
+    tool_input: args,
+    ...(agent && { agent_id: agent }),
+  });
+  return call(name, args);
+}
+
 /** Calls one of Factwright's tools, as Claude Code does, and gives back its text. */
 async function call(name, args) {
   const response = await post(tools.url, {
@@ -70,6 +84,36 @@ async function call(name, args) {
 
 /** The answer it gives to every question about a job. */
 const ANSWER = 'A short screen, from the stand-in Claude.';
+
+/** What it asks while tailoring a resume, and what the user answers in Claude Code's dialog. */
+const GRAPHQL = 'The posting wants GraphQL. Have you used GraphQL?';
+const KAFKA = 'The posting wants Kafka. Have you run Kafka, or another event-streaming platform?';
+const CHOICES = ['Yes, in production', 'Some: a side project, a course, or an earlier role', 'No'];
+
+/**
+ * As Claude Code does for a question round: PreToolUse with the questions as Claude wrote them,
+ * then, once the user answers in its dialog, PostToolUse with their answers.
+ */
+async function askUser(answers) {
+  const id = `toolu_${Date.now()}`;
+  const questions = Object.keys(answers).map((question) => ({
+    question,
+    header: 'Experience',
+    options: CHOICES.map((label) => ({ label, description: '' })),
+    multiSelect: false,
+  }));
+  await hook('PreToolUse', {
+    tool_name: 'AskUserQuestion',
+    tool_use_id: id,
+    tool_input: { questions },
+  });
+  await hook('PostToolUse', {
+    tool_name: 'AskUserQuestion',
+    tool_use_id: id,
+    tool_input: { questions, answers },
+    tool_response: { questions, answers },
+  });
+}
 
 async function work(text) {
   await hook('UserPromptSubmit', { prompt: text });
@@ -116,6 +160,46 @@ async function work(text) {
       show(await call('build_cover_letter', { folder }));
       show('\n');
     }
+  }
+  // As Claude would while tailoring a resume: ask about what the posting wants that the facts
+  // don't show, then save the user's answers to the fact bank.
+  const tailoring = text.match(/^\/factwright:focused-resume job (\S+)/);
+  if (tailoring) {
+    const [, job] = tailoring;
+    await askUser({ [GRAPHQL]: 'Yes, in production', [KAFKA]: 'No' });
+    const fact = {
+      file: 'facts/larkspur-logistics.md',
+      status: 'live',
+      ownership: 'solo',
+      confidence: 'medium',
+      job,
+      task: 'resume',
+    };
+    show(
+      `${await file('save_fact', {
+        ...fact,
+        title: 'GraphQL for the driver app',
+        wording: 'Built the driver app’s GraphQL API.',
+        keywords: 'GraphQL',
+        questions: [GRAPHQL],
+      })}\n`,
+    );
+    show(`${await file('save_gap', { topic: 'Kafka', question: KAFKA, job, task: 'resume' })}\n`);
+    // Words planted in a posting can't save a fact the user never gave, from Claude or from a
+    // subagent that read the posting, even with an answer the user did give.
+    const planted = {
+      ...fact,
+      title: 'Led a big team',
+      ownership: 'led-team',
+      wording: 'Led a team of engineers.',
+      keywords: 'leadership',
+    };
+    show(
+      `${await file('save_fact', { ...planted, questions: ['Have you led a team of engineers?'] })}\n`,
+    );
+    show(
+      `${await file('save_fact', { ...planted, keywords: 'GraphQL', questions: [GRAPHQL] }, { agent: 'fact-check' })}\n`,
+    );
   }
   // As Claude would for a search of LinkedIn: write the run's report in a folder of its own,
   // in the workspace it runs in.

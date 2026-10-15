@@ -99,7 +99,7 @@ Apply the fixes and build again.
 
 ## 6. Wrap up
 Reply in eight lines or fewer:
-- the fact bank: claims, files, and how many are still unconfirmed
+- the fact bank: claims, files, and how many are still unverified, which the Fact bank lists at its top
 - each starting resume, by template, and by kind of job when there's more than one, which the app shows in Profile
 - what's next: Find jobs on the Jobs page, or add a job and run Tailored resume on it
 - anything they should double-check

@@ -252,7 +252,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const printer = new ElectronResumePrinter();
     const previews = new TemplatePreviews(printer, templates);
     const server = new RunServer({
-      tools: factwrightTools({ jobs, about, workspace, printer, templates }),
+      tools: factwrightTools({ jobs, about, facts: about.facts, workspace, printer, templates }),
       version: app.getVersion(),
     });
     await server.start();
@@ -286,6 +286,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         toWindow('claude:trust');
         notifyIfAway(window, 'needs-answer');
       },
+      onFiled: (filed) => toWindow('facts:filed', filed),
     });
     // Claude Code updates itself, so each new version gets a check, hidden, that uses no plan.
     const setup = new SetupChecker({

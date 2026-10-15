@@ -10,7 +10,15 @@ import type {
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
-import type { FactBank, FactChange, FactResult, FactTarget, NewFact } from './facts.ts';
+import type {
+  FactBank,
+  FactChange,
+  FactResult,
+  FactTarget,
+  FiledFacts,
+  GapTarget,
+  NewFact,
+} from './facts.ts';
 import type { ModelChoices } from './models.ts';
 import type { ClaudePermissions } from './permissions.ts';
 import type {
@@ -373,8 +381,18 @@ export interface FactwrightApi {
   addFact(fact: NewFact): Promise<FactResult>;
   /** Deletes a claim, if it still reads as the window last read it. */
   removeFact(target: FactTarget): Promise<FactResult>;
-  /** Confirms a claim drafted from the user's files, with them as its source and today's date. */
+  /** Verifies a claim that waits for it, with the user as its source and today's date. */
   confirmFact(target: FactTarget): Promise<FactResult>;
+  /**
+   * Takes back something the user said they don't have, so Claude may ask about it again, if it
+   * still reads as the window last read it.
+   */
+  removeGap(target: GapTarget): Promise<FactResult>;
+  /**
+   * Listens for facts Claude files from the user's answers in a run, with all it has filed so far
+   * in that run. Returns a function that stops listening.
+   */
+  onFactsFiled(listener: (filed: FiledFacts) => void): () => void;
   /** Opens the system's terminal app, where the user runs Claude Code's own commands. */
   openTerminal(): Promise<EditResult>;
   /** Where an update to Factwright stands. */

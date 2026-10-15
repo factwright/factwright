@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type FactBank, type FactResult, firstNameOf } from '../../shared/facts.ts';
+import { CHANGED_SINCE, type FactBank, type FactResult, firstNameOf } from '../../shared/facts.ts';
 import { FactBankFiles } from './facts.ts';
 
 let workspace: string;
@@ -315,6 +315,41 @@ describe('confirm', () => {
       ok: false,
       message: 'That fact is already confirmed.',
     });
+  });
+});
+
+describe('what the user doesn’t have', () => {
+  const GAPS =
+    "# Gaps\n\n## Doesn't have\n| Topic | Their answer | Date |\n|---|---|---|\n| Rust | No | 2026-10-08 |\n| Kafka | No | 2026-10-12 |\n";
+
+  it('adds a row, and takes one back as the window read it', () => {
+    write('facts/gaps.md', GAPS);
+    const added = facts.addGap({ topic: 'GraphQL', answer: 'No', date: '2026-10-14' });
+    expect(added).toMatchObject({ ok: true, added: true });
+    expect(read('facts/gaps.md')).toContain(
+      '| Kafka | No | 2026-10-12 |\n| GraphQL | No | 2026-10-14 |\n',
+    );
+    bankOf(facts.removeGap({ index: 0, line: '| Rust | No | 2026-10-08 |' }));
+    expect(read('facts/gaps.md')).not.toContain('Rust');
+    // A row that changed since the window read it stays.
+    expect(facts.removeGap({ index: 0, line: '| Kafka | Not really | 2026-10-12 |' })).toEqual({
+      ok: false,
+      message: CHANGED_SINCE,
+      changed: true,
+    });
+    expect(read('facts/gaps.md')).toContain('| Kafka | No | 2026-10-12 |');
+  });
+
+  it('starts gaps.md when there’s none, but never in place of a link', () => {
+    expect(facts.addGap({ topic: 'GraphQL', answer: 'No', date: '2026-10-14' })).toMatchObject({
+      ok: true,
+      added: true,
+    });
+    expect(read('facts/gaps.md')).toContain('| GraphQL | No | 2026-10-14 |');
+    rmSync(join(workspace, 'facts', 'gaps.md'));
+    symlinkSync(join(outside, 'gaps.md'), join(workspace, 'facts', 'gaps.md'));
+    expect(facts.addGap({ topic: 'Kafka', answer: 'No', date: '2026-10-14' }).ok).toBe(false);
+    expect(readdirSync(outside)).toEqual([]);
   });
 });
 

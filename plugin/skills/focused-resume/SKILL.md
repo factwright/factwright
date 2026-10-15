@@ -1,6 +1,6 @@
 ---
 name: focused-resume
-description: Build a resume focused on one job. Use when the user shares a job posting (plus maybe a company link, notes, "pdf"/"word", "startup"/"big company") and wants a tailored resume. Maps the job to their fact bank, asks them about experience the bank lacks, files their answers into facts/, then builds and fact-checks the PDF or Word file. Also use whenever the user gives feedback on a resume, now or in a later session: it fixes the resume and saves the feedback as a nudge.
+description: Build a resume focused on one job. Use when the user shares a job posting (plus maybe a company link, notes, "pdf"/"word", "startup"/"big company") and wants a tailored resume. Maps the job to their fact bank, asks them about experience the bank lacks and about unverified facts it would use, saves their answers to the fact bank, then builds and fact-checks the PDF or Word file. Also use whenever the user gives feedback on a resume, now or in a later session: it fixes the resume and saves the feedback as a nudge.
 argument-hint: "[posting link or text, plus pdf/word and startup/big-company]"
 ---
 
@@ -25,7 +25,7 @@ If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview
 
 ## 1. Set up the application folder
 - For a job from the app (`job <id>`), call `job_details` with the id: it gives everything on file, with what each file holds. Otherwise call `find_job` with what you have (the link alone is fine), then `job_details` if it's on file. If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on.
-- Read what's on file that bears on tailoring, before anything else: the fit check (what fits, and what's missing that the resume should cover honestly or leave alone), `unmask.md`, the user's notes and calls (what a recruiter said the team cares about), what they sent on the application, and your answers to their questions about the job. A requirement the user's notes say matters most leads the resume.
+- Read what's on file that bears on tailoring, before anything else: the fit check (what fits, what's missing that the resume should cover honestly or leave alone, and what's worth asking the user), `unmask.md`, the user's notes and calls (what a recruiter said the team cares about), what they sent on the application, and your answers to their questions about the job. A requirement the user's notes say matters most leads the resume.
 - If a fit check (or unmask) already made a folder for this job, reuse it: keep its `posting.md`, `job.md` and `fit-check.md`, and add to them. Otherwise use `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
 - Save the posting word for word as `posting.md`, if the folder doesn't have one yet:
   - From a link: read it with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name.
@@ -54,23 +54,30 @@ Append `## Requirements` to job.md:
 - Use `facts/skills.md` for tech.
 - Respect status and ownership tags.
 - Check `facts/gaps.md` before treating anything as unknown. "Doesn't have" means it's settled: don't ask again.
-- A claim tagged `unconfirmed` counts as `none` until the user confirms it: if the job needs it, ask about it in step 5.
+- A claim tagged `unconfirmed` is unverified: map it, mark it `unverified` in the table, and offer it in step 5 before the resume uses it.
 
-## 5. Ask the user about gaps (this is how the fact bank grows)
-Ask about the requirements that are `partial` or `none`, that matter for this job, and that aren't already settled in gaps.md.
-- Use **one round** of AskUserQuestion, up to 4 questions. Add a second round only if something critical is still open.
-- Be concrete and give easy answers. For example:
-  - Question: "Have you run Kafka (or another event-streaming platform) in production?"
-  - Options: "Yes, in production" / "Some (side project, POC, or an earlier role)" / "No"
-- If a claim you want to use for this job is in gaps.md **Needs confirmation**, or tagged `unconfirmed`, ask about it here too. Once confirmed, drop the tag and set its Source.
-- Follow up once, briefly, if a "yes" is missing what, where, when, or scale. Don't nag.
-- Skip this step if coverage is strong. Never ask about trivia.
+## 5. Ask the user (this is how the fact bank grows)
+A fact the user gives you now can win this job and every one after it, so ask before drafting, as the standing rules say. Even when coverage looks strong, look for a must-have that's only partly proven, or a claim the job leans on that has no number.
 
-**File every answer before drafting**:
-- **Yes or partial:** add a new claim, or extend one, in the right facts file, in that file's format: a `### Short claim title` heading, then its tags in backticks (status such as `live`, `shipped` or `built`; ownership such as `solo`, `led-and-built`, `took-over` or `led-team`; confidence `high`, `medium` or `low`), the resume-ready wording as a `>` quote of about 190 characters at most, and `- **Source:** <first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`). Tag it exactly as they described it. Record what they said, never upgrade it, and leave out anything confidential.
-- **No:** add a row to gaps.md under **Doesn't have**.
-- **Confirmed or corrected:** update the claim in place and remove the item from gaps.md.
-- **New tech:** add a row to `facts/skills.md`.
+Ask in **one round** of AskUserQuestion, up to 4 questions, most valuable first:
+1. **Unverified facts the resume would use.** One question each, naming the fact by its title in quotes, giving its tags in words and quoting its wording in full, with where it came from: "Your fact bank has “Cost dashboards” (shipped, solo, medium confidence), from your resume and not verified yet: “Built cost dashboards that cut idle spend ~18%.” Can I use it?" Options: "Use and verify", "Use this once", "Don't use".
+2. **Gaps that matter.** Must-haves first, then nice-to-haves: requirements that are `partial` or `none`, aren't settled in gaps.md, and that the user plausibly has, judged from what's near them in the facts. fit-check.md's **Worth asking you** items come first. Word each question yourself, say why you ask, and give easy, neutral options:
+   - Question: "The posting wants Kafka. Your facts show RabbitMQ at Beacon. Have you run Kafka, or another event-streaming platform?"
+   - Options: "Yes, in production" / "Some: a side project, a course, or an earlier role" / "No"
+3. **Missing numbers.** A claim the job leans on with no number, such as "About how many clinics used the scheduling platform?", with ranges as options.
+
+Skip a question whose answer wouldn't change the resume, and never ask about trivia. A claim in gaps.md **Needs confirmation** that the resume would use is worth a question too.
+- **Follow up once** on a yes that's missing where, when, how much or how many, in a second round. Ask about the next gaps in that round only if a must-have is still open. Don't nag.
+- If nothing is worth asking, say so in one line and go on.
+
+**Save every answer before drafting**, giving each question word for word as you asked it, with `job` (the job's id) and `task: "resume"`:
+- **Yes or partial:** `save_fact`, in the right file: the file of the job where they did it, such as `facts/acme-health.md`, or `facts/projects.md` for work outside a job. Its tags are as they described it: status such as `live`, `shipped` or `built`; ownership such as `solo`, `led-and-built`, `took-over` or `led-team`; confidence `high`, `medium` or `low`. Its wording says what they said and no more, in about 190 characters at most, and names what you asked about. Its keywords are the terms you asked about, and its numbers, in digits or words, are only the ones they gave. A yes and its follow-up make one fact: save it once both are answered, with both questions.
+- **No,** in any words, such as "No, I haven't": `save_gap`, with the topic in the words you asked about.
+- **Use and verify:** `verify_fact`. **Use this once:** use it in this resume, and leave it unverified. **Don't use:** leave it out.
+- **A correction to an unverified fact,** or a note on their pick: use it as they put it, and save it with `save_fact`, giving the fact's title as `replaces`. They verify it in the Fact bank.
+- **A new number, or a correction, for a verified fact:** edit the fact in place, with its Source set to `<first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`), then use it. Claude Code asks them to OK the change. If they don't, use the fact as it was.
+
+The user just told you these, so the resume can use them. Note in notes.md which lines rest on today's answers.
 
 ## 6. Draft `resume.json` in the folder
 - Copy the closest starting point: the style and track's starting resume (`base/<style>-<track>.json`, or the base the style file names), or a past `applications/*/resume.json` for a more similar role.
@@ -87,10 +94,10 @@ Ask about the requirements that are `partial` or `none`, that matter for this jo
   - **Stats:** the most relevant approved stats (usually 4).
   - **Systems cards:** ranked by relevance, as many as `guide/lint.json` asks (6 when it doesn't say).
   - **Bullets:** choose and re-order the bullets from facts, and re-head the groups to match the job's themes. Mirror the posting's exact terms where they're true.
-  - **Skills:** as many lines as `guide/lint.json` asks (4 when it doesn't say), must-haves first, only what's in `facts/skills.md`. Keep the starting point's `skills_heading`, or name it for the field.
+  - **Skills:** as many lines as `guide/lint.json` asks (4 when it doesn't say), must-haves first, only what the facts prove: `facts/skills.md`, or a claim's Keywords. Keep the starting point's `skills_heading`, or name it for the field.
   - **Projects and education:** keep them or drop them per the style and the posting. Keep `education` whenever the posting asks for a degree, a license or a certification.
 - Apply the nudges in `guide/preferences.md` as defaults. If the job needs something else, skip the nudge and note why in notes.md.
-- Every line must trace to a confirmed `facts/` claim, never one tagged `unconfirmed`. Reuse approved wording and stay inside each claim's Say / don't-say limits.
+- Every line must trace to a `facts/` claim: a verified one, one saved from the user's answers in this run, or an unverified one they said to use in this run's questions. Never any other unverified claim. Reuse approved wording and stay inside each claim's Say / don't-say limits.
 - Address the likely worries through framing (headline, summary, emphasis). Never through untrue claims.
 
 The shape of `resume.json` (leave out what doesn't apply):
@@ -132,7 +139,8 @@ Call `build_resume` with the folder's name (and `format: "both"` when the user w
 Start **one** subagent with this prompt (fill in the folder):
 
 > Adversarially fact-check the resume at `applications/<folder>/resume.json`. The sources of truth are `facts/` (read all of it), `guide/rules.md`, and `applications/<folder>/posting.md` plus `job.md` (older folders keep the posting inside job.md). Check every summary sentence, stat, card, bullet, and skill:
-> - Is it supported by a facts claim, and not one tagged `unconfirmed`?
+> - Is it supported by a facts claim? A claim tagged `unconfirmed` counts only if it's one of these, which the user gave or said to use in this run: <the facts saved, and the unverified ones they said to use>. Anything resting on another unverified claim is a problem.
+> - For a claim whose Source is an `answer`, does it stay within what the user said in the **Answer** lines under it? Wording that says more than they did is a problem.
 > - Is the verb within that claim's status tag (built/shipped/live/beta)?
 > - Is the ownership within its tag (solo/led-and-built/took-over/led-team)?
 > - Is every number present in facts, with its "~"?
@@ -147,10 +155,11 @@ Apply the fixes and build again. Skip this step only if the user asks for speed.
   - the style, track and template, and why
   - the top tailoring choices
   - the evidence-map summary
-  - the questions asked and where each answer was filed
+  - the questions asked and where each answer was saved
+  - the lines that rest on today's answers, and on unverified facts the user said to use once
   - anything the user should double-check before sending
-- The app shows the resume in the job's panel, ready to open.
-- Reply in 6 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, the facts added, and anything to confirm. When the posting or `apply.md` asks for a cover letter, add that `/factwright:cover-letter` writes one to match.
+- The app shows the resume in the job's panel, ready to open, and the facts you saved at the top of the Fact bank, to verify.
+- Reply in 6 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, the facts you saved and the lines that rest on them, and anything to check. When the posting or `apply.md` asks for a cover letter, add that `/factwright:cover-letter` writes one to match.
 
 ## 10. Feedback (now or in a later session)
 When the user reacts to the resume:

@@ -42,6 +42,7 @@ export function Sidebar({
   levels,
   jobCount,
   factCount,
+  factsToVerify,
   update,
   version,
 }: {
@@ -79,6 +80,8 @@ export function Sidebar({
   jobCount?: number | undefined;
   /** How many facts the fact bank holds, once there are some. */
   factCount?: number | undefined;
+  /** How many of them wait for the user to verify them, which shows in place of the count. */
+  factsToVerify?: number | undefined;
   /** An update to Factwright that's ready to install, and restarting into it. */
   update: { status: UpdateStatus; busy: boolean; unsaved: () => boolean; onRestart: () => void };
   /** Factwright's version, such as "0.1.1". */
@@ -107,6 +110,7 @@ export function Sidebar({
           icon={<BookCheck size={16} aria-hidden="true" />}
           label="Fact bank"
           count={factCount}
+          {...(factsToVerify && { waiting: { count: factsToVerify, label: 'to verify' } })}
           current={page === 'facts'}
           onClick={() => onPage('facts')}
         />

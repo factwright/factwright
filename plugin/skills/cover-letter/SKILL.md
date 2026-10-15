@@ -1,6 +1,6 @@
 ---
 name: cover-letter
-description: Write a cover letter for one job, in the user's own voice, from their confirmed facts and everything on file for the job, such as the posting, the fit check's research, what people say about the company and the user's notes. Addresses the hiring manager when one is on file. Asks about experience the fact bank lacks and files the answers, as a tailored resume does, fact-checks every line, then builds the PDF or Word file in the job's resume template, so the two look like a set. Use when the user wants a cover letter, or text for an application form's cover letter box. Also use whenever the user gives feedback on a cover letter, now or in a later session: it fixes the letter and saves the feedback as a nudge.
+description: Write a cover letter for one job, in the user's own voice, from their facts and everything on file for the job, such as the posting, the fit check's research, what people say about the company and the user's notes. Addresses the hiring manager when one is on file. Asks about what the job wants that the facts don't show, and saves the answers to verify, as a tailored resume does, fact-checks every line, then builds the PDF or Word file in the job's resume template, so the two look like a set. Use when the user wants a cover letter, or text for an application form's cover letter box. Also use whenever the user gives feedback on a cover letter, now or in a later session: it fixes the letter and saves the feedback as a nudge.
 argument-hint: "[a job from the app, or a posting link or text, plus pdf/word]"
 ---
 
@@ -48,24 +48,34 @@ Before starting, read:
 
 ## 3. Pick what the letter says
 - **Two or three matches:** compare the posting's must-haves, and what the user's notes and calls say the team cares about most, with the facts. Pick the two or three that matter most to this employer, each with a number when `facts/` has one. Prefer what the resume can only list: the problem, what the user did, and what changed.
-- **Respect the tags:** status decides the verbs, ownership decides who did it, and medium confidence gets a hedge. A claim tagged `unconfirmed` isn't usable until the user confirms it: if the letter needs it, ask in step 4. In `facts/gaps.md`, **Doesn't have** is settled.
+- **Respect the tags:** status decides the verbs, ownership decides who did it, and medium confidence gets a hedge. A claim tagged `unconfirmed` is unverified: offer it in step 4 before the letter uses it. In `facts/gaps.md`, **Doesn't have** is settled.
 - **Why this company:** one concrete, true reason the user wants this job: something real about the company's product, users, stage, or a problem the posting names, from the posting, its site or the fit check's research. It has to be the user's reason. Take it from their notes, calls, `about_you` (what they want) or what they sent on applications. When nothing on file says why they want it, ask in step 4. Never flattery, and never a pitch about the company's market.
 - Write the plan to `notes.md`, under `## Cover letter`: who it's to and where that came from, the matches with their facts (`facts/<file>#<claim>`), and the reason for the company with its source.
 
-## 4. Ask the user about gaps (this is how the fact bank grows)
-Ask about what the letter would want to say that the facts don't back: a must-have that's `partial` or `none`, a claim tagged `unconfirmed` or in gaps.md **Needs confirmation**, and the user's reason for wanting the job when nothing on file gives one. Never ask about anything settled in gaps.md.
-- Use **one round** of AskUserQuestion, up to 4 questions. Add a second round only if something critical is still open.
-- Be concrete and give easy answers, with "No" a full answer. For example:
-  - Question: "The posting wants GraphQL. Have you used it?"
-  - Options: "Yes, in production" / "Some (side project, POC, or an earlier role)" / "No"
-- Follow up once, briefly, if a "yes" is missing what, where, when, or scale. Don't nag.
+## 4. Ask the user (this is how the fact bank grows)
+A fact the user gives you now can win this job and every one after it, so ask before drafting, as the standing rules say. Even when the facts cover the letter's matches, look for a must-have that's only partly proven, or a match the letter leans on that has no number.
 
-**File every answer before drafting**, as the tailored resume does:
-- **Yes or partial:** add a new claim, or extend one, in the right facts file, in that file's format: a `### Short claim title` heading, then its tags in backticks (status such as `live`, `shipped` or `built`; ownership such as `solo`, `led-and-built`, `took-over` or `led-team`; confidence `high`, `medium` or `low`), the resume-ready wording as a `>` quote of about 190 characters at most, and `- **Source:** <first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`). Tag it exactly as they described it. Record what they said, never upgrade it, and leave out anything confidential.
-- **No:** add a row to gaps.md under **Doesn't have**.
-- **Confirmed or corrected:** update the claim in place and remove the item from gaps.md.
-- **New tech:** add a row to `facts/skills.md`.
-- **Why they want the job:** it's about this job, not their experience, so it goes in `notes.md` under `## Cover letter`, in their words, not in `facts/`.
+Ask in **one round** of AskUserQuestion, up to 4 questions, most valuable first:
+1. **Unverified facts the letter would use.** One question each, naming the fact by its title in quotes, giving its tags in words and quoting its wording in full, with where it came from: "Your fact bank has “Cost dashboards” (shipped, solo, medium confidence), from your resume and not verified yet: “Built cost dashboards that cut idle spend ~18%.” Can I use it?" Options: "Use and verify", "Use this once", "Don't use".
+2. **Gaps that matter.** Must-haves first, then nice-to-haves: requirements that are `partial` or `none`, aren't settled in gaps.md, and that the user plausibly has, judged from what's near them in the facts. fit-check.md's **Worth asking you** items come first. Word each question yourself, say why you ask, and give easy, neutral options:
+   - Question: "The posting wants GraphQL. Your facts show REST APIs and React. Have you used GraphQL?"
+   - Options: "Yes, in production" / "Some: a side project, a course, or an earlier role" / "No"
+3. **Missing numbers.** A match the letter leans on with no number, such as "About how many clinics used the scheduling platform?", with ranges as options.
+4. **Why this job,** when nothing on file says why the user wants it: "What draws you to Acme?", with options from the posting and what's on file, such as the product, the problem the team names, or the company's stage. Their own words are an answer too.
+
+Skip a question whose answer wouldn't change the letter, and never ask about trivia. A claim in gaps.md **Needs confirmation** that the letter would use is worth a question too.
+- **Follow up once** on a yes that's missing where, when, how much or how many, in a second round. Ask about the next gaps in that round only if a must-have is still open. Don't nag.
+- If nothing is worth asking, say so in one line and go on.
+
+**Save every answer before drafting**, giving each question word for word as you asked it, with `job` (the job's id) and `task: "cover-letter"`:
+- **Yes or partial:** `save_fact`, in the right file: the file of the job where they did it, such as `facts/acme-health.md`, or `facts/projects.md` for work outside a job. Its tags are as they described it: status such as `live`, `shipped` or `built`; ownership such as `solo`, `led-and-built`, `took-over` or `led-team`; confidence `high`, `medium` or `low`. Its wording says what they said and no more, in about 190 characters at most, and names what you asked about. Its keywords are the terms you asked about, and its numbers, in digits or words, are only the ones they gave. A yes and its follow-up make one fact: save it once both are answered, with both questions.
+- **No,** in any words, such as "No, I haven't": `save_gap`, with the topic in the words you asked about.
+- **Use and verify:** `verify_fact`. **Use this once:** use it in this letter, and leave it unverified. **Don't use:** leave it out.
+- **A correction to an unverified fact,** or a note on their pick: use it as they put it, and save it with `save_fact`, giving the fact's title as `replaces`. They verify it in the Fact bank.
+- **A new number, or a correction, for a verified fact:** edit the fact in place, with its Source set to `<first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`), then use it. Claude Code asks them to OK the change. If they don't, use the fact as it was.
+- **Why they want the job:** it's about this job, not their experience, so it goes in `notes.md` under `## Cover letter`, in their words, and never in `facts/`.
+
+The user just told you these, so the letter can use them. Note in notes.md which lines rest on today's answers.
 
 ## 5. Draft `cover-letter.json` in the folder
 ```jsonc
@@ -92,7 +102,7 @@ Ask about what the letter would want to say that the facts don't back: a must-ha
 - **Their voice:** first person, plain and warm, the way they sound in what they sent and in their notes. Contractions are fine. Their nudges win.
 - **Not AI:** no "passionate", "thrilled", "excited to", "leverage", "spearheaded", "robust", "seamless", "deeply", "at the intersection of", "I believe I would be". No em dashes, no "not just X but Y", no lists of three for rhythm, and no closing line that sums up.
 - **No clichés:** nothing `guide/lint.json` bans, and none of the openings, greetings and claims the build checks every letter for.
-- **Facts first:** every claim about the user traces to a confirmed claim in `facts/`, with its verbs, ownership and hedges. Numbers appear exactly as `facts/` has them, with their "~". Job titles and dates stay exact. Mirror the posting's words where they're true.
+- **Facts first:** every claim about the user traces to a claim in `facts/`: a verified one, or one they gave or said to use in this run. It keeps that claim's verbs, ownership and hedges. Numbers appear exactly as `facts/` has them, with their "~". Job titles and dates stay exact. Mirror the posting's words where they're true.
 - **No names:** never the user's colleagues or customers, or anything in `guide/confidential-terms.txt`. The person it's addressed to is fine.
 - **Agree with the rest:** the resume, what the user sent on the application, and their answers.
 - No `**bold**`: a letter reads as prose. Apply the nudges in `guide/preferences.md` as defaults. If the job needs something else, skip the nudge and note why in notes.md.
@@ -112,7 +122,8 @@ Call `build_cover_letter` with the folder's name (and `format: "both"` when the 
 Start **one** subagent with this prompt (fill in the folder):
 
 > Adversarially fact-check the cover letter at `applications/<folder>/cover-letter.json`. The sources of truth are `facts/` (read all of it), `guide/rules.md`, `guide/confidential-terms.txt`, and `applications/<folder>/posting.md`, `job.md`, `fit-check.md` and `notes.md` (older folders keep the posting inside job.md). Check every sentence:
-> - Is each claim about the user supported by a facts claim, and not one tagged `unconfirmed`?
+> - Is each claim about the user supported by a facts claim? A claim tagged `unconfirmed` counts only if it's one of these, which the user gave or said to use in this run: <the facts saved, and the unverified ones they said to use>. Anything resting on another unverified claim is a problem.
+> - For a claim whose Source is an `answer`, does it stay within what the user said in the **Answer** lines under it? Wording that says more than they did is a problem.
 > - Is the verb within that claim's status tag (built/shipped/live/beta), and the ownership within its tag (solo/led-and-built/took-over/led-team)?
 > - Is every number present in facts, with its "~", and every title and date exact?
 > - Is each thing it says about the company in the posting, job.md or fit-check.md, rather than made up?
@@ -125,9 +136,9 @@ Start **one** subagent with this prompt (fill in the folder):
 Apply the fixes and build again. Skip this step only if the user asks for speed.
 
 ## 8. Deliver
-- Finish `notes.md`, under `## Cover letter`: who it's to and why, the matches it leads with and their facts, the reason for the company and its source, the questions asked and where each answer was filed, and anything the user should double-check before sending.
-- The app shows the letter in the job's panel, with its files and a Copy text button for an application form's cover letter box.
-- Reply in 6 lines or fewer: the file, who it's addressed to and where the name came from, the two or three matches it leads with, the facts added, and anything to confirm.
+- Finish `notes.md`, under `## Cover letter`: who it's to and why, the matches it leads with and their facts, the reason for the company and its source, the questions asked and where each answer was saved, the lines that rest on today's answers and on unverified facts the user said to use once, and anything the user should double-check before sending.
+- The app shows the letter in the job's panel, with its files and a Copy text button for an application form's cover letter box, and the facts you saved at the top of the Fact bank, to verify.
+- Reply in 6 lines or fewer: the file, who it's addressed to and where the name came from, the two or three matches it leads with, the facts you saved and the lines that rest on them, and anything to check.
 
 ## 9. Feedback (now or in a later session)
 When the user reacts to the letter:

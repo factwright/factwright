@@ -4,12 +4,19 @@ import { join } from 'node:path';
 import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { type AboutYou, type AnswerChanges, applyChanges, NO_ANSWERS } from '../../shared/about.ts';
+import { FactBankFiles } from '../about/facts.ts';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import { TemplateLibrary } from '../resume/templates.ts';
-import { factwrightTools, LOCAL_TOOLS, PROFILE_TOOLS, TEMPLATE_TOOLS } from './index.ts';
-import type { McpTool } from './mcp.ts';
+import {
+  FACT_TOOLS,
+  factwrightTools,
+  LOCAL_TOOLS,
+  PROFILE_TOOLS,
+  TEMPLATE_TOOLS,
+} from './index.ts';
+import { type McpTool, newCall } from './mcp.ts';
 import { FetchRefused } from './safe-fetch.ts';
 
 const NOW = () => new Date(2026, 9, 11, 9, 30);
@@ -22,6 +29,7 @@ let jobs: JobsService;
 let fetch: Mock<(url: string, json: boolean, limitMs: number) => Promise<unknown>>;
 let tools: McpTool[];
 let templates: TemplateLibrary;
+let facts: FactBankFiles;
 let printer: { print: Mock<ResumePrinter['print']>; measure: Mock<ResumePrinter['measure']> };
 // What the user told Factwright about themselves, which save_about_you changes.
 let answers: AboutYou;
@@ -64,7 +72,21 @@ beforeEach(() => {
   };
   answers = { ...NO_ANSWERS, you: { ...NO_ANSWERS.you } };
   templates = new TemplateLibrary({ workspace: root });
-  tools = factwrightTools({ jobs, about, workspace: root, now: NOW, fetch, printer, templates });
+  facts = new FactBankFiles({
+    workspace: root,
+    name: () => answers.you.name,
+    today: () => '2026-10-11',
+  });
+  tools = factwrightTools({
+    jobs,
+    about,
+    facts,
+    workspace: root,
+    now: NOW,
+    fetch,
+    printer,
+    templates,
+  });
 });
 
 afterEach(() => {
@@ -75,7 +97,7 @@ afterEach(() => {
 it('marks the tools that stay on this computer, which Claude may call without asking', () => {
   const local = tools.filter(({ annotations }) => annotations?.openWorldHint === false);
   expect(local.map((each) => each.name).sort()).toEqual(
-    [...LOCAL_TOOLS, ...PROFILE_TOOLS, ...TEMPLATE_TOOLS].sort(),
+    [...LOCAL_TOOLS, ...FACT_TOOLS, ...PROFILE_TOOLS, ...TEMPLATE_TOOLS].sort(),
   );
 });
 
@@ -648,7 +670,16 @@ describe('read_page', () => {
       clock += 30_000;
       return now;
     };
-    tools = factwrightTools({ jobs, about, workspace: root, now: tick, fetch, printer, templates });
+    tools = factwrightTools({
+      jobs,
+      about,
+      facts,
+      workspace: root,
+      now: tick,
+      fetch,
+      printer,
+      templates,
+    });
     fetch.mockResolvedValue({ jobs: [] });
     expect(await tool('read_page').run({ url: ASHBY })).toBe(
       `Couldn’t read ${ASHBY} (the site took too long to answer).`,
@@ -1216,7 +1247,7 @@ describe('the template tools', () => {
   });
 
   it('lets a run started to make a template replace only the templates it saved', async () => {
-    const call = { scope: 'template' as const, templates: new Set<string>() };
+    const call = newCall('template');
     const save = (id: string, changes: Record<string, unknown> = {}, replace = false) =>
       tool('save_template').run({ id, template: file(changes), replace }, call);
     // One of the user's, from before this run.
@@ -1233,7 +1264,16 @@ describe('the template tools', () => {
   it('puts the user’s template in the trash when another run replaces it', async () => {
     const trash = vi.fn(async (path: string) => rmSync(path));
     templates = new TemplateLibrary({ workspace: root, trash });
-    tools = factwrightTools({ jobs, about, workspace: root, now: NOW, fetch, printer, templates });
+    tools = factwrightTools({
+      jobs,
+      about,
+      facts,
+      workspace: root,
+      now: NOW,
+      fetch,
+      printer,
+      templates,
+    });
     await tool('save_template').run({ id: 'theirs', template: file() });
     expect(
       await tool('save_template').run({
