@@ -67,17 +67,30 @@ export function letterPlainText(letter: LetterText): string {
 export const letterWordCount = (letter: LetterText): number =>
   letter.paragraphs.join(' ').split(/\s+/).filter(Boolean).length;
 
-/** Words that say a cover letter isn't wanted, or isn't needed. */
-const WAIVED =
-  /\b(?:optional|not (?:required|needed|necessary)|(?:isn|aren)[’']t (?:required|needed|necessary)|no need|no cover letters?|(?:don|doesn)[’']t (?:need|require|send|include|want)|(?:do|does) not (?:need|require|send|include|want))\b/i;
+/** A cover letter, however it's written: "cover letter", "cover-letter" or "cover letters". */
+const LETTER = String.raw`cover[\s-]?letters?`;
+
+/**
+ * Ways of saying a cover letter isn't wanted, tied to the words "cover letter" themselves, so a
+ * "no" about something else in the same sentence doesn't count: "No cover letter needed", "Cover
+ * letter optional", "A cover letter is not required", "Don't send a cover letter".
+ */
+const WAIVERS = new RegExp(
+  [
+    String.raw`\bno\s+${LETTER}`,
+    String.raw`\bno\s+need\s+for\s+(?:a\s+)?${LETTER}`,
+    String.raw`\b(?:don['’]t|doesn['’]t|do\s+not|does\s+not|no\s+need\s+to)\s+(?:need|require|send|submit|include|attach|want)\s+(?:a\s+|an\s+|any\s+)?${LETTER}`,
+    String.raw`${LETTER}\s*[(:–—-]?\s*(?:is\s+|are\s+)?(?:optional|not\s+(?:required|needed|necessary))`,
+  ].join('|'),
+  'gi',
+);
 
 /**
  * Whether a job asks for a cover letter, by how to apply: its apply.md, or the job search's note
- * about applying. A sentence naming one counts, unless it says one isn't needed: "No cover letter
- * needed", or "Cover letter optional".
+ * about applying. Any mention counts, unless it's one that says a letter isn't needed. When in
+ * doubt it says yes: a letter that wasn't required does no harm, and one that was can't be missed.
  */
 export function asksForCoverLetter(job: { apply: string | null }): boolean {
-  return (job.apply ?? '')
-    .split(/[.!?\n]+/)
-    .some((sentence) => /\bcover\s+letters?\b/i.test(sentence) && !WAIVED.test(sentence));
+  const apply = (job.apply ?? '').replace(WAIVERS, ' ');
+  return new RegExp(String.raw`\b${LETTER}\b`, 'i').test(apply);
 }

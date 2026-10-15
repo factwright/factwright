@@ -103,7 +103,8 @@ export function resumeView(r: Resume, titles: ResumeTitles): Value {
 /**
  * A cover letter as a template sees it: the header a resume has, so a template's header parts
  * show it the same, then the letter. Its text is marked up as a resume's is, and the signature is
- * the name at the top unless the letter gives its own.
+ * the name at the top unless the letter gives its own. Of the titles, only the one a header can
+ * show, over the contact details: a letter has no sections, so no other title belongs on it.
  */
 export function letterView(l: CoverLetter, titles: ResumeTitles): Value {
   return {
@@ -117,7 +118,7 @@ export function letterView(l: CoverLetter, titles: ResumeTitles): Value {
     paragraphs: l.paragraphs.map(marked),
     closing: marked(l.closing),
     signature: marked(l.signature || l.name),
-    titles: titlesView(titles),
+    titles: { contact: text(titles.contact) },
   };
 }
 
@@ -136,10 +137,9 @@ export const VIEW_NAMES: ReadonlySet<string> = new Set([
 
 /**
  * Every name a letter's markup can use, at any depth: the header a resume has, the letter's own
- * parts, and the titles, which a header part can show.
+ * parts, and the title over the contact details, which a header part can show.
  */
 export const LETTER_VIEW_NAMES: ReadonlySet<string> = new Set([
   ...['name', 'headline', 'tagline', 'contact', 'kind', 'text', 'date', 'recipient'],
-  ...['greeting', 'paragraphs', 'closing', 'signature', 'titles', 'summary', 'competencies'],
-  ...['experience', 'education', 'skills', 'systems', 'projects', 'highlights', 'length'],
+  ...['greeting', 'paragraphs', 'closing', 'signature', 'titles', 'length'],
 ]);

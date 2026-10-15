@@ -2,7 +2,6 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isCoverLetterFile, JOB_DOCS, WORKSPACE_PATHS } from '@factwright/core';
 import {
-  type CoverLetter,
   DEFAULT_TEMPLATE,
   FORMATS,
   fitReport,
@@ -22,11 +21,10 @@ import {
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import { FOLDER_NAME } from './posting.ts';
 import { type BuildResumeDeps, keptAsSent, readText, rulesIn } from './resume.ts';
+import { headerDifferences, listed } from './set.ts';
 
 /** Where a job's cover letter's data is, beside its files. */
 const LETTER_DATA = JOB_DOCS.letter;
-
-const CONTACT = ['phone', 'email', 'linkedin', 'location', 'website'] as const;
 
 /** The job's tailored resume, when its folder has one that reads, which the letter matches. */
 async function resumeIn(dir: string): Promise<Resume | null> {
@@ -39,20 +37,6 @@ async function resumeIn(dir: string): Promise<Resume | null> {
     return null;
   }
 }
-
-/** Where the letter's header differs from the resume's: its name, headline or contact details. */
-function headerDifferences(letter: CoverLetter, resume: Resume): string[] {
-  return [
-    ...(letter.name !== resume.name ? ['name'] : []),
-    ...((letter.headline ?? '') !== resume.headline ? ['headline'] : []),
-    ...CONTACT.filter(
-      (kind) => (letter.contact?.[kind] ?? '') !== (resume.contact?.[kind] ?? ''),
-    ).map((kind) => `contact.${kind}`),
-  ];
-}
-
-const words = (list: readonly string[]) =>
-  list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`;
 
 /**
  * Builds a job's cover letter from its cover-letter.json, as a PDF, a Word file or both, named
@@ -121,7 +105,7 @@ export async function buildCoverLetter(
     ...lintLetter(letter, rules, confidential),
     ...(differs.length > 0
       ? [
-          `The letter’s ${words(differs)} ${differs.length === 1 ? 'doesn’t' : 'don’t'} match resume.json’s. Copy ${differs.length === 1 ? 'it' : 'them'} from there, so the two look like a set.`,
+          `The letter’s ${listed(differs)} ${differs.length === 1 ? 'doesn’t' : 'don’t'} match resume.json’s. Copy ${differs.length === 1 ? 'it' : 'them'} from there, so the two look like a set.`,
         ]
       : []),
   ];

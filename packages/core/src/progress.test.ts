@@ -355,7 +355,7 @@ describe('nextStep', () => {
       apply: '- **Alert:** Attach a cover letter.',
     };
     expect(step(asks)).toBe('Tailor a resume and a cover letter');
-    expect(step({ ...asks, files: [pdf] })).toBe('Write the cover letter it asks for');
+    expect(step({ ...asks, files: [pdf] })).toBe('The posting asks for a cover letter');
     expect(step({ ...asks, files: [pdf], letters: [pdf] })).toBe('Ready to apply');
     expect(step({ ...asks, files: [pdf], apply: 'No cover letter needed.' })).toBe(
       'Ready to apply',

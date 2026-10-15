@@ -16,6 +16,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Classic and Minimal lay out a cover letter under the resume's own header, and a template of your own can have a letter layout too. Making a template prints a cover letter in it beside the resume, for your Claude to check. A template file with a letter layout needs this version or later; one without works in earlier versions too.
 - factwright.com makes supporting Factwright easy to find: a Support Factwright block under the code, with a button each for Buy Me a Coffee and GitHub Sponsors, and a link to it in every page's footer. Before, it was a line of text at the end of a section.
 
+### Fixed
+- A resume's Word file no longer comes out unreadable when its text holds an invisible control character, such as one pasted in with a posting's words. Word files leave those out now.
+
 ## 0.2.0 - 2026-10-14
 
 ### Added

@@ -87,6 +87,15 @@ describe('CoverLetterSection', () => {
       ].join('\n\n'),
     );
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
+    // A screen reader hears it too.
+    expect(screen.getByRole('status').textContent).toBe('Copied the cover letter’s text');
+  });
+
+  it('says the letter isn’t checked yet while Claude is writing it', async () => {
+    render(<CoverLetterSection job={job} api={apiStub()} today={TODAY} writing />);
+    await screen.findByRole('article', { name: 'Cover letter for Acme' });
+    expect(screen.getByText('Your Claude is still writing and checking this letter.')).toBeTruthy();
+    expect(screen.getByText('Being written')).toBeTruthy();
   });
 
   it('opens a file in the user’s own app, and says when it can’t', async () => {

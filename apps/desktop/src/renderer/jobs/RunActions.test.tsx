@@ -74,7 +74,7 @@ describe('RunActions', () => {
     expect(screen.getByRole('group', { name: 'Run with your Claude' })).toBeTruthy();
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Tailored resumeA resume for this job, every line traced to a factRun',
-      'Cover letterA letter for this job, from your facts, in your wordsRun',
+      'Cover letterA letter for this job, from your facts, in your voiceRun',
       'Fit checkScore the job against your fact bankRun',
       'Salary checkEstimate the pay when the posting doesn’t sayRun',
       'Who to messagePeople worth contacting, with drafts you sendRun',
@@ -88,7 +88,25 @@ describe('RunActions', () => {
   });
 
   it('suggests a cover letter once the user will apply, when the posting asks for one', async () => {
-    const asks = { ...job, apply: '- **Alert:** Send a resume and a cover letter.' };
+    const resume = {
+      path: 'applications/a/r.pdf',
+      name: 'r.pdf',
+      format: 'pdf' as const,
+      size: 1,
+      modified: '',
+    };
+    const asks = {
+      ...job,
+      apply: '- **Alert:** Send a resume and a cover letter.',
+      files: [resume],
+    };
+    // The letter copies the tailored resume's header, so the resume comes first.
+    render(
+      <RunActions job={{ ...asks, files: [] }} status="apply" run={controls()} api={apiStub()} />,
+    );
+    expect(action(/Tailored resume/).className).toMatch(/suggested/);
+    expect(action(/Cover letter/).className).not.toMatch(/suggested/);
+    cleanup();
     const run = controls();
     render(<RunActions job={asks} status="apply" run={run} api={apiStub()} />);
     expect(action(/Cover letter/).className).toMatch(/suggested/);

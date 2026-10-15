@@ -1,4 +1,5 @@
 import { FONT_FILES, type FontFile } from '../fonts.ts';
+import { escapeHtml } from '../markup.ts';
 import { previewLetter, previewResume } from '../sample.ts';
 import {
   type LetterLayout,
@@ -92,7 +93,7 @@ const SHOWS = {
   letter: {
     kind: 'letter',
     names: LETTER_VIEW_NAMES,
-    what: 'a letter. A letter can show name, headline, contact, date, recipient, greeting, paragraphs, closing, signature and titles',
+    what: 'a letter. A letter can show name, headline, contact, date, recipient, greeting, paragraphs, closing, signature and titles.contact',
   },
 } as const;
 
@@ -193,10 +194,23 @@ function circle(shows: ReadonlyMap<string, ReadonlySet<string>>): string | null 
   return null;
 }
 
-/** A letter layout's problems, if it has one, and the parts its markup shows. */
-function letterProblems(letter: unknown): { problems: string[]; parts: Set<string> } {
+/**
+ * A letter layout's problems, if it has one, and the parts its markup shows. Its styles print
+ * after the template's, so they're checked together too, as well as each on its own.
+ */
+function letterProblems(
+  letter: unknown,
+  css: unknown,
+  version: unknown,
+): { problems: string[]; parts: Set<string> } {
   const none = new Set<string>();
   if (letter === undefined) return { problems: [], parts: none };
+  if (version !== TEMPLATE_FILE.version) {
+    return {
+      problems: [`A template with a letter is version ${TEMPLATE_FILE.version}.`],
+      parts: none,
+    };
+  }
   if (!isObject(letter) || Object.keys(letter).some((key) => key !== 'css' && key !== 'body')) {
     return {
       problems: ['template.letter should be an object with the letter’s css and body.'],
@@ -210,6 +224,11 @@ function letterProblems(letter: unknown): { problems: string[]; parts: Set<strin
     problems.push('template.letter.css holds control characters.');
   } else {
     problems.push(...cssProblems(letter.css, 'template.letter.css', 'letter'));
+    if (problems.length === 0 && typeof css === 'string') {
+      problems.push(
+        ...cssProblems(`${css}\n${letter.css}`, 'template.css with template.letter.css', 'letter'),
+      );
+    }
   }
   const body = markup(letter.body, 'template.letter.body', SHOWS.letter);
   return { problems: [...problems, ...body.problems], parts: body.parts };
@@ -297,7 +316,7 @@ export function readTemplate(
   const shows = new Map<string, Set<string>>();
   const body = markup(value.body, 'template.body');
   problems.push(...body.problems);
-  const letter = letterProblems(value.letter);
+  const letter = letterProblems(value.letter, value.css, value.version);
   problems.push(...letter.problems);
   if (!isObject(parts) || Object.keys(parts).length > MAX.parts) {
     problems.push(
@@ -351,11 +370,36 @@ export function readTemplate(
   // A page in it must print in reasonable time and length, whatever its parts do, and a letter.
   try {
     renderBody(template, previewResume());
-    renderLetterBody(template, previewLetter());
+    const letterProblem =
+      template.letter && showsLetter(renderLetterBody(template, previewLetter()));
+    if (letterProblem) return { ok: false, problems: [letterProblem] };
   } catch (error) {
     return { ok: false, problems: [error instanceof Error ? error.message : String(error)] };
   }
   return { ok: true, template };
+}
+
+/**
+ * What's missing from a letter layout's page, if anything: it has to show the whole letter, with
+ * each paragraph in an element with class "para", which the fit check measures. One that leaves
+ * part of the letter out would print a letter its writer never sees.
+ */
+function showsLetter(page: string): string | null {
+  const letter = previewLetter();
+  const shown = [
+    letter.greeting,
+    ...letter.paragraphs,
+    letter.closing,
+    letter.signature ?? letter.name,
+  ];
+  const paragraphs = page.match(/class="(?:[^"]*\s)?para(?:\s[^"]*)?"/g)?.length ?? 0;
+  if (
+    shown.every((text) => page.includes(escapeHtml(text))) &&
+    paragraphs === letter.paragraphs.length
+  ) {
+    return null;
+  }
+  return 'template.letter.body has to show the whole letter: {{greeting}}, each of {{#paragraphs}} in an element with class "para", {{closing}} and {{signature}}.';
 }
 
 /**

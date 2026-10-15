@@ -348,7 +348,7 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
       if (job.files.length === 0) {
         return step(letter ? 'Tailor a resume and a cover letter' : 'Tailor a resume');
       }
-      return step(letter ? 'Write the cover letter it asks for' : 'Ready to apply');
+      return step(letter ? 'The posting asks for a cover letter' : 'Ready to apply');
     }
     case 'later':
       return job.backOn && job.backOn > today ? step(`Back ${dayFrom(job.backOn, today)}`) : null;

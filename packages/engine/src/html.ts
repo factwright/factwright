@@ -18,9 +18,10 @@ const POLICY =
 /**
  * A Letter-size HTML page, ready to print to PDF, with its fonts carried as data: URLs, so it
  * looks the same on any computer. It needs nothing from anywhere else, and runs no scripts: no
- * fonts, images or scripts load from anywhere.
+ * fonts, images or scripts load from anywhere. Each stylesheet has a style element of its own, so
+ * a rule or comment one leaves open ends with it, and can't run on into the next.
  */
-function page(title: string, fonts: string, css: string, body: string): string {
+function page(title: string, fonts: string, sheets: readonly string[], body: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}"><title>${escapeHtml(title)}</title>
 <style>
   ${fonts}
@@ -37,8 +38,7 @@ function page(title: string, fonts: string, css: string, body: string): string {
   .row,.title{break-after:avoid}
   /* A template's marks can position an element, such as the dots on a date rail, so its siblings are positioned too, which keeps the PDF's text in reading order. */
   .hdr,.stats,section,.tl .d{position:relative}
-  ${css}
-</style></head><body>${body}</body></html>`;
+</style>${sheets.map((css) => `<style>${css}</style>`).join('')}</head><body>${body}</body></html>`;
 }
 
 /** A resume as a Letter-size page in a template, ready to print to PDF. */
@@ -46,7 +46,7 @@ export function renderHtml(resume: Resume, template: Template, fonts: FontUrls =
   return page(
     `${resume.name} — Resume`,
     fontFaceCss(template.fonts, fonts),
-    template.css,
+    [template.css],
     renderBody(template, resume),
   );
 }

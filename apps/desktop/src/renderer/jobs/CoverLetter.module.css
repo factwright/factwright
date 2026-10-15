@@ -26,6 +26,21 @@
   margin-top: 14px;
 }
 
+/* While Claude is still writing the letter, above it. */
+.writing {
+  margin: 0 0 var(--fw-space-2);
+}
+
+/* Says Copied to a screen reader, which the button's own new label may not. */
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Copy text, under the letter, with when to use it. */
 .copy {
   display: flex;

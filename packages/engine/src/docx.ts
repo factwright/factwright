@@ -31,9 +31,14 @@ const MARKED = new RegExp(`(${BOLD}|${PLACEHOLDER})`, 'g');
 const IS_BOLD = new RegExp(`^${BOLD}$`);
 const IS_PLACEHOLDER = new RegExp(`^${PLACEHOLDER}$`);
 
+/** Characters a Word file can't hold, which would make Word call the file unreadable. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: these are what it finds.
+const UNWRITABLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
+
 /** Text runs with **bold** and highlighted [[placeholders]]. */
 function runs(value: unknown, t: WordTheme, base: RunOptions = {}): TextRun[] {
   return String(value ?? '')
+    .replace(UNWRITABLE, '')
     .split(MARKED)
     .filter(Boolean)
     .map((part) => {

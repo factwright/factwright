@@ -89,6 +89,13 @@ describe('asksForCoverLetter', () => {
       'Cover letter required.',
       'Applications without a cover letter won’t be considered.',
       'Attach a resume. Mention Rust in your cover letter!',
+      'Attach your resume and cover-letter.',
+      // A "no" about something else in the same sentence isn't about the letter.
+      'Include a cover letter, but don’t include references.',
+      'A cover letter is required; no need to include a photo.',
+      'Attach a cover letter and an optional portfolio.',
+      'Send a resume and a cover letter (references not needed).',
+      'Please don’t send a generic cover letter.',
     ]) {
       expect(asksForCoverLetter({ apply })).toBe(true);
     }
@@ -103,6 +110,9 @@ describe('asksForCoverLetter', () => {
       'A cover letter is not required.',
       'Please don’t send a cover letter, just your resume.',
       'We do not need cover letters.',
+      'Cover letter (optional).',
+      'Cover-letters: not required.',
+      'No need for a cover letter.',
     ]) {
       expect(asksForCoverLetter({ apply })).toBe(false);
     }

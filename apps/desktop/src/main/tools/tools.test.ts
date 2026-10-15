@@ -941,6 +941,26 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('_v2.pdf');
   });
 
+  it('says when the job’s cover letter no longer has the resume’s header', async () => {
+    writeResume(resume);
+    const letter = {
+      name: 'Alex Rivera',
+      headline: 'Platform Engineer',
+      greeting: 'Dear Sam,',
+      paragraphs: ['Hello.'],
+      closing: 'Best,',
+    };
+    writeFileSync(folder('cover-letter.json'), JSON.stringify(letter));
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
+      'The job’s cover letter no longer matches this resume: its headline differs. Copy the header from resume.json into cover-letter.json, then build the letter again with build_cover_letter, so the two look like a set.',
+    );
+    writeFileSync(
+      folder('cover-letter.json'),
+      JSON.stringify({ ...letter, headline: 'Staff Engineer' }),
+    );
+    expect(await tool('build_resume').run({ folder: FOLDER })).not.toContain('cover letter');
+  });
+
   it('keeps them once the user withdrew, but not for a role that closed before applying', async () => {
     writeResume(resume);
     writeFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'as sent');
@@ -1207,6 +1227,28 @@ describe('the template tools', () => {
     ).toBe('%PDF-1.7 made up');
     expect(printer.print.mock.calls[1]?.[0]).toContain('<div class="lhi">Dear Priya Shah,</div>');
     expect(printer.print.mock.calls[1]?.[0]).toContain('Jordan Avery');
+    // Previewed with one of the user's resumes, the letter has that resume's header, and no
+    // contact details when it has none.
+    mkdirSync(join(root, 'base'));
+    writeFileSync(
+      join(root, 'base', 'startup-ic.json'),
+      JSON.stringify({
+        name: 'Sam Doe',
+        headline: 'Designer',
+        summary: 'Designs.',
+        experience: [{ title: 'Designer', company: 'Tidewater', start: '2022', end: 'Present' }],
+      }),
+    );
+    printer.print.mockClear();
+    await tool('save_template').run({
+      id: 'navy-sidebar',
+      template: file(),
+      replace: true,
+      resume: 'base/startup-ic',
+    });
+    const preview = printer.print.mock.calls[1]?.[0] ?? '';
+    expect(preview).toContain('<div class="name">Sam Doe</div>');
+    expect(preview).not.toContain('jordan.avery@example.com');
     // One with no letter layout says letters print plainly in it.
     expect(
       await tool('save_template').run({ id: 'plain', template: file({ letter: undefined }) }),

@@ -116,7 +116,7 @@ export async function saveTemplate(
   const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;
   // A cover letter in it, from the same person, with the header their resume has.
   const { name, headline, contact } = preview.resume;
-  const letter = { ...previewLetter(), name, headline, ...(contact && { contact }) };
+  const letter = { ...previewLetter(), name, headline, contact: contact ?? {} };
   const letterPath = deps.templates.letterPreviewPath(template.id);
   const letterPrinted = await deps.printer.print(renderLetterHtml(letter, template, RESUME_FONTS));
   await writeFile(join(deps.workspace, ...letterPath.split('/')), letterPrinted.pdf);

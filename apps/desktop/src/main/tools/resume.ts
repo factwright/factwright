@@ -1,6 +1,6 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type Job, type JobStatus, WORKSPACE_PATHS } from '@factwright/core';
+import { JOB_DOCS, type Job, type JobStatus, WORKSPACE_PATHS } from '@factwright/core';
 import {
   DEFAULT_MAX_PAGES,
   DEFAULT_TEMPLATE,
@@ -11,8 +11,10 @@ import {
   type LintConfig,
   lintResume,
   outputName,
+  type Resume,
   type ResumeFormat,
   readConfidentialTerms,
+  readLetter,
   readResume,
   renderHtml,
 } from '@factwright/engine';
@@ -20,6 +22,7 @@ import { RESUME_FONTS } from '../resume/fonts.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import { FOLDER_NAME } from './posting.ts';
+import { headerDifferences, listed } from './set.ts';
 
 export interface BuildResumeDeps {
   workspace: string;
@@ -93,6 +96,24 @@ export async function keptAsSent(
   const sent = [];
   for (const file of files) if (await exists(join(dir, file))) sent.push(file);
   return sent;
+}
+
+/**
+ * A note when the job's cover letter no longer has this resume's header, such as after the
+ * headline changed, so the two stay a set. Nothing when there's no letter, or it won't read.
+ */
+async function letterOutOfStep(dir: string, resume: Resume): Promise<string | null> {
+  const text = await readText(join(dir, JOB_DOCS.letter));
+  if (text === null) return null;
+  let read: ReturnType<typeof readLetter>;
+  try {
+    read = readLetter(JSON.parse(text));
+  } catch {
+    return null;
+  }
+  const differs = read.ok ? headerDifferences(read.letter, resume) : [];
+  if (differs.length === 0) return null;
+  return `The job’s cover letter no longer matches this resume: its ${listed(differs)} differ${differs.length === 1 ? 's' : ''}. Copy the header from resume.json into ${JOB_DOCS.letter}, then build the letter again with build_cover_letter, so the two look like a set.`;
 }
 
 /**
@@ -196,6 +217,9 @@ export async function buildResume(
       `Built ${where}/${name}.docx. Word lays it out itself, so its page count can differ from the PDF’s.`,
     );
   }
+
+  const out = at.isJob ? await letterOutOfStep(dir, resume) : null;
+  if (out) report.push(out);
 
   const rows = await deps.printer.measure(html);
   const runts = rows.filter(isRunt);

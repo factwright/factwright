@@ -202,6 +202,10 @@ describe('collectJobs', () => {
       ['Resume built', '2026-10-07'],
       ['Cover letter written', '2026-10-14'],
     ]);
+    // A letter copied in from elsewhere keeps its old date, but the job came first.
+    const old = { ...letter, modified: new Date(2026, 8, 1, 12).toISOString() };
+    const [copied] = collectJobs([folder('Acme Robotics', 'Staff Engineer', { letters: [old] })]);
+    expect(copied?.events.find((event) => event.tool === 'letter')?.date).toBe('2026-10-07');
   });
 
   it('takes a job’s kind from its fit check, or else the search that rated it highest', () => {

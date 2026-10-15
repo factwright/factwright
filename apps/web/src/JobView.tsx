@@ -284,16 +284,22 @@ export function JobView({
                 {copied === 'copied' ? 'Copied' : 'Copy text'}
               </Button>
             )}
-            {job.letters.map((file) => (
-              <Button
-                key={file.path}
-                size="sm"
-                aria-label={`Open ${file.name}`}
-                onClick={() => openResume(file.path, file.format, file.name)}
-              >
-                {file.format === 'pdf' ? 'Open the PDF' : 'Open the Word file'}
-              </Button>
-            ))}
+            {job.letters.map((file) => {
+              const label = file.format === 'pdf' ? 'Open the PDF' : 'Open the Word file';
+              return (
+                <Button
+                  key={file.path}
+                  size="sm"
+                  aria-label={`${label}, ${file.name}`}
+                  onClick={() => openResume(file.path, file.format, file.name)}
+                >
+                  {label}
+                </Button>
+              );
+            })}
+            <span className={styles.announce} role="status">
+              {copied === 'copied' ? 'Copied the cover letter’s text' : ''}
+            </span>
           </div>
           {copied === 'failed' && (
             <p className={styles.problem} role="alert">
@@ -367,7 +373,7 @@ export function JobView({
       {(built.length > 0 || documents.length > 0) && (
         <section className={styles.section} aria-labelledby="files">
           <h2 id="files" className={styles.heading}>
-            Resumes and documents
+            Files
           </h2>
           <ul className={styles.items}>
             {built.map((file) => (

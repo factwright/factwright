@@ -16,7 +16,7 @@ export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string
   {
     skill: 'cover-letter',
     label: 'Cover letter',
-    why: 'A letter for this job, from your facts, in your words',
+    why: 'A letter for this job, from your facts, in your voice',
   },
   { skill: 'fit-check', label: 'Fit check', why: 'Score the job against your fact bank' },
   {
@@ -93,8 +93,8 @@ export function RunActions({
           const running = mine && busy;
           const done = mine && run.phase === 'done';
           const [state, tone] = stateOf(job, skill, running, done);
-          // A fit check helps decide on a job, and a resume comes once the user will apply, with
-          // a cover letter when the posting asks for one.
+          // A fit check helps decide on a job, and a resume comes once the user will apply, then a
+          // cover letter when the posting asks for one, which copies the resume's header.
           const suggested =
             running ||
             (!done &&
@@ -102,6 +102,7 @@ export function RunActions({
                 (skill === 'focused-resume' && status === 'apply' && job.files.length === 0) ||
                 (skill === 'cover-letter' &&
                   status === 'apply' &&
+                  job.files.length > 0 &&
                   job.letters.length === 0 &&
                   asksForCoverLetter(job))));
           return (

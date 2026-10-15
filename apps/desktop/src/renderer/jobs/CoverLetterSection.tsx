@@ -31,10 +31,13 @@ export function CoverLetterSection({
   job,
   api,
   today,
+  writing = false,
 }: {
   job: Job;
   api: FactwrightApi;
   today: string;
+  /** Whether Claude is writing this job's letter now, so what shows isn't checked yet. */
+  writing?: boolean;
 }) {
   const [letter, setLetter] = useState<LetterText | null>(null);
   const [copied, setCopied] = useState(false);
@@ -59,7 +62,11 @@ export function CoverLetterSection({
 
   // Nothing to show yet: no letter that reads, such as one Claude is still writing, and no files.
   if (!letter && job.letters.length === 0) return null;
-  const summary = letter ? `${letterWordCount(letter)} words` : formats(job.letters);
+  const summary = writing
+    ? 'Being written'
+    : letter
+      ? `${letterWordCount(letter)} words`
+      : formats(job.letters);
 
   const copy = async () => {
     if (!letter) return;
@@ -75,6 +82,11 @@ export function CoverLetterSection({
 
   return (
     <PanelSection id="letter" title="Cover letter" icon={<Mail size={15} />} summary={summary}>
+      {writing && (
+        <p className={`${panel.quiet} ${styles.writing}`}>
+          Your Claude is still writing and checking this letter.
+        </p>
+      )}
       {letter && (
         <article className={styles.letter} aria-label={`Cover letter for ${job.company}`}>
           {letter.recipient.length > 0 && (
@@ -104,6 +116,9 @@ export function CoverLetterSection({
             {copied ? 'Copied' : 'Copy text'}
           </Button>
           <span className={styles.hint}>For a form’s cover letter box</span>
+          <span className={styles.announce} role="status">
+            {copied ? 'Copied the cover letter’s text' : ''}
+          </span>
         </div>
       )}
       {job.letters.length > 0 && (

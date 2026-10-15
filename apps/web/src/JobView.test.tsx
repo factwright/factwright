@@ -216,17 +216,36 @@ describe('a job on the phone', () => {
       'Dear Sam Lee,\n\nI cut deploy time by ~40%.\n\nTalk soon?\n\nBest regards,\nAlex Rivera',
     );
     expect(shown.getByRole('button', { name: 'Copied' })).toBeTruthy();
+    expect(shown.getByRole('status').textContent).toBe('Copied the cover letter’s text');
     // The letter's file is with the resume too, as the computer lists them.
-    expect(
-      within(section('Resumes and documents')).getByText('AlexRiveraCoverLetter_Acme.pdf'),
-    ).toBeTruthy();
+    expect(within(section('Files')).getByText('AlexRiveraCoverLetter_Acme.pdf')).toBeTruthy();
     fakeServer({ [`GET /api/sync/files/${locked.id}`]: () => new Response(locked.data) });
     const { tab } = newTab();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:letter');
     await userEvent.click(
-      shown.getByRole('button', { name: 'Open AlexRiveraCoverLetter_Acme.pdf' }),
+      shown.getByRole('button', { name: 'Open the PDF, AlexRiveraCoverLetter_Acme.pdf' }),
     );
     await waitFor(() => expect(tab.location.href).toBe('blob:letter'));
+  });
+
+  it('names each of two letters’ buttons by its file', async () => {
+    const { keys, vault } = await setUp();
+    const letter = (name: string) => ({
+      path: `applications/2026-10-07-acme-staff/${name}`,
+      name,
+      format: 'pdf' as const,
+      size: 9,
+      modified: TODAY,
+    });
+    const two = {
+      ...ACME,
+      letters: [letter('Sent_CoverLetter.pdf'), letter('New_CoverLetter.pdf')],
+    };
+    render(<JobView job={two} vault={vault} keys={keys} today={TODAY} />);
+    const shown = within(section('Cover letter'));
+    expect(shown.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(
+      ['Open the PDF, Sent_CoverLetter.pdf', 'Open the PDF, New_CoverLetter.pdf'],
+    );
   });
 
   it('says when the browser won’t copy the letter', async () => {

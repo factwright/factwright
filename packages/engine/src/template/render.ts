@@ -90,12 +90,12 @@ function letterOf(template: Template): ParsedLetter {
 }
 
 /**
- * The styles a template's letters print with: the template's own and its letter's, so the
- * letter's header is styled as the resume's is, or only the plain letter's.
+ * The stylesheets a template's letters print with, each on its own: the template's own and its
+ * letter's, so the letter's header is styled as the resume's is, or only the plain letter's.
  */
-export function letterStyles(template: Template): string {
+export function letterStyles(template: Template): string[] {
   const { layout, own } = letterOf(template);
-  return own ? `${template.css}\n${layout.css}` : layout.css;
+  return own ? [template.css, layout.css] : [layout.css];
 }
 
 /** A cover letter's page in a template: its letter's markup, filled in. */

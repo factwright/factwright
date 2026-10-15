@@ -109,9 +109,9 @@ describe('renderLetterHtml', () => {
     ]) {
       expect(html).toContain(text);
     }
-    // The same header as the resume, styled by the same rules.
+    // The same header as the resume, styled by the same rules, each sheet in its own element.
     const resume = renderHtml(sampleResume(), template);
-    expect(html).toContain(template.css);
+    expect(html).toContain(`<style>${template.css}</style><style>${template.letter?.css}</style>`);
     expect(resume).toContain('<div class="name">Alex Rivera</div>');
     expect(html.match(/<p class="para">/g)).toHaveLength(2);
   });
@@ -204,6 +204,15 @@ describe('letterDocument', () => {
       expect(xml.indexOf('Dear Sam Lee,')).toBeLessThan(xml.indexOf('Best regards,'));
     },
   );
+
+  it('leaves out characters a Word file can’t hold', async () => {
+    const xml = await documentXml(
+      { ...sampleLetter(), paragraphs: ['Cut deploys\u000b by ~40%\u0001 for the team.'] },
+      classic,
+    );
+    expect(xml).toContain('Cut deploys by ~40% for the team.');
+    for (const control of ['\u0001', '\u000b']) expect(xml).not.toContain(control);
+  });
 
   it('bolds **text**, and highlights placeholders', async () => {
     const xml = await documentXml(

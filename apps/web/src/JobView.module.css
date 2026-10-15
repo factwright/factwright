@@ -168,3 +168,13 @@
   gap: var(--fw-space-2);
   margin-top: var(--fw-space-3);
 }
+
+/* Says Copied to a screen reader, which the button's own new label may not. */
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

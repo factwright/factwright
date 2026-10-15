@@ -236,9 +236,11 @@ function eventsOf(record: ToolRecord, jobId: string): JobEvent[] {
     const id = `resume:${record.key}`;
     events.push({ id, tool: 'resume', date: record.date, title: 'Resume built' });
   }
-  // A letter usually comes after the resume, so it's dated by its own file.
+  // A letter usually comes after the resume, so it's dated by its own file, though never before
+  // the job's folder was made, as a file the user copied in from elsewhere could be.
   if (record.letters.length > 0) {
-    const date = firstModified(record.letters) ?? record.date;
+    const dates = [firstModified(record.letters), record.date].filter((each) => each !== null);
+    const date = dates.sort(compare).at(-1) ?? null;
     events.push({
       id: `letter:${record.key}`,
       tool: 'letter',
