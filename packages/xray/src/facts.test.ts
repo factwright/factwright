@@ -315,13 +315,17 @@ describe('readFacts, in nested lists', () => {
 
 describe('readFacts, on a file made to be slow to read', () => {
   it('reads a long heading over many lines in time with the file’s length', () => {
-    const text = `## ${'Tools '.repeat(20_000)}\n${Array.from(
-      { length: 20_000 },
-      (_, at) => `- Skill ${at}`,
-    ).join('\n')}`;
-    const started = performance.now();
-    expect(readFacts([{ path: 'facts/skills.md', text }]).skills).toHaveLength(20_000);
-    // Each line read every heading above it again: seconds for a file this size.
-    expect(performance.now() - started).toBeLessThan(1_500);
+    const lines = Array.from({ length: 20_000 }, (_, at) => `- Skill ${at}`).join('\n');
+    const time = (heading: string) => {
+      const started = performance.now();
+      const facts = readFacts([{ path: 'facts/skills.md', text: `## ${heading}\n${lines}` }]);
+      expect(facts.skills).toHaveLength(20_000);
+      return performance.now() - started;
+    };
+    time('Tools');
+    const short = time('Tools');
+    // Each line read every heading above it again: about fifty times as long with this one.
+    // Against the same file under a short heading, which a busy computer slows alike.
+    expect(time('Tools '.repeat(20_000))).toBeLessThan(short * 4 + 100);
   });
 });

@@ -31,34 +31,59 @@ function declaring(file: Uint8Array, name: string, size: number): Uint8Array {
   throw new Error(`No ${name} in the zip`);
 }
 
-/**
- * A deflate stream that unpacks to `size` zero bytes, written by hand, as zipping that many
- * would take seconds: a zero, then copies of the 258 bytes before, 13 bits each.
- */
-function zeros(size: number): Uint8Array {
+/** Bits for a deflate stream, each Huffman code first bit first, filling each byte from its last bit. */
+function bits() {
   const bytes: number[] = [];
   let byte = 0;
   let filled = 0;
-  // A Huffman code goes in its first bit first; the stream fills each byte from its last bit.
-  const code = (value: number, length: number) => {
-    for (let bit = length - 1; bit >= 0; bit--) {
-      byte |= ((value >> bit) & 1) << filled;
-      if (++filled === 8) {
-        bytes.push(byte);
-        byte = 0;
-        filled = 0;
+  return {
+    code(value: number, length: number) {
+      for (let bit = length - 1; bit >= 0; bit--) {
+        byte |= ((value >> bit) & 1) << filled;
+        if (++filled === 8) {
+          bytes.push(byte);
+          byte = 0;
+          filled = 0;
+        }
       }
-    }
+    },
+    bytes: () => (filled > 0 ? [...bytes, byte] : bytes),
   };
-  // The last block, with the fixed codes: its bits 1, then 1 and 0.
-  code(0b110, 3);
-  code(0x30, 8);
-  let left = size - 1;
-  for (; left >= 258; left -= 258) code(0b11000101_00000, 13);
-  for (; left > 0; left--) code(0x30, 8);
-  code(0, 7);
-  if (filled > 0) bytes.push(byte);
-  return new Uint8Array(bytes);
+}
+
+/**
+ * A deflate stream that unpacks to `size` zero bytes, in one block, written by hand, as zipping
+ * that many would take seconds: a zero, then copies of the 258 bytes before, 13 bits each. Eight
+ * copies make 13 whole bytes, so after a head of 3 bytes they repeat as bytes.
+ */
+function zeros(size: number): Uint8Array {
+  const copy = 0b11000101_00000;
+  const copies = Math.floor((size - 1) / 258);
+  // The last block, with the fixed codes: its bits 1, then 1 and 0. Then a zero, and a copy.
+  const head = bits();
+  head.code(0b110, 3);
+  head.code(0x30, 8);
+  if (copies === 0) {
+    // Too few for a copy: the rest as zeros, one by one, and the block's end.
+    for (let left = size - 1; left > 0; left--) head.code(0x30, 8);
+    head.code(0, 7);
+    return new Uint8Array(head.bytes());
+  }
+  head.code(copy, 13);
+  const eight = bits();
+  for (let at = 0; at < 8; at++) eight.code(copy, 13);
+  const group = eight.bytes();
+  const groups = Math.floor((copies - 1) / 8);
+  const tail = bits();
+  for (let left = (copies - 1) % 8; left > 0; left--) tail.code(copy, 13);
+  for (let left = (size - 1) % 258; left > 0; left--) tail.code(0x30, 8);
+  tail.code(0, 7);
+  const [start, end] = [head.bytes(), tail.bytes()];
+  const stream = new Uint8Array(start.length + group.length * groups + end.length);
+  stream.set(start, 0);
+  for (let at = 0; at < groups; at++) stream.set(group, start.length + at * group.length);
+  stream.set(end, start.length + group.length * groups);
+  return stream;
 }
 
 /** A deflate stream of empty stored blocks, which unpacks to nothing however long it is. */
@@ -293,19 +318,19 @@ describe('readDocx, on files made to blow up', () => {
   it('reads a part listed many times once, and one that says it holds nothing not at all', () => {
     const stream = emptyBlocks(200_000);
     for (const size of [0, 4_096]) {
-      const file = zipOf('word/document.xml', stream, size, 300);
+      const file = zipOf('word/document.xml', stream, size, 1_000);
       const started = performance.now();
       expect(() => readDocx(file)).toThrow();
-      // Each listing unpacked a megabyte that holds nothing: about two seconds in all.
-      expect(performance.now() - started, `${size}`).toBeLessThan(100);
+      // Each listing unpacked a megabyte that holds nothing: about six seconds in all.
+      expect(performance.now() - started, `${size}`).toBeLessThan(1_000);
     }
   });
 
   it('stops unpacking a part that holds far more than it says', () => {
-    const file = zipOf('word/document.xml', zeros(128_000_000), 4_096);
+    const file = zipOf('word/document.xml', zeros(2_000_000_000), 4_096);
     const started = performance.now();
     expect(() => readDocx(file)).toThrow();
-    // Unpacking all of it, only to cut it off, took 0.3 seconds, and a minute at 20 MB.
-    expect(performance.now() - started).toBeLessThan(100);
+    // Unpacking all of these two gigabytes, only to cut them off, took over three seconds.
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });
