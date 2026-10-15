@@ -59,12 +59,12 @@ describe('CoverLetterSection', () => {
     const { container } = render(<CoverLetterSection job={job} api={apiStub()} today={TODAY} />);
     expect(screen.getByRole('heading', { name: 'Cover letter' })).toBeTruthy();
     const letter = await screen.findByRole('article', { name: 'Cover letter for Acme' });
-    expect(within(letter).getByText('To Sam Lee, Engineering Manager, Acme')).toBeTruthy();
+    expect(within(letter).getByText('To Sam Lee · Engineering Manager · Acme')).toBeTruthy();
     expect(within(letter).getByText('Dear Sam Lee,')).toBeTruthy();
     // Its bold shows as bold, not as marks.
     expect(within(letter).getByText('~40%').tagName).toBe('STRONG');
     expect(letter.textContent).toContain('Best regards,Alex Rivera');
-    expect(screen.getByText('16 words · PDF and Word')).toBeTruthy();
+    expect(screen.getByText('16 words')).toBeTruthy();
     const files = screen.getByRole('list', { name: 'The cover letter’s files' });
     expect(within(files).getAllByRole('listitem')).toHaveLength(2);
     expect(

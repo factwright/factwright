@@ -96,11 +96,14 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
   };
 
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  // A resume or letter built as a PDF and a Word file is one, by its name.
+  const named = (files: readonly JobFile[]) =>
+    new Set(files.map((file) => file.name.replace(/\.[^.]+$/, ''))).size;
   const built = [...job.files, ...job.letters];
   const summary =
     [
-      job.files.length > 0 && count(job.files.length, 'resume'),
-      job.letters.length > 0 && count(job.letters.length, 'cover letter'),
+      job.files.length > 0 && count(named(job.files), 'resume'),
+      job.letters.length > 0 && count(named(job.letters), 'cover letter'),
       documents.length > 0 && count(documents.length, 'document'),
     ]
       .filter(Boolean)

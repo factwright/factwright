@@ -208,7 +208,7 @@ describe('a job on the phone', () => {
       <JobView job={written} vault={withLetter} keys={keys} today={TODAY} />,
     );
     const shown = within(section('Cover letter'));
-    expect(shown.getByText('To Sam Lee, Engineering Manager')).toBeTruthy();
+    expect(shown.getByText('To Sam Lee · Engineering Manager')).toBeTruthy();
     expect(shown.getByText('~40%').tagName).toBe('STRONG');
     expect((await axe.run(container)).violations).toEqual([]);
     await userEvent.click(shown.getByRole('button', { name: 'Copy text' }));

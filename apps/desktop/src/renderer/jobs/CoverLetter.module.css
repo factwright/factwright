@@ -26,6 +26,20 @@
   margin-top: 14px;
 }
 
+/* Copy text, under the letter, with when to use it. */
+.copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2) var(--fw-space-3);
+  margin-top: var(--fw-space-3);
+}
+
+.hint {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
 .files {
   margin-top: var(--fw-space-3);
 }

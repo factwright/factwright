@@ -58,8 +58,7 @@ export function CoverLetterSection({
   }, [api, job, written]);
 
   if (!written && job.letters.length === 0) return null;
-  const words = letter ? letterWordCount(letter) : 0;
-  const summary = [letter && `${words} words`, formats(job.letters)].filter(Boolean).join(' · ');
+  const summary = letter ? `${letterWordCount(letter)} words` : formats(job.letters);
 
   const copy = async () => {
     if (!letter) return;
@@ -74,29 +73,11 @@ export function CoverLetterSection({
   };
 
   return (
-    <PanelSection
-      id="letter"
-      title="Cover letter"
-      icon={<Mail size={15} />}
-      summary={summary}
-      actions={
-        letter && (
-          <Button
-            size="sm"
-            variant="quiet"
-            icon={<Copy size={13} aria-hidden="true" />}
-            aria-label={copied ? 'Copied' : 'Copy text of the cover letter'}
-            onClick={copy}
-          >
-            {copied ? 'Copied' : 'Copy text'}
-          </Button>
-        )
-      }
-    >
+    <PanelSection id="letter" title="Cover letter" icon={<Mail size={15} />} summary={summary}>
       {letter && (
         <article className={styles.letter} aria-label={`Cover letter for ${job.company}`}>
           {letter.recipient.length > 0 && (
-            <p className={styles.to}>To {letter.recipient.join(', ')}</p>
+            <p className={styles.to}>To {letter.recipient.join(' · ')}</p>
           )}
           {letter.greeting && <p>{letter.greeting}</p>}
           {letter.paragraphs.map((paragraph, i) => (
@@ -111,6 +92,19 @@ export function CoverLetterSection({
           </p>
         </article>
       )}
+      {letter && (
+        <div className={styles.copy}>
+          <Button
+            size="sm"
+            icon={<Copy size={13} aria-hidden="true" />}
+            aria-label={copied ? 'Copied' : 'Copy text of the cover letter'}
+            onClick={copy}
+          >
+            {copied ? 'Copied' : 'Copy text'}
+          </Button>
+          <span className={styles.hint}>For a form’s cover letter box</span>
+        </div>
+      )}
       {job.letters.length > 0 && (
         <ul className={`${panel.files} ${styles.files}`} aria-label="The cover letter’s files">
           {job.letters.map((file) => (
@@ -123,11 +117,6 @@ export function CoverLetterSection({
             />
           ))}
         </ul>
-      )}
-      {letter && (
-        <p className={panel.quiet}>
-          Attach a file, or paste the text into the application’s cover letter box.
-        </p>
       )}
       {problem && (
         <p className={panel.problem} role="alert">

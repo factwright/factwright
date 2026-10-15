@@ -263,7 +263,7 @@ export function JobView({
           {letter && (
             <div className={styles.letter}>
               {letter.recipient.length > 0 && (
-                <p className={styles.itemNote}>To {letter.recipient.join(', ')}</p>
+                <p className={styles.itemNote}>To {letter.recipient.join(' · ')}</p>
               )}
               {letter.greeting && <p>{letter.greeting}</p>}
               {letter.paragraphs.map((paragraph, i) => (
