@@ -139,3 +139,131 @@ describe('readFacts', () => {
     expect(facts.keywords).toEqual([]);
   });
 });
+
+describe('readFacts, with what each line is under', () => {
+  it('leaves out skills a heading above says are to come, however deep, or a line or cell says so', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/skills.md',
+        text: [
+          '## Tools',
+          '- SQL',
+          '| Skill | Depth |',
+          '|---|---|',
+          '| Go | Daily |',
+          '| Zig | In progress |',
+          '| Haskell | Wanted |',
+          '- AWS Certified Solutions Architect — exam in March',
+          '## Want to learn',
+          '### Cloud',
+          '- Kubernetes',
+          '## Studying',
+          '- Rust',
+          '## In progress',
+          '- Elixir',
+        ].join('\n'),
+      },
+    ]);
+    expect(texts(facts.skills)).toEqual(['SQL', 'Go']);
+  });
+
+  it('reads only the credentials profile.md says are earned and still held', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/profile.md',
+        text: [
+          '## Certifications',
+          '- AWS Solutions Architect, 2022',
+          '- RN license pending NCLEX results',
+          '- CPA: passed 2 of 4 exams',
+          '- CISSP next year',
+          '- PMP: not yet',
+          '- CPR (expired 2019)',
+          '| Certification | Have it |',
+          '|---|---|',
+          '| CFA | Yes |',
+          '| PMP | No |',
+          '## Certifications in progress',
+          '- CISM',
+          '## Certifications to get',
+          '- CCNA',
+          '## Goals for next year',
+          '### Certifications',
+          '- PMI-ACP',
+          '## Education',
+          '- MBA, 2018',
+          '- B.S. Biology (did not finish)',
+        ].join('\n'),
+      },
+    ]);
+    expect(texts(facts.credentials)).toEqual([
+      'AWS Solutions Architect, 2022',
+      'CFA, Yes',
+      'MBA, 2018',
+    ]);
+  });
+
+  it('reads every line of gaps.md’s parts, under a heading or a bold label', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/gaps.md',
+        text: [
+          '**Doesn’t have**',
+          '- Kafka',
+          '**Needs confirmation**',
+          '- Kubernetes: production?',
+          '## Doesn’t have',
+          'Flink. Never used it.',
+          '### Pulsar',
+          '## Open questions',
+          '- How many users?',
+        ].join('\n'),
+      },
+    ]);
+    expect(facts.saidNo).toEqual(['Kafka', 'Flink. Never used it.', 'Pulsar']);
+    expect(facts.toConfirm).toEqual(['Kubernetes: production?']);
+  });
+
+  it('reads what a Don’t claim part names', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/acme.md',
+        text: '## Don’t claim\n- Kubernetes: only via the platform team',
+      },
+    ]);
+    expect(facts.dontClaim).toEqual([
+      { text: 'Kubernetes: only via the platform team', where: 'acme.md · Don’t claim' },
+    ]);
+  });
+
+  it('backs terms only with a claim that says it’s confirmed, whatever its tags’ case', () => {
+    const claim = (title: string, tags: string, keywords: string) =>
+      `### ${title}\n${tags}\n- **Keywords:** ${keywords}`;
+    const facts = readFacts([
+      {
+        path: 'facts/acme.md',
+        text: [
+          // As core reads a claim, its first tag is in small letters.
+          claim('A', '`live` `Solo` `High`', 'Terraform'),
+          claim('F', '`Live` `solo` `high`', 'Looker'),
+          claim('B', '`solo` `Plan-only`', 'Snowflake'),
+          claim('C', '`planned` `solo` `high`', 'dbt'),
+          claim('D', '`live` `Unconfirmed` `high`', 'Airflow'),
+          claim('E', '`solo` `high`', 'Spark'),
+        ].join('\n'),
+      },
+    ]);
+    expect(texts(facts.keywords)).toEqual(['Terraform']);
+    expect(texts(facts.toCheck)).toEqual(['Airflow', 'Spark']);
+  });
+
+  it('keeps a code block open past a fence with words after it, as core does', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/skills.md',
+        text: ['- SQL', '```', '```js', '- Haskell', '```', '- Go'].join('\n'),
+      },
+    ]);
+    expect(texts(facts.skills)).toEqual(['SQL', 'Go']);
+  });
+});
