@@ -11,7 +11,7 @@ export interface Form {
   exact: boolean;
   /** A one-letter language, such as R, matched only in a list, such as "Python, R and SQL". */
   listed: boolean;
-  /** Matched in any case, and as the everyday word too, to find it in what the user said no to. */
+  /** Matched in any case, and anywhere, to find it in what the user said no to. */
   loose?: boolean;
 }
 
@@ -72,10 +72,12 @@ const NOT_JOINED: Readonly<Record<string, string>> = {
   Go: 'to|live|getter|ahead|between|around',
 };
 
-/** What can't follow a form, as the everyday word: "Go above", "Go-live". */
+/**
+ * What can't follow a form, as the everyday word: "Go above", "Go-live". Matched loosely, only a
+ * hyphen's compound is the everyday word, so "go in production" still names Go.
+ */
 function notAfter(form: Form): string {
-  if (form.loose) return '';
-  const words = NOT_BEFORE[form.text];
+  const words = form.loose ? undefined : NOT_BEFORE[form.text];
   const joined = NOT_JOINED[form.text];
   const not = [words && `\\s+(?:${words})\\b`, joined && `-(?:${joined})\\b`].filter(Boolean);
   return not.length > 0 ? `(?!${not.join('|')})` : '';
@@ -166,13 +168,14 @@ export function findTerm(text: string, term: Term): string | null {
 }
 
 /**
- * Where a term is in what the user said, in any case and even as the everyday word: "go in
- * production" names Go. It finds more than findTerm, which is safe for what the user said they
- * don't have, or not to claim, since that only ever keeps a term off.
+ * Where a term is in what the user said, in any case, and a one-letter language outside a list
+ * too: "r (statistics)" names R, and "go in production" names Go. It finds more than findTerm,
+ * which is safe for what the user said they don't have, or not to claim, since that only ever
+ * keeps a term off. A hyphen's compound is still the everyday word: "go-to-market" isn't Go.
  */
 export function findTermLoosely(text: string, term: Term): string | null {
   return findTerm(text, {
     ...term,
-    forms: term.forms.map((form) => ({ ...form, exact: false, loose: true })),
+    forms: term.forms.map((form) => ({ ...form, exact: false, listed: false, loose: true })),
   });
 }

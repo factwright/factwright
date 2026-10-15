@@ -10,6 +10,8 @@ export type Need = 'must' | 'nice';
 export interface PostingLine {
   text: string;
   need: Need;
+  /** The heading of the part it's in, such as "Licenses and certifications", or null. */
+  heading: string | null;
 }
 
 /** What a part of a posting holds. */
@@ -109,8 +111,9 @@ const SAVED_NOTE = /^(?:#\s+job posting\s*$|-\s+\*\*(?:source|saved):\*\*|-{3,}\
  */
 export function readPosting(text: string): { lines: PostingLine[]; sectioned: boolean } {
   // Each clause, with the text its markers are read in: its own, after its line's label.
-  const lines: { text: string; marked: string; part: Part | null }[] = [];
+  const lines: { text: string; marked: string; part: Part | null; heading: string | null }[] = [];
   let part: Part | null = null;
+  let title: string | null = null;
   let sectioned = false;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -120,6 +123,7 @@ export function readPosting(text: string): { lines: PostingLine[]; sectioned: bo
       const next = partOf(heading);
       // A heading that doesn't say what it holds, such as the job's title, starts a part of its own.
       part = next ?? 'other';
+      title = heading;
       if (next === 'must' || next === 'nice') sectioned = true;
       continue;
     }
@@ -129,17 +133,24 @@ export function readPosting(text: string): { lines: PostingLine[]; sectioned: bo
     const label = /^([^:]{1,40}):\s/.exec(body)?.[1];
     for (const [at, clause] of body.split(/;\s+|(?<=[\p{L})]{2}[.!?])\s+(?=\p{Lu})/u).entries()) {
       const text = clause.trim();
-      if (text) lines.push({ text, marked: at > 0 && label ? `${label}: ${text}` : text, part });
+      if (text) {
+        lines.push({
+          text,
+          marked: at > 0 && label ? `${label}: ${text}` : text,
+          part,
+          heading: title,
+        });
+      }
     }
   }
-  const asked = lines.flatMap(({ text: line, marked, part: where }): PostingLine[] => {
+  const asked = lines.flatMap(({ text: line, marked, part: where, heading }): PostingLine[] => {
     const nice = NICE_HERE.test(marked);
+    const ask = (need: Need): PostingLine[] => [{ text: line, need, heading }];
     if (!sectioned && where === 'other') return [];
-    if (!sectioned) return [{ text: line, need: nice ? 'nice' : 'must' }];
-    if (where === 'must') return [{ text: line, need: nice ? 'nice' : 'must' }];
-    if (where === 'nice') return [{ text: line, need: 'nice' }];
-    if (where === 'role')
-      return [{ text: line, need: !nice && MUST_HERE.test(marked) ? 'must' : 'nice' }];
+    if (!sectioned) return ask(nice ? 'nice' : 'must');
+    if (where === 'must') return ask(nice ? 'nice' : 'must');
+    if (where === 'nice') return ask('nice');
+    if (where === 'role') return ask(!nice && MUST_HERE.test(marked) ? 'must' : 'nice');
     return [];
   });
   return { lines: asked, sectioned };
