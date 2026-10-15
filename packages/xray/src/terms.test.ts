@@ -34,6 +34,13 @@ describe('finding terms', () => {
     expect(findTerm('ASP.NET Core', named('ASP.NET'))).toBe('ASP.NET');
   });
 
+  it('finds names with "&" in them, such as FP&A and P&L', () => {
+    expect(names('Partner with the FP&A team on P&L reviews')).toEqual([
+      'Financial planning and analysis',
+      'P&L',
+    ]);
+  });
+
   it('finds names with marks in them', () => {
     expect(names('C++, C#, .NET, Node.js and CI/CD')).toEqual([
       'C++',

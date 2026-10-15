@@ -41,6 +41,20 @@ describe('readPosting', () => {
     ]);
   });
 
+  it('reads each clause of a line on its own, so one preferred thing doesn’t make the rest optional', () => {
+    expect(
+      needs('## Requirements\n- Active RN license; BSN preferred\n- SQL. Python is preferred.'),
+    ).toEqual([
+      'must: Active RN license',
+      'nice: BSN preferred',
+      'must: SQL.',
+      'nice: Python is preferred.',
+    ]);
+    expect(needs('## Requirements\n- B.S. Computer Science, e.g. Python')).toEqual([
+      'must: B.S. Computer Science, e.g. Python',
+    ]);
+  });
+
   it('knows headings in capitals, in bold, and on their own', () => {
     expect(needs('REQUIREMENTS\n- Excel\nBonus points\n- Tableau')).toEqual([
       'must: Excel',

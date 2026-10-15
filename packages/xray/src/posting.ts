@@ -82,7 +82,12 @@ export function readPosting(text: string): { lines: PostingLine[]; sectioned: bo
       if (next === 'must' || next === 'nice') sectioned = true;
       continue;
     }
-    lines.push({ text: line.replace(/^[-*•+]\s+|^\d+[.)]\s+/, ''), part });
+    // Each clause asks on its own: "RN license; BSN preferred" needs the license, not the BSN.
+    for (const clause of line
+      .replace(/^[-*•+]\s+|^\d+[.)]\s+/, '')
+      .split(/;\s+|(?<=[\p{L})]{2}[.!?])\s+(?=\p{Lu})/u)) {
+      if (clause.trim()) lines.push({ text: clause.trim(), part });
+    }
   }
   const asked = lines.flatMap(({ text: line, part: where }): PostingLine[] => {
     if (!sectioned && where === 'other') return [];

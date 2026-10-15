@@ -162,7 +162,7 @@ const SPECS: Readonly<Record<string, readonly string[]>> = {
     'Data visualization|data visualisation',
     'Data science',
     'Statistics|statistical analysis|statistical modeling',
-    'A/B testing|AB testing|split testing',
+    'A/B testing|A/B test|AB testing|split testing',
     'Machine learning|ML',
     'Deep learning',
     'Artificial intelligence|AI',

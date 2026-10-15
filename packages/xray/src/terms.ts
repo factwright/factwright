@@ -93,14 +93,12 @@ export interface Hit {
   at: number;
 }
 
-/** A quick look for a form's first word, so most patterns never run on text that can't hold it. */
+/** A quick look for a form's first letters, so most patterns never run on text that can't hold them. */
 const mayHold = (lower: string, form: Form) =>
   lower.includes(
-    (
-      plain(form.text)
-        .toLowerCase()
-        .split(/[\s/-]/)[0] ?? ''
-    ).replace(/[^\p{L}\p{N}+#.]/gu, ''),
+    plain(form.text)
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/u)?.[0] ?? '',
   );
 
 /**
