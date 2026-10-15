@@ -340,19 +340,21 @@ function numbersIn(text: string): Set<string> {
 const UNSURE =
   /\b(?:not sure|unsure|no idea|don[’']?t know|do not know|can[’']?t (?:recall|remember|say)|not certain|hard to say|no clue)\b/;
 
-/** A question for an amount, such as how many people used something, not whether they have it. */
-const ASKS_AMOUNT = /\bhow (?:many|much|big|large|long|often|far|fast)\b/;
-
-/** An answer that's an amount with a no in front, such as "No more than 500". */
-const AMOUNT_NO = /^(?:no|not) (?:more|fewer|less|over|under|above|below) than\b/;
+/**
+ * An answer that gives an amount with a no or a not in front, such as "No more than 500" or
+ * "Not many, maybe 5", in the user's own words.
+ */
+const AMOUNT =
+  /^(?:(?:no|not) (?:more|fewer|less|over|under|above|below) than|not (?:many|much|a lot|that many|that much))\b/;
 
 /**
- * Whether an answer is the user saying no to having something: in what they picked or typed,
- * never in what an option said under it or in their notes, and not to a question for an amount.
+ * Whether an answer is the user saying no to having something, judged only by what they picked
+ * or typed: never by what an option said under it, their notes, or the question's words, which
+ * Claude writes. An amount, or not being sure, isn't a no.
  */
-const saysNo = ({ question, answer }: Answered) => {
-  const said = questionKey(answer);
-  return SAYS_NO.test(said) && !AMOUNT_NO.test(said) && !ASKS_AMOUNT.test(questionKey(question));
+const saysNo = (each: Answered) => {
+  const said = questionKey(each.answer);
+  return SAYS_NO.test(said) && !AMOUNT.test(said) && !saysUnsure(each);
 };
 
 /** Whether an answer is the user saying they aren't sure, in what they picked or typed. */
@@ -577,12 +579,7 @@ export async function saveGap(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,
       );
     }
-    const said = questionKey(answer.answer);
-    if (
-      saysUnsure(answer) ||
-      AMOUNT_NO.test(said) ||
-      ASKS_AMOUNT.test(questionKey(answer.question))
-    ) {
+    if (saysUnsure(answer) || AMOUNT.test(questionKey(answer.answer))) {
       throw new Error(
         `Not saved: “${answer.answer}” isn’t a no to whether they have it. Note under Doesn’t have only what the user said they don’t have.`,
       );

@@ -494,6 +494,18 @@ describe('save_fact', () => {
         questions: [prod],
       }),
     ).rejects.toThrow('Save that no with save_gap');
+    // A question that also asks how long doesn't make a no anything else.
+    const howLong = 'Have you run Kafka in production, and if so, how long?';
+    answered({ [howLong]: 'No' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Kafka in production',
+        wording: 'Ran Kafka in production.',
+        keywords: 'Kafka',
+        questions: [howLong],
+      }),
+    ).rejects.toThrow('Save that no with save_gap');
     // A no with a number in passing is still a no, and is something they don't have.
     const backend = 'Have you used Kafka at all?';
     answered({ [backend]: 'No, never used it in 10 years of backend work' });
@@ -518,6 +530,18 @@ describe('save_fact', () => {
         title: 'GraphQL for a few teams',
         wording: 'Built the GraphQL API that about 5 teams used.',
         questions: [rough],
+      }),
+    ).toMatch(/^Saved/);
+    // Unsure, with an estimate, is an answer to hedge, not a no.
+    const share = 'Roughly what share of load did the GraphQL API take?';
+    answered({ [share]: 'Not sure, maybe 18%' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'GraphQL share of load',
+        wording: 'Built the GraphQL API, which took about 18% of load.',
+        confidence: 'medium',
+        questions: [share],
       }),
     ).toMatch(/^Saved/);
     const many = 'About how many partners used the GraphQL API?';
