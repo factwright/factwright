@@ -293,7 +293,7 @@ const hasTerm = (text: string, term: string) => {
  * "2 million" read alike. The pattern takes time in step with the text.
  */
 const NUMBER =
-  /(?<![\p{L}\p{N}.,])(\p{Nd}+(?:[.,]\p{Nd}+)*)(?:[ \t]*(thousand|million|billion|trillion)\b|(\p{L}*))/giu;
+  /(?<![\p{L}\p{N}.,])(\p{Nd}+(?:[.,]\p{Nd}+)*)(?:[ \t]*(thousand|million|billion|trillion|k|m|mm|mn|mil|b|bn|t|tn)\b|(\p{L}*))/giu;
 /** Each way to write a scale, by the one it reads as. */
 const SCALES: Readonly<Record<string, string>> = {
   k: 'k',
@@ -318,13 +318,13 @@ const NUMBER_WORDS =
 function numbersIn(text: string): Set<string> {
   const plain = text.normalize('NFKC').toLowerCase();
   const found = new Set<string>();
-  // A scale's word after a number is part of that number, not a number of its own.
+  // A scale after a number, in letters or a word, is part of that number, not one of its own.
   const scaled: [number, number][] = [];
   for (const match of plain.matchAll(NUMBER)) {
-    const [whole, digits = '', word, letters = ''] = match;
-    const scale = SCALES[word ?? letters] ?? '';
+    const [whole, digits = '', after, letters = ''] = match;
+    const scale = SCALES[after ?? letters] ?? '';
     found.add(`${digits.replaceAll(',', '')}${scale}`);
-    if (word) scaled.push([match.index, match.index + whole.length]);
+    if (after) scaled.push([match.index, match.index + whole.length]);
   }
   for (const match of plain.matchAll(NUMBER_WORDS)) {
     const inside = scaled.some(([start, end]) => match.index >= start && match.index < end);
@@ -339,6 +339,27 @@ function numbersIn(text: string): Set<string> {
  */
 const UNSURE =
   /\b(?:not sure|unsure|no idea|don[’']?t know|do not know|can[’']?t (?:recall|remember|say)|not certain|hard to say|no clue)\b/;
+
+/** A question for an amount, such as how many people used something, not whether they have it. */
+const ASKS_AMOUNT = /\bhow (?:many|much|big|large|long|often|far|fast)\b/;
+
+/** An answer that's an amount with a no in front, such as "No more than 500". */
+const AMOUNT_NO = /^(?:no|not) (?:more|fewer|less|over|under|above|below) than\b/;
+
+/**
+ * Whether an answer is the user saying no to having something: in what they picked or typed,
+ * never in what an option said under it or in their notes, and not to a question for an amount.
+ */
+const saysNo = ({ question, answer }: Answered) => {
+  const said = questionKey(answer);
+  return SAYS_NO.test(said) && !AMOUNT_NO.test(said) && !ASKS_AMOUNT.test(questionKey(question));
+};
+
+/** Whether an answer is the user saying they aren't sure, in what they picked or typed. */
+const saysUnsure = ({ answer }: Answered) => {
+  const said = questionKey(answer);
+  return UNSURE.test(said) && !SAYS_YES.test(said);
+};
 
 /** Everything the user saw and said in the questions a fact rests on, to check it against. */
 const askedText = (answers: readonly Answered[]) =>
@@ -427,16 +448,14 @@ export async function saveFact(
     checkBacking(answers, correcting);
     const [first] = answers;
     if (first && !(isUseChoice(first.answer) && correcting(first))) {
-      const said = questionKey(answerText(first));
-      if (UNSURE.test(said) && numbersIn(said).size === 0) {
+      if (saysUnsure(first) && numbersIn(first.answer).size === 0) {
         throw new Error(
           `Not saved: the user wasn’t sure (“${first.answer}”). Claim nothing from that answer, and leave out a number they didn’t give.`,
         );
       }
-      // "No more than 500" gives a number, so it's an answer, not a no.
-      if (SAYS_NO.test(questionKey(first.answer)) && numbersIn(said).size === 0) {
+      if (saysNo(first)) {
         throw new Error(
-          `Not saved: the user answered “${first.answer}” to “${first.question}”. If that’s a no to whether they have it, save it with save_gap, and claim nothing from it.`,
+          `Not saved: the user answered “${first.answer}” to “${first.question}”. Save that no with save_gap, and claim nothing from it.`,
         );
       }
     }
@@ -558,8 +577,12 @@ export async function saveGap(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,
       );
     }
-    const said = questionKey(answerText(answer));
-    if (UNSURE.test(said) || numbersIn(said).size > 0) {
+    const said = questionKey(answer.answer);
+    if (
+      saysUnsure(answer) ||
+      AMOUNT_NO.test(said) ||
+      ASKS_AMOUNT.test(questionKey(answer.question))
+    ) {
       throw new Error(
         `Not saved: “${answer.answer}” isn’t a no to whether they have it. Note under Doesn’t have only what the user said they don’t have.`,
       );
@@ -667,7 +690,7 @@ export async function verifyFact(
     ];
     // The tags count only where the question says them, not inside the words it quotes.
     const besides = [wording, claim.title].reduce(
-      (left, quoted) => left.replace(questionKey(quoted), ' '),
+      (left, quoted) => left.replaceAll(questionKey(quoted), ' '),
       questionKey(answer.question),
     );
     const unsaid = claim.tags.find(

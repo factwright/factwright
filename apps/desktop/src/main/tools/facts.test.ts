@@ -87,17 +87,24 @@ const tool = (name: FilingTool) => {
   };
 };
 
+/** The options Claude offers, as the resume skill words them. */
+const OPTIONS = [
+  { label: 'Yes, in production', description: '' },
+  { label: 'Some', description: 'A side project, a course, or an earlier role' },
+  { label: 'No', description: '' },
+];
+
 /** A question round the user answered, as Claude Code's hooks report it. */
-function answered(answers: Record<string, string>, notes: Record<string, string> = {}) {
+function answered(
+  answers: Record<string, string>,
+  notes: Record<string, string> = {},
+  options = OPTIONS,
+) {
   const id = `toolu_${++rounds}`;
   const questions = Object.keys(answers).map((question) => ({
     question,
     header: 'Experience',
-    options: [
-      { label: 'Yes, in production', description: '' },
-      { label: 'Some', description: 'A side project, a course, or an earlier role' },
-      { label: 'No', description: '' },
-    ],
+    options,
   }));
   call.questions.hear({
     hook_event_name: 'PreToolUse',
@@ -389,6 +396,10 @@ describe('save_fact', () => {
     for (const wording of [
       'Built the GraphQL API behind $2mm in sales.',
       'Built the GraphQL API for 2bn calls.',
+      'Built the GraphQL API behind $2 mm in sales.',
+      'Built the GraphQL API for 2 bn calls.',
+      'Built the GraphQL API behind $2 mil in sales.',
+      'Built the GraphQL API behind $2 M in sales.',
     ]) {
       await expect(
         tool('save_fact')({ ...FACT, wording, questions: [`${GRAPHQL} `] }),
@@ -423,7 +434,7 @@ describe('save_fact', () => {
     await expect(
       tool('save_fact')({ ...FACT, keywords: 'Kafka', questions: [KAFKA] }),
     ).rejects.toThrow(
-      `Not saved: the user answered “No” to “${KAFKA}”. If that’s a no to whether they have it, save it with save_gap, and claim nothing from it.`,
+      `Not saved: the user answered “No” to “${KAFKA}”. Save that no with save_gap, and claim nothing from it.`,
     );
     answered({ [OFFER]: 'Use this once' });
     await expect(
@@ -435,7 +446,7 @@ describe('save_fact', () => {
     // question about it.
     for (const no of ['No, I have not', 'Never used it', 'Not really', 'I don’t, sorry']) {
       answered({ [GRAPHQL]: no });
-      await expect(tool('save_fact')(FACT)).rejects.toThrow('save it with save_gap');
+      await expect(tool('save_fact')(FACT)).rejects.toThrow('Save that no with save_gap');
     }
     // A no to a follow-up after a yes can back a fact.
     const prod = 'Was that in production?';
@@ -451,7 +462,64 @@ describe('save_fact', () => {
     ).toMatch(/^Saved/);
   });
 
+  it('reads a yes, a no and not sure in what the user picked or typed, never in an option’s words', async () => {
+    // A yes with a note that's unsure about a detail is still a yes.
+    answered({ [GRAPHQL]: 'Yes, in production' }, { [GRAPHQL]: 'not sure of the exact year' });
+    expect(await tool('save_fact')(FACT)).toMatch(/^Saved/);
+    // What an option said under it doesn't change the pick, either way.
+    answered({ [KAFKA]: 'Some' }, {}, [
+      { label: 'Some', description: 'Not sure it counts? A side project or a course' },
+      { label: 'No', description: '0 times' },
+    ]);
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'Kafka on a side project',
+        wording: 'Ran Kafka on a side project.',
+        keywords: 'Kafka',
+        questions: [KAFKA],
+      }),
+    ).toMatch(/^Saved/);
+    const prod = 'Have you run Kafka in production?';
+    answered({ [prod]: 'No' }, {}, [
+      { label: 'Yes', description: '' },
+      { label: 'No', description: '0 times' },
+    ]);
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Kafka in production',
+        wording: 'Ran Kafka in production.',
+        keywords: 'Kafka',
+        questions: [prod],
+      }),
+    ).rejects.toThrow('Save that no with save_gap');
+    // A no with a number in passing is still a no, and is something they don't have.
+    const backend = 'Have you used Kafka at all?';
+    answered({ [backend]: 'No, never used it in 10 years of backend work' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Kafka at all',
+        wording: 'Used Kafka.',
+        keywords: 'Kafka',
+        questions: [backend],
+      }),
+    ).rejects.toThrow('Save that no with save_gap');
+    expect(await tool('save_gap')({ topic: 'Kafka', question: backend })).toMatch(/^Noted/);
+  });
+
   it('takes a hedged or unsure answer to how many as just that, never as a no', async () => {
+    const rough = 'Roughly how many teams used the GraphQL API?';
+    answered({ [rough]: 'Not many, maybe 5' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'GraphQL for a few teams',
+        wording: 'Built the GraphQL API that about 5 teams used.',
+        questions: [rough],
+      }),
+    ).toMatch(/^Saved/);
     const many = 'About how many partners used the GraphQL API?';
     answered({ [many]: 'No more than 30' });
     expect(
@@ -747,6 +815,11 @@ describe('verify_fact', () => {
       'Your fact bank has “Reminder texts”: “Solo, live, high-volume reminder texts.” Can I use it?';
     answered({ [sneaky]: 'Use and verify' });
     await expect(tool('verify_fact')({ ...VERIFY, question: sneaky })).rejects.toThrow(
+      'Not verified: the question doesn’t say the fact is live.',
+    );
+    const twice = `${sneaky} Again: “Solo, live, high-volume reminder texts.”`;
+    answered({ [twice]: 'Use and verify' });
+    await expect(tool('verify_fact')({ ...VERIFY, question: twice })).rejects.toThrow(
       'Not verified: the question doesn’t say the fact is live.',
     );
     write('facts/acme.md', ACME);
