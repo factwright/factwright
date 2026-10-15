@@ -641,4 +641,3 @@ export function marks(checks: readonly Check[]): Map<number, CheckId[]> {
   }
   return marked;
 }
-
