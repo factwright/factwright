@@ -236,6 +236,15 @@ describe('JobPanel', () => {
       screen.getByRole('button', { name: 'Preview Resume - Northwind Labs.pdf' }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Preview (?!Resume)/ })).toBeNull();
+    // The resume's PDF and Word file each have an ATS X-ray; documents don't.
+    expect(
+      screen
+        .getAllByRole('button', { name: /^ATS X-ray of / })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual([
+      'ATS X-ray of Resume - Northwind Labs.pdf',
+      'ATS X-ray of Resume - Northwind Labs.docx',
+    ]);
     expect(screen.getByText('Recruiter was friendly. Team of six.')).toBeTruthy();
     expect(screen.getByText('Marked Interview')).toBeTruthy();
     // A call still to come isn't history yet.

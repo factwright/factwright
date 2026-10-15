@@ -13,8 +13,8 @@ import { ResumePreview } from '../jobs/ResumePreview.tsx';
 import { BUSY } from '../jobs/RunActions.tsx';
 import { ProfilesLine } from '../profiles/ProfilesLine.tsx';
 import type { RunPhase } from '../useClaudeRun.ts';
+import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
-import { XRayDialog } from '../xray/XRayDialog.tsx';
 import styles from './ProfilePage.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
 import { FilesStep } from './steps/FilesStep.tsx';
@@ -506,7 +506,7 @@ export function ProfilePage({
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
       {xray && filesOf(xray)[0] && (
-        <XRayDialog
+        <OpenXRay
           api={api}
           files={filesOf(xray)}
           start={(filesOf(xray)[0] as XRayFile).path}

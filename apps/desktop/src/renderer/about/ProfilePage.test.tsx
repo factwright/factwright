@@ -175,7 +175,7 @@ describe('ProfilePage', () => {
     ).toBe(true);
   });
 
-  it('lists the starting resumes once they’re built, ready to preview and open', async () => {
+  it('lists the starting resumes once they’re built, ready to preview, X-ray and open', async () => {
     const api = profileApi({
       facts: { claims: 30, unconfirmed: 0, files: 4 },
       starting: [
@@ -198,9 +198,14 @@ describe('ProfilePage', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Open' }));
     expect(api.openFile).toHaveBeenCalledWith('base/JordanAveryResume_Startups.pdf');
     await userEvent.click(within(card).getByRole('button', { name: 'Preview' }));
-    expect(
-      await screen.findByRole('dialog', { name: 'JordanAveryResume_Startups.pdf' }),
-    ).toBeTruthy();
+    const preview = await screen.findByRole('dialog', { name: 'JordanAveryResume_Startups.pdf' });
+    await userEvent.click(within(preview).getByRole('button', { name: 'Done' }));
+    await userEvent.click(
+      within(card).getByRole('button', { name: 'ATS X-ray of Senior Product Manager' }),
+    );
+    const xray = await screen.findByRole('dialog', { name: 'ATS X-ray' });
+    expect((await within(xray).findByRole('alert')).textContent).toBe('No preview here');
+    expect(api.readPdf).toHaveBeenLastCalledWith('base/JordanAveryResume_Startups.pdf');
   });
 
   it('offers to read what’s new since Claude last read', async () => {

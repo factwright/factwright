@@ -4,7 +4,7 @@ import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { XRayDialog } from '../xray/XRayDialog.tsx';
+import { OpenXRay } from '../xray/OpenXRay.tsx';
 import styles from './JobPanel.module.css';
 import { PanelSection } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
@@ -146,7 +146,7 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
       {xray && (
-        <XRayDialog
+        <OpenXRay
           api={api}
           files={sameResume(xray)}
           start={xray.path}

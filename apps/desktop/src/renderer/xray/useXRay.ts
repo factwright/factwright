@@ -33,8 +33,7 @@ async function factFiles(api: XRayApi) {
 
 /**
  * Reads a resume's file and works out its X-ray, with the job's posting when there is one, and
- * the fact bank. It's all done here, in the window: nothing goes to Claude or anywhere else. The
- * X-ray's code and pdf.js load only when one opens, so they never slow the app's start.
+ * the fact bank. It's all done here, in the window: nothing goes to Claude or anywhere else.
  */
 export function useXRay(
   api: XRayApi,
