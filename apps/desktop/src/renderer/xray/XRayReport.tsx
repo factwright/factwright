@@ -341,7 +341,7 @@ export function KeywordsView({ result, hasPosting }: { result: XRay; hasPosting:
     <div className={styles.groups}>
       <p className={styles.honest}>
         Add a term only where your fact bank backs it. A real gap stays off: every line of a resume
-        comes from a fact you’ve confirmed.
+        comes from a fact you’ve verified.
         {keywords.bank === 'some' &&
           ' Some of your fact bank’s files couldn’t be read, so what it backs says to check it first.'}
         {keywords.bank === 'none' && ' Your fact bank couldn’t be read, so no term says to add it.'}
