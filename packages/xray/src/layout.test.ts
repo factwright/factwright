@@ -74,17 +74,18 @@ describe('strayDates', () => {
 });
 
 describe('marginLines', () => {
-  it('finds text repeated at the foot of each page, and text in the page’s margin', () => {
+  it('finds text repeated at the foot of each page, page numbers and all', () => {
     const lines = [
       pdfLine('Jordan Avery · Page 1', 250, 40, { page: 1 }),
       pdfLine('Body text', 40, 400, { page: 1 }),
       pdfLine('Jordan Avery · Page 2', 250, 40, { page: 2 }),
-      pdfLine('Printed in the margin', 40, 10, { page: 2 }),
     ];
-    expect(marginLines(fileOf(lines))).toEqual([0, 2, 3]);
+    expect(marginLines(fileOf(lines))).toEqual([0, 2]);
   });
 
-  it('lets a one-page footer be', () => {
-    expect(marginLines(fileOf([pdfLine('References on request', 40, 60)]))).toEqual([]);
+  it('lets text at the edge of one page be, such as a name printed near the top', () => {
+    expect(
+      marginLines(fileOf([pdfLine('JORDAN AVERY', 40, 770), pdfLine('Footer', 40, 10)])),
+    ).toEqual([]);
   });
 });

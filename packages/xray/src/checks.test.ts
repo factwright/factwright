@@ -141,7 +141,7 @@ describe('runChecks', () => {
     expect(check(fileOf(resume(), { fonts: ['FontAwesome'] }), 'fonts')?.status).toBe('fix');
     expect(check(fileOf(resume(), { fonts: ['Calibri', 'Lato'] }), 'fonts')).toMatchObject({
       status: 'note',
-      summary: 'Not on most computers: Lato',
+      summary: 'Not on every computer: Lato',
     });
   });
 

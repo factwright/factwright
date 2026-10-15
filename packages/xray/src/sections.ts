@@ -219,7 +219,7 @@ export interface Section {
 /** A line that could be a heading by its shape: short, with words, and not a sentence. */
 const headingShaped = (line: Line) =>
   line.text.length <= 48 &&
-  /\p{L}/u.test(line.text) &&
+  (line.text.match(/\p{L}/gu)?.length ?? 0) >= 3 &&
   line.text.split(/\s+/).length <= 6 &&
   !/[.,;]$/.test(line.text) &&
   line.part !== 'header' &&
@@ -255,9 +255,20 @@ export function findSections(lines: readonly Line[]): Section[] {
   const starts: { line: number; kind: SectionKind | null }[] = [];
   for (const [index, line] of lines.entries()) {
     const kind = known.find((each) => each.index === index)?.kind ?? null;
+    const within = starts.at(-1)?.kind;
     if (kind && (looks.size === 0 || looks.has(line.look) || standsOut(line)))
       starts.push({ line: index, kind });
-    else if (!kind && looks.has(line.look) && headingShaped(line))
+    // A heading set like the known ones, but not one, such as "Selected Work", starts a part of
+    // its own once the first known heading is past. Inside a job or a school, a parser that knows
+    // its headings by name reads one, such as "Growth", as part of the job instead.
+    else if (
+      !kind &&
+      within !== undefined &&
+      within !== 'experience' &&
+      within !== 'education' &&
+      looks.has(line.look) &&
+      headingShaped(line)
+    )
       starts.push({ line: index, kind: null });
   }
   return starts.map((start, i) => ({

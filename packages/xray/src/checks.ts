@@ -569,7 +569,7 @@ function fontsCheck(file: ReadFile): Check {
       id: 'fonts',
       name,
       status: 'note',
-      summary: `Not on most computers: ${inWords(unusual)}`,
+      summary: `Not on every computer: ${inWords(unusual)}`,
       detail:
         'A Word file names its fonts rather than carrying them, so where one is missing, Word shows another. Systems read the text the same, but a recruiter who opens the file sees a different look, and maybe more pages.',
       lines: [],

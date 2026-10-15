@@ -119,8 +119,22 @@ function phoneIn(text: string): string | null {
   return match;
 }
 
-/** A job's title, company and place, from the lines around its dates. */
-function jobAt(lines: readonly Line[], index: number, range: DateRange, end: number): Job {
+/** A line that could hold a job's title, company or place: short, and not a sentence. */
+const headerLike = (line: Line | undefined) =>
+  !!line &&
+  line.text.split(/\s+/).length <= 10 &&
+  !/[.;]$/.test(line.text) &&
+  dateRanges(line.text).length === 0 &&
+  !headingKind(line.text) &&
+  // A group heading in capitals, such as "GROWTH", starts the bullets.
+  /\p{Ll}/u.test(line.text);
+
+/**
+ * A job's title, company and place, from the lines around its dates: the dates' own line, then
+ * up to three short lines after them, as a date rail down the side has them, or the line before
+ * when the dates stand alone after it.
+ */
+function jobAt(lines: readonly Line[], index: number, range: DateRange, section: Section): Job {
   const line = lines[index] as Line;
   const without = (text: string) =>
     text.replace(range.text, ' ').replace(/^[\s|,–—-]+|[\s|,–—-]+$/g, '');
@@ -129,14 +143,16 @@ function jobAt(lines: readonly Line[], index: number, range: DateRange, end: num
       .split(/\s+(?:\||·|—|–|@|at)\s+|\s*\|\s*/)
       .map((piece) => piece.trim())
       .filter(Boolean);
+  const piecesAt = (at: number) => piecesOf(lines[at] as Line).flatMap(split);
   const here = piecesOf(line).map(without).filter(Boolean).flatMap(split);
-  const near = (at: number) => {
-    const other = lines[at];
-    if (!other || at >= end || dateRanges(other.text).length > 0) return [];
-    if (other.text.split(/\s+/).length > 10 || /[.;]$/.test(other.text)) return [];
-    return piecesOf(other).flatMap(split);
-  };
-  const candidates = [...here, ...near(index + 1), ...(here.length === 0 ? near(index - 1) : [])];
+  const after: string[] = [];
+  for (let at = index + 1; at < Math.min(index + 4, section.end) && headerLike(lines[at]); at++)
+    after.push(...piecesAt(at));
+  const before =
+    here.length === 0 && index - 1 > section.line && headerLike(lines[index - 1])
+      ? piecesAt(index - 1)
+      : [];
+  const candidates = [...here, ...after, ...before];
   const location =
     candidates.find((piece) => PLACE.test(piece) && piece.split(' ').length <= 5) ?? null;
   const rest = candidates.filter((piece) => piece !== location);
@@ -153,7 +169,7 @@ function jobsIn(lines: readonly Line[], sections: readonly Section[]): Job[] {
     const jobs: Job[] = [];
     for (let index = section.line + 1; index < section.end; index++) {
       const line = lines[index] as Line;
-      for (const range of dateRanges(line.text)) jobs.push(jobAt(lines, index, range, section.end));
+      for (const range of dateRanges(line.text)) jobs.push(jobAt(lines, index, range, section));
     }
     return jobs;
   });
@@ -164,6 +180,8 @@ function educationIn(lines: readonly Line[], sections: readonly Section[]): Scho
   const schools: School[] = [];
   for (const section of sectionsOf(sections, 'education')) {
     let current: School | null = null;
+    // A date before a school's name, as a date rail down the side has it, is its date.
+    let early: string | null = null;
     for (let index = section.line + 1; index < section.end; index++) {
       const text = (lines[index] as Line).text;
       const degree = text.match(DEGREE) ? (piecesOf(lines[index] as Line)[0] ?? text) : null;
@@ -174,8 +192,13 @@ function educationIn(lines: readonly Line[], sections: readonly Section[]): Scho
       const startsNew =
         !current || (degree && current.degree) || (school && current.school && !degree);
       if ((degree || school) && startsNew) {
-        current = { degree: null, school: null, dates: null, line: index };
+        current = { degree: null, school: null, dates: early, line: index };
+        early = null;
         schools.push(current);
+      }
+      if (!degree && !school && dates && (!current || current.dates)) {
+        early = dates;
+        continue;
       }
       if (!current) continue;
       if (degree && !current.degree)

@@ -81,6 +81,23 @@ describe('jobs', () => {
     });
   });
 
+  it('reads a date rail: the dates and place, then the title and company', () => {
+    const fields = fieldsOf([
+      heading('Experience'),
+      wordLine('04/2021 – Present'),
+      wordLine('Denver, CO'),
+      wordLine('Senior Product Manager'),
+      wordLine('Northwind Stays — Vacation rentals'),
+      wordLine('GROWTH'),
+      wordLine('Led the repeat booking program from research to launch.'),
+    ]);
+    expect(fields.jobs[0]).toMatchObject({
+      title: 'Senior Product Manager',
+      company: 'Northwind Stays',
+      location: 'Denver, CO',
+    });
+  });
+
   it('reads only the experience sections for jobs', () => {
     const fields = fieldsOf([heading('Education'), wordLine('B.A., History 2010 – 2014')]);
     expect(fields.jobs).toEqual([]);
@@ -88,6 +105,16 @@ describe('jobs', () => {
 });
 
 describe('education and skills', () => {
+  it('reads a date before its school, as a date rail has it', () => {
+    const fields = fieldsOf([
+      heading('Education'),
+      wordLine('2016'),
+      wordLine('B.S., Economics'),
+      wordLine('University of Colorado Boulder'),
+    ]);
+    expect(fields.education[0]).toMatchObject({ degree: 'B.S., Economics', dates: '2016' });
+  });
+
   it('reads a degree and school on separate lines as one', () => {
     const fields = fieldsOf([
       heading('Education'),

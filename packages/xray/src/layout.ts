@@ -31,19 +31,18 @@ const besideEachOther = (a: Box, b: Box) =>
 const overlapAcross = (a: Box, b: Box) => a.left < b.right && b.left < a.right;
 
 /**
- * Lines that repeat at the top or bottom of each page, such as a name and page number, and lines
- * printed in the page's margin. Parsers read them where they fall: in the middle of the text.
+ * Lines that repeat at the top or bottom of each page, such as a name and page number. Parsers
+ * read them where they fall: in the middle of the text.
  */
 export function marginLines(file: ReadFile): number[] {
   const found = new Set<number>();
-  const edge = 0.4 * 72;
   const keyed = new Map<string, { index: number; page: number; y: number }[]>();
   for (const [index, line] of file.lines.entries()) {
     const box = boxOf(line);
     const page = file.pages[line.page - 1];
     if (!box || !page) continue;
-    if (box.y > page.height - edge || box.y < edge) found.add(index);
     if (box.y > page.height * 0.85 || box.y < page.height * 0.15) {
+      // A page's number changes from page to page, and still repeats.
       const key = line.text.toLowerCase().replace(/\d+/g, '#');
       keyed.set(key, [...(keyed.get(key) ?? []), { index, page: line.page, y: box.y }]);
     }
