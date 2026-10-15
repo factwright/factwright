@@ -61,8 +61,16 @@ function zeros(size: number): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-/** A zip of one deflated part, which says it unpacks to `size` bytes. */
-function zipOf(name: string, packed: Uint8Array, size: number): Uint8Array {
+/** A deflate stream of empty stored blocks, which unpacks to nothing however long it is. */
+function emptyBlocks(count: number): Uint8Array {
+  const bytes = new Uint8Array(count * 5 + 5);
+  for (let at = 0; at < count; at++) bytes.set([0x00, 0x00, 0x00, 0xff, 0xff], at * 5);
+  bytes.set([0x01, 0x00, 0x00, 0xff, 0xff], count * 5);
+  return bytes;
+}
+
+/** A zip of one deflated part, which says it unpacks to `size` bytes, listed `times` times. */
+function zipOf(name: string, packed: Uint8Array, size: number, times = 1): Uint8Array {
   const path = strToU8(name);
   const local = new Uint8Array(30 + path.length);
   const central = new Uint8Array(46 + path.length);
@@ -85,13 +93,14 @@ function zipOf(name: string, packed: Uint8Array, size: number): Uint8Array {
   c.setUint16(28, path.length, true);
   central.set(path, 46);
   e.setUint32(0, 0x06054b50, true);
-  e.setUint16(8, 1, true);
-  e.setUint16(10, 1, true);
-  e.setUint32(12, central.length, true);
+  e.setUint16(8, times, true);
+  e.setUint16(10, times, true);
+  e.setUint32(12, central.length * times, true);
   e.setUint32(16, local.length + packed.length, true);
-  const zip = new Uint8Array(local.length + packed.length + central.length + end.length);
+  const parts = [local, packed, ...Array.from({ length: times }, () => central), end];
+  const zip = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let at = 0;
-  for (const part of [local, packed, central, end]) {
+  for (const part of parts) {
     zip.set(part, at);
     at += part.length;
   }
@@ -279,6 +288,17 @@ describe('readDocx, on files made to blow up', () => {
       'Body',
       ...Array.from({ length: 16 }, (_, at) => `Box ${16 - at}`),
     ]);
+  });
+
+  it('reads a part listed many times once, and one that says it holds nothing not at all', () => {
+    const stream = emptyBlocks(200_000);
+    for (const size of [0, 4_096]) {
+      const file = zipOf('word/document.xml', stream, size, 300);
+      const started = performance.now();
+      expect(() => readDocx(file)).toThrow();
+      // Each listing unpacked a megabyte that holds nothing: about two seconds in all.
+      expect(performance.now() - started, `${size}`).toBeLessThan(100);
+    }
   });
 
   it('stops unpacking a part that holds far more than it says', () => {

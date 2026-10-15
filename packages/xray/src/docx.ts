@@ -252,14 +252,20 @@ function zipEntries(data: Uint8Array): ZipEntry[] {
 }
 
 /**
- * A part's bytes, unpacked no further than the size it says it holds. It's unpacked a little at
- * a time, so one that holds far more than it says stops soon after, rather than unpacking for a
- * minute only to be cut off.
+ * The most a part's packed bytes can be for the size it says it holds: its bytes stored as they
+ * are, with 5 bytes for each block of 65,535, and a little over. Packing never makes more.
+ */
+const mostPacked = (size: number) => size + Math.ceil(size / 65_535) * 5 + 1_024;
+
+/**
+ * A part's bytes, unpacked no further than the size it says it holds, from no more packed bytes
+ * than that size can take. It's unpacked a little at a time, so one that holds far more than it
+ * says stops soon after, rather than unpacking for a minute only to be cut off.
  */
 function unpack(data: Uint8Array, entry: ZipEntry): Uint8Array | null {
   if (u32(data, entry.header) !== 0x04034b50) return null;
   const start = entry.header + 30 + u16(data, entry.header + 26) + u16(data, entry.header + 28);
-  const packed = data.subarray(start, start + entry.packed);
+  const packed = data.subarray(start, start + Math.min(entry.packed, mostPacked(entry.size)));
   if (entry.method === 0) return packed.slice(0, entry.size);
   if (entry.method !== 8) return null;
   const out = new Uint8Array(entry.size);
@@ -283,10 +289,14 @@ export function readDocx(data: Uint8Array): ReadFile {
   // Each part, and all of them, are capped by the size the file says they unpack to. A part
   // that says less than it holds is cut off there, and soon, so the caps hold either way.
   const files: Record<string, Uint8Array> = {};
+  const read = new Set<number>();
   let total = 0;
   let margins = 0;
   for (const entry of zipEntries(data)) {
-    if (!WANTED.test(entry.name) || entry.size > MAX_PART_BYTES) continue;
+    if (!WANTED.test(entry.name) || entry.size === 0 || entry.size > MAX_PART_BYTES) continue;
+    // A part listed twice, by name or by where it is, is read once.
+    if (entry.name in files || read.has(entry.header)) continue;
+    read.add(entry.header);
     if (/^word\/(?:header|footer)\d*\.xml$/.test(entry.name) && ++margins > MAX_HEADERS) continue;
     total += entry.size;
     if (total > MAX_TOTAL_BYTES) break;
