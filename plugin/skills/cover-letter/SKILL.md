@@ -98,7 +98,7 @@ The user just told you these, so the letter can use them. Note in notes.md which
   1. **Opening:** specific to this job, in two or three sentences: what they need, said back plainly, and the user's most relevant result. Never "I am writing to apply", never a summary of the resume, and never flattery.
   2. **Proof:** the two or three strongest matches, each with its number, tied to what the posting asks for. One paragraph, or two when there's a lot to say.
   3. **Why this company:** the user's real reason, in a sentence or two. It can close the proof paragraph instead.
-  4. **Close:** a concrete next step in a sentence or two: what they'd like to talk about or show, and when they're free, if `about_you` or the user says. Never "I look forward to hearing from you".
+  4. **Close:** a concrete next step in a sentence or two: what they'd like to talk about or show. Say when they're free, or when they can start, only as the user or `about_you` says. Never "I look forward to hearing from you".
 - **Their voice:** first person, plain and warm, the way they sound in what they sent and in their notes. Contractions are fine. Their nudges win.
 - **Not AI:** no "passionate", "thrilled", "excited to", "leverage", "spearheaded", "robust", "seamless", "deeply", "at the intersection of", "I believe I would be". No em dashes, no "not just X but Y", no lists of three for rhythm, and no closing line that sums up.
 - **No clichés:** nothing `guide/lint.json` bans, and none of the openings, greetings and claims the build checks every letter for.
