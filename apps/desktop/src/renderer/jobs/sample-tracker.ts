@@ -23,6 +23,7 @@ import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
+import { samplePdf } from './sample-pdf.ts';
 
 /** A file the screens preview serves, as bytes. */
 async function fileBytes(url: string): Promise<Uint8Array> {
@@ -412,8 +413,12 @@ export function sampleTracker(jobs: string | null, resume: string | null = null)
     readShot: async (path) => shots.get(path)?.bytes ?? null,
     pasteImage: async () => ({ ok: true, file: '/sample/workspace/screenshots/pasted-1.png' }),
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
-    // Every resume is the same made-up one, made by the engine as the app makes it.
-    readPdf: async () => ({ ok: true, data: await fileBytes(files.pdf) }),
+    // Every resume is the same made-up one, made by the engine as the app makes it. A cover
+    // letter shows the sample page.
+    readPdf: async (path) => ({
+      ok: true,
+      data: /CoverLetter/.test(path) ? samplePdf() : await fileBytes(files.pdf),
+    }),
     readWord: async () => ({ ok: true, data: await fileBytes(files.word) }),
     copyText: async (text) => {
       await navigator.clipboard?.writeText(text).catch(() => {});

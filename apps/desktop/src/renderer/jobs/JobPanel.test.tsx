@@ -256,6 +256,20 @@ describe('JobPanel', () => {
     expect(results.violations).toEqual([]);
   });
 
+  it('offers an ATS X-ray for a job’s resume, and none for its cover letter', async () => {
+    panel(byCompany('Lumen Health'));
+    const files = screen.getByRole('region', { name: 'Files' });
+    expect(
+      within(files).getByRole('button', { name: 'Open AlexRiveraCoverLetter_LumenHealth.pdf' }),
+    ).toBeTruthy();
+    // The X-ray reads resumes; a cover letter is another kind of document.
+    expect(
+      within(files)
+        .getAllByRole('button', { name: /^ATS X-ray of / })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['ATS X-ray of Resume - Lumen Health.pdf']);
+  });
+
   it('puts the job under another kind of job, for a user who wants more than one', async () => {
     const kinds = [
       { id: 'developer', name: 'Developer' },
