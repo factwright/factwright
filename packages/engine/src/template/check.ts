@@ -122,7 +122,11 @@ function readCss(css: string): string {
  * letters or digits, and never var() or attr(). The page prints where it can't reach anything
  * else anyway.
  */
-export function cssProblems(css: string, where: string): string[] {
+export function cssProblems(
+  css: string,
+  where: string,
+  what: 'resume' | 'letter' = 'resume',
+): string[] {
   const problems: string[] = [];
   if (css.includes('<')) problems.push(`${where} can’t hold “<”. Write \\3c in a string.`);
   const read = readCss(css);
@@ -152,7 +156,7 @@ export function cssProblems(css: string, where: string): string[] {
     const words = strings.find((each) => WORDS.test(each));
     if (words !== undefined || /\b(?:var|attr)\(/i.test(value ?? '')) {
       problems.push(
-        `${where}: ${(property as string).toLowerCase()} would print ${words === undefined ? 'something the stylesheet doesn’t show' : `“${words.trim()}”`} on every resume. Every word comes from the resume or the template’s titles; a string here can hold marks such as • or |.`,
+        `${where}: ${(property as string).toLowerCase()} would print ${words === undefined ? 'something the stylesheet doesn’t show' : `“${words.trim()}”`} on every ${what}. Every word comes from the ${what} or the template’s titles; a string here can hold marks such as • or |.`,
       );
       break;
     }
@@ -184,7 +188,7 @@ const NAMED: Readonly<Record<string, string>> = {
  * What's wrong with a template's own text between tags: words, which come only from the resume
  * and the template's titles, or a character named some way the page might not read.
  */
-function textProblem(text: string, where: string): string | null {
+function textProblem(text: string, where: string, what: 'resume' | 'letter'): string | null {
   let unknown = '';
   const read = text.replace(
     /&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/g,
@@ -203,7 +207,7 @@ function textProblem(text: string, where: string): string | null {
   );
   if (unknown) return `${where}: write ${unknown} as the character itself.`;
   if (WORDS.test(read)) {
-    return `${where}: “${read.trim().slice(0, 40)}” would print on every resume. Every word comes from the resume or the template’s titles; the markup holds tags, values, and marks such as · or |.`;
+    return `${where}: “${read.trim().slice(0, 40)}” would print on every ${what}. Every word comes from the ${what} or the template’s titles; the markup holds tags, values, and marks such as · or |.`;
   }
   return null;
 }
@@ -235,6 +239,7 @@ function valuesIn(nodes: readonly Node[]): Extract<Node, { kind: 'value' }>[] {
 function scan(
   nodes: readonly Node[],
   where: string,
+  what: 'resume' | 'letter' = 'resume',
 ): { problems: string[]; inAttribute: boolean[] } {
   const text = skeleton(nodes);
   const problems: string[] = [];
@@ -254,7 +259,7 @@ function scan(
   let i = 0;
   let own = '';
   const endText = () => {
-    const problem = textProblem(own, where);
+    const problem = textProblem(own, where, what);
     if (problem) problems.push(problem);
     own = '';
   };
@@ -339,6 +344,7 @@ function scan(
           ...cssProblems(
             [...value].filter((each) => !isMark(each)).join(''),
             `${where}’s style=""`,
+            what,
           ),
         );
       }
@@ -356,8 +362,12 @@ function scan(
  * ends in the same place. Parts go between tags. So whatever the data, the page is only these
  * elements, and no value can add markup.
  */
-export function markupProblems(nodes: readonly Node[], where: string): string[] {
-  return scan(nodes, where).problems;
+export function markupProblems(
+  nodes: readonly Node[],
+  where: string,
+  what: 'resume' | 'letter' = 'resume',
+): string[] {
+  return scan(nodes, where, what).problems;
 }
 
 /**

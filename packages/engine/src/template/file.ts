@@ -1,13 +1,23 @@
 import { FONT_FILES, type FontFile } from '../fonts.ts';
-import { previewResume } from '../sample.ts';
-import { type SectionTitles, TEMPLATE_ID, type Template, type WordTheme } from '../templates.ts';
+import { previewLetter, previewResume } from '../sample.ts';
+import {
+  type LetterLayout,
+  type SectionTitles,
+  TEMPLATE_ID,
+  type Template,
+  type WordTheme,
+} from '../templates.ts';
 import { cssProblems, markupProblems } from './check.ts';
-import { renderBody } from './render.ts';
+import { renderBody, renderLetterBody } from './render.ts';
 import { type Node, PART_NAME, parseTemplate } from './syntax.ts';
-import { VIEW_NAMES } from './view.ts';
+import { LETTER_VIEW_NAMES, VIEW_NAMES } from './view.ts';
 
-/** What a template file says it is, so a file can be known for one. */
-export const TEMPLATE_FILE = { factwright: 'resume-template', version: 1 } as const;
+/**
+ * What a template file says it is, so a file can be known for one, and the newest version this
+ * app reads. Version 2 added the letter's layout, so a file with none is written as version 1,
+ * which apps before it read too.
+ */
+export const TEMPLATE_FILE = { factwright: 'resume-template', version: 2 } as const;
 
 /** The most a template file may weigh: its styles can carry pictures and fonts as data: URLs. */
 export const MAX_TEMPLATE_BYTES = 2_000_000;
@@ -25,6 +35,7 @@ const FIELDS = [
   'css',
   'body',
   'parts',
+  'letter',
 ];
 
 const TITLES: readonly (keyof SectionTitles)[] = [
@@ -71,8 +82,26 @@ function names(nodes: readonly Node[], found: { values: Set<string>; parts: Set<
   return found;
 }
 
-/** Markup's problems: its syntax, its elements, and names nothing in a resume has. */
-function markup(source: unknown, where: string): { problems: string[]; parts: Set<string> } {
+/** What a resume's markup can show, and a letter's, to say so when a name isn't one of them. */
+const SHOWS = {
+  resume: {
+    kind: 'resume',
+    names: VIEW_NAMES,
+    what: 'a resume. A template can show name, headline, tagline, contact, summary, stats, competencies, systems, experience, projects, education, education_first, skills, extra_sections and titles, and their fields',
+  },
+  letter: {
+    kind: 'letter',
+    names: LETTER_VIEW_NAMES,
+    what: 'a letter. A letter can show name, headline, contact, date, recipient, greeting, paragraphs, closing, signature and titles',
+  },
+} as const;
+
+/** Markup's problems: its syntax, its elements, and names nothing in a resume or letter has. */
+function markup(
+  source: unknown,
+  where: string,
+  shows: (typeof SHOWS)[keyof typeof SHOWS] = SHOWS.resume,
+): { problems: string[]; parts: Set<string> } {
   const none = new Set<string>();
   if (typeof source !== 'string' || source.length > MAX.markup) {
     return {
@@ -86,15 +115,12 @@ function markup(source: unknown, where: string): { problems: string[]; parts: Se
   if (!read.ok) return { problems: read.problems, parts: none };
   const found = names(read.nodes, { values: new Set(), parts: new Set() });
   const unknown = [...found.values].filter(
-    (name) => name !== '.' && name.split('.').some((word) => !VIEW_NAMES.has(word)),
+    (name) => name !== '.' && name.split('.').some((word) => !shows.names.has(word)),
   );
   return {
     problems: [
-      ...markupProblems(read.nodes, where),
-      ...unknown.map(
-        (name) =>
-          `${where}: {{${name}}} isn’t part of a resume. A template can show name, headline, tagline, contact, summary, stats, competencies, systems, experience, projects, education, education_first, skills, extra_sections and titles, and their fields.`,
-      ),
+      ...markupProblems(read.nodes, where, shows.kind),
+      ...unknown.map((name) => `${where}: {{${name}}} isn’t part of ${shows.what}.`),
     ],
     parts: found.parts,
   };
@@ -167,6 +193,28 @@ function circle(shows: ReadonlyMap<string, ReadonlySet<string>>): string | null 
   return null;
 }
 
+/** A letter layout's problems, if it has one, and the parts its markup shows. */
+function letterProblems(letter: unknown): { problems: string[]; parts: Set<string> } {
+  const none = new Set<string>();
+  if (letter === undefined) return { problems: [], parts: none };
+  if (!isObject(letter) || Object.keys(letter).some((key) => key !== 'css' && key !== 'body')) {
+    return {
+      problems: ['template.letter should be an object with the letter’s css and body.'],
+      parts: none,
+    };
+  }
+  const problems: string[] = [];
+  if (typeof letter.css !== 'string' || letter.css.length > MAX.css) {
+    problems.push(`template.letter.css should be text of up to ${MAX.css} characters.`);
+  } else if (CONTROL.test(letter.css)) {
+    problems.push('template.letter.css holds control characters.');
+  } else {
+    problems.push(...cssProblems(letter.css, 'template.letter.css', 'letter'));
+  }
+  const body = markup(letter.body, 'template.letter.body', SHOWS.letter);
+  return { problems: [...problems, ...body.problems], parts: body.parts };
+}
+
 /**
  * A template from its file, given the ID its file name gives it, or what's wrong with it in
  * plain words, for whoever made it to fix: Claude, or the person who shared it. A template
@@ -185,13 +233,13 @@ export function readTemplate(
       ],
     };
   }
-  if (value.version !== TEMPLATE_FILE.version) {
+  if (value.version !== 1 && value.version !== TEMPLATE_FILE.version) {
     return {
       ok: false,
       problems: [
         typeof value.version === 'number' && value.version > TEMPLATE_FILE.version
           ? 'This template is from a newer Factwright. Update the app to use it.'
-          : `template.version should be ${TEMPLATE_FILE.version}.`,
+          : `template.version should be 1, or ${TEMPLATE_FILE.version} with a letter.`,
       ],
     };
   }
@@ -249,6 +297,8 @@ export function readTemplate(
   const shows = new Map<string, Set<string>>();
   const body = markup(value.body, 'template.body');
   problems.push(...body.problems);
+  const letter = letterProblems(value.letter);
+  problems.push(...letter.problems);
   if (!isObject(parts) || Object.keys(parts).length > MAX.parts) {
     problems.push(
       `template.parts should be an object of up to ${MAX.parts} named pieces of markup.`,
@@ -265,7 +315,11 @@ export function readTemplate(
       problems.push(...part.problems);
       shows.set(name, part.parts);
     }
-    for (const [where, used] of [['template.body', body.parts] as const, ...shows]) {
+    for (const [where, used] of [
+      ['template.body', body.parts] as const,
+      ['template.letter.body', letter.parts] as const,
+      ...shows,
+    ]) {
       for (const name of used) {
         if (!Object.hasOwn(parts, name))
           problems.push(`${where} shows {{> ${name}}}, which isn’t in template.parts.`);
@@ -290,18 +344,26 @@ export function readTemplate(
     css: value.css as string,
     body: value.body as string,
     parts: parts as Record<string, string>,
+    ...(isObject(value.letter) && {
+      letter: { css: value.letter.css, body: value.letter.body } as LetterLayout,
+    }),
   };
-  // A page in it must print in reasonable time and length, whatever its parts do.
+  // A page in it must print in reasonable time and length, whatever its parts do, and a letter.
   try {
     renderBody(template, previewResume());
+    renderLetterBody(template, previewLetter());
   } catch (error) {
     return { ok: false, problems: [error instanceof Error ? error.message : String(error)] };
   }
   return { ok: true, template };
 }
 
-/** A template as its file holds it, as JSON: everything but its ID, which names the file. */
+/**
+ * A template as its file holds it, as JSON: everything but its ID, which names the file. One
+ * with no letter layout is version 1, which apps from before letters read too.
+ */
 export function templateFile(template: Template): string {
   const { id: _id, ...rest } = template;
-  return `${JSON.stringify({ ...TEMPLATE_FILE, ...rest }, null, 2)}\n`;
+  const version = template.letter ? TEMPLATE_FILE.version : 1;
+  return `${JSON.stringify({ factwright: TEMPLATE_FILE.factwright, version, ...rest }, null, 2)}\n`;
 }

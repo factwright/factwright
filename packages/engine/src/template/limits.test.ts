@@ -48,9 +48,19 @@ describe('a template that tries to keep the app busy', () => {
       ...TEMPLATE_FILE,
       body: '{{> p0}}',
       parts,
+      letter: undefined,
     };
     let read: ReturnType<typeof readTemplate> | undefined;
     expect(timed(() => (read = readTemplate(file, 'doubles')))).toBeLessThan(5000);
+    expect(read).toEqual({
+      ok: false,
+      problems: ['This template makes a page too long to print.'],
+    });
+    // Nor can a letter that shows them.
+    const letter = { css: '', body: '{{> p0}}' };
+    expect(
+      timed(() => (read = readTemplate({ ...file, body: '·', letter }, 'doubles'))),
+    ).toBeLessThan(5000);
     expect(read).toEqual({
       ok: false,
       problems: ['This template makes a page too long to print.'],

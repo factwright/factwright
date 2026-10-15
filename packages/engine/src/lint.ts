@@ -1,3 +1,4 @@
+import type { CoverLetter } from './letter.ts';
 import { PLACEHOLDER } from './markup.ts';
 import type { Resume } from './schema.ts';
 
@@ -48,26 +49,26 @@ function pattern(source: string, flags: string): RegExp | null {
 }
 
 /**
- * Checks a resume against the user's rules, and against their confidential terms, such as
- * customers' names, which must never reach an employer. Returns each problem in plain words.
+ * Checks what a resume or letter shows against the user's banned wording and confidential terms,
+ * and for placeholders left in. Returns each problem in plain words.
  */
-export function lintResume(
-  resume: Resume,
-  config: LintConfig = {},
-  confidential: readonly string[] = [],
+function textProblems(
+  text: string,
+  what: string,
+  banned: readonly { pattern: string; why: string; allow?: string }[],
+  confidential: readonly string[],
 ): string[] {
   const issues: string[] = [];
-  const text = shownText(resume).join('\n');
-  if (new RegExp(PLACEHOLDER).test(text)) issues.push('A [[placeholder]] is still in the resume.');
+  if (new RegExp(PLACEHOLDER).test(text)) issues.push(`A [[placeholder]] is still in the ${what}.`);
 
-  for (const rule of config.banned ?? []) {
-    const banned = pattern(rule.pattern, 'gi');
-    if (!banned) {
+  for (const rule of banned) {
+    const wording = pattern(rule.pattern, 'gi');
+    if (!wording) {
       issues.push(`The rule "${rule.pattern}" in guide/lint.json isn't a valid pattern.`);
       continue;
     }
     const allow = rule.allow ? pattern(rule.allow, 'i') : null;
-    const hit = [...text.matchAll(banned)].find((match) => !allow?.test(match[0]));
+    const hit = [...text.matchAll(wording)].find((match) => !allow?.test(match[0]));
     if (hit) issues.push(`"${hit[0]}" isn't allowed: ${rule.why}.`);
   }
 
@@ -79,9 +80,27 @@ export function lintResume(
         `The confidential term "${term}" in guide/confidential-terms.txt isn't a valid pattern. Put a \\ before any of . ( ) [ ] + ? * | in it.`,
       );
     } else if (secret.test(text)) {
-      issues.push(`A confidential term matching "${term}" is in the resume.`);
+      issues.push(`A confidential term matching "${term}" is in the ${what}.`);
     }
   }
+  return issues;
+}
+
+/**
+ * Checks a resume against the user's rules, and against their confidential terms, such as
+ * customers' names, which must never reach an employer. Returns each problem in plain words.
+ */
+export function lintResume(
+  resume: Resume,
+  config: LintConfig = {},
+  confidential: readonly string[] = [],
+): string[] {
+  const issues = textProblems(
+    shownText(resume).join('\n'),
+    'resume',
+    config.banned ?? [],
+    confidential,
+  );
 
   for (const [company, title] of Object.entries(config.titles ?? {})) {
     const job = resume.experience.find((e) => e.company === company);
@@ -114,6 +133,50 @@ export function lintResume(
     }
   }
   return issues;
+}
+
+/**
+ * What every cover letter is checked for, whatever the user's rules: the openings, greetings and
+ * claims that mark a letter as one of thousands.
+ */
+export const LETTER_CLICHES: readonly { pattern: string; why: string }[] = [
+  {
+    pattern: String.raw`\bI(?: am|’m|'m) writing (?:to|in regard|regarding|about)\b`,
+    why: 'every letter opens this way; open with something about this job instead',
+  },
+  {
+    pattern: 'to whom it may concern|dear sir or madam|dear sir/madam',
+    why: 'address a person, or the team: "Dear Acme hiring team,"',
+  },
+  {
+    pattern: String.raw`please find (attached|enclosed)|\benclosed (is|please find)`,
+    why: 'the reader has the resume already; say something they don’t know',
+  },
+  {
+    pattern: String.raw`\b(perfect|ideal) (fit|candidate)|\bgreat fit for\b`,
+    why: 'a claim the reader can’t check; show the fit with a fact instead',
+  },
+  {
+    pattern: String.raw`\bI look forward to hearing from you`,
+    why: 'a stock line; close with a concrete next step instead',
+  },
+];
+
+/**
+ * Checks a cover letter against the user's rules and confidential terms, as a resume is, and
+ * against the clichés every cover letter is checked for. Returns each problem in plain words.
+ */
+export function lintLetter(
+  letter: CoverLetter,
+  config: LintConfig = {},
+  confidential: readonly string[] = [],
+): string[] {
+  return textProblems(
+    shownText(letter).join('\n'),
+    'letter',
+    [...(config.banned ?? []), ...LETTER_CLICHES],
+    confidential,
+  );
 }
 
 /**

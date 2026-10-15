@@ -1,5 +1,6 @@
+import type { CoverLetter } from '../letter.ts';
 import { escapeHtml, md } from '../markup.ts';
-import type { Bullet, Resume } from '../schema.ts';
+import type { Bullet, Contact, Resume } from '../schema.ts';
 import { Html, type Value } from './syntax.ts';
 
 /** What every section is called on one resume: the template's names, with the resume's own. */
@@ -32,11 +33,18 @@ const span = (start: string | undefined, end: string | undefined) =>
  * resume can mark up, such as a bullet, has its **bold** in <strong>. Something the resume leaves
  * out is empty, so {{#tagline}}…{{/tagline}} shows only with a tagline.
  */
-export function resumeView(r: Resume, titles: ResumeTitles): Value {
-  const c = r.contact ?? {};
-  const contact = (['phone', 'email', 'linkedin', 'location', 'website'] as const).flatMap(
-    (kind) => (c[kind] ? [{ kind, text: text(c[kind]) }] : []),
+/** The contact details, in the order every template shows them. */
+const contactView = (c: Contact = {}) =>
+  (['phone', 'email', 'linkedin', 'location', 'website'] as const).flatMap((kind) =>
+    c[kind] ? [{ kind, text: text(c[kind]) }] : [],
   );
+
+/** What each title is called, safe for the page. */
+const titlesView = (titles: ResumeTitles) =>
+  Object.fromEntries(Object.entries(titles).map(([key, title]) => [key, text(title)]));
+
+export function resumeView(r: Resume, titles: ResumeTitles): Value {
+  const contact = contactView(r.contact);
   return {
     name: text(r.name),
     headline: text(r.headline),
@@ -88,7 +96,28 @@ export function resumeView(r: Resume, titles: ResumeTitles): Value {
       heading: text(x.heading),
       items: x.items.map(marked),
     })),
-    titles: Object.fromEntries(Object.entries(titles).map(([key, title]) => [key, text(title)])),
+    titles: titlesView(titles),
+  };
+}
+
+/**
+ * A cover letter as a template sees it: the header a resume has, so a template's header parts
+ * show it the same, then the letter. Its text is marked up as a resume's is, and the signature is
+ * the name at the top unless the letter gives its own.
+ */
+export function letterView(l: CoverLetter, titles: ResumeTitles): Value {
+  return {
+    name: text(l.name),
+    headline: text(l.headline),
+    tagline: text(''),
+    contact: contactView(l.contact),
+    date: marked(l.date),
+    recipient: (l.recipient ?? []).map(marked),
+    greeting: marked(l.greeting),
+    paragraphs: l.paragraphs.map(marked),
+    closing: marked(l.closing),
+    signature: marked(l.signature || l.name),
+    titles: titlesView(titles),
   };
 }
 
@@ -103,4 +132,14 @@ export const VIEW_NAMES: ReadonlySet<string> = new Set([
   ...['bullets', 'lead', 'projects', 'status', 'url', 'education', 'degree', 'school', 'note'],
   ...['education_first', 'skills', 'category', 'items', 'items_line', 'extra_sections'],
   ...['titles', 'highlights', 'length'],
+]);
+
+/**
+ * Every name a letter's markup can use, at any depth: the header a resume has, the letter's own
+ * parts, and the titles, which a header part can show.
+ */
+export const LETTER_VIEW_NAMES: ReadonlySet<string> = new Set([
+  ...['name', 'headline', 'tagline', 'contact', 'kind', 'text', 'date', 'recipient'],
+  ...['greeting', 'paragraphs', 'closing', 'signature', 'titles', 'summary', 'competencies'],
+  ...['experience', 'education', 'skills', 'systems', 'projects', 'highlights', 'length'],
 ]);

@@ -53,10 +53,56 @@ describe('readTemplate', () => {
         'This isn’t a Factwright resume template: it needs "factwright": "resume-template".',
       ],
     });
-    expect(readTemplate(file({ version: 2 }), 'x')).toEqual({
+    expect(readTemplate(file({ version: 3 }), 'x')).toEqual({
       ok: false,
       problems: ['This template is from a newer Factwright. Update the app to use it.'],
     });
+    expect(readTemplate(file({ version: 0 }), 'x')).toEqual({
+      ok: false,
+      problems: ['template.version should be 1, or 2 with a letter.'],
+    });
+  });
+
+  it('reads a letter’s layout, which shows the template’s parts too', () => {
+    const letter = {
+      css: '.para{margin:0}',
+      body: '<div class="hdr">{{> top}}</div>{{#paragraphs}}<p class="para">{{.}}</p>{{/paragraphs}}',
+    };
+    for (const version of [1, 2]) {
+      const read = readTemplate(file({ version, letter }), 'two-tone');
+      expect(read.ok && read.template.letter).toEqual(letter);
+    }
+    expect(problems({ letter: { css: '.para{margin:0}' } })).toEqual([
+      'template.letter.body should be text of up to 100000 characters.',
+    ]);
+    expect(problems({ letter: { ...letter, extra: 1 } })).toEqual([
+      'template.letter should be an object with the letter’s css and body.',
+    ]);
+  });
+
+  it('holds a letter’s layout to the rules the rest of a template meets', () => {
+    expect(
+      problems({
+        letter: {
+          css: '@import "https://example.com/x.css";',
+          body: '<div>{{> missing}}{{summary_text}}<script></script></div>',
+        },
+      }),
+    ).toEqual([
+      'template.letter.css can’t @import. Put every style in it.',
+      'template.letter.body: <script> isn’t allowed. Use text elements: div, span, section, h2, ul, li, table and the like.',
+      'template.letter.body: {{summary_text}} isn’t part of a letter. A letter can show name, headline, contact, date, recipient, greeting, paragraphs, closing, signature and titles.',
+      'template.letter.body shows {{> missing}}, which isn’t in template.parts.',
+    ]);
+    // A resume's names, such as its experience, aren't a letter's.
+    expect(
+      problems({ letter: { css: '', body: '{{#experience}}<p>{{title}}</p>{{/experience}}' } }),
+    ).toEqual([
+      'template.letter.body: {{title}} isn’t part of a letter. A letter can show name, headline, contact, date, recipient, greeting, paragraphs, closing, signature and titles.',
+    ]);
+    expect(problems({ letter: { css: '', body: '<p>Sincerely, {{name}}</p>' } })[0]).toContain(
+      '“Sincerely,” would print on every letter. Every word comes from the letter',
+    );
   });
 
   it('says what each field should be', () => {
@@ -151,10 +197,18 @@ describe('templateFile', () => {
     const text = templateFile(classic);
     expect(
       text.startsWith(
-        '{\n  "factwright": "resume-template",\n  "version": 1,\n  "name": "Classic",',
+        '{\n  "factwright": "resume-template",\n  "version": 2,\n  "name": "Classic",',
       ),
     ).toBe(true);
     expect(JSON.parse(text)).not.toHaveProperty('id');
     expect(readTemplate(JSON.parse(text), 'classic')).toEqual({ ok: true, template: classic });
+  });
+
+  it('writes one with no letter as version 1, which apps from before letters read', () => {
+    const { letter: _letter, ...plain } = classic;
+    const text = templateFile(plain);
+    expect(JSON.parse(text)).toMatchObject({ factwright: 'resume-template', version: 1 });
+    expect(JSON.parse(text)).not.toHaveProperty('letter');
+    expect(readTemplate(JSON.parse(text), 'classic')).toEqual({ ok: true, template: plain });
   });
 });
