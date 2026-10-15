@@ -31,6 +31,73 @@ function declaring(file: Uint8Array, name: string, size: number): Uint8Array {
   throw new Error(`No ${name} in the zip`);
 }
 
+/**
+ * A deflate stream that unpacks to `size` zero bytes, written by hand, as zipping that many
+ * would take seconds: a zero, then copies of the 258 bytes before, 13 bits each.
+ */
+function zeros(size: number): Uint8Array {
+  const bytes: number[] = [];
+  let byte = 0;
+  let filled = 0;
+  // A Huffman code goes in its first bit first; the stream fills each byte from its last bit.
+  const code = (value: number, length: number) => {
+    for (let bit = length - 1; bit >= 0; bit--) {
+      byte |= ((value >> bit) & 1) << filled;
+      if (++filled === 8) {
+        bytes.push(byte);
+        byte = 0;
+        filled = 0;
+      }
+    }
+  };
+  // The last block, with the fixed codes: its bits 1, then 1 and 0.
+  code(0b110, 3);
+  code(0x30, 8);
+  let left = size - 1;
+  for (; left >= 258; left -= 258) code(0b11000101_00000, 13);
+  for (; left > 0; left--) code(0x30, 8);
+  code(0, 7);
+  if (filled > 0) bytes.push(byte);
+  return new Uint8Array(bytes);
+}
+
+/** A zip of one deflated part, which says it unpacks to `size` bytes. */
+function zipOf(name: string, packed: Uint8Array, size: number): Uint8Array {
+  const path = strToU8(name);
+  const local = new Uint8Array(30 + path.length);
+  const central = new Uint8Array(46 + path.length);
+  const end = new Uint8Array(22);
+  const [l, c, e] = [local, central, end].map((part) => new DataView(part.buffer)) as [
+    DataView,
+    DataView,
+    DataView,
+  ];
+  l.setUint32(0, 0x04034b50, true);
+  l.setUint16(8, 8, true);
+  l.setUint32(18, packed.length, true);
+  l.setUint32(22, size, true);
+  l.setUint16(26, path.length, true);
+  local.set(path, 30);
+  c.setUint32(0, 0x02014b50, true);
+  c.setUint16(10, 8, true);
+  c.setUint32(20, packed.length, true);
+  c.setUint32(24, size, true);
+  c.setUint16(28, path.length, true);
+  central.set(path, 46);
+  e.setUint32(0, 0x06054b50, true);
+  e.setUint16(8, 1, true);
+  e.setUint16(10, 1, true);
+  e.setUint32(12, central.length, true);
+  e.setUint32(16, local.length + packed.length, true);
+  const zip = new Uint8Array(local.length + packed.length + central.length + end.length);
+  let at = 0;
+  for (const part of [local, packed, central, end]) {
+    zip.set(part, at);
+    at += part.length;
+  }
+  return zip;
+}
+
 const p = (text: string, props = '') =>
   `<w:p>${props}<w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 const texts = (data: Uint8Array) =>
@@ -215,11 +282,7 @@ describe('readDocx, on files made to blow up', () => {
   });
 
   it('stops unpacking a part that holds far more than it says', () => {
-    const file = declaring(
-      zipSync({ 'word/document.xml': new Uint8Array(128_000_000) }),
-      'word/document.xml',
-      4_096,
-    );
+    const file = zipOf('word/document.xml', zeros(128_000_000), 4_096);
     const started = performance.now();
     expect(() => readDocx(file)).toThrow();
     // Unpacking all of it, only to cut it off, took 0.3 seconds, and a minute at 20 MB.
