@@ -4,7 +4,13 @@ import type { FactBank } from '../../shared/facts.ts';
 
 export type FactBankApi = Pick<
   FactwrightApi,
-  'factBank' | 'changeFact' | 'addFact' | 'removeFact' | 'confirmFact' | 'onProfileChanged'
+  | 'factBank'
+  | 'changeFact'
+  | 'addFact'
+  | 'removeFact'
+  | 'confirmFact'
+  | 'removeGap'
+  | 'onProfileChanged'
 >;
 
 /**

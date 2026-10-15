@@ -53,7 +53,7 @@ Each claim gets its own `###` heading, so it can be cited as `file.md#claim-titl
 - **Status** decides the verbs: `live` (in production: "built", "runs") · `shipped` (in a release, maybe gated) · `beta` (say exactly what the claim says) · `built` (merged, not deployed: "built", never "in production") · `in-progress` ("building") · `pre-launch` (a side project not yet public) · `plan-only` (never claim it).
 - **Ownership:** `solo` (alone; AI-assisted still counts) · `led-and-built` (built the core and led it) · `took-over` (inherited, then rebuilt or completed; never "built from scratch") · `led-team` (their team built it: "led the team that delivered").
 - **Confidence:** `high` (use as written) · `medium` (hedge with "about" or "~", and keep it out of headline stats) · `low` (ask before using it).
-- **Unconfirmed:** `unconfirmed`, first among the tags, on a claim drafted from the user's files or notes that they haven't checked. Never use it until they confirm it.
+- **Unconfirmed:** `unconfirmed`, first among the tags, on a claim the user hasn't verified: drafted from their files or notes, or saved from an answer they gave while Claude worked on a job. The app lists these as Unverified, at the top of the Fact bank. Confirm them in the interview, as above.
 
 ## Starting a fact bank
 If `facts/` doesn't exist yet, make it as you go:

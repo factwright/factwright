@@ -244,10 +244,10 @@ export function ProfilePage({
               working={working && claims > 0 && unconfirmed > 0}
             >
               {claims === 0
-                ? 'Confirming each fact with you'
+                ? 'Checking each fact with you'
                 : unconfirmed > 0
-                  ? `Confirming with you: ${plural(unconfirmed, 'fact')} still to check`
-                  : 'Confirmed every fact with you'}
+                  ? `Checking with you: ${plural(unconfirmed, 'fact')} to verify`
+                  : 'Verified every fact with you'}
             </Milestone>
             <Milestone
               done={building}
@@ -272,7 +272,7 @@ export function ProfilePage({
           actions={
             <>
               {runButton(
-                unconfirmed > 0 ? 'Confirm your facts' : 'Interview me for more',
+                unconfirmed > 0 ? 'Verify your facts' : 'Interview me for more',
                 { skill: 'add-facts', mode: 'interview' },
                 unconfirmed > 0 && !inProgress,
               )}
@@ -285,9 +285,7 @@ export function ProfilePage({
               <p className={styles.big}>{plural(claims, 'fact')}</p>
               <p className={styles.quiet}>
                 In {plural(files, 'file')}.{' '}
-                {unconfirmed > 0
-                  ? `${plural(unconfirmed, 'fact')} still to confirm with you.`
-                  : 'All confirmed with you.'}
+                {unconfirmed > 0 ? `${plural(unconfirmed, 'fact')} to verify.` : 'All verified.'}
               </p>
               {fresh > 0 && (
                 <p className={styles.need}>
@@ -325,7 +323,7 @@ export function ProfilePage({
             <p className={styles.quiet}>
               One resume for each template you picked
               {kinds ? ', for each kind of job' : ''}, ready to send or tailor. Your Claude builds
-              them once your facts are confirmed.
+              them once your facts are verified.
             </p>
           ) : kinds ? (
             kinds.map((kind) => (

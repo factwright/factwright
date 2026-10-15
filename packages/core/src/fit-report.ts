@@ -47,6 +47,8 @@ export interface FitReport {
   filters: { pass: boolean; text: string; details: string[] } | null;
   why: ListItem[];
   gaps: ListItem[];
+  /** What the job wants that the facts don't show, which a tailored resume asks the user about. */
+  ask: ListItem[];
   /** Things to watch for. */
   flags: ListItem[];
   sentiment: Sentiment | null;
@@ -205,6 +207,7 @@ export function parseFitReport(text: string | null | undefined): FitReport | nul
       : null,
     why: list((key) => key.startsWith('why')),
     gaps: list((key) => key.startsWith('gap')),
+    ask: list((key) => key.startsWith('worth asking')),
     flags: list((key) => key.startsWith('flag') || key.startsWith('watch')),
     sentiment: sentimentSection
       ? sentimentFrom(sentimentSection.title, markdownItems(sentimentSection.lines), date)

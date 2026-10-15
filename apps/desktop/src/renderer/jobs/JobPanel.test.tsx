@@ -230,6 +230,9 @@ describe('JobPanel', () => {
     expect(screen.getByRole('img', { name: 'Proven' })).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Missing' })).toBeTruthy();
     expect(screen.getByText('People like it')).toBeTruthy();
+    // What's worth asking the user, which the tailored resume asks before it's written.
+    expect(screen.getByRole('heading', { name: 'Worth asking you' })).toBeTruthy();
+    expect(screen.getByText(/Have you used GraphQL\?$/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Open Resume - Northwind Labs.pdf' })).toBeTruthy();
     // PDFs can be previewed in the app; documents open as text.
     expect(

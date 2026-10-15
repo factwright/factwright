@@ -41,6 +41,8 @@ interface ScoreModel {
   filters: FitReport['filters'];
   why: ListItem[];
   gaps: ListItem[];
+  /** What the fit check says is worth asking the user, which a tailored resume asks. */
+  ask: ListItem[];
   flags: ListItem[];
 }
 
@@ -67,6 +69,7 @@ function scoreModel(job: Job): ScoreModel | null {
           filters: null,
           why: items(search.detail.why),
           gaps: items(search.detail.gaps),
+          ask: [],
           flags: items(search.detail.flags),
         }
       : null;
@@ -79,6 +82,7 @@ function scoreModel(job: Job): ScoreModel | null {
     filters: report?.filters ?? null,
     why: report?.why ?? [],
     gaps: report?.gaps ?? [],
+    ask: report?.ask ?? [],
     flags: report?.flags ?? [],
   };
 }
@@ -154,6 +158,7 @@ export function ScoreSection({ job, today }: { job: Job; today: string }) {
     [
       ['Why it fits', model.why],
       ['Gaps', model.gaps],
+      ['Worth asking you', model.ask],
       ['Watch for', model.flags],
     ] as const
   ).filter(([, list]) => list.length > 0);

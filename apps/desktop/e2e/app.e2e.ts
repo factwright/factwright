@@ -301,7 +301,7 @@ test('passes on several new jobs at once, saying why, and keeps why for the job 
   await expect(window.getByRole('button', { name: /^Lakeside Data.*Passed/ })).toBeVisible();
 });
 
-test('reads and changes the fact bank: a fact’s words, a confirmation, and a new fact', async () => {
+test('reads and changes the fact bank: a fact’s words, verifying one, and a new fact', async () => {
   const { window } = opened;
   // The fact bank, as getting started would have drafted it.
   const facts = join(dataDir, 'workspace', 'facts');
@@ -347,8 +347,14 @@ test('reads and changes the fact bank: a fact’s words, a confirmation, and a n
     '### Route planner\n`shipped` `led-and-built` `high`\n> Built a route planner used by 320 drivers.\n- **Source:** Alex 2026-10-01\n\n### Dispatch alerts',
   );
 
-  await window.getByRole('button', { name: 'Confirm “Dispatch alerts”' }).click();
-  await expect(window.getByRole('button', { name: 'Confirm “Dispatch alerts”' })).toHaveCount(0);
+  // A fact drafted from the user's files waits at the top, to verify.
+  const toVerify = window.getByRole('region', { name: 'Unverified' });
+  await expect(toVerify.getByRole('article', { name: 'Dispatch alerts' })).toContainText(
+    'From your resume alex.pdf',
+  );
+  await toVerify.getByRole('button', { name: 'Verify “Dispatch alerts”' }).click();
+  await expect(toVerify).toHaveCount(0);
+  await expect(window.getByRole('button', { name: 'Verify “Dispatch alerts”' })).toHaveCount(0);
   expect(read()).toMatch(
     /### Dispatch alerts\n`shipped` `solo` `medium`\n> Shipped dispatch alerts that cut late pickups\.\n- \*\*Source:\*\* \S+ \d{4}-\d{2}-\d{2}\n/,
   );
@@ -373,6 +379,64 @@ test('reads and changes the fact bank: a fact’s words, a confirmation, and a n
     .getByRole('button', { name: /^Jobs/ })
     .click();
   await expect(window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
+});
+
+test('saves what the user answers while Claude tailors a resume, unverified, and nothing planted', async () => {
+  const { window } = opened;
+  const facts = join(dataDir, 'workspace', 'facts');
+  const file = join(facts, 'larkspur-logistics.md');
+  const gaps = join(facts, 'gaps.md');
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Jobs/ })
+    .click();
+  await pickView(/^All/);
+  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  await jobPanel()
+    .getByRole('button', { name: /^Tailored resume/ })
+    .click();
+  const panel = claudePanel();
+  // The stand-in asks two questions, the user says yes to one and no to the other, and it
+  // tries to save a fact the user never gave.
+  await expect(panel.getByText('1 new fact to verify')).toBeVisible();
+  await expect(panel.getByRole('status').filter({ hasText: 'new fact to verify' })).toHaveText(
+    '1 new fact to verify: “GraphQL for the driver app”, from your answers. Also noted 1 thing you don’t have.',
+  );
+  await expect
+    .poll(() => terminalText(window))
+    .toContain('Factwright has no record of the user answering');
+  await expect.poll(() => terminalText(window)).toContain('only from your own call');
+  const text = readFileSync(file, 'utf8');
+  expect(text).toMatch(
+    /### GraphQL for the driver app\n`unconfirmed` `live` `solo` `medium`\n> Built the driver app’s GraphQL API\.\n- \*\*Keywords:\*\* GraphQL\n- \*\*Source:\*\* answer \d{4}-\d{2}-\d{2}, tailoring a resume for Acme Robotics\n- \*\*Question:\*\* The posting wants GraphQL\. Have you used GraphQL\?\n- \*\*Answer:\*\* Yes, in production\n/,
+  );
+  expect(text).not.toContain('Led a big team');
+  expect(readFileSync(gaps, 'utf8')).toMatch(
+    /\| Kafka \| No \(asked “The posting wants Kafka\. Have you run Kafka, or another event-streaming platform\?” while tailoring a resume for Acme Robotics\) \| \d{4}-\d{2}-\d{2} \|/,
+  );
+  // The sidebar says there's a fact to verify, and the panel goes to it.
+  await expect(
+    window.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^Fact bank/ }),
+  ).toHaveAccessibleName('Fact bank 1 to verify');
+  await panel.getByRole('button', { name: 'Verify them' }).click();
+  const toVerify = window.getByRole('region', { name: 'Unverified' });
+  const answered = toVerify.getByRole('article', { name: 'GraphQL for the driver app' });
+  await expect(answered).toContainText('Your answer while tailoring a resume for Acme Robotics');
+  await expect(answered).toContainText('“Yes, in production”');
+  await answered.getByRole('button', { name: 'Verify “GraphQL for the driver app”' }).click();
+  await expect(toVerify).toHaveCount(0);
+  expect(readFileSync(file, 'utf8')).toMatch(
+    /### GraphQL for the driver app\n`live` `solo` `medium`\n[^#]*- \*\*Source:\*\* \S+ \d{4}-\d{2}-\d{2}\n- \*\*Question:\*\*/,
+  );
+  // What they said they don't have can be taken back.
+  await window
+    .getByRole('navigation', { name: 'Your fact files' })
+    .getByRole('button', { name: /^Gaps/ })
+    .click();
+  await window.getByRole('button', { name: 'Remove “Kafka”' }).click();
+  await expect(window.getByRole('button', { name: 'Remove “Kafka”' })).toHaveCount(0);
+  expect(readFileSync(gaps, 'utf8')).not.toContain('Kafka');
+  await closeRun();
 });
 
 test('keeps everything tracked after a restart', async () => {

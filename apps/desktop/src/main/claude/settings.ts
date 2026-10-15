@@ -2,6 +2,7 @@ import { WORKSPACE_PATHS } from '@factwright/core';
 import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import {
+  FACT_TOOLS,
   LOCAL_TOOLS,
   PROFILE_TOOLS,
   PUBLIC_API_TOOLS,
@@ -9,6 +10,7 @@ import {
   TEMPLATE_TOOLS,
   WEB_TOOLS,
 } from '../tools/index.ts';
+import { FILING_TOOLS, hookToolName } from './questions.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
 export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
@@ -68,7 +70,9 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
   // Saving a template is the point of a template run. Otherwise it's like changing a file.
   const templates = scope === 'template' || permissions.anyFile ? TEMPLATE_TOOLS : [];
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
-  // else without asking: not building a resume or saving an answer, either.
+  // else without asking: not building a resume or saving an answer, either. A run on the job hunt
+  // files what the user answers it without asking, since that files only what they answered.
+  // Getting started and adding facts change the facts themselves, as the user confirms them.
   const tools =
     scope === 'template'
       ? [...TEMPLATE_READS, ...templates, ...profile]
@@ -76,6 +80,7 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
         ? [...LOCAL_TOOLS, ...profile, ...templates]
         : [
             ...LOCAL_TOOLS,
+            ...FACT_TOOLS,
             ...profile,
             ...templates,
             ...PUBLIC_API_TOOLS,
@@ -103,7 +108,8 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  * - Claude Code's ANSI theme, so the panel's own colors are the only ones it shows
  * - no claude.ai connectors (such as the user's mail or drive), since job posts are untrusted
  * - without asking: web searches, Factwright's skills, its tools that stay on this computer,
- *   such as reading what's on file and building resumes, its tools that read only fixed public
+ *   such as reading what's on file, building resumes and filing what the user answers Claude as
+ *   facts that wait for them to verify, its tools that read only fixed public
  *   job APIs (the applicant systems' postings and boards, and Hacker News's hiring thread), and
  *   saving work in the job, search and outreach folders. Searches and those APIs never reach a
  *   site a post names.
@@ -114,7 +120,8 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  *   run started to make a template may read and save templates without asking, and nothing
  *   else, and never reads the web either.
  * - never: changing Claude Code's settings or the instructions it loads
- * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
+ * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
+ *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
  *   session ends, which the self-test listens for
  */
 export function sessionSettings({
@@ -146,7 +153,12 @@ export function sessionSettings({
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],
-      PreToolUse: [{ matcher: 'AskUserQuestion', hooks: hook }],
+      // The questions Claude asks, and its calls to the tools that file the answers, which the
+      // app lets through only when they come from the run's own Claude.
+      PreToolUse: [
+        { matcher: 'AskUserQuestion', hooks: hook },
+        { matcher: FILING_TOOLS.map(hookToolName).join('|'), hooks: hook },
+      ],
       PostToolUse: [{ hooks: hook }],
       PostToolUseFailure: [{ hooks: hook }],
       PermissionRequest: [{ hooks: hook }],

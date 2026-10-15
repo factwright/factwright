@@ -44,3 +44,16 @@
 .current .count {
   color: inherit;
 }
+
+/* Something waiting for the user, such as facts to verify. */
+.waiting {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--fw-need-soft);
+  color: var(--fw-need);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

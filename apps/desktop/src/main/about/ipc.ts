@@ -2,7 +2,12 @@ import { join } from 'node:path';
 import { shell } from 'electron';
 import { ANSWER_LIMITS, parseAnswerChanges } from '../../shared/about.ts';
 import type { EditResult } from '../../shared/api.ts';
-import { parseFactChange, parseFactTarget, parseNewFact } from '../../shared/facts.ts';
+import {
+  parseFactChange,
+  parseFactTarget,
+  parseGapTarget,
+  parseNewFact,
+} from '../../shared/facts.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import type { TemplatePreviews } from './previews.ts';
@@ -103,6 +108,10 @@ export function registerAboutIpc(
   answer('facts:confirm', (target) => {
     const valid = parseFactTarget(target);
     return valid ? about.facts.confirm(valid) : REFUSED;
+  });
+  answer('facts:remove-gap', (target) => {
+    const valid = parseGapTarget(target);
+    return valid ? about.facts.removeGap(valid) : REFUSED;
   });
 
   answer('about:start', () => about.start());

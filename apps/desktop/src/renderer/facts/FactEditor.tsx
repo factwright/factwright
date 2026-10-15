@@ -89,14 +89,22 @@ function useForm(save: () => Promise<string | null>, onCancel: () => void) {
   return { saving, problem, submit, onKeyDown, onCancel };
 }
 
-function Actions({ saving, onCancel }: { saving: boolean; onCancel: () => void }) {
+function Actions({
+  saving,
+  onCancel,
+  saveLabel = 'Save',
+}: {
+  saving: boolean;
+  onCancel: () => void;
+  saveLabel?: string;
+}) {
   return (
     <div className={styles.actions}>
       <Button size="sm" onClick={onCancel}>
         Cancel
       </Button>
       <Button size="sm" variant="primary" type="submit" disabled={saving}>
-        Save
+        {saveLabel}
       </Button>
     </div>
   );
@@ -152,6 +160,7 @@ export function ClaimForm({
   files,
   path: startPath,
   notice,
+  saveLabel,
   onSave,
   onCancel,
 }: {
@@ -159,6 +168,8 @@ export function ClaimForm({
   draftKey: string;
   /** The claim as it was, or null for a new one. */
   block: FactBlock | null;
+  /** What its Save button says, such as "Save and verify". */
+  saveLabel?: string;
   /** Who a new claim is from, and when, such as "Alex 2026-10-12". */
   source: string;
   /** For a new claim: the files of facts it can go in. */
@@ -294,7 +305,7 @@ export function ClaimForm({
         )}
       </Field>
       <Problem problem={form.problem} />
-      <Actions saving={form.saving} onCancel={form.onCancel} />
+      <Actions saving={form.saving} onCancel={form.onCancel} {...(saveLabel && { saveLabel })} />
     </form>
   );
 }

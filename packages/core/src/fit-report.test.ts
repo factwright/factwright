@@ -120,10 +120,30 @@ describe('parseFitReport', () => {
       filters: null,
       why: [],
       gaps: [],
+      ask: [],
       flags: [],
       sentiment: null,
     });
     expect(parseFitReport(null)).toBeNull();
+  });
+
+  it('reads what’s worth asking the user, for the tailored resume to ask', () => {
+    const report = parseFitReport(
+      [
+        '## Gaps',
+        '- No Kafka on file',
+        '## Worth asking you',
+        '- Kafka (must-have): your facts show RabbitMQ at Beacon. Have you run Kafka?',
+        '## Flags',
+      ].join('\n'),
+    );
+    expect(report?.ask).toEqual([
+      {
+        text: 'Kafka (must-have): your facts show RabbitMQ at Beacon. Have you run Kafka?',
+        sub: [],
+      },
+    ]);
+    expect(report?.gaps.map((item) => item.text)).toEqual(['No Kafka on file']);
   });
 });
 

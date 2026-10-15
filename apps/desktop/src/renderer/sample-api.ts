@@ -1,5 +1,6 @@
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
 import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
+import type { FiledFacts } from '../shared/facts.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import type { RunTask } from '../shared/runs.ts';
@@ -140,6 +141,17 @@ export function sampleApi(): FactwrightApi {
   let afterTrust: () => void = () => {};
   const trustListeners = new Set<() => void>();
   let run = sampleRun(false);
+  // ?filed has the made-up run file facts from the user's answers as it finishes, once.
+  const facts = sampleFacts(query.get('profile'));
+  const filedListeners = new Set<(filed: FiledFacts) => void>();
+  let fileOnce = query.has('filed');
+  const done = () => {
+    signal('done');
+    if (!fileOnce) return;
+    fileOnce = false;
+    const filed = facts.fileAnswers();
+    for (const listener of filedListeners) listener(filed);
+  };
   let permissions: ClaudePermissions = ASK_FIRST;
   let models: ModelChoices = DEFAULT_MODELS;
   let effort: EffortChoices = DEFAULT_EFFORT;
@@ -157,7 +169,7 @@ export function sampleApi(): FactwrightApi {
     }
     setTimeout(() => {
       print(run.taskDone(task));
-      signal('done');
+      done();
     }, 1600);
   };
   return {
@@ -220,7 +232,7 @@ export function sampleApi(): FactwrightApi {
       signal('working');
       setTimeout(() => {
         print(run.finished);
-        signal('done');
+        done();
       }, 1600);
     },
     resizeClaude: () => {},
@@ -240,7 +252,11 @@ export function sampleApi(): FactwrightApi {
     ...sampleTracker(query.get('jobs'), query.get('resume')),
     ...sampleSync(query.get('sync'), query.get('approve')),
     ...sampleProfile(query.get('profile')),
-    ...sampleFacts(query.get('profile')),
+    ...facts.api,
+    onFactsFiled: (listener) => {
+      filedListeners.add(listener);
+      return () => filedListeners.delete(listener);
+    },
     ...sampleProfiles(query.get('profiles')),
     // ?update=ready shows an update waiting to be installed.
     updateStatus: async () =>
