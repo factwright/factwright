@@ -1,4 +1,4 @@
-import type { Job, JobStatus } from '@factwright/core';
+import { asksForCoverLetter, type Job, type JobStatus } from '@factwright/core';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunSkill, type RunTask, taskJob } from '../../shared/runs.ts';
@@ -12,6 +12,11 @@ export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string
     skill: 'focused-resume',
     label: 'Tailored resume',
     why: 'A resume for this job, every line traced to a fact',
+  },
+  {
+    skill: 'cover-letter',
+    label: 'Cover letter',
+    why: 'A letter for this job, from your facts, in your voice',
   },
   { skill: 'fit-check', label: 'Fit check', why: 'Score the job against your fact bank' },
   {
@@ -56,6 +61,7 @@ function stateOf(job: Job, skill: RunSkill, running: boolean, done: boolean): [s
   if (skill === 'fit-check' && job.fit) return ['Ran', 'quiet'];
   if (skill === 'answer-questions' && job.docKinds.includes('answers')) return ['Ran', 'quiet'];
   if (skill === 'focused-resume' && job.files.length > 0) return ['Ready', 'ok'];
+  if (skill === 'cover-letter' && job.letters.length > 0) return ['Ready', 'ok'];
   return ['Run', 'run'];
 }
 
@@ -87,12 +93,18 @@ export function RunActions({
           const running = mine && busy;
           const done = mine && run.phase === 'done';
           const [state, tone] = stateOf(job, skill, running, done);
-          // A fit check helps decide on a job, and a resume comes once the user will apply.
+          // A fit check helps decide on a job, and a resume comes once the user will apply, then a
+          // cover letter when the posting asks for one, which copies the resume's header.
           const suggested =
             running ||
             (!done &&
               ((skill === 'fit-check' && !job.fit && (status === 'new' || status === 'review')) ||
-                (skill === 'focused-resume' && status === 'apply' && job.files.length === 0)));
+                (skill === 'focused-resume' && status === 'apply' && job.files.length === 0) ||
+                (skill === 'cover-letter' &&
+                  status === 'apply' &&
+                  job.files.length > 0 &&
+                  job.letters.length === 0 &&
+                  asksForCoverLetter(job))));
           return (
             <button
               key={skill}

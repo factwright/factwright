@@ -187,6 +187,30 @@ describe('readRecords', () => {
     expect(of(records, 'prep')[0]?.date).toBe('2026-10-12');
   });
 
+  it('keeps a job’s cover letter apart from its resumes, and reads the letter’s data', () => {
+    const letter = '{"greeting":"Dear Sam,","paragraphs":["Hello."]}';
+    const [folder] = of(
+      readRecords(
+        memoryWorkspace({
+          [`${ACME}/job.md`]: '# Acme Robotics: Staff Engineer',
+          [`${ACME}/AlexRiveraResume10072026_Acme.pdf`]: 'pdf',
+          [`${ACME}/AlexRiveraCoverLetter10142026_Acme.pdf`]: 'pdf',
+          [`${ACME}/AlexRiveraCoverLetter10142026_Acme.docx`]: 'docx',
+          [`${ACME}/Acme cover letter.pdf`]: 'pdf',
+          [`${ACME}/cover-letter.json`]: letter,
+        }),
+      ),
+      'folder',
+    );
+    expect(folder?.files.map((file) => file.name)).toEqual(['AlexRiveraResume10072026_Acme.pdf']);
+    expect(folder?.letters.map((file) => file.name)).toEqual([
+      'Acme cover letter.pdf',
+      'AlexRiveraCoverLetter10142026_Acme.docx',
+      'AlexRiveraCoverLetter10142026_Acme.pdf',
+    ]);
+    expect(folder?.docs.letter).toBe(letter);
+  });
+
   it('reads job searches, checking each value’s type', () => {
     const [acme, weird, lumen] = of(records, 'search');
     expect(acme).toMatchObject({

@@ -29,12 +29,13 @@ Input: `from templates/sources/<file>`, a PDF or a picture the app kept. Without
 
 ## 3. Write it, and save it
 - Name it for its look, such as "Navy Sidebar", never for a company or a person. Its ID comes from the name: `navy-sidebar`.
-- `save_template` with the ID and the whole template, in the format below. It checks the template, saves it to the user's templates, and prints a preview PDF of the made-up resume the app's gallery shows. If it says what to fix, fix that and save again.
+- `save_template` with the ID and the whole template, in the format below. It checks the template, saves it to the user's templates, and prints a preview PDF of the made-up resume the app's gallery shows, and one of a cover letter in it. If it says what to fix, fix that and save again.
 - Save under a new ID. This run can replace only templates it saved itself, so the user's own are safe from it. To change one of theirs, they ask in a run that asks first.
 
 ## 4. Compare, and refine
 - Read the preview, then compare it with the resume you're copying: the page's layout, the header, the headings, how a job reads, the spacing, the colors and the type. Fix what's off, and `save_template` again with replace. Two or three rounds usually do it.
 - Then preview it with one of the user's own resumes: `resume` set to `base/<name>`, or a job's folder. Long titles, many jobs and every section should still look right.
+- Read the cover letter's preview too. Its header should match the resume's, and the letter should read well on one page. See **The letter** below.
 - Some things can't come across. Leave them out and say so: photos, logos, icons that are pictures (a character such as • or | is fine), and fonts the app doesn't carry (the closest one stands in).
 
 ## 5. Reply
@@ -42,7 +43,7 @@ In a few lines: the template's name, what it copies, what it couldn't, and that 
 
 ## The template file
 JSON, as `read_template` shows:
-- `"factwright": "resume-template"` and `"version": 1`
+- `"factwright": "resume-template"`, and `"version"`: 1, or 2 for a template with a `letter`
 - `name`, and `look`: one sentence on what it looks like
 - `fonts`: the font files it carries, from the app's own:
   - Factwright Sans has Calibri's widths: `factwright-sans-regular.woff2`, `-bold`, `-italic`.
@@ -57,8 +58,9 @@ JSON, as `read_template` shows:
   - `accent`, `accent2`, `muted`, `tint`, `nameColor`, `headlineColor` and `ruleColor`: hex, without the #.
   - `nameSize` and `size`: half points, such as 48 for 24 points.
   - `nameCaps` and `center`: true or false.
-- `css`: its styles. Letter pages and their margins are set already. Styles can't hold "<" or `@import`. `url()` can hold only a data: picture (PNG, JPEG, GIF or WebP) or a WOFF2 font, and there's no `image-set()` or `attr()`. A string that prints, such as `content`'s or a list's marker, holds marks such as • or |, never letters or digits.
+- `css`: its styles. US Letter pages and their margins are set already. Styles can't hold "<" or `@import`. `url()` can hold only a data: picture (PNG, JPEG, GIF or WebP) or a WOFF2 font, and there's no `image-set()` or `attr()`. A string that prints, such as `content`'s or a list's marker, holds marks such as • or |, never letters or digits.
 - `body`: the page's markup, and `parts`: named pieces of markup it shows.
+- `letter`, optional: the cover letter's layout, `{ "css": "", "body": "" }`. See **The letter** below.
 
 ## The markup
 It's in Mustache's syntax:
@@ -104,3 +106,17 @@ The fit check measures how each piece of text fills its lines, found by these cl
 - **Sections:** a div directly inside a section, other than one with class blk, job, proj, systems, stats, skills or tl.
 
 Use those classes for the same things, so it keeps working.
+
+## The letter
+A cover letter for a job prints in the same template as its resume, so the two look like a set. The template's `letter` lays it out:
+- `css`: styles of its own, added after the template's, so the header's classes look the same on both pages.
+- `body`: its markup, in the same syntax and with the same rules as the page's. It can show the template's parts, such as `{{> header}}{{> contact}}`, which is how Classic's and Minimal's letters put the resume's own header over the letter.
+
+When you start from Classic or Minimal, their `letter` comes along. Keep it when your header still sits across the top of the page, and restyle it to match. Leave it out when the page has a side column or a header a letter can't follow: then letters print plainly, in the template's fonts and its Word colors.
+
+What a letter gives the markup:
+- `{{name}}`, `{{headline}}`, and `{{#contact}}` with `{{text}}` and `{{kind}}`, as a resume gives them, so a header part shows the same.
+- `{{date}}`, and `{{#recipient}}`: each line of who it's to, as `{{.}}`. `{{recipient.length}}` counts them.
+- `{{greeting}}`, then `{{#paragraphs}}`: each paragraph, as `{{.}}`, in an element with class `para`, which the fit check measures.
+- `{{closing}}` and `{{signature}}`.
+- `{{titles.summary}}` and the other titles.

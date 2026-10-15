@@ -132,6 +132,35 @@ async function work(text) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
   }
+  // As Claude would for a cover letter: read what's on file, write the letter in the job's
+  // folder, and build it with the tool that checks it.
+  const lettered = text.match(/^\/factwright:cover-letter job (\S+)$/);
+  if (lettered) {
+    const details = await call('job_details', { job: lettered[1] });
+    const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
+    if (folder) {
+      writeFileSync(
+        join(process.cwd(), 'applications', folder, 'cover-letter.json'),
+        JSON.stringify({
+          format: 'both',
+          output_name: 'AlexRiveraCoverLetter10142026_Acme',
+          name: 'Alex Rivera',
+          headline: 'Staff Platform Engineer',
+          contact: { email: 'alex@example.com', location: 'Remote, US' },
+          date: 'October 14, 2026',
+          recipient: ['Sam Lee', 'Engineering Manager', 'Acme Robotics'],
+          greeting: 'Dear Sam Lee,',
+          paragraphs: [
+            'Acme’s posting asks for someone to make the tools engineers use every day feel fast. I cut deploy time by ~40% at Tidewater, from the stand-in Claude.',
+            'I would bring the same habits to your developer tools team.',
+          ],
+          closing: 'Best regards,',
+        }),
+      );
+      show(await call('build_cover_letter', { folder }));
+      show('\n');
+    }
+  }
   // As Claude would while tailoring a resume: ask about what the posting wants that the facts
   // don't show, then save the user's answers to the fact bank.
   const tailoring = text.match(/^\/factwright:focused-resume job (\S+)/);

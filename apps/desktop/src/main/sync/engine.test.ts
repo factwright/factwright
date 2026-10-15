@@ -49,6 +49,7 @@ const job = (id: string): CollectedJob => ({
   fitReport: null,
   sentiment: null,
   files: [],
+  letters: [],
 });
 
 /** A computer with its own workspace, tracker and sync notes, signed in to the account. */

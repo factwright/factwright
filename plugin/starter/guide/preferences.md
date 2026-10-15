@@ -16,7 +16,7 @@ The user may react in the same session or a later one.
 Record their words, not your reading of them. Praise counts too: what they liked goes under **Keep doing**, so it's done again.
 
 One line each:
-`- **<nudge>**: Seen N · last YYYY-MM-DD · scope: all|startup|big-company|public-sector|leader|builder|ic|pdf|docx · from: "<their words>" (<application folder>)`
+`- **<nudge>**: Seen N · last YYYY-MM-DD · scope: all|startup|big-company|public-sector|leader|builder|ic|pdf|docx|letter · from: "<their words>" (<application folder>)`
 
 ## Wording
 _(none yet)_
@@ -28,6 +28,9 @@ _(none yet)_
 _(none yet)_
 
 ## Look and format
+_(none yet)_
+
+## Cover letters
 _(none yet)_
 
 ## Application answers

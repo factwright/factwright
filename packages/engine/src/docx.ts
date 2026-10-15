@@ -14,8 +14,9 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
+import type { CoverLetter } from './letter.ts';
 import { BOLD, PLACEHOLDER } from './markup.ts';
-import type { Bullet, Resume } from './schema.ts';
+import type { Bullet, Contact, Resume } from './schema.ts';
 import { sectionTitles } from './template/render.ts';
 import type { Template, WordTheme } from './templates.ts';
 
@@ -30,9 +31,14 @@ const MARKED = new RegExp(`(${BOLD}|${PLACEHOLDER})`, 'g');
 const IS_BOLD = new RegExp(`^${BOLD}$`);
 const IS_PLACEHOLDER = new RegExp(`^${PLACEHOLDER}$`);
 
+/** Characters a Word file can't hold, which would make Word call the file unreadable. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: these are what it finds.
+const UNWRITABLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
+
 /** Text runs with **bold** and highlighted [[placeholders]]. */
 function runs(value: unknown, t: WordTheme, base: RunOptions = {}): TextRun[] {
   return String(value ?? '')
+    .replace(UNWRITABLE, '')
     .split(MARKED)
     .filter(Boolean)
     .map((part) => {
@@ -139,23 +145,28 @@ function statsTable(stats: NonNullable<Resume['impact_stats']>, t: WordTheme): T
   });
 }
 
-/**
- * A resume as a single-column Word document that applicant systems read well, in the colors and
- * fonts of its template.
- */
-export function resumeDocument(r: Resume, template: Template): Document {
-  const t = template.word;
-  const titles = sectionTitles(template, r);
-  const c = r.contact ?? {};
-  const align = t.center ? AlignmentType.CENTER : AlignmentType.LEFT;
-  const kids: (Paragraph | Table)[] = [];
+/** Who a resume or letter is from, as its header shows them. */
+interface Person {
+  name: string;
+  headline?: string;
+  tagline?: string;
+  contact?: Contact;
+}
 
+/**
+ * The name, headline and contact line across the top, over a rule: the same on a resume and its
+ * cover letter, so the two look like a set.
+ */
+function header(person: Person, t: WordTheme): Paragraph[] {
+  const c = person.contact ?? {};
+  const align = t.center ? AlignmentType.CENTER : AlignmentType.LEFT;
+  const kids: Paragraph[] = [];
   kids.push(
     new Paragraph({
       alignment: align,
       children: [
         new TextRun({
-          text: t.nameCaps ? r.name.toUpperCase() : r.name,
+          text: t.nameCaps ? person.name.toUpperCase() : person.name,
           font: t.head,
           size: t.nameSize,
           bold: true,
@@ -165,26 +176,28 @@ export function resumeDocument(r: Resume, template: Template): Document {
       ],
     }),
   );
-  kids.push(
-    new Paragraph({
-      alignment: align,
-      spacing: { before: 40 },
-      children: [
-        new TextRun({
-          text: r.headline,
-          font: t.body,
-          size: 24,
-          bold: true,
-          color: t.headlineColor,
-        }),
-      ],
-    }),
-  );
-  if (r.tagline) {
+  if (person.headline !== undefined) {
     kids.push(
       new Paragraph({
         alignment: align,
-        children: runs(r.tagline, t, { color: t.muted, size: t.size - 1 }),
+        spacing: { before: 40 },
+        children: [
+          new TextRun({
+            text: person.headline,
+            font: t.body,
+            size: 24,
+            bold: true,
+            color: t.headlineColor,
+          }),
+        ],
+      }),
+    );
+  }
+  if (person.tagline) {
+    kids.push(
+      new Paragraph({
+        alignment: align,
+        children: runs(person.tagline, t, { color: t.muted, size: t.size - 1 }),
       }),
     );
   }
@@ -207,6 +220,17 @@ export function resumeDocument(r: Resume, template: Template): Document {
       ),
     }),
   );
+  return kids;
+}
+
+/**
+ * A resume as a single-column Word document that applicant systems read well, in the colors and
+ * fonts of its template.
+ */
+export function resumeDocument(r: Resume, template: Template): Document {
+  const t = template.word;
+  const titles = sectionTitles(template, r);
+  const kids: (Paragraph | Table)[] = [...header(r, t)];
 
   kids.push(heading(titles.summary, t));
   kids.push(new Paragraph({ spacing: { after: 60 }, children: runs(r.summary, t) }));
@@ -378,4 +402,63 @@ export function resumeDocument(r: Resume, template: Template): Document {
 /** The resume as a Word file's bytes, ready to save. */
 export function docxFile(resume: Resume, template: Template): Promise<ArrayBuffer> {
   return Packer.toArrayBuffer(resumeDocument(resume, template));
+}
+
+/**
+ * A cover letter as a Word document, under the same header as its resume, in the template's
+ * fonts and colors: the date, who it's to, the letter, and the name under the closing. Its text
+ * is a little larger than a resume's, and its sides an inch, as a letter's are.
+ */
+export function letterDocument(l: CoverLetter, template: Template): Document {
+  const t = template.word;
+  const size = Math.max(t.size, 21);
+  const text = (value: string, options: RunOptions = {}) => runs(value, t, { size, ...options });
+  const kids: Paragraph[] = [...header(l, t)];
+  const to = l.recipient ?? [];
+  if (l.date) kids.push(new Paragraph({ spacing: { before: 360 }, children: text(l.date) }));
+  to.forEach((line, i) => {
+    kids.push(
+      new Paragraph({
+        spacing: { before: i === 0 ? (l.date ? 240 : 360) : 0 },
+        children: text(line),
+      }),
+    );
+  });
+  kids.push(
+    new Paragraph({
+      spacing: { before: l.date || to.length > 0 ? 240 : 360, after: 200 },
+      children: text(l.greeting),
+    }),
+  );
+  for (const paragraph of l.paragraphs) {
+    kids.push(new Paragraph({ spacing: { after: 200, line: 276 }, children: text(paragraph) }));
+  }
+  kids.push(new Paragraph({ spacing: { before: 120 }, keepNext: true, children: text(l.closing) }));
+  kids.push(
+    new Paragraph({
+      spacing: { before: 480 },
+      children: text(l.signature || l.name, { bold: true }),
+    }),
+  );
+  return new Document({
+    creator: l.name,
+    title: `${l.name} — Cover Letter`,
+    styles: { default: { document: { run: { font: t.body, size, noProof: true } } } },
+    sections: [
+      {
+        properties: {
+          page: {
+            size: { width: PAGE_W, height: 15840 },
+            margin: { top: 720, bottom: 720, left: 1440, right: 1440 },
+          },
+        },
+        children: kids,
+      },
+    ],
+  });
+}
+
+/** The cover letter as a Word file's bytes, ready to save. */
+export function letterDocxFile(letter: CoverLetter, template: Template): Promise<ArrayBuffer> {
+  return Packer.toArrayBuffer(letterDocument(letter, template));
 }

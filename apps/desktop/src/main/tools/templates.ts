@@ -2,10 +2,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   builtInTemplate,
+  previewLetter,
   previewResume,
   type Resume,
   readResume,
   renderHtml,
+  renderLetterHtml,
   type Template,
   templateFile,
 } from '@factwright/engine';
@@ -112,8 +114,18 @@ export async function saveTemplate(
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, printed.pdf);
   const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;
+  // A cover letter in it, from the same person, with the header their resume has.
+  const { name, headline, contact } = preview.resume;
+  const letter = { ...previewLetter(), name, headline, contact: contact ?? {} };
+  const letterPath = deps.templates.letterPreviewPath(template.id);
+  const letterPrinted = await deps.printer.print(renderLetterHtml(letter, template, RESUME_FONTS));
+  await writeFile(join(deps.workspace, ...letterPath.split('/')), letterPrinted.pdf);
+  const letterPages = letterPrinted.pages === 1 ? '1 page' : `${letterPrinted.pages} pages`;
   return [
     `Saved ${TEMPLATES_FOLDER}/${template.id}.json, “${template.name}”${saved.replaced ? (before ? ', in place of the one before, which is in the trash to restore' : ', in place of the one before') : ''}. It’s in the user’s templates now.`,
     `Its preview, with ${preview.label}, is ${path}: ${printed.pages} pages${fill}. Read it to check the look.`,
+    template.letter
+      ? `A cover letter in its letter layout is ${letterPath}: ${letterPages}. Read it too: its header should match the resume’s.`
+      : `It has no letter layout, so cover letters print plainly in its fonts and colors, as ${letterPath} shows: ${letterPages}.`,
   ].join('\n');
 }

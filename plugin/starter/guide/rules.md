@@ -1,6 +1,6 @@
 # Binding rules
 
-These apply to every resume, application answer and message. Break one only if the user says so in the current conversation, and if the change is for good, update this file. The user's own rules go under **Their rules** as they set them.
+These apply to every resume, cover letter, application answer and message. Break one only if the user says so in the current conversation, and if the change is for good, update this file. The user's own rules go under **Their rules** as they set them.
 
 ## Truth
 - Every claim traces to a claim in `facts/`. If there's no fact for something, ask the user instead of writing it.
@@ -19,12 +19,12 @@ Nothing confidential goes into anything sent to an employer:
 - security findings and incidents
 - pricing, revenue or spend an employer hasn't made public
 
-`confidential-terms.txt` lists words that must never appear, and the resume builder checks every resume against it.
+`confidential-terms.txt` lists words that must never appear, and the builder checks every resume and cover letter against it.
 
 ## Format
 - No more pages than `lint.json`'s `maxPages`, which the user sets in the app.
 - The files' name: `<FirstLast>Resume<MMDDYYYY>_<Company>`, the company's short name in letters and digits only. Two resumes for one company on the same day get a short role tag, such as `_TL`.
-- A resume or answer that went out with an application is never changed. Make a new one.
+- A resume, cover letter or answer that went out with an application is never changed. Make a new one.
 
 ## Their rules
 _None yet. Add the user's own here as they set them, such as the exact title a job must show, or how their education must read._

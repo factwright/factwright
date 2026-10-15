@@ -1,5 +1,5 @@
 import type { Template } from '../templates.ts';
-import { BODY, PARTS } from './markup.ts';
+import { BODY, LETTER, letterCss, PARTS } from './markup.ts';
 
 /** Traditional and all serif, in black and white: the safest choice for formal fields. */
 export const classic: Template = {
@@ -70,4 +70,9 @@ export const classic: Template = {
     `,
   body: BODY,
   parts: PARTS,
+  letter: {
+    css: `
+      .hdr{padding-bottom:10px;border-bottom:1px solid var(--rule)}${letterCss({ center: true, size: 11, sign: 700 })}`,
+    body: LETTER,
+  },
 };

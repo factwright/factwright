@@ -49,6 +49,16 @@ export interface WordTheme {
 }
 
 /**
+ * A template's cover letter: markup and styles of its own, shown with the template's styles and
+ * parts, so the letter's header is the resume's and the two look like a set. Each paragraph has
+ * class "para", which the fit check measures. See template/view.ts for what the markup can show.
+ */
+export interface LetterLayout {
+  css: string;
+  body: string;
+}
+
+/**
  * A resume template: its look in a sentence, the fonts it carries, what it calls each part,
  * its look in Word, and its page: styles, and markup in Mustache's syntax that the engine fills
  * in from the resume. See template/view.ts for what the markup can show.
@@ -68,6 +78,8 @@ export interface Template {
   body: string;
   /** Markup the body and other parts show by name, as {{> name}}. */
   parts: Readonly<Record<string, string>>;
+  /** Its cover letter's layout. Without one, a letter prints plainly in its fonts and colors. */
+  letter?: LetterLayout;
 }
 
 /** The templates every user has. A user can add their own to these, in their workspace. */

@@ -1,3 +1,4 @@
+import type { CoverLetter } from './letter.ts';
 import type { Resume } from './schema.ts';
 
 /** A made-up resume for tests. */
@@ -82,7 +83,7 @@ export function previewResume(): Resume {
     systems: [
       {
         name: 'Repeat booking program',
-        text: 'Designed rewards and reminders that lifted repeat bookings by about a third in a year.',
+        text: 'Designed rewards and reminders that lifted repeat bookings by about a third in a year, with no new discount codes.',
       },
       {
         name: 'Host pricing tool',
@@ -169,5 +170,48 @@ export function previewResume(): Resume {
       { category: 'Product', items: ['Discovery', 'Roadmapping', 'A/B testing', 'Pricing'] },
       { category: 'Tools', items: ['SQL', 'Amplitude', 'Figma', 'Jira'] },
     ],
+  };
+}
+
+/** A made-up cover letter for tests, from the made-up resume's person. */
+export function sampleLetter(): CoverLetter {
+  return {
+    layout: 'classic',
+    format: 'pdf',
+    output_name: 'AlexRiveraCoverLetter10142026_Acme',
+    name: 'Alex Rivera',
+    headline: 'Staff Platform Engineer',
+    contact: { email: 'alex@example.com', location: 'Remote, US' },
+    date: 'October 14, 2026',
+    recipient: ['Sam Lee', 'Engineering Manager', 'Acme Robotics'],
+    greeting: 'Dear Sam Lee,',
+    paragraphs: [
+      'Acme’s posting asks for someone to make deploys boring. I cut deploy time by **~40%** at Tidewater.',
+      'I would bring the same habits to Acme’s platform team.',
+    ],
+    closing: 'Best regards,',
+  };
+}
+
+/**
+ * A made-up cover letter that fills most of a page, from the person on the made-up resume, for
+ * checking that every template prints a letter well.
+ */
+export function previewLetter(): CoverLetter {
+  const resume = previewResume();
+  return {
+    name: resume.name,
+    headline: resume.headline,
+    contact: resume.contact,
+    date: 'October 14, 2026',
+    recipient: ['Priya Shah', 'Director of Product', 'Fernway'],
+    greeting: 'Dear Priya Shah,',
+    paragraphs: [
+      'Fernway’s posting asks for someone who can grow repeat bookings without leaning on discounts. That is the problem I have worked on for the last three years at Northwind Stays, a vacation rental marketplace, where the loyalty program I led from research to launch lifted repeat bookings by about a third in a year, with no new discount codes.',
+      'Two parts of that work fit what your team is taking on. First, I run experiments with data science as a habit: more than 40 pricing and checkout tests at Northwind added $2.4M in yearly revenue. Second, I build tools hosts actually use. Our suggested pricing reached most new listings within a quarter of launch, because we tried early versions with hosts before we built the real thing.',
+      'I also grew the guest team to twelve people across engineering, design and research, and set its quarterly goals. Before Northwind, I launched same-day delivery in three cities at Bramble Market with two engineers and a designer, so I know how far a small team can go when its goal is clear. I would bring the same habits to your host growth team: clear bets, small teams, and numbers we agree on before we ship.',
+      'I would welcome half an hour to walk through how the loyalty program came together, what I would do differently today, and what I would test first at Fernway. I am free most weekday afternoons over the next two weeks, and glad to send a short write-up of the pricing work beforehand.',
+    ],
+    closing: 'Best regards,',
   };
 }

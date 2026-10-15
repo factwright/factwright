@@ -4,7 +4,7 @@ The files a new workspace starts with. When a user hands their answers to Claude
 
 | File | What it is |
 |---|---|
-| [`guide/rules.md`](guide/rules.md) | The binding rules every resume, answer and message follows, with room for the user's own |
+| [`guide/rules.md`](guide/rules.md) | The binding rules every resume, cover letter, answer and message follows, with room for the user's own |
 | [`guide/writing.md`](guide/writing.md) | How to write and tailor a strong resume, and how each template fits |
 | [`guide/styles/`](guide/styles) | Who reads a resume at a startup, an established company or a public employer, and what they reward |
 | [`guide/preferences.md`](guide/preferences.md) | Where the user's feedback becomes nudges, empty at first |

@@ -239,6 +239,35 @@ describe('opening the job hunt in the browser', () => {
     expect(downloaded).toHaveLength(3);
   });
 
+  it('reads a job’s cover letter, and keeps its files apart from the resume', async () => {
+    const letter = JSON.stringify({ greeting: 'Dear Sam,', paragraphs: ['Hello.'] });
+    await pushFiles(sam.client, keys, {
+      ...FILES,
+      [`${ACME}/cover-letter.json`]: letter,
+      [`${ACME}/resume.json`]: '{"name": "Alex Rivera"}',
+      [`${ACME}/AlexRiveraCoverLetter10142026_Acme.pdf`]: RESUME,
+    });
+    const downloaded: string[] = [];
+    const client = new SyncClient({
+      server: server.url.toString(),
+      token: () => sam.token,
+      fetch: (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.startsWith('/api/sync/files/')) downloaded.push(path);
+        return fetch(input, init);
+      },
+    });
+    const vault = await openVault(client, keys);
+    expect(vault.docs.get(ACME_ID)?.letter).toBe(letter);
+    expect(vault.jobs[0]?.docKinds).toContain('letter');
+    expect(vault.jobs[0]?.letters.map((file) => file.name)).toEqual([
+      'AlexRiveraCoverLetter10142026_Acme.pdf',
+    ]);
+    expect(vault.jobs[0]?.files.map((file) => file.name)).toEqual(['resume.pdf']);
+    // The job's notes, its posting and its letter: never the resume's data or the files.
+    expect(downloaded).toHaveLength(3);
+  });
+
   it('reads the kinds of job the user wants, and what each job was found as', async () => {
     const downloaded: string[] = [];
     const client = new SyncClient({

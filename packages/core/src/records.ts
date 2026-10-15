@@ -2,6 +2,7 @@ import { firstDate } from './dates.ts';
 import type { FitTier } from './fit.ts';
 import { SCORE_PARTS, type ScorePartKey } from './fit-report.ts';
 import { companyKey, roleKey } from './keys.ts';
+import { isCoverLetterFile } from './letter.ts';
 import { type Link, linksFrom } from './links.ts';
 import { markdownTable } from './markdown.ts';
 
@@ -39,7 +40,7 @@ export const WORKSPACE_PATHS = {
   outreach: 'outreach',
 } as const;
 
-/** The Markdown files a job's folder can hold, by kind. */
+/** The text files a job's folder can hold, by kind: its Markdown, and the cover letter's data. */
 export const JOB_DOCS = {
   posting: 'posting.md',
   job: 'job.md',
@@ -49,13 +50,14 @@ export const JOB_DOCS = {
   answers: 'answers.md',
   prep: 'prep.md',
   apply: 'apply.md',
+  letter: 'cover-letter.json',
 } as const;
 
 export type JobDocKind = keyof typeof JOB_DOCS;
 
 export type JobDocs = Partial<Record<JobDocKind, string>>;
 
-/** A resume in a job's folder. */
+/** A resume or a cover letter in a job's folder. */
 export interface JobFile {
   /** Where it is in the workspace, such as "applications/acme-staff-engineer/resume.pdf". */
   path: string;
@@ -111,7 +113,10 @@ export interface FolderRecord extends RecordBase {
   style: string | null;
   /** The kind of job its fit check judged it as, by id or name, such as "project-manager". */
   kind: string | null;
+  /** Its resumes. */
   files: JobFile[];
+  /** Its cover letters' files. */
+  letters: JobFile[];
   docs: JobDocs;
 }
 
@@ -306,7 +311,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       const content = workspace.readText(`${path}/${file}`);
       if (content) docs[kind] = content;
     }
-    const files: JobFile[] = workspace
+    const built: JobFile[] = workspace
       .list(path)
       .sort(byName)
       .flatMap((file) => {
@@ -315,6 +320,8 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
         const { name, size, modified } = file;
         return [{ path: `${path}/${name}`, name, format, size, modified }];
       });
+    const files = built.filter((file) => !isCoverLetterFile(file.name));
+    const letters = built.filter((file) => isCoverLetterFile(file.name));
     const date = firstDate(notes.date) ?? firstDate(folder);
     records.push({
       tool: 'folder',
@@ -332,6 +339,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       style: notes.style,
       kind: notes.kind,
       files,
+      letters,
       docs,
     });
     if (docs.prep) {

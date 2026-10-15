@@ -38,6 +38,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     fitReport: null,
     sentiment: null,
     files: [],
+    letters: [],
     ...extra,
   };
 }

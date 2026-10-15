@@ -45,6 +45,7 @@ function job(extra: Partial<Job> = {}): Job {
     fitReport: null,
     sentiment: null,
     files: [],
+    letters: [],
     outreach: [],
     status: null,
     statusOn: null,
@@ -347,6 +348,18 @@ describe('nextStep', () => {
     );
     expect(step({ status: 'apply', statusOn: TODAY })).toBe('Tailor a resume');
     expect(step({ status: 'apply', statusOn: TODAY, files: [pdf] })).toBe('Ready to apply');
+    // A posting that asks for a cover letter gets one too.
+    const asks = {
+      status: 'apply' as const,
+      statusOn: TODAY,
+      apply: '- **Alert:** Attach a cover letter.',
+    };
+    expect(step(asks)).toBe('Tailor a resume and a cover letter');
+    expect(step({ ...asks, files: [pdf] })).toBe('The posting asks for a cover letter');
+    expect(step({ ...asks, files: [pdf], letters: [pdf] })).toBe('Ready to apply');
+    expect(step({ ...asks, files: [pdf], apply: 'No cover letter needed.' })).toBe(
+      'Ready to apply',
+    );
     expect(step({ status: 'later', backOn: '2026-10-15' })).toBe('Back Thursday');
     expect(step({ status: 'later', backOn: '2026-10-11' })).toBe('Back tomorrow');
     expect(step({ status: 'later' })).toBeUndefined();

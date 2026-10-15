@@ -26,6 +26,7 @@ export function job(base: Partial<Job> & Pick<Job, 'id' | 'company'>): Job {
     fitReport: null,
     sentiment: null,
     files: [],
+    letters: [],
     outreach: [],
     status: null,
     statusOn: null,

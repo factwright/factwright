@@ -74,6 +74,7 @@ describe('RunActions', () => {
     expect(screen.getByRole('group', { name: 'Run with your Claude' })).toBeTruthy();
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Tailored resumeA resume for this job, every line traced to a factRun',
+      'Cover letterA letter for this job, from your facts, in your voiceRun',
       'Fit checkScore the job against your fact bankRun',
       'Salary checkEstimate the pay when the posting doesn’t sayRun',
       'Who to messagePeople worth contacting, with drafts you sendRun',
@@ -82,7 +83,43 @@ describe('RunActions', () => {
     ]);
     expect(action(/Fit check/).className).toMatch(/suggested/);
     expect(action(/Tailored resume/).className).not.toMatch(/suggested/);
+    expect(action(/Cover letter/).className).not.toMatch(/suggested/);
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('suggests a cover letter once the user will apply, when the posting asks for one', async () => {
+    const resume = {
+      path: 'applications/a/r.pdf',
+      name: 'r.pdf',
+      format: 'pdf' as const,
+      size: 1,
+      modified: '',
+    };
+    const asks = {
+      ...job,
+      apply: '- **Alert:** Send a resume and a cover letter.',
+      files: [resume],
+    };
+    // The letter copies the tailored resume's header, so the resume comes first.
+    render(
+      <RunActions job={{ ...asks, files: [] }} status="apply" run={controls()} api={apiStub()} />,
+    );
+    expect(action(/Tailored resume/).className).toMatch(/suggested/);
+    expect(action(/Cover letter/).className).not.toMatch(/suggested/);
+    cleanup();
+    const run = controls();
+    render(<RunActions job={asks} status="apply" run={run} api={apiStub()} />);
+    expect(action(/Cover letter/).className).toMatch(/suggested/);
+    await userEvent.click(action(/Cover letter/));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'cover-letter', jobId: job.id });
+    cleanup();
+    // Not before the user decides to apply, nor when it says none is needed.
+    render(<RunActions job={asks} status="review" run={controls()} api={apiStub()} />);
+    expect(action(/Cover letter/).className).not.toMatch(/suggested/);
+    cleanup();
+    const waived = { ...job, apply: 'No cover letter needed.' };
+    render(<RunActions job={waived} status="apply" run={controls()} api={apiStub()} />);
+    expect(action(/Cover letter/).className).not.toMatch(/suggested/);
   });
 
   it('suggests a resume once the user will apply, and starts a skill on this job', async () => {
@@ -114,6 +151,11 @@ describe('RunActions', () => {
     render(<RunActions job={withResume} status="review" run={controls()} api={apiStub()} />);
     expect(action(/Fit check/).textContent).toMatch(/Ran$/);
     expect(action(/Tailored resume/).textContent).toMatch(/Ready$/);
+    expect(action(/Cover letter/).textContent).toMatch(/Run$/);
+    cleanup();
+    const withLetter = { ...withResume, letters: withResume.files };
+    render(<RunActions job={withLetter} status="apply" run={controls()} api={apiStub()} />);
+    expect(action(/Cover letter/).textContent).toMatch(/Ready$/);
     cleanup();
     const answered = { ...job, docKinds: ['answers' as const] };
     render(<RunActions job={answered} status="new" run={controls()} api={apiStub()} />);
