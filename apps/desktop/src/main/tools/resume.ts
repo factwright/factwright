@@ -1,6 +1,6 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { JOB_DOCS, type Job, type JobStatus, WORKSPACE_PATHS } from '@factwright/core';
+import { JOB_DOCS, type Job, resumeSent, WORKSPACE_PATHS } from '@factwright/core';
 import {
   DEFAULT_MAX_PAGES,
   DEFAULT_TEMPLATE,
@@ -33,22 +33,6 @@ export interface BuildResumeDeps {
   jobs: () => readonly Job[];
   now?: () => Date;
 }
-
-/**
- * Statuses a job only reaches once the user has applied, and sent its resume. Passed and Role
- * closed can come before applying, so they go by the applied date alone.
- */
-const SENT: readonly JobStatus[] = [
-  'applied',
-  'screen',
-  'interview',
-  'offer',
-  'accepted',
-  'declined',
-  'rejected',
-  'ghosted',
-  'withdrawn',
-];
 
 export async function readText(path: string): Promise<string | null> {
   try {
@@ -92,7 +76,7 @@ export async function keptAsSent(
   dir: string,
   files: readonly string[],
 ): Promise<string[]> {
-  if (!job || !(job.appliedOn || (job.status && SENT.includes(job.status)))) return [];
+  if (!job || !resumeSent(job)) return [];
   const sent = [];
   for (const file of files) if (await exists(join(dir, file))) sent.push(file);
   return sent;

@@ -56,6 +56,7 @@ describe('the plugin’s skills', () => {
       'interview-prep',
       'job-search',
       'make-template',
+      'revise-resume',
       'salary-check',
       'unmask-job',
       'who-to-message',
@@ -112,6 +113,7 @@ describe('the plugin’s skills', () => {
   it('ask about what a job wants while writing for it, and save the answers under their task', () => {
     const writing: Readonly<Record<string, FactTask>> = {
       'focused-resume': 'resume',
+      'revise-resume': 'resume',
       'cover-letter': 'cover-letter',
       'answer-questions': 'answers',
       'interview-prep': 'interview-prep',

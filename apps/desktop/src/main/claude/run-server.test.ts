@@ -20,8 +20,17 @@ const recall: McpTool = {
     call?.questions.find(String(input.question))?.answer ?? 'Not answered in this run',
 };
 
+/** Says which findings the run was started to fix, as revision_findings finds them. */
+const picked: McpTool = {
+  name: 'picked',
+  description: 'Says which findings the run fixes.',
+  inputSchema: { type: 'object', properties: {} },
+  run: async (_input, call) =>
+    call?.revision?.findings.map((finding) => finding.id).join(' ') ?? 'No revision',
+};
+
 describe('RunServer', () => {
-  const server = new RunServer({ tools: [greet, recall], version: '1.2.3' });
+  const server = new RunServer({ tools: [greet, recall, picked], version: '1.2.3' });
   afterEach(() => server.stop());
 
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -117,6 +126,33 @@ describe('RunServer', () => {
     };
     expect(await recalled(TOKEN)).toBe('Yes, in production');
     expect(await recalled(other)).toBe('Not answered in this run');
+  });
+
+  it('gives a revision’s findings to the run started for it, and to no other', async () => {
+    await server.start();
+    const other = 'd'.repeat(64);
+    server.listen(TOKEN, () => {}, {
+      revision: {
+        jobId: 'acme--staff',
+        resume: 'Resume.pdf',
+        findings: [{ id: 'term-go', kind: 'content', title: 'Add “Go”', about: 'Go is missing.' }],
+        before: 'Reads cleanly · 4 of 5 key terms',
+        folder: '2026-10-07-acme',
+        previous: 'applications/2026-10-07-acme/previous/2026-10-15-093012',
+      },
+    });
+    server.listen(other, () => {});
+    const findings = async (token: string) => {
+      const response = await post(
+        server.toolsUrl,
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'picked', arguments: {} } },
+        { Authorization: `Bearer ${token}` },
+      );
+      return ((await response.json()) as { result: { content: { text: string }[] } }).result
+        .content[0]?.text;
+    };
+    expect(await findings(TOKEN)).toBe('term-go');
+    expect(await findings(other)).toBe('No revision');
   });
 
   it('refuses requests without a live token, from a web page, or by other methods', async () => {

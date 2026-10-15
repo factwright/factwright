@@ -25,6 +25,7 @@ import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import { parsePermissions } from '../shared/permissions.ts';
+import { parseRevisionRequest } from '../shared/revision.ts';
 import { scopeOf } from '../shared/runs.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
 import { registerAboutIpc } from './about/ipc.ts';
@@ -45,8 +46,10 @@ import {
   parseNewNote,
   parseNoteChanges,
 } from './jobs/input.ts';
+import type { Revisions } from './jobs/revisions.ts';
 import type { JobsService } from './jobs/service.ts';
 import {
+  JOB_ID,
   MAX_PREVIEW_BYTES,
   openableFile,
   parseRunTask,
@@ -105,6 +108,8 @@ export interface IpcDeps {
   /** Checks that Factwright's setup still works with each version of Claude Code. */
   setup: SetupChecker;
   jobs: JobsService;
+  /** The revisions of jobs' resumes the user sent from their X-rays. */
+  revisions: Revisions;
   workspace: string;
   sync: SyncAccount;
   /** The app's own data folder, which holds what Claude may do without asking. */
@@ -142,6 +147,7 @@ export function registerIpc({
   claude: session,
   setup,
   jobs,
+  revisions,
   workspace,
   sync,
   dataDir,
@@ -220,6 +226,9 @@ export function registerIpc({
     const valid = parseTerminalSize(size);
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');
+    // A revision runs only as the window prepared it, which its run's tool calls then read.
+    const revision = run && 'findings' in run ? revisions.for(run) : undefined;
+    if (revision === null) throw new Error('Refused a revision the app didn’t prepare.');
     return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(([models, effort]) =>
       session.start(valid, {
         prompt: run ? runPrompt(run) : undefined,
@@ -228,9 +237,23 @@ export function registerIpc({
           effort: effortFor(effort, run, levels),
         }),
         scope: scopeOf(run),
+        ...(revision && { revision }),
       }),
     );
   });
+
+  // The resume's previous version is kept, and the revision held for the run the window starts.
+  answer('xray:revise', (value) => {
+    const request = parseRevisionRequest(value, JOB_ID);
+    if (!request) throw new Error('Refused a revision that isn’t in the shape the app takes.');
+    return revisions.prepare(request);
+  });
+
+  answer('xray:revision', (jobId, resume) =>
+    typeof jobId === 'string' && typeof resume === 'string'
+      ? revisions.latest(jobId, resume)
+      : null,
+  );
 
   // A task for the run that's open. One that needs another model or more effort, or may change
   // other files without asking, starts a new run instead. One that needs less effort runs at the
@@ -239,6 +262,8 @@ export function registerIpc({
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
+    // A revision's findings belong to its own run, so it always starts one.
+    if ('findings' in run) return { ok: false, reason: 'new-run' };
     const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
     const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
     const thinking = session.effort();

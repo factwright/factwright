@@ -13,6 +13,7 @@ import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import { buildResume } from './resume.ts';
+import { revisionFindings } from './revision.ts';
 import { hnJobs, jobBoard } from './search.ts';
 import { listTemplates, readTemplateFile, saveTemplate } from './templates.ts';
 
@@ -47,6 +48,7 @@ export const TOOLS_INSTRUCTIONS =
 export const LOCAL_TOOLS = [
   'find_job',
   'job_details',
+  'revision_findings',
   'build_resume',
   'build_cover_letter',
   'about_you',
@@ -197,6 +199,14 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         );
         return details.join('\n\n');
       },
+    },
+    {
+      name: 'revision_findings',
+      description:
+        'What the user picked in a resume’s ATS X-ray for this run to fix, each by its ID: what to fix in the resume, what to ask them first, and what comes from the template, with how they want the template dealt with. Only a run the user started with Send for revision has them.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READS,
+      run: async (_input, call) => revisionFindings(call?.revision),
     },
     {
       name: 'read_posting',

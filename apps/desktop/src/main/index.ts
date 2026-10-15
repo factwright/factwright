@@ -19,6 +19,7 @@ import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
 import { registerIpc } from './ipc.ts';
+import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
@@ -345,6 +346,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       claude,
       setup,
       jobs,
+      revisions: new Revisions({ workspace, jobs: () => jobs.list().jobs }),
       workspace,
       sync,
       dataDir,

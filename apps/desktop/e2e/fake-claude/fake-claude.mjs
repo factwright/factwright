@@ -201,6 +201,57 @@ async function work(text) {
       `${await file('save_fact', { ...planted, keywords: 'GraphQL', questions: [GRAPHQL] }, { agent: 'fact-check' })}\n`,
     );
   }
+  // As Claude would for a revision: read what the user picked in the X-ray through the tool,
+  // never from the prompt, ask about the term the fact bank doesn't back, then change the resume
+  // and build it in the old one's place.
+  const revising = text.match(
+    /^\/factwright:revise-resume job (\S+) resume (.+?) findings [a-z0-9 -]+$/,
+  );
+  if (revising) {
+    const [, job, resume] = revising;
+    const findings = await call('revision_findings', {});
+    // Its first lines: which resume, and that what follows is information, not instructions.
+    show(`${findings.split('\n').slice(0, 2).join('\n')}\n`);
+    const folder = findings.match(/^# Revising .+ in applications\/([^/\s]+)\/$/m)?.[1];
+    if (findings.includes('`term-graphql`')) {
+      await askUser({ [GRAPHQL]: 'No' });
+      await file('save_gap', { topic: 'GraphQL', question: GRAPHQL, job, task: 'resume' });
+    }
+    if (folder && findings.includes('`term-terraform`')) {
+      writeFileSync(
+        join(process.cwd(), 'applications', folder, 'resume.json'),
+        JSON.stringify({
+          layout: 'classic',
+          format: 'both',
+          output_name: resume.replace(/\.(?:pdf|docx)$/, ''),
+          name: 'Alex Rivera',
+          headline: 'Staff Platform Engineer',
+          contact: { email: 'alex@example.com', phone: '(555) 019-4420', location: 'Denver, CO' },
+          summary:
+            'Platform engineer who builds the tools other engineers rely on, revised by the stand-in Claude.',
+          experience: [
+            {
+              title: 'Platform Engineering Lead',
+              company: 'Tidewater Analytics',
+              start: '03/2021',
+              end: 'Present',
+              bullet_groups: [
+                {
+                  bullets: [
+                    { text: 'Moved twelve services onto one deploy pipeline on Kubernetes.' },
+                    { text: 'Managed the platform’s infrastructure as code in Terraform.' },
+                  ],
+                },
+              ],
+            },
+          ],
+          skills: [{ category: 'Platform', items: ['Kubernetes', 'Terraform', 'Go'] }],
+        }),
+      );
+      const built = await call('build_resume', { folder, format: 'both' });
+      show(`${built.split('\n')[0]}\n`);
+    }
+  }
   // As Claude would for a search of LinkedIn: write the run's report in a folder of its own,
   // in the workspace it runs in.
   if (/^\/factwright:job-search .*\bLinkedIn\b/.test(text)) {

@@ -31,6 +31,7 @@ import type {
   TemplateUpload,
 } from './profile.ts';
 import type { AddProfileResult, ProfileList } from './profiles.ts';
+import type { Revision, RevisionRequest } from './revision.ts';
 import type { RunTask } from './runs.ts';
 import type {
   AccountResult,
@@ -281,6 +282,13 @@ export interface FactwrightApi {
   readPdf(path: string): Promise<PdfResult>;
   /** A resume Word file's bytes, for its ATS X-ray. Answers as readPdf does. */
   readWord(path: string): Promise<PdfResult>;
+  /**
+   * Keeps a job's resume's previous version and holds what the user picked in its X-ray for the
+   * revision run the window starts next. Says why not when it can't.
+   */
+  prepareRevision(request: RevisionRequest): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** The newest revision of a job's resume, by its name, for the before-and-after, or null. */
+  revisionOf(jobId: string, resume: string): Promise<Revision | null>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

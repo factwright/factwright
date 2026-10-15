@@ -1,5 +1,5 @@
 import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
-import { fileSize, shortDate } from '@factwright/core';
+import { fileSize, resumeSent, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -8,6 +8,7 @@ import { OpenXRay } from '../xray/OpenXRay.tsx';
 import styles from './JobPanel.module.css';
 import { PanelSection } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
+import { BUSY, type RunControls } from './RunActions.tsx';
 
 /** The documents a job's folder can hold, in the order they're listed, with what each one is. */
 const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = [
@@ -86,9 +87,19 @@ export function FileRow({
 
 /**
  * A job's resumes and cover letters, which open in the user's own app, and its documents, which
- * open here.
+ * open here. A resume's X-ray can send what it found for revision, with Claude's panel.
  */
-export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
+export function FilesSection({
+  job,
+  api,
+  today,
+  run,
+}: {
+  job: Job;
+  api: FactwrightApi;
+  today: string;
+  run?: RunControls | undefined;
+}) {
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
   const [preview, setPreview] = useState<JobFile | null>(null);
@@ -200,6 +211,14 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
           files={sameResume(xray)}
           start={xray.path}
           posting={posting}
+          revise={
+            run && {
+              jobId: job.id,
+              sent: resumeSent(job),
+              busy: BUSY.includes(run.phase),
+              start: run.start,
+            }
+          }
           onClose={() => setXray(null)}
         />
       )}

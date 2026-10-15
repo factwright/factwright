@@ -8,8 +8,9 @@ import { strToU8, zipSync } from 'fflate';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi, PdfResult } from '../../shared/api.ts';
 import type { FactBank } from '../../shared/facts.ts';
+import type { Revision } from '../../shared/revision.ts';
 import type { XRayFile } from './useXRay.ts';
-import { XRayDialog } from './XRayDialog.tsx';
+import { XRayDialog, type XRayRevise } from './XRayDialog.tsx';
 
 // pdf.js needs a real browser, so a PDF reads as a Word file stands in for it.
 const readResumePdf = vi.hoisted(() => vi.fn());
@@ -266,5 +267,183 @@ describe('XRayDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Copy the text' }));
     expect(api.copyText.mock.calls[0]?.[0]).toMatch(/^JORDAN AVERY\nSenior Product Manager\n/);
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
+  });
+});
+
+describe('Send for revision', () => {
+  /** An X-ray's API that can keep a revision, and has the one given, if any, as the last. */
+  function reviseApi(
+    word: Uint8Array,
+    last: Revision | null = null,
+    prepared: { ok: true } | { ok: false; message: string } = { ok: true },
+  ) {
+    return {
+      ...apiStub({ ok: true, data: word }),
+      prepareRevision: vi.fn(async () => prepared),
+      revisionOf: vi.fn(async () => last),
+      openFile: vi.fn(async () => ({ ok: true }) as const),
+    } as unknown as FactwrightApi & {
+      prepareRevision: ReturnType<typeof vi.fn>;
+      revisionOf: ReturnType<typeof vi.fn>;
+      openFile: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  const revise = (changes: Partial<XRayRevise> = {}): XRayRevise => ({
+    jobId: 'acme--staff',
+    sent: false,
+    busy: false,
+    start: vi.fn(),
+    ...changes,
+  });
+
+  /** Opens the X-ray of a job's resume on its Revise tab. */
+  async function openRevise(
+    api: FactwrightApi,
+    plan: XRayRevise,
+    { files = [WORD], onClose = vi.fn() }: { files?: XRayFile[]; onClose?: () => void } = {},
+  ) {
+    render(
+      <XRayDialog
+        api={api}
+        files={files}
+        start={WORD.path}
+        posting={async () => POSTING}
+        revise={plan}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByRole('region', { name: 'The text' });
+    await userEvent.click(screen.getByText('Revise'));
+  }
+
+  it('ticks what a revision can fix to start, and types only the picked IDs into the run', async () => {
+    const api = reviseApi(await resumeWord());
+    const plan = revise();
+    const onClose = vi.fn();
+    await openRevise(api, plan, { onClose });
+    // The fact bank backs User research, so it's ticked. Tableau is a gap, to ask about first.
+    const add = screen.getByRole('checkbox', { name: 'Add “User research”' }) as HTMLInputElement;
+    expect(add.checked).toBe(true);
+    const ask = screen.getByRole('checkbox', { name: 'Ask about “Tableau”' }) as HTMLInputElement;
+    expect(ask.checked).toBe(false);
+    expect((await axe.run(screen.getByRole('dialog'))).violations).toEqual([]);
+    expect(
+      screen.getByText('Only what you pick goes to your Claude, once you send it.'),
+    ).toBeTruthy();
+
+    await userEvent.click(ask);
+    await userEvent.click(screen.getByRole('button', { name: 'Send 2 for revision' }));
+    expect(api.prepareRevision).toHaveBeenCalledWith({
+      jobId: 'acme--staff',
+      resume: 'Resume.docx',
+      // In the posting's order: its must-haves first.
+      findings: [
+        expect.objectContaining({ id: 'term-tableau', kind: 'question' }),
+        expect.objectContaining({ id: 'term-user-research', kind: 'content' }),
+      ],
+      before: 'Reads cleanly · 2 of 4 key terms · Nothing to fix',
+    });
+    expect(plan.start).toHaveBeenCalledWith({
+      skill: 'revise-resume',
+      jobId: 'acme--staff',
+      resume: 'Resume.docx',
+      findings: ['term-tableau', 'term-user-research'],
+    });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('asks how to fix what comes from the template, before sending it', async () => {
+    const api = reviseApi(headerWord());
+    const plan = revise();
+    await openRevise(api, plan);
+    const template = screen.getByRole('region', { name: 'From the template' });
+    const header = within(template).getByRole('checkbox', { name: /^Headers and footers/ });
+    expect((header as HTMLInputElement).checked).toBe(false);
+    await userEvent.click(header);
+    expect(screen.getByText('Pick how to fix the template.')).toBeTruthy();
+    const send = screen.getByRole('button', { name: /^Send \d+ for revision$/ });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole('radio', { name: /^Fix my template/ }));
+    expect((await axe.run(screen.getByRole('dialog'))).violations).toEqual([]);
+    await userEvent.click(send);
+    expect(plan.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: 'fix',
+        findings: expect.arrayContaining(['check-margins']),
+      }),
+    );
+    expect(api.prepareRevision).toHaveBeenCalledWith(expect.objectContaining({ template: 'fix' }));
+  });
+
+  it('keeps a resume that went out as it was sent, and waits while Claude is busy', async () => {
+    await openRevise(reviseApi(await resumeWord()), revise({ sent: true }));
+    expect(
+      screen.getByText('You applied with this resume, so it stays as you sent it.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /for revision$/ })).toBeNull();
+    cleanup();
+
+    const plan = revise({ busy: true });
+    await openRevise(reviseApi(await resumeWord()), plan);
+    expect(
+      screen.getByText('Your Claude is busy with another run. Send this once it’s done.'),
+    ).toBeTruthy();
+    const send = screen.getByRole('button', { name: 'Send 1 for revision' });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('says why when the previous version couldn’t be kept, and starts nothing', async () => {
+    const message = 'Couldn’t keep the resume’s previous version, so nothing changed.';
+    const plan = revise();
+    await openRevise(reviseApi(await resumeWord(), null, { ok: false, message }), plan);
+    await userEvent.click(screen.getByRole('button', { name: 'Send 1 for revision' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(message);
+    expect(plan.start).not.toHaveBeenCalled();
+  });
+
+  const last: Revision = {
+    at: '2026-10-15T10:00:00.000Z',
+    resume: 'Resume.docx',
+    findings: [
+      { id: 'check-dates', kind: 'content', title: 'Dates: 2 jobs’ dates may not be read' },
+      { id: 'term-sql', kind: 'content', title: 'Add “SQL”' },
+      { id: 'term-tableau', kind: 'question', title: 'Ask about “Tableau”' },
+    ],
+    before: '1 problem reading it · 1 of 4 key terms',
+    previous: 'applications/acme/previous/2026-10-15-050000',
+    files: ['applications/acme/previous/2026-10-15-050000/Resume.docx'],
+  };
+
+  it('shows what the last revision fixed, once the resume’s been rebuilt', async () => {
+    const api = reviseApi(await resumeWord(), last);
+    await openRevise(api, revise(), {
+      files: [{ ...WORD, modified: '2026-10-15T10:20:00.000Z' }],
+    });
+    expect(api.revisionOf).toHaveBeenCalledWith('acme--staff', 'Resume.docx');
+    expect(screen.getByRole('status').textContent).toMatch(
+      /Revised Oct 15(, 2026)?: 2 of 3 fixed · 2 of 4 key terms/,
+    );
+    const revised = screen.getByRole('region', { name: /^Revised Oct 15/ });
+    expect(revised.textContent).toContain('2 of 3 fixed · Before: 1 problem reading it');
+    const outcome = (title: string) =>
+      within(revised).getByText(title).closest('li')?.textContent ?? '';
+    expect(outcome('Add “SQL”')).toContain('Fixed');
+    expect(outcome('Ask about “Tableau”')).toContain('Still there');
+    expect((await axe.run(screen.getByRole('dialog'))).violations).toEqual([]);
+    await userEvent.click(
+      within(revised).getByRole('button', { name: 'Open the previous version' }),
+    );
+    expect(api.openFile).toHaveBeenCalledWith(last.files[0]);
+  });
+
+  it('says a revision was sent, until the resume’s rebuilt', async () => {
+    await openRevise(reviseApi(await resumeWord(), last), revise(), {
+      files: [{ ...WORD, modified: '2026-10-15T09:00:00.000Z' }],
+    });
+    const sent = screen.getByRole('region', { name: /^Sent for revision Oct 15/ });
+    expect(sent.textContent).toContain('The resume hasn’t been rebuilt since.');
+    expect(within(sent).queryByRole('button', { name: 'Open the previous version' })).toBeNull();
+    expect(screen.getByRole('status').textContent).not.toContain('Revised');
   });
 });

@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import type { BoundRevision } from '../jobs/revisions.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
 import { bearerToken, parseJson } from './signals.ts';
@@ -37,6 +38,8 @@ export interface ListenOptions {
   scope?: RunScope;
   /** Hears each time the run files something in the fact bank from the user's answers. */
   onFiled?: (filed: FiledFacts) => void;
+  /** The revision the run was started for, which only its own tool calls can read. */
+  revision?: BoundRevision;
 }
 
 /**
@@ -76,8 +79,8 @@ export class RunServer {
    * which its hooks report.
    */
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
-    const { tools, scope = 'hunt', onFiled } = options;
-    this.listeners.set(token, { hooks, tools, call: newCall(scope, onFiled) });
+    const { tools, scope = 'hunt', onFiled, revision } = options;
+    this.listeners.set(token, { hooks, tools, call: newCall(scope, onFiled, revision) });
     return () => this.listeners.delete(token);
   }
 

@@ -22,6 +22,7 @@ import iconsPdf from '@factwright/xray/fixtures/icons.pdf?url';
 import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
+import type { Revision } from '../../shared/revision.ts';
 import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
 
@@ -72,7 +73,47 @@ type TrackerApi = Pick<
   | 'removeShot'
   | 'readShot'
   | 'pasteImage'
+  | 'prepareRevision'
+  | 'revisionOf'
 >;
+
+/** A resume's file name without its format, which its PDF and Word file share. */
+const stemOf = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
+
+/** A sample job's folder, from where its files are, as the sample jobs keep none of their own. */
+const folderOf = (job: Job) => job.folder ?? job.files[0]?.path.split('/')[1] ?? job.id;
+
+/** A time as a previous version's folder: 2026-10-15-093012. */
+const stampOf = (at: Date) => {
+  const iso = new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString();
+  return `${iso.slice(0, 10)}-${iso.slice(11, 19).replaceAll(':', '')}`;
+};
+
+/**
+ * What ?revised shows: a revision of the job's resume, sent an hour before it was last built,
+ * that fixed what it picked but a key term that's still missing.
+ */
+function sampleRevision(job: Job, resume: string): Revision | null {
+  const file = job.files.find((each) => each.name === resume);
+  if (!file) return null;
+  const at = new Date(Date.parse(file.modified) - 3_600_000);
+  const previous = `applications/${folderOf(job)}/previous/${stampOf(at)}`;
+  return {
+    at: at.toISOString(),
+    resume,
+    findings: [
+      { id: 'check-dates', kind: 'content', title: 'Dates: 2 jobs’ dates may not be read' },
+      { id: 'check-headings', kind: 'content', title: 'Sections: no Skills section' },
+      { id: 'term-terraform', kind: 'content', title: 'Add “Terraform”' },
+      { id: 'term-kubernetes', kind: 'question', title: 'Check “Kubernetes”' },
+    ],
+    before: '2 problems reading it · 3 of 11 key terms',
+    previous,
+    files: job.files
+      .filter((each) => stemOf(each.name) === stemOf(resume))
+      .map((each) => `${previous}/${each.name}`),
+  };
+}
 
 /** What Claude answered about the sample jobs, by job and question. */
 function sampleAnswer(question: string, on: string): string {
@@ -99,8 +140,15 @@ const SAVED: EditResult = { ok: true };
  * real tracker's main rules (a call moves a job forward, Undo puts it back) closely enough to
  * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading.
  */
-export function sampleTracker(jobs: string | null, resume: string | null = null): TrackerApi {
+export function sampleTracker(
+  jobs: string | null,
+  resume: string | null = null,
+  revised = false,
+): TrackerApi {
   const files = RESUMES[resume ?? ''] ?? { pdf: engineerPdf, word: engineerWord };
+  // Revisions sent in the sample screens, by job and resume, until the page reloads.
+  const revisions = new Map<string, Revision>();
+  const revisionKey = (jobId: string, name: string) => `${jobId}/${stemOf(name)}`;
   let list: JobList = {
     jobs: jobs === 'none' ? [] : sampleJobs(),
     readAt: new Date().toISOString(),
@@ -420,6 +468,34 @@ export function sampleTracker(jobs: string | null, resume: string | null = null)
       data: /CoverLetter/.test(path) ? samplePdf() : await fileBytes(files.pdf),
     }),
     readWord: async () => ({ ok: true, data: await fileBytes(files.word) }),
+    // The sample screens keep no files, so a revision only remembers what was sent.
+    prepareRevision: async (request) => {
+      const job = list.jobs.find((each) => each.id === request.jobId);
+      if (!job) return { ok: false, message: 'That job isn’t on file anymore.' };
+      const at = new Date();
+      const previous = `applications/${folderOf(job)}/previous/${stampOf(at)}`;
+      revisions.set(revisionKey(job.id, request.resume), {
+        at: at.toISOString(),
+        resume: request.resume,
+        findings: request.findings.map(({ id, kind, title }) => ({ id, kind, title })),
+        ...(request.template && { template: request.template }),
+        before: request.before,
+        previous,
+        files: job.files
+          .filter((file) => stemOf(file.name) === stemOf(request.resume))
+          .map((file) => `${previous}/${file.name}`),
+      });
+      return { ok: true };
+    },
+    revisionOf: async (jobId, name) => {
+      const sent = revisions.get(revisionKey(jobId, name));
+      if (sent || !revised) return sent ?? null;
+      const job = list.jobs.find((each) => each.id === jobId);
+      const file = job?.files.find(
+        (each) => stemOf(each.name) === stemOf(name) && each.format === 'pdf',
+      );
+      return job && file ? sampleRevision(job, file.name) : null;
+    },
     copyText: async (text) => {
       await navigator.clipboard?.writeText(text).catch(() => {});
       return SAVED;

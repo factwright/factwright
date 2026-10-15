@@ -137,6 +137,26 @@ export const SETTLED_STATUSES: readonly JobStatus[] = [
   'role-closed',
 ];
 
+/**
+ * Statuses a job only reaches once the user has applied, and sent its resume. Passed and Role
+ * closed can come before applying, so they go by the applied date alone.
+ */
+export const SENT_STATUSES: readonly JobStatus[] = [
+  'applied',
+  'screen',
+  'interview',
+  'offer',
+  'accepted',
+  'declined',
+  'rejected',
+  'ghosted',
+  'withdrawn',
+];
+
+/** Whether the user has applied to the job, so the resume they sent stays as it went out. */
+export const resumeSent = (job: Pick<TrackerFields, 'appliedOn' | 'status'>): boolean =>
+  Boolean(job.appliedOn || (job.status && SENT_STATUSES.includes(job.status)));
+
 /** Where a logged call stands. */
 export const CALL_STATES = ['scheduled', 'done', 'canceled'] as const;
 

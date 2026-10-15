@@ -31,6 +31,15 @@ describe('how hard Claude thinks', () => {
     expect(await loadEffort(dataDir)).toEqual(DEFAULT_EFFORT);
     const resume = { skill: 'focused-resume' as const, jobId: 'acme--staff' };
     expect(effortFor(DEFAULT_EFFORT, resume, planLevels('max'))).toBe('xhigh');
+    // A revision is writing a resume, at a tailored resume's levels, which the user can choose.
+    const revision = {
+      skill: 'revise-resume' as const,
+      jobId: 'acme--staff',
+      resume: 'Resume.pdf',
+      findings: ['term-go'],
+    };
+    expect(effortFor(DEFAULT_EFFORT, revision, planLevels('max'))).toBe('xhigh');
+    expect(effortFor({ main: 'high', tasks: { 'focused-resume': 'max' } }, revision)).toBe('max');
     expect(effortFor(DEFAULT_EFFORT, { skill: 'salary-check', jobId: 'acme--staff' })).toBe(
       'xhigh',
     );

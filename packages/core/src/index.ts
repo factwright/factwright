@@ -255,6 +255,8 @@ export {
   PASS_REASONS,
   type PassReason,
   readStatus,
+  resumeSent,
+  SENT_STATUSES,
   SETTLED_STATUSES,
   type SentAnswer,
   STATUS_RANK,
