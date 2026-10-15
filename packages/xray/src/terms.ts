@@ -11,6 +11,8 @@ export interface Form {
   exact: boolean;
   /** A one-letter language, such as R, matched only in a list, such as "Python, R and SQL". */
   listed: boolean;
+  /** Matched in any case, and as the everyday word too, to find it in what the user said no to. */
+  loose?: boolean;
 }
 
 export interface Term {
@@ -65,9 +67,23 @@ const NOT_BEFORE: Readonly<Record<string, string>> = {
   Slack: 'time|off|in',
 };
 
+/** Words joined to an everyday word by a hyphen that show it's the word: "Go-to-market", "Go-live". */
+const NOT_JOINED: Readonly<Record<string, string>> = {
+  Go: 'to|live|getter|ahead|between|around',
+};
+
+/** What can't follow a form, as the everyday word: "Go above", "Go-live". */
+function notAfter(form: Form): string {
+  if (form.loose) return '';
+  const words = NOT_BEFORE[form.text];
+  const joined = NOT_JOINED[form.text];
+  const not = [words && `\\s+(?:${words})\\b`, joined && `-(?:${joined})\\b`].filter(Boolean);
+  return not.length > 0 ? `(?!${not.join('|')})` : '';
+}
+
 /** The pattern that finds a form as a whole word, with "-", a comma or a space between its words. */
 export function patternOf(form: Form): RegExp {
-  const key = `${form.exact ? '=' : ''}${form.listed ? '~' : ''}${form.text}`;
+  const key = `${form.exact ? '=' : ''}${form.listed ? '~' : ''}${form.loose ? '?' : ''}${form.text}`;
   const known = patterns.get(key);
   if (known) return known;
   const words = plain(form.text).split(/[\s,-]+/);
@@ -81,12 +97,11 @@ export function patternOf(form: Form): RegExp {
     (words.length > 1 || /^[A-Z]{2,5}$/.test(form.text))
       ? '(?:s|es)?'
       : '';
-  // Joined to the next word by a hyphen, as in "Go-to-market" or "Go-live", it's the everyday word.
-  const notBefore = NOT_BEFORE[form.text] ? `(?!\\s+(?:${NOT_BEFORE[form.text]})\\b|-\\p{L})` : '';
+  const notBefore = notAfter(form);
   const pattern = form.listed
     ? `(?<=(?:^|[,(/;:]|\\band|\\bor)\\s*)${body}(?=\\s*(?:[,)/;]|$|and\\b|or\\b|programming\\b|language\\b))`
     : `(?<![\\p{L}\\p{N}_])${body}${plural}(?![\\p{L}\\p{N}_+#])${notBefore}`;
-  const regex = new RegExp(pattern, form.exact ? 'gmu' : 'gimu');
+  const regex = new RegExp(pattern, form.exact && !form.loose ? 'gmu' : 'gimu');
   patterns.set(key, regex);
   return regex;
 }
@@ -148,4 +163,16 @@ export function findTerm(text: string, term: Term): string | null {
     if (match) return match[0];
   }
   return null;
+}
+
+/**
+ * Where a term is in what the user said, in any case and even as the everyday word: "go in
+ * production" names Go. It finds more than findTerm, which is safe for what the user said they
+ * don't have, or not to claim, since that only ever keeps a term off.
+ */
+export function findTermLoosely(text: string, term: Term): string | null {
+  return findTerm(text, {
+    ...term,
+    forms: term.forms.map((form) => ({ ...form, exact: false, loose: true })),
+  });
 }

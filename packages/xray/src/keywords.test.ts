@@ -210,3 +210,112 @@ describe('text made to be slow to read', () => {
     expect(performance.now() - started).toBeLessThan(500);
   });
 });
+
+describe('matchKeywords, honestly', () => {
+  const backing = (report: ReturnType<typeof matchKeywords>) =>
+    Object.fromEntries(report.terms.map(({ term, backing: { kind } }) => [term, kind]));
+
+  it('backs a credential only with a credential, however the posting or the user’s files name it', () => {
+    const facts = readFacts([
+      { path: 'facts/skills.md', text: '- CSM tooling\n- Kubernetes' },
+      {
+        path: 'facts/acme.md',
+        text: '### Studying\n`in-progress` `solo` `high`\n- **Keywords:** PMP certification, RN license',
+      },
+    ]);
+    const report = matchKeywords(
+      posting([
+        'Certified ScrumMaster (CSM)',
+        'Active CKA certification',
+        'PMP certification required',
+        'RN license',
+      ]),
+      'Platform engineer.',
+      facts,
+    );
+    expect(backing(report)).toEqual({
+      'Certified ScrumMaster': 'none',
+      CSM: 'none',
+      CKA: 'none',
+      'PMP certification': 'none',
+      'RN license': 'none',
+    });
+  });
+
+  it('backs a skill only with skills.md or a confirmed claim, not a degree’s college', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/profile.md',
+        text: '## Education\n- Lambda School, 2020\n- B.A. Biology, Rust College\n## Languages\n- Python, Go, Rust (learning)',
+      },
+    ]);
+    const report = matchKeywords(posting(['AWS Lambda and Rust']), 'Engineer.', facts);
+    expect(backing(report)).toEqual({ 'AWS Lambda': 'none', Rust: 'none' });
+  });
+
+  it('keeps a term off whatever case the user said no to it in, and checks one not to claim', () => {
+    const facts = readFacts([
+      { path: 'facts/skills.md', text: '- Go\n- Kubernetes' },
+      { path: 'facts/gaps.md', text: '## Doesn’t have\n- go in production' },
+      { path: 'facts/acme.md', text: '## Don’t claim\n- Kubernetes: only via the platform team' },
+    ]);
+    const report = matchKeywords(posting(['Go and Kubernetes']), 'Engineer.', facts);
+    expect(backing(report)).toEqual({ Go: 'said-no', Kubernetes: 'dont-claim' });
+    expect(report.terms[1]?.backing).toEqual({
+      kind: 'dont-claim',
+      where: 'acme.md · Don’t claim',
+      said: 'Kubernetes: only via the platform team',
+    });
+  });
+
+  it('says to check a term first when some of the fact bank couldn’t be read', () => {
+    const facts = readFacts([{ path: 'facts/skills.md', text: '- Terraform' }]);
+    const report = matchKeywords(posting(['Terraform']), 'Engineer.', facts, 'some');
+    expect(report.bank).toBe('some');
+    expect(report.terms[0]?.backing).toEqual({ kind: 'unread', where: 'skills.md' });
+  });
+
+  it('tells continuous integration from continuous delivery and deployment', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/acme.md',
+        text: '### Pipelines\n`live` `solo` `high`\n- **Keywords:** continuous integration',
+      },
+    ]);
+    const report = matchKeywords(
+      posting(['Continuous delivery', 'Continuous deployment', 'CI/CD']),
+      'Set up continuous integration.',
+      facts,
+    );
+    expect(backing(report)).toEqual({
+      'Continuous delivery': 'none',
+      'Continuous deployment': 'none',
+      'CI/CD': 'none',
+    });
+  });
+
+  it('leaves out a place’s code and a currency that spell a term', () => {
+    const report = matchKeywords(
+      'Location: Montreal, QC\nPay: CAD 120,000\nQC and CAD skills',
+      'Engineer.',
+      null,
+    );
+    expect(report.terms.map(({ term }) => term)).toEqual(['QC', 'CAD']);
+    expect(report.terms.every(({ context }) => context === 'QC and CAD skills')).toBe(true);
+  });
+
+  it('finds Go and Excel joined to a word, but not in "go-to-market"', () => {
+    const report = matchKeywords(
+      posting(['Go and Excel']),
+      'Built Go-based services and Excel-based models.',
+      null,
+    );
+    expect(report.terms.map(({ term, found }) => [term, found])).toEqual([
+      ['Go', 'Go'],
+      ['Excel', 'Excel'],
+    ]);
+    expect(
+      matchKeywords(posting(['Go']), 'Led the go-to-market plan.', null).terms[0]?.found,
+    ).toBeNull();
+  });
+});

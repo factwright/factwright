@@ -1,7 +1,7 @@
 import { type Check, type CheckId, marks, runChecks } from './checks.ts';
 import { type FactFile, readFacts } from './facts.ts';
 import { type Fields, readFields } from './fields.ts';
-import { type KeywordReport, matchKeywords } from './keywords.ts';
+import { type BankRead, type KeywordReport, matchKeywords } from './keywords.ts';
 import type { Line, ReadFile } from './read.ts';
 import { findSections, type Section, type SectionKind } from './sections.ts';
 
@@ -44,6 +44,11 @@ export interface XRayInput {
   posting?: string | null;
   /** The fact bank's files, to tell a term the user can add from a real gap. */
   facts?: readonly FactFile[] | null;
+  /**
+   * How much of the fact bank `facts` holds: all of it, some, when a file couldn't be read, or
+   * none, when the bank couldn't be read at all. By default, all of it when there are facts.
+   */
+  bank?: BankRead;
 }
 
 /** The checks that still mean something for a file with almost no text. */
@@ -95,6 +100,7 @@ export function xray(file: ReadFile, input: XRayInput = {}): XRay {
           input.posting,
           read.map((line) => line.text).join('\n'),
           input.facts ? readFacts(input.facts) : null,
+          input.bank ?? (input.facts ? 'all' : 'none'),
         )
       : null;
   return {

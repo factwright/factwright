@@ -10,7 +10,13 @@ export { type DateForm, type DateRange, dateRanges, formOf } from './dates.ts';
 export { readDocx } from './docx.ts';
 export { type FactFile, type FactTerms, readFacts } from './facts.ts';
 export type { Fields, Job, School } from './fields.ts';
-export { type Backing, type KeyTerm, type KeywordReport, matchKeywords } from './keywords.ts';
+export {
+  type Backing,
+  type BankRead,
+  type KeyTerm,
+  type KeywordReport,
+  matchKeywords,
+} from './keywords.ts';
 export { MAX_PAGES, readPdf } from './pdf.ts';
 export { type Need, type PostingLine, readPosting } from './posting.ts';
 export { familyOf, type Line, type Part, type ReadFile, type Run, textOf } from './read.ts';
