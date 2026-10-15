@@ -236,7 +236,7 @@ export function sampleApi(): FactwrightApi {
       trustListeners.add(listener);
       return () => trustListeners.delete(listener);
     },
-    // ?resume=spaced, dates-last, icons or sidebar gives every resume a problem to X-ray.
+    // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray.
     ...sampleTracker(query.get('jobs'), query.get('resume')),
     ...sampleSync(query.get('sync'), query.get('approve')),
     ...sampleProfile(query.get('profile')),

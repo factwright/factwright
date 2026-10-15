@@ -16,6 +16,7 @@ import {
 import datesLastPdf from '@factwright/xray/fixtures/dates-last.pdf?url';
 import engineerWord from '@factwright/xray/fixtures/engineer.docx?url';
 import engineerPdf from '@factwright/xray/fixtures/engineer.pdf?url';
+import footerPdf from '@factwright/xray/fixtures/footer.pdf?url';
 import headerWord from '@factwright/xray/fixtures/header.docx?url';
 import iconsPdf from '@factwright/xray/fixtures/icons.pdf?url';
 import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
@@ -38,6 +39,7 @@ const RESUMES: Readonly<Record<string, { pdf: string; word: string }>> = {
   'dates-last': { pdf: datesLastPdf, word: headerWord },
   icons: { pdf: iconsPdf, word: headerWord },
   sidebar: { pdf: sidebarPdf, word: headerWord },
+  footer: { pdf: footerPdf, word: headerWord },
 };
 
 type TrackerApi = Pick<
