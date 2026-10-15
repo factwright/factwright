@@ -11,6 +11,8 @@ export interface ToolCall {
   questions: QuestionLog;
   /** What this run filed in the fact bank from the user's answers. */
   filed: FiledFacts;
+  /** How many facts this run has saved, a correction counting as a save of its own. */
+  saves: number;
   /** Hears each time the run files something, to tell the window. */
   onFiled?: ((filed: FiledFacts) => void) | undefined;
 }
@@ -21,6 +23,7 @@ export const newCall = (scope: RunScope, onFiled?: (filed: FiledFacts) => void):
   templates: new Set(),
   questions: new QuestionLog(),
   filed: { facts: [], gaps: 0 },
+  saves: 0,
   onFiled,
 });
 

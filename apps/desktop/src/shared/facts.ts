@@ -88,7 +88,8 @@ export interface GapTarget {
  * to verify them, by file and title, and how many things the user said they don't have.
  */
 export interface FiledFacts {
-  facts: { path: string; title: string }[];
+  /** Each fact by its file and title, and which of the run's saves it was, from 1. */
+  facts: { path: string; title: string; save: number }[];
   gaps: number;
 }
 

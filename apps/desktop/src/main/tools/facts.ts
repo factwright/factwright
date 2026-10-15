@@ -288,26 +288,57 @@ const hasTerm = (text: string, term: string) => {
 
 /**
  * A number as a fact states it, in digits of any script: "3,000", "~30%", "40ms" and "2M" count,
- * the digits in a name such as "S3" or "HL7" don't. The letters after it go with it, so a
- * thousand, a million or a billion ("10k", "2M", "2B") reads as more than the bare number. The
- * pattern takes time in step with the text.
+ * the digits in a name such as "S3" or "HL7" don't. What follows it gives its scale: "10k",
+ * "2M", "$2mm", "2bn" and "100 million" each read as more than the bare number, and "2M" and
+ * "2 million" read alike. The pattern takes time in step with the text.
  */
-const NUMBER = /(?<![\p{L}\p{N}.,])(\p{Nd}+(?:[.,]\p{Nd}+)*)(\p{L}*)/gu;
+const NUMBER =
+  /(?<![\p{L}\p{N}.,])(\p{Nd}+(?:[.,]\p{Nd}+)*)(?:[ \t]*(thousand|million|billion|trillion)\b|(\p{L}*))/giu;
+/** Each way to write a scale, by the one it reads as. */
+const SCALES: Readonly<Record<string, string>> = {
+  k: 'k',
+  thousand: 'k',
+  m: 'm',
+  mm: 'm',
+  mn: 'm',
+  mil: 'm',
+  million: 'm',
+  b: 'b',
+  bn: 'b',
+  billion: 'b',
+  t: 't',
+  tn: 't',
+  trillion: 't',
+};
 /** Numbers in words, which count too. "One" is left out: it's in too many other words' places. */
 const NUMBER_WORDS =
   /\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?|billions?|dozens?)\b/g;
 
-/** The numbers in some text, each as its digits and how many thousands it counts in. */
+/** The numbers in some text, each as its digits and its scale, and the ones in words. */
 function numbersIn(text: string): Set<string> {
-  const plain = text.normalize('NFKC');
+  const plain = text.normalize('NFKC').toLowerCase();
   const found = new Set<string>();
-  for (const [, digits = '', after = ''] of plain.matchAll(NUMBER)) {
-    const scale = /^[kmb]$/i.test(after) ? after.toLowerCase() : '';
+  // A scale's word after a number is part of that number, not a number of its own.
+  const scaled: [number, number][] = [];
+  for (const match of plain.matchAll(NUMBER)) {
+    const [whole, digits = '', word, letters = ''] = match;
+    const scale = SCALES[word ?? letters] ?? '';
     found.add(`${digits.replaceAll(',', '')}${scale}`);
+    if (word) scaled.push([match.index, match.index + whole.length]);
   }
-  for (const [word] of plain.toLowerCase().matchAll(NUMBER_WORDS)) found.add(word);
+  for (const match of plain.matchAll(NUMBER_WORDS)) {
+    const inside = scaled.some(([start, end]) => match.index >= start && match.index < end);
+    if (!inside) found.add(match[0]);
+  }
   return found;
 }
+
+/**
+ * An answer that says the user isn't sure, such as to how many people used something, which
+ * is neither a fact nor something they don't have.
+ */
+const UNSURE =
+  /\b(?:not sure|unsure|no idea|don[’']?t know|do not know|can[’']?t (?:recall|remember|say)|not certain|hard to say|no clue)\b/;
 
 /** Everything the user saw and said in the questions a fact rests on, to check it against. */
 const askedText = (answers: readonly Answered[]) =>
@@ -395,14 +426,19 @@ export async function saveFact(
       corrected !== null && namesFact(each.question, corrected);
     checkBacking(answers, correcting);
     const [first] = answers;
-    if (
-      first &&
-      !(isUseChoice(first.answer) && correcting(first)) &&
-      SAYS_NO.test(questionKey(first.answer))
-    ) {
-      throw new Error(
-        `Not saved: the user answered “${first.answer}” to “${first.question}”. Save that with save_gap, and claim nothing from it.`,
-      );
+    if (first && !(isUseChoice(first.answer) && correcting(first))) {
+      const said = questionKey(answerText(first));
+      if (UNSURE.test(said) && numbersIn(said).size === 0) {
+        throw new Error(
+          `Not saved: the user wasn’t sure (“${first.answer}”). Claim nothing from that answer, and leave out a number they didn’t give.`,
+        );
+      }
+      // "No more than 500" gives a number, so it's an answer, not a no.
+      if (SAYS_NO.test(questionKey(first.answer)) && numbersIn(said).size === 0) {
+        throw new Error(
+          `Not saved: the user answered “${first.answer}” to “${first.question}”. If that’s a no to whether they have it, save it with save_gap, and claim nothing from it.`,
+        );
+      }
     }
     const asked = askedText(answers);
     const terms = keywords
@@ -483,7 +519,8 @@ export async function saveFact(
     call.filed.facts = call.filed.facts.filter(
       (each) => !(each.path === path && replaced && sameTitle(each.title, replaced)),
     );
-    call.filed.facts.push({ path, title });
+    call.saves += 1;
+    call.filed.facts.push({ path, title, save: call.saves });
     call.onFiled?.({ facts: [...call.filed.facts], gaps: call.filed.gaps });
     return [
       `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
@@ -519,6 +556,12 @@ export async function saveGap(
     if (SAYS_YES.test(questionKey(answer.answer))) {
       throw new Error(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,
+      );
+    }
+    const said = questionKey(answerText(answer));
+    if (UNSURE.test(said) || numbersIn(said).size > 0) {
+      throw new Error(
+        `Not saved: “${answer.answer}” isn’t a no to whether they have it. Note under Doesn’t have only what the user said they don’t have.`,
       );
     }
     if (!hasTerm(askedText(answers), topic)) {
@@ -622,8 +665,13 @@ export async function verifyFact(
       ...FACT_TAGS.ownership,
       ...FACT_TAGS.confidence,
     ];
+    // The tags count only where the question says them, not inside the words it quotes.
+    const besides = [wording, claim.title].reduce(
+      (left, quoted) => left.replace(questionKey(quoted), ' '),
+      questionKey(answer.question),
+    );
     const unsaid = claim.tags.find(
-      (tag) => standard.includes(tag) && !hasTerm(answer.question, tag.replaceAll('-', ' ')),
+      (tag) => standard.includes(tag) && !hasTerm(besides, tag.replaceAll('-', ' ')),
     );
     if (unsaid) {
       throw new Error(

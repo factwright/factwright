@@ -217,7 +217,7 @@ export function sampleFacts(state: string | null): { api: FactApi; fileAnswers: 
           date: '2026-10-12',
         }),
       );
-      return { facts: [{ path, title }], gaps: 1 };
+      return { facts: [{ path, title, save: 1 }], gaps: 1 };
     },
   };
 }

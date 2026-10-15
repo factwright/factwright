@@ -201,7 +201,7 @@ describe('save_fact', () => {
       ),
     );
     expect(filed).toHaveBeenCalledWith({
-      facts: [{ path: 'facts/acme.md', title: 'GraphQL for the partner API' }],
+      facts: [{ path: 'facts/acme.md', title: 'GraphQL for the partner API', save: 1 }],
       gaps: 0,
     });
   });
@@ -386,6 +386,26 @@ describe('save_fact', () => {
         questions: [`${GRAPHQL} `],
       }),
     ).rejects.toThrow('Not saved: 12 isn’t in the user’s answer');
+    for (const wording of [
+      'Built the GraphQL API behind $2mm in sales.',
+      'Built the GraphQL API for 2bn calls.',
+    ]) {
+      await expect(
+        tool('save_fact')({ ...FACT, wording, questions: [`${GRAPHQL} `] }),
+      ).rejects.toThrow('isn’t in the user’s answer or your question');
+    }
+    // A number written with its scale in letters or in words reads alike.
+    const scale = 'How many calls a day?';
+    answered({ [scale]: 'About 100 million' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'GraphQL at scale',
+        wording: 'Ran the GraphQL API at 100M calls a day.',
+        questions: [GRAPHQL, scale],
+        keywords: 'GraphQL',
+      }),
+    ).toMatch(/^Saved/);
     // Their own numbers, as they gave them or written another way, and names with digits in
     // them, such as S3 or OAuth2, are fine.
     expect(
@@ -403,7 +423,7 @@ describe('save_fact', () => {
     await expect(
       tool('save_fact')({ ...FACT, keywords: 'Kafka', questions: [KAFKA] }),
     ).rejects.toThrow(
-      `Not saved: the user answered “No” to “${KAFKA}”. Save that with save_gap, and claim nothing from it.`,
+      `Not saved: the user answered “No” to “${KAFKA}”. If that’s a no to whether they have it, save it with save_gap, and claim nothing from it.`,
     );
     answered({ [OFFER]: 'Use this once' });
     await expect(
@@ -415,7 +435,7 @@ describe('save_fact', () => {
     // question about it.
     for (const no of ['No, I have not', 'Never used it', 'Not really', 'I don’t, sorry']) {
       answered({ [GRAPHQL]: no });
-      await expect(tool('save_fact')(FACT)).rejects.toThrow('Save that with save_gap');
+      await expect(tool('save_fact')(FACT)).rejects.toThrow('save it with save_gap');
     }
     // A no to a follow-up after a yes can back a fact.
     const prod = 'Was that in production?';
@@ -429,6 +449,31 @@ describe('save_fact', () => {
         questions: [WHERE, prod],
       }),
     ).toMatch(/^Saved/);
+  });
+
+  it('takes a hedged or unsure answer to how many as just that, never as a no', async () => {
+    const many = 'About how many partners used the GraphQL API?';
+    answered({ [many]: 'No more than 30' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        wording: 'Built the partner API in GraphQL, used by up to 30 partners.',
+        questions: [many],
+      }),
+    ).toMatch(/^Saved/);
+    const unsure = 'About how many requests a day did the GraphQL API serve?';
+    answered({ [unsure]: 'Not sure, no idea really' });
+    await expect(
+      tool('save_fact')({ ...FACT, title: 'GraphQL load', questions: [unsure] }),
+    ).rejects.toThrow('Not saved: the user wasn’t sure (“Not sure, no idea really”).');
+    // Nor is either something they don't have.
+    await expect(tool('save_gap')({ topic: 'GraphQL', question: unsure })).rejects.toThrow(
+      'isn’t a no to whether they have it',
+    );
+    await expect(tool('save_gap')({ topic: 'GraphQL', question: many })).rejects.toThrow(
+      'isn’t a no to whether they have it',
+    );
+    expect(read('facts/gaps.md')).toBe(GAPS);
   });
 
   it('lets one answer back a few facts, and no more, even all at once', async () => {
@@ -470,7 +515,7 @@ describe('save_fact', () => {
     expect(text).not.toContain('### GraphQL for the partner API');
     expect(text.match(/### GraphQL partner API/g)).toHaveLength(1);
     expect(filed).toHaveBeenLastCalledWith({
-      facts: [{ path: 'facts/acme.md', title: 'GraphQL partner API' }],
+      facts: [{ path: 'facts/acme.md', title: 'GraphQL partner API', save: 2 }],
       gaps: 0,
     });
 
@@ -688,8 +733,23 @@ describe('verify_fact', () => {
       'Your fact bank has “Reminder texts”: “Shipped appointment reminder texts.” Can I use it?';
     answered({ [untagged]: 'Use and verify' });
     await expect(tool('verify_fact')({ ...VERIFY, question: untagged })).rejects.toThrow(
-      'Not verified: the question doesn’t say the fact is solo.',
+      'Not verified: the question doesn’t say the fact is shipped.',
     );
+    // Tags count only where the question says them, not inside the words it quotes.
+    write(
+      'facts/acme.md',
+      ACME.replace(
+        '`unconfirmed` `shipped` `solo` `medium`\n> Shipped appointment reminder texts.',
+        '`unconfirmed` `live` `solo` `high`\n> Solo, live, high-volume reminder texts.',
+      ),
+    );
+    const sneaky =
+      'Your fact bank has “Reminder texts”: “Solo, live, high-volume reminder texts.” Can I use it?';
+    answered({ [sneaky]: 'Use and verify' });
+    await expect(tool('verify_fact')({ ...VERIFY, question: sneaky })).rejects.toThrow(
+      'Not verified: the question doesn’t say the fact is live.',
+    );
+    write('facts/acme.md', ACME);
     // A copy waiting elsewhere, with the same title and words, could be the one meant.
     write(
       'facts/projects.md',

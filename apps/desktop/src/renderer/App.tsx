@@ -151,9 +151,10 @@ export function App({ api }: { api: FactwrightApi }) {
       ),
     [api],
   );
-  // Only what's new since the user last looked: a fact by its file and title, so one Claude
-  // corrected under a new title shows again.
-  const factKey = ({ path, title }: FiledFacts['facts'][number]) => `${path}#${title}`;
+  // Only what's new since the user last looked, by each save, so a fact Claude corrected
+  // shows again.
+  const factKey = ({ path, title, save }: FiledFacts['facts'][number]) =>
+    `${path}#${title}#${save}`;
   const filed: FiledFacts | null =
     filedIn?.runId === run.runId
       ? {
