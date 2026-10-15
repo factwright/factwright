@@ -200,3 +200,24 @@ describe('piecesOf', () => {
     ]);
   });
 });
+
+describe('text made to be slow to read', () => {
+  // Patterns that read a run again from each of its characters took seconds on these.
+  it('reads long runs of spaces, commas, dashes and "A." in time with their length', () => {
+    for (const unit of [' ', '\t', ',', '–', '|', 'A.']) {
+      const run = unit.repeat(40_000 / unit.length);
+      const started = performance.now();
+      fieldsOf([
+        wordLine(`Alex Rivera${run}x`),
+        heading('Experience'),
+        wordLine(`Engineer 2019 – 2021${run}x`),
+        heading('Education'),
+        wordLine(`B.S. Boston University${run}x`),
+        wordLine(`B.S.${run}x`),
+        heading('Skills'),
+        wordLine(`Go${run}x`),
+      ]);
+      expect(performance.now() - started, JSON.stringify(unit)).toBeLessThan(500);
+    }
+  });
+});

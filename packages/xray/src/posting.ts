@@ -42,11 +42,26 @@ function partOf(heading: string): Part | null {
   return null;
 }
 
+/**
+ * A Markdown heading's words, such as "Requirements" in "## Requirements ##", read by hand: a
+ * pattern for it reads the line again from every space and "#" when it doesn't match.
+ */
+function markdownHeading(text: string): string | null {
+  const marks = /^#{1,6}(?=\s)/.exec(text)?.[0];
+  if (!marks) return null;
+  let words = text.slice(marks.length).trim();
+  // A closing run of "#", after a space, as "## Requirements ##" has. "## C#" keeps its "#".
+  let end = words.length;
+  while (end > 0 && words.charAt(end - 1) === '#') end -= 1;
+  if (end === 0 || /\s/.test(words.charAt(end - 1))) words = words.slice(0, end).trim();
+  return words || null;
+}
+
 /** A heading's words, when a line is one: "## Requirements", "**What you bring**", "Bonus:". */
 function headingOf(line: string): string | null {
   const text = line.trim();
   const marked =
-    text.match(/^#{1,6}\s+(.+?)\s*#*$/)?.[1] ??
+    markdownHeading(text) ??
     text.match(/^\*\*([^*]+?):?\*\*:?$/)?.[1] ??
     text.match(/^__([^_]+?):?__:?$/)?.[1];
   if (marked) return marked;

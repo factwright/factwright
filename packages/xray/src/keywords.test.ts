@@ -196,3 +196,17 @@ describe('matchKeywords', () => {
     expect(report.terms[0]?.need).toBe('must');
   });
 });
+
+describe('text made to be slow to read', () => {
+  it('reads a Keywords line of open brackets in time with its length', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/acme.md',
+        text: `### A\n\`live\` \`solo\` \`high\`\n- **Keywords:** ${'('.repeat(80_000)}`,
+      },
+    ]);
+    const started = performance.now();
+    matchKeywords(posting(['Go']), 'Go', facts);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

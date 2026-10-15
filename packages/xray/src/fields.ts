@@ -52,9 +52,12 @@ const STATE_NAMES =
 const COUNTRIES =
   'USA|US|U\\.S\\.|United States|UK|U\\.K\\.|United Kingdom|England|Scotland|Wales|Ireland|Canada|Mexico|Brazil|Argentina|Germany|France|Spain|Portugal|Italy|Netherlands|Belgium|Switzerland|Austria|Sweden|Norway|Denmark|Finland|Poland|Czechia|Romania|Greece|Turkey|Israel|UAE|India|Pakistan|Bangladesh|China|Japan|Korea|South Korea|Singapore|Malaysia|Philippines|Indonesia|Vietnam|Thailand|Australia|New Zealand|South Africa|Nigeria|Kenya|Egypt';
 
-/** A place: "Denver, CO", "Austin, Texas", "London, UK", or remote work. */
+/**
+ * A place: "Denver, CO", "Austin, Texas", "London, UK", or remote work. Each word of a city's
+ * name is at most 40 letters, so a run such as "A.A.A." can't be read again from every letter.
+ */
 const PLACE = new RegExp(
-  `\\b(?:(?:[Rr]emote|REMOTE)(?:,? (?:${COUNTRIES}))?|[A-Z][\\p{L}.'-]+(?: [A-Z][\\p{L}.'-]+){0,3},\\s*(?:${STATES}|${STATE_NAMES}|${COUNTRIES}))(?![\\p{L}])`,
+  `\\b(?:(?:[Rr]emote|REMOTE)(?:,? (?:${COUNTRIES}))?|[A-Z][\\p{L}.'-]{1,40}(?: [A-Z][\\p{L}.'-]{1,40}){0,3},\\s*(?:${STATES}|${STATE_NAMES}|${COUNTRIES}))(?![\\p{L}])`,
   'u',
 );
 
@@ -71,6 +74,21 @@ const DEGREE =
 
 const SCHOOL =
   /\b(?:University|College|Institute|School|Academy|Polytechnic|Conservatory|Seminary|Universidad|Université|Universität)\b/u;
+
+const isSpace = (character: string) => /\s/.test(character);
+
+/**
+ * Text without the characters `drop` takes at its end, read from the end, once. A pattern such
+ * as /[\s,]+$/ reads to the end again from every space in a run that isn't at the end.
+ */
+function trimEndOf(text: string, drop: (character: string) => boolean): string {
+  let end = text.length;
+  while (end > 0 && drop(text.charAt(end - 1))) end -= 1;
+  return text.slice(0, end);
+}
+
+/** A comma, dash or bar between a school's name and its place, or before a year. */
+const isSeparator = (character: string) => isSpace(character) || ',–—|·-'.includes(character);
 
 /** A line's pieces, split where there's a wide gap: a title on the left and dates on the right. */
 export function piecesOf(line: Line): string[] {
@@ -102,7 +120,8 @@ export function piecesOf(line: Line): string[] {
  * marks set the name apart, as in "Jordan Avery | Senior Engineer".
  */
 function nameIn(text: string): string | null {
-  const first = text.split(/\s+[|·•—–]\s+|\s*\|\s*/)[0]?.trim() ?? '';
+  // A bar, or a dot or dash with a space each side, sets the name apart.
+  const first = text.split(/\||(?<=\s)[·•—–](?=\s)/)[0]?.trim() ?? '';
   if (looksLikeName(text)) return text.trim();
   return first !== text.trim() && looksLikeName(first) ? first : null;
 }
@@ -157,10 +176,11 @@ const headerLike = (line: Line | undefined) =>
 function jobAt(lines: readonly Line[], index: number, range: DateRange, section: Section): Job {
   const line = lines[index] as Line;
   const without = (text: string) =>
-    text.replace(range.text, ' ').replace(/^[\s|,–—-]+|[\s|,–—-]+$/g, '');
+    trimEndOf(text.replace(range.text, ' ').replace(/^[\s|,–—-]+/, ''), isSeparator);
+  // Split at a bar, and at a dot, dash, "@" or "at" with a space each side.
   const split = (text: string) =>
     text
-      .split(/\s+(?:\||·|—|–|@|at)\s+|\s*\|\s*/)
+      .split(/\||(?<=\s)(?:·|—|–|@|at)(?=\s)/)
       .map((piece) => piece.trim())
       .filter(Boolean);
   const piecesAt = (at: number) => piecesOf(lines[at] as Line).flatMap(split);
@@ -204,7 +224,7 @@ function jobsIn(lines: readonly Line[], sections: readonly Section[]): Job[] {
 function withoutPlace(school: string): string {
   const place = school.match(PLACE);
   if (!place || place.index === undefined) return school;
-  const before = school.slice(0, place.index).replace(/[\s,–—|·-]+$/, '');
+  const before = trimEndOf(school.slice(0, place.index), isSeparator);
   return SCHOOL.test(before) ? before : school;
 }
 
@@ -224,7 +244,10 @@ function educationIn(lines: readonly Line[], sections: readonly Section[]): Scho
       // "B.S., Economics, University of Colorado, 2016" holds both: the degree comes before the
       // school's name.
       if (degree && school && degree === school) {
-        const parts = text.split(/,\s*|\s+[|·—–]\s+/);
+        const parts = text
+          .split(/,|(?<=\s)[|·—–](?=\s)/)
+          .map((part) => part.trim())
+          .filter(Boolean);
         const at = parts.findIndex((part) => SCHOOL.test(part));
         degree = parts.slice(0, Math.max(at, 1)).join(', ');
         school = parts[at] ?? school;
@@ -242,8 +265,12 @@ function educationIn(lines: readonly Line[], sections: readonly Section[]): Scho
         continue;
       }
       if (!current) continue;
-      if (degree && !current.degree)
-        current.degree = degree.replace(/[\s,–—-]*(?:19|20)\d{2}.*$/, '').trim();
+      if (degree && !current.degree) {
+        // Its words up to any year, without the commas and dashes before the year.
+        const year = degree.search(/(?:19|20)\d{2}/);
+        const before = (character: string) => isSpace(character) || ',–—-'.includes(character);
+        current.degree = (year < 0 ? degree : trimEndOf(degree.slice(0, year), before)).trim();
+      }
       if (school && !current.school) current.school = withoutPlace(school);
       if (dates && !current.dates) current.dates = dates;
     }
@@ -268,8 +295,12 @@ function skillsIn(lines: readonly Line[], sections: readonly Section[]): string[
     }
     for (const piece of pieces) {
       const text = piece.replace(/^[^:]{1,40}:\s+/, '');
-      for (const item of text.split(/\s*[·•,;|]\s*|\s+[–—-]\s+|^[–—-]\s+/)) {
-        const skill = item.replace(/^[\s–—•·-]+|[\s.]+$/g, '');
+      // Split at dots, commas, semicolons and bars, and at a dash with a space each side.
+      for (const item of text.split(/[·•,;|]|(?<=\s)[–—-](?=\s)/)) {
+        const skill = trimEndOf(
+          item.replace(/^[\s–—•·-]+/, ''),
+          (character) => isSpace(character) || character === '.',
+        );
         if (skill && skill.split(/\s+/).length <= 5 && !skills.has(skill.toLowerCase()))
           skills.set(skill.toLowerCase(), skill);
       }

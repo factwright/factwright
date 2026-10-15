@@ -75,12 +75,28 @@ const term = (text: string): Term => {
   return termOf(text.length <= 3 && /\p{Lu}/u.test(text) ? `=${text}` : text);
 };
 
+/**
+ * Text with each "(…)" made a comma: from a "(" to the first ")" after it, as /\([^)]*\)/g
+ * would take it. It's read in one pass, where that pattern reads to the end again for each "("
+ * left open.
+ */
+function withoutParentheticals(text: string): string {
+  let kept = '';
+  let at = 0;
+  for (let open = text.indexOf('('); open >= 0; open = text.indexOf('(', at)) {
+    const close = text.indexOf(')', open + 1);
+    if (close < 0) break;
+    kept += `${text.slice(at, open)},`;
+    at = close + 1;
+  }
+  return kept + text.slice(at);
+}
+
 /** The user's own terms, from skills.md and Keywords lines, split into single terms. */
 function factTerms(facts: FactTerms | null): Term[] {
   if (!facts) return [];
   const items = [...facts.skills, ...facts.keywords, ...facts.toCheck].flatMap(({ text }) =>
-    text
-      .replace(/\([^)]*\)/g, ',')
+    withoutParentheticals(text)
       .split(/[,;·•]|\s+\/\s+/)
       .map((each) => each.replace(/\*\*/g, '').trim())
       .filter((each) => each.length >= 2 && each.length <= 40 && each.split(/\s+/).length <= 4),

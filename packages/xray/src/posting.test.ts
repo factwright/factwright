@@ -92,3 +92,20 @@ describe('readPosting', () => {
     expect(needs('Join us to work with Python.\n## Requirements\n- Go')).toEqual(['must: Go']);
   });
 });
+
+describe('text made to be slow to read', () => {
+  it('reads a heading line of "#" or tabs in time with its length', () => {
+    for (const run of ['#'.repeat(80_000), '\t'.repeat(80_000)]) {
+      const started = performance.now();
+      readPosting(`# a${run}x\n- Go`);
+      expect(performance.now() - started).toBeLessThan(500);
+    }
+  });
+
+  it('reads a heading with closing marks, as in "## Nice to have ##"', () => {
+    expect(needs('## Requirements ##\n- Go\n## Nice to have ##\n- Rust')).toEqual([
+      'must: Go',
+      'nice: Rust',
+    ]);
+  });
+});
