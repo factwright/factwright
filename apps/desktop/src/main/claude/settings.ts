@@ -1,6 +1,7 @@
 import { WORKSPACE_PATHS } from '@factwright/core';
 import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import { TEMPLATES_FOLDER } from '../resume/templates.ts';
 import {
   FACT_TOOLS,
   LOCAL_TOOLS,
@@ -67,8 +68,10 @@ const OFF_THE_WEB = [
 function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
   // Saving to the user's profile is like changing their facts: allowed when those are.
   const profile = scope === 'profile' || permissions.anyFile ? PROFILE_TOOLS : [];
-  // Saving a template is the point of a template run. Otherwise it's like changing a file.
-  const templates = scope === 'template' || permissions.anyFile ? TEMPLATE_TOOLS : [];
+  // Saving a template is the point of a template run. Otherwise it's like changing a file, but
+  // a revision reads what an X-ray found in a posting, so it always asks first.
+  const templates =
+    scope === 'template' || (permissions.anyFile && scope !== 'revise') ? TEMPLATE_TOOLS : [];
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
   // else without asking: not building a resume or saving an answer, either. A run on the job hunt
   // files what the user answers it without asking, since that files only what they answered.
@@ -153,7 +156,12 @@ export function sessionSettings({
     disableClaudeAiConnectors: true,
     permissions: {
       allow: allowed(permissions, scope),
-      deny: [...NEVER_CHANGED.map(edits), ...(scope === 'hunt' ? [] : OFF_THE_WEB)],
+      deny: [
+        ...NEVER_CHANGED.map(edits),
+        ...(scope === 'hunt' ? [] : OFF_THE_WEB),
+        // A revision changes a template only through save_template, which asks.
+        ...(scope === 'revise' ? [edits(`${TEMPLATES_FOLDER}/**`)] : []),
+      ],
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],

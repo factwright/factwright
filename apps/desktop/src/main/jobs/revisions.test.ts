@@ -153,9 +153,13 @@ describe('Revisions', () => {
       message: 'That job isn’t on file anymore.',
     });
     expect(kept()).toEqual([]);
-    // Data without a name of its own builds whatever the revision names it.
+    // Data without a name of its own builds files named for the person and a day, and only those.
     writeFileSync(join(folder, 'resume.json'), JSON.stringify({ name: 'Alex Rivera' }));
-    expect(await locked()).toBeNull();
+    expect(await locked()).toMatch(/^This resume wasn’t built from the job’s resume data/);
+    const dated = 'AlexRiveraResume10142026.pdf';
+    writeFileSync(join(folder, dated), dated);
+    job = { ...job, files: [...job.files, file(dated)] } as Job;
+    expect((await store.state(job.id, dated)).locked).toBeNull();
   });
 
   it('keeps a folder of its own for each, even two in the same second', async () => {

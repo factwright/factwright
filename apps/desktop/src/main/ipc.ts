@@ -231,15 +231,22 @@ export function registerIpc({
     if (revision === null) return Promise.resolve<StartResult>({ ok: false, reason: 'revision' });
     return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(
       async ([models, effort]) => {
-        const started = await session.start(valid, {
-          prompt: run ? runPrompt(run) : undefined,
-          choose: (levels) => ({
-            model: modelFor(models, run, levels),
-            effort: effortFor(effort, run, levels),
-          }),
-          scope: scopeOf(run),
-          ...(revision && { revision }),
-        });
+        let started: StartResult;
+        try {
+          started = await session.start(valid, {
+            prompt: run ? runPrompt(run) : undefined,
+            choose: (levels) => ({
+              model: modelFor(models, run, levels),
+              effort: effortFor(effort, run, levels),
+            }),
+            scope: scopeOf(run),
+            ...(revision && { revision }),
+          });
+        } catch (error) {
+          // It didn't start, so starting it again finds it.
+          if (revision) revisions.release(revision);
+          throw error;
+        }
         // Once its run starts, the revision is kept for the before-and-after. If it didn't
         // start, starting it again finds it.
         if (revision && started.ok) await revisions.record(revision).catch(() => {});

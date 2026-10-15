@@ -155,12 +155,15 @@ export class Revisions {
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return built;
     const { name, output_name } = parsed as Record<string, unknown>;
-    // Without its own name, the revision gives it this file's.
-    if (typeof output_name !== 'string' || !output_name.trim()) return null;
-    const builds = outputName(
-      { name: typeof name === 'string' ? name : '', output_name },
-      new Date(),
-    );
+    const person = typeof name === 'string' ? name : '';
+    // Without a name of its own, the data builds files named for the person and the day they
+    // were built, such as AlexRiveraResume10072026. The revision gives it that file's name.
+    if (typeof output_name !== 'string' || !output_name.trim()) {
+      const prefix = outputName({ name: person }, new Date(0)).slice(0, -8);
+      const stem = stemOf(resume);
+      return stem.startsWith(prefix) && /^\d{8}$/.test(stem.slice(prefix.length)) ? null : built;
+    }
+    const builds = outputName({ name: person, output_name }, new Date());
     return builds === stemOf(resume)
       ? null
       : `The job’s resume data builds ${builds} now, not this file. X-ray that one to revise it.`;

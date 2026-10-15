@@ -32,9 +32,10 @@ export const FINDING_KINDS: readonly FindingKind[] = ['content', 'question', 'te
 
 /**
  * A resume's file in its job's folder, by name, ending .pdf or .docx: no slashes, so it can only
- * name a file in the folder, and no control characters. It's never typed into a run.
+ * name a file in the folder, and no control characters or line breaks of any kind. It's never
+ * typed into a run.
  */
-export const RESUME_FILE = /^(?!\.)[^/\\\p{C}]{1,200}\.(?:pdf|docx)$/iu;
+export const RESUME_FILE = /^(?!\.)[^/\\\p{C}\p{Zl}\p{Zp}]{1,200}\.(?:pdf|docx)$/iu;
 
 /** The most findings one revision takes. */
 export const MAX_FINDINGS = 40;

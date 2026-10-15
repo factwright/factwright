@@ -96,7 +96,7 @@ function sampleRun(dark: boolean) {
     task: (task: RunTask) =>
       'findings' in task
         ? [
-            `${color(main, `/factwright:${task.skill} job ${task.jobId} resume ${task.resume} findings ${task.findings.join(' ')}${task.template ? ` template ${task.template}` : ''}`)}\r\n\r\n`,
+            `${color(main, `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${task.template ? ` template ${task.template}` : ''}`)}\r\n\r\n`,
             `${color('34', '✻')} ${color(secondary, 'Reading what you picked in the ATS X-ray…')}\r\n`,
           ]
         : 'jobId' in task

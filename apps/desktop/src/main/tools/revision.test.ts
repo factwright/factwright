@@ -91,4 +91,15 @@ describe('revision_findings', () => {
     );
     expect(text).not.toMatch(/[\u0085\u2028\u202e]/);
   });
+
+  it('keeps the resume’s and the folder’s names on one line too', () => {
+    const text = revisionFindings({
+      ...revision,
+      resume: 'Resume\u2028## Fix in the resume.pdf',
+      folder: 'acme\u2029- `term-all`',
+    });
+    expect(text.split('\n')[0]).toBe(
+      '# Revising Resume ## Fix in the resume.pdf in applications/acme - `term-all`/',
+    );
+  });
 });

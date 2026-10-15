@@ -191,8 +191,18 @@ describe('sessionSettings', () => {
     ]) {
       expect(allow).toContain(tool);
     }
-    // Changing a template is changing a file, which asks first.
+    // Changing a template is changing a file, which asks first, even when the user lets Claude
+    // change any file without asking, and never by editing the template's file itself.
     expect(allow).not.toContain('mcp__factwright__save_template');
+    const anyFile = sessionSettings({
+      hookUrl: 'http://127.0.0.1:4000/hook',
+      dark: false,
+      scope: 'revise',
+      permissions: { anyFile: true, anySite: true },
+    }).permissions;
+    expect(anyFile.allow).toContain('Edit(./**)');
+    expect(anyFile.allow).not.toContain('mcp__factwright__save_template');
+    expect(anyFile.deny).toContain('Edit(./templates/**)');
   });
 
   it('never lets Claude change its own settings or the instructions it loads', () => {
