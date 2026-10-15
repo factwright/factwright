@@ -406,7 +406,7 @@ describe('Send for revision', () => {
     at: '2026-10-15T10:00:00.000Z',
     resume: 'Resume.docx',
     findings: [
-      { id: 'check-dates', kind: 'content', title: 'Dates: 2 jobs’ dates may not be read' },
+      { id: 'check-dates', kind: 'content', title: 'Dates: 2 jobs with dates some systems can’t read' },
       { id: 'term-sql', kind: 'content', title: 'Add “SQL”' },
       { id: 'term-tableau', kind: 'question', title: 'Ask about “Tableau”' },
     ],

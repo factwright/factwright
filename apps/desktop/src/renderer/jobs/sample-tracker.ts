@@ -102,8 +102,12 @@ function sampleRevision(job: Job, resume: string): Revision | null {
     at: at.toISOString(),
     resume,
     findings: [
-      { id: 'check-dates', kind: 'content', title: 'Dates: 2 jobs’ dates may not be read' },
-      { id: 'check-headings', kind: 'content', title: 'Sections: no Skills section' },
+      {
+        id: 'check-dates',
+        kind: 'content',
+        title: 'Dates: 2 jobs with dates some systems can’t read',
+      },
+      { id: 'check-headings', kind: 'content', title: 'Section headings: No skills section' },
       { id: 'term-terraform', kind: 'content', title: 'Add “Terraform”' },
       { id: 'term-kubernetes', kind: 'question', title: 'Check “Kubernetes”' },
     ],
