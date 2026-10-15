@@ -149,7 +149,16 @@ function TermToAdd({ term }: { term: KeyTerm }) {
  * A group of the posting's terms: missing ones the fact bank has, with what to do; the ones the
  * resume has; and real gaps, which stay off.
  */
-function TermGroup({ title, terms }: { title: string; terms: readonly KeyTerm[] }) {
+function TermGroup({
+  title,
+  terms,
+  explain,
+}: {
+  title: string;
+  terms: readonly KeyTerm[];
+  /** Whether to say what a real gap means: once, under the first group that has one. */
+  explain: boolean;
+}) {
   if (terms.length === 0) return null;
   const found = terms.filter((term) => term.found);
   const toAdd = terms
@@ -216,17 +225,24 @@ function TermGroup({ title, terms }: { title: string; terms: readonly KeyTerm[] 
                 </li>
               ))}
             </ul>
-            <p className={styles.footnote}>
-              {gaps.length === 1 ? 'A real gap, so it stays off' : 'Real gaps, so they stay off'}:
-              nothing in your fact bank backs {gaps.length === 1 ? 'it' : 'them'}. If you do have
-              one, add it to your Fact bank first.
-            </p>
+            {explain && (
+              <p className={styles.footnote}>
+                Real gaps stay off: nothing in your fact bank backs them. If you do have one, add it
+                to your Fact bank first.
+              </p>
+            )}
           </div>
         )}
       </div>
     </section>
   );
 }
+
+/** Whether any of the terms is a real gap, or one the user said they don't have. */
+const hasGap = (terms: readonly KeyTerm[]) =>
+  terms.some(
+    (term) => !term.found && (term.backing.kind === 'none' || term.backing.kind === 'said-no'),
+  );
 
 /** The posting's key terms, found or missing, and for each one missing, what's honest to do. */
 export function KeywordsView({ result, hasPosting }: { result: XRay; hasPosting: boolean }) {
@@ -251,8 +267,12 @@ export function KeywordsView({ result, hasPosting }: { result: XRay; hasPosting:
         Add a term only where your fact bank backs it. A real gap stays off: every line of a resume
         comes from a fact you’ve confirmed.
       </p>
-      <TermGroup title={keywords.sectioned ? 'Must-haves' : 'Key terms'} terms={must} />
-      <TermGroup title="Nice to have" terms={nice} />
+      <TermGroup
+        title={keywords.sectioned ? 'Must-haves' : 'Key terms'}
+        terms={must}
+        explain={hasGap(must)}
+      />
+      <TermGroup title="Nice to have" terms={nice} explain={!hasGap(must) && hasGap(nice)} />
     </div>
   );
 }
