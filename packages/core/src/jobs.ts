@@ -1,3 +1,4 @@
+import { localDate } from './dates.ts';
 import type { FitTier } from './fit.ts';
 import {
   type FitReport,
@@ -30,8 +31,11 @@ export interface JobPay {
   source: 'listed' | 'estimate';
 }
 
-/** What a step in a job's history came from. A job's folder counts once it has a resume. */
-export type EventTool = Exclude<Tool, 'folder'> | 'resume';
+/**
+ * What a step in a job's history came from. A job's folder counts once it has a resume, and
+ * again once it has a cover letter.
+ */
+export type EventTool = Exclude<Tool, 'folder'> | 'resume' | 'letter';
 
 /** A dated step in a job's history, such as "Fit check: Strong 82". */
 export interface JobEvent {
@@ -106,7 +110,10 @@ export interface CollectedJob {
   apply: string | null;
   fitReport: FitReport | null;
   sentiment: Sentiment | null;
+  /** Its resumes. */
   files: JobFile[];
+  /** Its cover letters' files. */
+  letters: JobFile[];
 }
 
 /** A job as the app shows it: what the workspace says about it, plus what the user tracks. */
@@ -219,6 +226,34 @@ function findDraft(drafts: Draft[], record: ToolRecord, company: string, role: s
   return best && best.score >= 0.75 && next?.score !== best.score ? best.draft : null;
 }
 
+function eventsOf(record: ToolRecord, jobId: string): JobEvent[] {
+  if (record.tool !== 'folder') {
+    const event = eventOf(record, jobId);
+    return event ? [event] : [];
+  }
+  const events: JobEvent[] = [];
+  if (record.files.length > 0) {
+    const id = `resume:${record.key}`;
+    events.push({ id, tool: 'resume', date: record.date, title: 'Resume built' });
+  }
+  // A letter usually comes after the resume, so it's dated by its own file.
+  if (record.letters.length > 0) {
+    const date = firstModified(record.letters) ?? record.date;
+    events.push({
+      id: `letter:${record.key}`,
+      tool: 'letter',
+      date,
+      title: 'Cover letter written',
+    });
+  }
+  return events;
+}
+
+/** The day the first of some files was made, on the user's own calendar. */
+function firstModified(files: readonly JobFile[]): string | null {
+  return [...files].map((file) => localDate(new Date(file.modified))).sort(compare)[0] ?? null;
+}
+
 function eventOf(record: ToolRecord, jobId: string): JobEvent | null {
   const id = `${record.tool}:${record.key}`;
   const date = record.date;
@@ -228,9 +263,7 @@ function eventOf(record: ToolRecord, jobId: string): JobEvent | null {
       return { id, tool: 'fit-check', date, title: result ? `Fit check: ${result}` : 'Fit check' };
     }
     case 'folder':
-      return record.files.length > 0
-        ? { id: `resume:${record.key}`, tool: 'resume', date, title: 'Resume built' }
-        : null;
+      return null;
     case 'prep':
       return { id, tool: 'prep', date, title: 'Interview prep written' };
     case 'search': {
@@ -329,6 +362,7 @@ function build(draft: Draft): CollectedJob {
 
   const dates = records.flatMap((record) => (record.date ? [record.date] : [])).sort(compare);
   const files = folders.flatMap((record) => record.files);
+  const letters = folders.flatMap((record) => record.letters);
   const onlyOutreach = outreach.length === records.length;
   // Claude's work takes a job out of New: anything but finding it, or messages drafted for its
   // company, which join every job there, even one found long after.
@@ -388,13 +422,14 @@ function build(draft: Draft): CollectedJob {
     firstSeen: dates[0] ?? null,
     lastActivity: dates.at(-1) ?? null,
     summary: fit?.note ?? bestSearch?.detail.pick ?? bestSearch?.detail.note ?? null,
-    events: records.flatMap((record) => eventOf(record, draft.id) ?? []),
+    events: records.flatMap((record) => eventsOf(record, draft.id)),
     docs,
     outreach: outreach.map((record) => `${WORKSPACE_PATHS.outreach}/${record.key}`),
     apply: docs.apply ?? searchApplySteps(searches),
     fitReport,
     sentiment,
     files,
+    letters,
   };
 }
 

@@ -128,6 +128,14 @@ export {
   unnamedFirstKind,
 } from './kinds.ts';
 export { PRIVACY_URL, TERMS_URL } from './legal.ts';
+export {
+  asksForCoverLetter,
+  isCoverLetterFile,
+  type LetterText,
+  letterPlainText,
+  letterWordCount,
+  readLetterText,
+} from './letter.ts';
 export { hostOf, isJobLink, type Link, linksFrom, normalizeUrl } from './links.ts';
 export {
   type ListItem,
