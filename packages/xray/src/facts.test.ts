@@ -314,7 +314,10 @@ describe('readFacts, in nested lists', () => {
 });
 
 describe('readFacts, on a file made to be slow to read', () => {
-  it('reads a long heading over many lines in time with the file’s length', () => {
+  // Six timed reads take a few seconds on a busy CI runner, past the usual five.
+  it('reads a long heading over many lines in time with the file’s length', {
+    timeout: 30_000,
+  }, () => {
     const lines = Array.from({ length: 20_000 }, (_, at) => `- Skill ${at}`).join('\n');
     // The best of three, since a busy computer only ever adds time.
     const time = (heading: string) => {
