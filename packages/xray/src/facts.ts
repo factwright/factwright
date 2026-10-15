@@ -87,6 +87,13 @@ const DOUBT =
 const NOT_HAD_NOTE =
   /\b(?:no|none|never|not|nor|without|n\/a|learn\w*|studying|want\w*|wish\w*|plans?|planned|goals?|someday|interest\w*|exploring|practic\w*|course\w*|bootcamp|tutorials?|exams?|next(?!\.)|hop(?:e|ing)|future|upcoming|pending|maybe|soon|later|in progress|(?:don|doesn|didn|haven|hasn|can|won|wouldn)['’]?t|cannot)\b/i;
 
+/**
+ * More words that, in a heading or label, may say its skills aren't quite had: "Rusty", "Not my
+ * strengths", "Skills I'd like". Under one, a skill is a check, never "Add it".
+ */
+const DOUBT_PART =
+  /\b(?:like to|would like|i['’]?d like|outdated|former|formerly|past|used to|previously|no longer|retired|old|some|little|basic|basics|beginner|familiar|learning|weak)\b/i;
+
 /** More words that say a degree, certification or license isn't earned, or isn't held anymore. */
 const NOT_EARNED =
   /\b(?:expected|booked|scheduled|working towards?|candidate|enroll\w*|incomplete|not completed|unfinished|exams?|not yet|awaiting|expired|lapsed|did not|didn['’]?t|dropped|withdrew|withdrawn|attended|no degree|to take|preparing|failed|retak\w*|inactive|renew\w*|admitted|starting|deferred|coursework|class|minor|started|thinking)\b/i;
@@ -178,6 +185,8 @@ interface Marks {
   later: boolean;
   notHad: boolean;
   check: boolean;
+  /** Anything that may leave a doubt, which makes what's under it a check. */
+  doubt: boolean;
   credential: boolean;
   notEarned: boolean;
   saidNo: boolean;
@@ -193,6 +202,7 @@ function marksOf(text: string): Marks {
     later: says(LATER_PART, title),
     notHad: says(NOT_HAD_PART, title),
     check: says(CHECK_PART, title),
+    doubt: says(DOUBT, title) || says(DOUBT_PART, title),
     credential: CREDENTIAL_PART.test(title),
     notEarned: says(NOT_EARNED, text),
     saidNo: SAID_NO_PART.test(title),
@@ -671,7 +681,11 @@ function skillsIn(path: string, text: string): Source[] {
     if (line.todo || isLabelItem(line) || hasNoCell(line) || ruledOut.has(at)) continue;
     if (underAny(line, 'later') || underAny(line, 'notHad')) continue;
     const sure =
-      !line.commented && !doubted.has(at) && !underAny(line, 'check') && !underAny(line, 'open');
+      !line.commented &&
+      !doubted.has(at) &&
+      !underAny(line, 'check') &&
+      !underAny(line, 'open') &&
+      !underAny(line, 'doubt');
     const lead = line.kind === 'item' ? boldLead(line.line) : null;
     const listed = lead ? pieces(lead[2] ?? '') : [];
     // "**Languages:** Python, Go" lists skills; "**Python:** daily" is Python, with a note.

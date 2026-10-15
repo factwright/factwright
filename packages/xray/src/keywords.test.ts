@@ -608,3 +608,25 @@ describe('matchKeywords, beyond doubt', () => {
     ).toEqual({ Kubernetes: 'dont-claim' });
   });
 });
+
+describe('matchKeywords, under headings put in unknown words', () => {
+  it('makes a skill under a heading or label with a doubt in it a check', () => {
+    // A heading or label put in words the X-ray doesn't know as a part to come still leaves a
+    // doubt, so what's under it is a check, never "Add it".
+    for (const heading of [
+      '## Not my strengths',
+      '## Rusty',
+      '## Skills I’d like to have',
+      '## Used to use',
+      '**Some exposure**',
+      '- Familiar with:',
+    ]) {
+      const report = matchKeywords(
+        posting(['Kubernetes']),
+        'Nothing.',
+        readFacts([{ path: 'facts/skills.md', text: `${heading}\n- Kubernetes` }]),
+      );
+      expect(report.terms[0]?.backing.kind, heading).not.toBe('facts');
+    }
+  });
+});
