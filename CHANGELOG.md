@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-15
+
 ### Added
 - Your fact bank grows as your Claude writes. While it tailors a resume, answers an application's questions or gets you ready for an interview, it asks about what the job wants that your facts don't show, when you likely have it, and for a missing number a claim needs. A yes is saved as a new fact to verify, with the question and your answer word for word, and a no goes under Doesn't have, so you're never asked again. The task uses your answers right away, and says which lines rest on them. It asks with no permission prompts: Factwright's own tools save only answers you gave in that run, as Claude Code reported them, so a job post can't plant a fact.
 - The Fact bank opens with **Unverified**: the facts from your answers and the ones drafted from your files, each with where it came from, such as "Your answer while tailoring a resume for Acme, Oct 14", and the question and your answer. Verify one as it is, edit it (saving verifies it), or delete it. Until you do, your Claude asks before using it: Use and verify, Use this once, or Don't use. The sidebar shows how many wait, and a task that saved some says so in Claude's panel, with Verify them.
