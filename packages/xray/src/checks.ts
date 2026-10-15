@@ -1,7 +1,7 @@
 import { formOf, READABLE, readable } from './dates.ts';
 import type { Fields } from './fields.ts';
 import { marginLines, orderJumps, strayDates, wideColumns } from './layout.ts';
-import type { Line, ReadFile } from './read.ts';
+import type { ReadFile } from './read.ts';
 import { SECTION_NAMES, type Section } from './sections.ts';
 
 /** What each check looks at. */
@@ -642,4 +642,3 @@ export function marks(checks: readonly Check[]): Map<number, CheckId[]> {
   return marked;
 }
 
-export type { Line };
