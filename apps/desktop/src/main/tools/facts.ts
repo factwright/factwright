@@ -188,6 +188,32 @@ async function answersTo(
 /** An answer as a fact keeps it: what they picked or typed, and any notes. */
 const answerText = ({ answer, notes }: Answered) => (notes ? `${answer} (${notes})` : answer);
 
+/** The quotation marks a question can name a fact's title in. */
+const QUOTES = [
+  ['“', '”'],
+  ['"', '"'],
+  ['‘', '’'],
+  ["'", "'"],
+  ['«', '»'],
+] as const;
+
+/**
+ * Whether a question names a fact by its title, in quotes, as the standing rules ask: "Your fact
+ * bank has “Cost dashboards”…". A title that only turns up among other words, such as a short
+ * one like "API", doesn't count.
+ */
+const namesFact = (question: string, title: string) => {
+  const asked = questionKey(question);
+  const named = questionKey(title);
+  return QUOTES.some(([open, close]) => asked.includes(`${open}${named}${close}`));
+};
+
+/** An answer that's a plain no, which goes under Doesn't have rather than becoming a fact. */
+const PLAIN_NO = /^(?:no|nope|never|none|not really|no,? never)[.!]?$/;
+
+/** An answer that's a plain yes, which is never something the user doesn't have. */
+const PLAIN_YES = /^yes\b/;
+
 /** The claims in a file of the bank, by its path. */
 const claimsIn = (bank: FactBank, path: string): FactBlock[] =>
   bank.files.find((file) => file.path === path)?.blocks.filter((block) => block.tags) ?? [];
@@ -232,6 +258,12 @@ export async function saveFact(
   const company = companyOf(input, deps);
   const questions = questionsOf(input);
   const answers = await answersTo(questions, call, 'fact', deps.answerWaitMs);
+  const no = answers.find((each) => PLAIN_NO.test(questionKey(each.answer)));
+  if (no) {
+    throw new Error(
+      `Not saved: the user answered “${no.answer}” to “${oneLine(no.question)}”. Save that with save_gap, and claim nothing from it.`,
+    );
+  }
 
   const bank = deps.facts.read();
   const claims = claimsIn(bank, path);
@@ -248,12 +280,10 @@ export async function saveFact(
     const filedHere = call.filed.facts.some(
       (each) => each.path === path && sameTitle(each.title, old.title),
     );
-    const named = answers.some((each) =>
-      questionKey(each.question).includes(questionKey(old.title)),
-    );
+    const named = answers.some((each) => namesFact(each.question, old.title));
     if (!filedHere && !named) {
       throw new Error(
-        `Not saved: “${old.title}” wasn’t filed in this run, and no answer here is about it. To correct it, ask the user about it by its title first.`,
+        `Not saved: “${old.title}” wasn’t filed in this run, and no answer here is about it. To correct it, ask the user about it first, naming it by its title in quotes.`,
       );
     }
     replacing = targetOf(path, old, claims);
@@ -315,6 +345,11 @@ export async function saveGap(
   const company = companyOf(input, deps);
   const [answer] = await answersTo([question], call, 'gap', deps.answerWaitMs);
   if (!answer) throw notAnswered(question, call);
+  if (PLAIN_YES.test(questionKey(answer.answer))) {
+    throw new Error(
+      `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,
+    );
+  }
   const context = contextOf(task, company);
   const result = deps.facts.addGap({
     topic,
@@ -350,9 +385,9 @@ export async function verifyFact(
       `Not verified: the user answered “${answer.answer}”, not “${VERIFY_ANSWER}”. It stays unverified.`,
     );
   }
-  if (!questionKey(answer.question).includes(questionKey(title))) {
+  if (!namesFact(answer.question, title)) {
     throw new Error(
-      `Not verified: the question doesn’t name “${title}”. Ask about the fact by its title, so the user knows which one they’re verifying.`,
+      `Not verified: the question doesn’t name “${title}”. Ask about the fact by its title, in quotes, and quote its wording, so the user knows which one they’re verifying.`,
     );
   }
   const bank = deps.facts.read();

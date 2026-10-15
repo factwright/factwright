@@ -281,6 +281,16 @@ describe('save_fact', () => {
     );
   });
 
+  it('claims nothing from a plain no', async () => {
+    answered({ [KAFKA]: 'No' });
+    await expect(tool('save_fact')({ ...FACT, questions: [KAFKA] })).rejects.toThrow(
+      `Not saved: the user answered “No” to “${KAFKA}”. Save that with save_gap, and claim nothing from it.`,
+    );
+    // A no with more to it can still back a fact, such as about what they used instead.
+    answered({ [GRAPHQL]: 'No, but REST at scale' });
+    expect(await tool('save_fact')({ ...FACT, questions: [GRAPHQL] })).toMatch(/^Saved/);
+  });
+
   it('never replaces a verified fact, or an unverified one the user wasn’t asked about', async () => {
     answered({ [GRAPHQL]: 'Yes, in production' });
     await expect(
@@ -293,6 +303,17 @@ describe('save_fact', () => {
     ).rejects.toThrow(
       'Not saved: “Reminder texts” wasn’t filed in this run, and no answer here is about it.',
     );
+    // Naming it only in passing, not by its title in quotes, isn't asking about it.
+    const passing = 'Do your reminder texts count for this?';
+    answered({ [passing]: 'Only at two clinics' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        replaces: 'Reminder texts',
+        title: 'Texts',
+        questions: [passing],
+      }),
+    ).rejects.toThrow('wasn’t filed in this run, and no answer here is about it');
     expect(read('facts/acme.md')).toBe(ACME);
   });
 
@@ -364,6 +385,14 @@ describe('save_gap', () => {
     expect(read('facts/gaps.md')).toContain(`| Kafka | No (asked “${KAFKA}”) | 2026-10-14 |`);
   });
 
+  it('notes nothing from a yes', async () => {
+    answered({ [KAFKA]: 'Yes, in production' });
+    await expect(tool('save_gap')({ topic: 'Kafka', question: KAFKA })).rejects.toThrow(
+      'Not saved: the user answered “Yes, in production”, a yes. Save what they have with save_fact instead.',
+    );
+    expect(read('facts/gaps.md')).toBe(GAPS);
+  });
+
   it('notes one gap for each answer', async () => {
     answered({ [KAFKA]: 'No' });
     await tool('save_gap')({ topic: 'Kafka', question: KAFKA });
@@ -399,7 +428,7 @@ describe('verify_fact', () => {
     await expect(
       tool('verify_fact')({ file: 'facts/acme.md', title: 'Reminder texts', question: ASKED }),
     ).rejects.toThrow('Not verified: the user answered “Use this once”, not “Use and verify”.');
-    const vague = 'Can I use the fact about texts?';
+    const vague = 'Can I use Reminder texts, the fact about texts?';
     answered({ [vague]: 'Use and verify' });
     await expect(
       tool('verify_fact')({ file: 'facts/acme.md', title: 'Reminder texts', question: vague }),

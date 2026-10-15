@@ -77,6 +77,29 @@ describe('QuestionLog', () => {
     expect(two.questions()).toEqual([]);
   });
 
+  it('reads the answers from the call’s input when its result carries none', () => {
+    const log = new QuestionLog();
+    const asked = [question(GRAPHQL)];
+    log.hear({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'toolu_1',
+      tool_input: { questions: asked },
+    });
+    log.hear({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'toolu_1',
+      tool_input: { questions: asked, answers: { [GRAPHQL]: 'Some' } },
+      tool_response:
+        'User has answered your questions: "Have you used GraphQL in production?"="Some".',
+    });
+    expect(log.find(GRAPHQL)?.answer).toBe('Some');
+    // With answers in neither, nothing was answered.
+    round(log, [question(KAFKA)], {}, { id: 'toolu_2' });
+    expect(log.find(KAFKA)).toBeNull();
+  });
+
   it('keeps the newest answer to a question asked twice', () => {
     const log = new QuestionLog();
     round(log, [question(GRAPHQL)], { answers: { [GRAPHQL]: 'Some' } });

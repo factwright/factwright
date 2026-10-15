@@ -465,7 +465,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     },
     {
       name: 'save_fact',
-      description: `Saves a fact the user just told you in answer to a question you asked with AskUserQuestion in this run, such as a yes to “Have you used GraphQL?”, in their fact bank, unverified until they verify it. Give the question word for word as you asked it, and its follow-up if you asked one; the file it belongs in; and the claim in the fact bank’s format: a short title, its status, ownership and confidence, wording within what they said, and any numbers, keywords and say or don’t-say. Factwright adds where it came from: the date, the job, and the questions with the user’s answers, from its own record of the round. Use the fact in this run’s work. Later runs offer it before using it: ask “${UNVERIFIED_CHOICES.join('”, “')}”. It never changes a verified fact. To fix one that waits to be verified, give its title as replaces: one this run saved, or one the user just answered a question about by its title.`,
+      description: `Saves a fact the user just told you in answer to a question you asked with AskUserQuestion in this run, such as a yes to “Have you used GraphQL?”, in their fact bank, unverified until they verify it. Give the question word for word as you asked it, and its follow-up if you asked one; the file it belongs in; and the claim in the fact bank’s format: a short title, its status, ownership and confidence, wording within what they said, and any numbers, keywords and say or don’t-say. Factwright adds where it came from: the date, the job, and the questions with the user’s answers, from its own record of the round. Use the fact in this run’s work. Later runs offer it before using it: ask “${UNVERIFIED_CHOICES.join('”, “')}”. It never changes a verified fact. To fix one that waits to be verified, give its title as replaces: one this run saved, or one the user just answered a question about, naming it by its title in quotes. A plain “No” is never a fact: save it with save_gap.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -567,7 +567,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     },
     {
       name: 'verify_fact',
-      description: `Verifies a fact that waits to be verified (tagged unconfirmed), once the user picked “${UNVERIFIED_CHOICES[0]}” in this run’s question about it, which names the fact by its title. Give the fact’s file and title, and the question word for word as you asked it. Nothing else verifies a fact in a run.`,
+      description: `Verifies a fact that waits to be verified (tagged unconfirmed), once the user picked “${UNVERIFIED_CHOICES[0]}” in this run’s question about it, which names the fact by its title in quotes. Give the fact’s file and title, and the question word for word as you asked it. Nothing else verifies a fact in a run.`,
       inputSchema: {
         type: 'object',
         properties: {

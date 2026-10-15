@@ -40,7 +40,7 @@ Before starting, read:
 One AskUserQuestion round, up to 4 questions, as the standing rules say, for:
 - what the form asks that facts/ and `about_you` can't answer, such as "Do you have experience with HL7?" when the facts don't settle it
 - an experience question the form asks that the user plausibly has, judged from what's near it in the facts
-- an unverified fact an answer would use: a question naming it by its title and quoting its wording, with "Use and verify", "Use this once" and "Don't use"
+- an unverified fact an answer would use: a question naming it by its title in quotes and quoting its wording, with "Use and verify", "Use this once" and "Don't use"
 
 Give easy, neutral options, with "No" one of them. Save what they tell you before drafting, giving each question word for word as you asked it, with `job` (the job's id) and `task: "answers"`:
 - **New experience:** `save_fact`, in the right facts file. Its tags and wording say what they said, and never more. It's saved unverified, and these answers can use it.

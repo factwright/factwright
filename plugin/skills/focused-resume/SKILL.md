@@ -60,7 +60,7 @@ Append `## Requirements` to job.md:
 A fact the user gives you now can win this job and every one after it, so ask before drafting, as the standing rules say. Even when coverage looks strong, look for a must-have that's only partly proven, or a claim the job leans on that has no number.
 
 Ask in **one round** of AskUserQuestion, up to 4 questions, most valuable first:
-1. **Unverified facts the resume would use.** One question each, naming the fact by its title and quoting its wording, with where it came from: "Your fact bank has “Cost dashboards”, from your resume and not verified yet: “Built cost dashboards that cut idle spend ~18%.” Can I use it?" Options: "Use and verify", "Use this once", "Don't use".
+1. **Unverified facts the resume would use.** One question each, naming the fact by its title in quotes and quoting its wording, with where it came from: "Your fact bank has “Cost dashboards”, from your resume and not verified yet: “Built cost dashboards that cut idle spend ~18%.” Can I use it?" Options: "Use and verify", "Use this once", "Don't use".
 2. **Gaps that matter.** Must-haves first, then nice-to-haves: requirements that are `partial` or `none`, aren't settled in gaps.md, and that the user plausibly has, judged from what's near them in the facts. fit-check.md's **Worth asking you** items come first. Say why you ask, and give easy, neutral options:
    - Question: "The posting wants Kafka. Your facts show RabbitMQ at Beacon. Have you run Kafka, or another event-streaming platform?"
    - Options: "Yes, in production" / "Some: a side project, a course, or an earlier role" / "No"
@@ -75,7 +75,7 @@ Skip a question whose answer wouldn't change the resume, and never ask about tri
 - **No:** `save_gap`, with the topic in a few words.
 - **Use and verify:** `verify_fact`. **Use this once:** use it in this resume, and leave it unverified. **Don't use:** leave it out.
 - **A correction to an unverified fact:** use it as they put it, and save it with `save_fact`, giving the fact's title as `replaces`.
-- **A correction to a verified fact:** leave the fact as it is, use their words in this resume only, and tell them to fix it in the Fact bank.
+- **A new number, or a correction, for a verified fact:** edit the fact in place, with its Source set to `<first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`), then use it. Claude Code asks them to OK the change. If they don't, use the fact as it was.
 
 The user just told you these, so the resume can use them. Note in notes.md which lines rest on today's answers.
 

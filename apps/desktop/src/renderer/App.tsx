@@ -154,6 +154,11 @@ export function App({ api }: { api: FactwrightApi }) {
       ? 'profile'
       : 'jobs');
 
+  // Going to a part of the fact bank lasts while it shows: back from elsewhere, it opens as usual.
+  useEffect(() => {
+    if (page !== 'facts') setFactsShown(null);
+  }, [page]);
+
   // The first time, open on the view furthest along that has jobs in it, once there are some,
   // such as when sync brings them to a new computer. After that, the view the user last picked.
   useEffect(() => {
