@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
+import { RUN_TOKEN_VARIABLE, sessionSettings, TOOLS_SERVER, toolsConfig } from './settings.ts';
 
 const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
 
@@ -127,7 +127,7 @@ describe('sessionSettings', () => {
     expect(allow(false, 'template')).toContain('mcp__factwright__save_template');
   });
 
-  it('files what the user answers without asking, in any run but one making a template', () => {
+  it('files what the user answers without asking, in a run on the job hunt', () => {
     const allow = (scope: 'hunt' | 'profile' | 'template') =>
       sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false, scope }).permissions
         .allow;
@@ -138,7 +138,8 @@ describe('sessionSettings', () => {
     ];
     for (const tool of filing) {
       expect(allow('hunt')).toContain(tool);
-      expect(allow('profile')).toContain(tool);
+      // Getting started and adding facts change the facts themselves, as the user confirms them.
+      expect(allow('profile')).not.toContain(tool);
       expect(allow('template')).not.toContain(tool);
     }
   });
@@ -208,9 +209,12 @@ describe('sessionSettings', () => {
     }
   });
 
-  it('only hears about AskUserQuestion before a tool runs', () => {
+  it('hears before a tool runs only about AskUserQuestion and the tools that file answers', () => {
     expect(settings.hooks.PreToolUse).toEqual([
       expect.objectContaining({ matcher: 'AskUserQuestion' }),
+      expect.objectContaining({
+        matcher: `mcp__${TOOLS_SERVER}__save_fact|mcp__${TOOLS_SERVER}__save_gap|mcp__${TOOLS_SERVER}__verify_fact`,
+      }),
     ]);
   });
 });

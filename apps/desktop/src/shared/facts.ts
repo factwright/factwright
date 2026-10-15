@@ -231,7 +231,7 @@ export const CHANGED_SINCE =
   'This changed since you opened it, maybe by your Claude or another computer. It shows as it is now: make your change again.';
 
 /** A claim with a code block it never closes runs on into what follows, so it stays as it is. */
-const RUNS_ON =
+export const RUNS_ON =
   'This fact has a code block (```) that isn’t closed, so it runs on into what follows. Close it in the fact’s details first.';
 
 /** A file's new text after a change, or what stopped it. */

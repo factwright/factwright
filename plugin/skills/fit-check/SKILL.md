@@ -29,7 +29,7 @@ Before starting, read:
 - Score 0–100 against facts/ only, with the criteria.md rubric. Without one, use: work 40 (how much of the job's core work the facts prove, domain included) · role 25 (how well the level and shape fit what the user wants) · stack 20 (overlap with proven tech) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, certification).
 - Respect status and ownership tags: built ≠ live, led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user verifies it; say so in the gaps.
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61 · **Long shot** < 50.
-- **Worth asking you:** up to 4 of the posting's must-haves and nice-to-haves that the facts don't show, but that the user plausibly has, judged from what's near them in the facts, must-haves first. Each is a question a tailored resume asks them before it's written. Leave out anything `facts/gaps.md` settles under Doesn't have. Score them as gaps: a fit check never asks.
+- **Worth asking you:** up to 4 of the posting's must-haves and nice-to-haves that the facts don't show, but that the user plausibly has, judged from what's near them in the facts, must-haves first. Each is a question, in your own words, that a tailored resume asks them before it's written. Leave out anything `facts/gaps.md` settles under Doesn't have. Score them as gaps: a fit check never asks.
 - Pay never changes the score.
 
 ## 3. Sentiment (5 searches at most)

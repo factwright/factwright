@@ -15,6 +15,7 @@ import {
   findBlock,
   GAPS_FILE,
   hasGap,
+  leavesCodeOpen,
   type NewGap,
   newGapsFile,
   UNCONFIRMED,
@@ -38,6 +39,7 @@ import {
   inFactOrder,
   isFactPath,
   type NewFact,
+  RUNS_ON,
   stopped,
   withChange,
   withClaim,
@@ -51,23 +53,24 @@ const GONE = 'That file isn’t in your fact bank anymore.';
 /** Where the fact bank keeps work outside a job, which a fact from an answer can start. */
 const PROJECTS = 'facts/projects.md';
 
-/** What a file's confirmed claims say, each once for each time it's there. */
-function confirmedIn(file: string): string[] {
-  return factBlocks(file)
-    .filter((block) => block.tags && !block.tags.includes(UNCONFIRMED))
-    .map((block) => block.text.trimEnd())
-    .sort();
+/** What a file's confirmed claims say, with how many times each is there. */
+function confirmedIn(file: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const block of factBlocks(file)) {
+    if (!block.tags || block.tags.includes(UNCONFIRMED)) continue;
+    const text = block.text.trimEnd();
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Whether every confirmed claim in a file is still there, word for word, in its new text. */
 export function keepsConfirmed(before: string, after: string): boolean {
-  const left = [...confirmedIn(after)];
-  return confirmedIn(before).every((claim) => {
-    const at = left.indexOf(claim);
-    if (at < 0) return false;
-    left.splice(at, 1);
-    return true;
-  });
+  const kept = confirmedIn(after);
+  for (const [claim, count] of confirmedIn(before)) {
+    if ((kept.get(claim) ?? 0) < count) return false;
+  }
+  return true;
 }
 
 export interface FactBankDeps {
@@ -130,7 +133,9 @@ export class FactBankFiles {
   /** Confirms a claim drafted from the user's files, with them as its source and today's date. */
   confirm(target: FactTarget): FactResult {
     const source = `${firstNameOf(this.deps.name()) ?? 'confirmed'} ${this.deps.today()}`;
-    return this.edit(target.path, (file, kind) => withConfirmed(file, kind, target, source));
+    return this.edit(target.path, (file, kind) => withConfirmed(file, kind, target, source), {
+      keepConfirmed: true,
+    });
   }
 
   /**
@@ -151,6 +156,8 @@ export class FactBankFiles {
         if (!block.tags?.includes(UNCONFIRMED)) {
           return { problem: 'Only a fact that waits to be verified can be replaced.' };
         }
+        // A code block it never closes runs on over the facts after it, which would go with it.
+        if (leavesCodeOpen(block.text)) return { problem: RUNS_ON };
         return withChange(file, kind, { ...replacing, next: text });
       },
       { keepConfirmed: true },

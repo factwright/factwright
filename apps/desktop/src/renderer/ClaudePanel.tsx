@@ -12,14 +12,18 @@ import type { ClaudeRun } from './useClaudeRun.ts';
 const plural = (count: number, one: string, many: string) =>
   count === 1 ? `1 ${one}` : `${count} ${many}`;
 
-/** What a run filed from the user's answers, in a few words: "3 new facts to verify". */
+/**
+ * What a run filed from the user's answers, in a few words: "1 new fact to verify", with the
+ * facts by name when there are only a couple, so the user sees what was saved.
+ */
 export function filedWords(filed: FiledFacts): { lead: string; more: string } {
   const facts = filed.facts.length;
   const gaps = plural(filed.gaps, 'thing', 'things');
   if (facts === 0) return { lead: `Noted ${gaps} you don’t have`, more: ', from your answers.' };
+  const named = facts <= 2 ? `: ${filed.facts.map(({ title }) => `“${title}”`).join(' and ')}` : '';
   return {
     lead: plural(facts, 'new fact to verify', 'new facts to verify'),
-    more: `, from your answers.${filed.gaps > 0 ? ` Also noted ${gaps} you don’t have.` : ''}`,
+    more: `${named}, from your answers.${filed.gaps > 0 ? ` Also noted ${gaps} you don’t have.` : ''}`,
   };
 }
 
@@ -84,7 +88,7 @@ export function ClaudePanel({
             <IconButton
               variant="quiet"
               size="sm"
-              label="Dismiss"
+              label={`Dismiss “${words.lead}”`}
               icon={<X size={14} aria-hidden="true" />}
               onClick={onDismissFiled}
             />

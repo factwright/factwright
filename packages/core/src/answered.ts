@@ -36,9 +36,19 @@ export interface AnsweredClaim {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it drops.
 const CONTROL = /[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g;
 
-/** Text on one line: line breaks and other control characters become spaces, runs of spaces one. */
+/**
+ * Marks that change how text shows without showing themselves: the ones that reorder it from
+ * right to left, and a space of no width. Words in the fact bank could otherwise read one way
+ * and say another.
+ */
+const INVISIBLE = /[\u061c\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+
+/**
+ * Text on one line: line breaks and other control characters become spaces, runs of spaces one,
+ * and marks that don't show go.
+ */
 export function oneLine(text: string): string {
-  return text.replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
+  return text.replace(INVISIBLE, '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /** The Source a claim filed from an answer gives: "answer 2026-10-14, tailoring a resume for Acme". */

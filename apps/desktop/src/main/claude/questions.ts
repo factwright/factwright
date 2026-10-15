@@ -2,15 +2,17 @@ import { oneLine } from '@factwright/core';
 
 /** A question the user answered in a run, as Claude Code's hooks reported it. */
 export interface Answered {
-  /** The question, as the user saw it. */
+  /** The question, as the user saw it, on one line. */
   question: string;
   /** What the user picked or typed. Several picks are joined with ", ", as Claude Code joins them. */
   answer: string;
+  /** What the pick they made says under it, in the dialog, when it says anything. */
+  detail: string | null;
   /** What the user added to their pick in its notes, if anything. */
   notes: string | null;
 }
 
-/** A question asked in a run, with what the app has let it back, so each answer backs little. */
+/** A question answered in a run, with how much it has backed, so each answer backs little. */
 interface Heard extends Answered {
   key: string;
   /** How many facts, rows of what the user doesn't have, and verified facts it has backed. */
@@ -21,6 +23,17 @@ interface Heard extends Answered {
 export const MAX_BACKED = { fact: 4, gap: 1, verify: 1 } as const;
 
 export type Backing = keyof typeof MAX_BACKED;
+
+/**
+ * The tools that file what the user answered, by their names in Claude Code. A call to one counts
+ * only once Claude Code's PreToolUse hook has shown it, from the run's own Claude.
+ */
+export const FILING_TOOLS = ['save_fact', 'save_gap', 'verify_fact'] as const;
+
+export type FilingTool = (typeof FILING_TOOLS)[number];
+
+/** A tool's name as Claude Code gives it to hooks, such as mcp__factwright__save_fact. */
+export const hookToolName = (tool: FilingTool) => `mcp__factwright__${tool}`;
 
 /**
  * The fields a question round only has once someone has answered it. Claude never sets them:
@@ -35,6 +48,8 @@ const MAX_QUESTIONS = 4;
 /** How many rounds a run keeps, newest first, and how many it waits on at once. */
 const MAX_HEARD = 200;
 const MAX_WAITING = 20;
+/** How many filing calls Claude Code has shown and the app hasn't had yet. */
+const MAX_SHOWN = 50;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -42,7 +57,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /** A question's key: its words on one line, in one form and case, so spacing can't tell two apart. */
 export const questionKey = (question: string) => oneLine(question).normalize('NFC').toLowerCase();
 
-/** A string of a length, or null. */
+/** A string of a length, trimmed, or null. */
 const text = (value: unknown, max: number): string | null =>
   typeof value === 'string' && value.trim() !== '' && value.length <= max ? value.trim() : null;
 
@@ -55,27 +70,72 @@ function answerOf(value: unknown): string | null {
   return text(value, MAX_ANSWER);
 }
 
+/** JSON with every object's keys in order, so the same input reads the same however it's sent. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** A question as Claude asked it: its words exactly, which Claude Code keys the answers by, and its options. */
+interface Asked {
+  raw: string;
+  options: { label: string; description: string | null }[];
+}
+
 /**
- * The questions Claude asks the user in one run, and what the user answered, from Claude Code's
- * own hooks: PreToolUse shows the questions as Claude wrote them, before the user sees them, and
- * PostToolUse shows them once the user has answered. The app sends both, not Claude, so Claude
- * can't make up an answer here, and neither can a job post Claude read. Factwright's tools file a
- * fact from an answer only when it's here.
+ * What Claude Code's own hooks say about one run: the questions Claude asked the user and what
+ * they answered, and the calls to the tools that file those answers. PreToolUse shows a round's
+ * questions as Claude wrote them, before the user sees them, and PostToolUse shows them once the
+ * user has answered. The app gets both from Claude Code, not from Claude, so Claude can't make up
+ * an answer here, and neither can a job post Claude read. Factwright's tools file a fact from an
+ * answer only when it's here, and only for a call Claude Code showed from the run's own Claude,
+ * never a subagent's.
  */
 export class QuestionLog {
-  /** Rounds asked and not answered yet, by the tool call's id, with their questions as written. */
-  private readonly waiting = new Map<string, string[]>();
+  /** Rounds asked and not answered yet, by the tool call's id, with their questions. */
+  private readonly waiting = new Map<string, Asked[]>();
   private readonly heard: Heard[] = [];
+  /** Filing calls Claude Code showed from the run's own Claude, by tool, as canonical JSON. */
+  private readonly shown: { tool: FilingTool; input: string }[] = [];
 
   hear(event: unknown): void {
-    if (!isRecord(event) || event.tool_name !== 'AskUserQuestion') return;
-    // Only the run's own Claude asks: a subagent can't, so a round that says it came from one
-    // isn't one to go by.
-    if (event.agent_id !== undefined) return;
+    if (!isRecord(event)) return;
+    // Only the run's own Claude asks, and files: a subagent can't ask, and reads pages it might
+    // be steered by, so nothing that says it came from one counts.
+    if (typeof event.agent_id === 'string' && event.agent_id !== '') return;
+    const filing = FILING_TOOLS.find((tool) => event.tool_name === hookToolName(tool));
+    if (filing) {
+      if (event.hook_event_name === 'PreToolUse') this.showCall(filing, event.tool_input);
+      return;
+    }
+    if (event.tool_name !== 'AskUserQuestion') return;
     const id = text(event.tool_use_id, 200);
     if (!id) return;
     if (event.hook_event_name === 'PreToolUse') this.asked(id, event.tool_input);
     else if (event.hook_event_name === 'PostToolUse') this.answered(id, event);
+  }
+
+  /** A filing call Claude Code is about to make, for the tool to find. */
+  private showCall(tool: FilingTool, input: unknown): void {
+    if (!isRecord(input)) return;
+    this.shown.push({ tool, input: canonical(input) });
+    if (this.shown.length > MAX_SHOWN) this.shown.splice(0, this.shown.length - MAX_SHOWN);
+  }
+
+  /**
+   * Whether Claude Code showed this call from the run's own Claude, which it does before making
+   * it. Each showing lets one call through.
+   */
+  takeCall(tool: FilingTool, input: Record<string, unknown>): boolean {
+    const wanted = canonical(input);
+    const at = this.shown.findIndex((each) => each.tool === tool && each.input === wanted);
+    if (at < 0) return false;
+    this.shown.splice(at, 1);
+    return true;
   }
 
   /** A round Claude is about to ask, as it wrote it. One that came answered already is ignored. */
@@ -83,9 +143,16 @@ export class QuestionLog {
     this.waiting.delete(id);
     if (!isRecord(input) || ANSWER_FIELDS.some((field) => Object.hasOwn(input, field))) return;
     const asked = Array.isArray(input.questions) ? input.questions : [];
-    const questions = asked.flatMap((each) => {
-      const question = isRecord(each) ? text(each.question, MAX_QUESTION) : null;
-      return question ? [question] : [];
+    const questions = asked.flatMap((each): Asked[] => {
+      if (!isRecord(each)) return [];
+      const raw = each.question;
+      if (typeof raw !== 'string' || !raw.trim() || raw.length > MAX_QUESTION) return [];
+      const options = (Array.isArray(each.options) ? each.options : []).flatMap((option) =>
+        isRecord(option) && typeof option.label === 'string'
+          ? [{ label: option.label, description: text(option.description, MAX_ANSWER) }]
+          : [],
+      );
+      return [{ raw, options }];
     });
     if (questions.length === 0 || asked.length > MAX_QUESTIONS) return;
     this.waiting.set(id, questions);
@@ -117,15 +184,17 @@ export class QuestionLog {
         : {};
     // Words typed in place of answering apply to the round's one question, if it had one.
     const typed = text(output.response ?? input.response, MAX_ANSWER);
-    for (const question of questions) {
-      const note = notes[question];
-      const answer =
-        answerOf(answers[question]) ?? (questions.length === 1 && typed ? typed : null);
+    for (const { raw, options } of questions) {
+      // Claude Code keys the answers by each question exactly as Claude wrote it.
+      const note = notes[raw];
+      const answer = answerOf(answers[raw]) ?? (questions.length === 1 && typed ? typed : null);
       if (!answer) continue;
+      const picked = options.find((option) => option.label.trim() === answer);
       this.heard.push({
-        key: questionKey(question),
-        question,
+        key: questionKey(raw),
+        question: oneLine(raw),
         answer,
+        detail: picked?.description ?? null,
         notes: isRecord(note) ? text(note.notes, MAX_ANSWER) : null,
         backed: { fact: 0, gap: 0, verify: 0 },
       });
@@ -133,11 +202,17 @@ export class QuestionLog {
     if (this.heard.length > MAX_HEARD) this.heard.splice(0, this.heard.length - MAX_HEARD);
   }
 
+  private newest(question: string): Heard | undefined {
+    const key = questionKey(question);
+    return this.heard.findLast((each) => each.key === key);
+  }
+
   /** The newest answer to a question, by its words, or null when the user wasn't asked it. */
   find(question: string): Answered | null {
-    const key = questionKey(question);
-    const found = this.heard.findLast((each) => each.key === key);
-    return found ? { question: found.question, answer: found.answer, notes: found.notes } : null;
+    const found = this.newest(question);
+    return found
+      ? { question: found.question, answer: found.answer, detail: found.detail, notes: found.notes }
+      : null;
   }
 
   /**
@@ -152,20 +227,20 @@ export class QuestionLog {
     }
   }
 
-  /** Whether an answer can back one more of something, without using it up. */
-  canBack(question: string, what: Backing): boolean {
-    const found = this.heard.findLast((each) => each.key === questionKey(question));
-    return found !== undefined && found.backed[what] < MAX_BACKED[what];
-  }
-
-  /** Notes that an answer backed something. */
-  back(question: string, what: Backing): void {
-    const found = this.heard.findLast((each) => each.key === questionKey(question));
-    if (found) found.backed[what] += 1;
-  }
-
-  /** The questions answered in this run, oldest first, to say which ones a tool can use. */
-  questions(): string[] {
-    return [...new Set(this.heard.map((each) => each.question))];
+  /**
+   * Takes one of what an answer can back, all at once, so two calls at the same moment can't both
+   * have the last one. Answers with a way to give it back, if what it backed wasn't saved, or null
+   * when the answer has backed as much as it can.
+   */
+  reserve(question: string, what: Backing): (() => void) | null {
+    const found = this.newest(question);
+    if (!found || found.backed[what] >= MAX_BACKED[what]) return null;
+    found.backed[what] += 1;
+    let given = false;
+    return () => {
+      if (given) return;
+      given = true;
+      found.backed[what] -= 1;
+    };
   }
 }

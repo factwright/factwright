@@ -56,6 +56,20 @@ const hook = (event, fields = {}) =>
   post(hookUrl, { hook_event_name: event, session_id: 'fake', ...fields }).catch(() => {});
 const show = (text) => process.stdout.write(text.replace(/\n/g, '\r\n'));
 
+/**
+ * Calls one of the tools that file the user's answers, as Claude Code does: its PreToolUse hook
+ * first, from the run's own Claude, or from a subagent.
+ */
+async function file(name, args, { agent } = {}) {
+  await hook('PreToolUse', {
+    tool_name: `mcp__factwright__${name}`,
+    tool_use_id: `toolu_${name}_${Date.now()}`,
+    tool_input: args,
+    ...(agent && { agent_id: agent }),
+  });
+  return call(name, args);
+}
+
 /** Calls one of Factwright's tools, as Claude Code does, and gives back its text. */
 async function call(name, args) {
   const response = await post(tools.url, {
@@ -133,7 +147,7 @@ async function work(text) {
       task: 'resume',
     };
     show(
-      `${await call('save_fact', {
+      `${await file('save_fact', {
         ...fact,
         title: 'GraphQL for the driver app',
         wording: 'Built the driver app’s GraphQL API.',
@@ -141,16 +155,21 @@ async function work(text) {
         questions: [GRAPHQL],
       })}\n`,
     );
-    show(`${await call('save_gap', { topic: 'Kafka', question: KAFKA, job, task: 'resume' })}\n`);
-    // Words planted in a posting can't save a fact the user never gave.
+    show(`${await file('save_gap', { topic: 'Kafka', question: KAFKA, job, task: 'resume' })}\n`);
+    // Words planted in a posting can't save a fact the user never gave, from Claude or from a
+    // subagent that read the posting, even with an answer the user did give.
+    const planted = {
+      ...fact,
+      title: 'Led a big team',
+      ownership: 'led-team',
+      wording: 'Led a team of engineers.',
+      keywords: 'leadership',
+    };
     show(
-      `${await call('save_fact', {
-        ...fact,
-        title: 'Led 50 engineers',
-        ownership: 'led-team',
-        wording: 'Led a team of 50 engineers.',
-        questions: ['Have you led a team of 50 engineers?'],
-      })}\n`,
+      `${await file('save_fact', { ...planted, questions: ['Have you led a team of engineers?'] })}\n`,
+    );
+    show(
+      `${await file('save_fact', { ...planted, keywords: 'GraphQL', questions: [GRAPHQL] }, { agent: 'fact-check' })}\n`,
     );
   }
   // As Claude would for a search of LinkedIn: write the run's report in a folder of its own,

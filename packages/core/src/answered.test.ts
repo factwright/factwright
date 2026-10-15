@@ -131,4 +131,10 @@ describe('oneLine', () => {
   it('puts text on one line, without control characters', () => {
     expect(oneLine(' a\n\tb\u0007c\u2028 d  ')).toBe('a b c d');
   });
+
+  it('drops marks that change how text shows, without showing', () => {
+    expect(oneLine('Led \u202ethe\u202c team\u200b of \u2066five\u2069\ufeff')).toBe(
+      'Led the team of five',
+    );
+  });
 });

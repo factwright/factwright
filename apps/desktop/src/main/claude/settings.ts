@@ -10,6 +10,7 @@ import {
   TEMPLATE_TOOLS,
   WEB_TOOLS,
 } from '../tools/index.ts';
+import { FILING_TOOLS, hookToolName } from './questions.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
 export const RUN_TOKEN_VARIABLE = 'FACTWRIGHT_RUN_TOKEN';
@@ -69,13 +70,14 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
   // Saving a template is the point of a template run. Otherwise it's like changing a file.
   const templates = scope === 'template' || permissions.anyFile ? TEMPLATE_TOOLS : [];
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
-  // else without asking: not building a resume or saving an answer, either. Every other run
+  // else without asking: not building a resume or saving an answer, either. A run on the job hunt
   // files what the user answers it without asking, since that files only what they answered.
+  // Getting started and adding facts change the facts themselves, as the user confirms them.
   const tools =
     scope === 'template'
       ? [...TEMPLATE_READS, ...templates, ...profile]
       : scope === 'profile'
-        ? [...LOCAL_TOOLS, ...FACT_TOOLS, ...profile, ...templates]
+        ? [...LOCAL_TOOLS, ...profile, ...templates]
         : [
             ...LOCAL_TOOLS,
             ...FACT_TOOLS,
@@ -118,7 +120,8 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  *   run started to make a template may read and save templates without asking, and nothing
  *   else, and never reads the web either.
  * - never: changing Claude Code's settings or the instructions it loads
- * - hooks that tell the app, over HTTP on this computer, where the run stands, and when the
+ * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
+ *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
  *   session ends, which the self-test listens for
  */
 export function sessionSettings({
@@ -150,7 +153,12 @@ export function sessionSettings({
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],
-      PreToolUse: [{ matcher: 'AskUserQuestion', hooks: hook }],
+      // The questions Claude asks, and its calls to the tools that file the answers, which the
+      // app lets through only when they come from the run's own Claude.
+      PreToolUse: [
+        { matcher: 'AskUserQuestion', hooks: hook },
+        { matcher: FILING_TOOLS.map(hookToolName).join('|'), hooks: hook },
+      ],
       PostToolUse: [{ hooks: hook }],
       PostToolUseFailure: [{ hooks: hook }],
       PermissionRequest: [{ hooks: hook }],

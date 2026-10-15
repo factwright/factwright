@@ -39,6 +39,7 @@ import {
   type OriginView,
   originOf,
   tagInfo,
+  type Unverified,
   unverifiedFacts,
 } from './factView.ts';
 import { type FactBankApi, useFactBank } from './useFactBank.ts';
@@ -253,6 +254,7 @@ function BlockView({
               <button
                 type="button"
                 className={styles.inFile}
+                aria-label={`${fileTitle}: show the whole file`}
                 title="Show the whole file"
                 onClick={onOpenFile}
               >
@@ -547,7 +549,6 @@ export function FactBankPage({
   const counts = bankCounts(bank);
   const searching = query.trim() !== '';
   const toVerify = unverifiedFacts(bank);
-  const toVerifyShown = allToVerify ? toVerify : toVerify.slice(0, FIRST_TO_VERIFY);
   // The file the user last had open, or else the first with facts in it.
   const file =
     bank.files.find((each) => each.path === openPath) ??
@@ -579,6 +580,23 @@ export function FactBankPage({
         keep: (path, block) => placedKey('file', path, block) === editingKey,
       })
     : [];
+  // A fact in the list that's being changed, asked about deleting, or showing what stopped it
+  // stays in it, whatever else comes in ahead of it, and while the user searches.
+  const pinned = new Set([editingKey, deletingKey, troubleKey]);
+  const isPinned = ({ file: each, block }: Unverified) =>
+    pinned.has(placedKey('unverified', each.path, block));
+  const toVerifyShown = toVerify.filter((each, i) =>
+    searching ? isPinned(each) : allToVerify || i < FIRST_TO_VERIFY || isPinned(each),
+  );
+  // An edit opened in the list stays open even once its fact leaves it, as when it's verified
+  // in its file meanwhile.
+  const strayEdit =
+    editing?.kind === 'change' &&
+    editing.place === 'unverified' &&
+    editingAt >= 0 &&
+    !toVerifyShown.some(
+      ({ file: each, block }) => placedKey('unverified', each.path, block) === editingKey,
+    );
 
   /** Ends the edit that's open, dropping what was typed for it. */
   const finish = () => {
@@ -928,26 +946,42 @@ export function FactBankPage({
         right, and your Claude goes by it from its next task.
       </p>
 
-      {toVerify.length > 0 && !searching && (
+      {(toVerifyShown.length > 0 || strayEdit || (toVerify.length > 0 && !searching)) && (
         <section className={styles.unverified} aria-labelledby="facts-unverified-title">
           <div className={styles.unverifiedHead}>
             <h2 id="facts-unverified-title" tabIndex={-1} className={styles.unverifiedTitle}>
               Unverified
             </h2>
-            <span className={styles.unverifiedCount}>{toVerify.length}</span>
+            {toVerify.length > 0 && (
+              <span className={styles.unverifiedCount}>{toVerify.length}</span>
+            )}
           </div>
           <p className={styles.unverifiedLead}>
             Your Claude asks you before using these. Verify each one that’s right as written, or
             edit it first.
           </p>
           <div className={styles.unverifiedList}>
+            {strayEdit && editing?.kind === 'change' && changeForm(editing)}
             {toVerifyShown.map(({ file: each, block }) =>
               renderBlock('unverified', each.path, block, 3),
             )}
           </div>
-          {toVerify.length > toVerifyShown.length && (
+          {!searching && toVerify.length > toVerifyShown.length && (
             <div>
-              <Button size="sm" variant="quiet" onClick={() => setAllToVerify(true)}>
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() => {
+                  // The first fact it brings in takes the focus, in place of the button.
+                  const next = toVerify.find((each) => !toVerifyShown.includes(each));
+                  setAllToVerify(true);
+                  if (next) {
+                    focusSoon(
+                      toolOf(placedKey('unverified', next.file.path, next.block), 'confirm'),
+                    );
+                  }
+                }}
+              >
                 Show all {toVerify.length}
               </Button>
             </div>

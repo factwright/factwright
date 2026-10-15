@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { QuestionLog } from './questions.ts';
+import { hookToolName, QuestionLog } from './questions.ts';
 
 const GRAPHQL = 'Have you used GraphQL in production?';
 const KAFKA = 'Have you run Kafka, or another event-streaming platform?';
@@ -49,13 +49,26 @@ describe('QuestionLog', () => {
     expect(log.find(GRAPHQL)).toEqual({
       question: GRAPHQL,
       answer: 'Yes, in production',
+      detail: null,
       notes: 'Two years, on the partner API',
     });
-    expect(log.find(KAFKA)).toEqual({ question: KAFKA, answer: 'No', notes: null });
+    expect(log.find(KAFKA)).toEqual({ question: KAFKA, answer: 'No', detail: null, notes: null });
     // Spacing and case don't make it another question; other words do.
     expect(log.find(`  have you used  graphql\nin production?`)?.answer).toBe('Yes, in production');
     expect(log.find('Have you used GraphQL?')).toBeNull();
-    expect(log.questions()).toEqual([GRAPHQL, KAFKA]);
+  });
+
+  it('keeps what the pick said under it, as the user saw it', () => {
+    const log = new QuestionLog();
+    round(log, [question(GRAPHQL)], { answers: { [GRAPHQL]: 'Some' } });
+    expect(log.find(GRAPHQL)?.detail).toBe('A side project, a course, or an earlier role');
+  });
+
+  it('reads an answer by the question exactly as Claude wrote it, spaces and all', () => {
+    const log = new QuestionLog();
+    const spaced = `${GRAPHQL} `;
+    round(log, [question(spaced)], { answers: { [spaced]: 'Yes, in production' } });
+    expect(log.find(GRAPHQL)?.answer).toBe('Yes, in production');
   });
 
   it('reads several picks, and words typed in place of a pick for a round of one', () => {
@@ -74,7 +87,8 @@ describe('QuestionLog', () => {
     // Typed words can't tell which of two questions they answer.
     const two = new QuestionLog();
     round(two, [question(GRAPHQL), question(KAFKA)], { answers: {}, response: 'Yes to both' });
-    expect(two.questions()).toEqual([]);
+    expect(two.find(GRAPHQL)).toBeNull();
+    expect(two.find(KAFKA)).toBeNull();
   });
 
   it('reads the answers from the call’s input when its result carries none', () => {
@@ -155,7 +169,8 @@ describe('QuestionLog', () => {
     round(log, [question(GRAPHQL)], {
       answers: { [GRAPHQL]: 'No', 'Have you led a team of 50?': 'Yes' },
     });
-    expect(log.questions()).toEqual([GRAPHQL]);
+    expect(log.find(GRAPHQL)?.answer).toBe('No');
+    expect(log.find('Have you led a team of 50?')).toBeNull();
   });
 
   it('ignores a round that closed itself while the user was away', () => {
@@ -181,18 +196,31 @@ describe('QuestionLog', () => {
       tool_input: { questions: [question(GRAPHQL)] },
     });
     round(log, [], { answers: {} }, { id: 'toolu_3' });
-    expect(log.questions()).toEqual([]);
+    expect(log.find(GRAPHQL)).toBeNull();
+    // A subagent id that's empty, or not given, is the run's own Claude.
+    round(
+      log,
+      [question(KAFKA)],
+      { answers: { [KAFKA]: 'No' } },
+      { id: 'toolu_4', extra: { agent_id: null } },
+    );
+    expect(log.find(KAFKA)?.answer).toBe('No');
   });
 
-  it('lets an answer back so much, and no more', () => {
+  it('lets an answer back so much, and no more, taking each at once', () => {
     const log = new QuestionLog();
     round(log, [question(GRAPHQL)], { answers: { [GRAPHQL]: 'Yes, in production' } });
-    expect(log.canBack(GRAPHQL, 'gap')).toBe(true);
-    log.back(GRAPHQL, 'gap');
-    expect(log.canBack(GRAPHQL, 'gap')).toBe(false);
-    for (let i = 0; i < 4; i++) log.back(GRAPHQL, 'fact');
-    expect(log.canBack(GRAPHQL, 'fact')).toBe(false);
-    expect(log.canBack(GRAPHQL, 'verify')).toBe(true);
+    const gap = log.reserve(GRAPHQL, 'gap');
+    expect(gap).not.toBeNull();
+    expect(log.reserve(GRAPHQL, 'gap')).toBeNull();
+    // Given back, when what it backed wasn't saved, it can back that again, once.
+    gap?.();
+    gap?.();
+    expect(log.reserve(GRAPHQL, 'gap')).not.toBeNull();
+    expect(log.reserve(GRAPHQL, 'gap')).toBeNull();
+    for (let i = 0; i < 4; i++) expect(log.reserve(GRAPHQL, 'fact')).not.toBeNull();
+    expect(log.reserve(GRAPHQL, 'fact')).toBeNull();
+    expect(log.reserve(GRAPHQL, 'verify')).not.toBeNull();
     // Asked again, its new answer backs as much again.
     round(
       log,
@@ -200,8 +228,31 @@ describe('QuestionLog', () => {
       { answers: { [GRAPHQL]: 'Yes, in production' } },
       { id: 'toolu_2' },
     );
-    expect(log.canBack(GRAPHQL, 'fact')).toBe(true);
-    expect(log.canBack(KAFKA, 'fact')).toBe(false);
+    expect(log.reserve(GRAPHQL, 'fact')).not.toBeNull();
+    expect(log.reserve(KAFKA, 'fact')).toBeNull();
+  });
+
+  it('lets a filing call through once Claude Code showed it from the run’s own Claude', () => {
+    const log = new QuestionLog();
+    const input = { topic: 'Kafka', question: KAFKA, job: 'acme' };
+    const show = (extra: Record<string, unknown> = {}) =>
+      log.hear({
+        hook_event_name: 'PreToolUse',
+        tool_name: hookToolName('save_gap'),
+        tool_use_id: 'toolu_9',
+        tool_input: { job: 'acme', question: KAFKA, topic: 'Kafka' },
+        ...extra,
+      });
+    expect(log.takeCall('save_gap', input)).toBe(false);
+    show();
+    // The same input, in any order of its fields, once.
+    expect(log.takeCall('save_fact', input)).toBe(false);
+    expect(log.takeCall('save_gap', { ...input, topic: 'Pulsar' })).toBe(false);
+    expect(log.takeCall('save_gap', input)).toBe(true);
+    expect(log.takeCall('save_gap', input)).toBe(false);
+    // A subagent's call isn't let through.
+    show({ agent_id: 'agent-1' });
+    expect(log.takeCall('save_gap', input)).toBe(false);
   });
 
   it('waits a moment for an answer whose hook is still on its way', async () => {
@@ -221,6 +272,7 @@ describe('QuestionLog', () => {
       { answers: { [GRAPHQL]: 'x'.repeat(20_000) } },
       { id: 'toolu_2' },
     );
-    expect(log.questions()).toEqual([]);
+    expect(log.find(long)).toBeNull();
+    expect(log.find(GRAPHQL)).toBeNull();
   });
 });

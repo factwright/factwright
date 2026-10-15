@@ -173,7 +173,9 @@ describe('FactBankPage', () => {
     );
     expect((await axe.run(container)).violations).toEqual([]);
     // Its file opens from it.
-    await userEvent.click(within(answered).getByRole('button', { name: 'Beta Labs' }));
+    await userEvent.click(
+      within(answered).getByRole('button', { name: 'Beta Labs: show the whole file' }),
+    );
     await waitFor(() =>
       expect(document.activeElement).toBe(
         screen.getByRole('heading', { name: 'Beta Labs', level: 2 }),
@@ -193,6 +195,71 @@ describe('FactBankPage', () => {
     expect(within(list).getAllByRole('article')).toHaveLength(4);
     await userEvent.click(within(list).getByRole('button', { name: 'Show all 8' }));
     expect(within(list).getAllByRole('article')).toHaveLength(8);
+    // The first one it brought in takes the focus, in place of the button.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(list).getByRole('button', { name: 'Verify “Drafted 3”' }),
+      ),
+    );
+  });
+
+  it('keeps an edit opened in the list open, whatever comes in ahead of it, or a search', async () => {
+    const user = userEvent.setup();
+    const many = ['A', 'B'].map(
+      (letter) =>
+        `### Drafted ${letter}\n\`unconfirmed\` \`live\`\n> Did ${letter}.\n- **Source:** notes 2026-10-10\n`,
+    );
+    files.set('facts/beta.md', `${BETA}\n${many.join('\n')}`);
+    open();
+    const list = await screen.findByRole('region', { name: 'Unverified' });
+    // The fourth in the list.
+    await user.click(
+      within(list).getByRole('button', { name: 'Edit “Drafted B”, then verify it' }),
+    );
+    const wording = screen.getByRole('textbox', { name: 'What resumes say' });
+    await user.clear(wording);
+    await user.type(wording, 'Mine.');
+    // Claude saves the user's answer meanwhile, which goes first.
+    changeOnDisk(
+      'facts/acme.md',
+      `${ACME}\n### Kafka pipeline\n\`unconfirmed\` \`live\`\n> Ran Kafka.\n- **Source:** answer 2026-10-12\n`,
+    );
+    await unverified().findByRole('article', { name: 'Kafka pipeline' });
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Mine.',
+    );
+    // A search leaves it open too.
+    await user.type(screen.getByRole('searchbox', { name: 'Search your facts' }), 'field');
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Mine.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save and verify' }));
+    await waitFor(() =>
+      expect(files.get('facts/beta.md')).toContain('### Drafted B\n`live`\n> Mine.\n'),
+    );
+  });
+
+  it('keeps an edit opened in the list open once its fact is verified elsewhere', async () => {
+    const user = userEvent.setup();
+    open();
+    await screen.findByRole('region', { name: 'Unverified' });
+    await user.click(unverified().getByRole('button', { name: 'Edit “Waitlist”, then verify it' }));
+    const wording = screen.getByRole('textbox', { name: 'What resumes say' });
+    await user.clear(wording);
+    await user.type(wording, 'Mine.');
+    changeOnDisk(
+      'facts/acme.md',
+      ACME.replace('`unconfirmed` `built` `solo` `high`', '`built` `solo` `high`'),
+    );
+    await waitFor(() =>
+      expect(unverified().queryByRole('article', { name: 'Waitlist' })).toBeNull(),
+    );
+    expect(screen.getByRole('textbox', { name: 'What resumes say' })).toHaveProperty(
+      'value',
+      'Mine.',
+    );
   });
 
   it('changes a fact’s words and status, then gives the focus back to it', async () => {

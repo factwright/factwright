@@ -376,15 +376,18 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   // The stand-in asks two questions, the user says yes to one and no to the other, and it
   // tries to save a fact the user never gave.
   await expect(panel.getByText('1 new fact to verify')).toBeVisible();
-  await expect(panel.getByText(/Also noted 1 thing you don’t have\./)).toBeVisible();
+  await expect(panel.getByRole('status').filter({ hasText: 'new fact to verify' })).toHaveText(
+    '1 new fact to verify: “GraphQL for the driver app”, from your answers. Also noted 1 thing you don’t have.',
+  );
   await expect
     .poll(() => terminalText(window))
     .toContain('Factwright has no record of the user answering');
+  await expect.poll(() => terminalText(window)).toContain('only for your own calls');
   const text = readFileSync(file, 'utf8');
   expect(text).toMatch(
     /### GraphQL for the driver app\n`unconfirmed` `live` `solo` `medium`\n> Built the driver app’s GraphQL API\.\n- \*\*Keywords:\*\* GraphQL\n- \*\*Source:\*\* answer \d{4}-\d{2}-\d{2}, tailoring a resume for Acme Robotics\n- \*\*Question:\*\* The posting wants GraphQL\. Have you used GraphQL\?\n- \*\*Answer:\*\* Yes, in production\n/,
   );
-  expect(text).not.toContain('Led 50 engineers');
+  expect(text).not.toContain('Led a big team');
   expect(readFileSync(gaps, 'utf8')).toMatch(
     /\| Kafka \| No \(asked “The posting wants Kafka\. Have you run Kafka, or another event-streaming platform\?” while tailoring a resume for Acme Robotics\) \| \d{4}-\d{2}-\d{2} \|/,
   );

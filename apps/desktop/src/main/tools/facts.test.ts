@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FiledFacts } from '../../shared/facts.ts';
 import { FactBankFiles, keepsConfirmed } from '../about/facts.ts';
+import { type FilingTool, hookToolName } from '../claude/questions.ts';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import { factwrightTools } from './index.ts';
@@ -48,6 +49,10 @@ const GAPS = [
   '',
 ].join('\n');
 
+/** The question that offers the user a fact that waits to be verified, as the standing rules word it. */
+const OFFER =
+  'Your fact bank has “Reminder texts”, from your resume and not verified yet: “Shipped appointment reminder texts.” Can I use it?';
+
 let root: string;
 let tracker: Tracker;
 let tools: McpTool[];
@@ -62,10 +67,24 @@ const write = (path: string, text: string) => {
 };
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
-const tool = (name: string) => {
+/** Claude Code's PreToolUse hook for a call, from the run's own Claude or a subagent. */
+const shown = (name: FilingTool, input: Record<string, unknown>, agent?: string) =>
+  call.questions.hear({
+    hook_event_name: 'PreToolUse',
+    tool_name: hookToolName(name),
+    tool_use_id: `toolu_call_${++rounds}`,
+    tool_input: input,
+    ...(agent && { agent_id: agent }),
+  });
+
+/** A call to a filing tool as Claude Code makes it: shown in its hook first, then made. */
+const tool = (name: FilingTool) => {
   const found = tools.find((each) => each.name === name);
   if (!found) throw new Error(`No tool ${name}`);
-  return (input: Record<string, unknown>) => found.run(input, call);
+  return (input: Record<string, unknown>, { agent }: { agent?: string } = {}) => {
+    shown(name, input, agent);
+    return found.run(input, call);
+  };
 };
 
 /** A question round the user answered, as Claude Code's hooks report it. */
@@ -76,6 +95,7 @@ function answered(answers: Record<string, string>, notes: Record<string, string>
     header: 'Experience',
     options: [
       { label: 'Yes, in production', description: '' },
+      { label: 'Some', description: 'A side project, a course, or an earlier role' },
       { label: 'No', description: '' },
     ],
   }));
@@ -106,7 +126,7 @@ const FACT = {
   status: 'live',
   ownership: 'solo',
   confidence: 'medium',
-  wording: 'Built and ran the partner API in GraphQL, used by 30 partners.',
+  wording: 'Built and ran the partner API in GraphQL.',
   keywords: 'GraphQL',
   questions: [GRAPHQL],
   job: JOB,
@@ -153,7 +173,13 @@ afterEach(() => {
 describe('save_fact', () => {
   it('files a yes as a fact to verify, with where it came from as Claude Code reported it', async () => {
     answered({ [GRAPHQL]: 'Yes, in production', [WHERE]: 'The partner API, about 30 partners' });
-    expect(await tool('save_fact')({ ...FACT, questions: [GRAPHQL, WHERE] })).toBe(
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        wording: 'Built and ran the partner API in GraphQL, used by 30 partners.',
+        questions: [GRAPHQL, WHERE],
+      }),
+    ).toBe(
       'Saved “GraphQL for the partner API” in facts/acme.md, unverified, from the user’s answer: “Yes, in production”, then “The partner API, about 30 partners”. Use it in this run’s work: the user just said it. Say which lines rest on it when you report. Later runs offer it to the user before using it, until they verify it.',
     );
     expect(read('facts/acme.md')).toBe(
@@ -180,22 +206,42 @@ describe('save_fact', () => {
     });
   });
 
-  it('keeps the user’s notes with their answer, and leaves out the job when there’s none', async () => {
-    answered({ [GRAPHQL]: 'Yes, in production' }, { [GRAPHQL]: 'Two years' });
+  it('keeps what the pick said and the user’s notes with their answer, and leaves out the job when there’s none', async () => {
+    answered({ [GRAPHQL]: 'Some' }, { [GRAPHQL]: 'Two years' });
     await tool('save_fact')({ ...FACT, job: undefined, task: undefined });
     const text = read('facts/acme.md');
     expect(text).toContain('- **Source:** answer 2026-10-14\n');
-    expect(text).toContain('- **Answer:** Yes, in production (Two years)\n');
+    expect(text).toContain(
+      '- **Answer:** Some: A side project, a course, or an earlier role (Two years)\n',
+    );
   });
 
   it('files nothing the user wasn’t asked, or was asked some other way', async () => {
     await expect(tool('save_fact')(FACT)).rejects.toThrow(
-      'Not saved: Factwright has no record of the user answering “Have you used GraphQL in production?” in this run. Facts from answers come only from questions you asked with AskUserQuestion, given word for word. The user hasn’t answered any questions in this run yet.',
+      'Not saved: Factwright has no record of the user answering “Have you used GraphQL in production?” in this run. Facts from answers come only from questions you asked with AskUserQuestion, given word for word.',
     );
     answered({ [KAFKA]: 'No' });
-    await expect(tool('save_fact')(FACT)).rejects.toThrow(`Answered so far: “${KAFKA}”.`);
+    // Nothing tells Claude which questions it could have used instead.
+    await expect(tool('save_fact')(FACT)).rejects.not.toThrow(KAFKA);
     expect(read('facts/acme.md')).toBe(ACME);
     expect(filed).not.toHaveBeenCalled();
+  });
+
+  it('files nothing for a call Claude Code didn’t show from the run’s own Claude', async () => {
+    answered({ [GRAPHQL]: 'Yes, in production' });
+    const saveFact = tools.find((each) => each.name === 'save_fact');
+    await expect(saveFact?.run(FACT, call)).rejects.toThrow(
+      'Not saved: Factwright files the user’s answers only for your own calls, as Claude Code shows them, never a subagent’s.',
+    );
+    await expect(tool('save_fact')(FACT, { agent: 'agent-7' })).rejects.toThrow(
+      'never a subagent’s',
+    );
+    // Shown with other words, it isn't this call.
+    shown('save_fact', { ...FACT, wording: 'Something else.' });
+    await expect(saveFact?.run(FACT, call)).rejects.toThrow('never a subagent’s');
+    expect(read('facts/acme.md')).toBe(ACME);
+    // The answer is still there for the call that's shown.
+    expect(await tool('save_fact')(FACT)).toMatch(/^Saved/);
   });
 
   it('turns away files that don’t hold claims, and one that isn’t there', async () => {
@@ -230,6 +276,9 @@ describe('save_fact', () => {
     await expect(tool('save_fact')({ ...FACT, wording: 'x'.repeat(401) })).rejects.toThrow(
       'The wording should be 400 characters or fewer.',
     );
+    await expect(tool('save_fact')({ ...FACT, keywords: undefined })).rejects.toThrow(
+      'Give the keywords.',
+    );
     await expect(tool('save_fact')({ ...FACT, questions: [] })).rejects.toThrow('Give questions');
     await expect(tool('save_fact')({ ...FACT, job: 'nobody--nothing' })).rejects.toThrow(
       'Nothing on file for nobody--nothing.',
@@ -239,12 +288,110 @@ describe('save_fact', () => {
     );
   });
 
-  it('lets one answer back a few facts, and no more', async () => {
-    answered({ [GRAPHQL]: 'Yes, in production' });
-    for (let i = 1; i <= 4; i++) await tool('save_fact')({ ...FACT, title: `Fact ${i}` });
-    await expect(tool('save_fact')({ ...FACT, title: 'Fact 5' })).rejects.toThrow(
-      'has been used for as much as one answer can back',
+  it('files a fact only about what was asked, by its keywords', async () => {
+    const asked = 'Shall I carry on with the resume?';
+    answered({ [asked]: 'Yes, in production' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Led a big team',
+        wording: 'Led the platform team.',
+        keywords: 'leadership, people management',
+        questions: [asked],
+      }),
+    ).rejects.toThrow(
+      'Not saved: none of its keywords (leadership, people management) is in the question or the user’s answer.',
     );
+    expect(read('facts/acme.md')).toBe(ACME);
+    answered({ [KAFKA]: 'Yes, in production' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'Event streaming',
+        wording: 'Ran an event-streaming pipeline.',
+        keywords: 'Kafka, event streaming',
+        questions: [KAFKA],
+      }),
+    ).toMatch(/^Saved/);
+  });
+
+  it('files no number the user didn’t give or see', async () => {
+    answered({ [GRAPHQL]: 'Yes, in production', [WHERE]: 'The partner API, about 3,000 users' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        wording: 'Built the partner API in GraphQL for 3,000 users, cutting load ~40%.',
+        questions: [GRAPHQL, WHERE],
+      }),
+    ).rejects.toThrow(
+      'Not saved: 40 isn’t in the user’s answer or your question. Leave out a number they didn’t give, or ask them for it.',
+    );
+    await expect(
+      tool('save_fact')({ ...FACT, numbers: '5,000 users', questions: [GRAPHQL, WHERE] }),
+    ).rejects.toThrow('Not saved: 5000 isn’t in the user’s answer');
+    // Their own numbers, as they gave them or written another way, and names with digits in
+    // them, such as S3 or OAuth2, are fine.
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        wording: 'Built the partner API in GraphQL, on S3 and OAuth2, for 3000 users.',
+        numbers: '3,000 users',
+        questions: [GRAPHQL, WHERE],
+      }),
+    ).toMatch(/^Saved/);
+  });
+
+  it('claims nothing from a plain no, or from a pick about using a fact', async () => {
+    answered({ [KAFKA]: 'No' });
+    await expect(
+      tool('save_fact')({ ...FACT, keywords: 'Kafka', questions: [KAFKA] }),
+    ).rejects.toThrow(
+      `Not saved: the user answered “No” to “${KAFKA}”. Save that with save_gap, and claim nothing from it.`,
+    );
+    answered({ [OFFER]: 'Use this once' });
+    await expect(
+      tool('save_fact')({ ...FACT, keywords: 'reminder texts', questions: [OFFER] }),
+    ).rejects.toThrow(
+      'Not saved: “Use this once” answers whether to use a fact, not what the user has done.',
+    );
+    // A no with more to it, or a no to a follow-up after a yes, can still back a fact.
+    answered({ [GRAPHQL]: 'No, but REST at scale' });
+    expect(await tool('save_fact')({ ...FACT, keywords: 'GraphQL, REST' })).toMatch(/^Saved/);
+    const prod = 'Was that in production?';
+    answered({ [WHERE]: 'The partner API', [prod]: 'No' });
+    expect(
+      await tool('save_fact')({
+        ...FACT,
+        title: 'Partner API in GraphQL',
+        keywords: 'partner API',
+        status: 'built',
+        questions: [WHERE, prod],
+      }),
+    ).toMatch(/^Saved/);
+  });
+
+  it('lets one answer back a few facts, and no more, even all at once', async () => {
+    answered({ [GRAPHQL]: 'Yes, in production' });
+    const saves = ['A', 'B', 'C', 'D', 'E'].map((letter) =>
+      tool('save_fact')({ ...FACT, title: `Fact ${letter}` }),
+    );
+    const results = await Promise.allSettled(saves);
+    expect(results.filter((each) => each.status === 'fulfilled')).toHaveLength(4);
+    expect(results.filter((each) => each.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          message: expect.stringContaining('has been used for as much as one answer can back'),
+        }),
+      }),
+    ]);
+  });
+
+  it('gives back what an answer backed when the fact isn’t saved', async () => {
+    answered({ [GRAPHQL]: 'Yes, in production' });
+    for (let i = 0; i < 5; i++) {
+      await expect(tool('save_fact')({ ...FACT, file: 'facts/fernway.md' })).rejects.toThrow();
+    }
+    expect(await tool('save_fact')(FACT)).toMatch(/^Saved/);
   });
 
   it('replaces a fact it filed in this run, or one the user just corrected by its title', async () => {
@@ -266,29 +413,19 @@ describe('save_fact', () => {
       gaps: 0,
     });
 
-    const correction = 'Is “Reminder texts” right: Shipped appointment reminder texts?';
-    answered({ [correction]: 'Only to two clinics, as a pilot' });
+    answered({ [OFFER]: 'Only to two clinics, as a pilot' });
     await tool('save_fact')({
       ...FACT,
       title: 'Reminder texts',
       replaces: 'Reminder texts',
       status: 'beta',
       wording: 'Piloted appointment reminder texts at two clinics.',
-      questions: [correction],
+      keywords: 'appointment reminder texts',
+      questions: [OFFER],
     });
     expect(read('facts/acme.md')).toContain(
       '### Reminder texts\n`unconfirmed` `beta` `solo` `medium`\n> Piloted appointment reminder texts at two clinics.',
     );
-  });
-
-  it('claims nothing from a plain no', async () => {
-    answered({ [KAFKA]: 'No' });
-    await expect(tool('save_fact')({ ...FACT, questions: [KAFKA] })).rejects.toThrow(
-      `Not saved: the user answered “No” to “${KAFKA}”. Save that with save_gap, and claim nothing from it.`,
-    );
-    // A no with more to it can still back a fact, such as about what they used instead.
-    answered({ [GRAPHQL]: 'No, but REST at scale' });
-    expect(await tool('save_fact')({ ...FACT, questions: [GRAPHQL] })).toMatch(/^Saved/);
   });
 
   it('never replaces a verified fact, or an unverified one the user wasn’t asked about', async () => {
@@ -311,10 +448,34 @@ describe('save_fact', () => {
         ...FACT,
         replaces: 'Reminder texts',
         title: 'Texts',
+        keywords: 'reminder texts',
         questions: [passing],
       }),
     ).rejects.toThrow('wasn’t filed in this run, and no answer here is about it');
     expect(read('facts/acme.md')).toBe(ACME);
+  });
+
+  it('never replaces a fact whose code block runs on over the facts after it', async () => {
+    write(
+      'facts/acme.md',
+      ACME.replace(
+        '> Shipped appointment reminder texts.',
+        '> Shipped appointment reminder texts.\n```\nnever closed',
+      ),
+    );
+    const before = read('facts/acme.md');
+    answered({ [OFFER]: 'Only at two clinics' });
+    await expect(
+      tool('save_fact')({
+        ...FACT,
+        title: 'Reminder texts',
+        replaces: 'Reminder texts',
+        wording: 'Piloted reminder texts at two clinics.',
+        keywords: 'reminder texts',
+        questions: [OFFER],
+      }),
+    ).rejects.toThrow('isn’t closed, so it runs on into what follows');
+    expect(read('facts/acme.md')).toBe(before);
   });
 
   it('can’t be made to change a confirmed fact, even by a target that points at one', () => {
@@ -339,6 +500,21 @@ describe('save_fact', () => {
     });
     expect(read('facts/acme.md')).toBe(ACME);
   });
+
+  it('never starts a file of projects through a link', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'factwright-outside-'));
+    try {
+      rmSync(join(root, 'facts'), { recursive: true });
+      symlinkSync(outside, join(root, 'facts'));
+      answered({ [GRAPHQL]: 'Yes, in production' });
+      await expect(tool('save_fact')({ ...FACT, file: 'facts/projects.md' })).rejects.toThrow(
+        'Not saved',
+      );
+      expect(() => readFileSync(join(outside, 'projects.md'))).toThrow();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('keepsConfirmed', () => {
@@ -350,6 +526,9 @@ describe('keepsConfirmed', () => {
       keepsConfirmed(ACME, ACME.replace('`live` `led-and-built`', '`unconfirmed` `live`')),
     ).toBe(false);
     expect(keepsConfirmed(ACME, ACME.replace('### Reminder texts', '### Reminders'))).toBe(true);
+    // Two of the same, then one, is a claim gone.
+    const twice = `${ACME}\n### Scheduling platform\n\`live\` \`led-and-built\` \`high\`\n> Built a scheduling platform used by 40 clinics.\n- **Source:** Alex 2026-10-01\n`;
+    expect(keepsConfirmed(twice, ACME)).toBe(false);
   });
 });
 
@@ -369,10 +548,12 @@ describe('save_gap', () => {
     );
     expect(filed).toHaveBeenCalledWith({ facts: [], gaps: 1 });
     // The same topic again stays as it was, and uses up nothing.
-    answered({ [GRAPHQL]: 'No' });
-    expect(await tool('save_gap')({ topic: 'kafka', question: GRAPHQL })).toBe(
+    const asked = 'Have you used Kafka Streams?';
+    answered({ [asked]: 'No' });
+    expect(await tool('save_gap')({ topic: 'kafka', question: asked })).toBe(
       '“kafka” is in facts/gaps.md under Doesn’t have already.',
     );
+    expect(await tool('save_gap')({ topic: 'Kafka Streams', question: asked })).toMatch(/^Noted/);
   });
 
   it('starts gaps.md when there’s none, and files nothing the user wasn’t asked', async () => {
@@ -385,36 +566,41 @@ describe('save_gap', () => {
     expect(read('facts/gaps.md')).toContain(`| Kafka | No (asked “${KAFKA}”) | 2026-10-14 |`);
   });
 
-  it('notes nothing from a yes', async () => {
+  it('notes nothing from a yes, a pick about using a fact, or a topic nobody asked about', async () => {
     answered({ [KAFKA]: 'Yes, in production' });
     await expect(tool('save_gap')({ topic: 'Kafka', question: KAFKA })).rejects.toThrow(
       'Not saved: the user answered “Yes, in production”, a yes. Save what they have with save_fact instead.',
     );
+    answered({ [OFFER]: "Don't use" });
+    await expect(tool('save_gap')({ topic: 'reminder texts', question: OFFER })).rejects.toThrow(
+      'answers whether to use a fact',
+    );
+    answered({ [GRAPHQL]: 'No' });
+    await expect(tool('save_gap')({ topic: 'Python', question: GRAPHQL })).rejects.toThrow(
+      'Not saved: “Python” isn’t in the question or the user’s answer.',
+    );
     expect(read('facts/gaps.md')).toBe(GAPS);
   });
 
-  it('notes one gap for each answer', async () => {
+  it('notes one gap for each answer, even asked for twice at once', async () => {
     answered({ [KAFKA]: 'No' });
-    await tool('save_gap')({ topic: 'Kafka', question: KAFKA });
-    await expect(tool('save_gap')({ topic: 'Pulsar', question: KAFKA })).rejects.toThrow(
-      'has been used for as much as one answer can back',
-    );
+    const results = await Promise.allSettled([
+      tool('save_gap')({ topic: 'Kafka', question: KAFKA }),
+      tool('save_gap')({ topic: 'event streaming', question: KAFKA }),
+    ]);
+    expect(results.map((each) => each.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(read('facts/gaps.md').match(/\| Kafka \||\| event streaming \|/g)).toHaveLength(1);
   });
 });
 
 describe('verify_fact', () => {
-  const ASKED =
-    'Your fact bank has “Reminder texts”: “Shipped appointment reminder texts.” Can I use it?';
+  const VERIFY = { file: 'facts/acme.md', title: 'Reminder texts', question: OFFER };
 
   it('verifies a fact on the user’s own pick, as the app does', async () => {
-    answered({ [ASKED]: 'Use and verify' });
-    expect(
-      await tool('verify_fact')({
-        file: 'facts/acme.md',
-        title: 'Reminder texts',
-        question: ASKED,
-      }),
-    ).toBe('Verified “Reminder texts”, on the user’s pick. Use it as any verified fact.');
+    answered({ [OFFER]: 'Use and verify' });
+    expect(await tool('verify_fact')(VERIFY)).toBe(
+      'Verified “Reminder texts”, on the user’s pick. Use it as any verified fact.',
+    );
     expect(read('facts/acme.md')).toBe(
       ACME.replace(
         '`unconfirmed` `shipped` `solo` `medium`\n> Shipped appointment reminder texts.\n- **Source:** resume alex.pdf 2026-10-10',
@@ -423,24 +609,64 @@ describe('verify_fact', () => {
     );
   });
 
-  it('verifies nothing on any other answer, or a question that doesn’t name it', async () => {
-    answered({ [ASKED]: 'Use this once' });
-    await expect(
-      tool('verify_fact')({ file: 'facts/acme.md', title: 'Reminder texts', question: ASKED }),
-    ).rejects.toThrow('Not verified: the user answered “Use this once”, not “Use and verify”.');
-    const vague = 'Can I use Reminder texts, the fact about texts?';
-    answered({ [vague]: 'Use and verify' });
-    await expect(
-      tool('verify_fact')({ file: 'facts/acme.md', title: 'Reminder texts', question: vague }),
-    ).rejects.toThrow('Not verified: the question doesn’t name “Reminder texts”.');
-    await expect(
-      tool('verify_fact')({ file: 'facts/acme.md', title: 'Reminder texts', question: GRAPHQL }),
-    ).rejects.toThrow('Factwright has no record of the user answering');
+  it('verifies nothing on any other answer, or with notes the user added', async () => {
+    answered({ [OFFER]: 'Use this once' });
+    await expect(tool('verify_fact')(VERIFY)).rejects.toThrow(
+      'Not verified: the user answered “Use this once”, not “Use and verify”.',
+    );
+    answered({ [OFFER]: 'Use and verify' }, { [OFFER]: 'It was two clinics, not all' });
+    await expect(tool('verify_fact')(VERIFY)).rejects.toThrow(
+      'Not verified: the user added “It was two clinics, not all”. Correct the fact with save_fact and replaces',
+    );
     expect(read('facts/acme.md')).toBe(ACME);
   });
 
+  it('verifies only the words the user saw, in a question naming the fact', async () => {
+    const vague = 'Can I use Reminder texts, the fact about texts?';
+    answered({ [vague]: 'Use and verify' });
+    await expect(tool('verify_fact')({ ...VERIFY, question: vague })).rejects.toThrow(
+      'Not verified: the question doesn’t name “Reminder texts”.',
+    );
+    const titleOnly = 'Can I use “Reminder texts”?';
+    answered({ [titleOnly]: 'Use and verify' });
+    await expect(tool('verify_fact')({ ...VERIFY, question: titleOnly })).rejects.toThrow(
+      'Not verified: the question doesn’t quote what “Reminder texts” says now.',
+    );
+    await expect(tool('verify_fact')({ ...VERIFY, question: GRAPHQL })).rejects.toThrow(
+      'Factwright has no record of the user answering',
+    );
+    expect(read('facts/acme.md')).toBe(ACME);
+  });
+
+  it('never verifies a fact this run saved, or put new words in', async () => {
+    // A fact titled as the question quotes the old words, saved with words of its own, isn't
+    // what the user saw.
+    answered({ [OFFER]: 'Use and verify' });
+    const planted = 'Shipped appointment reminder texts.';
+    answered({ [GRAPHQL]: 'Yes, in production' });
+    await tool('save_fact')({ ...FACT, file: 'facts/projects.md', title: planted });
+    await expect(
+      tool('verify_fact')({ file: 'facts/projects.md', title: planted, question: OFFER }),
+    ).rejects.toThrow(`Not verified: “${planted}” was saved in this run`);
+    // And one this run corrected is the user's to verify in the Fact bank.
+    const corrected = `${OFFER} Or is it out of date?`;
+    answered({ [corrected]: 'Only at two clinics' });
+    await tool('save_fact')({
+      ...FACT,
+      title: 'Reminder texts',
+      replaces: 'Reminder texts',
+      wording: 'Piloted reminder texts at two clinics.',
+      keywords: 'reminder texts',
+      questions: [corrected],
+    });
+    await expect(tool('verify_fact')(VERIFY)).rejects.toThrow(
+      'Not verified: “Reminder texts” was saved in this run',
+    );
+  });
+
   it('says when a fact is verified already, or not there', async () => {
-    const asked = 'Can I use “Scheduling platform”?';
+    const asked =
+      'Can I use “Scheduling platform”: “Built a scheduling platform used by 40 clinics.”?';
     answered({ [asked]: 'Use and verify' });
     expect(
       await tool('verify_fact')({

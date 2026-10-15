@@ -131,13 +131,38 @@ export function App({ api }: { api: FactwrightApi }) {
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
   const [picked, setPicked] = useState<Page | null>(null);
-  // What the run filed in the fact bank from the user's answers, until they look. A new run
-  // starts with nothing filed.
-  const [filedIn, setFiled] = useState<{ runId: number; facts: FiledFacts } | null>(null);
+  // What the run filed in the fact bank from the user's answers, and how much of it the user
+  // has seen, by opening it or dismissing the note. A new run starts with nothing filed.
+  const [filedIn, setFiled] = useState<{
+    runId: number;
+    facts: FiledFacts;
+    seen: { facts: number; gaps: number };
+  } | null>(null);
   const runId = useRef(run.runId);
   runId.current = run.runId;
-  useEffect(() => api.onFactsFiled((facts) => setFiled({ runId: runId.current, facts })), [api]);
-  const filed = filedIn?.runId === run.runId ? filedIn.facts : null;
+  useEffect(
+    () =>
+      api.onFactsFiled((facts) =>
+        setFiled((was) => ({
+          runId: runId.current,
+          facts,
+          seen: was?.runId === runId.current ? was.seen : { facts: 0, gaps: 0 },
+        })),
+      ),
+    [api],
+  );
+  // Only what's new since the user last looked.
+  const filed: FiledFacts | null =
+    filedIn?.runId === run.runId
+      ? {
+          facts: filedIn.facts.facts.slice(filedIn.seen.facts),
+          gaps: Math.max(0, filedIn.facts.gaps - filedIn.seen.gaps),
+        }
+      : null;
+  const seeFiled = () =>
+    setFiled((was) =>
+      was ? { ...was, seen: { facts: was.facts.facts.length, gaps: was.facts.gaps } } : was,
+    );
   // A part of the fact bank to go to, such as the facts a run just filed.
   const [factsShown, setFactsShown] = useState<{ part: 'unverified' | 'gaps'; at: number } | null>(
     null,
@@ -420,11 +445,11 @@ export function App({ api }: { api: FactwrightApi }) {
             title={runTitle}
             filed={filed}
             onReviewFiled={(part) => {
-              setFiled(null);
+              seeFiled();
               setPicked('facts');
               setFactsShown((was) => ({ part, at: (was?.at ?? 0) + 1 }));
             }}
-            onDismissFiled={() => setFiled(null)}
+            onDismissFiled={seeFiled}
           />
         </div>
       </div>

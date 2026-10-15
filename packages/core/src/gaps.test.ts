@@ -134,6 +134,56 @@ describe('withGap', () => {
   });
 });
 
+describe('the shapes a gaps file comes in', () => {
+  it('finds the section under a deeper heading, or its name in bold, so a topic isn’t added twice', () => {
+    const deep =
+      '# Gaps\n\n## Notes\n\n#### Doesn’t have\n- **Rust:** No (2026-10-01)\n\n## Open questions\n';
+    expect(hasGap(deep, 'Rust')).toBe(true);
+    expect(withGap(deep, NO)).toBe(
+      deep.replace(
+        '(2026-10-01)\n',
+        '(2026-10-01)\n- **GraphQL:** No (asked “Have you used GraphQL?”) (2026-10-14)\n',
+      ),
+    );
+    const bold =
+      "# Gaps\n\n**Doesn't have** (settled)\n| Topic | Their answer | Date |\n|---|---|---|\n| Rust | No | 2026-10-01 |\n\n**Open questions**\n- One\n";
+    expect(doesntHave(bold)?.rows.map((row) => row.topic)).toEqual(['Rust']);
+    expect(withGap(bold, NO)).toContain('| Rust | No | 2026-10-01 |\n| GraphQL |');
+    expect(withGap(bold, NO).match(/Doesn't have/g)).toHaveLength(1);
+  });
+
+  it('counts only a list’s own items, and numbers a new one in an ordered list', () => {
+    const nested = "## Doesn't have\n- **Rust:** No\n  - asked while tailoring for Fernway\n- Go\n";
+    expect(doesntHave(nested)?.rows.map((row) => row.topic)).toEqual(['Rust', 'Go']);
+    const ordered = "## Doesn't have\n1. Rust\n2. Go\n";
+    expect(doesntHave(ordered)?.rows.map((row) => row.topic)).toEqual(['Rust', 'Go']);
+    expect(withGap(ordered, NO)).toBe(
+      "## Doesn't have\n1. Rust\n2. Go\n3. **GraphQL:** No (asked “Have you used GraphQL?”) (2026-10-14)\n",
+    );
+  });
+
+  it('reads a topic that has a colon of its own', () => {
+    const list = "## Doesn't have\n- **C++: templates:** No\n- Kafka: no, only RabbitMQ\n";
+    expect(doesntHave(list)?.rows.map(({ topic, answer }) => [topic, answer])).toEqual([
+      ['C++: templates', 'No'],
+      ['Kafka', 'no, only RabbitMQ'],
+    ]);
+    expect(hasGap(list, 'c++: TEMPLATES')).toBe(true);
+  });
+
+  it('keeps a new table apart from the words before it', () => {
+    expect(withGap("## Doesn't have\nNothing yet.\n\n## Open questions\n", NO)).toBe(
+      "## Doesn't have\nNothing yet.\n\n| Topic | Their answer | Date |\n|---|---|---|\n| GraphQL | No (asked “Have you used GraphQL?”) | 2026-10-14 |\n\n## Open questions\n",
+    );
+  });
+
+  it('reads a long heading line in a moment', () => {
+    const started = Date.now();
+    doesntHave(`##${' '.repeat(50_000)}x${' '.repeat(50_000)}#\n**${'a'.repeat(50_000)}`);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+});
+
 describe('newGapsFile', () => {
   it('starts a gaps file with the bank’s sections and the one row', () => {
     const file = newGapsFile(NO);
