@@ -271,6 +271,8 @@ export interface FactwrightApi {
   openFile(path: string): Promise<EditResult>;
   /** A resume PDF's bytes, to show its pages in the window. */
   readPdf(path: string): Promise<PdfResult>;
+  /** A resume Word file's bytes, for its ATS X-ray. Answers as readPdf does. */
+  readWord(path: string): Promise<PdfResult>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

@@ -278,6 +278,9 @@ importers:
       '@factwright/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@factwright/xray':
+        specifier: workspace:*
+        version: link:../../packages/xray
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.63.0

@@ -90,6 +90,11 @@ export function previewablePdf(workspace: string, path: string): string | null {
   return /\.pdf$/i.test(path) ? openableFile(workspace, path) : null;
 }
 
+/** A Word file inside the workspace that the window may read, for its X-ray, or null. */
+export function readableWord(workspace: string, path: string): string | null {
+  return /\.docx$/i.test(path) ? openableFile(workspace, path) : null;
+}
+
 /** The file a URL path names inside `root`, or null if it would reach outside it. */
 export function resolveInside(root: string, urlPath: string): string | null {
   let decoded: string;

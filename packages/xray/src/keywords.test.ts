@@ -18,6 +18,18 @@ describe('matchKeywords', () => {
     ]);
   });
 
+  it('takes another form of the same word as the posting’s own', () => {
+    const report = matchKeywords(
+      posting(['Mentor engineers', 'Own the roadmap']),
+      'Mentoring. Roadmapping.',
+      null,
+    );
+    expect(report.terms.map(({ term, otherName }) => [term, otherName])).toEqual([
+      ['Mentor', false],
+      ['roadmap', false],
+    ]);
+  });
+
   it('backs a missing term with a confirmed claim before an unconfirmed one', () => {
     const facts = readFacts([
       {

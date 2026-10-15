@@ -34,6 +34,7 @@
     "@factwright/server": "workspace:*",
     "@factwright/sync": "workspace:*",
     "@factwright/ui": "workspace:*",
+    "@factwright/xray": "workspace:*",
     "@testing-library/dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@testing-library/user-event": "catalog:",

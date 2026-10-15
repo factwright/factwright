@@ -1,4 +1,11 @@
-export { type Check, type CheckId, type CheckStatus, inWords } from './checks.ts';
+export {
+  type Check,
+  type CheckId,
+  type CheckStatus,
+  inWords,
+  type TextMark,
+  textMarks,
+} from './checks.ts';
 export { type DateForm, type DateRange, dateRanges, formOf } from './dates.ts';
 export { readDocx } from './docx.ts';
 export { type FactFile, type FactTerms, readFacts } from './facts.ts';

@@ -55,6 +55,30 @@ const JOINED = /[\u{FB00}-\u{FB06}]/u;
 /** Three or more letters with a space after each, as letter spacing can make a word read. */
 const SPACED = /(?<![\p{L}\p{N}])(?:\p{L} ){2,}\p{L}(?![\p{L}\p{N}])/gu;
 
+/** A stretch of a line worth marking: a character systems can't read, joined letters, or spaced ones. */
+export interface TextMark {
+  kind: 'junk' | 'joined' | 'spaced';
+  /** Where it is in the line, from `start` up to but not including `end`. */
+  start: number;
+  end: number;
+}
+
+/** The stretches of a line the checks find, in order, to mark where they are. */
+export function textMarks(text: string): TextMark[] {
+  const marks: TextMark[] = [];
+  for (const [kind, pattern] of [
+    ['junk', new RegExp(JUNK.source, 'gu')],
+    ['joined', new RegExp(JOINED.source, 'gu')],
+    ['spaced', SPACED],
+  ] as const) {
+    for (const match of text.matchAll(pattern)) {
+      const start = match.index ?? 0;
+      marks.push({ kind, start, end: start + match[0].length });
+    }
+  }
+  return marks.sort((a, b) => a.start - b.start);
+}
+
 /** Fonts that draw pictures in place of letters. */
 const ICON_FONT = /awesome|icon|glyph|symbol|dingbat|wingding|webding|material|feather|ionic/i;
 

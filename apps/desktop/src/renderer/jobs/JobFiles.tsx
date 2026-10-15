@@ -2,8 +2,9 @@ import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
 import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { XRayDialog } from '../xray/XRayDialog.tsx';
 import styles from './JobPanel.module.css';
 import { PanelSection } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
@@ -19,12 +20,25 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
 
+/** A file's name without its extension, which a resume's PDF and Word file share. */
+const stem = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
+
 /** A job's resumes, which open in the user's own app, and its documents, which open here. */
 export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
   const [preview, setPreview] = useState<JobFile | null>(null);
+  const [xray, setXray] = useState<JobFile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+
+  // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes.
+  const posting = useCallback(async () => {
+    const loaded = await api.jobDocs(job.id);
+    return loaded?.posting ?? loaded?.job ?? null;
+  }, [api, job.id]);
+  /** A resume's PDF and Word file, which share a name, for the X-ray to switch between. */
+  const sameResume = (file: JobFile) =>
+    job.files.filter((each) => stem(each.name) === stem(file.name));
 
   // Older folders keep the posting inside the job notes.
   const documents = DOCUMENTS.filter(({ kind }) => job.docKinds.includes(kind)).map((doc) =>
@@ -71,24 +85,34 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
                   {shortDate(file.modified, today)}
                 </span>
               </span>
-              {file.format === 'pdf' && (
+              <span className={styles.fileActions}>
+                {file.format === 'pdf' && (
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    aria-label={`Preview ${file.name}`}
+                    onClick={() => setPreview(file)}
+                  >
+                    Preview
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="quiet"
-                  aria-label={`Preview ${file.name}`}
-                  onClick={() => setPreview(file)}
+                  aria-label={`ATS X-ray of ${file.name}`}
+                  onClick={() => setXray(file)}
                 >
-                  Preview
+                  ATS X-ray
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant="quiet"
-                aria-label={`Open ${file.name}`}
-                onClick={() => openFile(file.path)}
-              >
-                Open
-              </Button>
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  aria-label={`Open ${file.name}`}
+                  onClick={() => openFile(file.path)}
+                >
+                  Open
+                </Button>
+              </span>
             </li>
           ))}
           {documents.map(({ kind, name, about }) => (
@@ -121,6 +145,15 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
         </Dialog>
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
+      {xray && (
+        <XRayDialog
+          api={api}
+          files={sameResume(xray)}
+          start={xray.path}
+          posting={posting}
+          onClose={() => setXray(null)}
+        />
+      )}
     </PanelSection>
   );
 }

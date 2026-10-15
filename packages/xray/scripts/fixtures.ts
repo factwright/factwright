@@ -107,8 +107,80 @@ function longResume(): Resume {
   };
 }
 
+/**
+ * A made-up engineer, Alex Rivera, whose resume matches the fact bank and jobs the desktop app's
+ * sample screens show, so the screens can show a real X-ray.
+ */
+function engineerResume(): Resume {
+  return {
+    name: 'Alex Rivera',
+    headline: 'Staff Platform Engineer',
+    tagline: 'Developer platforms · Kubernetes · Go',
+    contact: {
+      phone: '(555) 019-4420',
+      email: 'alex@example.com',
+      linkedin: 'linkedin.com/in/alex-rivera',
+      location: 'Denver, CO',
+    },
+    summary:
+      'Platform engineer who builds the tools other engineers rely on. Moved twelve services onto one deploy pipeline, and took over and finished offline sync for a field app used by 3,000 technicians.',
+    impact_stats: [
+      { value: '~40%', label: 'Faster deploys' },
+      { value: '12', label: 'Services on one pipeline' },
+      { value: '3,000', label: 'Technicians on the field app' },
+    ],
+    competencies: ['Platform engineering', 'CI/CD', 'Kubernetes', 'Go', 'TypeScript', 'Mentoring'],
+    experience: [
+      {
+        title: 'Platform Engineering Lead',
+        company: 'Tidewater Analytics',
+        company_note: 'Water-quality analytics',
+        location: 'Denver, CO',
+        start: '03/2021',
+        end: 'Present',
+        bullet_groups: [
+          {
+            bullets: [
+              {
+                lead: 'Pipelines',
+                text: 'Moved 12 services onto one deploy pipeline, cutting deploy time **~40%** and on-call pages by half.',
+              },
+              { text: 'Led the team of 6 that runs the platform the other teams ship on.' },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'Software Engineer',
+        company: 'Beacon Labs',
+        company_note: 'Field-service scheduling',
+        location: 'Remote',
+        start: '06/2016',
+        end: '02/2021',
+        bullet_groups: [
+          {
+            bullets: [
+              {
+                text: 'Took over and finished offline sync for the field app, used by **3,000** technicians.',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    education: [
+      { degree: 'B.S., Computer Science', school: 'Colorado State University', end: '2012' },
+    ],
+    skills: [
+      { category: 'Languages', items: ['Go', 'TypeScript'] },
+      { category: 'Platform', items: ['Kubernetes', 'CI/CD'] },
+    ],
+  };
+}
+
 const PDFS: [name: string, template: Template, resume: Resume][] = [
   ['classic', classic, previewResume()],
+  ['engineer', classic, engineerResume()],
   ['minimal', minimal, previewResume()],
   ['sidebar', sidebar, previewResume()],
   ['spaced', spaced, previewResume()],
@@ -294,14 +366,12 @@ app.whenReady().then(async () => {
     );
     console.log(`Printed ${name}.pdf`);
   }
-  for (const [name, template] of [
-    ['classic', classic],
-    ['minimal', minimal],
+  for (const [name, template, resume] of [
+    ['classic', classic, previewResume()],
+    ['minimal', minimal, previewResume()],
+    ['engineer', classic, engineerResume()],
   ] as const) {
-    writeFileSync(
-      new URL(`${name}.docx`, OUT),
-      Buffer.from(await docxFile(previewResume(), template)),
-    );
+    writeFileSync(new URL(`${name}.docx`, OUT), Buffer.from(await docxFile(resume, template)));
     console.log(`Built ${name}.docx`);
   }
   for (const [name, document] of DOCXES) {

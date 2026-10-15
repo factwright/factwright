@@ -129,7 +129,10 @@ export function matchKeywords(
     // The form the posting uses, which the resume may have by another name.
     const asked = found.forms.find((form) => findTerm(text, { name: form.text, forms: [form] }));
     const otherName =
-      !!inResume && !!asked && !findTerm(resume, { name: asked.text, forms: [asked] });
+      !!inResume &&
+      !!asked &&
+      !findTerm(resume, { name: asked.text, forms: [asked] }) &&
+      !sameWord(inResume, text);
     seen.set(key, {
       term: text,
       need,
@@ -152,6 +155,21 @@ export function matchKeywords(
     ...terms.filter((each) => each.need === 'nice'),
   ];
   return { sectioned, terms: ordered.slice(0, MAX_TERMS) };
+}
+
+/** Endings that make another form of the same word, such as "mentoring" for "mentor". */
+const ENDINGS = /^(?:s|es|d|ed|ing|[bdgmnpt]ing|[bdgmnpt]ed|er|ers|ship|ment|ments)$/;
+
+/** Whether two words are forms of one, such as "Mentoring" and "mentor", not another name. */
+function sameWord(a: string, b: string): boolean {
+  const [short, long] = [a, b]
+    .map((word) =>
+      plain(word)
+        .toLowerCase()
+        .replace(/[\s-]+/g, ''),
+    )
+    .sort((x, y) => x.length - y.length) as [string, string];
+  return long === short || (long.startsWith(short) && ENDINGS.test(long.slice(short.length)));
 }
 
 /** A posting's line, shortened to show beside its term. */

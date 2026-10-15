@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CheckId, inWords, runChecks } from './checks.ts';
+import { type CheckId, inWords, runChecks, textMarks } from './checks.ts';
 import { readFields } from './fields.ts';
 import type { Line, ReadFile } from './read.ts';
 import { findSections } from './sections.ts';
@@ -171,5 +171,16 @@ describe('inWords', () => {
       'A and B',
       'A, B and C',
     ]);
+  });
+});
+
+describe('textMarks', () => {
+  it('marks junk, joined letters and spaced ones, in order', () => {
+    expect(textMarks('\u{E001} eﬃcient S U M M A R Y')).toEqual([
+      { kind: 'junk', start: 0, end: 1 },
+      { kind: 'joined', start: 3, end: 4 },
+      { kind: 'spaced', start: 10, end: 23 },
+    ]);
+    expect(textMarks('Plain text')).toEqual([]);
   });
 });

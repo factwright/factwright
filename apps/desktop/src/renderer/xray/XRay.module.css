@@ -1,0 +1,591 @@
+/* The summary and, for a resume with both files, the switch between them. */
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-4);
+  min-height: 44px;
+  margin-bottom: 14px;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+  min-width: 0;
+}
+
+.summaryOk,
+.summaryFix {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.summaryOk {
+  color: var(--fw-ok);
+}
+
+.summaryFix {
+  color: var(--fw-need);
+}
+
+.summaryText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.summaryHeadline {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.summaryRest {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-md);
+}
+
+/* The text on one side, and the report on the other, each scrolling on its own. */
+.panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  gap: var(--fw-space-4);
+  /* As tall as the window allows, so the dialog itself never needs to scroll. */
+  height: clamp(240px, calc(100vh - 320px), 720px);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.pane:last-child {
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-3) 0 0;
+}
+
+.pane:last-child > fieldset {
+  margin: 0 var(--fw-space-3);
+}
+
+.paneTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fw-border);
+  font-size: var(--fw-text-sm);
+  font-weight: 650;
+}
+
+.paneNote {
+  color: var(--fw-muted);
+  font-weight: 400;
+}
+
+/* The text as a parser gets it: plain, in a typewriter face, on a sunken page. */
+.text {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 10px 8px 14px;
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.pageBreak {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  margin: 14px 6px 8px;
+  color: var(--fw-muted);
+  font-family: var(--fw-font-sans);
+  font-size: var(--fw-text-xs);
+}
+
+.pageBreak::before,
+.pageBreak::after {
+  flex: 1 1 auto;
+  border-top: 1px dashed var(--fw-control-border);
+  content: "";
+}
+
+.lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  padding: 1px 6px;
+  border-left: 2px solid transparent;
+  border-radius: 0 4px 4px 0;
+}
+
+.lineText {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* A line too long for the pane goes on indented, so it reads as one line, not two. */
+  padding-left: 2ch;
+  text-indent: -2ch;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+  white-space: pre-wrap;
+}
+
+.headingLine {
+  margin-top: 8px;
+  font-weight: 700;
+}
+
+/* Text in a Word file's header, footer or a text box, which many systems skip. */
+.aside .lineText {
+  color: var(--fw-muted);
+  font-style: italic;
+}
+
+.flagged {
+  border-left-color: var(--fw-need);
+}
+
+.shown {
+  background: var(--fw-need-soft);
+}
+
+.tag,
+.tagQuiet {
+  flex: 0 0 auto;
+  padding: 0 7px;
+  border-radius: var(--fw-radius-full);
+  font-family: var(--fw-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tag {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.tagQuiet {
+  background: var(--fw-tone-gray-bg);
+  color: var(--fw-tone-gray-fg);
+}
+
+/* What the checks find in a line: a character systems can't read, or letters joined or spaced. */
+.junk {
+  display: inline-block;
+  min-width: 1.3em;
+  margin: 0 1px;
+  border-radius: 3px;
+  background: var(--fw-bad-soft);
+  color: var(--fw-bad);
+  font-weight: 700;
+  text-align: center;
+}
+
+.joined,
+.spaced {
+  background: var(--fw-need-soft);
+  color: inherit;
+  text-decoration: underline wavy var(--fw-need);
+  text-underline-offset: 3px;
+}
+
+/* The report beside the text. */
+.report {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px var(--fw-space-3) var(--fw-space-4);
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 var(--fw-space-2);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.groupCount {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.problems,
+.passes,
+.terms,
+.entries {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.problems,
+.terms {
+  gap: var(--fw-space-2);
+}
+
+.passes {
+  gap: 6px;
+}
+
+.entries {
+  gap: 10px;
+}
+
+.problemCheck {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  padding: var(--fw-space-3);
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+.fix,
+.note,
+.pass {
+  display: inline-flex;
+  padding-top: 2px;
+}
+
+.fix {
+  color: var(--fw-need);
+}
+
+.note {
+  color: var(--fw-accent-text);
+}
+
+.pass {
+  color: var(--fw-ok);
+}
+
+.checkBody {
+  min-width: 0;
+}
+
+.checkName {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+}
+
+.checkSummary {
+  margin: 1px 0 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.checkDetail {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.examples code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.link {
+  margin-top: var(--fw-space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.passCheck {
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  font-size: 13px;
+}
+
+.passCheck .pass {
+  padding-top: 0;
+  align-self: center;
+}
+
+.passName {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.passSummary {
+  min-width: 0;
+  color: var(--fw-muted);
+}
+
+/* Keywords. */
+.honest {
+  margin: 0;
+  padding: 10px var(--fw-space-3);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-size: var(--fw-text-sm);
+  line-height: 1.5;
+}
+
+.termGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.term {
+  padding: 10px var(--fw-space-3);
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+}
+
+.termHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+}
+
+.termName {
+  min-width: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.advice {
+  flex: 0 0 auto;
+  padding: 1px 9px;
+  border-radius: var(--fw-radius-full);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.add {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.confirm {
+  background: var(--fw-tone-amber-bg);
+  color: var(--fw-tone-amber-fg);
+}
+
+.termWhy {
+  margin: 5px 0 0;
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.termContext {
+  margin: 4px 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  line-height: 1.45;
+}
+
+.chips,
+.skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.foundTerm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+}
+
+.gapTerm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-tone-gray-bg);
+  color: var(--fw-tone-gray-fg);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+}
+
+.foundAs {
+  font-weight: 450;
+}
+
+.footnote {
+  margin: 6px 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  line-height: 1.45;
+}
+
+/* What it fills in. */
+.rows {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+
+.row dt {
+  color: var(--fw-muted);
+}
+
+.row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.missing {
+  color: var(--fw-need);
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.entryTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.entryMeta {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.skills li {
+  padding: 2px 9px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  font-size: var(--fw-text-sm);
+}
+
+.sectionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: baseline;
+  gap: var(--fw-space-3);
+}
+
+.sectionTitle {
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.sectionKind {
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+}
+
+.sectionUnknown {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  line-height: 1.4;
+}
+
+.status,
+.empty,
+.problem {
+  margin: 0;
+  font-size: var(--fw-text-md);
+}
+
+.status,
+.problem {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: center;
+}
+
+.status,
+.empty {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+/* A quiet word, at the left of the buttons, that it all happened on this computer. */
+.private {
+  margin: 0 auto 0 0;
+  align-self: center;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}

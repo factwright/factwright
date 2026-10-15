@@ -203,7 +203,7 @@ describe('keywords against a posting', () => {
       OKRs: 'must facts',
       KPIs: 'must none',
       'stakeholder management': 'must unconfirmed',
-      roadmap: 'nice found as Roadmapping',
+      roadmap: 'nice found',
       retention: 'nice facts',
       'A/B testing': 'nice found',
       'data science': 'nice found',
