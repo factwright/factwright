@@ -1,4 +1,5 @@
 import {
+  type Backing,
   type Check,
   type CheckId,
   type CheckStatus,
@@ -140,33 +141,54 @@ export function ChecksView({
   );
 }
 
-/** What to do about a term the fact bank has, and why: add it, or confirm it first. */
-const ADVICE = {
-  facts: {
-    label: 'Add it',
-    tone: styles.add,
-    why: (where: string) => `Your fact bank backs it: ${where}.`,
-  },
-  'to-check': {
-    label: 'Check it first',
-    tone: styles.confirm,
-    why: (where: string) =>
-      `Only a claim you haven’t checked yet has it: ${where}. Check it in the Fact bank, then add it.`,
-  },
-  doubted: {
-    label: 'Check it first',
-    tone: styles.confirm,
-    why: (where: string) =>
-      `Your fact bank says it needs confirming: “${where}”. Confirm it in the Fact bank first.`,
-  },
-} as const;
+/** A missing term's backing when the fact bank has it, to add now or once it's checked. */
+type ToAdd = Extract<Backing, { kind: 'facts' | 'unread' | 'to-check' | 'doubted' | 'dont-claim' }>;
+
+const TO_ADD: ReadonlySet<Backing['kind']> = new Set([
+  'facts',
+  'unread',
+  'to-check',
+  'doubted',
+  'dont-claim',
+]);
+
+const isToAdd = (backing: Backing): backing is ToAdd => TO_ADD.has(backing.kind);
+
+/** What to do about a term the fact bank has, and why: add it, or check it first. */
+function adviceOf(backing: ToAdd): { label: string; tone: string | undefined; why: string } {
+  const check = { label: 'Check it first', tone: styles.confirm };
+  switch (backing.kind) {
+    case 'facts':
+      return {
+        label: 'Add it',
+        tone: styles.add,
+        why: `Your fact bank backs it: ${backing.where}.`,
+      };
+    case 'unread':
+      return {
+        ...check,
+        why: `Your fact bank backs it: ${backing.where}. Some of its files couldn’t be read, so check none of them says otherwise.`,
+      };
+    case 'to-check':
+      return {
+        ...check,
+        why: `Only a claim you haven’t checked yet has it: ${backing.where}. Check it in the Fact bank, then add it.`,
+      };
+    case 'doubted':
+      return {
+        ...check,
+        why: `Your fact bank says it needs confirming: “${backing.where}”. Confirm it in the Fact bank first.`,
+      };
+    case 'dont-claim':
+      return {
+        ...check,
+        why: `${backing.where} says: “${backing.said}”. Add it only as that allows.`,
+      };
+  }
+}
 
 /** Whether a missing term is one the fact bank has, to add now or once it's checked. */
-const toAdd = (term: KeyTerm) =>
-  !term.found &&
-  (term.backing.kind === 'facts' ||
-    term.backing.kind === 'to-check' ||
-    term.backing.kind === 'doubted');
+const toAdd = (term: KeyTerm) => !term.found && isToAdd(term.backing);
 
 /** Whether a missing term is a real gap, or one the user said they don't have. */
 const isGap = (term: KeyTerm) =>
@@ -174,17 +196,15 @@ const isGap = (term: KeyTerm) =>
 
 /** A missing term the fact bank has: what to do, why, and where the posting asks for it. */
 function TermToAdd({ term }: { term: KeyTerm }) {
-  const backing = term.backing;
-  if (backing.kind !== 'facts' && backing.kind !== 'to-check' && backing.kind !== 'doubted')
-    return null;
-  const advice = ADVICE[backing.kind];
+  if (!isToAdd(term.backing)) return null;
+  const advice = adviceOf(term.backing);
   return (
     <li className={styles.term}>
       <div className={styles.termHead}>
         <span className={styles.termName}>{term.term}</span>
         <span className={`${styles.advice} ${advice.tone}`}>{advice.label}</span>
       </div>
-      <p className={styles.termWhy}>{advice.why(backing.where)}</p>
+      <p className={styles.termWhy}>{advice.why}</p>
       <p className={styles.termContext}>From the posting: “{term.context}”</p>
     </li>
   );
@@ -250,7 +270,11 @@ function TermGroup({
                 <li
                   key={term.term}
                   className={styles.gapTerm}
-                  title={`From the posting: “${term.context}”`}
+                  title={
+                    term.backing.kind === 'said-no'
+                      ? `You said: “${term.backing.where}”`
+                      : `From the posting: “${term.context}”`
+                  }
                 >
                   <Minus size={12} strokeWidth={2.8} aria-hidden="true" />
                   {term.term}
@@ -303,6 +327,9 @@ export function KeywordsView({ result, hasPosting }: { result: XRay; hasPosting:
       <p className={styles.honest}>
         Add a term only where your fact bank backs it. A real gap stays off: every line of a resume
         comes from a fact you’ve confirmed.
+        {keywords.bank === 'some' &&
+          ' Some of your fact bank’s files couldn’t be read, so what it backs says to check it first.'}
+        {keywords.bank === 'none' && ' Your fact bank couldn’t be read, so no term says to add it.'}
       </p>
       <TermGroup
         title={keywords.sectioned ? 'Must-haves' : 'Key terms'}

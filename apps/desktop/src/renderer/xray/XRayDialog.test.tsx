@@ -90,11 +90,15 @@ const FACTS = bank({
     '### Repeat booking program\n`shipped` `led-and-built` `high`\n- **Keywords:** user research',
 });
 
-function apiStub(word: PdfResult, pdf: PdfResult = { ok: true, data: new Uint8Array([1]) }) {
+function apiStub(
+  word: PdfResult,
+  pdf: PdfResult = { ok: true, data: new Uint8Array([1]) },
+  facts: FactBank = FACTS,
+) {
   return {
     readPdf: vi.fn(async () => pdf),
     readWord: vi.fn(async () => word),
-    factBank: vi.fn(async () => FACTS),
+    factBank: vi.fn(async () => facts),
     copyText: vi.fn(async () => ({ ok: true }) as const),
   } as unknown as FactwrightApi & {
     readWord: ReturnType<typeof vi.fn>;
@@ -139,6 +143,25 @@ describe('XRayDialog', () => {
     expect(screen.getByText('jordan.avery@example.com')).toBeTruthy();
     const jobs = screen.getByRole('region', { name: 'Jobs' });
     expect(within(jobs).getByText('Senior Product Manager')).toBeTruthy();
+  });
+
+  it('says to check a term first when a file of the fact bank couldn’t be read', async () => {
+    const skipped: FactBank = { ...FACTS, skipped: [{ path: 'facts/gaps.md', why: 'big' }] };
+    render(
+      <XRayDialog
+        api={apiStub({ ok: true, data: await resumeWord() }, undefined, skipped)}
+        files={[WORD]}
+        start={WORD.path}
+        posting={async () => POSTING}
+        onClose={vi.fn()}
+      />,
+    );
+    await screen.findByText('Reads cleanly');
+    await userEvent.click(screen.getByText('Keywords'));
+    const nice = screen.getByRole('region', { name: 'Nice to have' });
+    expect(within(nice).getByText('Check it first')).toBeTruthy();
+    expect(within(nice).queryByText('Add it')).toBeNull();
+    expect(screen.getByText(/Some of your fact bank’s files couldn’t be read/)).toBeTruthy();
   });
 
   it('lists a problem with what to do, and shows where it is in the text', async () => {

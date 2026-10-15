@@ -1,4 +1,4 @@
-import type { XRay } from '@factwright/xray';
+import type { BankRead, FactFile, XRay } from '@factwright/xray';
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 
@@ -17,17 +17,23 @@ export type XRayState =
 
 type XRayApi = Pick<FactwrightApi, 'readPdf' | 'readWord' | 'factBank'>;
 
-/** The fact bank's files as written, which tell a term the user can add from a real gap. */
-async function factFiles(api: XRayApi) {
+/**
+ * The fact bank's files as written, which tell a term the user can add from a real gap, and how
+ * much of the bank they are. A file it couldn't read could say the user doesn't have a term, so
+ * then nothing it backs says "Add it" without a check.
+ */
+async function factFiles(api: XRayApi): Promise<{ facts: FactFile[] | null; bank: BankRead }> {
   try {
     const bank = await api.factBank();
-    return bank.files.map((file) => ({
+    const facts = bank.files.map((file) => ({
       path: file.path,
       text: file.blocks.map((block) => block.text).join('\n'),
     }));
+    const unread = bank.skipped.some((file) => !/(?:^|\/)readme\.md$/i.test(file.path));
+    return { facts, bank: unread ? 'some' : 'all' };
   } catch {
     // Without the fact bank, every missing term reads as a gap, so nothing gets added.
-    return null;
+    return { facts: null, bank: 'none' };
   }
 }
 
@@ -49,7 +55,7 @@ export function useXRay(
       const read =
         file.format === 'pdf' ? await api.readPdf(file.path) : await api.readWord(file.path);
       if (!read.ok) return { step: 'failed', message: read.message };
-      const [{ readDocx, xray }, text, facts] = await Promise.all([
+      const [{ readDocx, xray }, text, { facts, bank }] = await Promise.all([
         import('@factwright/xray'),
         posting ? posting().catch(() => null) : null,
         factFiles(api),
@@ -58,7 +64,7 @@ export function useXRay(
         file.format === 'pdf'
           ? await (await import('../jobs/pdf.ts')).readResumePdf(read.data)
           : readDocx(read.data);
-      return { step: 'ready', result: xray(parsed, { posting: text, facts }) };
+      return { step: 'ready', result: xray(parsed, { posting: text, facts, bank }) };
     })().then(
       (next) => live && setState(next),
       () =>
