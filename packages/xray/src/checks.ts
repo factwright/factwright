@@ -2,7 +2,7 @@ import { formOf, READABLE, readable } from './dates.ts';
 import type { Fields } from './fields.ts';
 import { marginLines, orderJumps, strayDates, wideColumns } from './layout.ts';
 import type { ReadFile } from './read.ts';
-import { SECTION_NAMES, type Section } from './sections.ts';
+import { SECTION_NAMES, type Section, type SectionKind, splitHeadingKind } from './sections.ts';
 
 /** What each check looks at. */
 export type CheckId =
@@ -338,9 +338,14 @@ function joinedCheck(file: ReadFile): Check {
 }
 
 function spacedCheck(file: ReadFile): Check {
-  const found = file.lines.flatMap((line, at) =>
+  const letters = file.lines.flatMap((line, at) =>
     [...line.text.matchAll(SPACED)].map((match) => ({ at, text: match[0] })),
   );
+  // A heading split into pieces, as "PROFESSI ONAL EXPER I ENCE", is the same spacing at work.
+  const split = file.lines.flatMap((line, at) =>
+    splitHeadingKind(line.text) ? [{ at, text: line.text }] : [],
+  );
+  const found = [...split, ...letters];
   if (found.length === 0) {
     return {
       id: 'spaced',
@@ -350,11 +355,25 @@ function spacedCheck(file: ReadFile): Check {
       lines: [],
     };
   }
+  // Letters read one at a time trip every parser. A heading split into pieces trips some, as
+  // pdf.js reads it, while others, such as Poppler, may read it whole.
+  if (letters.length === 0) {
+    return {
+      id: 'spaced',
+      name: 'Spaced letters',
+      status: 'note',
+      summary: `${count(split.length, 'heading')} may read in pieces`,
+      detail:
+        'The letters in these headings are spaced so wide that some parsers read spaces inside their words, and then don’t know them as headings, so they may not find the sections under them. Others read them whole. Normal letter spacing reads the same in every system.',
+      examples: [...new Set(split.map((each) => excerpt(each.text, 40)))].slice(0, 4),
+      lines: split.map((each) => each.at),
+    };
+  }
   return {
     id: 'spaced',
     name: 'Spaced letters',
     status: 'fix',
-    summary: `Letters read one at a time in ${count(found.length, 'place')}`,
+    summary: `Letters read one at a time in ${count(letters.length, 'place')}`,
     detail:
       'Wide letter spacing makes a system read each letter as a word of its own, so it misses the word. A heading such as “S U M M A R Y” isn’t found. Use less spacing.',
     examples: [...new Set(found.map((each) => excerpt(each.text, 40)))].slice(0, 4),
@@ -520,18 +539,33 @@ function datesCheck(sections: readonly Section[], fields: Fields): Check | null 
   };
 }
 
-function headingsCheck(sections: readonly Section[]): Check {
+function headingsCheck(file: ReadFile, sections: readonly Section[]): Check {
   const name = 'Section headings';
   const kinds = new Set(sections.map((section) => section.kind));
+  // A heading that's there, but split apart by its letter spacing, as a parser reads it.
+  const split = new Map<SectionKind, { at: number; text: string }>();
+  for (const [at, line] of file.lines.entries()) {
+    const kind = splitHeadingKind(line.text);
+    if (kind && !split.has(kind)) split.set(kind, { at, text: line.text });
+  }
+  const splitNote = (kind: SectionKind) => {
+    const heading = split.get(kind);
+    return heading
+      ? ` Your “${excerpt(heading.text, 40)}” heading is there, but its letters are spaced so wide that a parser may split its words: see Spaced letters.`
+      : '';
+  };
+  const splitLine = (kind: SectionKind) => {
+    const heading = split.get(kind);
+    return heading ? [heading.at] : [];
+  };
   if (!kinds.has('experience')) {
     return {
       id: 'headings',
       name,
       status: 'fix',
       summary: 'No heading systems know for your work history',
-      detail:
-        'Systems find your jobs under a heading such as “Experience” or “Work Experience”. Without one, they may not find them at all.',
-      lines: [],
+      detail: `Systems find your jobs under a heading such as “Experience” or “Work Experience”. Without one, they may not find them at all.${splitNote('experience')}`,
+      lines: splitLine('experience'),
     };
   }
   const found = (['summary', 'experience', 'education', 'skills'] as const)
@@ -543,9 +577,8 @@ function headingsCheck(sections: readonly Section[]): Check {
       name,
       status: 'note',
       summary: 'No skills section',
-      detail:
-        'Many systems look for a section headed “Skills” and read the terms in it as your skills.',
-      lines: [],
+      detail: `Many systems look for a section headed “Skills” and read the terms in it as your skills.${splitNote('skills')}`,
+      lines: splitLine('skills'),
     };
   }
   return { id: 'headings', name, status: 'pass', summary: `${inWords(found)} found`, lines: [] };
@@ -631,7 +664,7 @@ export function runChecks(file: ReadFile, sections: readonly Section[], fields: 
     layoutCheck(file, sections, fields),
     contactCheck(file, fields),
     datesCheck(sections, fields),
-    headingsCheck(sections),
+    headingsCheck(file, sections),
     fontsCheck(file),
     lengthCheck(file),
   ].filter((check): check is Check => check !== null);

@@ -199,6 +199,37 @@ export const normalized = (text: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+/** The headings parsers know, with the spaces between their words left out. */
+const KNOWN_JOINED = new Map([...KNOWN].map(([name, kind]) => [name.replace(/ /g, ''), kind]));
+
+/** Endings that make a heading one parsers know, written with no spaces. */
+const JOINED_ENDINGS: readonly [RegExp, SectionKind][] = [
+  [/.skills$/, 'skills'],
+  [/.experience$/, 'experience'],
+  [/.projects$/, 'projects'],
+  [/.(?:certifications|licenses)$/, 'certifications'],
+  [/^education./, 'education'],
+  [/.(?:awards|honors)$/, 'awards'],
+];
+
+/**
+ * The kind of section a line would head if its words weren't split apart, as "PROFESSI ONAL
+ * EXPER I ENCE" is when wide letter spacing makes a parser read a space inside a word, or null.
+ * A parser doesn't know it as it reads, so the section stays unfound.
+ */
+export function splitHeadingKind(text: string): SectionKind | null {
+  if (text.length > 60 || headingKind(text) !== null) return null;
+  const name = normalized(text);
+  if (!name.includes(' ') || name.split(' ').length > 10) return null;
+  const joined = name.replace(/ /g, '');
+  const known = KNOWN_JOINED.get(joined);
+  if (known) return known;
+  // An ending, only for a line in capitals, as a heading is: "INDEPENDEN T PROJECTS".
+  if (/\p{Ll}/u.test(text)) return null;
+  for (const [ending, kind] of JOINED_ENDINGS) if (ending.test(joined)) return kind;
+  return null;
+}
+
 /** The kind of section a line heads, when it's a heading parsers know, or null. */
 export function headingKind(text: string): SectionKind | null {
   if (text.length > 60) return null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findSections, headingKind } from './sections.ts';
+import { findSections, headingKind, splitHeadingKind } from './sections.ts';
 import { wordLine } from './testing.ts';
 
 describe('headingKind', () => {
@@ -88,5 +88,42 @@ describe('findSections', () => {
 
   it('skips text in a header or footer', () => {
     expect(findSections([wordLine('Skills', { part: 'header' })])).toEqual([]);
+  });
+});
+
+describe('splitHeadingKind', () => {
+  it('knows a heading whose words letter spacing split apart, as a parser reads it', () => {
+    expect(
+      Object.fromEntries(
+        [
+          'EXECUTI VE SUM M ARY',
+          'PROFESSI ONAL EXPER I ENCE',
+          'TECH NI CAL SKI LLS',
+          'COR E COM PETENCI ES',
+          'EDUCATI ON',
+          'T ECHNOLOGIES',
+        ].map((text) => [text, splitHeadingKind(text)]),
+      ),
+    ).toEqual({
+      'EXECUTI VE SUM M ARY': 'summary',
+      'PROFESSI ONAL EXPER I ENCE': 'experience',
+      'TECH NI CAL SKI LLS': 'skills',
+      'COR E COM PETENCI ES': 'skills',
+      'EDUCATI ON': 'education',
+      'T ECHNOLOGIES': 'skills',
+    });
+  });
+
+  it('leaves a heading read whole or known by its ending, a sentence, or one it doesn’t know', () => {
+    // "INDEPENDEN T PROJECTS" still ends in "projects", so parsers know it as it reads.
+    expect(headingKind('INDEPENDEN T PROJECTS')).toBe('projects');
+    for (const text of [
+      'PROFESSIONAL EXPERIENCE',
+      'No experience',
+      'Built pipelines',
+      'KEY SYST EMS BUILT',
+    ]) {
+      expect(splitHeadingKind(text), text).toBeNull();
+    }
   });
 });

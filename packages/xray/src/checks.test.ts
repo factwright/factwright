@@ -169,6 +169,30 @@ describe('runChecks', () => {
   });
 });
 
+describe('headings split by letter spacing', () => {
+  it('says which headings read in pieces, and why their sections aren’t found', () => {
+    const file = fileOf(
+      resume().map((line) =>
+        line.text === 'Experience'
+          ? heading('PROFESSI ONAL EXPER I ENCE')
+          : line.text === 'Skills'
+            ? heading('TECH NI CAL SKI LLS')
+            : line,
+      ),
+    );
+    // Some parsers read such a heading whole, so it's worth knowing, not a fix on its own.
+    expect(check(file, 'spaced')).toMatchObject({
+      status: 'note',
+      summary: '2 headings may read in pieces',
+      examples: ['PROFESSI ONAL EXPER I ENCE', 'TECH NI CAL SKI LLS'],
+    });
+    const headings = check(file, 'headings');
+    expect(headings?.status).toBe('fix');
+    expect(headings?.detail).toContain('Your “PROFESSI ONAL EXPER I ENCE” heading is there');
+    expect(headings?.lines).toHaveLength(1);
+  });
+});
+
 describe('inWords', () => {
   it('lists words as a sentence does', () => {
     expect([inWords([]), inWords(['A']), inWords(['A', 'B']), inWords(['A', 'B', 'C'])]).toEqual([
