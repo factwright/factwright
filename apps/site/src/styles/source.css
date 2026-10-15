@@ -146,33 +146,55 @@
   white-space: nowrap;
 }
 
-.source-maker {
-  display: flex;
-  justify-content: center;
+/* Who builds Factwright, and the two ways to support it, under the code. Every page's footer
+   links here. */
+.support {
+  display: grid;
+  justify-items: center;
   gap: 10px;
-  margin-top: clamp(56px, 7vw, 80px);
+  max-width: 600px;
+  margin: clamp(56px, 7vw, 80px) auto 0;
+  padding: 28px 24px;
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+  background: var(--fw-surface);
+  text-align: center;
+  scroll-margin-top: 96px;
+}
+
+.support h3 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.support p {
   color: var(--fw-muted);
   font-size: 16px;
-  text-align: center;
   text-wrap: balance;
 }
 
-.source-maker .icon {
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
-  color: var(--fw-tone-purple-fg);
-  fill: color-mix(in srgb, var(--fw-tone-purple-fg) 18%, transparent);
-}
-
-.source-maker a {
+.support p a {
   color: var(--fw-text);
   font-weight: 600;
   text-underline-offset: 3px;
 }
 
-.source-maker a:hover {
+.support p a:hover {
   color: var(--fw-accent-text);
+}
+
+.support-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.support-heart {
+  color: var(--fw-tone-purple-fg);
+  fill: color-mix(in srgb, var(--fw-tone-purple-fg) 18%, transparent);
 }
 
 @media (max-width: 900px) {
@@ -197,7 +219,7 @@
 }
 
 @media (max-width: 520px) {
-  .source-maker {
-    text-align: left;
+  .support {
+    padding: 24px 18px;
   }
 }
