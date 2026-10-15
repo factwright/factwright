@@ -54,6 +54,7 @@ function factApi(firstName: string | null = 'Alex') {
     addFact: vi.fn(memory.addFact),
     removeFact: vi.fn(memory.removeFact),
     confirmFact: vi.fn(memory.confirmFact),
+    removeGap: vi.fn(memory.removeGap),
     onProfileChanged: vi.fn((listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -68,13 +69,37 @@ function changeOnDisk(path: string, text: string) {
   for (const listener of listeners) listener();
 }
 
-function open(api = factApi(), onGetStarted = () => {}) {
+function open(
+  api = factApi(),
+  onGetStarted = () => {},
+  show: { part: 'unverified' | 'gaps'; at: number } | null = null,
+) {
   return render(
-    <FactBankPage api={api as unknown as FactBankApi} today={TODAY} onGetStarted={onGetStarted} />,
+    <FactBankPage
+      api={api as unknown as FactBankApi}
+      today={TODAY}
+      onGetStarted={onGetStarted}
+      show={show}
+    />,
   );
 }
 
-const fact = (title: string) => screen.getByRole('article', { name: title });
+/** The list of facts to verify at the top of the page. */
+const unverified = () => within(screen.getByRole('region', { name: 'Unverified' }));
+
+/** What's on the page outside the list of facts to verify, where a fact to verify shows too. */
+const outsideList = (elements: HTMLElement[]) => {
+  const [found] = elements.filter(
+    (element) => !element.closest('[aria-labelledby="facts-unverified-title"]'),
+  );
+  if (!found) throw new Error('Not on the page outside the list to verify');
+  return found;
+};
+
+const fact = (title: string) => outsideList(screen.getAllByRole('article', { name: title }));
+const button = (name: string) => outsideList(screen.getAllByRole('button', { name }));
+const findButton = async (name: string) =>
+  outsideList(await screen.findAllByRole('button', { name }));
 
 beforeEach(() => {
   localStorage.clear();
@@ -92,7 +117,7 @@ describe('FactBankPage', () => {
   it('lists the files, opens the first with facts, and shows each fact with its tags', async () => {
     const { container } = open();
     expect(await screen.findByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy();
-    expect(screen.getByText('4 facts in 2 files · 2 to confirm with you')).toBeTruthy();
+    expect(screen.getByText('4 facts in 2 files · 2 to verify')).toBeTruthy();
     const files = screen.getByRole('navigation', { name: 'Your fact files' });
     expect(
       within(files)
@@ -105,10 +130,69 @@ describe('FactBankPage', () => {
     );
     expect(platform.textContent).toContain('Built a scheduling platform used by 40 clinics.');
     expect(
-      within(fact('Reminder texts')).getByRole('button', { name: 'Confirm “Reminder texts”' }),
+      within(fact('Reminder texts')).getByRole('button', { name: 'Verify “Reminder texts”' }),
     ).toBeTruthy();
+    expect(within(fact('Reminder texts')).getByRole('list', { name: 'Tags' }).textContent).toBe(
+      'UnverifiedShippedSoloMedium confidence',
+    );
     expect(screen.getByRole('heading', { name: 'Overview', level: 3 })).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('lists the facts to verify at the top, each with where it came from', async () => {
+    files.set(
+      'facts/beta.md',
+      `${BETA}\n### GraphQL partner API\n\`unconfirmed\` \`live\` \`solo\` \`medium\`\n> Built the partner API in GraphQL.\n- **Keywords:** GraphQL\n- **Source:** answer 2026-10-11, tailoring a resume for Fernway\n- **Question:** Have you used GraphQL?\n- **Answer:** Yes, in production\n`,
+    );
+    const { container } = open();
+    const list = await screen.findByRole('region', { name: 'Unverified' });
+    // The user's answers come first, then what was drafted from their files.
+    expect(
+      within(list)
+        .getAllByRole('article')
+        .map(
+          (each) =>
+            each.getAttribute('aria-labelledby') && within(each).getByRole('heading').textContent,
+        ),
+    ).toEqual(['GraphQL partner API', 'Reminder texts', 'Waitlist']);
+    const answered = within(list).getByRole('article', { name: 'GraphQL partner API' });
+    expect(answered.textContent).toContain(
+      'Your answer while tailoring a resume for Fernway, Oct 11',
+    );
+    expect(answered.textContent).toContain('Have you used GraphQL?“Yes, in production”');
+    expect(answered.textContent).toContain('Keywords:');
+    expect(answered.textContent).not.toContain('Source:');
+    expect(within(answered).getByRole('list', { name: 'Tags' }).textContent).toBe(
+      'LiveSoloMedium confidence',
+    );
+    expect(within(list).getByRole('article', { name: 'Reminder texts' }).textContent).toContain(
+      'From your resume alex.pdf, Oct 10',
+    );
+    expect(within(list).getByRole('article', { name: 'Waitlist' }).textContent).toContain(
+      'From your notes, Oct 10',
+    );
+    expect((await axe.run(container)).violations).toEqual([]);
+    // Its file opens from it.
+    await userEvent.click(within(answered).getByRole('button', { name: 'Beta Labs' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('heading', { name: 'Beta Labs', level: 2 }),
+      ),
+    );
+  });
+
+  it('shows the first few facts to verify, and the rest when asked', async () => {
+    const many = Array.from(
+      { length: 6 },
+      (_, i) =>
+        `### Drafted ${i + 1}\n\`unconfirmed\` \`live\`\n> Did ${i + 1}.\n- **Source:** notes 2026-10-10\n`,
+    ).join('\n');
+    files.set('facts/beta.md', `${BETA}\n${many}`);
+    open();
+    const list = await screen.findByRole('region', { name: 'Unverified' });
+    expect(within(list).getAllByRole('article')).toHaveLength(4);
+    await userEvent.click(within(list).getByRole('button', { name: 'Show all 8' }));
+    expect(within(list).getAllByRole('article')).toHaveLength(8);
   });
 
   it('changes a fact’s words and status, then gives the focus back to it', async () => {
@@ -197,51 +281,109 @@ describe('FactBankPage', () => {
     expect(api.changeFact).toHaveBeenCalledTimes(2);
   });
 
-  it('confirms the facts still to confirm, one after another', async () => {
+  it('verifies the facts to verify, one after another', async () => {
     const user = userEvent.setup();
     const { container } = open();
-    await user.click(await screen.findByRole('button', { name: 'To confirm · 2' }));
-    expect(
-      screen.getByRole('button', { name: 'To confirm · 2' }).getAttribute('aria-pressed'),
-    ).toBe('true');
-    expect(screen.queryByRole('article', { name: 'Scheduling platform' })).toBeNull();
+    await screen.findByRole('region', { name: 'Unverified' });
     expect((await axe.run(container)).violations).toEqual([]);
-    await user.click(screen.getByRole('button', { name: 'Confirm “Reminder texts”' }));
+    await user.click(unverified().getByRole('button', { name: 'Verify “Reminder texts”' }));
     await waitFor(() =>
-      expect(screen.queryByRole('article', { name: 'Reminder texts' })).toBeNull(),
+      expect(unverified().queryByRole('article', { name: 'Reminder texts' })).toBeNull(),
     );
     expect(files.get('facts/acme.md')).toContain(
       '### Reminder texts\n`shipped` `solo` `medium`\n> Shipped appointment reminder texts.\n- **Source:** Alex 2026-10-12\n',
     );
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Confirm “Waitlist”' }),
+        unverified().getByRole('button', { name: 'Verify “Waitlist”' }),
       ),
     );
-    expect(screen.getByText('Confirmed “Reminder texts”.')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Confirm “Waitlist”' }));
-    // Nothing's left to confirm, so the file shows again.
+    expect(screen.getByText('Verified “Reminder texts”.')).toBeTruthy();
+    // Verified, it's still in its file, as any other fact.
+    expect(within(fact('Reminder texts')).queryByRole('button', { name: /^Verify/ })).toBeNull();
+    await user.click(unverified().getByRole('button', { name: 'Verify “Waitlist”' }));
+    // Nothing's left to verify, so the list goes.
+    await waitFor(() => expect(screen.getByText('4 facts in 2 files · all verified')).toBeTruthy());
+    expect(screen.queryByRole('region', { name: 'Unverified' })).toBeNull();
     await waitFor(() =>
-      expect(screen.getByText('4 facts in 2 files · all confirmed with you')).toBeTruthy(),
+      expect(document.activeElement).toBe(
+        screen.getByRole('searchbox', { name: 'Search your facts' }),
+      ),
     );
-    expect(screen.queryByRole('button', { name: /^To confirm/ })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy();
+  });
+
+  it('verifies a fact from its file too', async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(await findButton('Verify “Waitlist”'));
+    await waitFor(() =>
+      expect(files.get('facts/acme.md')).toContain('### Waitlist\n`built` `solo` `high`\n'),
+    );
+    await waitFor(() => expect(document.activeElement).toBe(button('Change “Waitlist”')));
+  });
+
+  it('verifies a fact to verify once it’s edited and saved', async () => {
+    const user = userEvent.setup();
+    const api = factApi();
+    const { container } = open(api);
+    await screen.findByRole('region', { name: 'Unverified' });
+    await user.click(unverified().getByRole('button', { name: 'Edit “Waitlist”, then verify it' }));
+    const form = screen.getByRole('form', { name: 'Change “Waitlist”' });
+    expect(form.closest('[aria-labelledby="facts-unverified-title"]')).not.toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
+    const wording = within(form).getByRole('textbox', { name: 'What resumes say' });
+    await user.clear(wording);
+    await user.type(wording, 'Built a waitlist that refills cancelled visits.');
+    await user.click(within(form).getByRole('button', { name: 'Save and verify' }));
+    await waitFor(() =>
+      expect(files.get('facts/acme.md')).toContain(
+        '### Waitlist\n`built` `solo` `high`\n> Built a waitlist that refills cancelled visits.\n- **Source:** Alex 2026-10-12',
+      ),
+    );
+    expect(screen.getByText('Saved and verified “Waitlist”.')).toBeTruthy();
+    // The one before it in the list takes the focus.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        unverified().getByRole('button', { name: 'Verify “Reminder texts”' }),
+      ),
+    );
+  });
+
+  it('deletes a fact to verify from the list, once asked', async () => {
+    const user = userEvent.setup();
+    open();
+    const list = await screen.findByRole('region', { name: 'Unverified' });
+    await user.click(within(list).getByRole('button', { name: 'Delete “Reminder texts”' }));
+    const asked = within(list).getByRole('article', { name: 'Reminder texts' });
+    expect(asked.textContent).toContain('Delete this fact?');
+    // The same fact in its file isn't asked about.
+    expect(fact('Reminder texts').textContent).not.toContain('Delete this fact?');
+    await user.click(within(asked).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(files.get('facts/acme.md')).not.toContain('Reminder texts'));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        unverified().getByRole('button', { name: 'Verify “Waitlist”' }),
+      ),
+    );
+  });
+
+  it('goes to the facts to verify when asked, as after a run filed some', async () => {
+    open(factApi(), () => {}, { part: 'unverified', at: 1 });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Unverified' })),
+    );
   });
 
   it('asks before deleting a fact, and keeps it if asked', async () => {
     const user = userEvent.setup();
     open();
-    await user.click(await screen.findByRole('button', { name: 'Delete “Waitlist”' }));
+    await user.click(await findButton('Delete “Waitlist”'));
     expect(fact('Waitlist').textContent).toContain('Delete this fact?');
     expect(document.activeElement?.textContent).toBe('Delete');
     await user.click(within(fact('Waitlist')).getByRole('button', { name: 'Keep it' }));
     expect(fact('Waitlist').textContent).not.toContain('Delete this fact?');
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Delete “Waitlist”' }),
-      ),
-    );
-    await user.click(screen.getByRole('button', { name: 'Delete “Waitlist”' }));
+    await waitFor(() => expect(document.activeElement).toBe(button('Delete “Waitlist”')));
+    await user.click(button('Delete “Waitlist”'));
     await user.click(within(fact('Waitlist')).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('article', { name: 'Waitlist' })).toBeNull());
     expect(files.get('facts/acme.md')).not.toContain('Waitlist');
@@ -439,7 +581,7 @@ describe('FactBankPage', () => {
   it('keeps the question about deleting with its fact as the file changes', async () => {
     const user = userEvent.setup();
     open();
-    await user.click(await screen.findByRole('button', { name: 'Delete “Waitlist”' }));
+    await user.click(await findButton('Delete “Waitlist”'));
     // Claude adds a fact above it while the question is open.
     changeOnDisk(
       'facts/acme.md',
@@ -449,7 +591,7 @@ describe('FactBankPage', () => {
     expect(fact('Waitlist').textContent).toContain('Delete this fact?');
     expect(fact('Reminder texts').textContent).not.toContain('Delete this fact?');
     await user.click(within(fact('Waitlist')).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(screen.queryByRole('article', { name: 'Waitlist' })).toBeNull());
+    await waitFor(() => expect(screen.queryAllByRole('article', { name: 'Waitlist' })).toEqual([]));
     expect(files.get('facts/acme.md')).toContain('### Reminder texts');
     expect(files.get('facts/acme.md')).not.toContain('Waitlist');
   });
@@ -457,7 +599,7 @@ describe('FactBankPage', () => {
   it('drops the question about deleting a fact that changed, and says so', async () => {
     const user = userEvent.setup();
     open();
-    await user.click(await screen.findByRole('button', { name: 'Delete “Waitlist”' }));
+    await user.click(await findButton('Delete “Waitlist”'));
     changeOnDisk(
       'facts/acme.md',
       ACME.replace('fills cancelled visits.', 'fills cancelled visits fast.'),
@@ -467,24 +609,85 @@ describe('FactBankPage', () => {
     expect(files.get('facts/acme.md')).toContain('fills cancelled visits fast.');
   });
 
-  it('leaves the facts to confirm once none are left, even when more come later', async () => {
-    const user = userEvent.setup();
+  it('lists a fact to verify that Claude files while the page is open', async () => {
     open();
-    await user.click(await screen.findByRole('button', { name: 'To confirm · 2' }));
-    await user.click(screen.getByRole('button', { name: 'Confirm “Reminder texts”' }));
-    await user.click(await screen.findByRole('button', { name: 'Confirm “Waitlist”' }));
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy(),
-    );
+    expect(await screen.findByRole('region', { name: 'Unverified' })).toBeTruthy();
     changeOnDisk(
       'facts/beta.md',
-      `${BETA}\n### Drafted\n\`unconfirmed\` \`live\`\n> From a resume.\n`,
+      `${BETA}\n### Kafka pipeline\n\`unconfirmed\` \`live\`\n> Ran Kafka.\n- **Source:** answer 2026-10-12, tailoring a resume for Fernway\n- **Question:** Have you run Kafka?\n- **Answer:** Yes\n`,
     );
-    expect(await screen.findByRole('button', { name: 'To confirm · 1' })).toBeTruthy();
+    expect(await unverified().findByRole('article', { name: 'Kafka pipeline' })).toBeTruthy();
+    expect(screen.getByText('5 facts in 2 files · 3 to verify')).toBeTruthy();
+  });
+
+  it('shows what the user said they don’t have, and takes one back', async () => {
+    const user = userEvent.setup();
+    files.set(
+      'facts/gaps.md',
+      [
+        '# Gaps',
+        '',
+        "## Doesn't have (don't claim, don't ask again)",
+        '| Topic | Their answer | Date |',
+        '|---|---|---|',
+        '| Rust in production | No | 2026-10-08 |',
+        '| Kafka | No (asked “Have you run Kafka?” while tailoring a resume for Fernway) | 2026-10-12 |',
+        '',
+        '## Open questions',
+        '- How many clinics?',
+        '',
+      ].join('\n'),
+    );
+    const api = factApi();
+    const { container } = open(api, () => {}, { part: 'gaps', at: 1 });
+    const heading = await screen.findByRole('heading', {
+      name: 'Things you’ve said you don’t have',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    const nav = screen.getByRole('navigation', { name: 'Your fact files' });
+    expect(within(nav).getByRole('button', { name: /^Gaps/ }).textContent).toBe('Gaps 2');
+    const section = heading.closest('section') as HTMLElement;
+    expect(section.textContent).toContain('Rust in productionNo');
+    expect(section.textContent).toContain('Oct 8');
+    expect(section.textContent).toContain(
+      'KafkaNo (asked “Have you run Kafka?” while tailoring a resume for Fernway)',
+    );
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.click(within(section).getByRole('button', { name: 'Remove “Rust in production”' }));
+    await waitFor(() => expect(files.get('facts/gaps.md')).not.toContain('Rust in production'));
+    expect(api.removeGap).toHaveBeenCalledWith({
+      index: 0,
+      line: '| Rust in production | No | 2026-10-08 |',
+    });
     expect(
-      screen.getByRole('button', { name: 'To confirm · 1' }).getAttribute('aria-pressed'),
-    ).toBe('false');
-    expect(screen.getByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy();
+      screen.getByText('Removed “Rust in production”. Your Claude can ask about it again.'),
+    ).toBeTruthy();
+    // The one after it takes the focus.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Remove “Kafka”' })),
+    );
+    expect(files.get('facts/gaps.md')).toContain('## Open questions\n- How many clinics?');
+  });
+
+  it('says what stopped taking something back, such as Claude changing it meanwhile', async () => {
+    const user = userEvent.setup();
+    const gaps =
+      "# Gaps\n\n## Doesn't have\n| Topic | Their answer | Date |\n|---|---|---|\n| Rust | No | 2026-10-08 |\n";
+    files.set('facts/gaps.md', gaps);
+    open(factApi(), () => {}, { part: 'gaps', at: 1 });
+    const remove = await screen.findByRole('button', { name: 'Remove “Rust”' });
+    files.set('facts/gaps.md', gaps.replace('| No |', '| Not really |'));
+    await user.click(remove);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/changed since you opened it/);
+    expect(files.get('facts/gaps.md')).toContain('Not really');
+  });
+
+  it('says when nothing’s been said not to have yet', async () => {
+    files.set('facts/gaps.md', "# Gaps\n\n## Doesn't have\n\n## Open questions\n- One\n");
+    open(factApi(), () => {}, { part: 'gaps', at: 1 });
+    expect(
+      await screen.findByText(/^Nothing yet\. When you tell your Claude you don’t have/),
+    ).toBeTruthy();
   });
 
   it('says when there’s no fact bank yet, and goes to getting started', async () => {

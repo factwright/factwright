@@ -10,6 +10,27 @@ describe('NavItem', () => {
     );
   });
 
+  it('shows what waits for the user in place of the count, and says what it is', () => {
+    const { rerender } = render(
+      <NavItem
+        icon={null}
+        label="Fact bank"
+        count={48}
+        waiting={{ count: 3, label: 'to verify' }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Fact bank 3 to verify' })).toBeTruthy();
+    rerender(
+      <NavItem
+        icon={null}
+        label="Fact bank"
+        count={48}
+        waiting={{ count: 0, label: 'to verify' }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Fact bank 48' })).toBeTruthy();
+  });
+
   it('leaves other pages unmarked', () => {
     render(<NavItem icon={null} label="Fact bank" />);
     expect(screen.getByRole('button', { name: 'Fact bank' }).hasAttribute('aria-current')).toBe(

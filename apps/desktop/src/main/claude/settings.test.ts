@@ -27,6 +27,9 @@ describe('sessionSettings', () => {
       'mcp__factwright__save_answer',
       'mcp__factwright__list_templates',
       'mcp__factwright__read_template',
+      'mcp__factwright__save_fact',
+      'mcp__factwright__save_gap',
+      'mcp__factwright__verify_fact',
       'mcp__factwright__read_posting',
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
@@ -122,6 +125,22 @@ describe('sessionSettings', () => {
     expect(allow(false, 'profile')).not.toContain('mcp__factwright__save_template');
     expect(allow(true)).toContain('mcp__factwright__save_template');
     expect(allow(false, 'template')).toContain('mcp__factwright__save_template');
+  });
+
+  it('files what the user answers without asking, in any run but one making a template', () => {
+    const allow = (scope: 'hunt' | 'profile' | 'template') =>
+      sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false, scope }).permissions
+        .allow;
+    const filing = [
+      'mcp__factwright__save_fact',
+      'mcp__factwright__save_gap',
+      'mcp__factwright__verify_fact',
+    ];
+    for (const tool of filing) {
+      expect(allow('hunt')).toContain(tool);
+      expect(allow('profile')).toContain(tool);
+      expect(allow('template')).not.toContain(tool);
+    }
   });
 
   it('lets a run for making a template read and save templates without asking, and nothing else', () => {

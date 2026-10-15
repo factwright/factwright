@@ -4,7 +4,14 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Your fact bank grows as your Claude writes. While it tailors a resume, answers an application's questions or gets you ready for an interview, it asks about what the job wants that your facts don't show, when you likely have it, and for a missing number a claim needs. A yes is saved as a new fact to verify, with the question and your answer word for word, and a no goes under Doesn't have, so you're never asked again. The task uses your answers right away, and says which lines rest on them. It asks with no permission prompts: Factwright's own tools save only answers you gave in that run, as Claude Code reported them, so a job post can't plant a fact.
+- The Fact bank opens with **Unverified**: the facts from your answers and the ones drafted from your files, each with where it came from, such as "Your answer while tailoring a resume for Acme, Oct 14", and the question and your answer. Verify one as it is, edit it (saving verifies it), or delete it. Until you do, your Claude asks before using it: Use and verify, Use this once, or Don't use. The sidebar shows how many wait, and a task that saved some says so in Claude's panel, with Verify them.
+- **Things you've said you don't have**, in the Fact bank's gaps, each with your answer and when. Remove one that's changed, and your Claude can ask about it again.
+- Fit checks note what's worth asking you, for the tailored resume to ask before it's written. A fit check itself still never asks.
+
 ### Changed
+- Facts that wait for you are called unverified everywhere, and verified once you say so: on the Fact bank, in Profile, and in what your Claude says. The tag in your files stays `unconfirmed`, so your fact bank reads as before.
 - factwright.com makes supporting Factwright easy to find: a Support Factwright block under the code, with a button each for Buy Me a Coffee and GitHub Sponsors, and a link to it in every page's footer. Before, it was a line of text at the end of a section.
 
 ## 0.2.0 - 2026-10-14

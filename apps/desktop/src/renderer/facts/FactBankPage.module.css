@@ -70,6 +70,136 @@
   font-size: var(--fw-text-sm);
 }
 
+/* The facts that wait for the user to verify them, above everything else. */
+.unverified {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+  margin-top: var(--fw-space-4);
+  padding: var(--fw-space-4);
+  border: 1px solid color-mix(in srgb, var(--fw-need) 22%, transparent);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-need-soft);
+}
+
+.unverifiedHead {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+.unverifiedTitle {
+  margin: 0;
+  font-size: var(--fw-text-lg);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.unverifiedCount {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fw-surface);
+  color: var(--fw-need);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.unverifiedLead {
+  max-width: 70ch;
+  margin: calc(-1 * var(--fw-space-2)) 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.unverifiedList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+}
+
+/* A fact to verify: its file under its title, and where it came from. */
+.factTitles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.inFile {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-muted);
+  font: inherit;
+  font-size: var(--fw-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.inFile:hover {
+  color: var(--fw-accent-text);
+  text-decoration: underline;
+}
+
+.inFile:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 2px;
+  border-radius: var(--fw-radius-sm);
+}
+
+.origin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.originText {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--fw-muted);
+}
+
+.originIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.asked {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.askedPair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.askedPair dt {
+  color: var(--fw-muted);
+}
+
+.askedPair dd {
+  margin: 0;
+  color: var(--fw-text);
+  font-weight: 600;
+}
+
 /* The files on the left, and what's in the open one, or what a search found, on the right. */
 .body {
   display: grid;
@@ -243,6 +373,61 @@
 .sectionText {
   margin-top: var(--fw-space-2);
   font-size: 13px;
+}
+
+/* What a section is for, under its heading, such as what the user said they don't have. */
+.sectionLead {
+  max-width: 70ch;
+  margin: var(--fw-space-1) 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* What the user said they don't have, one to a row, each with a way to take it back. */
+.gaps {
+  display: flex;
+  flex-direction: column;
+  margin: var(--fw-space-3) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--fw-border);
+  list-style: none;
+}
+
+.gap {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.gapText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gapTopic {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gapAnswer {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.gapDate {
+  flex: none;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* A short word in a table, such as a skill's depth, stays whole rather than breaking. */

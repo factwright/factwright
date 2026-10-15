@@ -1,4 +1,11 @@
-import { FACT_TAGS, type FactBlock, UNCONFIRMED } from '@factwright/core';
+import {
+  type Asked,
+  claimOrigin,
+  FACT_TAGS,
+  type FactBlock,
+  shortDate,
+  UNCONFIRMED,
+} from '@factwright/core';
 import type { Tone } from '@factwright/ui';
 import type { FactBank, FactFile } from '../../shared/facts.ts';
 
@@ -11,8 +18,8 @@ export interface TagInfo {
 
 export const TAG_INFO: Readonly<Record<string, TagInfo>> = {
   [UNCONFIRMED]: {
-    label: 'Not confirmed',
-    meaning: 'Drafted from what you shared. Nothing uses it until you confirm it.',
+    label: 'Unverified',
+    meaning: 'You haven’t verified it yet, so your Claude asks you before using it.',
     tone: 'amber',
   },
   live: { label: 'Live', meaning: 'In use now: “runs”, “built”, “in production”.', tone: 'green' },
@@ -103,40 +110,103 @@ export function blockMatches(block: FactBlock, query: string): boolean {
   return words.every((word) => text.includes(word));
 }
 
-/** The blocks of one file that a search or the "to confirm" view shows. */
+/** The blocks of one file that a search shows. */
 export interface FoundIn {
   file: FactFile;
   blocks: FactBlock[];
 }
 
 /**
- * What a search finds, file by file: with `toConfirm`, only the claims still to confirm. A block
- * `keep` names stays either way, such as one being changed, whose new words may not match.
+ * What a search finds, file by file. A block `keep` names stays either way, such as one being
+ * changed, whose new words may not match.
  */
 export function findFacts(
   bank: FactBank,
-  {
-    query,
-    toConfirm,
-    keep,
-  }: {
-    query: string;
-    toConfirm: boolean;
-    keep?: (path: string, block: FactBlock) => boolean;
-  },
+  { query, keep }: { query: string; keep?: (path: string, block: FactBlock) => boolean },
 ): FoundIn[] {
   return bank.files
     .map((file) => ({
       file,
       blocks: file.blocks.filter(
         (block) =>
-          hasContent(block) &&
-          (((!toConfirm || isUnconfirmed(block)) && blockMatches(block, query)) ||
-            (keep?.(file.path, block) ?? false)),
+          hasContent(block) && (blockMatches(block, query) || (keep?.(file.path, block) ?? false)),
       ),
     }))
     .filter((found) => found.blocks.length > 0);
 }
+
+/** A claim that waits for the user to verify it, with the file it's in. */
+export interface Unverified {
+  file: FactFile;
+  block: FactBlock;
+}
+
+/**
+ * Every claim that waits for the user to verify it: the ones from their answers first, newest
+ * first (on the same day, the one filed later, which goes after the others), then the ones
+ * drafted from their files, in the order the files list them.
+ */
+export function unverifiedFacts(bank: FactBank): Unverified[] {
+  const all = bank.files
+    .filter((file) => file.kind === 'claims')
+    .flatMap((file) => file.blocks.filter(isUnconfirmed).map((block) => ({ file, block })));
+  const answered = (each: Unverified) => {
+    const origin = claimOrigin(each.block);
+    return origin?.kind === 'answer' ? origin.date : '';
+  };
+  return all
+    .map((each, order) => ({ each, order, date: answered(each) }))
+    .sort(
+      (a, b) => b.date.localeCompare(a.date) || (a.date ? b.order - a.order : a.order - b.order),
+    )
+    .map(({ each }) => each);
+}
+
+/** Where a claim came from, in a line for the user, and the questions it rests on. */
+export interface OriginView {
+  text: string;
+  asked: Asked[];
+}
+
+const SHARED_WORDS = {
+  resume: 'your resume',
+  notes: 'your notes',
+  linkedin: 'your LinkedIn',
+  screenshot: 'a screenshot',
+} as const;
+
+/**
+ * Where a claim came from, for the user: "Your answer while tailoring a resume for Acme, Oct 14",
+ * "From your resume alex.pdf, Oct 12", or its Source as written. Null when it gives none.
+ */
+export function originOf(block: FactBlock, today: string): OriginView | null {
+  const origin = claimOrigin(block);
+  if (!origin) return null;
+  if (origin.kind === 'answer') {
+    const when = shortDate(origin.date, today);
+    return {
+      text: origin.context
+        ? `Your answer while ${origin.context}, ${when}`
+        : `Your answer, ${when}`,
+      asked: origin.asked,
+    };
+  }
+  if (origin.kind === 'shared') {
+    const what = SHARED_WORDS[origin.what];
+    const file = origin.what === 'resume' && origin.file ? ` ${origin.file}` : '';
+    const when = origin.date ? `, ${shortDate(origin.date, today)}` : '';
+    return { text: `From ${what}${file}${when}`, asked: [] };
+  }
+  return { text: `Source: ${origin.text}`, asked: [] };
+}
+
+/** A claim's details without where it came from, which shows on its own line. */
+export const detailsWithoutOrigin = (details: string) =>
+  details
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*[-*+]\s+\*\*(?:Source|Question|Answer):\*\*/.test(line))
+    .join('\n')
+    .trim();
 
 /** The tags a claim picks from each list, such as its status: the first of each it has. */
 export interface TagPicks {

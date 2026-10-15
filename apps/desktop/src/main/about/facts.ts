@@ -1,6 +1,26 @@
 import { randomUUID } from 'node:crypto';
-import { lstatSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
+import {
+  factBlocks,
+  findBlock,
+  GAPS_FILE,
+  hasGap,
+  type NewGap,
+  newGapsFile,
+  UNCONFIRMED,
+  withGap,
+  withoutGap,
+} from '@factwright/core';
 import {
   CHANGED_SINCE,
   FACT_LIMITS,
@@ -14,6 +34,7 @@ import {
   factFile,
   factFileKind,
   firstNameOf,
+  type GapTarget,
   inFactOrder,
   isFactPath,
   type NewFact,
@@ -26,6 +47,28 @@ import {
 import { markdownUnder } from './status.ts';
 
 const GONE = 'That file isn’t in your fact bank anymore.';
+
+/** Where the fact bank keeps work outside a job, which a fact from an answer can start. */
+const PROJECTS = 'facts/projects.md';
+
+/** What a file's confirmed claims say, each once for each time it's there. */
+function confirmedIn(file: string): string[] {
+  return factBlocks(file)
+    .filter((block) => block.tags && !block.tags.includes(UNCONFIRMED))
+    .map((block) => block.text.trimEnd())
+    .sort();
+}
+
+/** Whether every confirmed claim in a file is still there, word for word, in its new text. */
+export function keepsConfirmed(before: string, after: string): boolean {
+  const left = [...confirmedIn(after)];
+  return confirmedIn(before).every((claim) => {
+    const at = left.indexOf(claim);
+    if (at < 0) return false;
+    left.splice(at, 1);
+    return true;
+  });
+}
 
 export interface FactBankDeps {
   workspace: string;
@@ -91,16 +134,75 @@ export class FactBankFiles {
   }
 
   /**
+   * Files a claim from the user's answers in a run: after a file's last claim, or in place of
+   * one that still waits to be verified. A confirmed claim is never changed or deleted. A file
+   * of projects is started when there's none, with the claim in it.
+   */
+  fileClaim(path: string, text: string, replacing: FactTarget | null = null): FactResult {
+    if (path === PROJECTS && !replacing && this.file(path) === null && !this.exists(path)) {
+      return this.create(path, `# Projects\n\n${text.trimEnd()}\n`);
+    }
+    return this.edit(
+      path,
+      (file, kind) => {
+        if (!replacing) return withClaim(file, kind, text);
+        const block = findBlock(factBlocks(file), replacing);
+        if (!block) return { problem: CHANGED_SINCE };
+        if (!block.tags?.includes(UNCONFIRMED)) {
+          return { problem: 'Only a fact that waits to be verified can be replaced.' };
+        }
+        return withChange(file, kind, { ...replacing, next: text });
+      },
+      { keepConfirmed: true },
+    );
+  }
+
+  /**
+   * Notes something the user said they don't have, as a row of gaps.md's Doesn't have section,
+   * starting the file when there's none. A topic it has already stays as it is.
+   */
+  addGap(gap: NewGap): FactResult & { added?: boolean } {
+    if (this.file(GAPS_FILE) === null && !this.exists(GAPS_FILE)) {
+      const made = this.create(GAPS_FILE, newGapsFile(gap));
+      return made.ok ? { ...made, added: true } : made;
+    }
+    let added = false;
+    const result = this.edit(
+      GAPS_FILE,
+      (file) => {
+        if (hasGap(file, gap.topic)) return file;
+        added = true;
+        return withGap(file, gap);
+      },
+      { keepConfirmed: true },
+    );
+    return result.ok ? { ...result, added } : result;
+  }
+
+  /** Takes back something the user said they don't have, if it reads as the window last saw it. */
+  removeGap(target: GapTarget): FactResult {
+    return this.edit(GAPS_FILE, (file) => withoutGap(file, target) ?? { problem: CHANGED_SINCE });
+  }
+
+  /**
    * Reads a fact bank file, changes it, and saves it whole, answering with the bank as it is
    * then. Just before saving, it reads the file once more: a change made meanwhile, such as by
-   * Claude, is never written over.
+   * Claude, is never written over. With `keepConfirmed`, a change to any confirmed claim is
+   * refused, whatever made it.
    */
-  private edit(path: string, apply: (file: string, kind: FactFileKind) => FactEdit): FactResult {
+  private edit(
+    path: string,
+    apply: (file: string, kind: FactFileKind) => FactEdit,
+    { keepConfirmed: keep = false } = {},
+  ): FactResult {
     const full = this.file(path);
     const file = full === null ? null : this.readText(full);
     if (full === null || typeof file !== 'string') return { ok: false, message: GONE };
     const next = apply(file, factFileKind(path));
     if (typeof next !== 'string') return stopped(next.problem);
+    if (keep && !keepsConfirmed(file, next)) {
+      return stopped('That would change a confirmed fact, which only you can do.');
+    }
     if (Buffer.byteLength(next, 'utf8') > FACT_LIMITS.file) {
       return stopped('That file would get too big.');
     }
@@ -111,6 +213,49 @@ export class FactBankFiles {
       } catch {
         return stopped('That couldn’t be saved. Try again in a moment.');
       }
+    }
+    return { ok: true, bank: this.read() };
+  }
+
+  /** Whether anything is at a path in facts/, even a link, which a new file mustn't take the place of. */
+  private exists(path: string): boolean {
+    try {
+      lstatSync(join(this.deps.workspace, ...path.split('/')));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Starts a file directly in facts/ that isn't there yet, whole or not at all, and never in
+   * place of anything: facts/ itself must be a folder in the workspace, not a link.
+   */
+  private create(path: string, text: string): FactResult {
+    const parts = path.split('/');
+    if (!isFactPath(path) || parts.length !== 2) return { ok: false, message: GONE };
+    const folder = join(this.deps.workspace, 'facts');
+    try {
+      mkdirSync(folder, { recursive: true });
+      if (!lstatSync(folder).isDirectory()) return { ok: false, message: GONE };
+      if (realpathSync(folder) !== join(realpathSync(this.deps.workspace), 'facts')) {
+        return { ok: false, message: GONE };
+      }
+    } catch {
+      return stopped('That couldn’t be saved. Try again in a moment.');
+    }
+    const full = join(folder, parts[1] ?? '');
+    const temporary = join(folder, `.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(temporary, text, 'utf8');
+      // A link to the finished file fails if anything took the name meanwhile, unlike a rename.
+      linkSync(temporary, full);
+    } catch {
+      return this.exists(path)
+        ? stopped(CHANGED_SINCE)
+        : stopped('That couldn’t be saved. Try again in a moment.');
+    } finally {
+      rmSync(temporary, { force: true });
     }
     return { ok: true, bank: this.read() };
   }

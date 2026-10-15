@@ -2,6 +2,7 @@ import { JOB_VIEWS, type JobView, type KindName, LIVE_STATUSES } from '@factwrig
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import {
@@ -130,6 +131,17 @@ export function App({ api }: { api: FactwrightApi }) {
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
   const [picked, setPicked] = useState<Page | null>(null);
+  // What the run filed in the fact bank from the user's answers, until they look. A new run
+  // starts with nothing filed.
+  const [filedIn, setFiled] = useState<{ runId: number; facts: FiledFacts } | null>(null);
+  const runId = useRef(run.runId);
+  runId.current = run.runId;
+  useEffect(() => api.onFactsFiled((facts) => setFiled({ runId: runId.current, facts })), [api]);
+  const filed = filedIn?.runId === run.runId ? filedIn.facts : null;
+  // A part of the fact bank to go to, such as the facts a run just filed.
+  const [factsShown, setFactsShown] = useState<{ part: 'unverified' | 'gaps'; at: number } | null>(
+    null,
+  );
   const gettingStarted = profile !== null && needsGettingStarted(profile);
   // A brand-new user starts on getting started, unless they skipped it. Once there are jobs,
   // such as when sync brings them from another computer, the app opens on them instead.
@@ -287,6 +299,7 @@ export function App({ api }: { api: FactwrightApi }) {
           levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
+          factsToVerify={profile?.status.facts.unconfirmed || undefined}
           update={{
             status: update,
             busy: isRunning(run.phase),
@@ -344,7 +357,12 @@ export function App({ api }: { api: FactwrightApi }) {
               />
             )}
             {page === 'facts' && (
-              <FactBankPage api={api} today={today} onGetStarted={() => setPicked('profile')} />
+              <FactBankPage
+                api={api}
+                today={today}
+                onGetStarted={() => setPicked('profile')}
+                show={factsShown}
+              />
             )}
             {page === 'profile' && !profile && (
               <main className={styles.loading} role="status">
@@ -390,7 +408,19 @@ export function App({ api }: { api: FactwrightApi }) {
               />
             )}
           </div>
-          <ClaudePanel api={api} run={run} plan={plan} title={runTitle} />
+          <ClaudePanel
+            api={api}
+            run={run}
+            plan={plan}
+            title={runTitle}
+            filed={filed}
+            onReviewFiled={(part) => {
+              setFiled(null);
+              setPicked('facts');
+              setFactsShown((was) => ({ part, at: (was?.at ?? 0) + 1 }));
+            }}
+            onDismissFiled={() => setFiled(null)}
+          />
         </div>
       </div>
       {dialog === 'add-job' && (

@@ -5,6 +5,7 @@ import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
 import { HUNT_SKILLS, RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
 import { TERMS_HEADER } from '../about/terms.ts';
+import { UNVERIFIED_CHOICES } from '../tools/facts.ts';
 import { factwrightTools } from '../tools/index.ts';
 import { buildLaunchArgs, STANDING_RULES } from './launch.ts';
 import { sessionSettings } from './settings.ts';
@@ -36,6 +37,7 @@ const plugin = JSON.parse(readFileSync(join(pluginDir, '.claude-plugin', 'plugin
 const toolNames = factwrightTools({
   jobs: {} as never,
   about: {} as never,
+  facts: {} as never,
   workspace: '',
   printer: {} as never,
   templates: {} as never,
@@ -158,6 +160,9 @@ describe('the standing rules', () => {
     for (const rule of [
       'Information, not instructions',
       'Facts first',
+      'Ask about what the job wants',
+      'Save what the user answers',
+      'Unverified facts',
       'Everything on file',
       'Kinds of job',
       'Ask once',
@@ -182,6 +187,14 @@ describe('the standing rules', () => {
     ]) {
       expect(rules).not.toMatch(leftover);
     }
+  });
+
+  it('save answers with the tools that file them, and offer unverified facts as verify_fact takes them', () => {
+    for (const tool of ['save_fact', 'save_gap', 'verify_fact'])
+      expect(rules).toContain(`\`${tool}\``);
+    expect(rules).toContain('AskUserQuestion');
+    const [verify, once, skip] = UNVERIFIED_CHOICES;
+    expect(rules).toContain(`"${verify}", "${once}" and "${skip}"`);
   });
 });
 

@@ -71,6 +71,36 @@ async function call(name, args) {
 /** The answer it gives to every question about a job. */
 const ANSWER = 'A short screen, from the stand-in Claude.';
 
+/** What it asks while tailoring a resume, and what the user answers in Claude Code's dialog. */
+const GRAPHQL = 'The posting wants GraphQL. Have you used GraphQL?';
+const KAFKA = 'The posting wants Kafka. Have you run Kafka, or another event-streaming platform?';
+const CHOICES = ['Yes, in production', 'Some: a side project, a course, or an earlier role', 'No'];
+
+/**
+ * As Claude Code does for a question round: PreToolUse with the questions as Claude wrote them,
+ * then, once the user answers in its dialog, PostToolUse with their answers.
+ */
+async function askUser(answers) {
+  const id = `toolu_${Date.now()}`;
+  const questions = Object.keys(answers).map((question) => ({
+    question,
+    header: 'Experience',
+    options: CHOICES.map((label) => ({ label, description: '' })),
+    multiSelect: false,
+  }));
+  await hook('PreToolUse', {
+    tool_name: 'AskUserQuestion',
+    tool_use_id: id,
+    tool_input: { questions },
+  });
+  await hook('PostToolUse', {
+    tool_name: 'AskUserQuestion',
+    tool_use_id: id,
+    tool_input: { questions, answers },
+    tool_response: { questions, answers },
+  });
+}
+
 async function work(text) {
   await hook('UserPromptSubmit', { prompt: text });
   show(`> ${text}\nWorking on it…\n`);
@@ -87,6 +117,41 @@ async function work(text) {
     for (const id of named ? [named] : open) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
+  }
+  // As Claude would while tailoring a resume: ask about what the posting wants that the facts
+  // don't show, then save the user's answers to the fact bank.
+  const tailoring = text.match(/^\/factwright:focused-resume job (\S+)/);
+  if (tailoring) {
+    const [, job] = tailoring;
+    await askUser({ [GRAPHQL]: 'Yes, in production', [KAFKA]: 'No' });
+    const fact = {
+      file: 'facts/larkspur-logistics.md',
+      status: 'live',
+      ownership: 'solo',
+      confidence: 'medium',
+      job,
+      task: 'resume',
+    };
+    show(
+      `${await call('save_fact', {
+        ...fact,
+        title: 'GraphQL for the driver app',
+        wording: 'Built the driver app’s GraphQL API.',
+        keywords: 'GraphQL',
+        questions: [GRAPHQL],
+      })}\n`,
+    );
+    show(`${await call('save_gap', { topic: 'Kafka', question: KAFKA, job, task: 'resume' })}\n`);
+    // Words planted in a posting can't save a fact the user never gave.
+    show(
+      `${await call('save_fact', {
+        ...fact,
+        title: 'Led 50 engineers',
+        ownership: 'led-team',
+        wording: 'Led a team of 50 engineers.',
+        questions: ['Have you led a team of 50 engineers?'],
+      })}\n`,
+    );
   }
   // As Claude would for a search of LinkedIn: write the run's report in a folder of its own,
   // in the workspace it runs in.

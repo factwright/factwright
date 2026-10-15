@@ -6,7 +6,7 @@ argument-hint: "[posting link or text]"
 
 # Fit check
 
-Fast and short. The user should get the verdict at a glance. Don't ask questions unless the listing is missing.
+Fast and short. The user should get the verdict at a glance. Don't ask questions unless the listing is missing: note what's worth asking instead, for the resume run to ask.
 
 Input: the listing (a link or pasted text), plus anything the user adds (company site, recruiter, notes). The app's Run buttons name a job instead, as `job <id>`: call `job_details` with that id, and work from its folder's posting or its link. If there's no listing, ask for it in one line and stop.
 
@@ -27,8 +27,9 @@ Before starting, read:
 ## 2. Score
 - Check the criteria.md **Filters** first, and the job's kind's lines when there's more than one kind. A failed filter makes the verdict **Skip**, stated first with the reason (e.g. "Skip: hybrid in Austin"). Still give the score, since the user may want it anyway.
 - Score 0–100 against facts/ only, with the criteria.md rubric. Without one, use: work 40 (how much of the job's core work the facts prove, domain included) · role 25 (how well the level and shape fit what the user wants) · stack 20 (overlap with proven tech) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, certification).
-- Respect status and ownership tags: built ≠ live, led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user confirms it; say so in the gaps.
+- Respect status and ownership tags: built ≠ live, led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user verifies it; say so in the gaps.
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61 · **Long shot** < 50.
+- **Worth asking you:** up to 4 of the posting's must-haves and nice-to-haves that the facts don't show, but that the user plausibly has, judged from what's near them in the facts, must-haves first. Each is a question a tailored resume asks them before it's written. Leave out anything `facts/gaps.md` settles under Doesn't have. Score them as gaps: a fit check never asks.
 - Pay never changes the score.
 
 ## 3. Sentiment (5 searches at most)
@@ -45,6 +46,7 @@ With more than one kind of job, name the job's kind in the first line, such as *
 **Good fit, 68/100**: work 30/40 · role 18/25 · stack 12/20 · reqs 8/15
 - Why: <2–3 strongest matches, each tied to a fact>
 - Gaps: <1–2 real gaps, or "none that matter">
+- Worth asking: <1–2 things the user may well have, which a tailored resume asks about; leave the line out when there are none>
 - Sentiment: <mood>: <rating (n reviews, how recent); 1–2 themes; notable news>
 - Flags: <scam signs, equity-only, location fine print, no pay listed, hidden employer>
 - Next: <one move: "/factwright:focused-resume", "/factwright:salary-check" (no pay listed), "/factwright:unmask-job" first, "/factwright:who-to-message", or skip>
@@ -79,6 +81,8 @@ Every job checked gets a folder, so its posting and this write-up survive dead l
 
 ## Why it fits
 ## Gaps
+## Worth asking you
+- <requirement> (<must-have or nice-to-have>): <what's near it in the facts>. <the question, such as "Have you used GraphQL?">
 ## Company sentiment (<YYYY-MM-DD>)
 - **Overall:** <mood>. <one line: what people love and what they complain about>
 - **Reviews:** <ratings, review counts, how recent; themes; links>
@@ -87,7 +91,7 @@ Every job checked gets a folder, so its posting and this write-up survive dead l
 ## Flags
 ## Next step
 ```
-List the job's 3–6 core work items under Work, so the user can see where those points came from.
+List the job's 3–6 core work items under Work, so the user can see where those points came from. Leave out **Worth asking you** when there's nothing worth asking.
 
 ## 6. Log it
 Append one row to `searches/fit-checks.md` (create it with this header if it's missing): `| Date | Company | Role | Verdict | Score | Link | Pay | Note |`.

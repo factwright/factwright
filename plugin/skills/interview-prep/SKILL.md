@@ -29,17 +29,20 @@ Before starting, read:
 ## 2. Just talking?
 If the user only wants to talk the job through, stop here and chat from what you loaded. Don't write a file unless they ask for one.
 
-## 3. Refresh the company (3 searches at most)
+## 3. Ask (when it would change the prep)
+When the posting or the call's focus leans on something the facts don't show, and the user plausibly has it, ask up to 4 questions in one AskUserQuestion round, as the standing rules say: "They'll likely probe Kubernetes. Your facts show Docker and ECS. Have you run Kubernetes?" A good story needs its numbers too, so ask for one a likely question leans on. Save each yes with `save_fact` and each no with `save_gap`, giving each question word for word as you asked it, with `job` (the job's id) and `task: "interview-prep"`, and use the answers in the prep. Skip this step when the facts cover what they'll ask.
+
+## 4. Refresh the company (3 searches at most)
 - News from the last ~3 months: funding, launches, leadership changes, layoffs, acquisitions.
 - If the user names who they're meeting, look up their public role and background: search results and public pages only, never a sign-in. Work info only: title, team, public posts and talks. Their names can go in prep.md, since it's the user's own notes.
 
-## 4. Write `applications/<folder>/prep.md`
+## 5. Write `applications/<folder>/prep.md`
 Header: `# Prep: <Company>, <Role>`, then `- **Date:** <today>`, and `- **Conversation:** <type, date, who with>` if known.
 
 Sections, short and scannable:
 - **The job in 5 lines:** what they need most, and what they'll probe.
 - **30-second pitch:** tailored to this job, fact-checked.
-- **Likely questions:** 6–10, each with a short answer outline that cites `facts/<file>#<claim>`. Respect the status tags: built ≠ live, led-team ≠ solo. Mark any outline that leans on a claim tagged `unconfirmed`, so the user checks it before saying it.
+- **Likely questions:** 6–10, each with a short answer outline that cites `facts/<file>#<claim>`. Respect the status tags: built ≠ live, led-team ≠ solo. Mark any outline that leans on a claim tagged `unconfirmed` (unverified), so the user checks it before saying it.
 - **Stories to have ready:** 3–5 STAR outlines from the fact bank, each mapped to a requirement.
 - **Gaps and how to handle them:** from the fit check and resume notes. Honest framing and adjacent proof, never a stretch.
 - **What's on the resume you sent:** the claims they're most likely to ask about, so answers match it.
@@ -48,7 +51,7 @@ Sections, short and scannable:
 
 The app shows prep.md in the job's panel. There's nothing to commit or sync.
 
-## 5. Reply
+## 6. Reply
 In 8 lines or fewer: the pitch, the top 3 likely questions, the biggest gap and how to frame it, 2 questions to ask, and an offer to run a mock interview ("say 'mock' and I'll interview you").
 
 ## Mock interview

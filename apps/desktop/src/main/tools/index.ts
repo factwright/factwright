@@ -1,13 +1,15 @@
-import { localDate } from '@factwright/core';
+import { FACT_TAGS, localDate } from '@factwright/core';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
+import type { FactBankFiles } from '../about/facts.ts';
 import type { AboutStore } from '../about/store.ts';
 import type { JobsService } from '../jobs/service.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
+import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
-import type { McpTool } from './mcp.ts';
+import { huntCall, type McpTool } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import { buildResume } from './resume.ts';
 import { hnJobs, jobBoard } from './search.ts';
@@ -17,6 +19,8 @@ export interface ToolDeps {
   jobs: JobsService;
   /** What the user told Factwright about themselves, which save_about_you adds to. */
   about: Pick<AboutStore, 'answers' | 'saveAnswers'>;
+  /** The fact bank's files, which the user's answers in a run add to. */
+  facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm'>;
   workspace: string;
   printer: ResumePrinter;
   /** The resume templates, built in and the user's own. */
@@ -25,6 +29,8 @@ export interface ToolDeps {
   fetch?: FetchDeps['fetch'];
   /** What was read, for saving it later. Tests pass their own. */
   cache?: ReadCache;
+  /** How long a fact tool waits for an answer whose hook is on its way. Tests wait less. */
+  answerWaitMs?: number;
 }
 
 const SEARCH_FOLDER = {
@@ -34,7 +40,7 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes, and the resume templates. Use them to read the tracker and the web, and to save answers, templates and resume files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes, the resume templates, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, facts from the user’s answers, templates and resume files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
@@ -47,6 +53,14 @@ export const LOCAL_TOOLS = [
   'list_templates',
   'read_template',
 ];
+
+/**
+ * The tools that file what the user answers Claude in a run: a new fact, unverified until they
+ * verify it, something they don't have, or a fact verified on their own pick. Each files only
+ * what the user answered in that run, as Claude Code's hooks reported it, and never changes a
+ * verified fact, so Claude may call them without asking. They stay on this computer.
+ */
+export const FACT_TOOLS = ['save_fact', 'save_gap', 'verify_fact'];
 
 /**
  * The tools that change what the user told Factwright about themselves. They stay on this
@@ -121,6 +135,12 @@ const QUERY_PROPERTIES = {
 /** The tools Factwright gives each Claude Code run, in place of a shell. */
 export function factwrightTools(deps: ToolDeps): McpTool[] {
   const today = () => localDate(deps.now?.() ?? new Date());
+  const factDeps = {
+    facts: deps.facts,
+    jobs: () => deps.jobs.list().jobs,
+    today,
+    answerWaitMs: deps.answerWaitMs,
+  };
   // The user's kinds of job, when they want more than one, so each job says which it's under.
   const kinds = () => {
     const answers = deps.about.answers();
@@ -442,6 +462,124 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           today(),
         );
       },
+    },
+    {
+      name: 'save_fact',
+      description: `Saves a fact the user just told you in answer to a question you asked with AskUserQuestion in this run, such as a yes to “Have you used GraphQL?”, in their fact bank, unverified until they verify it. Give the question word for word as you asked it, and its follow-up if you asked one; the file it belongs in; and the claim in the fact bank’s format: a short title, its status, ownership and confidence, wording within what they said, and any numbers, keywords and say or don’t-say. Factwright adds where it came from: the date, the job, and the questions with the user’s answers, from its own record of the round. Use the fact in this run’s work. Later runs offer it before using it: ask “${UNVERIFIED_CHOICES.join('”, “')}”. It never changes a verified fact. To fix one that waits to be verified, give its title as replaces: one this run saved, or one the user just answered a question about by its title.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file: {
+            type: 'string',
+            description:
+              'The file of facts it goes in: the job’s, such as facts/acme-health.md, or facts/projects.md for work outside a job.',
+          },
+          title: {
+            type: 'string',
+            description: 'A short title, such as “GraphQL APIs for the field app”.',
+          },
+          status: {
+            type: 'string',
+            enum: [...FACT_TAGS.status],
+            description: 'live, shipped, beta, built, in-progress, pre-launch or plan-only.',
+          },
+          ownership: {
+            type: 'string',
+            enum: [...FACT_TAGS.ownership],
+            description: 'solo, led-and-built, took-over or led-team.',
+          },
+          confidence: {
+            type: 'string',
+            enum: [...FACT_TAGS.confidence],
+            description: 'high, medium (hedge it) or low (ask before using it).',
+          },
+          wording: {
+            type: 'string',
+            description:
+              'What resumes say, about 190 characters at most, never more than the user said.',
+          },
+          short: { type: 'string', description: 'A version of about 110 characters or less.' },
+          numbers: { type: 'string', description: 'Numbers the user gave, such as “3,000 users”.' },
+          say: {
+            type: 'string',
+            description: 'What to say and never say, such as “used GraphQL” / never “led it”.',
+          },
+          keywords: {
+            type: 'string',
+            description: 'The posting’s terms this fact honestly proves, such as “GraphQL”.',
+          },
+          questions: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+            maxItems: 2,
+            description:
+              'The question the user answered, word for word as you asked it, and its follow-up if you asked one.',
+          },
+          job: {
+            type: 'string',
+            description: 'The job’s id, when you asked while working on one.',
+          },
+          task: {
+            type: 'string',
+            enum: [...FACT_TASKS],
+            description:
+              'What you were doing: resume, cover-letter, answers (an application’s questions), interview-prep, or other.',
+          },
+          replaces: {
+            type: 'string',
+            description:
+              'The title of a fact in the same file that waits to be verified, which this one corrects.',
+          },
+        },
+        required: ['file', 'title', 'status', 'confidence', 'wording', 'questions'],
+        additionalProperties: false,
+      },
+      // It adds to the user's fact bank on this computer, only from what they answered.
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      run: async (input, call) => saveFact(input, factDeps, call ?? huntCall()),
+    },
+    {
+      name: 'save_gap',
+      description:
+        'Notes a “no” the user gave in this run, to a question you asked with AskUserQuestion, under Doesn’t have in facts/gaps.md, so it’s never claimed and never asked about again. Give the topic in a few words, such as “GraphQL”, and the question word for word as you asked it. Factwright adds the user’s answer and the date, from its own record of the round.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'What they don’t have, in a few words.' },
+          question: { type: 'string', description: 'The question, word for word as you asked it.' },
+          job: {
+            type: 'string',
+            description: 'The job’s id, when you asked while working on one.',
+          },
+          task: {
+            type: 'string',
+            enum: [...FACT_TASKS],
+            description:
+              'What you were doing: resume, cover-letter, answers (an application’s questions), interview-prep, or other.',
+          },
+        },
+        required: ['topic', 'question'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input, call) => saveGap(input, factDeps, call ?? huntCall()),
+    },
+    {
+      name: 'verify_fact',
+      description: `Verifies a fact that waits to be verified (tagged unconfirmed), once the user picked “${UNVERIFIED_CHOICES[0]}” in this run’s question about it, which names the fact by its title. Give the fact’s file and title, and the question word for word as you asked it. Nothing else verifies a fact in a run.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'The fact’s file, such as facts/acme-health.md.' },
+          title: { type: 'string', description: 'The fact’s title, as its heading gives it.' },
+          question: { type: 'string', description: 'The question, word for word as you asked it.' },
+        },
+        required: ['file', 'title', 'question'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input, call) => verifyFact(input, factDeps, call ?? huntCall()),
     },
     {
       name: 'save_about_you',

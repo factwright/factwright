@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { type FactBank, factFile } from '../../shared/facts.ts';
-import { bankCounts, blockMatches, findFacts, picksOf, tagInfo, tagsWith } from './factView.ts';
+import {
+  bankCounts,
+  blockMatches,
+  detailsWithoutOrigin,
+  findFacts,
+  originOf,
+  picksOf,
+  tagInfo,
+  tagsWith,
+  unverifiedFacts,
+} from './factView.ts';
 
 const ACME = [
   '# Acme Health',
@@ -24,7 +34,7 @@ const bank = (files: Record<string, string>): FactBank => ({
 });
 
 describe('bankCounts', () => {
-  it('counts the claims in files of facts, and the ones to confirm', () => {
+  it('counts the claims in files of facts, and the ones to verify', () => {
     expect(
       bankCounts(
         bank({
@@ -49,7 +59,7 @@ describe('blockMatches', () => {
 
   it('finds a tag by what it reads as', () => {
     expect(blockMatches(platform, 'led and built')).toBe(true);
-    expect(blockMatches(reminders, 'not confirmed')).toBe(true);
+    expect(blockMatches(reminders, 'unverified')).toBe(true);
   });
 
   it('finds a file’s opening by what it says, not by the file’s name', () => {
@@ -65,29 +75,87 @@ describe('findFacts', () => {
   });
 
   it('finds blocks across files, file by file', () => {
-    const found = findFacts(facts, { query: 'shipped', toConfirm: false });
+    const found = findFacts(facts, { query: 'shipped' });
     expect(
       found.map(({ file, blocks }) => [file.path, blocks.map((block) => block.title)]),
     ).toEqual([['facts/acme.md', ['Reminder texts']]]);
   });
 
-  it('shows only the claims still to confirm', () => {
-    const found = findFacts(facts, { query: '', toConfirm: true });
-    expect(found.flatMap(({ blocks }) => blocks.map((block) => block.title))).toEqual([
-      'Reminder texts',
-    ]);
-  });
-
   it('keeps the block being changed, whatever it says now', () => {
     const found = findFacts(facts, {
       query: 'reminder',
-      toConfirm: false,
       keep: (path, block) => path === 'facts/beta.md' && block.title === 'Kept',
     });
     expect(found.flatMap(({ blocks }) => blocks.map((block) => block.title))).toEqual([
       'Reminder texts',
       'Kept',
     ]);
+  });
+});
+
+describe('unverifiedFacts', () => {
+  it('lists the facts to verify, the newest answers first, then the rest as the files go', () => {
+    const answer = (title: string, date: string) =>
+      `### ${title}\n\`unconfirmed\` \`live\`\n> Did it.\n- **Source:** answer ${date}, tailoring a resume for Fernway\n`;
+    const list = unverifiedFacts(
+      bank({
+        'facts/acme.md': `${ACME}\n${answer('Older answer', '2026-10-12')}\n${answer('Later that day', '2026-10-12')}`,
+        'facts/beta.md': `# Beta\n\n${answer('Newer answer', '2026-10-14')}\n### Drafted\n\`unconfirmed\` \`built\`\n> From notes.\n- **Source:** notes 2026-10-01\n`,
+        'facts/gaps.md': '### Not a claim here\n`unconfirmed`\n',
+      }),
+    );
+    expect(list.map(({ file, block }) => [file.path, block.title])).toEqual([
+      ['facts/beta.md', 'Newer answer'],
+      ['facts/acme.md', 'Later that day'],
+      ['facts/acme.md', 'Older answer'],
+      ['facts/acme.md', 'Reminder texts'],
+      ['facts/beta.md', 'Drafted'],
+    ]);
+  });
+});
+
+describe('originOf', () => {
+  const blockWith = (lines: string[]) =>
+    factFile(
+      'facts/acme.md',
+      ['### A fact', '`unconfirmed` `live`', '> Did it.', ...lines].join('\n'),
+    ).blocks[0] as Parameters<typeof originOf>[0];
+
+  it('says where a fact came from, and the questions it rests on', () => {
+    expect(
+      originOf(
+        blockWith([
+          '- **Source:** answer 2026-10-14, tailoring a resume for Fernway',
+          '- **Question:** Have you used GraphQL?',
+          '- **Answer:** Yes, in production',
+        ]),
+        '2026-10-15',
+      ),
+    ).toEqual({
+      text: 'Your answer while tailoring a resume for Fernway, Oct 14',
+      asked: [{ question: 'Have you used GraphQL?', answer: 'Yes, in production' }],
+    });
+    expect(originOf(blockWith(['- **Source:** answer 2025-12-01']), '2026-10-15')?.text).toBe(
+      'Your answer, Dec 1, 2025',
+    );
+    expect(
+      originOf(blockWith(['- **Source:** resume alex-rivera.pdf 2026-10-12']), '2026-10-15')?.text,
+    ).toBe('From your resume alex-rivera.pdf, Oct 12');
+    expect(originOf(blockWith(['- **Source:** LinkedIn 2026-10-12']), '2026-10-15')?.text).toBe(
+      'From your LinkedIn, Oct 12',
+    );
+    expect(originOf(blockWith(['- **Source:** a call with Sam']), '2026-10-15')?.text).toBe(
+      'Source: a call with Sam',
+    );
+    expect(originOf(blockWith([]), '2026-10-15')).toBeNull();
+  });
+
+  it('leaves where it came from out of its other details', () => {
+    expect(
+      detailsWithoutOrigin(
+        '- **Numbers:** 30 partners\n- **Source:** answer 2026-10-14\n- **Question:** Q?\n- **Answer:** A',
+      ),
+    ).toBe('- **Numbers:** 30 partners');
   });
 });
 

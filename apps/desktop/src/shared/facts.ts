@@ -77,6 +77,21 @@ export interface NewFact {
   text: string;
 }
 
+/** Something the user said they don't have: its place among gaps.md's rows, and what it said. */
+export interface GapTarget {
+  index: number;
+  line: string;
+}
+
+/**
+ * What a run filed in the fact bank from the user's answers: the facts, which wait for the user
+ * to verify them, by file and title, and how many things the user said they don't have.
+ */
+export interface FiledFacts {
+  facts: { path: string; title: string }[];
+  gaps: number;
+}
+
 /**
  * The bank as it is after a change, or what stopped it: `changed` when the block changed since
  * the window read it, such as by Claude or another computer.
@@ -135,6 +150,18 @@ export function parseFactChange(value: unknown): FactChange | null {
   const target = parseFactTarget(value);
   const next = isRecord(value) ? value.next : undefined;
   return target && isText(next, FACT_LIMITS.block) ? { ...target, next } : null;
+}
+
+export function parseGapTarget(value: unknown): GapTarget | null {
+  if (!isRecord(value)) return null;
+  const { index, line } = value;
+  return typeof index === 'number' &&
+    Number.isInteger(index) &&
+    index >= 0 &&
+    isText(line, FACT_LIMITS.block) &&
+    !/[\r\n]/.test(line)
+    ? { index, line }
+    : null;
 }
 
 export function parseNewFact(value: unknown): NewFact | null {
