@@ -15,6 +15,22 @@ function word(body: string, parts: Record<string, string> = {}): Uint8Array {
   });
 }
 
+/** A Word file whose zip says one of its parts unpacks to `size` bytes, whatever it holds. */
+function declaring(file: Uint8Array, name: string, size: number): Uint8Array {
+  const data = file.slice();
+  const view = new DataView(data.buffer);
+  // Each entry in the zip's central directory: its signature, then its sizes and its name.
+  for (let at = 0; at + 46 <= data.length; at++) {
+    if (view.getUint32(at, true) !== 0x02014b50) continue;
+    const length = view.getUint16(at + 28, true);
+    if (new TextDecoder().decode(data.subarray(at + 46, at + 46 + length)) === name) {
+      view.setUint32(at + 24, size, true);
+      return data;
+    }
+  }
+  throw new Error(`No ${name} in the zip`);
+}
+
 const p = (text: string, props = '') =>
   `<w:p>${props}<w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 const texts = (data: Uint8Array) =>
@@ -123,6 +139,27 @@ describe('readDocx', () => {
     expect(readDocx(data)).toMatchObject({ fonts: ['Aptos'], columns: 2, pageCount: 2 });
   });
 
+  it('reads no more of a part than the zip says it unpacks to', () => {
+    const file = declaring(word(p('x'.repeat(100_000))), 'word/document.xml', 400);
+    const text = readDocx(file)
+      .lines.map((line) => line.text)
+      .join('');
+    expect(text.length).toBeGreaterThan(0);
+    expect(text.length).toBeLessThan(400);
+  });
+
+  it('reads at most 12 headers and footers', () => {
+    const headers = Object.fromEntries(
+      Array.from({ length: 20 }, (_, at) => [
+        `word/header${at + 1}.xml`,
+        `<w:hdr ${W}>${p(`Header ${at + 1}`)}</w:hdr>`,
+      ]),
+    );
+    const lines = readDocx(word(p('Body'), headers)).lines;
+    expect(lines.filter((line) => line.part === 'header')).toHaveLength(12);
+    expect(lines.at(-1)?.text).toBe('Body');
+  });
+
   it('refuses a file that isn’t a Word file', () => {
     expect(() => readDocx(zipSync({ 'notes.txt': strToU8('hello') }))).toThrow('isn’t a Word file');
     expect(() => readDocx(strToU8('not a zip at all'))).toThrow();
@@ -141,6 +178,14 @@ describe('parseXml', () => {
   it('closes an end tag back to the element it names, and skips one that matches none', () => {
     const root = parseXml('<a><b><c>text</b></x><d/></a>');
     expect(childrenOf(root).map((child) => child.name)).toEqual(['b', 'd']);
+  });
+
+  it('reads end tags that match nothing in time with how many there are', () => {
+    const started = performance.now();
+    const root = parseXml(`${'<a>'.repeat(40_000)}${'</b>'.repeat(40_000)}`);
+    // Each stray end tag looked back through every open element, which took seconds.
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(root.name).toBe('a');
   });
 
   it('reads deep nesting without running out of room', () => {
