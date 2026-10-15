@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { getDocument } from 'pdfjs-dist';
+// pdf.js's build for Node, which brings what Node 24 lacks. The app's window reads with the other.
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { describe, expect, it } from 'vitest';
 import type { CheckId } from './checks.ts';
 import { readDocx } from './docx.ts';
