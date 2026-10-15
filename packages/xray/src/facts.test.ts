@@ -63,7 +63,8 @@ describe('readFacts', () => {
       },
     ]);
     expect(facts.keywords).toEqual([
-      { text: 'CI/CD, platform engineering', where: 'acme.md · Cut deploy time' },
+      { text: 'CI/CD', where: 'acme.md · Cut deploy time' },
+      { text: 'platform engineering', where: 'acme.md · Cut deploy time' },
     ]);
     expect(facts.toCheck).toEqual([
       { text: 'incident management', where: 'acme.md · Ran the on-call rotation' },
@@ -107,7 +108,9 @@ describe('readFacts', () => {
         ].join('\n'),
       },
     ]);
-    expect(facts.saidNo).toEqual(['Rust in production', 'Kafka']);
+    // Everything in gaps.md says what the user doesn't have, but what needs confirming and the
+    // open questions: its title too, which names nothing.
+    expect(facts.saidNo).toEqual(['Gaps', 'Rust in production, No, 2026-10-12', 'Kafka']);
     expect(facts.toConfirm).toEqual(['Kubernetes: production, or a side project?']);
     expect(facts.keywords).toEqual([]);
   });
@@ -232,6 +235,7 @@ describe('readFacts, with what each line is under', () => {
       },
     ]);
     expect(facts.dontClaim).toEqual([
+      { text: 'Don’t claim', where: 'acme.md · Don’t claim' },
       { text: 'Kubernetes: only via the platform team', where: 'acme.md · Don’t claim' },
     ]);
   });
@@ -269,7 +273,7 @@ describe('readFacts, with what each line is under', () => {
 });
 
 describe('readFacts, in nested lists', () => {
-  it('reads a nested item with the items it’s in', () => {
+  it('reads a nested item with the items it’s in, and items after a label item with it', () => {
     const facts = readFacts([
       {
         path: 'facts/skills.md',
@@ -299,8 +303,22 @@ describe('readFacts, in nested lists', () => {
         ].join('\n'),
       },
     ]);
-    expect(texts(facts.skills)).toEqual(['Python', 'Go']);
+    // "- Go" comes after "- Want to learn:" at its depth, so it may be one to learn too.
+    expect(texts(facts.skills)).toEqual(['Python']);
     expect(facts.saidNo).toEqual(['Kafka']);
     expect(texts(facts.credentials)).toEqual(['PMP, 2021']);
+  });
+});
+
+describe('readFacts, on a file made to be slow to read', () => {
+  it('reads a long heading over many lines in time with the file’s length', () => {
+    const text = `## ${'Tools '.repeat(20_000)}\n${Array.from(
+      { length: 20_000 },
+      (_, at) => `- Skill ${at}`,
+    ).join('\n')}`;
+    const started = performance.now();
+    expect(readFacts([{ path: 'facts/skills.md', text }]).skills).toHaveLength(20_000);
+    // Each line read every heading above it again: seconds for a file this size.
+    expect(performance.now() - started).toBeLessThan(1_500);
   });
 });
