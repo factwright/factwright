@@ -10,10 +10,12 @@ import {
   jobProgress,
   kindNamed,
   kindOfJob,
+  letterPlainText,
   nextStep,
   PASS_REASON_LABELS,
   payLabel,
   questionKey,
+  readLetterText,
   readSuggestedAnswers,
   shortDate,
 } from '@factwright/core';
@@ -24,10 +26,11 @@ import {
   FitBadge,
   JOB_STATUS_DISPLAY,
   Markdown,
+  MarkdownLine,
   Notice,
   StatusPill,
 } from '@factwright/ui';
-import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
+import { ArrowLeft, Copy, ExternalLink, FileText } from 'lucide-react';
 import { useState } from 'react';
 import styles from './JobView.module.css';
 import { navigate } from './route.ts';
@@ -67,12 +70,15 @@ export function JobView({
 }) {
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
   const progress = jobProgress(job, today);
   const next = nextStep(job, progress, today);
   const pay = payLabel(job.pay);
   const docs = vault.docs.get(job.id) ?? {};
   const documents = DOCUMENTS.filter(({ kind }) => docs[kind]);
   const answers = applicationAnswers(job.questions, readSuggestedAnswers(docs.answers), job.sent);
+  const letter = readLetterText(docs.letter);
+  const built = [...job.files, ...job.letters];
   const asked = vault.asked.get(job.id) ?? {};
   const kind =
     vault.kinds.length > 1
@@ -110,6 +116,18 @@ export function JobView({
       link.click();
     }
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  // A phone copies only while the tap that asked is still going, and some browsers say no.
+  const copyLetter = async () => {
+    if (!letter) return;
+    try {
+      await navigator.clipboard.writeText(letterPlainText(letter));
+      setCopied('copied');
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setCopied('failed');
+    }
   };
 
   return (
@@ -237,6 +255,60 @@ export function JobView({
         </section>
       )}
 
+      {(letter || job.letters.length > 0) && (
+        <section className={styles.section} aria-labelledby="letter">
+          <h2 id="letter" className={styles.heading}>
+            Cover letter
+          </h2>
+          {letter && (
+            <div className={styles.letter}>
+              {letter.recipient.length > 0 && (
+                <p className={styles.itemNote}>To {letter.recipient.join(' · ')}</p>
+              )}
+              {letter.greeting && <p>{letter.greeting}</p>}
+              {letter.paragraphs.map((paragraph, i) => (
+                <p key={i}>
+                  <MarkdownLine text={paragraph} />
+                </p>
+              ))}
+              <p>
+                {letter.closing}
+                {letter.closing && letter.signature && <br />}
+                {letter.signature}
+              </p>
+            </div>
+          )}
+          <div className={styles.letterActions}>
+            {letter && (
+              <Button size="sm" icon={<Copy size={14} aria-hidden="true" />} onClick={copyLetter}>
+                {copied === 'copied' ? 'Copied' : 'Copy text'}
+              </Button>
+            )}
+            {job.letters.map((file) => {
+              const label = file.format === 'pdf' ? 'Open the PDF' : 'Open the Word file';
+              return (
+                <Button
+                  key={file.path}
+                  size="sm"
+                  aria-label={`${label}, ${file.name}`}
+                  onClick={() => openResume(file.path, file.format, file.name)}
+                >
+                  {label}
+                </Button>
+              );
+            })}
+            <span className={styles.announce} role="status">
+              {copied === 'copied' ? 'Copied the cover letter’s text' : ''}
+            </span>
+          </div>
+          {copied === 'failed' && (
+            <p className={styles.problem} role="alert">
+              This browser wouldn’t copy it. Select the letter’s text and copy that instead.
+            </p>
+          )}
+        </section>
+      )}
+
       {answers.length > 0 && (
         <section className={styles.section} aria-labelledby="answers">
           <h2 id="answers" className={styles.heading}>
@@ -298,13 +370,13 @@ export function JobView({
         </section>
       )}
 
-      {(job.files.length > 0 || documents.length > 0) && (
+      {(built.length > 0 || documents.length > 0) && (
         <section className={styles.section} aria-labelledby="files">
           <h2 id="files" className={styles.heading}>
-            Resumes and documents
+            Files
           </h2>
           <ul className={styles.items}>
-            {job.files.map((file) => (
+            {built.map((file) => (
               <li key={file.path} className={styles.file}>
                 <span>
                   <strong>{file.name}</strong>

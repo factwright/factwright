@@ -274,6 +274,30 @@ describe('job_details', () => {
     );
   });
 
+  it('tells a cover letter from the resumes, and marks the one most likely sent', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    const folder = join(root, 'applications', FOLDER);
+    writeFileSync(join(folder, 'cover-letter.json'), '{}');
+    writeFileSync(join(folder, 'AlexRiveraResume10082026_Acme.pdf'), '%PDF-1.7');
+    writeFileSync(join(folder, 'AlexRiveraCoverLetter10082026_Acme.pdf'), '%PDF-1.7');
+    const at = new Date('2026-10-08T12:00:00');
+    for (const file of [
+      'AlexRiveraResume10082026_Acme.pdf',
+      'AlexRiveraCoverLetter10082026_Acme.pdf',
+    ])
+      utimesSync(join(folder, file), at, at);
+    jobs.read();
+    jobs.updateJob(id, { status: 'applied', statusOn: '2026-10-09' });
+    const answer = await tool('job_details').run({ job: id });
+    for (const line of [
+      `- applications/${FOLDER}/cover-letter.json: the cover letter’s data, which builds its PDF and Word files`,
+      `- applications/${FOLDER}/AlexRiveraCoverLetter10082026_Acme.pdf: a built cover letter (2026-10-08), most likely the one sent with the application`,
+      `- applications/${FOLDER}/AlexRiveraResume10082026_Acme.pdf: a built resume (2026-10-08), most likely the one sent with the application`,
+    ]) {
+      expect(answer).toContain(line);
+    }
+  });
+
   it('lists the user’s questions about the job, and which are answered', async () => {
     const id = 'acme-robotics--staff-engineer';
     const asked = jobs.addAsk(id, 'What can you find about their tech culture?');
@@ -917,6 +941,26 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('_v2.pdf');
   });
 
+  it('says when the job’s cover letter no longer has the resume’s header', async () => {
+    writeResume(resume);
+    const letter = {
+      name: 'Alex Rivera',
+      headline: 'Platform Engineer',
+      greeting: 'Dear Sam,',
+      paragraphs: ['Hello.'],
+      closing: 'Best,',
+    };
+    writeFileSync(folder('cover-letter.json'), JSON.stringify(letter));
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
+      'The job’s cover letter no longer matches this resume: its headline differs. Copy the header from resume.json into cover-letter.json, then build the letter again with build_cover_letter, so the two look like a set.',
+    );
+    writeFileSync(
+      folder('cover-letter.json'),
+      JSON.stringify({ ...letter, headline: 'Staff Engineer' }),
+    );
+    expect(await tool('build_resume').run({ folder: FOLDER })).not.toContain('cover letter');
+  });
+
   it('keeps them once the user withdrew, but not for a role that closed before applying', async () => {
     writeResume(resume);
     writeFileSync(folder('AlexRiveraResume10112026_Acme.pdf'), 'as sent');
@@ -924,6 +968,201 @@ describe('build_resume', () => {
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('stays as sent');
     jobs.updateJob('acme-robotics--staff-engineer', { status: 'role-closed' });
     expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Built applications/');
+  });
+});
+
+describe('build_cover_letter', () => {
+  const folder = (file: string) => join(root, 'applications', FOLDER, file);
+  const resume = {
+    layout: 'minimal',
+    name: 'Alex Rivera',
+    headline: 'Staff Engineer',
+    contact: { email: 'alex@example.com' },
+    summary: 'Builds platforms.',
+    experience: [{ title: 'Staff Engineer', company: 'Tidewater', start: '2022', end: 'Present' }],
+  };
+  const letter = {
+    output_name: 'AlexRiveraCoverLetter10112026_Acme',
+    name: 'Alex Rivera',
+    headline: 'Staff Engineer',
+    contact: { email: 'alex@example.com' },
+    date: 'October 11, 2026',
+    recipient: ['Sam Lee', 'Engineering Manager', 'Acme Robotics'],
+    greeting: 'Dear Sam Lee,',
+    paragraphs: ['Acme wants deploys to be boring. I made them boring at Tidewater.', 'Talk soon.'],
+    closing: 'Best regards,',
+  };
+  const write = (file: string, value: unknown) =>
+    writeFileSync(folder(file), typeof value === 'string' ? value : JSON.stringify(value));
+  const onePage = () =>
+    printer.print.mockResolvedValue({
+      pdf: Buffer.from('%PDF-1.7 letter'),
+      pages: 1,
+      lastFill: 58,
+    });
+
+  it('builds the PDF in the resume’s template, and says how it fits', async () => {
+    write('resume.json', resume);
+    write('cover-letter.json', letter);
+    onePage();
+    const answer = await tool('build_cover_letter').run({ folder: FOLDER });
+    expect(answer).toBe(
+      [
+        `Built applications/${FOLDER}/AlexRiveraCoverLetter10112026_Acme.pdf in the Minimal template: 1 page, 58% full.`,
+        '14 words in 2 paragraphs.',
+        'Paragraphs that end short:',
+        '! 2L   9% | Cut deploy time by ~40% across twelve',
+        '',
+        '1 runt line(s) marked "!": the last line is under 30% full. Trim or extend those.',
+        'Checks: clean.',
+        'Read the PDF to check how it reads and sits on the page.',
+      ].join('\n'),
+    );
+    expect(readFileSync(folder('AlexRiveraCoverLetter10112026_Acme.pdf'), 'utf8')).toBe(
+      '%PDF-1.7 letter',
+    );
+    const printed = printer.print.mock.calls[0]?.[0] ?? '';
+    expect(printed).toContain('<title>Alex Rivera — Cover Letter</title>');
+    expect(printed).toContain('<div class="lhi">Dear Sam Lee,</div>');
+    // Minimal's own header, styled as on its resume.
+    expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
+    // The letter's paragraphs are what the fit check measures.
+    expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
+    expect(printer.measure.mock.calls[0]?.[1]).toContain("const selector = '.para';");
+  });
+
+  it('builds a Word file too, and says a letter runs to one page', async () => {
+    write('resume.json', resume);
+    write('cover-letter.json', letter);
+    const answer = await tool('build_cover_letter').run({ folder: FOLDER, format: 'both' });
+    expect(answer).toContain(
+      `Built applications/${FOLDER}/AlexRiveraCoverLetter10112026_Acme.docx. Word lays it out itself, so check it fits one page there too.`,
+    );
+    expect(
+      readFileSync(folder('AlexRiveraCoverLetter10112026_Acme.docx')).subarray(0, 2).toString(),
+    ).toBe('PK');
+    expect(answer).toContain(
+      'Problems to fix, then build again:\n- The letter runs to 2 pages; a cover letter fits on one.',
+    );
+  });
+
+  it('holds its header to the resume’s, so the two look like a set', async () => {
+    write('resume.json', resume);
+    write('cover-letter.json', {
+      ...letter,
+      name: 'Alex R.',
+      contact: { email: 'alex@old.example', phone: '555-0100' },
+    });
+    onePage();
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toContain(
+      '- The letter’s name, contact.phone and contact.email don’t match resume.json’s. Copy them from there, so the two look like a set.',
+    );
+    write('cover-letter.json', { ...letter, layout: 'classic' });
+    const own = await tool('build_cover_letter').run({ folder: FOLDER });
+    expect(own).toContain('in the Classic template');
+    expect(own).toContain('The letter names its own template, so it doesn’t match the resume’s.');
+    expect(own).toContain('Checks: clean.');
+  });
+
+  it('builds without a tailored resume, saying the header wasn’t checked', async () => {
+    write('cover-letter.json', letter);
+    onePage();
+    const answer = await tool('build_cover_letter').run({ folder: FOLDER });
+    expect(answer).toContain('in the Classic template');
+    expect(answer).toContain(
+      'The job has no resume.json, so the header wasn’t checked against it. It should match the resume the user sends.',
+    );
+  });
+
+  it('checks the user’s rules, confidential terms and the clichés every letter is checked for', async () => {
+    mkdirSync(join(root, 'guide'));
+    writeFileSync(
+      join(root, 'guide', 'lint.json'),
+      JSON.stringify({ banned: [{ pattern: 'boring', why: 'say reliable' }] }),
+    );
+    writeFileSync(join(root, 'guide', 'confidential-terms.txt'), '# customers\ntidewater\n');
+    write('cover-letter.json', {
+      ...letter,
+      greeting: 'To whom it may concern,',
+      paragraphs: ['I am writing to apply. I made deploys boring at Tidewater.'],
+    });
+    onePage();
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toContain(
+      [
+        'Problems to fix, then build again:',
+        '- "boring" isn\'t allowed: say reliable.',
+        '- "I am writing to" isn\'t allowed: every letter opens this way; open with something about this job instead.',
+        '- "To whom it may concern" isn\'t allowed: address a person, or the team: "Dear Acme hiring team,".',
+        '- A confidential term matching "tidewater" is in the letter.',
+      ].join('\n'),
+    );
+  });
+
+  it('prints plainly in a template of the user’s own with no letter layout', async () => {
+    const classic = builtInTemplate('classic') as Template;
+    const { letter: _letter, ...plain } = classic;
+    mkdirSync(join(root, 'templates'));
+    writeFileSync(
+      join(root, 'templates', 'two-tone.json'),
+      templateFile({ ...plain, name: 'Two Tone', css: 'body{display:grid}' }),
+    );
+    write('resume.json', { ...resume, layout: 'two-tone' });
+    write('cover-letter.json', letter);
+    onePage();
+    const answer = await tool('build_cover_letter').run({ folder: FOLDER });
+    expect(answer).toContain(
+      'in the Two Tone template’s fonts and colors (it has no letter layout of its own, so the letter is plain): 1 page',
+    );
+    expect(printer.print.mock.calls[0]?.[0]).not.toContain('body{display:grid}');
+  });
+
+  it('says what’s wrong with cover-letter.json, the folder, the format or the files’ name', async () => {
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toBe(
+      `There’s no applications/${FOLDER}/cover-letter.json yet. Write the letter there first.`,
+    );
+    write('cover-letter.json', '{ not json');
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toMatch(
+      /^applications\/.+\/cover-letter\.json isn’t valid JSON: /,
+    );
+    write('cover-letter.json', { ...letter, greeting: undefined, paragraphs: [] });
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toBe(
+      'Not built. Fix cover-letter.json first:\n- letter.greeting is missing.\n- letter.paragraphs should hold the letter, a paragraph each.',
+    );
+    write('cover-letter.json', { ...letter, output_name: 'AlexRiveraLetter_Acme' });
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toBe(
+      'Not built: the files’ name, AlexRiveraLetter_Acme, has to say CoverLetter, such as AlexRiveraCoverLetter10142026_Acme, so the app keeps them apart from the resume. Change output_name in cover-letter.json.',
+    );
+    write('cover-letter.json', { ...letter, layout: 'timeline' });
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toBe(
+      'Not built: There’s no template “timeline”. The user’s templates are classic, minimal. Set layout in cover-letter.json to one of them.',
+    );
+    for (const name of ['../escape', 'base/startup-ic', 'Acme Letter']) {
+      expect(await tool('build_cover_letter').run({ folder: name })).toContain(
+        'isn’t a job folder',
+      );
+    }
+    expect(await tool('build_cover_letter').run({ folder: FOLDER, format: 'rtf' })).toBe(
+      'The format should be pdf, docx, both.',
+    );
+    expect(printer.print).not.toHaveBeenCalled();
+  });
+
+  it('names the files from the person and the date, without an output_name', async () => {
+    write('cover-letter.json', { ...letter, output_name: undefined });
+    onePage();
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toContain(
+      `Built applications/${FOLDER}/AlexRiveraCoverLetter10112026.pdf`,
+    );
+  });
+
+  it('keeps the letter that went out with an application', async () => {
+    write('cover-letter.json', letter);
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'applied', statusOn: '2026-10-09' });
+    writeFileSync(folder('AlexRiveraCoverLetter10112026_Acme.pdf'), 'as sent');
+    expect(await tool('build_cover_letter').run({ folder: FOLDER })).toBe(
+      'Not built: AlexRiveraCoverLetter10112026_Acme.pdf went out with the application, so it stays as sent. Give cover-letter.json a new output_name to build another.',
+    );
+    expect(readFileSync(folder('AlexRiveraCoverLetter10112026_Acme.pdf'), 'utf8')).toBe('as sent');
   });
 });
 
@@ -941,7 +1180,7 @@ describe('the template tools', () => {
     mkdirSync(join(root, 'templates'));
     writeFileSync(
       join(root, 'templates', 'navy-sidebar.json'),
-      JSON.stringify(file({ body: '<p>{{name}}</p>', parts: {} })),
+      JSON.stringify(file({ body: '<p>{{name}}</p>', parts: {}, letter: undefined })),
     );
     expect(await tool('list_templates').run({})).toBe(
       [
@@ -975,13 +1214,53 @@ describe('the template tools', () => {
       [
         'Saved templates/navy-sidebar.json, “Navy Sidebar”. It’s in the user’s templates now.',
         'Its preview, with the made-up resume the gallery shows, is templates/.previews/navy-sidebar.pdf: 2 pages, the last one 84% full. Read it to check the look.',
+        'A cover letter in its letter layout is templates/.previews/navy-sidebar.letter.pdf: 2 pages. Read it too: its header should match the resume’s.',
       ].join('\n'),
     );
     expect(readFileSync(join(root, 'templates', '.previews', 'navy-sidebar.pdf'), 'utf8')).toBe(
       '%PDF-1.7 made up',
     );
     expect(printer.print.mock.calls[0]?.[0]).toContain('Jordan Avery');
-    expect(templates.list().map((each) => each.id)).toEqual(['classic', 'minimal', 'navy-sidebar']);
+    // The letter is from the same person, in the template's letter layout.
+    expect(
+      readFileSync(join(root, 'templates', '.previews', 'navy-sidebar.letter.pdf'), 'utf8'),
+    ).toBe('%PDF-1.7 made up');
+    expect(printer.print.mock.calls[1]?.[0]).toContain('<div class="lhi">Dear Priya Shah,</div>');
+    expect(printer.print.mock.calls[1]?.[0]).toContain('Jordan Avery');
+    // Previewed with one of the user's resumes, the letter has that resume's header, and no
+    // contact details when it has none.
+    mkdirSync(join(root, 'base'));
+    writeFileSync(
+      join(root, 'base', 'startup-ic.json'),
+      JSON.stringify({
+        name: 'Sam Doe',
+        headline: 'Designer',
+        summary: 'Designs.',
+        experience: [{ title: 'Designer', company: 'Tidewater', start: '2022', end: 'Present' }],
+      }),
+    );
+    printer.print.mockClear();
+    await tool('save_template').run({
+      id: 'navy-sidebar',
+      template: file(),
+      replace: true,
+      resume: 'base/startup-ic',
+    });
+    const preview = printer.print.mock.calls[1]?.[0] ?? '';
+    expect(preview).toContain('<div class="name">Sam Doe</div>');
+    expect(preview).not.toContain('jordan.avery@example.com');
+    // One with no letter layout says letters print plainly in it.
+    expect(
+      await tool('save_template').run({ id: 'plain', template: file({ letter: undefined }) }),
+    ).toContain(
+      'It has no letter layout, so cover letters print plainly in its fonts and colors, as templates/.previews/plain.letter.pdf shows: 2 pages.',
+    );
+    expect(templates.list().map((each) => each.id)).toEqual([
+      'classic',
+      'minimal',
+      'navy-sidebar',
+      'plain',
+    ]);
   });
 
   it('says what to fix, and never replaces a template unless asked', async () => {
@@ -1005,7 +1284,8 @@ describe('the template tools', () => {
         replace: true,
       }),
     ).toContain('“Navy 2”, in place of the one before');
-    expect(printer.print).toHaveBeenCalledTimes(2);
+    // A resume and a letter for each save.
+    expect(printer.print).toHaveBeenCalledTimes(4);
   });
 
   it('lets a run started to make a template replace only the templates it saved', async () => {

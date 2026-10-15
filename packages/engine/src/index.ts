@@ -1,9 +1,10 @@
-export { docxFile, resumeDocument } from './docx.ts';
+export { docxFile, letterDocument, letterDocxFile, resumeDocument } from './docx.ts';
 export { outputName, pdfPageCount } from './files.ts';
 export {
   type FitRow,
   fitReport,
   isRunt,
+  LETTER_MEASURE_SCRIPT,
   MEASURE_SCRIPT,
   measurableHtml,
   RUNT_PERCENT,
@@ -14,9 +15,18 @@ export {
   DEFAULT_SYSTEMS_HEADING,
   escapeHtml,
   renderHtml,
+  renderLetterHtml,
 } from './html.ts';
-export { DEFAULT_MAX_PAGES, type LintConfig, lintResume, readConfidentialTerms } from './lint.ts';
-export { previewResume } from './sample.ts';
+export { type CoverLetter, LETTER_FIELDS, letterWords, readLetter } from './letter.ts';
+export {
+  DEFAULT_MAX_PAGES,
+  LETTER_CLICHES,
+  type LintConfig,
+  lintLetter,
+  lintResume,
+  readConfidentialTerms,
+} from './lint.ts';
+export { previewLetter, previewResume } from './sample.ts';
 export {
   type Bullet,
   type Contact,
@@ -33,6 +43,7 @@ export { sectionTitles } from './template/render.ts';
 export {
   builtInTemplate,
   DEFAULT_TEMPLATE,
+  type LetterLayout,
   type SectionTitles,
   TEMPLATE_ID,
   TEMPLATES,

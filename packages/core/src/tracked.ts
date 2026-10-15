@@ -276,6 +276,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     fitReport: null,
     sentiment: null,
     files: [],
+    letters: [],
     outreach: [],
     docKinds: [],
     ...tracking,

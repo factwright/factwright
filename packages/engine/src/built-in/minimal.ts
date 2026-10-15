@@ -1,5 +1,5 @@
 import type { Template } from '../templates.ts';
-import { BODY, PARTS } from './markup.ts';
+import { BODY, LETTER, letterCss, PARTS } from './markup.ts';
 
 /** Quiet and airy: lots of white space, gray headings and no color. */
 export const minimal: Template = {
@@ -69,4 +69,9 @@ export const minimal: Template = {
     `,
   body: BODY,
   parts: PARTS,
+  letter: {
+    css: `
+      .hdr{padding-bottom:14px;border-bottom:1px solid var(--rule)}${letterCss({ center: false, size: 10.5, sign: 600 })}`,
+    body: LETTER,
+  },
 };

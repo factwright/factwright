@@ -5,7 +5,7 @@ import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
 import { HUNT_SKILLS, RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
 import { TERMS_HEADER } from '../about/terms.ts';
-import { UNVERIFIED_CHOICES } from '../tools/facts.ts';
+import { type FactTask, UNVERIFIED_CHOICES } from '../tools/facts.ts';
 import { factwrightTools } from '../tools/index.ts';
 import { buildLaunchArgs, STANDING_RULES } from './launch.ts';
 import { sessionSettings } from './settings.ts';
@@ -49,6 +49,7 @@ describe('the plugin’s skills', () => {
       'add-facts',
       'answer-questions',
       'ask',
+      'cover-letter',
       'fit-check',
       'focused-resume',
       'get-started',
@@ -105,6 +106,20 @@ describe('the plugin’s skills', () => {
     for (const skill of RUN_SKILLS) {
       const found = skills.find(({ folder }) => folder === skill);
       expect(found?.text).toContain('`job <id>`');
+    }
+  });
+
+  it('ask about what a job wants while writing for it, and save the answers under their task', () => {
+    const writing: Readonly<Record<string, FactTask>> = {
+      'focused-resume': 'resume',
+      'cover-letter': 'cover-letter',
+      'answer-questions': 'answers',
+      'interview-prep': 'interview-prep',
+    };
+    for (const [folder, task] of Object.entries(writing)) {
+      const text = skills.find((skill) => skill.folder === folder)?.text ?? '';
+      expect(text, folder).toContain(`task: "${task}"`);
+      for (const tool of ['save_fact', 'save_gap']) expect(text, folder).toContain(`\`${tool}\``);
     }
   });
 

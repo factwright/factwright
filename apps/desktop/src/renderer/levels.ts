@@ -19,6 +19,7 @@ import {
 /** Each task the app starts, as a sentence names it, such as "Job searches at High". */
 const TASK_NAMES: Readonly<Record<ModelTask, string>> = {
   'focused-resume': 'Tailored resumes',
+  'cover-letter': 'Cover letters',
   'fit-check': 'Fit checks',
   'salary-check': 'Salary checks',
   'who-to-message': 'Who to message',

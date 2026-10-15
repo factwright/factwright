@@ -1,3 +1,4 @@
+import { type Check, contactCheck, isObject, list, shape, text, yesOrNo } from './checks.ts';
 import { TEMPLATE_ID } from './templates.ts';
 
 /** The files a build makes. PDF is the default. */
@@ -76,56 +77,6 @@ export interface Resume {
   extra_sections?: { heading: string; items: string[] }[];
 }
 
-type Check = (value: unknown, where: string, problems: string[]) => void;
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-function text(required: boolean): Check {
-  return (value, where, problems) => {
-    if (value === undefined || value === null) {
-      if (required) problems.push(`${where} is missing.`);
-    } else if (typeof value !== 'string') {
-      problems.push(`${where} should be text.`);
-    }
-  };
-}
-
-const yesOrNo: Check = (value, where, problems) => {
-  if (value !== undefined && value !== null && typeof value !== 'boolean') {
-    problems.push(`${where} should be true or false.`);
-  }
-};
-
-function list(item: Check, required = false): Check {
-  return (value, where, problems) => {
-    if (value === undefined || value === null) {
-      if (required) problems.push(`${where} is missing.`);
-      return;
-    }
-    if (!Array.isArray(value)) {
-      problems.push(`${where} should be a list.`);
-      return;
-    }
-    for (const [i, each] of value.entries()) item(each, `${where}[${i}]`, problems);
-  };
-}
-
-function shape(fields: Record<string, Check>, required = true): Check {
-  return (value, where, problems) => {
-    if (value === undefined || value === null) {
-      if (required) problems.push(`${where} is missing.`);
-      return;
-    }
-    if (!isObject(value)) {
-      problems.push(`${where} should be an object.`);
-      return;
-    }
-    for (const [key, check] of Object.entries(fields))
-      check(value[key], `${where}.${key}`, problems);
-  };
-}
-
 const CHECKS: Record<string, Check> = {
   layout: text(false),
   format: text(false),
@@ -133,16 +84,7 @@ const CHECKS: Record<string, Check> = {
   name: text(true),
   headline: text(true),
   tagline: text(false),
-  contact: shape(
-    {
-      phone: text(false),
-      email: text(false),
-      linkedin: text(false),
-      location: text(false),
-      website: text(false),
-    },
-    false,
-  ),
+  contact: contactCheck,
   summary: text(true),
   impact_stats: list(shape({ value: text(true), label: text(true) })),
   competencies: list(text(true)),

@@ -119,6 +119,21 @@ function resume(company: string, modified: string, format: 'pdf' | 'docx' = 'pdf
   };
 }
 
+/** A cover letter's files, as the cover-letter skill names them: a PDF, or a Word file too. */
+function letters(company: string, modified: string, formats: readonly ('pdf' | 'docx')[]) {
+  const short = company.replace(/\W+/g, '');
+  return formats.map((format) => {
+    const name = `AlexRiveraCoverLetter_${short}.${format}`;
+    return {
+      path: `applications/${company.toLowerCase().replace(/\W+/g, '-')}/${name}`,
+      name,
+      format,
+      size: format === 'pdf' ? 38_100 : 9_800,
+      modified: `${modified}T16:00:00.000Z`,
+    };
+  });
+}
+
 /** A made-up job, with anything not given left empty. */
 export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'role'>): Job {
   return {
@@ -142,6 +157,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     fitReport: null,
     sentiment: null,
     files: [],
+    letters: [],
     outreach: [],
     status: null,
     statusOn: null,
@@ -351,7 +367,8 @@ export function sampleJobs(): Job[] {
       appliedOn: day(-3),
       statusLog: changes('lumen', [['applied', -3]]),
       files: [resume('Lumen Health', day(-4))],
-      docKinds: ['posting', 'answers'],
+      letters: letters('Lumen Health', day(-4), ['pdf', 'docx']),
+      docKinds: ['posting', 'answers', 'letter'],
     }),
     sampleJob({
       id: 'brightpath-learning--software-engineer-iii',
@@ -364,6 +381,12 @@ export function sampleJobs(): Job[] {
       source: LINKEDIN_RUN.source,
       searches: [LINKEDIN_RUN],
       files: [resume('Brightpath Learning', day(-1))],
+      apply: [
+        '- **Alert:** Email your resume and a cover letter. There’s no form.',
+        '- **Email:** jobs@brightpath.example',
+        '',
+        '1. Attach your resume and a cover letter, both as PDFs.',
+      ].join('\n'),
       status: 'apply',
       statusOn: day(-1),
       statusLog: changes('brightpath', [['apply', -1]]),
@@ -599,6 +622,26 @@ const SAMPLE_ANSWERS = [
   '| Are you authorized to work in the US without sponsorship? | Yes | From your profile |',
 ].join('\n');
 
+/** A cover letter for a job, as the cover-letter skill writes its cover-letter.json. */
+function sampleLetter(job: Job): string {
+  return JSON.stringify({
+    output_name: `AlexRiveraCoverLetter_${job.company.replace(/\W+/g, '')}`,
+    name: 'Alex Rivera',
+    headline: 'Staff Platform Engineer',
+    contact: { email: 'alex@example.com', location: 'Remote, US' },
+    date: MONTH_DAY.format(new Date()),
+    recipient: ['Dana Brooks', 'Engineering Manager, Care Team', job.company],
+    greeting: 'Dear Dana Brooks,',
+    paragraphs: [
+      `${job.company}’s posting says the care team ships to clinics every week and wants that to feel boring. I spent the last four years making releases boring at Tidewater Analytics, where I cut deploy time by **~40%** across twelve services.`,
+      'Two things from that work fit what you’re building. I moved every team onto one deploy pipeline with automatic rollback, so a bad release undoes itself before anyone gets paged. And I ran the on-call rotation that kept it honest, writing the runbooks new engineers learned from.',
+      'Your posting also asks for someone who mentors. I paired with four engineers through their first on-call rotations, and two of them now lead their own services.',
+      'I’d love half an hour to walk through the pipeline and hear where releases hurt most at your clinics. I’m free most afternoons in the next two weeks.',
+    ],
+    closing: 'Best regards,',
+  });
+}
+
 export function sampleDocs(job: Job): JobDocs {
   const posting = [
     `# ${job.role}`,
@@ -629,7 +672,9 @@ export function sampleDocs(job: Job): JobDocs {
         ? posting
         : kind === 'answers' && job.company === 'Northwind Labs'
           ? SAMPLE_ANSWERS
-          : `# ${job.company}\n\nA sample ${kind} document.`,
+          : kind === 'letter'
+            ? sampleLetter(job)
+            : `# ${job.company}\n\nA sample ${kind} document.`,
     ]),
   );
 }

@@ -30,8 +30,10 @@ import {
 } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
+import { taskJob } from '../../shared/runs.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
+import { CoverLetterSection } from './CoverLetterSection.tsx';
 import { focusNext, PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
 import { FilesSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
@@ -90,6 +92,7 @@ function claudeSummary(job: Job): string {
     [
       job.fit && 'Fit checked',
       job.files.length > 0 && 'Resume ready',
+      job.letters.length > 0 && 'Cover letter ready',
       job.asks.length > 0 && plural(job.asks.length, 'question'),
     ]
       .filter(Boolean)
@@ -281,6 +284,17 @@ export function JobPanel({
       <SentimentSection job={job} today={today} />
       <SearchSection job={job} today={today} />
     </PanelSection>,
+    <CoverLetterSection
+      key={`letter-${job.id}`}
+      job={job}
+      api={api}
+      today={today}
+      writing={
+        run?.task?.skill === 'cover-letter' &&
+        taskJob(run.task) === job.id &&
+        BUSY.includes(run.phase)
+      }
+    />,
     <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
     <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} />,
     <ActivitySection key="activity" job={job} today={today} />,

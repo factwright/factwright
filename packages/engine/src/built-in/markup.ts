@@ -42,3 +42,48 @@ export const PARTS = {
   project:
     '<div class="proj"><span class="pn">{{name}}</span>{{#status}} <span class="ps">· {{status}}</span>{{/status}}{{#url}} <span class="ps">· {{url}}</span>{{/url}}<div>{{text}}</div></div>',
 };
+
+/**
+ * A cover letter under its header: the date, who it's to, then the letter. Each paragraph has
+ * class "para", which the fit check measures.
+ */
+const LETTER_TEXT = `
+<div class="letter">
+{{#date}}<div class="ldate">{{date}}</div>{{/date}}
+{{#recipient.length}}<div class="lto">{{#recipient}}<div>{{.}}</div>{{/recipient}}</div>{{/recipient.length}}
+<div class="lhi">{{greeting}}</div>
+{{#paragraphs}}<p class="para">{{.}}</p>{{/paragraphs}}
+<div class="lbye">{{closing}}</div>
+<div class="lsig">{{signature}}</div>
+</div>`;
+
+/** The letter the built-in templates share, under the resume's own header, so the two match. */
+export const LETTER = `<div class="hdr">{{> header}}{{> contact}}</div>${LETTER_TEXT}`;
+
+/** A letter for a template with no letter of its own: a plain header over the same letter. */
+export const PLAIN_LETTER = `<div class="hdr"><div class="name">{{name}}</div>{{#headline}}<div class="headline">{{headline}}</div>{{/headline}}<div class="contact">{{#contact}}<span>{{text}}</span>{{/contact}}</div></div>${LETTER_TEXT}`;
+
+/**
+ * How a letter's text sits under its header: a column narrower than the page, which reads
+ * better, centered under a centered header, and the gaps a letter has between its parts.
+ */
+export function letterCss({
+  center,
+  size,
+  sign,
+}: {
+  center: boolean;
+  /** The text's size, in points. */
+  size: number;
+  /** The signature's weight. */
+  sign: number;
+}): string {
+  return `
+      .letter{max-width:6.5in;margin:28px ${center ? 'auto' : '0'} 0;font-size:${size}pt;line-height:1.5}
+      .ldate,.lto{margin-bottom:18px}
+      .lhi{margin-bottom:12px}
+      .para{margin:0 0 11px}
+      .lbye{margin-top:20px}
+      .lsig{margin-top:34px;font-weight:${sign}}
+    `;
+}

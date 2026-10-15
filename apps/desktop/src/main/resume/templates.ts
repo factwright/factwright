@@ -90,6 +90,11 @@ export class TemplateLibrary {
     return `${PREVIEWS_FOLDER}/${id}.pdf`;
   }
 
+  /** Where Claude's preview of a cover letter in a template is printed. No ID holds a dot. */
+  letterPreviewPath(id: string): string {
+    return `${PREVIEWS_FOLDER}/${id}.letter.pdf`;
+  }
+
   /** The IDs of the user's own template files. None can take the ID of one the app has. */
   private ownIds(): string[] {
     let names: string[];

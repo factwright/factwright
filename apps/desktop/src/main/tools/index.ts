@@ -8,6 +8,7 @@ import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
+import { buildCoverLetter } from './letter.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
@@ -40,13 +41,14 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes, the resume templates, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, facts from the user’s answers, templates and resume files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, facts from the user’s answers, templates, and resume and cover letter files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
   'find_job',
   'job_details',
   'build_resume',
+  'build_cover_letter',
   'about_you',
   'past_answers',
   'save_answer',
@@ -255,6 +257,42 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
         }),
+    },
+    {
+      name: 'build_cover_letter',
+      description:
+        'Builds a job’s cover letter from its folder’s cover-letter.json, as a PDF, a Word file or both beside it, named after its output_name. It’s in the job’s resume’s template, with the same header, so the two look like a set. Says whether it fits one page, which paragraphs end on a word or two, and what breaks the user’s rules, their confidential terms, or the clichés every letter is checked for. Build again after each change. A job the user applied to keeps the files that were sent.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description:
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
+          },
+          format: {
+            type: 'string',
+            enum: ['pdf', 'docx', 'both'],
+            description: 'Which files to build. Without it, cover-letter.json’s format, or a PDF.',
+          },
+        },
+        required: ['folder'],
+        additionalProperties: false,
+      },
+      // It writes only cover letter files, beside their data, from what's on this computer.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) =>
+        buildCoverLetter(
+          textInput(input, 'folder', true) ?? '',
+          textInput(input, 'format', false),
+          {
+            workspace: deps.workspace,
+            printer: deps.printer,
+            templates: deps.templates,
+            jobs: () => deps.jobs.list().jobs,
+            ...(deps.now && { now: deps.now }),
+          },
+        ),
     },
     {
       name: 'list_templates',

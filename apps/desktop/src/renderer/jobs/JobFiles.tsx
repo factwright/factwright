@@ -23,7 +23,71 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
 /** A file's name without its extension, which a resume's PDF and Word file share. */
 const stem = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
 
-/** A job's resumes, which open in the user's own app, and its documents, which open here. */
+/**
+ * A resume's or cover letter's file: a PDF previews here, and either opens in the user's own app,
+ * ready to attach. A resume can be X-rayed too, to see what an applicant tracking system reads.
+ */
+export function FileRow({
+  file,
+  today,
+  onPreview,
+  onOpen,
+  onXRay,
+}: {
+  file: JobFile;
+  today: string;
+  onPreview: (file: JobFile) => void;
+  onOpen: (path: string) => void;
+  /** For a resume: opens its ATS X-ray. A cover letter has none. */
+  onXRay?: (file: JobFile) => void;
+}) {
+  return (
+    <li className={styles.file}>
+      <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
+      <span className={styles.fileText}>
+        <span className={styles.fileName}>{file.name}</span>
+        <span className={styles.fileMeta}>
+          {file.format.toUpperCase()} · {fileSize(file.size)} · {shortDate(file.modified, today)}
+        </span>
+      </span>
+      <span className={styles.fileActions}>
+        {file.format === 'pdf' && (
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-label={`Preview ${file.name}`}
+            onClick={() => onPreview(file)}
+          >
+            Preview
+          </Button>
+        )}
+        {onXRay && (
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-label={`ATS X-ray of ${file.name}`}
+            onClick={() => onXRay(file)}
+          >
+            ATS X-ray
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="quiet"
+          aria-label={`Open ${file.name}`}
+          onClick={() => onOpen(file.path)}
+        >
+          Open
+        </Button>
+      </span>
+    </li>
+  );
+}
+
+/**
+ * A job's resumes and cover letters, which open in the user's own app, and its documents, which
+ * open here.
+ */
 export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
@@ -61,9 +125,14 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
   };
 
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  // A resume or letter built as a PDF and a Word file is one, by its name.
+  const named = (files: readonly JobFile[]) =>
+    new Set(files.map((file) => file.name.replace(/\.[^.]+$/, ''))).size;
+  const built = [...job.files, ...job.letters];
   const summary =
     [
-      job.files.length > 0 && count(job.files.length, 'resume'),
+      job.files.length > 0 && count(named(job.files), 'resume'),
+      job.letters.length > 0 && count(named(job.letters), 'cover letter'),
       documents.length > 0 && count(documents.length, 'document'),
     ]
       .filter(Boolean)
@@ -71,49 +140,29 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
 
   return (
     <PanelSection id="files" title="Files" icon={<FolderOpen size={15} />} summary={summary}>
-      {job.files.length === 0 && documents.length === 0 ? (
+      {built.length === 0 && documents.length === 0 ? (
         <p className={styles.quiet}>No files yet.</p>
       ) : (
         <ul className={styles.files}>
           {job.files.map((file) => (
-            <li key={file.path} className={styles.file}>
-              <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
-              <span className={styles.fileText}>
-                <span className={styles.fileName}>{file.name}</span>
-                <span className={styles.fileMeta}>
-                  {file.format.toUpperCase()} · {fileSize(file.size)} ·{' '}
-                  {shortDate(file.modified, today)}
-                </span>
-              </span>
-              <span className={styles.fileActions}>
-                {file.format === 'pdf' && (
-                  <Button
-                    size="sm"
-                    variant="quiet"
-                    aria-label={`Preview ${file.name}`}
-                    onClick={() => setPreview(file)}
-                  >
-                    Preview
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="quiet"
-                  aria-label={`ATS X-ray of ${file.name}`}
-                  onClick={() => setXray(file)}
-                >
-                  ATS X-ray
-                </Button>
-                <Button
-                  size="sm"
-                  variant="quiet"
-                  aria-label={`Open ${file.name}`}
-                  onClick={() => openFile(file.path)}
-                >
-                  Open
-                </Button>
-              </span>
-            </li>
+            <FileRow
+              key={file.path}
+              file={file}
+              today={today}
+              onPreview={setPreview}
+              onOpen={openFile}
+              onXRay={setXray}
+            />
+          ))}
+          {/* Cover letters have no X-ray: it reads resumes. */}
+          {job.letters.map((file) => (
+            <FileRow
+              key={file.path}
+              file={file}
+              today={today}
+              onPreview={setPreview}
+              onOpen={openFile}
+            />
           ))}
           {documents.map(({ kind, name, about }) => (
             <li key={kind} className={styles.file}>

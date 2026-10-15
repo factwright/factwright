@@ -22,6 +22,7 @@ describe('sessionSettings', () => {
       'mcp__factwright__find_job',
       'mcp__factwright__job_details',
       'mcp__factwright__build_resume',
+      'mcp__factwright__build_cover_letter',
       'mcp__factwright__about_you',
       'mcp__factwright__past_answers',
       'mcp__factwright__save_answer',

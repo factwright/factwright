@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp, terminalText } from './app.ts';
 import { version } from './paths.ts';
-import { ACME_RESUME, ACME_WORD, newDataFolder } from './workspace.ts';
+import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder } from './workspace.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -154,6 +154,49 @@ test('X-rays a resume as applicant systems read it, its PDF and its Word file', 
   await expect(dialog.getByText('Reads cleanly')).toBeVisible();
   await dialog.getByRole('button', { name: 'Done' }).click();
   await expect(dialog).toHaveCount(0);
+});
+
+test('writes a cover letter, and shows it to read, copy, preview and open', async () => {
+  const { app, window } = opened;
+  await jobPanel()
+    .getByRole('button', { name: /^Cover letter/ })
+    .click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The app types only the skill and the job. A letter is writing, so it gets Opus at extra high.
+  expect(await terminalText(window)).toContain(`/factwright:cover-letter job ${ACME_ID}`);
+  expect(await terminalText(window)).toContain('opus · xhigh effort');
+  expect(await terminalText(window)).toContain('in the Classic template: 1 page');
+  await closeRun();
+
+  const letter = jobPanel().getByRole('region', { name: 'Cover letter' });
+  await expect(
+    letter.getByRole('article', { name: 'Cover letter for Acme Robotics' }),
+  ).toContainText('I cut deploy time by ~40% at Tidewater');
+  await letter.getByRole('button', { name: 'Copy text of the cover letter' }).click();
+  await expect(letter.getByRole('button', { name: 'Copied' })).toBeVisible();
+  expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toMatch(
+    /^Dear Sam Lee,\n\nAcme’s posting asks .+\n\nBest regards,\nAlex Rivera$/s,
+  );
+  // Its PDF, printed in the job's resume template, previews as one page.
+  await letter
+    .getByRole('button', { name: 'Preview AlexRiveraCoverLetter10142026_Acme.pdf' })
+    .click();
+  const dialog = window.getByRole('dialog', { name: 'AlexRiveraCoverLetter10142026_Acme.pdf' });
+  await expect(dialog.getByRole('img', { name: 'Page 1 of 1' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(
+    letter.getByRole('button', { name: 'Open AlexRiveraCoverLetter10142026_Acme.docx' }),
+  ).toBeVisible();
+  // The resume is still the resume, and the letter is its own.
+  const files = jobPanel().getByRole('region', { name: 'Files' });
+  await expect(files).toContainText('1 resume · 1 cover letter');
+  expect(readdirSync(join(dataDir, 'workspace', ACME_FOLDER)).sort()).toEqual(
+    expect.arrayContaining([
+      'AlexRiveraCoverLetter10142026_Acme.docx',
+      'AlexRiveraCoverLetter10142026_Acme.pdf',
+      'cover-letter.json',
+    ]),
+  );
 });
 
 test('asks for an application’s questions, then runs them in Claude’s panel', async () => {

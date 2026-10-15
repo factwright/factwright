@@ -19,12 +19,9 @@ export function measurableHtml(html: string): string {
   return html.replace('</head>', '<style>@media screen{body{width:7.4in}}</style></head>');
 }
 
-/**
- * Measures each piece of text on a page made by measurableHtml, run in the page: how many lines
- * it takes, and how full its last line is. It evaluates to a list of FitRows.
- */
-export const MEASURE_SCRIPT = `(() => {
-  const selector = '.headline,.tagline,.stat span,.sys div,.intro,section>div:not(.systems):not(.stats):not(.skills):not(.tl):not(.blk):not(.job):not(.proj),.sum,li,.proj div,.skills .s';
+/** Measures each piece of text a selector finds on a page made by measurableHtml, run in it. */
+const measuring = (selector: string) => `(() => {
+  const selector = '${selector}';
   return [...document.querySelectorAll(selector)].map((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -41,6 +38,17 @@ export const MEASURE_SCRIPT = `(() => {
     return { lines, last: Math.round(last * 100), text: el.textContent.trim().replace(/\\s+/g, ' ').slice(0, 90) };
   });
 })()`;
+
+/**
+ * Measures each piece of a resume's text on a page made by measurableHtml, run in the page: how
+ * many lines it takes, and how full its last line is. It evaluates to a list of FitRows.
+ */
+export const MEASURE_SCRIPT = measuring(
+  '.headline,.tagline,.stat span,.sys div,.intro,section>div:not(.systems):not(.stats):not(.skills):not(.tl):not(.blk):not(.job):not(.proj),.sum,li,.proj div,.skills .s',
+);
+
+/** Measures each paragraph of a cover letter, which has class "para", the same way. */
+export const LETTER_MEASURE_SCRIPT = measuring('.para');
 
 /** A runt: text that wraps, with only a word or two on its last line. */
 export const isRunt = (row: FitRow) => row.lines > 1 && row.last < RUNT_PERCENT;

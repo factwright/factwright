@@ -82,6 +82,7 @@ function folder(company: string, role: string, extra: Partial<FolderRecord> = {}
     style: null,
     kind: null,
     files: [],
+    letters: [],
     docs: {},
     ...extra,
   };
@@ -183,6 +184,28 @@ describe('collectJobs', () => {
       'Resume built',
       'Fit check: Strong 82',
     ]);
+  });
+
+  it('keeps a job’s cover letter apart from its resumes, dated by its file', () => {
+    const letter = {
+      ...RESUME,
+      path: 'applications/2026-10-07-acme/AlexRiveraCoverLetter10142026_Acme.pdf',
+      name: 'AlexRiveraCoverLetter10142026_Acme.pdf',
+      modified: new Date(2026, 9, 14, 12).toISOString(),
+    };
+    const [job] = collectJobs([
+      folder('Acme Robotics', 'Staff Engineer', { files: [RESUME], letters: [letter] }),
+    ]);
+    expect(job?.files).toEqual([RESUME]);
+    expect(job?.letters).toEqual([letter]);
+    expect(job?.events.map(({ title, date }) => [title, date])).toEqual([
+      ['Resume built', '2026-10-07'],
+      ['Cover letter written', '2026-10-14'],
+    ]);
+    // A letter copied in from elsewhere keeps its old date, but the job came first.
+    const old = { ...letter, modified: new Date(2026, 8, 1, 12).toISOString() };
+    const [copied] = collectJobs([folder('Acme Robotics', 'Staff Engineer', { letters: [old] })]);
+    expect(copied?.events.find((event) => event.tool === 'letter')?.date).toBe('2026-10-07');
   });
 
   it('takes a job’s kind from its fit check, or else the search that rated it highest', () => {

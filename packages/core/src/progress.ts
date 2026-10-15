@@ -1,6 +1,7 @@
 import { daysBetween } from './dates.ts';
 import { FIT_TIERS, type FitTier } from './fit.ts';
 import type { Job } from './jobs.ts';
+import { asksForCoverLetter } from './letter.ts';
 import {
   CALL_STAGE,
   type Call,
@@ -341,8 +342,14 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
       if (job.files.length > 0) return step('Resume ready. Apply or pass?');
       if (!job.fit) return check();
       return step(progress.tier === 'skip' ? 'Fit check says skip. Pass?' : 'Apply or pass?');
-    case 'apply':
-      return step(job.files.length > 0 ? 'Ready to apply' : 'Tailor a resume');
+    case 'apply': {
+      // A posting that asks for a cover letter gets one before the job's ready.
+      const letter = asksForCoverLetter(job) && job.letters.length === 0;
+      if (job.files.length === 0) {
+        return step(letter ? 'Tailor a resume and a cover letter' : 'Tailor a resume');
+      }
+      return step(letter ? 'The posting asks for a cover letter' : 'Ready to apply');
+    }
     case 'later':
       return job.backOn && job.backOn > today ? step(`Back ${dayFrom(job.backOn, today)}`) : null;
     case 'applied': {

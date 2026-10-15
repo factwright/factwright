@@ -11,6 +11,7 @@ import {
   JOB_STATUS_LABELS,
   type Job,
   type JobDocKind,
+  type JobFile,
   type JobShot,
   type JobStatus,
   jobProgress,
@@ -191,6 +192,7 @@ const ABOUT_DOCS: Readonly<Record<JobDocKind, string>> = {
   answers: 'Claude’s suggested answers to the application’s questions',
   prep: 'interview prep: the pitch, likely questions, stories and questions to ask',
   apply: 'special steps for applying',
+  letter: 'the cover letter’s data, which builds its PDF and Word files',
 };
 
 const DOC_KIND_BY_FILE = new Map(
@@ -212,14 +214,20 @@ function aboutShot(shot: JobShot): string {
 }
 
 /**
- * The resume most likely sent with the application: the newest built by the day they applied,
- * on the user's own calendar.
+ * The file most likely sent with the application, of a job's resumes or its cover letters: the
+ * newest built by the day they applied, on the user's own calendar.
  */
-function sentResume(job: Job): string | null {
+function sentFile(job: Job, files: readonly JobFile[]): string | null {
   if (!job.appliedOn) return null;
   const applied = job.appliedOn;
-  const before = job.files.filter((file) => localDate(new Date(file.modified)) <= applied);
+  const before = files.filter((file) => localDate(new Date(file.modified)) <= applied);
   return before.sort((a, b) => b.modified.localeCompare(a.modified))[0]?.path ?? null;
+}
+
+/** A built resume or cover letter, as the catalog says it, and whether it's most likely the one sent. */
+function aboutBuilt(what: string, file: JobFile, sent: string | null): string {
+  const likely = file.path === sent ? ', most likely the one sent with the application' : '';
+  return `a built ${what} (${localDate(new Date(file.modified))})${likely}`;
 }
 
 /**
@@ -230,17 +238,21 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
   const lines: string[] = [];
   if (job.folder) {
     const folder = `${WORKSPACE_PATHS.jobs}/${job.folder}`;
-    const sent = sentResume(job);
+    const sentResume = sentFile(job, job.files);
+    const sentLetter = sentFile(job, job.letters);
     for (const name of await folderFiles(workspace, job.folder)) {
       const kind = DOC_KIND_BY_FILE.get(name);
       const resume = job.files.find((file) => file.name === name);
+      const letter = job.letters.find((file) => file.name === name);
       const about = kind
         ? ABOUT_DOCS[kind]
         : name === 'resume.json'
           ? 'the tailored resume’s data, which builds its PDF and Word files'
           : resume
-            ? `a built resume (${localDate(new Date(resume.modified))})${resume.path === sent ? ', most likely the one sent with the application' : ''}`
-            : null;
+            ? aboutBuilt('resume', resume, sentResume)
+            : letter
+              ? aboutBuilt('cover letter', letter, sentLetter)
+              : null;
       lines.push(`- ${folder}/${name}${about ? `: ${about}` : ''}`);
     }
   }
