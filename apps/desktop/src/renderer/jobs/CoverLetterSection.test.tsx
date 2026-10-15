@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { localDate } from '@factwright/core';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -110,5 +110,14 @@ describe('CoverLetterSection', () => {
     const none = { ...job, docKinds: [], letters: [] };
     const { container } = render(<CoverLetterSection job={none} api={apiStub()} today={TODAY} />);
     expect(container.textContent).toBe('');
+    cleanup();
+    // A letter still being written, which won't read yet, shows nothing until it does.
+    const writing = { ...job, letters: [] };
+    const api = apiStub('{"greeting": "Dear');
+    const { container: half } = render(
+      <CoverLetterSection job={writing} api={api} today={TODAY} />,
+    );
+    await waitFor(() => expect(api.jobDocs).toHaveBeenCalled());
+    expect(half.textContent).toBe('');
   });
 });

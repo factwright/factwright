@@ -57,7 +57,8 @@ export function CoverLetterSection({
     };
   }, [api, job, written]);
 
-  if (!written && job.letters.length === 0) return null;
+  // Nothing to show yet: no letter that reads, such as one Claude is still writing, and no files.
+  if (!letter && job.letters.length === 0) return null;
   const summary = letter ? `${letterWordCount(letter)} words` : formats(job.letters);
 
   const copy = async () => {
