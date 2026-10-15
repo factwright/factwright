@@ -1,0 +1,28 @@
+{
+  "name": "@factwright/xray",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reads a resume file the way an applicant tracking system does, and checks it against the posting and the fact bank.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "fixtures": "electron scripts/fixtures.ts"
+  },
+  "dependencies": {
+    "fflate": "catalog:"
+  },
+  "devDependencies": {
+    "@factwright/engine": "workspace:*",
+    "@types/node": "catalog:",
+    "docx": "9.8.1",
+    "electron": "catalog:",
+    "pdfjs-dist": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

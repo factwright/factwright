@@ -1,0 +1,3 @@
+# Real resume files the tests read. Never change their line endings.
+*.pdf binary
+*.docx binary
