@@ -4,7 +4,11 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Cover letters. A Cover letter button on each job, beside Tailored resume, has your Claude write one in your own voice, from your confirmed facts and everything on file for the job: the posting, the fit check's research and what people say about the company, and your notes and calls. It's addressed to the hiring manager when one is on file, leads with your two or three strongest matches, with their numbers, and closes with a concrete next step. It asks about experience your fact bank lacks and files your answers, as a tailored resume does, then checks every line against your facts, and for clichés such as "I am writing to apply". It's built as a one-page PDF or Word file in the job's resume template, with the same header, fonts and colors, so the two look like a set. A template of your own without a letter layout prints it plainly, in its fonts and colors. The job's panel shows the letter, with Copy text for an application form's cover letter box, and its files to preview and open. A posting that asks for a cover letter makes writing one the job's next step. Your phone shows it too, once the sync server is updated. Cover letters run at the writing's levels, and Claude settings can change them.
+
 ### Changed
+- Classic and Minimal lay out a cover letter under the resume's own header, and a template of your own can have a letter layout too. Making a template prints a cover letter in it beside the resume, for your Claude to check. A template file with a letter layout needs this version or later; one without works in earlier versions too.
 - factwright.com makes supporting Factwright easy to find: a Support Factwright block under the code, with a button each for Buy Me a Coffee and GitHub Sponsors, and a link to it in every page's footer. Before, it was a line of text at the end of a section.
 
 ## 0.2.0 - 2026-10-14
