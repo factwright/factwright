@@ -267,3 +267,40 @@ describe('readFacts, with what each line is under', () => {
     expect(texts(facts.skills)).toEqual(['SQL', 'Go']);
   });
 });
+
+describe('readFacts, in nested lists', () => {
+  it('reads a nested item with the items it’s in', () => {
+    const facts = readFacts([
+      {
+        path: 'facts/skills.md',
+        text: [
+          '- Daily:',
+          '  - Python',
+          '- Want to learn:',
+          '  - Rust',
+          '    - Tokio',
+          '- Go',
+        ].join('\n'),
+      },
+      {
+        path: 'facts/gaps.md',
+        text: ['- Doesn’t have:', '  - Kafka', '- Open questions:', '  - How many users?'].join(
+          '\n',
+        ),
+      },
+      {
+        path: 'facts/profile.md',
+        text: [
+          '- Certifications:',
+          '  - PMP, 2021',
+          '- Goals:',
+          '  - Certifications:',
+          '    - CISSP',
+        ].join('\n'),
+      },
+    ]);
+    expect(texts(facts.skills)).toEqual(['Python', 'Go']);
+    expect(facts.saidNo).toEqual(['Kafka']);
+    expect(texts(facts.credentials)).toEqual(['PMP, 2021']);
+  });
+});

@@ -156,8 +156,9 @@ interface Placed {
 
 /**
  * A file's lines, each with what it's under: a heading's, from core's blocks and the deeper
- * headings in them, and a bold label's, up to the next heading. A table's first row names its
- * columns, so it's left out.
+ * headings in them, a bold label's, up to the next heading, and for a list item in a list, the
+ * items it's nested in, as "Rust" is in "- Want to learn:" / "  - Rust". A table's first row
+ * names its columns, so it's left out.
  */
 function placedLines(text: string): Placed[] {
   const placed: Placed[] = [];
@@ -172,9 +173,12 @@ function placedLines(text: string): Placed[] {
     const inner: { level: number; title: string }[] = [];
     let label: string | null = null;
     let header = true;
+    // The list items a nested one is in, by how far each is indented.
+    let items: { indent: number; text: string }[] = [];
     const under = () => [
       ...[...outer, ...inner].map((each) => each.title),
       ...(label ? [label] : []),
+      ...items.map((each) => each.text),
     ];
     for (const line of outsideCode(block.body)) {
       const trimmed = line.trim();
@@ -182,6 +186,7 @@ function placedLines(text: string): Placed[] {
       if (heading) {
         while ((inner.at(-1)?.level ?? 0) >= heading.level && inner.length > 0) inner.pop();
         label = null;
+        items = [];
         placed.push({
           text: heading.title,
           line: trimmed,
@@ -196,11 +201,14 @@ function placedLines(text: string): Placed[] {
       const bold = labelOf(trimmed);
       if (bold) {
         label = bold;
+        items = [];
         header = true;
         continue;
       }
       const row = cells(line);
       if (row) {
+        // A table ends a list.
+        items = [];
         const [first, ...rest] = row;
         if (!header && first)
           placed.push({ text: first, line: trimmed, kind: 'row', rest, under: under() });
@@ -210,7 +218,14 @@ function placedLines(text: string): Placed[] {
       if (isRule(line)) continue;
       header = true;
       if (!trimmed) continue;
+      const indent = line.length - line.trimStart().length;
       const listed = item(line)?.replace(/\*\*/g, '').trim();
+      if (listed) {
+        items = items.filter((each) => each.indent < indent);
+      } else if (indent === 0) {
+        // A paragraph at the margin ends the list; an indented one goes on an item.
+        items = [];
+      }
       placed.push({
         text: listed ?? trimmed.replace(/\*\*/g, ''),
         line: trimmed,
@@ -218,10 +233,14 @@ function placedLines(text: string): Placed[] {
         rest: [],
         under: under(),
       });
+      if (listed) items.push({ indent, text: listed });
     }
   }
   return placed;
 }
+
+/** A list item that labels the items under it, as "- Want to learn:" does. */
+const isLabel = (line: Placed) => line.kind === 'item' && line.text.endsWith(':');
 
 /** Whether any of the titles says so. */
 const any = (pattern: RegExp, titles: readonly string[]) =>
@@ -239,7 +258,7 @@ const notHad = (line: Placed, words: RegExp) =>
 function skillsIn(path: string, text: string): Source[] {
   return (
     placedLines(text)
-      .filter((line) => line.kind === 'item' || line.kind === 'row')
+      .filter((line) => line.kind === 'row' || (line.kind === 'item' && !isLabel(line)))
       .filter((line) => !any(LATER_PART, line.under) && !notHad(line, LEARNING))
       .filter((line) => !NOT_EARNED.test(line.line))
       // A note in brackets stays: a line that passes says nothing's to come, so "Amplitude
@@ -257,7 +276,7 @@ function skillsIn(path: string, text: string): Source[] {
  */
 function credentialsIn(path: string, text: string): Source[] {
   return placedLines(text)
-    .filter((line) => any(CREDENTIAL_PART, line.under))
+    .filter((line) => any(CREDENTIAL_PART, line.under) && !isLabel(line))
     .filter((line) => !any(LATER_PART, line.under) && !any(NOT_EARNED, line.under))
     .filter((line) => !notHad(line, NOT_EARNED))
     .map((line) => ({
