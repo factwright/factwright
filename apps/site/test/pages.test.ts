@@ -46,6 +46,9 @@ const MAKER = [
   'https://github.com/sponsors/steve1two',
 ];
 
+/** The home page's Support Factwright block, which every other page's footer links to. */
+const SUPPORT = '/#support';
+
 /** Whether a link goes to Factwright's code, or something in it, such as a folder. */
 const inSource = (href: string) => href === SOURCE || href.startsWith(`${SOURCE}/`);
 
@@ -128,6 +131,7 @@ describe.each([
     const legal = LEGAL_PAGES.includes(`/${page.replace('.html', '')}`);
     const allowed = [
       '/',
+      SUPPORT,
       ...DOWNLOAD_PAGES,
       ...DOWNLOADS,
       ...LEGAL_PAGES,
@@ -147,6 +151,13 @@ describe.each([
       link.getAttribute('href'),
     );
     expect(hrefs).toEqual(expect.arrayContaining([...LEGAL_PAGES, SOURCE]));
+  });
+
+  it('links to Support Factwright from its footer', () => {
+    const links = [...(open(page).querySelector('footer')?.querySelectorAll('a[href]') ?? [])];
+    const support = links.find((link) => link.textContent?.trim() === 'Support Factwright');
+    const href = page === 'index.html' ? '#support' : SUPPORT;
+    expect(support?.getAttribute('href')).toBe(href);
   });
 
   it('describes every picture, or hides it from screen readers', () => {
@@ -200,6 +211,16 @@ describe('the home page', () => {
     expect(footer).toContain(
       'It uses your own Claude account, and its runs count against your plan.',
     );
+  });
+
+  it('offers both ways to support Factwright, as buttons in its own block', () => {
+    const support = open('index.html').getElementById('support');
+    expect(support?.querySelector('h3')?.textContent).toBe('Support Factwright');
+    const buttons = [...(support?.querySelectorAll('a.button') ?? [])];
+    expect(buttons.map((button) => button.getAttribute('href'))).toEqual([
+      'https://buymeacoffee.com/stevehillyer',
+      'https://github.com/sponsors/steve1two',
+    ]);
   });
 
   it('says it’s open source, with its code a click away in the header', () => {

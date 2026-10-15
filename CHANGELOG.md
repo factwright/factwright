@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- factwright.com makes supporting Factwright easy to find: a Support Factwright block under the code, with a button each for Buy Me a Coffee and GitHub Sponsors, and a link to it in every page's footer. Before, it was a line of text at the end of a section.
+
 ## 0.2.0 - 2026-10-14
 
 ### Added
