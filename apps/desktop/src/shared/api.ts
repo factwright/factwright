@@ -31,7 +31,7 @@ import type {
   TemplateUpload,
 } from './profile.ts';
 import type { AddProfileResult, ProfileList } from './profiles.ts';
-import type { Revision, RevisionRequest } from './revision.ts';
+import type { RevisionRequest, RevisionState } from './revision.ts';
 import type { RunTask } from './runs.ts';
 import type {
   AccountResult,
@@ -94,9 +94,10 @@ export type StartResult =
       ok: false;
       /**
        * "new-run": the task needs a run of its own, since the open one is on another model, or
-       * may change other files without asking.
+       * may change other files without asking. "revision": the app has no revision prepared for
+       * it, such as after a restart, so it needs sending again.
        */
-      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'new-run';
+      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'new-run' | 'revision';
       message?: string;
     };
 
@@ -287,8 +288,11 @@ export interface FactwrightApi {
    * revision run the window starts next. Says why not when it can't.
    */
   prepareRevision(request: RevisionRequest): Promise<{ ok: true } | { ok: false; message: string }>;
-  /** The newest revision of a job's resume, by its name, for the before-and-after, or null. */
-  revisionOf(jobId: string, resume: string): Promise<Revision | null>;
+  /**
+   * Where a job's resume stands for its X-ray's Revise tab: its newest revision, for the
+   * before-and-after, and why it can't be revised, if it can't.
+   */
+  revisionOf(jobId: string, resume: string): Promise<RevisionState | null>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

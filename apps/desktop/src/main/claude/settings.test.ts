@@ -165,6 +165,36 @@ describe('sessionSettings', () => {
     }
   });
 
+  it('keeps a revision off the web, and lets it do the rest of what a run on the job hunt does', () => {
+    const { allow, deny } = sessionSettings({
+      hookUrl: 'http://127.0.0.1:4000/hook',
+      dark: false,
+      scope: 'revise',
+      permissions: { anyFile: false, anySite: true },
+    }).permissions;
+    // It reads what the X-ray found in a posting, so nothing it reads can send it to a site.
+    for (const tool of [
+      'WebSearch',
+      'mcp__factwright__read_posting',
+      'mcp__factwright__job_board',
+      'mcp__factwright__read_page',
+    ]) {
+      expect(allow).not.toContain(tool);
+      expect(deny).toContain(tool);
+    }
+    for (const tool of [
+      'mcp__factwright__revision_findings',
+      'mcp__factwright__build_resume',
+      'mcp__factwright__save_fact',
+      'mcp__factwright__save_gap',
+      'Edit(./applications/**)',
+    ]) {
+      expect(allow).toContain(tool);
+    }
+    // Changing a template is changing a file, which asks first.
+    expect(allow).not.toContain('mcp__factwright__save_template');
+  });
+
   it('never lets Claude change its own settings or the instructions it loads', () => {
     for (const anyFile of [false, true]) {
       const { deny } = sessionSettings({

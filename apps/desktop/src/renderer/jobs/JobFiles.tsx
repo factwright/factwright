@@ -1,5 +1,5 @@
 import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
-import { fileSize, resumeSent, shortDate } from '@factwright/core';
+import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -211,14 +211,11 @@ export function FilesSection({
           files={sameResume(xray)}
           start={xray.path}
           posting={posting}
-          revise={
-            run && {
-              jobId: job.id,
-              sent: resumeSent(job),
-              busy: BUSY.includes(run.phase),
-              start: run.start,
-            }
-          }
+          revise={{
+            jobId: job.id,
+            busy: run ? BUSY.includes(run.phase) : false,
+            start: run?.start ?? null,
+          }}
           onClose={() => setXray(null)}
         />
       )}

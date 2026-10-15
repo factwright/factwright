@@ -9,10 +9,12 @@ import {
   localDate,
   parsePay,
   questionKey,
+  resumeSent,
   SETTLED_STATUSES,
   STATUS_RANK,
   shotsFolder,
 } from '@factwright/core';
+import { termIdOf } from '@factwright/xray';
 import datesLastPdf from '@factwright/xray/fixtures/dates-last.pdf?url';
 import engineerWord from '@factwright/xray/fixtures/engineer.docx?url';
 import engineerPdf from '@factwright/xray/fixtures/engineer.pdf?url';
@@ -108,8 +110,8 @@ function sampleRevision(job: Job, resume: string): Revision | null {
         title: 'Dates: 2 jobs with dates some systems can’t read',
       },
       { id: 'check-headings', kind: 'content', title: 'Section headings: No skills section' },
-      { id: 'term-terraform', kind: 'content', title: 'Add “Terraform”' },
-      { id: 'term-kubernetes', kind: 'question', title: 'Check “Kubernetes”' },
+      { id: termIdOf('Terraform'), kind: 'content', title: 'Add “Terraform”' },
+      { id: termIdOf('Kubernetes'), kind: 'question', title: 'Check “Kubernetes”' },
     ],
     before: '2 problems reading it · 3 of 11 key terms',
     previous,
@@ -491,14 +493,17 @@ export function sampleTracker(
       });
       return { ok: true };
     },
+    // A job applied to keeps its resume as sent, as the app's does.
     revisionOf: async (jobId, name) => {
-      const sent = revisions.get(revisionKey(jobId, name));
-      if (sent || !revised) return sent ?? null;
       const job = list.jobs.find((each) => each.id === jobId);
+      const locked =
+        job && resumeSent(job) ? 'You applied with this resume, so it stays as you sent it.' : null;
+      const sent = revisions.get(revisionKey(jobId, name));
       const file = job?.files.find(
         (each) => stemOf(each.name) === stemOf(name) && each.format === 'pdf',
       );
-      return job && file ? sampleRevision(job, file.name) : null;
+      const last = sent ?? (revised && job && file ? sampleRevision(job, file.name) : null);
+      return { last, locked };
     },
     copyText: async (text) => {
       await navigator.clipboard?.writeText(text).catch(() => {});

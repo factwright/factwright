@@ -18,6 +18,7 @@ export {
   findingsOf,
   type Outcome,
   outcomesOf,
+  termIdOf,
 } from './findings.ts';
 export {
   type Backing,

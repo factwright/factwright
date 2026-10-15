@@ -1,4 +1,4 @@
-import type { REVISE_SKILL, TemplateChoice } from './revision.ts';
+import { REVISE_SKILL, type TemplateChoice } from './revision.ts';
 
 /**
  * The skills a job's panel can run on it, by their names in Factwright's plugin: its Run buttons,
@@ -117,12 +117,15 @@ export const HUNT_SKILLS = [SEARCH_SKILL, GET_STARTED_SKILL, FACTS_SKILL, TEMPLA
  * What a run may change without asking. A run started to get to know the user, or to add facts,
  * may save their facts, starting resumes and guide. A run started to make a template may read
  * and save templates, and nothing else, and may replace only the ones it saved: the resume it
- * copies came from anywhere. Every other run asks first. Neither of those two reads the web.
+ * copies came from anywhere. A revision may do what a run on the job hunt does, but reads what
+ * the X-ray found in a posting, and needs nothing from the web, so it can't reach it. Every
+ * other run asks first. None of the last three reads the web.
  */
-export type RunScope = 'hunt' | 'profile' | 'template';
+export type RunScope = 'hunt' | 'profile' | 'template' | 'revise';
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
   if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
+  if (task?.skill === REVISE_SKILL) return 'revise';
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }
 

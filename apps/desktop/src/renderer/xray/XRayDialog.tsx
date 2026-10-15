@@ -1,4 +1,3 @@
-import { localDate, shortDate } from '@factwright/core';
 import { Button, Dialog, DialogActions, SegmentedControl, VisuallyHidden } from '@factwright/ui';
 import {
   type CheckId,
@@ -14,13 +13,13 @@ import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import {
-  RESUME_FILE,
   REVISE_SKILL,
   type Revision,
+  type RevisionState,
   type TemplateChoice,
 } from '../../shared/revision.ts';
 import type { RunTask } from '../../shared/runs.ts';
-import { fixedText, type LastRevisionState, ReviseView } from './ReviseView.tsx';
+import { dayOf, fixedText, type LastRevisionState, ReviseView } from './ReviseView.tsx';
 import { useXRay, type XRayFile } from './useXRay.ts';
 import styles from './XRay.module.css';
 import { ChecksView, FieldsView, KeywordsView } from './XRayReport.tsx';
@@ -30,12 +29,10 @@ type Tab = 'checks' | 'keywords' | 'fields' | 'revise';
 /** What the X-ray of a job's resume needs to send it for revision. */
 export interface XRayRevise {
   jobId: string;
-  /** Whether the user applied with this resume, which then stays as they sent it. */
-  sent: boolean;
   /** Whether Claude is busy with another run, which a revision waits for. */
   busy: boolean;
-  /** Starts the revision's run, in Claude's panel. */
-  start: (task: RunTask) => void;
+  /** Starts the revision's run, in Claude's panel, or null while Claude Code isn't ready. */
+  start: ((task: RunTask) => void) | null;
 }
 
 /** A resume's format, as words: its PDF or its Word file. */
@@ -257,23 +254,25 @@ export function XRayDialog({
   const [template, setTemplate] = useState<TemplateChoice | null>(null);
   const [sending, setSending] = useState(false);
   const [sendProblem, setSendProblem] = useState<string | null>(null);
-  const [revision, setRevision] = useState<Revision | null>(null);
+  // Where the resume stands: its last revision, for the before-and-after, and whether it can
+  // have another. Asked again once the file changes, as a revision rebuilds it.
+  const [stands, setStands] = useState<RevisionState | null>(null);
   const picked = (finding: Finding) => choices.get(finding.id) ?? finding.ticked;
   const pick = (finding: Finding, on: boolean) =>
     setChoices((now) => new Map(now).set(finding.id, on));
-
-  // The resume's last revision, for the before-and-after.
+  const modified = file.modified;
   useEffect(() => {
     if (!jobId) return;
     let live = true;
-    api.revisionOf(jobId, file.name).then(
-      (found) => live && setRevision(found),
-      () => {},
-    );
+    // When the app can't say, sending checks it all again anyway.
+    const told = (state: RevisionState | null) =>
+      live && setStands(state ?? { last: null, locked: null });
+    api.revisionOf(jobId, file.name).then(told, () => told(null));
     return () => {
       live = false;
     };
-  }, [api, jobId, file.name]);
+  }, [api, jobId, file.name, modified]);
+  const revision = stands?.last ?? null;
   const last = revision && result ? lastRevision(revision, result, file, files) : null;
   const previous =
     revision?.files.find((each) => each.endsWith(`.${file.format}`)) ?? revision?.files[0];
@@ -284,16 +283,9 @@ export function XRayDialog({
           return opened.ok ? null : opened.message;
         }
       : null;
-  const locked = !revise
-    ? null
-    : revise.sent
-      ? 'You applied with this resume, so it stays as you sent it.'
-      : RESUME_FILE.test(file.name)
-        ? null
-        : 'This file’s name has marks your Claude can’t be given safely, so it can’t be sent for revision.';
-
   const send = async (close: () => void) => {
-    if (!revise || !result) return;
+    const start = revise?.start;
+    if (!revise || !start || !result) return;
     const chosen = findings.filter(picked);
     const choice = chosen.some((finding) => finding.kind === 'template') ? template : null;
     setSending(true);
@@ -315,7 +307,7 @@ export function XRayDialog({
       setSendProblem(prepared.message);
       return;
     }
-    revise.start({
+    start({
       skill: REVISE_SKILL,
       jobId: revise.jobId,
       resume: file.name,
@@ -348,7 +340,7 @@ export function XRayDialog({
                 result={result}
                 revised={
                   last?.outcomes
-                    ? `Revised ${shortDate(last.revision.at, localDate())}: ${fixedText(last.outcomes)}`
+                    ? `Revised ${dayOf(last.revision)}: ${fixedText(last.outcomes)}`
                     : null
                 }
               />
@@ -422,13 +414,16 @@ export function XRayDialog({
                     {tab === 'revise' && revise && (
                       <ReviseView
                         findings={findings}
+                        readable={result.readable}
                         picked={picked}
                         onPick={pick}
                         template={template}
                         onTemplate={setTemplate}
                         last={last}
                         onOpenPrevious={openPrevious}
-                        locked={locked}
+                        locked={stands?.locked ?? null}
+                        known={stands !== null}
+                        ready={revise.start !== null}
                         busy={revise.busy}
                         sending={sending}
                         problem={sendProblem}
@@ -443,7 +438,7 @@ export function XRayDialog({
           <DialogActions>
             <p className={styles.private}>
               {tab === 'revise'
-                ? 'Only what you pick goes to your Claude, once you send it.'
+                ? 'Nothing goes to your Claude until you send it.'
                 : 'Worked out on this computer, with nothing sent anywhere.'}
             </p>
             <Button onClick={copy} disabled={!result}>

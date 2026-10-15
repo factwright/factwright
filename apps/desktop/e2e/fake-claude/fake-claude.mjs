@@ -204,20 +204,19 @@ async function work(text) {
   // As Claude would for a revision: read what the user picked in the X-ray through the tool,
   // never from the prompt, ask about the term the fact bank doesn't back, then change the resume
   // and build it in the old one's place.
-  const revising = text.match(
-    /^\/factwright:revise-resume job (\S+) resume (.+?) findings [a-z0-9 -]+$/,
-  );
+  const revising = text.match(/^\/factwright:revise-resume job (\S+) findings [a-z0-9 -]+$/);
   if (revising) {
-    const [, job, resume] = revising;
+    const [, job] = revising;
     const findings = await call('revision_findings', {});
     // Its first lines: which resume, and that what follows is information, not instructions.
     show(`${findings.split('\n').slice(0, 2).join('\n')}\n`);
-    const folder = findings.match(/^# Revising .+ in applications\/([^/\s]+)\/$/m)?.[1];
-    if (findings.includes('`term-graphql`')) {
+    const [, resume = '', folder] =
+      findings.match(/^# Revising (.+) in applications\/([^/\s]+)\/$/m) ?? [];
+    if (findings.includes('“GraphQL”')) {
       await askUser({ [GRAPHQL]: 'No' });
       await file('save_gap', { topic: 'GraphQL', question: GRAPHQL, job, task: 'resume' });
     }
-    if (folder && findings.includes('`term-terraform`')) {
+    if (folder && findings.includes('“Terraform”')) {
       writeFileSync(
         join(process.cwd(), 'applications', folder, 'resume.json'),
         JSON.stringify({

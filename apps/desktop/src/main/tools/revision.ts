@@ -1,3 +1,4 @@
+import { oneLine } from '../../shared/revision.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 
 /** How each kind of finding gets fixed, as the skill's steps name them. */
@@ -9,7 +10,7 @@ const PARTS = [
 
 /** What the user chose for the template's findings, in words for the run. */
 const TEMPLATE_WORDS = {
-  fix: 'Fix the template: change the user’s own template so it reads cleanly. It changes every resume that uses it, so save it only once they’ve said yes.',
+  fix: 'Fix the template: change the template the resume uses so it reads cleanly. It changes every resume that uses it, so ask the user before saving it, and save it only once they’ve said yes.',
   switch:
     'Use a template that reads cleanly: switch this job’s resume to one, and leave the user’s template as it is.',
 } as const;
@@ -37,9 +38,7 @@ export function revisionFindings(revision: BoundRevision | undefined): string {
     if (findings.length === 0) continue;
     lines.push('', `## ${heading}`);
     // Each on a line of its own, so nothing in what the X-ray read can start a part of its own.
-    for (const finding of findings) {
-      lines.push(`- \`${finding.id}\` ${finding.about.replace(/\s+/g, ' ').trim()}`);
-    }
+    for (const finding of findings) lines.push(`- \`${finding.id}\` ${oneLine(finding.about)}`);
   }
   return lines.join('\n');
 }

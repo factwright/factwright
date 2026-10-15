@@ -256,10 +256,11 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} ${kind ? `for ${kind}: ` : ''}${places.join(' · ')}`;
   }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
-  // The findings by their IDs alone: the run reads what they say with revision_findings.
+  // The findings by their IDs alone, which hold no posting's words. The run reads the resume
+  // and what the findings say with revision_findings.
   if ('findings' in task) {
     const template = task.template ? ` template ${task.template}` : '';
-    return `/factwright:${task.skill} job ${task.jobId} resume ${task.resume} findings ${task.findings.join(' ')}${template}`;
+    return `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${template}`;
   }
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;

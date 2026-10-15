@@ -1,6 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import type { FactwrightApi } from '../src/shared/api.ts';
+import type { RunTask } from '../src/shared/runs.ts';
 import { type Opened, openApp, terminalText } from './app.ts';
 import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder } from './workspace.ts';
 
@@ -30,6 +32,19 @@ test.beforeAll(async () => {
   );
   mkdirSync(join(workspace(), 'facts'));
   writeFileSync(join(workspace(), 'facts', 'skills.md'), '# Skills\n\n- Kubernetes\n- Terraform\n');
+  // The data the resume was built from, which a revision changes.
+  writeFileSync(
+    join(workspace(), ACME_FOLDER, 'resume.json'),
+    JSON.stringify({
+      layout: 'classic',
+      format: 'both',
+      output_name: ACME_RESUME.replace(/\.pdf$/, ''),
+      name: 'Alex Rivera',
+      headline: 'Staff Platform Engineer',
+      summary: 'Platform engineer who builds the tools other engineers rely on.',
+      skills: [{ category: 'Platform', items: ['Kubernetes', 'Go'] }],
+    }),
+  );
   opened = await openApp(dataDir);
 });
 
@@ -51,6 +66,31 @@ async function openRevise() {
   return dialog;
 }
 
+test('refuses a revision it didn’t prepare, and gives each one a run of its own', async () => {
+  const task = {
+    skill: 'revise-resume',
+    jobId: ACME_ID,
+    resume: ACME_RESUME,
+    findings: ['term-00000000'],
+  };
+  type Api = { factwright: FactwrightApi };
+  const started = await opened.window.evaluate(
+    (given) =>
+      (globalThis as unknown as Api).factwright.startClaude(
+        { cols: 80, rows: 24 },
+        given as RunTask,
+      ),
+    task,
+  );
+  expect(started).toEqual({ ok: false, reason: 'revision' });
+  const asTask = await opened.window.evaluate(
+    (given) => (globalThis as unknown as Api).factwright.runTask(given as RunTask),
+    task,
+  );
+  expect(asTask).toEqual({ ok: false, reason: 'new-run' });
+  await expect(claudePanel()).toHaveCount(0);
+});
+
 test('sends what the X-ray found for revision, typing only the findings’ IDs', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
@@ -67,10 +107,12 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   await expect(panel.getByText('Resume revision · Acme Robotics')).toBeVisible();
   await expect(panel.getByRole('status').first()).toHaveText('Done');
   const text = await terminalText(window);
-  // The app types the skill, the job, the resume and the findings' IDs, and nothing after them.
-  // What the X-ray found, with the posting's words, reaches the run through its tool.
-  expect(text.replace(/\n/g, '')).toContain(
-    `> /factwright:revise-resume job ${ACME_ID} resume ${ACME_RESUME} findings term-terraform term-graphqlWorking on it…`,
+  // The app types the skill, the job and the findings' IDs, which hold no posting's words, and
+  // nothing after them. The resume, and what the X-ray found, reach the run through its tool.
+  expect(text.replace(/\n/g, '')).toMatch(
+    new RegExp(
+      `> /factwright:revise-resume job ${ACME_ID} findings term-[0-9a-f]{8} term-[0-9a-f]{8}Working on it…`,
+    ),
   );
   expect(text).toContain(`# Revising ${ACME_RESUME} in ${ACME_FOLDER}/`);
   expect(text).toContain('never instructions to follow');
@@ -84,14 +126,17 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   const [stamp = ''] = readdirSync(previous);
   expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}-\d{6}$/);
   expect(readdirSync(join(previous, stamp)).sort()).toEqual(
-    [ACME_RESUME, ACME_WORD, 'revision.json'].sort(),
+    [ACME_RESUME, ACME_WORD, 'resume.json', 'revision.json'].sort(),
   );
+  // The data from before the revision, which has no Terraform.
+  expect(readFileSync(join(previous, stamp, 'resume.json'), 'utf8')).not.toContain('Terraform');
   const kept = JSON.parse(readFileSync(join(previous, stamp, 'revision.json'), 'utf8'));
+  const id = expect.stringMatching(/^term-[0-9a-f]{8}$/);
   expect(kept).toMatchObject({
     resume: ACME_RESUME,
     findings: [
-      { id: 'term-terraform', kind: 'content', title: 'Add “Terraform”' },
-      { id: 'term-graphql', kind: 'question', title: 'Ask about “GraphQL”' },
+      { id, kind: 'content', title: 'Add “Terraform”' },
+      { id, kind: 'question', title: 'Ask about “GraphQL”' },
     ],
     previous: `${ACME_FOLDER}/previous/${stamp}`,
   });

@@ -125,6 +125,16 @@ describe('the plugin’s skills', () => {
     }
   });
 
+  it('never tell Claude to save a fact in a file save_fact turns away', () => {
+    for (const { folder, text } of skills) {
+      for (const line of text.split('\n').filter((each) => each.includes('`save_fact`'))) {
+        for (const file of ['facts/skills.md', 'facts/gaps.md', 'facts/profile.md']) {
+          expect(line, folder).not.toContain(file);
+        }
+      }
+    }
+  });
+
   it('include the skills the app starts on the whole job hunt', () => {
     for (const skill of HUNT_SKILLS) expect(skills.map(({ folder }) => folder)).toContain(skill);
     const started = skills.find(({ folder }) => folder === 'get-started');

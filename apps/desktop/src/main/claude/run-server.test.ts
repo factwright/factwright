@@ -135,10 +135,14 @@ describe('RunServer', () => {
       revision: {
         jobId: 'acme--staff',
         resume: 'Resume.pdf',
-        findings: [{ id: 'term-go', kind: 'content', title: 'Add “Go”', about: 'Go is missing.' }],
+        findings: [
+          { id: 'term-9f8e7d6c', kind: 'content', title: 'Add “Go”', about: 'Go is missing.' },
+        ],
         before: 'Reads cleanly · 4 of 5 key terms',
+        at: '2026-10-15T14:30:12.000Z',
         folder: '2026-10-07-acme',
         previous: 'applications/2026-10-07-acme/previous/2026-10-15-093012',
+        files: [],
       },
     });
     server.listen(other, () => {});
@@ -151,7 +155,7 @@ describe('RunServer', () => {
       return ((await response.json()) as { result: { content: { text: string }[] } }).result
         .content[0]?.text;
     };
-    expect(await findings(TOKEN)).toBe('term-go');
+    expect(await findings(TOKEN)).toBe('term-9f8e7d6c');
     expect(await findings(other)).toBe('No revision');
   });
 

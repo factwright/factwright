@@ -226,19 +226,26 @@ export function registerIpc({
     const valid = parseTerminalSize(size);
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');
-    // A revision runs only as the window prepared it, which its run's tool calls then read.
-    const revision = run && 'findings' in run ? revisions.for(run) : undefined;
-    if (revision === null) throw new Error('Refused a revision the app didn’t prepare.');
-    return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(([models, effort]) =>
-      session.start(valid, {
-        prompt: run ? runPrompt(run) : undefined,
-        choose: (levels) => ({
-          model: modelFor(models, run, levels),
-          effort: effortFor(effort, run, levels),
-        }),
-        scope: scopeOf(run),
-        ...(revision && { revision }),
-      }),
+    // A revision runs only as the window prepared it, in one run, whose tool calls read it.
+    const revision = run && 'findings' in run ? revisions.claim(run) : undefined;
+    if (revision === null) return Promise.resolve<StartResult>({ ok: false, reason: 'revision' });
+    return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(
+      async ([models, effort]) => {
+        const started = await session.start(valid, {
+          prompt: run ? runPrompt(run) : undefined,
+          choose: (levels) => ({
+            model: modelFor(models, run, levels),
+            effort: effortFor(effort, run, levels),
+          }),
+          scope: scopeOf(run),
+          ...(revision && { revision }),
+        });
+        // Once its run starts, the revision is kept for the before-and-after. If it didn't
+        // start, starting it again finds it.
+        if (revision && started.ok) await revisions.record(revision).catch(() => {});
+        else if (revision) revisions.release(revision);
+        return started;
+      },
     );
   });
 
@@ -250,9 +257,7 @@ export function registerIpc({
   });
 
   answer('xray:revision', (jobId, resume) =>
-    typeof jobId === 'string' && typeof resume === 'string'
-      ? revisions.latest(jobId, resume)
-      : null,
+    typeof jobId === 'string' && typeof resume === 'string' ? revisions.state(jobId, resume) : null,
   );
 
   // A task for the run that's open. One that needs another model or more effort, or may change

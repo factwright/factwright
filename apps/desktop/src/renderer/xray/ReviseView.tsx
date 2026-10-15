@@ -13,7 +13,7 @@ const KINDS: readonly { kind: FindingKind; title: string; about?: string }[] = [
     kind: 'question',
     title: 'Ask you first',
     about:
-      'Your Claude asks about each before adding it. A yes goes in your fact bank, unverified, and your resume only says what’s true.',
+      'Your Claude asks you about each before adding it. A yes goes in your fact bank, to verify, so your resume only says what’s true.',
   },
   {
     kind: 'template',
@@ -44,22 +44,42 @@ const OUTCOMES: Readonly<Record<Outcome, { icon: ReactNode; words: string; tone:
     tone: styles.settled ?? '',
   },
   open: { icon: <TriangleAlert size={15} />, words: 'Still there', tone: styles.fix ?? '' },
+  unknown: {
+    icon: <Minus size={15} />,
+    words: 'Not checked this time',
+    tone: styles.settled ?? '',
+  },
 };
+
+/** When a revision was sent, as a day: "Oct 15". Nothing for a time that doesn't read. */
+export function dayOf(revision: Revision): string {
+  return Number.isNaN(Date.parse(revision.at)) ? '' : shortDate(revision.at, localDate());
+}
 
 /** When a revision was sent: "Oct 15 at 3:12 PM". */
 export function sentAt(revision: Revision): string {
   const at = new Date(revision.at);
+  if (Number.isNaN(at.getTime())) return '';
   const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  return `${shortDate(revision.at, localDate())} at ${time}`;
+  return `${dayOf(revision)} at ${time}`;
 }
 
-/** How many of the picked findings a revision fixed: "2 of 2 fixed · 1 you don’t have". */
+/**
+ * How much of what was picked a revision fixed: "2 of 3 fixed · 1 you don’t have", with the ones
+ * this X-ray couldn't check apart.
+ */
 export function fixedText(outcomes: ReadonlyMap<string, Outcome>): string {
   const all = [...outcomes.values()];
-  const fixed = all.filter((outcome) => outcome === 'fixed').length;
-  const saidNo = all.filter((outcome) => outcome === 'said-no').length;
-  const settled = saidNo > 0 ? ` · ${saidNo} you don’t have` : '';
-  return `${fixed} of ${all.length - saidNo} fixed${settled}`;
+  const count = (outcome: Outcome) => all.filter((each) => each === outcome).length;
+  const [fixed, saidNo, unknown] = [count('fixed'), count('said-no'), count('unknown')];
+  const checked = all.length - saidNo - unknown;
+  return [
+    checked > 0 && `${fixed} of ${checked} fixed`,
+    saidNo > 0 && `${saidNo} you don’t have`,
+    unknown > 0 && `${unknown} not checked`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** The last revision of a resume, as its X-ray shows it. */
@@ -91,8 +111,16 @@ function LastRevision({
         {rebuilt ? 'Revised' : 'Sent for revision'} {sentAt(revision)}
       </h4>
       <p className={styles.lastBefore}>
-        {outcomes && <span className={styles.lastFixed}>{fixedText(outcomes)}</span>}
-        {outcomes && ' · '}
+        {outcomes &&
+          fixedText(outcomes)
+            .split(' · ')
+            .map((part) => (
+              <span key={part}>
+                {/* What got fixed stands out; what's settled or wasn't checked doesn't. */}
+                {part.endsWith(' fixed') ? <span className={styles.lastFixed}>{part}</span> : part}
+                {' · '}
+              </span>
+            ))}
         {note}
       </p>
       <ul className={styles.outcomes}>
@@ -178,6 +206,7 @@ function KindGroup({
  */
 export function ReviseView({
   findings,
+  readable,
   picked,
   onPick,
   template,
@@ -185,12 +214,16 @@ export function ReviseView({
   last,
   onOpenPrevious,
   locked,
+  known,
+  ready,
   busy,
   sending,
   problem,
   onSend,
 }: {
   findings: readonly Finding[];
+  /** Whether the file has text to read, without which there's nothing to revise. */
+  readable: boolean;
   picked: (finding: Finding) => boolean;
   onPick: (finding: Finding, on: boolean) => void;
   template: TemplateChoice | null;
@@ -200,6 +233,10 @@ export function ReviseView({
   onOpenPrevious: (() => Promise<string | null>) | null;
   /** Why this resume can't be revised, such as that it went out with the application. */
   locked: string | null;
+  /** Whether the app has said yet where the resume stands. Until it has, nothing's sent. */
+  known: boolean;
+  /** Whether Claude Code is ready to run. */
+  ready: boolean;
   /** Whether Claude is busy with another run, which a revision waits for. */
   busy: boolean;
   sending: boolean;
@@ -216,14 +253,20 @@ export function ReviseView({
         ? `Pick ${MAX_FINDINGS} at most.`
         : templated && !template
           ? 'Pick how to fix the template.'
-          : busy
-            ? 'Your Claude is busy with another run. Send this once it’s done.'
-            : null;
+          : !ready
+            ? 'Your Claude isn’t ready yet. The card in the sidebar says what to do.'
+            : busy
+              ? 'Your Claude is busy with another run. Send this once it’s done.'
+              : !known
+                ? ''
+                : null;
   return (
     <div className={styles.groups}>
       {last && <LastRevision last={last} onOpenPrevious={onOpenPrevious} />}
       {locked ? (
         <p className={styles.honest}>{locked}</p>
+      ) : !readable ? (
+        <p className={styles.empty}>There’s no text in this file to revise.</p>
       ) : findings.length === 0 ? (
         <p className={styles.empty}>
           {last
@@ -233,8 +276,9 @@ export function ReviseView({
       ) : (
         <>
           <p className={styles.honest}>
-            Pick what your Claude fixes. It keeps this version, makes the changes in a run you can
-            follow, and rebuilds the resume. Open the X-ray again after, to see what got fixed.
+            Pick what to fix. Factwright keeps this version, then your Claude makes the changes in a
+            run you can follow, and rebuilds the resume. Open the X-ray again after to see what got
+            fixed.
           </p>
           {KINDS.map(({ kind, title, about }) => {
             const ofKind = findings.filter((finding) => finding.kind === kind);
@@ -276,7 +320,7 @@ export function ReviseView({
           })}
         </>
       )}
-      {!locked && findings.length > 0 && (
+      {!locked && readable && findings.length > 0 && (
         <div className={styles.send}>
           {problem && (
             <p className={styles.sendProblem} role="alert">

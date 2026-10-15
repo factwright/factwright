@@ -2,9 +2,10 @@ import type { FindingKind } from '@factwright/xray';
 
 /**
  * Send for revision: the user picks what a resume's ATS X-ray found, and a run fixes it. The
- * app types only the skill, the job's ID, the resume's file and the findings' IDs. The findings
- * themselves reach the run through a tool, bound to that run, so nothing the X-ray read, such as
- * a posting's words, ever reaches Claude as if the user had typed it.
+ * app types only the skill, the job's ID and the findings' IDs, which hold none of the posting's
+ * words. The resume and the findings themselves reach the run through a tool, bound to that run,
+ * so nothing the X-ray read, such as a posting's words, ever reaches Claude as if the user had
+ * typed it.
  */
 
 /** The skill that revises a job's resume for what its X-ray found. */
@@ -19,25 +20,29 @@ export const TEMPLATE_CHOICES = ['fix', 'switch'] as const;
 
 export type TemplateChoice = (typeof TEMPLATE_CHOICES)[number];
 
-/** A finding's ID, as the X-ray gives it: "check-headings", "term-kubernetes". */
-export const FINDING_ID = /^(?:check|term)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/**
+ * A finding's ID, as the X-ray gives it: "check-" and a check that can be revised, or "term-" and
+ * eight hex digits, such as "term-3c5e0f21", so none of a posting's words is ever typed into a run.
+ * The same as @factwright/xray's, which a test checks.
+ */
+export const FINDING_ID =
+  /^(?:check-(?:contact|dates|headings|length|order|margins|characters|joined|spaced|layout|fonts)|term-[0-9a-f]{8}(?:-[1-9][0-9]?)?)$/;
 
 export const FINDING_KINDS: readonly FindingKind[] = ['content', 'question', 'template'];
 
 /**
- * A resume's file in its job's folder, by name: letters and digits first, then those, spaces and
- * a few marks, ending .pdf or .docx. No % or !, which Windows' command line would act on, no
- * quotes that could end the prompt's, and no slashes, so it can only name a file in the folder.
+ * A resume's file in its job's folder, by name, ending .pdf or .docx: no slashes, so it can only
+ * name a file in the folder, and no control characters. It's never typed into a run.
  */
-export const RESUME_FILE = /^[\p{L}\p{N}][\p{L}\p{N} ._()&,'’+–—-]{0,150}\.(?:pdf|docx)$/u;
+export const RESUME_FILE = /^(?!\.)[^/\\\p{C}]{1,200}\.(?:pdf|docx)$/iu;
 
 /** The most findings one revision takes. */
 export const MAX_FINDINGS = 40;
 
 const MAX_ID = 60;
-const MAX_TITLE = 300;
+export const MAX_TITLE = 300;
 const MAX_ABOUT = 2000;
-const MAX_SUMMARY = 300;
+export const MAX_SUMMARY = 300;
 
 /** One finding the user picked: its ID and kind, a short name, and what the X-ray found. */
 export interface RevisionFinding {
@@ -59,6 +64,14 @@ export interface RevisionRequest {
   before: string;
 }
 
+/** Where a job's resume stands for the X-ray's Revise tab. */
+export interface RevisionState {
+  /** Its last revision, for the before-and-after, or null. */
+  last: Revision | null;
+  /** Why it can't be sent for revision, such as that it went out with the application, or null. */
+  locked: string | null;
+}
+
 /** A revision as the app kept it beside the previous version, for the before-and-after. */
 export interface Revision {
   /** When it was sent, as an ISO time. */
@@ -76,6 +89,12 @@ export interface Revision {
 const text = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.trim() !== '' && value.length <= max;
 
+/**
+ * Text on one line: each run of spaces, line breaks and other control or format characters,
+ * such as a right-to-left mark, as one space.
+ */
+export const oneLine = (value: string) => value.replace(/[\s\p{C}]+/gu, ' ').trim();
+
 /** A finding from the window, if it's in the shape a revision takes. */
 function parseFinding(value: unknown): RevisionFinding | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
@@ -84,7 +103,8 @@ function parseFinding(value: unknown): RevisionFinding | null {
   if (!text(id, MAX_ID) || !FINDING_ID.test(id)) return null;
   if (!(FINDING_KINDS as readonly unknown[]).includes(kind)) return null;
   if (!text(title, MAX_TITLE) || !text(about, MAX_ABOUT)) return null;
-  return { id, kind: kind as FindingKind, title, about };
+  if (!oneLine(title) || !oneLine(about)) return null;
+  return { id, kind: kind as FindingKind, title: oneLine(title), about: oneLine(about) };
 }
 
 /**
@@ -110,12 +130,12 @@ export function parseRevisionRequest(value: unknown, jobIdPattern: RegExp): Revi
     return null;
   }
   if (templated !== (template !== undefined)) return null;
-  if (!text(before, MAX_SUMMARY)) return null;
+  if (!text(before, MAX_SUMMARY) || !oneLine(before)) return null;
   return {
     jobId,
     resume,
     findings: picked,
     ...(template !== undefined && { template: template as TemplateChoice }),
-    before,
+    before: oneLine(before),
   };
 }

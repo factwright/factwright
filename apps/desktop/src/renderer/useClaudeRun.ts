@@ -38,6 +38,7 @@ const START_PROBLEMS = {
   failed: 'Claude Code couldn’t start.',
   'not-running': 'Claude Code has closed. Start it again.',
   'new-run': 'This needs Claude to start again. Start it again.',
+  revision: 'This revision needs sending again. Send it from the resume’s ATS X-ray.',
 } as const;
 
 /** Runs the user's Claude Code in the panel and follows its signals. */
