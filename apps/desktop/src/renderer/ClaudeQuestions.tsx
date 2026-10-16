@@ -15,8 +15,7 @@ import type { Choice } from './useClaudeQuestions.ts';
 
 const startChoice = (question: RoundQuestion): Choice => ({
   picks: [],
-  // A number question starts at the number Claude suggests, if it gave one.
-  other: question.number?.start == null ? '' : String(question.number.start),
+  other: '',
   otherOn: question.options.length === 0,
   note: '',
   noting: false,
@@ -121,7 +120,8 @@ export function ClaudeQuestions({
       onClose={onClose}
     >
       {(close) => (
-        <form onSubmit={(event) => send(event, close)} onKeyDown={holdEnter}>
+        // The app checks a number as Claude Code does, so the browser's own checks stay out of it.
+        <form noValidate onSubmit={(event) => send(event, close)} onKeyDown={holdEnter}>
           <div className={styles.questions}>
             {round.questions.map((question, at) => (
               <QuestionField
@@ -337,7 +337,7 @@ function NumberBox({
   onChange: (value: string) => void;
 }) {
   const wrongId = useId();
-  const { min = null, max = null, step = null, unit = null } = question.number ?? {};
+  const { min = null, max = null, step = null, unit = null, start = null } = question.number ?? {};
   const wrong = value.trim() !== '' && !takesNumber(question, value);
   return (
     <div className={styles.numberRow}>
@@ -348,7 +348,8 @@ function NumberBox({
         aria-label={unit ? `Your answer, in ${unit}` : 'Your answer'}
         aria-invalid={wrong || undefined}
         aria-describedby={wrong ? wrongId : undefined}
-        placeholder={question.placeholder ?? undefined}
+        // Claude's suggestion is a hint: only the user's own number answers, as a fact can rest on it.
+        placeholder={question.placeholder ?? (start === null ? undefined : String(start))}
         min={min ?? undefined}
         max={max ?? undefined}
         step={step ?? 'any'}

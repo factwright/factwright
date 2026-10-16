@@ -197,7 +197,8 @@ describe('RunServer', () => {
       await server.start();
       const { ask, answer } = dialog();
       const hooks = vi.fn();
-      server.listen(TOKEN, hooks, { ask });
+      const onAnswered = vi.fn();
+      server.listen(TOKEN, hooks, { ask, onAnswered });
       const held = post(server.hookUrl, asked);
       await answer(yes);
       expect(ask.mock.calls[0]?.[0]).toEqual({
@@ -228,8 +229,16 @@ describe('RunServer', () => {
           updatedInput: { questions, answers: { [question]: 'Yes, in production' } },
         },
       });
-      // The run still hears the question as it's asked, to read "Needs your answer".
+      // The run still hears the question as it's asked, to read "Needs your answer", and hears
+      // once it's answered, with the round as it then runs.
       expect(hooks).toHaveBeenCalledWith(asked);
+      await vi.waitFor(() =>
+        expect(onAnswered).toHaveBeenCalledWith({
+          tool_name: 'AskUserQuestion',
+          tool_input: { questions },
+          ranWith: { questions, answers: { [question]: 'Yes, in production' } },
+        }),
+      );
     });
 
     it('has the terminal ask when the dialog gives no answers, and answers other hooks meanwhile', async () => {
@@ -366,8 +375,9 @@ describe('RunServer', () => {
             });
           }),
       );
+      // Answers the oldest prompt waiting.
       const answer = async (given: PermissionAnswer | null) => {
-        await vi.waitFor(() => expect(answers).toHaveLength(1));
+        await vi.waitFor(() => expect(answers.length).toBeGreaterThan(0));
         answers.shift()?.(given);
       };
       return { permit, answer, signals };
@@ -377,7 +387,7 @@ describe('RunServer', () => {
       await server.start();
       const { permit, answer } = dialog();
       const hooks = vi.fn();
-      server.listen(TOKEN, hooks, { permit, workspace: '/work' });
+      server.listen(TOKEN, hooks, { permit, context: { workspace: '/work' } });
       const held = post(server.hookUrl, prompted);
       await answer({ allow: true });
       expect(permit.mock.calls[0]?.[0]).toMatchObject({
@@ -396,8 +406,8 @@ describe('RunServer', () => {
     it('denies the call with the user’s note, and tells the run it won’t run', async () => {
       await server.start();
       const { permit, answer } = dialog();
-      const onDenied = vi.fn();
-      server.listen(TOKEN, () => {}, { permit, onDenied, workspace: '/work' });
+      const onAnswered = vi.fn();
+      server.listen(TOKEN, () => {}, { permit, onAnswered, context: { workspace: '/work' } });
       const held = post(server.hookUrl, prompted);
       await answer({ allow: false, note: 'Keep it in the job’s folder' });
       expect(await (await held).json()).toEqual({
@@ -410,14 +420,57 @@ describe('RunServer', () => {
         },
       });
       await vi.waitFor(() =>
-        expect(onDenied).toHaveBeenCalledWith({ tool_name: 'Write', tool_input: input }),
+        expect(onAnswered).toHaveBeenCalledWith({
+          tool_name: 'Write',
+          tool_input: input,
+          ranWith: null,
+        }),
       );
+    });
+
+    it('tells the run of a yes too, with the call as it runs, and of nothing let go', async () => {
+      await server.start();
+      const { permit, answer, signals } = dialog();
+      const onAnswered = vi.fn();
+      server.listen(TOKEN, () => {}, { permit, onAnswered, context: { workspace: '/work' } });
+      const allowed = post(server.hookUrl, prompted);
+      await answer({ allow: true });
+      await allowed;
+      await vi.waitFor(() =>
+        expect(onAnswered).toHaveBeenCalledWith({
+          tool_name: 'Write',
+          tool_input: input,
+          ranWith: input,
+        }),
+      );
+      const dropped = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      await post(server.hookUrl, { hook_event_name: 'Stop' });
+      expect((await dropped).status).toBe(204);
+      expect(onAnswered).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets go of one prompt for a call that ran, never for a subagent’s call', async () => {
+      await server.start();
+      const { permit, signals } = dialog();
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      const first = post(server.hookUrl, prompted);
+      const second = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      const ran = { hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: input };
+      await post(server.hookUrl, { ...ran, agent_id: 'research' });
+      expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
+      await post(server.hookUrl, ran);
+      expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+      expect((await first).status).toBe(204);
+      await post(server.hookUrl, ran);
+      expect((await second).status).toBe(204);
     });
 
     it('lets the dialog go once the call runs, as when the terminal was answered first', async () => {
       await server.start();
       const { permit, signals } = dialog();
-      server.listen(TOKEN, () => {}, { permit, workspace: '/work' });
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
       const held = post(server.hookUrl, prompted);
       await vi.waitFor(() => expect(signals).toHaveLength(1));
       // Another call to the same tool is no answer to this one.
@@ -438,10 +491,28 @@ describe('RunServer', () => {
       expect((await held).status).toBe(204);
     });
 
+    it('lets no other prompt go when a call allowed in the app runs', async () => {
+      await server.start();
+      const { permit, answer, signals } = dialog();
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      const first = post(server.hookUrl, prompted);
+      const second = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      await answer({ allow: true });
+      expect((await first).status).toBe(200);
+      // The first call runs, as allowed: the second, just like it, still waits on the user.
+      const ran = { hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: input };
+      await post(server.hookUrl, ran);
+      expect(signals[1]?.aborted).toBe(false);
+      await post(server.hookUrl, ran);
+      expect(signals[1]?.aborted).toBe(true);
+      expect((await second).status).toBe(204);
+    });
+
     it('lets everything go once the run moves on, or answers the terminal from the dialog', async () => {
       await server.start();
       const { permit, signals, answer } = dialog();
-      server.listen(TOKEN, () => {}, { permit, workspace: '/work' });
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
       const first = post(server.hookUrl, prompted);
       await vi.waitFor(() => expect(signals).toHaveLength(1));
       await post(server.hookUrl, { hook_event_name: 'Stop' });
@@ -455,7 +526,7 @@ describe('RunServer', () => {
       await server.start();
       const { permit } = dialog();
       const other = 'f'.repeat(64);
-      server.listen(TOKEN, () => {}, { permit, workspace: '/work' });
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
       server.listen(other, () => {});
       const bash = { ...prompted, tool_name: 'Bash', tool_input: { command: 'ls' } };
       expect((await post(server.hookUrl, bash)).status).toBe(204);

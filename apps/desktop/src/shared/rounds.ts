@@ -20,7 +20,10 @@ export interface NumberAsked {
   step: number | null;
   /** What the number counts, such as "years". */
   unit: string | null;
-  /** The number the box starts at, when Claude suggests one. */
+  /**
+   * The number Claude suggests, which the box shows as a hint. Only the user's own number answers,
+   * as a fact can rest on it.
+   */
   start: number | null;
 }
 

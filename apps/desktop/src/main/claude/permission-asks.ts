@@ -59,6 +59,24 @@ export function toolKey(tool: unknown, input: unknown): string | null {
   return typeof tool === 'string' && shown !== null ? `${tool}:${shown}` : null;
 }
 
+/**
+ * What else the dialog's words come from: the run's workspace, which the paths are shown from,
+ * and the names of the user's templates, by their IDs.
+ */
+export interface AskContext {
+  workspace?: string;
+  templateName?: (id: string) => string | null;
+}
+
+/**
+ * A file's path, if Claude Code would read it as it reads here: whole, with nothing around it, and
+ * not from the home folder's "~", which Claude Code could take one way and the dialog another.
+ */
+function pathFrom(value: unknown): string | null {
+  const path = textUpTo(value, MAX_PATH);
+  return path && path === path.trim() && isAbsolute(path) && !path.startsWith('~') ? path : null;
+}
+
 /** Where a file is: by its path in the workspace when it's there, or in full when it isn't. */
 function placeOf(path: string, workspace: string | undefined): FilePlace & { full: string } {
   const full = resolve(workspace ?? sep, path);
@@ -79,10 +97,10 @@ type Described = PermissionAsk extends infer Each
 function describe(
   tool: string,
   input: Record<string, unknown>,
-  workspace: string | undefined,
+  { workspace, templateName }: AskContext,
 ): Described | null {
   if (tool === 'Edit') {
-    const path = textUpTo(input.file_path, MAX_PATH);
+    const path = pathFrom(input.file_path);
     const before = textUpTo(input.old_string, MAX_SHOWN);
     const after = textUpTo(input.new_string, MAX_SHOWN);
     const { replace_all: everywhere } = input;
@@ -92,14 +110,14 @@ function describe(
     return { kind: 'edit', file, outside, before, after, everywhere: everywhere === true };
   }
   if (tool === 'Write') {
-    const path = textUpTo(input.file_path, MAX_PATH);
+    const path = pathFrom(input.file_path);
     const content = textUpTo(input.content, MAX_SHOWN);
     if (!path || content === null) return null;
     const { file, outside, full } = placeOf(path, workspace);
     return { kind: 'write', file, outside, content, replaces: existsSync(full) };
   }
   if (tool === 'Read') {
-    const path = textUpTo(input.file_path, MAX_PATH);
+    const path = pathFrom(input.file_path);
     if (!path) return null;
     const { file, outside } = placeOf(path, workspace);
     return { kind: 'read', file, outside };
@@ -119,11 +137,17 @@ function describe(
   if (tool === OWN.profile) {
     const changes: ProfileChange[] = [];
     for (const [key, value] of Object.entries(input)) {
-      const label = PROFILE_LABELS[key];
+      // Only the fields it saves, never anything a name like "__proto__" could reach.
+      const label = Object.hasOwn(PROFILE_LABELS, key) ? PROFILE_LABELS[key] : undefined;
       const text = textUpTo(value, MAX_VALUE);
       if (!label || text === null) return null;
-      if (!text.trim()) continue;
-      const shown = key === 'relocate' ? RELOCATE[text] : text;
+      // A blank clears what's there, which the user sees too.
+      if (!text.trim()) {
+        changes.push({ label, value: null });
+        continue;
+      }
+      const shown =
+        key === 'relocate' ? (Object.hasOwn(RELOCATE, text) ? RELOCATE[text] : undefined) : text;
       if (shown === undefined) return null;
       changes.push({ label, value: shown });
     }
@@ -139,13 +163,18 @@ function describe(
     if (replace !== undefined && typeof replace !== 'boolean') return null;
     const name = textUpTo(file.name, MAX_NAME);
     const look = file.look === undefined ? null : textUpTo(file.look, MAX_VALUE);
+    const code = JSON.stringify(file, null, 2);
     if (!name?.trim() || (file.look !== undefined && look === null)) return null;
+    // The whole file, to look through: longer than the dialog shows, the terminal asks.
+    if (code.length > MAX_SHOWN) return null;
     return {
       kind: 'template',
       template,
       name,
       look: look?.trim() || null,
       replace: replace === true,
+      replacing: replace === true ? (templateName?.(template) ?? null) : null,
+      code,
     };
   }
   return null;
@@ -155,7 +184,7 @@ function describe(
 export interface HeardAsk {
   ask: PermissionAsk;
   /** The call it asks about, by its tool and input, which its PostToolUse names too. */
-  key: string | null;
+  key: string;
   tool: string;
   input: Record<string, unknown>;
 }
@@ -167,15 +196,17 @@ export interface HeardAsk {
  * changing, writing or reading a file, reading a web page, and Factwright's tools that save to
  * the user's profile or their templates.
  */
-export function permissionAskFrom(event: unknown, workspace: string | undefined): HeardAsk | null {
+export function permissionAskFrom(event: unknown, context: AskContext = {}): HeardAsk | null {
   if (!isRecord(event) || event.hook_event_name !== 'PermissionRequest') return null;
   if (typeof event.agent_id === 'string' && event.agent_id !== '') return null;
   const tool = event.tool_name;
   const input = event.tool_input;
   if (typeof tool !== 'string' || !isRecord(input)) return null;
-  const described = describe(tool, input, workspace);
-  if (!described) return null;
-  return { ask: { id: randomUUID(), ...described }, key: toolKey(tool, input), tool, input };
+  // Without a key, a yes in the terminal couldn't close the dialog, so the terminal asks.
+  const key = toolKey(tool, input);
+  const described = key === null ? null : describe(tool, input, context);
+  if (key === null || !described) return null;
+  return { ask: { id: randomUUID(), ...described }, key, tool, input };
 }
 
 /** The user's answer from the window, if it's one: allow, or don't allow with a note. */

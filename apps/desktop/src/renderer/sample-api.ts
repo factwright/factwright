@@ -202,6 +202,18 @@ const SAMPLE_PERMITS: Readonly<Record<string, PermissionAsk>> = {
     name: 'Navy Sidebar (clean)',
     look: 'Navy headings in one column, with no letter-spacing, icons or sidebar, so applicant systems read it in order.',
     replace: false,
+    replacing: null,
+    code: JSON.stringify(
+      {
+        factwright: 'template',
+        version: 1,
+        name: 'Navy Sidebar (clean)',
+        look: 'Navy headings in one column.',
+        css: 'h2 { color: #1f3a5f; letter-spacing: 0; }',
+      },
+      null,
+      2,
+    ),
   },
 };
 

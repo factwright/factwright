@@ -71,7 +71,13 @@ function numberFrom(value: Record<string, unknown>): NumberAsked | null {
   }
   if (unit === undefined || (min !== null && max !== null && min > max)) return null;
   if (step !== null && step <= 0) return null;
-  return { min, max, step, unit, start };
+  // A suggestion Claude Code wouldn't take as an answer, such as one past the most, is dropped.
+  const fits =
+    start !== null &&
+    /^-?\d+(\.\d+)?$/.test(String(start)) &&
+    (min === null || start >= min) &&
+    (max === null || start <= max);
+  return { min, max, step, unit, start: fits ? start : null };
 }
 
 const KINDS = ['choice', 'text', 'number'] as const;

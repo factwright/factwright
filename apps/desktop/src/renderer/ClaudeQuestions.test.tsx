@@ -307,8 +307,12 @@ describe('ClaudeQuestions', () => {
     );
     expect(screen.getByText('The posting asks for 3 or more.')).toBeTruthy();
     const years = screen.getByRole('spinbutton', { name: 'Your answer, in years' });
-    expect(years).toHaveProperty('value', '2');
-    await userEvent.clear(years);
+    // Claude's suggestion is a hint, never the user's answer: a fact could rest on it.
+    expect(years).toHaveProperty('value', '');
+    expect(years.getAttribute('placeholder')).toBe('2');
+    expect(send().disabled).toBe(true);
+    // The app checks the number as Claude Code does, not the browser.
+    expect(years.closest('form')?.noValidate).toBe(true);
     await userEvent.type(years, '55');
     expect(screen.getByRole('alert').textContent).toBe('Give a number from 0 to 40.');
     expect(send().disabled).toBe(true);

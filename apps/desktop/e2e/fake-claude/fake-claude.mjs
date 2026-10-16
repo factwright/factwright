@@ -380,10 +380,10 @@ async function work(text) {
     );
     show('\n');
   }
-  setTimeout(async () => {
-    show('Done.\n> ');
-    await hook('Stop');
-  }, 300);
+  // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  show('Done.\n> ');
+  await hook('Stop');
 }
 
 async function begin() {
@@ -397,6 +397,8 @@ async function begin() {
 }
 
 let askingTrust = process.env.FAKE_CLAUDE_TRUST === 'ask';
+/** The prompt it's working on, which the next one waits for. */
+let working = Promise.resolve();
 let typed = '';
 let interrupts = 0;
 
@@ -423,7 +425,8 @@ process.stdin.on('data', async (chunk) => {
   }
   const line = typed.trim();
   typed = '';
-  if (line) await work(line);
+  // One prompt at a time, as Claude Code takes them, even if the next is typed while it works.
+  if (line) working = working.then(() => work(line));
 });
 process.on('SIGHUP', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));

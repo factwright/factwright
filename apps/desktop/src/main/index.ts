@@ -329,6 +329,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onFiled: (filed) => window.send('facts:filed', filed),
       ask: (round, signal) => questions.ask(round, signal),
       permit: (ask, signal) => permissionAsks.ask(ask, signal),
+      templateName: (id) =>
+        templates.list().find((template) => template.own && template.id === id)?.name ?? null,
     });
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.

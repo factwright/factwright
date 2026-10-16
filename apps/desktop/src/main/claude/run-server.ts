@@ -8,7 +8,7 @@ import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
-import { permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
+import { type AskContext, permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
 import { hookReply, roundFrom } from './rounds.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
@@ -45,25 +45,43 @@ export type PermissionAsker = (
   signal: AbortSignal,
 ) => Promise<PermissionAnswer | null>;
 
-/** A call the user said no to in the app, by its tool and input, which never runs. */
-export type DeniedListener = (call: { tool_name: string; tool_input: unknown }) => void;
+/**
+ * A call the user answered in the app, a round of questions or a permission prompt, by its tool
+ * and input, with the input it then runs with, or null when it doesn't run, after a no.
+ */
+export interface AnsweredCall {
+  tool_name: string;
+  tool_input: unknown;
+  ranWith: unknown;
+}
+
+/** Hears each call the user answered in the app, which Claude Code no longer waits on them for. */
+export type AnsweredListener = (call: AnsweredCall) => void;
 
 /** The hooks after which nothing from before can still be waiting on the user. */
 const MOVED_ON = ['UserPromptSubmit', 'Stop', 'SessionEnd'];
+
+/** How many calls allowed in the app are kept, until their PostToolUse comes. */
+const MAX_ALLOWED = 50;
 
 interface RunListeners {
   hooks: HookListener;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
   permit: PermissionAsker | undefined;
-  onDenied: DeniedListener | undefined;
-  /** The run's workspace, which the paths in its permission prompts are shown from. */
-  workspace: string | undefined;
+  onAnswered: AnsweredListener | undefined;
+  /** What the words of its permission prompts come from, such as its workspace. */
+  context: AskContext;
   /**
    * What's held for the run, waiting on the user, by the call each waits on when it's known. The
    * run lets all of them go once it stops listening.
    */
   held: Map<AbortController, string | null>;
+  /**
+   * Calls the user allowed in the app, by key, whose PostToolUse lets nothing go: another prompt
+   * for a call just like it may still wait.
+   */
+  allowed: string[];
   /** What the run is for, what it's saved, and what the user answered, which its tool calls carry. */
   call: ToolCall;
 }
@@ -82,10 +100,10 @@ export interface ListenOptions {
   ask?: QuestionAsker;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
   permit?: PermissionAsker;
-  /** Hears each call the user said no to in the app, which never runs. */
-  onDenied?: DeniedListener;
-  /** The run's workspace, which the paths in its permission prompts are shown from. */
-  workspace?: string;
+  /** Hears each call the user answered in the app, which Claude Code no longer waits on them for. */
+  onAnswered?: AnsweredListener;
+  /** What the words of its permission prompts come from, such as its workspace. */
+  context?: AskContext;
 }
 
 /**
@@ -126,16 +144,18 @@ export class RunServer {
    * it was asking, so their dialog closes.
    */
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
-    const { tools, scope = 'hunt', onFiled, revision, ask, permit, onDenied, workspace } = options;
+    const { tools, scope = 'hunt', onFiled, revision, ask, permit, onAnswered } = options;
+    const context = options.context ?? {};
     const held = new Map<AbortController, string | null>();
     this.listeners.set(token, {
       hooks,
       tools,
       ask,
       permit,
-      onDenied,
-      workspace,
+      onAnswered,
+      context,
       held,
+      allowed: [],
       call: newCall(scope, onFiled, revision),
     });
     return () => {
@@ -178,7 +198,7 @@ export class RunServer {
         this.letGo(listener, event);
         const { ask, permit } = listener;
         const round = ask ? roundFrom(event) : null;
-        const permission = !round && permit ? permissionAskFrom(event, listener.workspace) : null;
+        const permission = !round && permit ? permissionAskFrom(event, listener.context) : null;
         if (ask && round) {
           void this.hold(
             listener,
@@ -186,7 +206,14 @@ export class RunServer {
             null,
             (signal) => ask(round.round, signal),
             (reply) => hookReply(round, reply),
-          );
+          ).then((reply) => {
+            if (!reply) return;
+            listener.onAnswered?.({
+              tool_name: 'AskUserQuestion',
+              tool_input: round.input,
+              ranWith: hookReply(round, reply).hookSpecificOutput.updatedInput,
+            });
+          });
         } else if (permit && permission) {
           void this.hold(
             listener,
@@ -195,10 +222,17 @@ export class RunServer {
             (signal) => permit(permission.ask, signal),
             permissionReply,
           ).then((answer) => {
-            // A no means the call never runs, so nothing else says it's over.
-            if (answer?.allow === false) {
-              listener.onDenied?.({ tool_name: permission.tool, tool_input: permission.input });
+            if (!answer) return;
+            if (answer.allow) {
+              listener.allowed.push(permission.key);
+              if (listener.allowed.length > MAX_ALLOWED) listener.allowed.shift();
             }
+            // A yes runs the call as Claude asked it. A no means it never runs.
+            listener.onAnswered?.({
+              tool_name: permission.tool,
+              tool_input: permission.input,
+              ranWith: answer.allow ? permission.input : null,
+            });
           });
         }
         // An empty answer lets Claude Code carry on as it would have.
@@ -263,15 +297,28 @@ export class RunServer {
   private letGo(listener: RunListeners, event: unknown): void {
     if (typeof event !== 'object' || event === null || listener.held.size === 0) return;
     const fields = event as Record<string, unknown>;
+    // A subagent's calls answer nothing the run's own Claude asked.
+    if (typeof fields.agent_id === 'string' && fields.agent_id !== '') return;
     const name = fields.hook_event_name;
     if (typeof name === 'string' && MOVED_ON.includes(name)) {
       for (const waiting of listener.held.keys()) waiting.abort();
+      listener.allowed.length = 0;
       return;
     }
     if (name !== 'PostToolUse' && name !== 'PostToolUseFailure') return;
     const ran = toolKey(fields.tool_name, fields.tool_input);
+    // A call allowed in the app was answered there, so it settles no other prompt.
+    const allowed = ran === null ? -1 : listener.allowed.indexOf(ran);
+    if (allowed >= 0) {
+      listener.allowed.splice(allowed, 1);
+      return;
+    }
+    // The call that ran settles one prompt for it, the oldest, as another just like it may wait.
     for (const [waiting, key] of listener.held) {
-      if (key !== null && key === ran) waiting.abort();
+      if (key !== null && key === ran) {
+        waiting.abort();
+        return;
+      }
     }
   }
 

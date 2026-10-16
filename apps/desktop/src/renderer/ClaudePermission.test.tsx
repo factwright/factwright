@@ -27,6 +27,12 @@ const PAGE: PermissionAsk = {
   host: 'jobs.example.com',
 };
 
+/** Waits out the moment the answers wait after a prompt shows. */
+const answerable = () =>
+  vi.waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', false),
+  );
+
 function open(ask: PermissionAsk = PAGE, result: EditResult = { ok: true }) {
   const api = {
     answerPermission: vi.fn(async (_id: string, _answer: PermissionAnswer | 'terminal') => result),
@@ -48,6 +54,9 @@ describe('ClaudePermission', () => {
     expect(screen.getByText('https://jobs.example.com/careers/42')).toBeTruthy();
     expect(screen.getByText('jobs.example.com').tagName).toBe('STRONG');
     expect((await axe.run(container)).violations).toEqual([]);
+    // A click the moment it shows, such as a double-click's second, answers nothing.
+    expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', true);
+    await answerable();
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect(api.answerPermission).toHaveBeenCalledWith('perm_1', { allow: true });
     expect(onClose).toHaveBeenCalled();
@@ -60,6 +69,7 @@ describe('ClaudePermission', () => {
       screen.getByRole('textbox', { name: 'Note for Claude' }),
       'Use the posting',
     );
+    await answerable();
     await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
     expect(first.api.answerPermission).toHaveBeenCalledWith('perm_1', {
       allow: false,
@@ -108,30 +118,46 @@ describe('ClaudePermission', () => {
     );
   });
 
-  it('lists what saving to the profile saves, and names a template it saves or changes', () => {
+  it('lists what saving to the profile saves, and what it clears', () => {
     open({
       id: 'perm_4',
       kind: 'profile',
-      changes: [{ label: 'When you can start', value: 'Two weeks’ notice' }],
+      changes: [
+        { label: 'When you can start', value: 'Two weeks’ notice' },
+        { label: 'Phone', value: null },
+      ],
     });
     expect(
       screen.getByRole('dialog', { name: 'Let Claude save this to your profile?' }),
     ).toBeTruthy();
-    expect(screen.getByRole('term').textContent).toBe('When you can start');
-    expect(screen.getByRole('definition').textContent).toBe('Two weeks’ notice');
-    cleanup();
+    expect(screen.getAllByRole('term').map((term) => term.textContent)).toEqual([
+      'When you can start',
+      'Phone',
+    ]);
+    expect(screen.getAllByRole('definition').map((value) => value.textContent)).toEqual([
+      'Two weeks’ notice',
+      'Clears what’s there',
+    ]);
+  });
+
+  it('names the template it replaces by its own name and ID, and shows the whole new one', () => {
     open({
       id: 'perm_5',
       kind: 'template',
-      template: 'navy',
-      name: 'Navy',
+      template: 'executive',
+      name: 'Navy (clean)',
       look: 'Navy headings.',
       replace: true,
+      replacing: 'Executive',
+      code: '{\n  "name": "Navy (clean)"\n}',
     });
     expect(
-      screen.getByRole('dialog', { name: 'Let Claude change your template “Navy”?' }),
+      screen.getByRole('dialog', { name: 'Let Claude replace your template “Executive”?' }),
     ).toBeTruthy();
-    expect(screen.getByText(/Every resume that uses it changes/)).toBeTruthy();
+    expect(screen.getByText('executive').tagName).toBe('CODE');
+    expect(screen.getByText(/It replaces your template “Executive”/)).toBeTruthy();
+    expect(screen.getByText('The whole template, as it saves it')).toBeTruthy();
+    expect(screen.getByText(/"name": "Navy \(clean\)"/).tagName).toBe('PRE');
   });
 
   it('stays open, saying why, when the answer doesn’t reach Claude Code', async () => {
@@ -139,6 +165,7 @@ describe('ClaudePermission', () => {
       ok: false,
       message: 'Claude Code isn’t waiting for this anymore.',
     });
+    await answerable();
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect(screen.getByRole('alert').textContent).toBe(
       'Claude Code isn’t waiting for this anymore.',

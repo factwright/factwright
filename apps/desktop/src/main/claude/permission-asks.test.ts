@@ -22,7 +22,7 @@ const asks = (tool_name: string, tool_input: unknown, fields: Record<string, unk
 });
 
 const described = (tool: string, input: unknown) => {
-  const heard = permissionAskFrom(asks(tool, input), workspace);
+  const heard = permissionAskFrom(asks(tool, input), { workspace });
   if (!heard) return null;
   const { id, ...rest } = heard.ask;
   expect(id).toMatch(/^[0-9a-f-]{36}$/);
@@ -67,9 +67,7 @@ describe('permissionAskFrom', () => {
     });
     expect(
       described('Write', { file_path: join(workspace, 'kept.md'), content: '' }),
-    ).toMatchObject({
-      replaces: true,
-    });
+    ).toMatchObject({ replaces: true });
   });
 
   it('shows reading a file outside the job hunt in full', () => {
@@ -78,6 +76,18 @@ describe('permissionAskFrom', () => {
       file: '/Users/alex/.ssh/id_rsa',
       outside: true,
     });
+  });
+
+  it('leaves to the terminal a path Claude Code could read another way: relative, padded, or from ~', () => {
+    for (const file_path of [
+      '~/.zshrc',
+      ' /Users/alex/.zshrc',
+      '/Users/alex/.zshrc\n',
+      'notes/a.md',
+    ]) {
+      expect(described('Write', { file_path, content: 'x' })).toBeNull();
+      expect(described('Read', { file_path })).toBeNull();
+    }
   });
 
   it('shows the whole address of a page to read, and the site it goes to', () => {
@@ -89,11 +99,15 @@ describe('permissionAskFrom', () => {
         host: 'jobs.example.com',
       });
     }
+    // The site is the one the address goes to, whatever comes before an @.
+    expect(described('WebFetch', { url: 'https://good.example@evil.example/' })).toMatchObject({
+      host: 'evil.example',
+    });
     expect(described('WebFetch', { url: 'file:///etc/passwd' })).toBeNull();
     expect(described('WebFetch', { url: 'not a link' })).toBeNull();
   });
 
-  it('shows what saving to the profile saves, in words, in the profile’s order', () => {
+  it('shows what saving to the profile saves, in words, in the profile’s order, blanks clearing', () => {
     expect(
       described('mcp__factwright__save_about_you', {
         targetPay: '$185,000',
@@ -107,57 +121,84 @@ describe('permissionAskFrom', () => {
         { label: 'When you can start', value: 'Two weeks’ notice' },
         { label: 'Whether you’d move for a job', value: 'Maybe, for the right one' },
         { label: 'Base pay you’re aiming for', value: '$185,000' },
+        { label: 'Phone', value: null },
       ],
+    });
+    expect(described('mcp__factwright__save_about_you', { email: '' })).toEqual({
+      kind: 'profile',
+      changes: [{ label: 'Email', value: null }],
     });
     expect(
       described('mcp__factwright__save_about_you', { start: 'Now', nickname: 'Al' }),
     ).toBeNull();
     expect(described('mcp__factwright__save_about_you', { relocate: 'sometimes' })).toBeNull();
-    expect(described('mcp__factwright__save_about_you', { phone: ' ' })).toBeNull();
   });
 
-  it('shows a template to save by its name and look, and whether it changes one of the user’s', () => {
-    expect(
-      described('mcp__factwright__save_template', {
-        id: 'navy-clean',
-        template: { name: 'Navy (clean)', look: 'Navy headings.', css: 'h2{}' },
-        replace: true,
-      }),
-    ).toEqual({
+  it('leaves to the terminal a field or value only a lookup past an object’s own would find', () => {
+    const save = 'mcp__factwright__save_about_you';
+    expect(described(save, JSON.parse('{"__proto__": "x"}'))).toBeNull();
+    expect(described(save, { constructor: 'x' })).toBeNull();
+    for (const relocate of ['__proto__', 'constructor', 'toString']) {
+      expect(described(save, { relocate })).toBeNull();
+    }
+  });
+
+  it('shows a template by its ID, name, look and whole file, and the template of the user’s it replaces', () => {
+    const template = { name: 'Navy (clean)', look: 'Navy headings.', css: 'h2{}' };
+    const heard = permissionAskFrom(
+      asks('mcp__factwright__save_template', { id: 'executive', template, replace: true }),
+      { workspace, templateName: (id) => (id === 'executive' ? 'Executive' : null) },
+    );
+    expect(heard?.ask).toMatchObject({
       kind: 'template',
-      template: 'navy-clean',
+      template: 'executive',
       name: 'Navy (clean)',
       look: 'Navy headings.',
       replace: true,
+      replacing: 'Executive',
+      code: JSON.stringify(template, null, 2),
     });
     expect(
+      described('mcp__factwright__save_template', { id: 'navy-clean', template, replace: false }),
+    ).toMatchObject({ replace: false, replacing: null });
+    expect(
       described('mcp__factwright__save_template', { id: 'x', template: { css: 'h2{}' } }),
+    ).toBeNull();
+    expect(
+      described('mcp__factwright__save_template', {
+        id: 'big',
+        template: { name: 'Big', css: 'x'.repeat(50_000) },
+      }),
     ).toBeNull();
   });
 
   it('leaves to the terminal other hooks, other tools, a subagent’s request, and what it can’t show in full', () => {
     expect(
-      permissionAskFrom({ ...asks('Edit', {}), hook_event_name: 'PreToolUse' }, workspace),
+      permissionAskFrom({ ...asks('Edit', {}), hook_event_name: 'PreToolUse' }, { workspace }),
     ).toBeNull();
     for (const tool of ['Bash', 'AskUserQuestion', 'ExitPlanMode', 'NotebookEdit']) {
-      expect(permissionAskFrom(asks(tool, { command: 'ls' }), workspace)).toBeNull();
+      expect(permissionAskFrom(asks(tool, { command: 'ls' }), { workspace })).toBeNull();
     }
     const read = { file_path: '/tmp/a' };
-    expect(permissionAskFrom(asks('Read', read, { agent_id: 'research' }), workspace)).toBeNull();
-    expect(permissionAskFrom(asks('Read', read, { agent_id: '' }), workspace)).not.toBeNull();
+    expect(
+      permissionAskFrom(asks('Read', read, { agent_id: 'research' }), { workspace }),
+    ).toBeNull();
+    expect(permissionAskFrom(asks('Read', read, { agent_id: '' }), { workspace })).not.toBeNull();
     expect(
       described('Write', { file_path: join(workspace, 'big.md'), content: 'x'.repeat(50_001) }),
     ).toBeNull();
     expect(described('Edit', { file_path: join(workspace, 'a.md'), old_string: 'a' })).toBeNull();
-    expect(permissionAskFrom(asks('Read', 'path'), workspace)).toBeNull();
-    expect(permissionAskFrom(null, workspace)).toBeNull();
+    expect(permissionAskFrom(asks('Read', 'path'), { workspace })).toBeNull();
+    expect(permissionAskFrom(null, { workspace })).toBeNull();
+    // Nested past what a key can name, a yes in the terminal couldn't close it.
+    const deep = { file_path: '/tmp/a', extra: { a: { b: { c: { d: { e: 1 } } } } } };
+    expect(permissionAskFrom(asks('Read', deep), { workspace })).toBeNull();
   });
 
   it('names the call it asks about, as its PostToolUse names it, whatever order the input’s keys', () => {
-    const heard = permissionAskFrom(
-      asks('Write', { file_path: '/tmp/a', content: 'b' }),
+    const heard = permissionAskFrom(asks('Write', { file_path: '/tmp/a', content: 'b' }), {
       workspace,
-    );
+    });
     expect(heard?.key).toBe(toolKey('Write', { content: 'b', file_path: '/tmp/a' }));
     expect(heard?.key).not.toBe(toolKey('Write', { content: 'c', file_path: '/tmp/a' }));
     expect(toolKey(undefined, {})).toBeNull();

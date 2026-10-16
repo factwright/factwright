@@ -188,6 +188,13 @@ describe('roundFrom', () => {
     ).toBeNull();
     expect(round([{ question: 'Years?', kind: 'number', min: '1' }])).toBeNull();
     expect(round([{ question: 'When?', kind: 'date' }])).toBeNull();
+    // A suggestion it wouldn't take as an answer is dropped, and the question kept.
+    for (const defaultValue of [41, 1e21, -0.5]) {
+      expect(
+        round([{ question: 'Years?', kind: 'number', min: 0, max: 40, defaultValue }])?.round
+          .questions[0]?.number?.start,
+      ).toBeNull();
+    }
     expect(round([{ ...first, kind: 'choice' }])).not.toBeNull();
     expect(round([{ ...first, question: '  ' }])).toBeNull();
     expect(round([{ ...first, question: 'x'.repeat(2001) }])).toBeNull();

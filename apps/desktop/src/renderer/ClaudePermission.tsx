@@ -1,6 +1,6 @@
 import { Button, Dialog, DialogActions, TextArea } from '@factwright/ui';
 import { TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
   MAX_PERMISSION_NOTE,
@@ -25,8 +25,8 @@ function titleOf(ask: PermissionAsk): string {
     case 'profile':
       return 'Let Claude save this to your profile?';
     case 'template':
-      return ask.replace
-        ? `Let Claude change your template “${ask.name}”?`
+      return ask.replacing
+        ? `Let Claude replace your template “${ask.replacing}”?`
         : `Let Claude save the template “${ask.name}”?`;
   }
 }
@@ -122,7 +122,11 @@ function Details({ ask }: { ask: PermissionAsk }) {
             {ask.changes.map((change) => (
               <div key={change.label} className={styles.change}>
                 <dt>{change.label}</dt>
-                <dd>{change.value}</dd>
+                {change.value === null ? (
+                  <dd className={styles.clears}>Clears what’s there</dd>
+                ) : (
+                  <dd>{change.value}</dd>
+                )}
               </div>
             ))}
           </dl>
@@ -135,12 +139,19 @@ function Details({ ask }: { ask: PermissionAsk }) {
     case 'template':
       return (
         <>
-          {ask.look && <Text label="Its look" text={ask.look} />}
           <p className={styles.note}>
-            {ask.replace
-              ? 'Every resume that uses it changes the next time it’s built.'
-              : 'It joins your templates, for you to pick for any resume.'}
+            Named <strong>{ask.name}</strong>, with the ID <code>{ask.template}</code>.{' '}
+            {ask.replacing
+              ? `It replaces your template “${ask.replacing}”, which has that ID, and every resume that uses it changes the next time it’s built.`
+              : ask.replace
+                ? 'It replaces a template of yours with that ID, if there is one. Otherwise it joins your templates.'
+                : 'It joins your templates, for you to pick for any resume.'}
           </p>
+          {ask.look && <Text label="Its look" text={ask.look} />}
+          <details className={styles.code}>
+            <summary>The whole template, as it saves it</summary>
+            <pre className={styles.text}>{ask.code}</pre>
+          </details>
         </>
       );
   }
@@ -170,6 +181,13 @@ export function ClaudePermission({
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // The answers wait a moment after a prompt shows, so a double-click on the last one's can't
+  // answer this one unseen.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
   const reply = async (close: () => void, answer: PermissionAnswer | 'terminal') => {
     setSending(true);
     setProblem(null);
@@ -229,12 +247,15 @@ export function ClaudePermission({
               >
                 Answer in the terminal
               </Button>
-              <Button disabled={sending} onClick={() => void reply(close, { allow: false, note })}>
+              <Button
+                disabled={sending || !ready}
+                onClick={() => void reply(close, { allow: false, note })}
+              >
                 Don’t allow
               </Button>
               <Button
                 variant="primary"
-                disabled={sending}
+                disabled={sending || !ready}
                 onClick={() => void reply(close, { allow: true })}
               >
                 Allow

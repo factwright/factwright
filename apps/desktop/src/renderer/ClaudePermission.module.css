@@ -17,9 +17,31 @@
   overflow-wrap: anywhere;
 }
 
+/* A path or address exactly as it is, spaces and all. */
+.file {
+  white-space: pre-wrap;
+}
+
 /* A web page's whole address, every character of it. */
 .url {
+  white-space: pre-wrap;
   word-break: break-all;
+}
+
+.note code {
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-sm);
+}
+
+/* The whole template file, there to look through. */
+.code summary {
+  color: var(--fw-accent-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.code[open] summary {
+  margin-bottom: var(--fw-space-2);
 }
 
 .warning {
@@ -122,6 +144,12 @@
   margin: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.change dd.clears {
+  color: var(--fw-need);
+  font-style: italic;
+  font-weight: 500;
 }
 
 .addWhy {

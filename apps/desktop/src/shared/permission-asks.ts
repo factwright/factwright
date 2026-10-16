@@ -8,7 +8,8 @@
 export interface ProfileChange {
   /** What it is, in words, such as "When you can start". */
   label: string;
-  value: string;
+  /** What it saves, or null when it clears what's there. */
+  value: string | null;
 }
 
 /** Where a file is: in the user's job hunt, by its path there, or anywhere else, in full. */
@@ -44,12 +45,17 @@ export type PermissionAsk = { id: string } & (
   | { kind: 'profile'; changes: ProfileChange[] }
   | {
       kind: 'template';
-      /** The template's ID and name, and what Claude says its look is. */
+      /** The template's ID, which a template it replaces has too, and its name. */
       template: string;
       name: string;
+      /** What Claude says its look is. */
       look: string | null;
-      /** Whether it changes a template of the user's that's there already. */
+      /** Whether it may replace a template of the user's with the same ID. */
       replace: boolean;
+      /** The name of the user's template with that ID, which it replaces, if there is one. */
+      replacing: string | null;
+      /** The whole template file it saves, as text. */
+      code: string;
     }
 );
 

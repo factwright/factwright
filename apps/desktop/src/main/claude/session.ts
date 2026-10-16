@@ -148,6 +148,8 @@ export interface SessionDeps {
   ask?: QuestionAsker;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
   permit?: PermissionAsker;
+  /** The name of the user's template with an ID, for a permission prompt that would replace it. */
+  templateName?: (id: string) => string | null;
 }
 
 interface Run {
@@ -242,9 +244,9 @@ export class ClaudeSession {
         onFiled: this.deps.onFiled,
         ask: this.deps.ask,
         permit: this.deps.permit,
-        // A call the user said no to never runs, so the run isn't waiting on them for it.
-        onDenied: (call) => signals.answered(call),
-        workspace: launch.cwd,
+        // A call the user answered in the app is one the run no longer waits on them for.
+        onAnswered: (call) => signals.answered(call),
+        context: { workspace: launch.cwd, templateName: this.deps.templateName },
         ...(revision && { revision }),
       },
     );
