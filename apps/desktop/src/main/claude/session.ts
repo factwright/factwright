@@ -14,7 +14,7 @@ import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
 import { loadPermissions } from './permissions.ts';
-import type { QuestionAsker, RunServer } from './run-server.ts';
+import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { TrustWatch } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
 import { RunSignals } from './signals.ts';
@@ -146,6 +146,10 @@ export interface SessionDeps {
   onFiled?: (filed: FiledFacts) => void;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
+  /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
+  permit?: PermissionAsker;
+  /** The name of the user's template with an ID, for a permission prompt that would replace it. */
+  templateName?: (id: string) => string | null;
 }
 
 interface Run {
@@ -235,7 +239,16 @@ export class ClaudeSession {
         trust.pastIt();
         signals.hear(event);
       },
-      { scope, onFiled: this.deps.onFiled, ask: this.deps.ask, ...(revision && { revision }) },
+      {
+        scope,
+        onFiled: this.deps.onFiled,
+        ask: this.deps.ask,
+        permit: this.deps.permit,
+        // A call the user answered in the app is one the run no longer waits on them for.
+        onAnswered: (call) => signals.answered(call),
+        context: { workspace: launch.cwd, templateName: this.deps.templateName },
+        ...(revision && { revision }),
+      },
     );
     let terminal: IPty;
     try {

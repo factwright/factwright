@@ -19,6 +19,7 @@ export function TerminalView({
   onTyped,
   jobId = null,
   onPasteProblem,
+  attention = false,
 }: {
   api: FactwrightApi;
   onSize: (size: TerminalSize) => void;
@@ -28,6 +29,8 @@ export function TerminalView({
   jobId?: string | null;
   /** Hears why a pasted picture couldn't be kept, or null once one is. */
   onPasteProblem?: (message: string | null) => void;
+  /** Whether Claude Code waits on an answer only the terminal takes, which outlines it. */
+  attention?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const latestOnSize = useRef(onSize);
@@ -111,5 +114,7 @@ export function TerminalView({
     };
   }, [api]);
 
-  return <div ref={container} className={styles.terminal} />;
+  return (
+    <div ref={container} className={`${styles.terminal} ${attention ? styles.attention : ''}`} />
+  );
 }

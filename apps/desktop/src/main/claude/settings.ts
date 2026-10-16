@@ -23,10 +23,11 @@ export const TOOLS_SERVER = 'factwright';
 const HOOK_SECONDS = 5;
 
 /**
- * How long Claude Code waits for the user to answer Claude's questions in the app's dialog, in
- * seconds: a day, since they may step away while Claude works. Past it, the terminal asks them.
+ * How long Claude Code waits for the user's answer in the app's dialogs, to Claude's questions or
+ * a permission prompt, in seconds: a day, since they may step away while Claude works. Past it,
+ * the terminal asks them.
  */
-export const QUESTION_WAIT_SECONDS = 24 * 60 * 60;
+export const ANSWER_WAIT_SECONDS = 24 * 60 * 60;
 
 /** The plugin's name in its plugin.json, which names its skills, as in /factwright:fit-check. */
 const PLUGIN = 'factwright';
@@ -138,8 +139,8 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  * - never: changing Claude Code's settings or the instructions it loads
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
- *   session ends, which the self-test listens for. The one for Claude's questions waits while the
- *   user answers them in the app's dialog.
+ *   session ends, which the self-test listens for. The ones for Claude's questions and Claude
+ *   Code's permission prompts wait while the user answers them in the app's dialogs.
  */
 export function sessionSettings({
   hookUrl,
@@ -180,12 +181,13 @@ export function sessionSettings({
       // the tools that file the answers, which the app lets through only when they come from the
       // run's own Claude.
       PreToolUse: [
-        { matcher: 'AskUserQuestion', hooks: http(QUESTION_WAIT_SECONDS) },
+        { matcher: 'AskUserQuestion', hooks: http(ANSWER_WAIT_SECONDS) },
         { matcher: FILING_TOOLS.map(hookToolName).join('|'), hooks: hook },
       ],
       PostToolUse: [{ hooks: hook }],
       PostToolUseFailure: [{ hooks: hook }],
-      PermissionRequest: [{ hooks: hook }],
+      // Claude Code's permission prompts, which the user can answer in the app's dialog too.
+      PermissionRequest: [{ hooks: http(ANSWER_WAIT_SECONDS) }],
       Notification: [{ hooks: hook }],
       Stop: [{ hooks: hook }],
       SessionEnd: [{ hooks: hook }],

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import type { QuestionRound } from '../shared/rounds.ts';
+import { useWaiting } from './useWaiting.ts';
 
 /** What the user has chosen for one of a round's questions so far. */
 export interface Choice {
@@ -31,37 +32,15 @@ export interface ClaudeQuestions {
 export function useClaudeQuestions(
   api: Pick<FactwrightApi, 'claudeQuestion' | 'onClaudeQuestion'>,
 ): ClaudeQuestions {
-  const [round, setRound] = useState<QuestionRound | null>(null);
-  // The round the user put aside, which stays closed until they open it again.
-  const [aside, setAside] = useState<string | null>(null);
+  const { item: round, open, show, hide } = useWaiting(api.claudeQuestion, api.onClaudeQuestion);
   // What the user chose in a round, by its ID, so putting it aside loses nothing.
   const [draft, setDraft] = useState<{ id: string; choices: Choice[] } | null>(null);
-  useEffect(() => {
-    let live = true;
-    let heard = false;
-    const stop = api.onClaudeQuestion((next) => {
-      heard = true;
-      if (live) setRound(next);
-    });
-    // One that was waiting before the window listened, such as after it reloaded. Anything heard
-    // since is newer.
-    api.claudeQuestion().then(
-      (current) => {
-        if (live && !heard) setRound(current);
-      },
-      () => {},
-    );
-    return () => {
-      live = false;
-      stop();
-    };
-  }, [api]);
   const id = round?.id ?? null;
   return {
     round,
-    open: id !== null && id !== aside,
-    show: useCallback(() => setAside(null), []),
-    hide: useCallback(() => setAside(id), [id]),
+    open,
+    show,
+    hide,
     draft: draft !== null && draft.id === id ? draft.choices : null,
     keepDraft: useCallback(
       (choices: Choice[]) => {

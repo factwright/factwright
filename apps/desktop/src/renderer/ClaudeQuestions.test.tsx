@@ -20,6 +20,15 @@ beforeAll(() => {
 
 afterEach(cleanup);
 
+/** What a question to pick an answer for has, beside its words and options. */
+const CHOICE = {
+  kind: 'choice',
+  description: null,
+  placeholder: null,
+  multiSelect: false,
+  number: null,
+} as const;
+
 const GRAPHQL = 'The posting wants `GraphQL`. Have you used it?';
 const TOOLS = 'Which of these have you run in production?';
 
@@ -29,6 +38,7 @@ const ROUND: QuestionRound = {
     {
       question: GRAPHQL,
       header: 'Experience',
+      ...CHOICE,
       multiSelect: false,
       options: [
         {
@@ -47,6 +57,7 @@ const ROUND: QuestionRound = {
     {
       question: TOOLS,
       header: 'Tools',
+      ...CHOICE,
       multiSelect: true,
       options: [
         { label: 'Kafka', description: null, preview: null },
@@ -265,6 +276,59 @@ describe('ClaudeQuestions', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('asks for a number in its range, starting where Claude suggests, and words in a box of their own', async () => {
+    const { api } = open(
+      { ok: true },
+      {
+        id: 'toolu_3',
+        questions: [
+          {
+            question: 'How many years have you run Kubernetes?',
+            header: 'Kubernetes',
+            kind: 'number',
+            description: 'The posting asks for 3 or more.',
+            placeholder: null,
+            multiSelect: false,
+            options: [],
+            number: { min: 0, max: 40, step: 0.5, unit: 'years', start: 2 },
+          },
+          {
+            question: 'Anything to know first?',
+            header: null,
+            kind: 'text',
+            description: null,
+            placeholder: 'Such as a notice period',
+            multiSelect: false,
+            options: [],
+            number: null,
+          },
+        ],
+      },
+    );
+    expect(screen.getByText('The posting asks for 3 or more.')).toBeTruthy();
+    const years = screen.getByRole('spinbutton', { name: 'Your answer, in years' });
+    // Claude's suggestion is a hint, never the user's answer: a fact could rest on it.
+    expect(years).toHaveProperty('value', '');
+    expect(years.getAttribute('placeholder')).toBe('2');
+    expect(send().disabled).toBe(true);
+    // The app checks the number as Claude Code does, not the browser.
+    expect(years.closest('form')?.noValidate).toBe(true);
+    await userEvent.type(years, '55');
+    expect(screen.getByRole('alert').textContent).toBe('Give a number from 0 to 40.');
+    expect(send().disabled).toBe(true);
+    await userEvent.clear(years);
+    await userEvent.type(years, '3.5');
+    expect(screen.queryByRole('alert')).toBeNull();
+    const words = screen.getByRole('textbox', { name: 'Your answer' });
+    expect(words.getAttribute('placeholder')).toBe('Such as a notice period');
+    await userEvent.type(words, 'Two weeks');
+    await userEvent.click(send());
+    expect(api.answerClaude).toHaveBeenCalledWith('toolu_3', [
+      { picks: [], other: '3.5', note: '' },
+      { picks: [], other: 'Two weeks', note: '' },
+    ]);
+  });
+
   it('asks a question with no options in the user’s own words', async () => {
     const { api } = open(
       { ok: true },
@@ -274,7 +338,7 @@ describe('ClaudeQuestions', () => {
           {
             question: 'What should Claude call you?',
             header: null,
-            multiSelect: false,
+            ...CHOICE,
             options: [],
           },
         ],

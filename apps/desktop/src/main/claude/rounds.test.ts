@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
-import { hookReply, parseReply, QuestionDesk, roundFrom } from './rounds.ts';
+import { describe, expect, it } from 'vitest';
+import type { RoundReply } from '../../shared/rounds.ts';
+import { hookReply, parseReply, roundFrom } from './rounds.ts';
 
 const GRAPHQL = 'The posting wants GraphQL. Have you used GraphQL?';
 const TOOLS = 'Which of these have you run in production?';
@@ -55,7 +55,11 @@ describe('roundFrom', () => {
         {
           question: GRAPHQL,
           header: 'Experience',
+          kind: 'choice',
+          description: null,
+          placeholder: null,
           multiSelect: false,
+          number: null,
           options: [
             {
               label: 'Yes, in production',
@@ -69,7 +73,11 @@ describe('roundFrom', () => {
         {
           question: TOOLS,
           header: 'Tools',
+          kind: 'choice',
+          description: null,
+          placeholder: null,
           multiSelect: true,
+          number: null,
           options: [
             { label: 'Kafka', description: null, preview: null },
             { label: 'Terraform', description: null, preview: null },
@@ -83,7 +91,66 @@ describe('roundFrom', () => {
   it('takes a question with no options, which the user answers in their own words', () => {
     const found = roundFrom(asked({ tool_input: { questions: [{ question: 'Anything else?' }] } }));
     expect(found?.round.questions).toEqual([
-      { question: 'Anything else?', header: null, multiSelect: false, options: [] },
+      {
+        question: 'Anything else?',
+        header: null,
+        kind: 'choice',
+        description: null,
+        placeholder: null,
+        multiSelect: false,
+        options: [],
+        number: null,
+      },
+    ]);
+  });
+
+  it('takes a question asking for words, or for a number within a range, with nothing to pick', () => {
+    const found = roundFrom(
+      asked({
+        tool_input: {
+          questions: [
+            {
+              question: 'How many years have you run Kubernetes?',
+              header: 'Kubernetes',
+              kind: 'number',
+              description: 'The posting asks for 3 or more.',
+              min: 0,
+              max: 40,
+              step: 0.5,
+              unit: 'years',
+              defaultValue: 2,
+            },
+            {
+              question: 'Anything to know first?',
+              kind: 'text',
+              placeholder: 'Such as a notice period',
+              multiSelect: true,
+            },
+          ],
+        },
+      }),
+    );
+    expect(found?.round.questions).toEqual([
+      {
+        question: 'How many years have you run Kubernetes?',
+        header: 'Kubernetes',
+        kind: 'number',
+        description: 'The posting asks for 3 or more.',
+        placeholder: null,
+        multiSelect: false,
+        options: [],
+        number: { min: 0, max: 40, step: 0.5, unit: 'years', start: 2 },
+      },
+      {
+        question: 'Anything to know first?',
+        header: null,
+        kind: 'text',
+        description: null,
+        placeholder: 'Such as a notice period',
+        multiSelect: false,
+        options: [],
+        number: null,
+      },
     ]);
   });
 
@@ -111,8 +178,23 @@ describe('roundFrom', () => {
       round([1, 2, 3, 4, 5].map((n) => ({ ...first, question: `Question ${n}?` }))),
     ).toBeNull();
     expect(round([first, first])).toBeNull();
+    // Words and numbers have nothing to pick from, and a range has to make sense.
     expect(round([{ ...first, kind: 'number' }])).toBeNull();
     expect(round([{ ...first, kind: 'text' }])).toBeNull();
+    expect(round([{ question: 'Years?', kind: 'number', min: 5, max: 1 }])).toBeNull();
+    expect(round([{ question: 'Years?', kind: 'number', step: 0 }])).toBeNull();
+    expect(
+      round([{ question: 'Years?', kind: 'number', max: Number.POSITIVE_INFINITY }]),
+    ).toBeNull();
+    expect(round([{ question: 'Years?', kind: 'number', min: '1' }])).toBeNull();
+    expect(round([{ question: 'When?', kind: 'date' }])).toBeNull();
+    // A suggestion it wouldn't take as an answer is dropped, and the question kept.
+    for (const defaultValue of [41, 1e21, -0.5]) {
+      expect(
+        round([{ question: 'Years?', kind: 'number', min: 0, max: 40, defaultValue }])?.round
+          .questions[0]?.number?.start,
+      ).toBeNull();
+    }
     expect(round([{ ...first, kind: 'choice' }])).not.toBeNull();
     expect(round([{ ...first, question: '  ' }])).toBeNull();
     expect(round([{ ...first, question: 'x'.repeat(2001) }])).toBeNull();
@@ -158,6 +240,21 @@ describe('parseReply', () => {
   });
 });
 
+describe('parseReply for a number question', () => {
+  const found = roundFrom(
+    asked({ tool_input: { questions: [{ question: 'Years?', kind: 'number', min: 0, max: 40 }] } }),
+  );
+  if (!found) throw new Error('No round');
+
+  it('takes a number within its range, as Claude Code would, and refuses any other', () => {
+    expect(parseReply(found.round, [answer([], ' 3.5 ')])).toEqual([answer([], ' 3.5 ')]);
+    for (const other of ['41', '-1', 'three', '1e3', '3.', '.5']) {
+      expect(parseReply(found.round, [answer([], other)])).toBeNull();
+    }
+    expect(parseReply(found.round, [answer(['3'], '')])).toBeNull();
+  });
+});
+
 describe('hookReply', () => {
   it('allows the round with the answers by each question’s words, and the input as it came', () => {
     const reply: RoundReply = [
@@ -188,58 +285,5 @@ describe('hookReply', () => {
       answers: { [GRAPHQL]: 'No' },
       annotations: { [GRAPHQL]: { preview: '```\nNo GraphQL\n```' } },
     });
-  });
-});
-
-describe('QuestionDesk', () => {
-  const round = (id: string): QuestionRound => ({ id, questions: heard().round.questions });
-  const reply: RoundReply = [answer(['Some']), answer([])];
-
-  it('shows the oldest round waiting, and settles each with the user’s answers', async () => {
-    const show = vi.fn();
-    const desk = new QuestionDesk(show);
-    const first = desk.ask(round('a'), new AbortController().signal);
-    const second = desk.ask(round('b'), new AbortController().signal);
-    expect(desk.current()?.id).toBe('a');
-    expect(show.mock.calls.map(([shown]) => shown?.id)).toEqual(['a']);
-    expect(desk.answer('a', reply)).toBe(true);
-    await expect(first).resolves.toBe(reply);
-    expect(desk.current()?.id).toBe('b');
-    expect(desk.answer('b', null)).toBe(true);
-    await expect(second).resolves.toBeNull();
-    expect(show.mock.calls.map(([shown]) => shown?.id ?? null)).toEqual(['a', 'b', null]);
-    expect(desk.answer('b', reply)).toBe(false);
-    expect(desk.find('b')).toBeNull();
-  });
-
-  it('lets a round go once Claude Code stops waiting for it', async () => {
-    const show = vi.fn();
-    const desk = new QuestionDesk(show);
-    const stopped = new AbortController();
-    const waiting = desk.ask(round('a'), stopped.signal);
-    stopped.abort();
-    await expect(waiting).resolves.toBeNull();
-    expect(desk.current()).toBeNull();
-    expect(show).toHaveBeenLastCalledWith(null);
-    expect(desk.answer('a', reply)).toBe(false);
-    const already = new AbortController();
-    already.abort();
-    await expect(desk.ask(round('b'), already.signal)).resolves.toBeNull();
-    expect(desk.current()).toBeNull();
-  });
-
-  it('replaces a round asked again, and lets the oldest go past ten', async () => {
-    const desk = new QuestionDesk(() => {});
-    const before = desk.ask(round('a'), new AbortController().signal);
-    const again = desk.ask(round('a'), new AbortController().signal);
-    await expect(before).resolves.toBeNull();
-    const waits = Array.from({ length: 10 }, (_, n) =>
-      desk.ask(round(`r${n}`), new AbortController().signal),
-    );
-    await expect(again).resolves.toBeNull();
-    expect(desk.current()?.id).toBe('r0');
-    expect(desk.find('r9')).not.toBeNull();
-    for (let n = 0; n < 10; n += 1) desk.answer(`r${n}`, null);
-    await Promise.all(waits);
   });
 });

@@ -1,8 +1,17 @@
 import type { RunSignal } from '../../shared/api.ts';
+import { canonical } from './questions.ts';
 
-/** A tool call waiting on the user, by its tool and input, since PermissionRequest has no id. */
-const waitKey = (fields: Record<string, unknown>) =>
-  `${String(fields.tool_name)}:${JSON.stringify(fields.tool_input ?? null)}`;
+/**
+ * A tool call waiting on the user, by its tool and input, since PermissionRequest has no id. The
+ * input's keys can come in any order.
+ */
+const waitKey = (fields: { tool_name?: unknown; tool_input?: unknown }) => {
+  const input = fields.tool_input ?? null;
+  return `${String(fields.tool_name)}:${canonical(input) ?? JSON.stringify(input)}`;
+};
+
+/** How many calls answered in the app are kept, until their PostToolUse comes. */
+const MAX_ANSWERED = 50;
 
 /**
  * Turns one run's hook events from Claude Code into signals for the panel. While Claude waits on
@@ -13,6 +22,11 @@ export class RunSignals {
   private readonly emit: (signal: RunSignal) => void;
   /** The tool calls waiting on the user, oldest first. */
   private readonly waiting: string[] = [];
+  /**
+   * Calls the user answered in the app, as they then run, whose PostToolUse settles nothing more:
+   * another wait on the same tool is still waiting.
+   */
+  private readonly answeredInApp: string[] = [];
 
   constructor(emit: (signal: RunSignal) => void) {
     this.emit = emit;
@@ -24,6 +38,7 @@ export class RunSignals {
     switch (fields.hook_event_name) {
       case 'UserPromptSubmit':
         this.waiting.length = 0;
+        this.answeredInApp.length = 0;
         this.emit('working');
         return;
       case 'PreToolUse':
@@ -46,9 +61,26 @@ export class RunSignals {
         return;
       case 'Stop':
         this.waiting.length = 0;
+        this.answeredInApp.length = 0;
         this.emit('done');
         return;
     }
+  }
+
+  /**
+   * A round of questions or a permission prompt the user answered in the app, which Claude Code
+   * no longer waits on them for: that call alone, by its tool and input. One that runs, with the
+   * input it runs with, settles nothing more when its PostToolUse comes. One the user said no to
+   * never runs, so nothing else says it's over.
+   */
+  answered(call: { tool_name: string; tool_input: unknown; ranWith: unknown }): void {
+    const at = this.waiting.indexOf(waitKey(call));
+    if (at >= 0) this.waiting.splice(at, 1);
+    if (call.ranWith !== null) {
+      this.answeredInApp.push(waitKey({ tool_name: call.tool_name, tool_input: call.ranWith }));
+      if (this.answeredInApp.length > MAX_ANSWERED) this.answeredInApp.shift();
+    }
+    if (this.waiting.length === 0) this.emit('working');
   }
 
   private wait(fields: Record<string, unknown>): void {
@@ -58,7 +90,14 @@ export class RunSignals {
 
   /** A tool finished. If it was one the user had to answer for, it's no longer waiting. */
   private settle(fields: Record<string, unknown>): void {
-    let at = this.waiting.indexOf(waitKey(fields));
+    const key = waitKey(fields);
+    // One the user answered in the app is over already.
+    const answered = this.answeredInApp.indexOf(key);
+    if (answered >= 0) {
+      this.answeredInApp.splice(answered, 1);
+      return;
+    }
+    let at = this.waiting.indexOf(key);
     // An input can come back reworded, so fall back to the oldest wait on the same tool.
     if (at < 0)
       at = this.waiting.findIndex((key) => key.startsWith(`${String(fields.tool_name)}:`));

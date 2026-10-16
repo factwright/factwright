@@ -1,11 +1,13 @@
 import {
   isAnswered,
   MAX_ROUND_TEXT,
+  type NumberAsked,
   type QuestionRound,
   type RoundAnswer,
   type RoundOption,
   type RoundQuestion,
   type RoundReply,
+  takesNumber,
 } from '../../shared/rounds.ts';
 import { ANSWER_FIELDS } from './questions.ts';
 
@@ -21,9 +23,9 @@ const MAX_HEADER = 100;
 const MAX_LABEL = 500;
 const MAX_DESCRIPTION = 2_000;
 const MAX_PREVIEW = 20_000;
+const MAX_PLACEHOLDER = 200;
+const MAX_UNIT = 40;
 const MAX_ID = 200;
-/** How many rounds can wait at once, past which the oldest goes to the terminal. */
-const MAX_WAITING = 10;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -49,18 +51,51 @@ function optionFrom(value: unknown): RoundOption | null {
   return { label, description, preview };
 }
 
+/** An optional number: null when it's absent, undefined when it's anything but a finite one. */
+const optionalNumber = (value: unknown): number | null | undefined =>
+  value === undefined || value === null
+    ? null
+    : typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : undefined;
+
+/** What a number question takes, if it makes sense: a least no more than its most, a step above 0. */
+function numberFrom(value: Record<string, unknown>): NumberAsked | null {
+  const min = optionalNumber(value.min);
+  const max = optionalNumber(value.max);
+  const step = optionalNumber(value.step);
+  const start = optionalNumber(value.defaultValue);
+  const unit = optionalText(value.unit, MAX_UNIT);
+  if (min === undefined || max === undefined || step === undefined || start === undefined) {
+    return null;
+  }
+  if (unit === undefined || (min !== null && max !== null && min > max)) return null;
+  if (step !== null && step <= 0) return null;
+  // A suggestion Claude Code wouldn't take as an answer, such as one past the most, is dropped.
+  const fits =
+    start !== null &&
+    /^-?\d+(\.\d+)?$/.test(String(start)) &&
+    (min === null || start >= min) &&
+    (max === null || start <= max);
+  return { min, max, step, unit, start: fits ? start : null };
+}
+
+const KINDS = ['choice', 'text', 'number'] as const;
+
 function questionFrom(value: unknown): RoundQuestion | null {
   if (!isRecord(value)) return null;
-  // Claude Code can ask for a number or a line of text too, in ways of its own, so those stay
-  // in the terminal.
-  if (value.kind !== undefined && value.kind !== 'choice') return null;
+  const kind = KINDS.find((each) => each === (value.kind ?? 'choice'));
   const question = textUpTo(value.question, MAX_QUESTION);
   const header = optionalText(value.header, MAX_HEADER);
+  const description = optionalText(value.description, MAX_DESCRIPTION);
+  const placeholder = optionalText(value.placeholder, MAX_PLACEHOLDER);
   const { multiSelect } = value;
   const listed = value.options ?? [];
-  if (!question?.trim() || header === undefined || !Array.isArray(listed)) return null;
+  if (!kind || !question?.trim() || header === undefined || !Array.isArray(listed)) return null;
+  if (description === undefined || placeholder === undefined) return null;
   if (multiSelect !== undefined && typeof multiSelect !== 'boolean') return null;
-  if (listed.length > MAX_OPTIONS) return null;
+  // Words and numbers are answers of their own, with nothing to pick from.
+  if (listed.length > (kind === 'choice' ? MAX_OPTIONS : 0)) return null;
   const options: RoundOption[] = [];
   for (const each of listed) {
     const option = optionFrom(each);
@@ -68,7 +103,18 @@ function questionFrom(value: unknown): RoundQuestion | null {
     options.push(option);
   }
   if (new Set(options.map((option) => option.label)).size !== options.length) return null;
-  return { question, header, multiSelect: multiSelect === true, options };
+  const number = kind === 'number' ? numberFrom(value) : null;
+  if (kind === 'number' && !number) return null;
+  return {
+    question,
+    header,
+    kind,
+    description,
+    placeholder,
+    multiSelect: kind === 'choice' && multiSelect === true,
+    options,
+    number,
+  };
 }
 
 /** A round from a hook, for the dialog, with the input Claude Code gave, which its answer goes back with. */
@@ -82,7 +128,8 @@ export interface HeardRound {
  * Null for any other hook, and for a round the dialog leaves to the terminal, as before:
  * - one from a subagent, which only the run's own Claude may ask
  * - one that comes with answers already, which Claude never sets, so something else did
- * - one with more questions or options, longer words, or kinds of question, than the dialog shows
+ * - one with more questions or options, or longer words, than the dialog shows, or a kind of
+ *   question it doesn't know
  */
 export function roundFrom(event: unknown): HeardRound | null {
   if (!isRecord(event)) return null;
@@ -108,8 +155,9 @@ export function roundFrom(event: unknown): HeardRound | null {
 
 /**
  * The user's answers from the window, if they fit the round: one for each question, picking only
- * its own options, at most one of them, or words of their own, where it takes one answer, and at
- * least one question answered. The picks come back in the question's order.
+ * its own options, at most one of them, or words of their own, where it takes one answer, a number
+ * it takes for a number question, and at least one question answered. The picks come back in the
+ * question's order.
  */
 export function parseReply(round: QuestionRound, value: unknown): RoundReply | null {
   if (!Array.isArray(value) || value.length !== round.questions.length) return null;
@@ -126,6 +174,7 @@ export function parseReply(round: QuestionRound, value: unknown): RoundReply | n
     if (new Set(picks).size !== picks.length) return null;
     const answer = { picks: labels.filter((label) => picks.includes(label)), other, note };
     if (!question.multiSelect && answer.picks.length + (other.trim() ? 1 : 0) > 1) return null;
+    if (question.kind === 'number' && other.trim() && !takesNumber(question, other)) return null;
     reply.push(answer);
   }
   return reply.some(isAnswered) ? reply : null;
@@ -169,77 +218,4 @@ export function hookReply(heard: HeardRound, reply: RoundReply) {
       },
     },
   };
-}
-
-/** A round waiting on the user, with what settles it. */
-interface Waiting {
-  round: QuestionRound;
-  settle: (reply: RoundReply | null) => void;
-}
-
-/**
- * The rounds of Claude's questions waiting on the user in the app, oldest first, which the window
- * shows one at a time. Each waits until the user answers it, sends it to the terminal, or Claude
- * Code stops waiting, as when the user interrupts the run, the hook's time runs out, or the run
- * ends.
- */
-export class QuestionDesk {
-  private readonly waiting: Waiting[] = [];
-  private readonly show: (round: QuestionRound | null) => void;
-
-  /** `show` hears the round the window should show, or null once none is waiting. */
-  constructor(show: (round: QuestionRound | null) => void) {
-    this.show = show;
-  }
-
-  /**
-   * Waits for the user's answers to a round, or null to have Claude Code ask it in the terminal,
-   * which is also what an aborted wait settles with.
-   */
-  ask(round: QuestionRound, signal: AbortSignal): Promise<RoundReply | null> {
-    if (signal.aborted) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      let settled = false;
-      const entry: Waiting = {
-        round,
-        settle: (reply) => {
-          if (settled) return;
-          settled = true;
-          signal.removeEventListener('abort', stopped);
-          const shown = this.current();
-          const at = this.waiting.indexOf(entry);
-          if (at >= 0) this.waiting.splice(at, 1);
-          resolve(reply);
-          if (this.current() !== shown) this.show(this.current());
-        },
-      };
-      const stopped = () => entry.settle(null);
-      signal.addEventListener('abort', stopped, { once: true });
-      // The same call asked again replaces the one before, whose hook has gone.
-      this.waiting.find((each) => each.round.id === round.id)?.settle(null);
-      this.waiting.push(entry);
-      while (this.waiting.length > MAX_WAITING) this.waiting[0]?.settle(null);
-      if (this.current() === round) this.show(round);
-    });
-  }
-
-  /** The round the window shows: the oldest one waiting, or null. */
-  current(): QuestionRound | null {
-    return this.waiting[0]?.round ?? null;
-  }
-
-  /** A round that's waiting, by its ID, or null. */
-  find(id: string): QuestionRound | null {
-    return this.waiting.find((each) => each.round.id === id)?.round ?? null;
-  }
-
-  /**
-   * Settles a round with the user's answers, or null to send it to the terminal. False when it
-   * isn't waiting anymore.
-   */
-  answer(id: string, reply: RoundReply | null): boolean {
-    const entry = this.waiting.find((each) => each.round.id === id);
-    entry?.settle(reply);
-    return entry !== undefined;
-  }
 }

@@ -2,8 +2,14 @@ import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shar
 import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
+import type { PermissionAsk } from '../shared/permission-asks.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
-import { isAnswered, type QuestionRound, type RoundReply } from '../shared/rounds.ts';
+import {
+  isAnswered,
+  type QuestionRound,
+  type RoundQuestion,
+  type RoundReply,
+} from '../shared/rounds.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
@@ -84,6 +90,17 @@ function sampleRun(dark: boolean) {
       ),
       `\r\n${color('34', '✻')} ${color(secondary, next)}\r\n`,
     ],
+    /** Claude Code's own permission prompt, in the terminal, behind the app's dialog. */
+    permission: (ask: PermissionAsk) => [
+      `${color('32', '⏺')} ${color(`1;${main}`, permissionCall(ask))}\r\n\r\n`,
+      ` ${color(main, 'Do you want to proceed?')}\r\n`,
+      ` ${color('34', '❯ 1. Yes')}\r\n`,
+      `   ${color(main, '2. No')}\r\n`,
+    ],
+    allowed: [`\r\n${color('34', '✻')} ${color(secondary, 'Carrying on with the prep…')}\r\n`],
+    denied: (note: string) => [
+      `\r\n${color('32', '⏺')} ${color(main, note.trim() ? `Understood: “${note.trim()}”. I’ll carry on without it.` : 'Understood. I’ll carry on without it.')}\r\n`,
+    ],
     /** Interview prep stopping to ask which round it's for, with ?run=asks. */
     roundIntro: [
       `\r\n${color('32', '⏺')} ${color(main, 'Read the posting, your fit check, the resume you sent and your notes.')}\r\n\r\n`,
@@ -120,16 +137,137 @@ function sampleRun(dark: boolean) {
   };
 }
 
+/** Claude Code's line for a call that needs the user's OK, as its terminal prompt names it. */
+function permissionCall(ask: PermissionAsk): string {
+  switch (ask.kind) {
+    case 'edit':
+      return `Update(${ask.file})`;
+    case 'write':
+      return `Write(${ask.file})`;
+    case 'read':
+      return `Read(${ask.file})`;
+    case 'page':
+      return `factwright - read_page (MCP)(url: "${ask.url}")`;
+    case 'profile':
+      return 'factwright - save_about_you (MCP)';
+    case 'template':
+      return `factwright - save_template (MCP)(id: "${ask.template}")`;
+  }
+}
+
+/** A permission prompt for the made-up run, with ?permit= and its kind, in place of its question. */
+const SAMPLE_PERMITS: Readonly<Record<string, PermissionAsk>> = {
+  page: {
+    id: 'perm_sample',
+    kind: 'page',
+    url: 'https://northwindlabs.com/careers/senior-software-engineer-platform',
+    host: 'northwindlabs.com',
+  },
+  edit: {
+    id: 'perm_sample',
+    kind: 'edit',
+    file: 'facts/tidewater-analytics.md',
+    outside: false,
+    before: '> Cut deploy time by ~40%.',
+    after: '> Cut deploy time by ~40% by moving 12 services onto one deploy pipeline.',
+    everywhere: false,
+  },
+  write: {
+    id: 'perm_sample',
+    kind: 'write',
+    file: 'guide/voice.md',
+    outside: false,
+    replaces: false,
+    content:
+      '# How you sound\n\n- Plain words, short sentences.\n- Numbers over adjectives: "~40% faster", not "much faster".\n- No "passionate" or "rockstar".',
+  },
+  read: {
+    id: 'perm_sample',
+    kind: 'read',
+    file: '/Users/alex/Documents/Resume 2024.pdf',
+    outside: true,
+  },
+  profile: {
+    id: 'perm_sample',
+    kind: 'profile',
+    changes: [
+      { label: 'When you can start', value: 'Two weeks’ notice' },
+      { label: 'Base pay you’re aiming for', value: '$185,000' },
+    ],
+  },
+  template: {
+    id: 'perm_sample',
+    kind: 'template',
+    template: 'navy-sidebar-clean',
+    name: 'Navy Sidebar (clean)',
+    look: 'Navy headings in one column, with no letter-spacing, icons or sidebar, so applicant systems read it in order.',
+    replace: false,
+    replacing: null,
+    code: JSON.stringify(
+      {
+        factwright: 'template',
+        version: 1,
+        name: 'Navy Sidebar (clean)',
+        look: 'Navy headings in one column.',
+        css: 'h2 { color: #1f3a5f; letter-spacing: 0; }',
+      },
+      null,
+      2,
+    ),
+  },
+};
+
 /** What Claude does once a round is answered. */
 const NEXT = {
   opening: 'Reading the posting and your facts…',
   round: 'Checking company news and writing your prep sheet…',
 } as const;
 
-/** The made-up run's first round: which role, and with ?ask=more, what to cover and how long. */
-function openingRound(more: boolean): QuestionRound {
+/** A question to pick an answer for, with nothing about words or numbers. */
+const choice = (
+  question: Pick<RoundQuestion, 'question' | 'header' | 'multiSelect' | 'options'>,
+): RoundQuestion => ({
+  kind: 'choice',
+  description: null,
+  placeholder: null,
+  number: null,
+  ...question,
+});
+
+/**
+ * The made-up run's first round: which role, and with ?ask=more, what to cover and how long. With
+ * ?ask=kinds, it asks for a number and for a line of words instead.
+ */
+function openingRound(ask: string | null): QuestionRound {
   const option = (label: string, description: string) => ({ label, description, preview: null });
-  const role = {
+  if (ask === 'kinds') {
+    return {
+      id: 'toolu_sample_opening',
+      questions: [
+        {
+          question: 'How many years have you run Kubernetes in production?',
+          header: 'Kubernetes',
+          kind: 'number',
+          description: 'The posting asks for 3 or more. Your facts show EKS at Tidewater.',
+          placeholder: null,
+          multiSelect: false,
+          options: [],
+          number: { min: 0, max: 40, step: 0.5, unit: 'years', start: null },
+        },
+        {
+          question: 'Anything the recruiter already knows, or that you’d rather not bring up?',
+          header: 'Context',
+          kind: 'text',
+          description: null,
+          placeholder: 'Such as a notice period, or a gap in your history',
+          multiSelect: false,
+          options: [],
+          number: null,
+        },
+      ],
+    };
+  }
+  const role = choice({
     question: 'Which role is the call about?',
     header: 'Role',
     multiSelect: false,
@@ -140,13 +278,13 @@ function openingRound(more: boolean): QuestionRound {
       ),
       option('Staff Engineer at Acme Robotics', 'Applied last week. No call logged yet.'),
     ],
-  };
-  if (!more) return { id: 'toolu_sample_opening', questions: [role] };
+  });
+  if (ask !== 'more') return { id: 'toolu_sample_opening', questions: [role] };
   return {
     id: 'toolu_sample_opening',
     questions: [
       role,
-      {
+      choice({
         question: 'What should the prep sheet cover?',
         header: 'Focus',
         multiSelect: true,
@@ -156,8 +294,8 @@ function openingRound(more: boolean): QuestionRound {
           option('Questions to ask them', 'About the team, the work and what comes next.'),
           option('Pay and logistics', 'Your range, notice period and start date.'),
         ],
-      },
-      {
+      }),
+      choice({
         question: 'How long is the call?',
         header: 'Length',
         multiSelect: false,
@@ -166,7 +304,7 @@ function openingRound(more: boolean): QuestionRound {
           option('30 minutes', 'The usual recruiter screen.'),
           option('45 minutes or more', 'Room for a technical question or two.'),
         ],
-      },
+      }),
     ],
   };
 }
@@ -175,7 +313,7 @@ function openingRound(more: boolean): QuestionRound {
 const PREP_ROUND: QuestionRound = {
   id: 'toolu_sample_round',
   questions: [
-    {
+    choice({
       question: 'Which round is the interview?',
       header: 'Round',
       multiSelect: false,
@@ -191,7 +329,7 @@ const PREP_ROUND: QuestionRound = {
           preview: null,
         },
       ],
-    },
+    }),
   ],
 };
 
@@ -212,7 +350,10 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * after one stopped short of opening (stopped). Starting Claude plays a short made-up run, so
  * every state of the panel can be seen, and status changes stick until the page reloads. Claude's
  * questions open in their dialog. With ?run=asks, interview prep stops to ask a question, as the
- * README's screenshots show it, and ?ask=more makes the first run's round three questions.
+ * README's screenshots show it, and ?ask=more makes the first run's round three questions, or
+ * ?ask=kinds a number and a line of words.
+ * ?permit=edit, write, read, page, profile or template has the first run ask Claude Code's OK
+ * for that instead, in its dialog.
  */
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
@@ -227,8 +368,9 @@ export function sampleApi(): FactwrightApi {
     for (const listener of signalListeners) listener(value);
   };
   let waitingForAnswer = false;
-  // What answering plays: the opening run's question, or interview prep's, with ?run=asks.
-  let afterAnswer: 'opening' | 'round' = 'opening';
+  // What answering plays: the opening run's question, interview prep's, with ?run=asks, or a
+  // permission prompt, with ?permit=.
+  let afterAnswer: 'opening' | 'round' | 'permission' = 'opening';
   const asks = query.get('run') === 'asks';
   // ?trust=ask starts with Claude Code's question about trusting the folder, once.
   let waitingForTrust = false;
@@ -247,7 +389,26 @@ export function sampleApi(): FactwrightApi {
     signal('needs-answer');
     tellQuestion(round);
   };
-  const more = query.get('ask') === 'more';
+  const roundAsked = query.get('ask');
+  // A permission prompt waiting in its dialog, with ?permit=, in place of the first question.
+  const permissionListeners = new Set<(ask: PermissionAsk | null) => void>();
+  let permitting: PermissionAsk | null = null;
+  const tellPermission = (ask: PermissionAsk | null) => {
+    for (const listener of permissionListeners) listener(ask);
+  };
+  const askPermission = (ask: PermissionAsk) => {
+    permitting = ask;
+    print(run.permission(ask));
+    signal('needs-answer');
+    tellPermission(ask);
+  };
+  const carryOn = () => {
+    signal('working');
+    setTimeout(() => {
+      print(run.finished);
+      done();
+    }, 1600);
+  };
   // ?filed has the made-up run file facts from the user's answers as it finishes, once.
   const facts = sampleFacts(query.get('profile'));
   const filedListeners = new Set<(filed: FiledFacts) => void>();
@@ -303,7 +464,9 @@ export function sampleApi(): FactwrightApi {
         }, 300);
         setTimeout(() => {
           print(run.intro);
-          askRound(openingRound(more), 'opening');
+          const permit = SAMPLE_PERMITS[query.get('permit') ?? ''];
+          if (permit) askPermission(permit);
+          else askRound(openingRound(roundAsked), 'opening');
         }, 1800);
       };
       if (trusted) {
@@ -327,6 +490,10 @@ export function sampleApi(): FactwrightApi {
         asking = null;
         tellQuestion(null);
       }
+      if (permitting) {
+        permitting = null;
+        tellPermission(null);
+      }
       signal('stopped');
     },
     writeToClaude: (data) => {
@@ -338,6 +505,11 @@ export function sampleApi(): FactwrightApi {
       }
       if (!waitingForAnswer || !data.includes('\r')) return;
       waitingForAnswer = false;
+      if (afterAnswer === 'permission') {
+        print(run.allowed);
+        carryOn();
+        return;
+      }
       print(
         afterAnswer === 'round'
           ? run.answered(
@@ -385,11 +557,29 @@ export function sampleApi(): FactwrightApi {
         return { ok: true };
       }
       print(run.answered(noted(waiting.round, reply), NEXT[waiting.after]));
-      signal('working');
-      setTimeout(() => {
-        print(run.finished);
-        done();
-      }, 1600);
+      carryOn();
+      return { ok: true };
+    },
+    // Claude Code's permission prompts, in their dialog: answered there, or in the terminal.
+    claudePermission: async () => permitting,
+    onClaudePermission: (listener) => {
+      permissionListeners.add(listener);
+      return () => permissionListeners.delete(listener);
+    },
+    answerPermission: async (id, answer) => {
+      const waiting = permitting;
+      if (!waiting || waiting.id !== id) {
+        return { ok: false, message: 'Claude Code isn’t waiting for this anymore.' };
+      }
+      permitting = null;
+      tellPermission(null);
+      if (answer === 'terminal') {
+        waitingForAnswer = true;
+        afterAnswer = 'permission';
+        return { ok: true };
+      }
+      print(answer.allow ? run.allowed : run.denied(answer.note));
+      carryOn();
       return { ok: true };
     },
     // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray,

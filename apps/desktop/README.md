@@ -47,19 +47,31 @@ You can tuck the panel away while Claude works, and it comes back whenever Claud
 
 **Claude's questions:** when Claude asks you something with Claude Code's question tool, Factwright asks it in a dialog of its own rather than the terminal ([`src/renderer/ClaudeQuestions.tsx`](src/renderer/ClaudeQuestions.tsx)), the way Claude Code's hooks allow:
 - **One screen:** the whole round at once, each question with its label, its options and what they mean, a box for your own words where no option fits, several picks where Claude allows them, and a note for Claude about any answer. A question you leave unanswered is skipped.
+- **Words and numbers:** a question that asks for a line of words gets a box for them, and one that asks for a number gets a box for that, with its unit. A number Claude suggests is only a hint in the box: your own number answers, as a fact can rest on it. Send waits for a number in the question's range, as Claude Code checks it.
 - **Straight to Claude Code:** the question hook waits on the app ([`src/main/claude/rounds.ts`](src/main/claude/rounds.ts)), and Send answers it with your answers, so Claude Code runs its question tool with them and asks nothing in the terminal. The terminal notes your answers, as it always has.
 - **Not now** puts the round aside, still waiting, with Answer in the panel to come back to it. **Answer in the terminal** has Claude Code ask it there instead, as before.
 - **Waits as long as you're away:** the hook waits up to a day, then Claude Code asks in the terminal. Interrupting the run, or its ending, closes the dialog.
-- **The terminal asks the rest:** a round from a subagent, one that comes with answers already, and one the dialog can't show as Claude Code would, such as a question asking for a number.
+- **The terminal asks the rest:** a round from a subagent, one that comes with answers already, and one the dialog can't show as Claude Code would, such as a kind of question it doesn't know.
 - **The same record:** Factwright's tools still file facts only from what Claude Code reports once the round has run, never from anything Claude writes. Only the app's own window can answer a round, and only one that's waiting.
+
+**Claude Code's permission prompts:** when Claude Code asks your OK before Claude does something, Factwright asks it in a dialog too ([`src/renderer/ClaudePermission.tsx`](src/renderer/ClaudePermission.tsx)), in plain words and in full:
+- **What it shows:** changing a file, with the text it takes out and puts in; writing one, saying whether it replaces a file that's there; reading a file outside your job hunt; reading a web page, with its whole address and the site it goes to; saving to your profile, field by field, including any it would clear; and saving a template, with its name, its ID, the template of yours it would replace, and its whole file to look through. A file outside your job hunt folder gets a warning.
+- **No answer by accident:** its answers wait half a second after a prompt shows, so the second click of a double-click can't answer the next prompt unseen.
+- **Allow or don't:** Allow lets that one call through, as Claude asked it. Don't allow tells Claude you said no, with anything you add in Tell Claude why not, and Claude carries on without it. The dialog never offers to allow anything for good: what Claude may do without asking stays as you set it in Settings.
+- **Claude Code's own prompt is there too,** behind the dialog, and Claude Code takes whichever answer comes first. Answered in the terminal, the dialog closes: on a no, Claude Code drops the hook, and on a yes, the call it asked about runs, which its hooks report. **Answer in the terminal** leaves it there, and closing the dialog puts it aside, with Answer in the panel to come back to it.
+- **How it works:** the PermissionRequest hook waits on the app, for up to a day ([`src/main/claude/permission-asks.ts`](src/main/claude/permission-asks.ts)), and the app answers it with Claude Code's allow or deny. A no settles the run's "Needs your answer" at once, since the call never runs.
+- **The terminal asks the rest:** a subagent's request, any other tool, anything too long to show in full, such as a file of over 50,000 characters, and a path Claude Code could read another way than the dialog would, such as one that isn't whole or starts with "~".
 
 **Pictures:** a picture pasted into the panel, such as a screenshot, is checked like any picture you share, saved in the workspace with the run's job (`screenshots/<job>/pasted-…`, or `screenshots/` without one), and pasted as where it is. Claude Code attaches a pasted picture's path as the picture itself. Screenshots added with the application's questions or a question for Claude are kept in the same folder, named for what they came with, and `job_details` lists each one.
 
 The first run asks a question of its own: Claude Code wants to know whether to trust the workspace, and says it will be able to "execute files". When the app sees that question on screen:
 - The run reads "Needs your answer", and the panel comes back.
+- The terminal gets an outline that pulses a few times, then stays, until it's answered.
 - A note above the terminal says how to answer: use the arrow keys to pick "Yes, I trust this folder", then press Enter.
 - The note also explains that the warning doesn't apply: Claude Code has no shell here, so it can't run programs.
 - The panel grows to fit the note rather than shrinking the terminal, because Claude Code can drop a line of its screen when it redraws for a resize.
+
+Anything else only the terminal can answer, such as a question or permission prompt sent there, or one the dialogs leave to it, gets the same outline, with a note pointing down to the terminal: "Claude Code is asking you something in the terminal below", and how to answer. The first time, the note also says that this is your own Claude Code, until you choose Got it. The terminal takes the keyboard, so you can answer straight away.
 
 ## The setup check
 Claude Code updates itself, so a new version could change something Factwright relies on. Once for each version, the app checks its setup ([`src/main/claude/self-test.ts`](src/main/claude/self-test.ts)). It starts your Claude Code hidden, with exactly what a run gets but no prompt, so it uses none of your plan. Then:

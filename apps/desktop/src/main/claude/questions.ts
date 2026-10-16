@@ -77,7 +77,7 @@ const MAX_DEPTH = 4;
  * JSON with every object's keys in order, so the same input reads the same however it's sent.
  * Null for an input nested deeper than any filing tool takes.
  */
-function canonical(value: unknown, depth = 0): string | null {
+export function canonical(value: unknown, depth = 0): string | null {
   if (depth > MAX_DEPTH) return null;
   if (Array.isArray(value) || isRecord(value)) {
     const entries = Array.isArray(value)

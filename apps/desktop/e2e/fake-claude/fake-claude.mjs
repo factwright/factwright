@@ -128,6 +128,27 @@ async function askUser(answers) {
   });
 }
 
+/**
+ * As Claude Code does for a call that needs the user's OK: PreToolUse, then a PermissionRequest
+ * hook, which the app holds while the user answers in its dialog. Gives back the hook's decision,
+ * or nothing when the hook left it to the terminal.
+ */
+async function permission(tool, input) {
+  await hook('PreToolUse', {
+    tool_name: tool,
+    tool_use_id: `toolu_${Date.now()}`,
+    tool_input: input,
+  });
+  const asked = await post(hookUrl, {
+    hook_event_name: 'PermissionRequest',
+    session_id: 'fake',
+    tool_name: tool,
+    tool_input: input,
+    permission_suggestions: [],
+  });
+  return asked.status === 200 ? (await asked.json()).hookSpecificOutput?.decision : undefined;
+}
+
 async function work(text) {
   await hook('UserPromptSubmit', { prompt: text });
   show(`> ${text}\nWorking on it…\n`);
@@ -327,6 +348,21 @@ async function work(text) {
       }),
     );
   }
+  // As Claude would, asked to save what the user said to their profile, which Claude Code asks
+  // their OK for first: saved on a yes, and not on a no, which says what they added.
+  if (text === 'save my notice period') {
+    const tool = 'mcp__factwright__save_about_you';
+    const input = { start: 'Two weeks’ notice' };
+    const decision = await permission(tool, input);
+    if (decision?.behavior === 'allow') {
+      show(`${await call('save_about_you', input)}\n`);
+      await hook('PostToolUse', { tool_name: tool, tool_input: input, tool_response: {} });
+    } else if (decision?.behavior === 'deny') {
+      show(`Not saved: ${decision.message}\n`);
+    } else {
+      show('Claude Code asked in the terminal.\n');
+    }
+  }
   // As Claude would for a template: start from one of the app's, and save one of the user's own.
   if (/^\/factwright:make-template from templates\/sources\/\S+$/.test(text)) {
     const classic = await call('read_template', { id: 'classic' });
@@ -344,10 +380,10 @@ async function work(text) {
     );
     show('\n');
   }
-  setTimeout(async () => {
-    show('Done.\n> ');
-    await hook('Stop');
-  }, 300);
+  // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  show('Done.\n> ');
+  await hook('Stop');
 }
 
 async function begin() {
@@ -361,6 +397,8 @@ async function begin() {
 }
 
 let askingTrust = process.env.FAKE_CLAUDE_TRUST === 'ask';
+/** The prompt it's working on, which the next one waits for. */
+let working = Promise.resolve();
 let typed = '';
 let interrupts = 0;
 
@@ -387,7 +425,8 @@ process.stdin.on('data', async (chunk) => {
   }
   const line = typed.trim();
   typed = '';
-  if (line) await work(line);
+  // One prompt at a time, as Claude Code takes them, even if the next is typed while it works.
+  if (line) working = working.then(() => work(line));
 });
 process.on('SIGHUP', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));

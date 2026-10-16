@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { PermissionAnswer, PermissionAsk } from '../../shared/permission-asks.ts';
 import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { McpTool } from '../tools/mcp.ts';
 import { RunServer } from './run-server.ts';
@@ -196,7 +197,8 @@ describe('RunServer', () => {
       await server.start();
       const { ask, answer } = dialog();
       const hooks = vi.fn();
-      server.listen(TOKEN, hooks, { ask });
+      const onAnswered = vi.fn();
+      server.listen(TOKEN, hooks, { ask, onAnswered });
       const held = post(server.hookUrl, asked);
       await answer(yes);
       expect(ask.mock.calls[0]?.[0]).toEqual({
@@ -205,7 +207,11 @@ describe('RunServer', () => {
           {
             question,
             header: 'GraphQL',
+            kind: 'choice',
+            description: null,
+            placeholder: null,
             multiSelect: false,
+            number: null,
             options: [
               { label: 'Yes, in production', description: null, preview: null },
               { label: 'No', description: null, preview: null },
@@ -223,8 +229,16 @@ describe('RunServer', () => {
           updatedInput: { questions, answers: { [question]: 'Yes, in production' } },
         },
       });
-      // The run still hears the question as it's asked, to read "Needs your answer".
+      // The run still hears the question as it's asked, to read "Needs your answer", and hears
+      // once it's answered, with the round as it then runs.
       expect(hooks).toHaveBeenCalledWith(asked);
+      await vi.waitFor(() =>
+        expect(onAnswered).toHaveBeenCalledWith({
+          tool_name: 'AskUserQuestion',
+          tool_input: { questions },
+          ranWith: { questions, answers: { [question]: 'Yes, in production' } },
+        }),
+      );
     });
 
     it('has the terminal ask when the dialog gives no answers, and answers other hooks meanwhile', async () => {
@@ -333,6 +347,194 @@ describe('RunServer', () => {
       expect(await response.json()).toMatchObject({
         result: { content: [{ type: 'text', text: 'Yes, in production' }] },
       });
+    });
+  });
+
+  describe('Claude Code’s permission prompts', () => {
+    const input = { file_path: '/work/notes/a.md', content: 'Hello' };
+    const prompted = {
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'Write',
+      tool_input: input,
+      permission_suggestions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }],
+    };
+
+    /** The app's permission dialog, which the test answers by hand, and which lets go when told. */
+    function dialog() {
+      const answers: ((answer: PermissionAnswer | null) => void)[] = [];
+      const signals: AbortSignal[] = [];
+      const permit = vi.fn(
+        (_ask: PermissionAsk, signal: AbortSignal) =>
+          new Promise<PermissionAnswer | null>((resolve) => {
+            answers.push(resolve);
+            signals.push(signal);
+            // Let go, it's no longer there to answer.
+            signal.addEventListener('abort', () => {
+              answers.splice(answers.indexOf(resolve), 1);
+              resolve(null);
+            });
+          }),
+      );
+      // Answers the oldest prompt waiting.
+      const answer = async (given: PermissionAnswer | null) => {
+        await vi.waitFor(() => expect(answers.length).toBeGreaterThan(0));
+        answers.shift()?.(given);
+      };
+      return { permit, answer, signals };
+    }
+
+    it('holds the hook while the user decides in the app, and allows the call as Claude asked it', async () => {
+      await server.start();
+      const { permit, answer } = dialog();
+      const hooks = vi.fn();
+      server.listen(TOKEN, hooks, { permit, context: { workspace: '/work' } });
+      const held = post(server.hookUrl, prompted);
+      await answer({ allow: true });
+      expect(permit.mock.calls[0]?.[0]).toMatchObject({
+        kind: 'write',
+        file: 'notes/a.md',
+        outside: false,
+        content: 'Hello',
+      });
+      expect(await (await held).json()).toEqual({
+        hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } },
+      });
+      // The run still hears it asked, to read "Needs your answer".
+      expect(hooks).toHaveBeenCalledWith(prompted);
+    });
+
+    it('denies the call with the user’s note, and tells the run it won’t run', async () => {
+      await server.start();
+      const { permit, answer } = dialog();
+      const onAnswered = vi.fn();
+      server.listen(TOKEN, () => {}, { permit, onAnswered, context: { workspace: '/work' } });
+      const held = post(server.hookUrl, prompted);
+      await answer({ allow: false, note: 'Keep it in the job’s folder' });
+      expect(await (await held).json()).toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: {
+            behavior: 'deny',
+            message: 'The user said no, in Factwright, and added: Keep it in the job’s folder',
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(onAnswered).toHaveBeenCalledWith({
+          tool_name: 'Write',
+          tool_input: input,
+          ranWith: null,
+        }),
+      );
+    });
+
+    it('tells the run of a yes too, with the call as it runs, and of nothing let go', async () => {
+      await server.start();
+      const { permit, answer, signals } = dialog();
+      const onAnswered = vi.fn();
+      server.listen(TOKEN, () => {}, { permit, onAnswered, context: { workspace: '/work' } });
+      const allowed = post(server.hookUrl, prompted);
+      await answer({ allow: true });
+      await allowed;
+      await vi.waitFor(() =>
+        expect(onAnswered).toHaveBeenCalledWith({
+          tool_name: 'Write',
+          tool_input: input,
+          ranWith: input,
+        }),
+      );
+      const dropped = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      await post(server.hookUrl, { hook_event_name: 'Stop' });
+      expect((await dropped).status).toBe(204);
+      expect(onAnswered).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets go of one prompt for a call that ran, never for a subagent’s call', async () => {
+      await server.start();
+      const { permit, signals } = dialog();
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      const first = post(server.hookUrl, prompted);
+      const second = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      const ran = { hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: input };
+      await post(server.hookUrl, { ...ran, agent_id: 'research' });
+      expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
+      await post(server.hookUrl, ran);
+      expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+      expect((await first).status).toBe(204);
+      await post(server.hookUrl, ran);
+      expect((await second).status).toBe(204);
+    });
+
+    it('lets the dialog go once the call runs, as when the terminal was answered first', async () => {
+      await server.start();
+      const { permit, signals } = dialog();
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      const held = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(1));
+      // Another call to the same tool is no answer to this one.
+      await post(server.hookUrl, {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Write',
+        tool_input: { ...input, content: 'Other' },
+      });
+      expect(signals[0]?.aborted).toBe(false);
+      // Claude Code says the call ran, its input in any order.
+      await post(server.hookUrl, {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Write',
+        tool_input: { content: 'Hello', file_path: '/work/notes/a.md' },
+        tool_response: { type: 'create' },
+      });
+      expect(signals[0]?.aborted).toBe(true);
+      expect((await held).status).toBe(204);
+    });
+
+    it('lets no other prompt go when a call allowed in the app runs', async () => {
+      await server.start();
+      const { permit, answer, signals } = dialog();
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      const first = post(server.hookUrl, prompted);
+      const second = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      await answer({ allow: true });
+      expect((await first).status).toBe(200);
+      // The first call runs, as allowed: the second, just like it, still waits on the user.
+      const ran = { hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: input };
+      await post(server.hookUrl, ran);
+      expect(signals[1]?.aborted).toBe(false);
+      await post(server.hookUrl, ran);
+      expect(signals[1]?.aborted).toBe(true);
+      expect((await second).status).toBe(204);
+    });
+
+    it('lets everything go once the run moves on, or answers the terminal from the dialog', async () => {
+      await server.start();
+      const { permit, signals, answer } = dialog();
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      const first = post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(signals).toHaveLength(1));
+      await post(server.hookUrl, { hook_event_name: 'Stop' });
+      expect((await first).status).toBe(204);
+      const second = post(server.hookUrl, prompted);
+      await answer(null);
+      expect((await second).status).toBe(204);
+    });
+
+    it('leaves to the terminal what it can’t show, a subagent’s request, and a run with no dialog', async () => {
+      await server.start();
+      const { permit } = dialog();
+      const other = 'f'.repeat(64);
+      server.listen(TOKEN, () => {}, { permit, context: { workspace: '/work' } });
+      server.listen(other, () => {});
+      const bash = { ...prompted, tool_name: 'Bash', tool_input: { command: 'ls' } };
+      expect((await post(server.hookUrl, bash)).status).toBe(204);
+      expect((await post(server.hookUrl, { ...prompted, agent_id: 'research' })).status).toBe(204);
+      expect(
+        (await post(server.hookUrl, prompted, { Authorization: `Bearer ${other}` })).status,
+      ).toBe(204);
+      expect(permit).not.toHaveBeenCalled();
     });
   });
 

@@ -89,6 +89,42 @@ describe('RunSignals', () => {
     hear({ hook_event_name: 'PostToolUse', ...read('facts/profile.md') });
     expect(signals.slice(-3)).toEqual(['needs-answer', 'done', 'working']);
   });
+
+  it('stops waiting on a call the user answered in the app, by that call alone', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...page });
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...read('notes/a.md') });
+    // A no: its call never runs.
+    tracker.answered({ ...page, ranWith: null });
+    expect(signals).toEqual(['needs-answer', 'needs-answer']);
+    // A yes: the run works on at once, and the call's PostToolUse settles no other wait.
+    tracker.answered({ ...read('notes/a.md'), ranWith: read('notes/a.md').tool_input });
+    expect(signals.at(-1)).toBe('working');
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...read('notes/b.md') });
+    tracker.hear({ hook_event_name: 'PostToolUse', ...read('notes/a.md') });
+    expect(signals.at(-1)).toBe('needs-answer');
+  });
+
+  it('works on once a round is answered in the app, before Claude Code runs it with the answers', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    const questions = { questions: [{ question: 'Which?' }] };
+    const answered = { ...questions, answers: { 'Which?': 'This one' } };
+    tracker.hear({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_input: questions,
+    });
+    tracker.answered({ tool_name: 'AskUserQuestion', tool_input: questions, ranWith: answered });
+    expect(signals).toEqual(['needs-answer', 'working']);
+    tracker.hear({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_input: answered,
+    });
+    expect(signals).toEqual(['needs-answer', 'working']);
+  });
 });
 
 describe('bearerToken', () => {

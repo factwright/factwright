@@ -26,6 +26,7 @@ import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import { ClaudePanel } from './ClaudePanel.tsx';
+import { ClaudePermission } from './ClaudePermission.tsx';
 import { ClaudeQuestions } from './ClaudeQuestions.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
 import { FactBankPage } from './facts/FactBankPage.tsx';
@@ -63,6 +64,7 @@ import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
+import { useClaudePermission } from './useClaudePermission.ts';
 import { useClaudeQuestions } from './useClaudeQuestions.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
@@ -88,6 +90,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const approvals = useApprovals(api);
   const run = useClaudeRun(api);
   const questions = useClaudeQuestions(api);
+  const permission = useClaudePermission(api);
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
   const today = useToday();
@@ -511,11 +514,19 @@ export function App({ api }: { api: FactwrightApi }) {
             }}
             onDismissFiled={seeFiled}
             asking={
-              questions.round && {
-                count: questions.round.questions.length,
-                open: questions.open,
-                onAnswer: questions.show,
-              }
+              questions.round
+                ? {
+                    what: 'questions',
+                    count: questions.round.questions.length,
+                    open: questions.open,
+                    onAnswer: questions.show,
+                  }
+                : permission.ask && {
+                    what: 'permission',
+                    count: 1,
+                    open: permission.open,
+                    onAnswer: permission.show,
+                  }
             }
           />
         </div>
@@ -654,6 +665,15 @@ export function App({ api }: { api: FactwrightApi }) {
           draft={questions.draft}
           onDraft={questions.keepDraft}
           onClose={questions.hide}
+        />
+      )}
+      {permission.ask && permission.open && (
+        <ClaudePermission
+          key={permission.ask.id}
+          api={api}
+          ask={permission.ask}
+          about={runTitle ?? null}
+          onClose={permission.hide}
         />
       )}
       {profileProblem && (

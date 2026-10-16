@@ -6,7 +6,18 @@ import { useClaudeQuestions } from './useClaudeQuestions.ts';
 
 const round = (id: string): QuestionRound => ({
   id,
-  questions: [{ question: 'Which round is it?', header: null, multiSelect: false, options: [] }],
+  questions: [
+    {
+      question: 'Which round is it?',
+      header: null,
+      kind: 'choice',
+      description: null,
+      placeholder: null,
+      multiSelect: false,
+      options: [],
+      number: null,
+    },
+  ],
 });
 
 /** The window's API for Claude's questions, with the round waiting before it listened. */

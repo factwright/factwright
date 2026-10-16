@@ -24,17 +24,21 @@ import type {
 import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
+import type { PermissionAnswer, PermissionAsk } from '../shared/permission-asks.ts';
 import { parsePermissions } from '../shared/permissions.ts';
 import { parseRevisionRequest } from '../shared/revision.ts';
+import type { QuestionRound, RoundReply } from '../shared/rounds.ts';
 import { scopeOf } from '../shared/runs.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { AboutStore } from './about/store.ts';
+import type { Desk } from './claude/desk.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
 import { loadModels, saveModels } from './claude/models.ts';
+import { parsePermissionAnswer } from './claude/permission-asks.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
-import { parseReply, type QuestionDesk } from './claude/rounds.ts';
+import { parseReply } from './claude/rounds.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
@@ -79,6 +83,13 @@ const isText = (value: unknown): value is string =>
 /** The answer to an edit the window sent in a shape the app doesn't take. */
 const REFUSED = { ok: false, message: 'That change couldn’t be saved.' } as const;
 
+/** Why an answer to a permission prompt didn't reach Claude Code: it stopped waiting for it. */
+const PERMISSION_GONE = {
+  ok: false,
+  message:
+    'Claude Code isn’t waiting for this anymore. If you answered in the terminal, that answer stands.',
+} as const;
+
 /** Why answers to Claude's questions didn't reach it: it stopped waiting for them. */
 const QUESTIONS_GONE = {
   ok: false,
@@ -116,7 +127,9 @@ export interface IpcDeps {
   previews: TemplatePreviews;
   claude: ClaudeSession;
   /** Claude's questions waiting on the user, which the window's dialog answers. */
-  questions: QuestionDesk;
+  questions: Desk<QuestionRound, RoundReply>;
+  /** Claude Code's permission prompts waiting on the user, which the window's dialog answers. */
+  permissionAsks: Desk<PermissionAsk, PermissionAnswer>;
   /** Checks that Factwright's setup still works with each version of Claude Code. */
   setup: SetupChecker;
   jobs: JobsService;
@@ -162,6 +175,7 @@ export function registerIpc({
   previews,
   claude: session,
   questions,
+  permissionAsks,
   setup,
   jobs,
   revisions,
@@ -339,6 +353,20 @@ export function registerIpc({
     const answers = parseReply(round, reply);
     if (!answers) throw new Error('Refused answers that don’t fit Claude’s questions.');
     return questions.answer(round.id, answers) ? { ok: true } : QUESTIONS_GONE;
+  });
+
+  // Claude Code's permission prompts, answered in the window's dialog, or in the terminal.
+  answer('claude:permission', () => permissionAsks.current());
+  answer('claude:permit', (id, value): EditResult => {
+    const ask = typeof id === 'string' ? permissionAsks.find(id) : null;
+    if (!ask) return PERMISSION_GONE;
+    if (value === 'terminal') {
+      permissionAsks.answer(ask.id, null);
+      return { ok: true };
+    }
+    const answer = parsePermissionAnswer(value);
+    if (!answer) throw new Error('Refused an answer that isn’t allow, or don’t allow with a note.');
+    return permissionAsks.answer(ask.id, answer) ? { ok: true } : PERMISSION_GONE;
   });
 
   answer('jobs:list', () => jobs.list());
