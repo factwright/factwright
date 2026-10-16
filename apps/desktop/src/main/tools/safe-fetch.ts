@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
+import { isLinkedIn } from '@factwright/core';
 
 /** The most a fetched page may weigh, unless the caller allows more, so a huge or endless answer can't fill memory. */
 const MAX_BYTES = 5_000_000;
@@ -71,9 +72,6 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
-/** LinkedIn's sites, which its terms keep software from reading. */
-const LINKEDIN = /(^|\.)(linkedin\.com|lnkd\.in|licdn\.com)$/;
-
 /** Why a link can't be fetched, or null when it can. The address itself is checked on connecting. */
 export function linkProblem(url: URL): string | null {
   if (url.protocol !== 'https:') return 'Only https links work.';
@@ -83,8 +81,8 @@ export function linkProblem(url: URL): string | null {
   if (!host.includes('.') || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) {
     return 'Links to this computer or a home network are off limits.';
   }
-  if (LINKEDIN.test(host.replace(/\.$/, ''))) {
-    return 'Factwright never reads LinkedIn: its terms forbid software reading it. Find the job on the employer’s own site, or ask the user to paste it.';
+  if (isLinkedIn(url.href)) {
+    return 'Factwright never reads LinkedIn: its terms forbid software reading it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.';
   }
   return null;
 }

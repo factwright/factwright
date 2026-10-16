@@ -18,8 +18,24 @@ const TRACKING_PARAM =
   /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
 
 /**
+ * A page's route after "#/" or "#!/", where some careers sites keep each job, without its own
+ * tracking parameters or a trailing slash: "#/jobs/42?source=x" is "#/jobs/42". Any other "#" is
+ * a place on the page, which names nothing.
+ */
+function routeOf(hash: string): string {
+  if (!/^#!?\/./.test(hash)) return '';
+  const [path = '', query = ''] = hash.split('?', 2);
+  const kept = query.split('&').filter((pair) => {
+    const name = pair.split('=', 1)[0] ?? '';
+    return name !== '' && !TRACKING_PARAM.test(name);
+  });
+  return `${trimEndOf(path, '/')}${kept.length > 0 ? `?${kept.join('&')}` : ''}`;
+}
+
+/**
  * One form per address, for matching: no "www.", no trailing slash, no tracking parameters, and
- * lowercase. "https://www.acme.com/jobs/42/?utm_source=x" becomes "acme.com/jobs/42".
+ * lowercase. "https://www.acme.com/jobs/42/?utm_source=x" becomes "acme.com/jobs/42". A page's
+ * route after "#/" or "#!/", where some careers sites keep each job, stays: it names the job.
  */
 export function normalizeUrl(url: string): string {
   try {
@@ -29,7 +45,7 @@ export function normalizeUrl(url: string): string {
     }
     const host = parsed.hostname.replace(/^www\./, '');
     const path = trimEndOf(parsed.pathname, '/');
-    return `${host}${path}${parsed.search}`.toLowerCase();
+    return `${host}${path}${parsed.search}${routeOf(parsed.hash)}`.toLowerCase();
   } catch {
     return url.toLowerCase();
   }
@@ -118,4 +134,23 @@ export function linksFrom(field: string | null | undefined, fallbackLabel?: stri
     }
     return links;
   });
+}
+
+/** LinkedIn's sites: its own, its short links and its files. */
+const LINKEDIN = /(^|\.)(linkedin\.com|lnkd\.in|licdn\.com)$/;
+
+/**
+ * Whether a link is LinkedIn's. Factwright's own tools never read LinkedIn, whose terms forbid
+ * software reading it. The browser extension can save a LinkedIn job the user is looking at.
+ */
+export function isLinkedIn(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+      .replace(/^\[|\]$/g, '')
+      .toLowerCase()
+      .replace(/\.$/, '');
+    return LINKEDIN.test(host);
+  } catch {
+    return false;
+  }
 }

@@ -86,3 +86,13 @@ describe('records', () => {
     expect(decodeRecord(Uint8Array.of(0xff))).toBeNull();
   });
 });
+
+describe('a path’s names', () => {
+  it('fit what every computer holds: 255 bytes each', () => {
+    expect(isSyncPath(`saved/${'a'.repeat(255)}/posting.md`)).toBe(true);
+    expect(isSyncPath(`saved/${'a'.repeat(256)}/posting.md`)).toBe(false);
+    // Counted in bytes: each of these takes three.
+    expect(isSyncPath(`saved/${'職'.repeat(86)}/posting.md`)).toBe(false);
+    expect(isSyncPath(`saved/${'職'.repeat(85)}/posting.md`)).toBe(true);
+  });
+});

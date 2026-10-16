@@ -4,6 +4,8 @@ import {
   type AccountKeys,
   accountKeys,
   type Bytes,
+  CLIENTS,
+  DeviceSignIn,
   fromBase64Url,
   linkId,
   lockForLink,
@@ -34,7 +36,6 @@ import { SyncEngine } from './engine.ts';
 import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
 import { SyncRunner } from './runner.ts';
 import { type Keychain, Secrets } from './secrets.ts';
-import { DeviceSignIn } from './sign-in.ts';
 import { SyncState } from './state.ts';
 
 export interface SyncAccountDeps {
@@ -264,6 +265,7 @@ export class SyncAccount {
       this.current.state === 'signing-in' ? { state: 'off' } : this.current;
     const flow = new DeviceSignIn({
       server,
+      clientId: CLIENTS.desktop,
       userAgent: userAgent(this.deps.version, this.device),
       ...(this.deps.fetch && { fetch: this.deps.fetch }),
       ...(this.deps.sleep && { sleep: this.deps.sleep }),

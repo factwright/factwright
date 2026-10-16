@@ -9,17 +9,18 @@ import {
   type CollectedJob,
   companyKey,
   type JobStatus,
+  jobIdFor,
   type KnownJob,
   type Note,
+  normalizeUrl,
   questionKey,
   readStatus,
-  roleKey,
   SETTLED_STATUSES,
   type SentAnswer,
   STATUS_RANK,
   type StatusChange,
   type StoredRow,
-  slug,
+  shortCode,
   type TrackedRow,
   trackedCall,
   trackedChange,
@@ -517,7 +518,8 @@ export class Tracker {
       return { ok: false, message: 'Links start with https:// or http://.' };
     }
     const status = input.status ?? null;
-    const base = `${companyKey(company) || slug(company) || 'job'}--${roleKey(role) || 'general'}`;
+    // A company with no Latin letters gets an ID from its link, as Save to Factwright gives it.
+    const base = jobIdFor(company, role, link ? shortCode(normalizeUrl(link)) : undefined);
     const taken = this.db.prepare('SELECT 1 FROM jobs WHERE id = ?');
     let id = base;
     for (let n = 2; taken.get(id); n++) id = `${base}-${n}`;

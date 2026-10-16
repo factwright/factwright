@@ -372,7 +372,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: what read_page or read_posting read from that link in this run, or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -382,6 +382,11 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             description:
               'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
           },
+          job: {
+            type: 'string',
+            description:
+              'The job’s id from find_job or job_details, such as acme-robotics--staff-engineer, so the posting the user saved from their browser for that job is the one used.',
+          },
         },
         required: ['url', 'folder'],
         additionalProperties: false,
@@ -389,10 +394,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It writes what was read, or reads a public feed, and saving twice keeps the first.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
       run: async (input) =>
-        savePosting(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
-          ...reading,
-          workspace: deps.workspace,
-        }),
+        savePosting(
+          textInput(input, 'url', true) ?? '',
+          textInput(input, 'folder', true) ?? '',
+          { ...reading, workspace: deps.workspace },
+          textInput(input, 'job', false) ?? undefined,
+        ),
     },
     {
       name: 'job_board',

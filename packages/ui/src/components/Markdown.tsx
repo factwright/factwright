@@ -24,7 +24,9 @@ const link = (url: string, children: ReactNode, key: string) => (
 const INLINE: readonly Inline[] = [
   { pattern: /`([^`]+)`/, render: (match, key) => <code key={key}>{match[1]}</code> },
   {
-    pattern: /\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/,
+    // A link's text and address are capped, so a page full of "[" or "](http://" can't slow
+    // matching to a crawl.
+    pattern: /\[([^\]]{1,500})\]\(((?:https?:\/\/|mailto:)[^\s)]{1,2048})\)/,
     render: (match, key) => link(match[2] ?? '', inline(match[1] ?? '', key), key),
   },
   {
@@ -41,24 +43,40 @@ const INLINE: readonly Inline[] = [
   },
 ];
 
-/** Text with its inline marks, as React elements. */
+/** Each inline mark's pattern, to search on from a place in the text. */
+const SEARCHES = INLINE.map(({ pattern }) => new RegExp(pattern.source, `${pattern.flags}g`));
+
+/**
+ * Text with its inline marks, as React elements. Each pattern's next match is kept, and searched
+ * for again only once the text before it has been read, so a long text full of marks, or of
+ * things that nearly are, is read in a few passes, not once for every mark in it.
+ */
 function inline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  let rest = text;
-  while (rest) {
-    let first: { match: RegExpExecArray; rule: Inline } | undefined;
-    for (const rule of INLINE) {
-      const match = rule.pattern.exec(rest);
-      if (match && (!first || match.index < first.match.index)) first = { match, rule };
+  const next: (RegExpExecArray | null | undefined)[] = INLINE.map(() => undefined);
+  let at = 0;
+  while (at < text.length) {
+    let first = -1;
+    for (let rule = 0; rule < INLINE.length; rule++) {
+      let match = next[rule];
+      if (match === undefined || (match !== null && match.index < at)) {
+        const search = SEARCHES[rule] as RegExp;
+        search.lastIndex = at;
+        match = search.exec(text);
+        next[rule] = match;
+      }
+      if (match && (first < 0 || match.index < (next[first] as RegExpExecArray).index)) {
+        first = rule;
+      }
     }
-    if (!first) {
-      nodes.push(rest);
+    const match = next[first];
+    if (!match) {
+      nodes.push(text.slice(at));
       break;
     }
-    const { match, rule } = first;
-    if (match.index > 0) nodes.push(rest.slice(0, match.index));
-    nodes.push(rule.render(match, `${keyPrefix}.${nodes.length}`));
-    rest = rest.slice(match.index + match[0].length);
+    if (match.index > at) nodes.push(text.slice(at, match.index));
+    nodes.push((INLINE[first] as Inline).render(match, `${keyPrefix}.${nodes.length}`));
+    at = match.index + match[0].length;
   }
   return nodes;
 }

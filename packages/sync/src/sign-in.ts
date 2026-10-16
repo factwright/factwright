@@ -1,7 +1,5 @@
-import { SyncError } from '@factwright/sync';
-
-/** The app's name in sign-in. The server takes device codes from it only. */
-const CLIENT_ID = 'factwright-desktop';
+import { SyncError } from './client.ts';
+import type { CLIENTS } from './protocol.ts';
 
 /** A code waiting for the user to approve it in their browser. */
 export interface PendingSignIn {
@@ -20,8 +18,13 @@ export type SignInResult =
 export interface SignInDeps {
   /** The sync server's address. */
   server: string;
-  /** What the app says it is, with the computer's name, so the account page can name it. */
-  userAgent: string;
+  /** Which app is signing in, as the server knows it. */
+  clientId: (typeof CLIENTS)[keyof typeof CLIENTS];
+  /**
+   * What the app says it is, with the computer's name, so the account page can name it. A browser
+   * sends its own, and won't let an extension change it.
+   */
+  userAgent?: string;
   fetch?: typeof fetch;
   /** Waits between checks. Tests skip the wait. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -41,10 +44,11 @@ const spaced = (code: string) =>
   code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
 
 /**
- * Signs the app in through the user's browser, with a device code (RFC 8628). The app asks the
- * server for a code, the user opens the page in their browser, signs in with GitHub or Google,
- * checks the code matches what the app shows, and approves. Meanwhile the app asks every few
- * seconds whether they have, and gets its own session once they do.
+ * Signs an app in through the user's browser, with a device code (RFC 8628): the desktop app, or
+ * the browser extension. The app asks the server for a code, the user opens the page in their
+ * browser, signs in with GitHub or Google, checks the code matches what the app shows, and
+ * approves. Meanwhile the app asks every few seconds whether they have, and gets its own session
+ * once they do.
  */
 export class DeviceSignIn {
   private readonly deps: SignInDeps;
@@ -63,7 +67,10 @@ export class DeviceSignIn {
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const response = await (this.deps.fetch ?? fetch)(new URL(path, this.deps.server), {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'user-agent': this.deps.userAgent },
+      headers: {
+        'content-type': 'application/json',
+        ...(this.deps.userAgent && { 'user-agent': this.deps.userAgent }),
+      },
       body: JSON.stringify(body),
       signal: this.stopper.signal,
     });
@@ -75,7 +82,7 @@ export class DeviceSignIn {
   async start(): Promise<PendingSignIn> {
     let answer: { status: number; body: Record<string, unknown> };
     try {
-      answer = await this.post('/api/auth/device/code', { client_id: CLIENT_ID });
+      answer = await this.post('/api/auth/device/code', { client_id: this.deps.clientId });
     } catch (error) {
       throw new SyncError('offline', `Couldn’t reach the sync server: ${String(error)}`);
     }
@@ -117,7 +124,7 @@ export class DeviceSignIn {
         answer = await this.post('/api/auth/device/token', {
           grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
           device_code: this.deviceCode,
-          client_id: CLIENT_ID,
+          client_id: this.deps.clientId,
         });
       } catch {
         // Offline for a moment: keep waiting.

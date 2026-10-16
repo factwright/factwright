@@ -1,9 +1,13 @@
+import { CLIENTS } from '@factwright/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 
-/** The desktop app's name in sign-in, the only app that may sign in with a device code. */
-export const DESKTOP_CLIENT = 'factwright-desktop';
+/** The apps that may sign in with a device code: the desktop app and the browser extension. */
+const DEVICE_CLIENTS: ReadonlySet<string> = new Set(Object.values(CLIENTS));
+
+/** What the account page calls the browser extension, before the browser it's in. */
+const EXTENSION_NAME = 'Save to Factwright in';
 
 const DAY_SECONDS = 24 * 60 * 60;
 
@@ -36,6 +40,15 @@ function deviceOnly<T extends { userAgent?: string | null; ipAddress?: string | 
 
 /** Where sign-in makes a session after GitHub or Google says who it is, in a browser. */
 const WEB_SIGN_IN = /^\/callback\//;
+
+/**
+ * Whether a session is the browser extension's: made with a device code it asked for under its
+ * own name. Its name then says so, such as "Save to Factwright in Chrome on Mac", so the account
+ * page and the app's question about linking it tell it apart from a browser's own sign-in.
+ */
+const byExtension = (context: { path?: string; body?: unknown } | null | undefined) =>
+  context?.path === '/device/token' &&
+  (context.body as { client_id?: unknown } | undefined)?.client_id === CLIENTS.extension;
 
 /**
  * How a session signed in: "web" after GitHub or Google, in a browser, or "device" with a code
@@ -113,7 +126,11 @@ export function authOptions(settings: AuthSettings) {
         create: {
           before: async (session, context) => {
             const via: SignedInVia = WEB_SIGN_IN.test(context?.path ?? '') ? 'web' : 'device';
-            return { data: { ...deviceOnly(session), via } };
+            const kept = deviceOnly(session);
+            if (byExtension(context) && 'userAgent' in kept) {
+              kept.userAgent = `${EXTENSION_NAME} ${kept.userAgent}`;
+            }
+            return { data: { ...kept, via } };
           },
         },
         update: { before: async (session) => ({ data: deviceOnly(session) }) },
@@ -158,7 +175,7 @@ export function authOptions(settings: AuthSettings) {
         expiresIn: '10m',
         interval: '5s',
         verificationUri: '/device',
-        validateClient: (clientId: string) => clientId === DESKTOP_CLIENT,
+        validateClient: (clientId: string) => DEVICE_CLIENTS.has(clientId),
       }),
     ],
   } satisfies BetterAuthOptions;
@@ -173,9 +190,12 @@ function decoded(text: string): string {
   }
 }
 
-/** A name deviceName gives, which sessions keep in place of what the device sent. */
+/**
+ * A name deviceName gives, which sessions keep in place of what the device sent, or the browser
+ * extension's, which is a browser's with its own name in front.
+ */
 const DEVICE_NAME =
-  /^(Factwright on .{1,100}|(Edge|Firefox|Chrome|Safari|A browser)( on (iPhone|iPad|Android|Mac|Windows|Linux))?)$/;
+  /^(Factwright on .{1,100}|(Save to Factwright in )?(Edge|Firefox|Chrome|Safari|A browser)( on (iPhone|iPad|Android|Mac|Windows|Linux))?)$/;
 
 /**
  * A device's name, from what it sent when it signed in, such as "Safari on iPhone". The app

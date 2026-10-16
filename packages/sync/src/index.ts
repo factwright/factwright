@@ -47,6 +47,7 @@ export {
   API,
   type Change,
   type ChangesPage,
+  CLIENTS,
   type Device,
   type ErrorBody,
   type Feature,
@@ -81,3 +82,9 @@ export {
   type SyncRecord,
 } from './record.ts';
 export { fileId, openFile, openRecord, recordId, sealFile, sealRecord } from './seal.ts';
+export {
+  DeviceSignIn,
+  type PendingSignIn,
+  type SignInDeps,
+  type SignInResult,
+} from './sign-in.ts';

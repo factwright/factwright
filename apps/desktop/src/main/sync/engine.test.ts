@@ -493,6 +493,19 @@ describe('two computers on one account', () => {
     expect(pc.has('.hidden/state.json')).toBe(false);
   });
 
+  it('pass over a file that can never land on a computer, and keep syncing the rest', async () => {
+    mac.write('saved/acme--staff/posting.md', 'Saved from the browser');
+    mac.write('facts/work.md', 'Shipped things');
+    await mac.sync();
+    // On the PC, a file stands where the folder must go, so the posting can't land there.
+    pc.write('saved', 'a file in the way');
+    const report = await pc.sync();
+    expect(report.unreadable).toBe(1);
+    expect(pc.read('facts/work.md')).toBe('Shipped things');
+    // It isn't tried again and again: the next sync goes on as usual.
+    await expect(pc.sync()).resolves.toMatchObject({ unreadable: 0 });
+  });
+
   it('send the same contents once, however many files hold them', async () => {
     mac.write('applications/a/resume.pdf', 'same');
     mac.write('applications/b/resume.pdf', 'same');

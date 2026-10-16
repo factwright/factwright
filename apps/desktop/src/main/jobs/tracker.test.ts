@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { CollectedJob } from '@factwright/core';
+import { type CollectedJob, jobIdFor, newJobRows, normalizeUrl, shortCode } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { trackerAsOf } from './testing.ts';
 import { type EditContext, Tracker } from './tracker.ts';
@@ -303,11 +303,55 @@ describe('addJob', () => {
     expect(row('tidewater--general')?.kind).toBeNull();
   });
 
+  it('names a job whose company has no Latin letters by its link, as Save to Factwright does', () => {
+    const link = 'https://example.jp/jobs/1?utm_source=x';
+    const added = tracker.addJob({ company: '株式会社', role: 'エンジニア', link }, AT);
+    expect(added).toEqual({
+      ok: true,
+      jobId: jobIdFor('株式会社', 'エンジニア', shortCode(normalizeUrl(link))),
+    });
+    expect(tracker.addJob({ company: '株式会社' }, AT)).toEqual({
+      ok: true,
+      jobId: 'job--general',
+    });
+  });
+
   it('needs a company, and a link that starts with http', () => {
     expect(tracker.addJob({ company: '  ' }, AT)).toMatchObject({ ok: false });
     expect(tracker.addJob({ company: 'Acme', link: 'javascript:alert(1)' }, AT)).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe('a job another device adds through sync', () => {
+  const added = () =>
+    newJobRows({
+      id: 'northwind--staff-engineer',
+      company: 'Northwind',
+      role: 'Staff Engineer',
+      link: 'https://www.linkedin.com/jobs/view/4012345678/',
+      pay: '',
+      status: 'new',
+      today: TODAY,
+      now: NOW,
+      statusId: 'status-1',
+    });
+
+  it('is the row the app keeps, so taking it leaves nothing to send back', () => {
+    const rows = added();
+    tracker.applySyncRow('jobs', 'northwind--staff-engineer', rows.job);
+    tracker.applySyncRow('status_log', 'status-1', rows.status);
+    expect(tracker.syncRow('jobs', 'northwind--staff-engineer')).toEqual(rows.job);
+    expect(tracker.syncRow('status_log', 'status-1')).toEqual(rows.status);
+    expect(row('northwind--staff-engineer')).toMatchObject({ status: 'new', manual: true });
+    expect(history('northwind--staff-engineer')).toEqual([['new', TODAY]]);
+  });
+
+  it('has every column the tracker keeps, so a column added later can’t go missing', () => {
+    tracker.addJob({ company: 'Fernway', role: 'Project Manager' }, AT);
+    const kept = tracker.syncRow('jobs', 'fernway--project-manager') ?? {};
+    expect(Object.keys(added().job).sort()).toEqual(Object.keys(kept).sort());
   });
 });
 

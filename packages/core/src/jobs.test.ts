@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { collectJobs } from './jobs.ts';
+import { normalizeUrl } from './links.ts';
+import { jobIdFor, shortCode } from './new-job.ts';
 import type {
   FitCheckRecord,
   FolderRecord,
@@ -142,6 +144,22 @@ describe('collectJobs', () => {
     ]);
     // The best-rated run is the one the job's score comes from.
     expect(job?.search).toMatchObject({ source: 'HN October 2026', score: 80 });
+  });
+
+  it('names a job at a company with no Latin letters by its link, as Add job does', () => {
+    const link = 'https://example.jp/jobs/123';
+    const [job] = collectJobs([
+      search('株式会社テスト', 'エンジニア', { links: [{ url: link, label: 'Posting' }] }),
+    ]);
+    expect(job?.id).toBe(jobIdFor('株式会社テスト', 'エンジニア', shortCode(normalizeUrl(link))));
+  });
+
+  it('gives a job it finds the ID Add job and Save to Factwright would, cut to fit a folder', () => {
+    const role =
+      'Senior Software Engineer, Machine Learning Infrastructure - Distributed Training Platform';
+    const [job] = collectJobs([search('Acme Robotics', role)]);
+    expect(job?.id).toBe(jobIdFor('Acme Robotics', role));
+    expect(job?.id.length).toBeLessThanOrEqual(142);
   });
 
   it('joins one job’s records across skills by its own link', () => {

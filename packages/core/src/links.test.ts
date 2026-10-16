@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostOf, isJobLink, linksFrom, normalizeUrl } from './links.ts';
+import { hostOf, isJobLink, isLinkedIn, linksFrom, normalizeUrl } from './links.ts';
 
 /** How long something takes, in milliseconds. */
 function timed(work: () => unknown): number {
@@ -17,6 +17,27 @@ describe('normalizeUrl', () => {
 
   it('lowercases text that isn’t a full address', () => {
     expect(normalizeUrl('Acme.com/Jobs')).toBe('acme.com/jobs');
+  });
+
+  it('keeps a careers site’s route to a job after “#/”, and drops any other “#”', () => {
+    expect(normalizeUrl('https://careers.acme.example/?utm_source=x#/jobs/123/')).toBe(
+      'careers.acme.example#/jobs/123',
+    );
+    expect(normalizeUrl('https://careers.acme.example/#/jobs/123')).not.toBe(
+      normalizeUrl('https://careers.acme.example/#/jobs/456'),
+    );
+    expect(normalizeUrl('https://careers.acme.example/#!/job/7')).toBe(
+      'careers.acme.example#!/job/7',
+    );
+    expect(normalizeUrl('https://acme.example/jobs/42#apply')).toBe('acme.example/jobs/42');
+    expect(normalizeUrl('https://careers.acme.example/#/')).toBe('careers.acme.example');
+    expect(normalizeUrl('https://careers.acme.example/#/jobs/42/?source=x&team=data')).toBe(
+      'careers.acme.example#/jobs/42?team=data',
+    );
+    expect(normalizeUrl('https://careers.acme.example/#/jobs/42?utm_source=x')).toBe(
+      normalizeUrl('https://careers.acme.example/#/jobs/42'),
+    );
+    expect(isJobLink('https://careers.acme.example/#/jobs/123')).toBe(true);
   });
 });
 
@@ -91,5 +112,30 @@ describe('links made to keep the app busy, or to pass for another site', () => {
       { url: 'https://acme.com/jobs/42', label: '· Jobs' },
       { url: 'https://acme.com', label: 'Site' },
     ]);
+  });
+});
+
+describe('isLinkedIn', () => {
+  it('knows LinkedIn’s sites, its short links and its files', () => {
+    for (const url of [
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      'https://linkedin.com/in/someone',
+      'https://ca.linkedin.com/jobs',
+      'https://lnkd.in/abc',
+      'https://media.licdn.com/x.png',
+      'https://WWW.LINKEDIN.COM./jobs',
+    ]) {
+      expect(isLinkedIn(url), url).toBe(true);
+    }
+  });
+
+  it('leaves every other site, and anything that isn’t a link', () => {
+    for (const url of [
+      'https://notlinkedin.com/',
+      'https://linkedin.com.evil.example/',
+      'not a link',
+    ]) {
+      expect(isLinkedIn(url), url).toBe(false);
+    }
   });
 });

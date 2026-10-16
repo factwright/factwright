@@ -1,6 +1,6 @@
 import { startServer, type TestServer } from '@factwright/server/testing';
+import { CLIENTS, DeviceSignIn } from '@factwright/sync';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DeviceSignIn } from './sign-in.ts';
 
 let server: TestServer;
 
@@ -28,6 +28,7 @@ async function browser(code: string, token: string, answer: 'approve' | 'deny') 
 const signIn = () =>
   new DeviceSignIn({
     server: server.url.toString(),
+    clientId: CLIENTS.desktop,
     userAgent: USER_AGENT,
     sleep: async () => {},
   });
@@ -57,6 +58,7 @@ describe('signing the app in through the browser', () => {
 
     const canceled = new DeviceSignIn({
       server: server.url.toString(),
+      clientId: CLIENTS.desktop,
       userAgent: USER_AGENT,
       sleep: (_ms, signal) =>
         new Promise((resolve) => signal.addEventListener('abort', () => resolve())),

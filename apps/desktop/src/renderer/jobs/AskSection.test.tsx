@@ -29,10 +29,12 @@ afterEach(cleanup);
 const job = sampleJob({ id: 'acme--staff-engineer', company: 'Acme', role: 'Staff Engineer' });
 const ASK = { id: '2026-10-12-what-should-i-expect', question: 'What should I expect?', on: TODAY };
 
-function apiStub(extras: JobExtras = { asked: {}, shots: [] }) {
+function apiStub(
+  extras: Omit<JobExtras, 'posting'> & Partial<JobExtras> = { asked: {}, shots: [] },
+) {
   return {
     platform: 'darwin',
-    jobExtras: vi.fn(async () => extras),
+    jobExtras: vi.fn(async () => ({ posting: null, ...extras })),
     askAboutJob: vi.fn(async () => ({ ok: true as const, askId: '2026-10-12-whats-their-stack' })),
     removeAsk: vi.fn(async () => ({ ok: true }) as const),
     addShot: vi.fn(async () => ({ ok: true as const, path: 'screenshots/x/ask-1.png' })),

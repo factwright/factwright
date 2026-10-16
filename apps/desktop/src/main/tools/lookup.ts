@@ -276,7 +276,7 @@ export async function jobDetails(
   kinds: readonly KindName[] = [],
 ): Promise<string> {
   const { status } = jobProgress(job, today);
-  const { asked, shots } = readJobExtras(diskWorkspace(workspace), job.id);
+  const { asked, shots, posting } = readJobExtras(diskWorkspace(workspace), job.id);
   const out = [`## ${name(job)}`, `- Job id: ${job.id}`];
   const add = (label: string, value: string | null | undefined | false) => {
     if (value) out.push(`- ${label}: ${value}`);
@@ -308,6 +308,11 @@ export async function jobDetails(
   );
   add('Links', job.links.map((link) => `${link.label} ${link.url}`).join(' · '));
   add('Folder', job.folder && `${WORKSPACE_PATHS.jobs}/${job.folder}/`);
+  add(
+    'Posting saved from the user’s browser',
+    posting &&
+      `${posting.path}${posting.saved ? ` (${posting.saved})` : ''}, as the user saw it. Read the posting there, LinkedIn's included: save_posting with the job's link and this job's id copies it into the job's folder.`,
+  );
   if (job.apply) {
     const steps = readApplySteps(job.apply);
     add(

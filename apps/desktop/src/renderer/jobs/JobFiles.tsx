@@ -1,8 +1,8 @@
-import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
+import type { Job, JobDocKind, JobDocs, JobFile, SavedPosting } from '@factwright/core';
 import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import styles from './JobPanel.module.css';
@@ -105,19 +105,36 @@ export function FilesSection({
   const [preview, setPreview] = useState<JobFile | null>(null);
   const [xray, setXray] = useState<JobFile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // The posting the user saved from their browser with Save to Factwright, kept apart from the
+  // job's folder, which Claude's work makes.
+  const [saved, setSaved] = useState<SavedPosting | null>(null);
 
-  // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes.
+  // Read again whenever the job does, such as after a sync, which can bring the posting in.
+  useEffect(() => {
+    let live = true;
+    void api.jobExtras(job.id).then((extras) => {
+      if (live) setSaved(extras?.posting ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [api, job]);
+
+  // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes,
+  // and a job saved from the browser may have only the posting the user saved there.
   const posting = useCallback(async () => {
     const loaded = await api.jobDocs(job.id);
-    return loaded?.posting ?? loaded?.job ?? null;
-  }, [api, job.id]);
+    return loaded?.posting ?? saved?.text ?? loaded?.job ?? null;
+  }, [api, job.id, saved]);
   /** A resume's PDF and Word file, which share a name, for the X-ray to switch between. */
   const sameResume = (file: JobFile) =>
     job.files.filter((each) => stem(each.name) === stem(file.name));
 
-  // Older folders keep the posting inside the job notes.
+  // Once Claude saves the posting in the job's folder, that one is shown instead.
+  const browserPosting = saved && !job.docKinds.includes('posting') ? saved : null;
+  // Older folders keep the posting inside the job notes, unless the browser saved it.
   const documents = DOCUMENTS.filter(({ kind }) => job.docKinds.includes(kind)).map((doc) =>
-    doc.kind === 'job' && !job.docKinds.includes('posting')
+    doc.kind === 'job' && !job.docKinds.includes('posting') && !browserPosting
       ? { ...doc, name: 'Posting', about: 'Saved with the job notes' }
       : doc,
   );
@@ -144,14 +161,15 @@ export function FilesSection({
     [
       job.files.length > 0 && count(named(job.files), 'resume'),
       job.letters.length > 0 && count(named(job.letters), 'cover letter'),
-      documents.length > 0 && count(documents.length, 'document'),
+      documents.length + (browserPosting ? 1 : 0) > 0 &&
+        count(documents.length + (browserPosting ? 1 : 0), 'document'),
     ]
       .filter(Boolean)
       .join(' · ') || 'None yet';
 
   return (
     <PanelSection id="files" title="Files" icon={<FolderOpen size={15} />} summary={summary}>
-      {built.length === 0 && documents.length === 0 ? (
+      {built.length === 0 && documents.length === 0 && !browserPosting ? (
         <p className={styles.quiet}>No files yet.</p>
       ) : (
         <ul className={styles.files}>
@@ -192,6 +210,28 @@ export function FilesSection({
               </Button>
             </li>
           ))}
+          {browserPosting && (
+            <li className={styles.file}>
+              <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
+              <span className={styles.fileText}>
+                <span className={styles.fileName}>Posting</span>
+                <span className={styles.fileMeta}>
+                  Saved from your browser
+                  {browserPosting.saved ? `, ${shortDate(browserPosting.saved, today)}` : ''}
+                </span>
+              </span>
+              <Button
+                size="sm"
+                variant="quiet"
+                aria-label="Open the posting saved from your browser"
+                onClick={() =>
+                  setOpen({ title: `Posting: ${job.company}`, text: browserPosting.text })
+                }
+              >
+                Open
+              </Button>
+            </li>
+          )}
         </ul>
       )}
       {problem && (

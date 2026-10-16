@@ -1,0 +1,206 @@
+/* The popup is a small window under the toolbar button; the setup page is a tab of its own. */
+body.popup {
+  width: 360px;
+  padding: var(--fw-space-4);
+}
+
+body.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--fw-space-8) var(--fw-space-4);
+}
+
+h1 {
+  font-size: var(--fw-text-lg);
+  margin: 0 0 var(--fw-space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+h1 img {
+  width: 24px;
+  height: 24px;
+}
+
+h2 {
+  font-size: var(--fw-text-md);
+  margin: var(--fw-space-6) 0 var(--fw-space-2);
+}
+
+p {
+  margin: 0 0 var(--fw-space-3);
+  line-height: 1.45;
+}
+
+.muted {
+  color: var(--fw-muted);
+}
+
+.small {
+  font-size: var(--fw-text-sm);
+}
+
+label {
+  display: block;
+  font-size: var(--fw-text-sm);
+  color: var(--fw-muted);
+  margin: var(--fw-space-3) 0 var(--fw-space-1);
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-space-2) var(--fw-space-3);
+}
+
+input[type="text"]:focus-visible,
+input[type="password"]:focus-visible,
+summary:focus-visible,
+.posting:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 2px;
+}
+
+.check {
+  display: flex;
+  gap: var(--fw-space-2);
+  align-items: flex-start;
+  color: var(--fw-text);
+  font-size: var(--fw-text-base);
+}
+
+.check input {
+  margin-top: 3px;
+}
+
+.actions {
+  display: flex;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-4);
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-space-2) var(--fw-space-4);
+  border: 1px solid var(--fw-control-border);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--fw-hover);
+}
+
+button.primary {
+  background: var(--fw-accent);
+  border-color: var(--fw-accent);
+  color: var(--fw-accent-ink);
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: var(--fw-accent-hover);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+a {
+  color: var(--fw-accent-text);
+}
+
+.card {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-space-3) var(--fw-space-4);
+  margin: var(--fw-space-3) 0;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--fw-space-1) var(--fw-space-3);
+  font-size: var(--fw-text-sm);
+  margin: var(--fw-space-3) 0 0;
+}
+
+.facts dt {
+  color: var(--fw-muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+details.preview {
+  margin: var(--fw-space-3) 0 0;
+  font-size: var(--fw-text-sm);
+}
+
+details.preview summary {
+  cursor: pointer;
+  color: var(--fw-accent-text);
+}
+
+.posting {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: var(--fw-space-2);
+  padding: var(--fw-space-2) var(--fw-space-3);
+  background: var(--fw-sunken);
+  border-radius: var(--fw-radius-md);
+}
+
+.note {
+  background: var(--fw-sunken);
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-space-2) var(--fw-space-3);
+  font-size: var(--fw-text-sm);
+}
+
+.ok {
+  color: var(--fw-ok);
+  font-weight: 600;
+}
+
+.bad {
+  color: var(--fw-bad);
+}
+
+.code {
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xl);
+  letter-spacing: 0.1em;
+  margin: var(--fw-space-2) 0;
+}
+
+.emoji {
+  font-size: 32px;
+  letter-spacing: 0.2em;
+  margin: var(--fw-space-2) 0;
+}
+
+.steps {
+  padding-left: var(--fw-space-5);
+}
+
+.steps li {
+  margin-bottom: var(--fw-space-2);
+}

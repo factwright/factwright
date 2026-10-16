@@ -27,7 +27,7 @@ function apiStub() {
   return {
     platform: 'darwin',
     updateJob: vi.fn(async () => ({ ok: true }) as const),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
     readShot: vi.fn(async () => null),
     addShot: vi.fn(async (jobId: string) => ({
       ok: true as const,
@@ -285,6 +285,7 @@ describe('the application questions', () => {
     const path = `screenshots/${job.id}/form-2026-10-11-1.png`;
     vi.mocked(api.jobExtras).mockResolvedValue({
       asked: {},
+      posting: null,
       shots: [
         { path, name: 'form-2026-10-11-1.png', kind: 'form', ask: null, size: 8, modified: '' },
       ],

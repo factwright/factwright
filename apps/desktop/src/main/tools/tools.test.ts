@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { savedPostingFile, savedPostingMarkdown } from '@factwright/core';
 import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { type AboutYou, type AnswerChanges, applyChanges, NO_ANSWERS } from '../../shared/about.ts';
@@ -235,6 +236,24 @@ describe('job_details', () => {
     );
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled');
     expect(answer).toContain('    2026-10-11  The user marked it Screen');
+  });
+
+  it('names a posting the user saved from their browser, for Claude to read', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    const saved = join(root, savedPostingFile(id));
+    mkdirSync(join(saved, '..'), { recursive: true });
+    writeFileSync(
+      saved,
+      savedPostingMarkdown({
+        url: 'https://acme.example/jobs/staff',
+        site: 'acme.example',
+        savedOn: '2026-10-10',
+        text: 'Staff Engineer at Acme.',
+      }),
+    );
+    expect(await tool('job_details').run({ job: id })).toContain(
+      `- Posting saved from the user’s browser: saved/${id}/posting.md (2026-10-10), as the user saw it.`,
+    );
   });
 
   it('gives the application’s questions, numbered, as questions to answer, with what was sent', async () => {
@@ -760,6 +779,57 @@ describe('save_posting', () => {
     ).toMatch(
       /^Got only \d+ characters, so the page probably needs a browser or a sign-in\. Ask the user to paste the posting/,
     );
+  });
+
+  it('copies a posting the user saved from their browser, LinkedIn’s included, without reading anything', async () => {
+    const linkedIn = 'https://www.linkedin.com/jobs/view/4012345678/';
+    const text = `About the job\n\n${'Build payments at scale with Go and Postgres. '.repeat(12)}`;
+    const saved = join(root, savedPostingFile('northwind--staff-engineer'));
+    mkdirSync(join(saved, '..'), { recursive: true });
+    writeFileSync(
+      saved,
+      savedPostingMarkdown({ url: linkedIn, site: 'linkedin.com', savedOn: '2026-10-10', text }),
+    );
+    const answer = await tool('save_posting').run({
+      url: 'https://linkedin.com/jobs/view/4012345678?trk=abc',
+      folder: FOLDER,
+    });
+    expect(answer).toMatch(/\(\d+ characters, via saved from the user’s browser\)\.$/);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(posted()).toContain('Build payments at scale');
+    expect(posted()).toContain(
+      '- **Saved:** 2026-10-11 by Factwright (saved from the user’s browser)',
+    );
+  });
+
+  it('uses the job’s own posting from the browser, by its id, when two share a link', async () => {
+    const board = 'https://boards.example.com/#/jobs';
+    for (const [id, text] of [
+      ['acme--designer', 'The designer posting.'],
+      ['acme--writer', 'The writer posting.'],
+    ] as const) {
+      const saved = join(root, savedPostingFile(id));
+      mkdirSync(join(saved, '..'), { recursive: true });
+      writeFileSync(
+        saved,
+        savedPostingMarkdown({
+          url: board,
+          site: 'boards.example.com',
+          savedOn: '2026-10-10',
+          text,
+        }),
+      );
+    }
+    // Without the job, it won't guess between the two.
+    expect(await tool('save_posting').run({ url: board, folder: FOLDER })).toMatch(/^Nothing read/);
+    const answer = await tool('save_posting').run({
+      url: board,
+      folder: FOLDER,
+      job: 'acme--writer',
+    });
+    expect(answer).toContain('via saved from the user’s browser');
+    expect(posted()).toContain('The writer posting.');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('keeps a posting already saved, without fetching it again', async () => {

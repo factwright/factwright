@@ -1,9 +1,8 @@
+import { JOB_LIMITS } from '@factwright/core';
+
 /** The longest text each tracker field takes. The main process checks them, and the window's inputs stop there. */
 export const LIMITS = {
-  company: 200,
-  role: 300,
-  link: 2000,
-  pay: 200,
+  ...JOB_LIMITS,
   nextAction: 500,
   /** The one undated box of notes the app had before notes were dated. */
   notes: 20_000,

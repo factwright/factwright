@@ -402,6 +402,7 @@ export function sampleTracker(
         shots: [...shots.values()]
           .map((each) => each.shot)
           .filter((shot) => shot.path.startsWith(`${shotsFolder(jobId)}/`)),
+        posting: null,
       };
     },
     recordAnswer: async (jobId, question, nth, text) =>

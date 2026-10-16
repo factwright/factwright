@@ -87,6 +87,7 @@ Factwright is free and open source. It's built by [Steve Hillyer](https://github
 | [`apps/web`](apps/web) | The web view of your job hunt, for your phone or any browser |
 | [`apps/server`](apps/server) | The sync server |
 | [`apps/site`](apps/site) | The website, factwright.com |
+| [`apps/extension`](apps/extension) | Save to Factwright, the browser extension for Chrome and Firefox |
 | [`packages/core`](packages/core) | Shared logic: reading the workspace, jobs, tracker rules and pay parsing |
 | [`packages/sync`](packages/sync) | End-to-end encryption and the sync protocol |
 | [`packages/ui`](packages/ui) | The design system and shared screens |
