@@ -9,6 +9,7 @@ import {
 } from './fit-report.ts';
 import { companyKey, roleKey, slug } from './keys.ts';
 import { isJobLink, type Link, normalizeUrl } from './links.ts';
+import { idPart } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import {
   type FolderRecord,
@@ -466,7 +467,8 @@ export function collectJobs(
     draft.records.push(record);
   };
   const create = (company: string, key: string, role: string) => {
-    const base = `${key || slug(company) || 'unknown'}--${role || 'general'}`;
+    // Cut as Add job cuts them, so the ID fits a folder's name, and Save to Factwright finds it.
+    const base = `${idPart(key || slug(company), 'company') || 'unknown'}--${idPart(role, 'role') || 'general'}`;
     let id = base;
     for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
     ids.add(id);

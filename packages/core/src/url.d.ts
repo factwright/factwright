@@ -9,6 +9,7 @@ declare class URL {
   readonly hostname: string;
   readonly pathname: string;
   readonly search: string;
+  readonly hash: string;
   readonly searchParams: URLSearchParams;
 }
 

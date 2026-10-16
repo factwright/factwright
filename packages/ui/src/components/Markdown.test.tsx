@@ -41,6 +41,13 @@ describe('Markdown', () => {
     expect(screen.queryByText('this', { selector: 'a' })).toBeNull();
   });
 
+  it('reads text full of unfinished links quickly', () => {
+    const start = performance.now();
+    // Uncapped, this took seconds: each "[" read the rest of the text as a link's address.
+    render(<Markdown text={'[a](http://'.repeat(20_000)} />);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+
   it('never turns text into markup', () => {
     const { container } = render(
       <Markdown text={'<img src=x onerror="alert(1)"> **<b>hi</b>**'} />,

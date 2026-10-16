@@ -1,5 +1,6 @@
 import { hostOf } from '@factwright/core';
 import type { PageJob } from './page/read-job.ts';
+import type { Unread } from './read-tab.ts';
 import type { JobToSave } from './save.ts';
 
 /** Query parameters that only track where a click came from (@factwright/core's links.ts). */
@@ -170,16 +171,19 @@ export function companyFromAddress(url: string): string {
 }
 
 /**
- * What a save without the popup would need checked first, or null when it's clearly one job's: a
- * page that isn't one job's own, a company it couldn't tell, or a posting taken from the page's
- * main text, which may not be a posting at all. The popup shows each of these, to check.
+ * What a save without the popup would need checked first, or null when it's clearly one job, with
+ * its title, company and posting: a page that isn't one job's own, or that can't be read, a title,
+ * company or posting it couldn't find, or a posting taken from the page's main text, which may not
+ * be a posting at all. A LinkedIn job saved by its link alone, as you chose, needs no posting. The
+ * popup shows each of these, to check.
  */
-export function needsChecking(page: PageJob, job: JobToSave): string | null {
+export function needsChecking(page: PageJob, job: JobToSave, unread: Unread): string | null {
   if (!isJobAddress(job.url)) return 'This isn’t one job’s page.';
+  if (unread === 'unreadable') return 'It can’t read this page.';
+  if (!job.role) return 'It couldn’t tell the job’s title.';
   if (!job.company) return 'It couldn’t tell the company.';
-  if (page.source === 'main' && job.posting) {
-    return 'It couldn’t tell the posting from the rest of the page.';
-  }
+  if (!job.posting && unread !== 'linkedin-link-only') return 'It couldn’t find the posting.';
+  if (page.source === 'main') return 'It couldn’t tell the posting from the rest of the page.';
   return null;
 }
 

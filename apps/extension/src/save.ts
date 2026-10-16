@@ -1,12 +1,15 @@
 import {
+  companyKey,
   JOB_LIMITS,
   jobIdFor,
   localDate,
   newJobRows,
   normalizeUrl,
+  roleKey,
   savedPostingFile,
   savedPostingMarkdown,
   shortCode,
+  slug,
 } from '@factwright/core';
 import {
   type AccountKeys,
@@ -57,12 +60,16 @@ export type SaveResult =
 
 /** How many jobs with the same company and role it tries IDs for: "-2" up to this. */
 const MAX_SAME = 50;
+/** How many times it tries the job's history and posting, with the connection lost. */
+const TRIES = 3;
 
 export interface SaveDeps {
   /** What the job's records say made them, such as "Save to Factwright in Chrome". */
   device: string;
   now?: () => Date;
   uuid?: () => string;
+  /** Waits before trying again: a second, then two. */
+  pause?: (ms: number) => Promise<void>;
 }
 
 /** Who made a change, and when. */
@@ -104,6 +111,28 @@ async function openJob(keys: AccountKeys, current: Change): Promise<RowRecord | 
   const plain = await openRecord(keys, current.record, current.version, current.data);
   const record = plain && decodeRecord(plain);
   return record?.kind === 'row' && record.table === 'jobs' ? record : null;
+}
+
+/** The jobs row at an ID, as it is now, or null when there's none. */
+async function currentJob(
+  client: SyncClient,
+  keys: AccountKeys,
+  id: string,
+): Promise<RowRecord | null> {
+  const record = await recordId(keys, rowName('jobs', id));
+  const [latest] = await client.versions(record);
+  if (!latest || latest.deleted) return null;
+  const change = await client.version(record, latest.version);
+  return change ? openJob(keys, change) : null;
+}
+
+/**
+ * The ID a job had before IDs were cut short to fit a folder's name: its company's and role's
+ * whole keys. The app still knows the jobs it added or found before then by these.
+ */
+function wholeId(company: string, role: string): string | null {
+  const companyPart = companyKey(company) || slug(company);
+  return companyPart ? `${companyPart}--${roleKey(role) || 'general'}` : null;
 }
 
 /** Whether a jobs row has a link to the same address. */
@@ -175,7 +204,15 @@ export async function saveJob(
     fields.role,
     fields.link ? shortCode(normalizeUrl(fields.link)) : undefined,
   );
+  const pause = deps.pause ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   try {
+    // A job with a long company or title, which the app knows by its whole ID from before.
+    const whole = wholeId(fields.company, fields.role);
+    const known = whole && whole !== base ? await currentJob(client, keys, whole) : null;
+    if (whole && known && hasLink(known.row, fields.link)) {
+      const kept = await addPosting(client, keys, whole, posting, made, pause);
+      return { ok: true, id: whole, already: true, posting: kept };
+    }
     for (let n = 1; n <= MAX_SAME; n++) {
       const id = n === 1 ? base : `${base}-${n}`;
       const rows = newJobRows({
@@ -197,7 +234,7 @@ export async function saveJob(
       }
       if (!result) return { ok: false, reason: 'failed', message: 'Sync didn’t answer the save.' };
       if (result.ok) {
-        const saved = await saveRest(client, keys, id, rows.status, posting, made);
+        const saved = await saveRest(client, keys, id, rows.status, posting, made, pause);
         return { ok: true, id, already: false, posting: saved };
       }
       if (result.reason === 'full') return failed(new SyncError('full', 'full'));
@@ -208,13 +245,7 @@ export async function saveJob(
       const existing = result.current && !result.current.deleted ? result.current : null;
       const found = existing && (await openJob(keys, existing));
       if (found && hasLink(found.row, fields.link)) {
-        // Saved before, by the app or an earlier save that didn't finish: its posting, if it has
-        // none yet.
-        const kept = posting.text
-          ? await pushPosting(client, keys, id, posting, made, { replace: false }).catch(
-              () => 'failed' as const,
-            )
-          : 'none';
+        const kept = await addPosting(client, keys, id, posting, made, pause);
         return { ok: true, id, already: true, posting: kept };
       }
     }
@@ -224,7 +255,26 @@ export async function saveJob(
   }
 }
 
-/** The job's history and its posting, once its row is in, and what became of the posting. */
+/** Tries something again while the connection is lost, a second, then two, apart. */
+async function retried<T>(
+  work: () => Promise<T>,
+  pause: (ms: number) => Promise<void>,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (error) {
+      const offline = error instanceof SyncError && error.kind === 'offline';
+      if (!offline || attempt >= TRIES) throw error;
+      await pause(attempt * 1000);
+    }
+  }
+}
+
+/**
+ * The job's history and its posting, once its row is in, and what became of the posting. Tried
+ * again through a lost connection, since saving the job again adds only its posting.
+ */
 async function saveRest(
   client: SyncClient,
   keys: AccountKeys,
@@ -232,19 +282,37 @@ async function saveRest(
   status: Record<string, string | number | null>,
   posting: Posting,
   made: Made,
+  pause: (ms: number) => Promise<void>,
 ): Promise<PostingSaved> {
   try {
     const history = await rowChange(keys, 'status_log', String(status.id), status, made);
     if (!posting.text) {
-      await client.push([history]);
+      await retried(() => client.push([history]), pause);
       return 'none';
     }
     // A posting left from an earlier job with this ID, since deleted: this one takes its place.
-    return await pushPosting(client, keys, id, posting, made, { replace: true, with: [history] });
+    const options = { replace: true, with: [history] };
+    return await retried(() => pushPosting(client, keys, id, posting, made, options), pause);
   } catch {
     // The job is in: saving it again adds its posting.
     return posting.text ? 'failed' : 'none';
   }
+}
+
+/** The posting for a job saved before, by the app or a save that didn't finish, if it has none. */
+async function addPosting(
+  client: SyncClient,
+  keys: AccountKeys,
+  id: string,
+  posting: Posting,
+  made: Made,
+  pause: (ms: number) => Promise<void>,
+): Promise<PostingSaved> {
+  if (!posting.text) return 'none';
+  const options = { replace: false };
+  return retried(() => pushPosting(client, keys, id, posting, made, options), pause).catch(
+    () => 'failed' as const,
+  );
 }
 
 /**

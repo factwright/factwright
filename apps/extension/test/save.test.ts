@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readSavedPosting, savedPostingFile } from '@factwright/core';
+import { newJobRows, readSavedPosting, savedPostingFile } from '@factwright/core';
 import { startServer, type TestServer } from '@factwright/server/testing';
 import {
   type AccountKeys,
@@ -82,15 +82,15 @@ async function deleteJob(client: SyncClient, keys: AccountKeys, jobId: string) {
   await client.push([{ record, base: version, data, file: null, deleted: true }]);
 }
 
-/** The sync client, with one of its pushes, counted from 1, failing as a lost connection does. */
-function failingPush(client: SyncClient, which: number): SyncClient {
+/** The sync client, with the pushes `fails` picks, counted from 1, failing as a lost connection does. */
+function failingPush(client: SyncClient, fails: (push: number) => boolean): SyncClient {
   let pushes = 0;
   return new Proxy(client, {
     get(target, key) {
       if (key === 'push') {
         return (changes: Parameters<SyncClient['push']>[0]) => {
           pushes += 1;
-          if (pushes === which) return Promise.reject(new SyncError('offline', 'Gone.'));
+          if (fails(pushes)) return Promise.reject(new SyncError('offline', 'Gone.'));
           return target.push(changes);
         };
       }
@@ -101,7 +101,12 @@ function failingPush(client: SyncClient, which: number): SyncClient {
 }
 
 const save = (client: SyncClient, keys: AccountKeys, job: JobToSave = JOB, status = 'status-1') =>
-  saveJob(client, keys, job, { device: DEVICE, now: () => NOW, uuid: () => status });
+  saveJob(client, keys, job, {
+    device: DEVICE,
+    now: () => NOW,
+    uuid: () => status,
+    pause: async () => {},
+  });
 
 describe('saving a job through sync', () => {
   it('adds it as New, with its history and the posting as the person saw it', async () => {
@@ -182,10 +187,30 @@ describe('saving a job through sync', () => {
     expect(await savedText(client, keys, 'northwind--staff-engineer-payments')).toBe(JOB.posting);
   });
 
-  it('says when the job saved but its posting didn’t, and adds it when it’s saved again', async () => {
+  it('tries the job’s history and posting again when the connection drops', async () => {
     const { client, keys } = await account();
     // The job's row goes up in the first push, and its history and posting in the second.
-    expect(await save(failingPush(client, 2), keys)).toEqual({
+    expect(
+      await save(
+        failingPush(client, (push) => push === 2),
+        keys,
+      ),
+    ).toMatchObject({
+      already: false,
+      posting: 'saved',
+    });
+    expect(await readRecord(client, keys, rowName('status_log', 'status-1'))).not.toBeNull();
+    expect(await savedText(client, keys, 'northwind--staff-engineer-payments')).toBe(JOB.posting);
+  });
+
+  it('says when the job saved but its posting didn’t, and adds it when it’s saved again', async () => {
+    const { client, keys } = await account();
+    expect(
+      await save(
+        failingPush(client, (push) => push >= 2),
+        keys,
+      ),
+    ).toEqual({
       ok: true,
       id: 'northwind--staff-engineer-payments',
       already: false,
@@ -237,6 +262,37 @@ describe('saving a job through sync', () => {
     if (job?.kind !== 'row' || !job.row) throw new Error('no job saved');
     expect(String(job.row.company)).toHaveLength(200);
     expect(JSON.parse(String(job.row.links))[0].url).toHaveLength(2000);
+  });
+
+  it('finds a job the app knows by its whole ID, from before IDs were cut short', async () => {
+    const { client, keys } = await account();
+    const role =
+      'Senior Software Engineer, Machine Learning Infrastructure - Distributed Training Platform';
+    const whole =
+      'northwind--senior-software-engineer-machine-learning-infrastructure-distributed-training-platform';
+    const rows = newJobRows({
+      id: whole,
+      company: 'Northwind',
+      role,
+      link: JOB.url,
+      pay: '',
+      status: 'new',
+      today: '2026-10-01',
+      now: '2026-10-01T12:00:00.000Z',
+      statusId: 'from-the-app',
+    });
+    const record = await recordId(keys, rowName('jobs', whole));
+    const body = { kind: 'row', table: 'jobs', id: whole, row: rows.job, device: 'Mac', at: '' };
+    const data = await sealRecord(keys, record, 1, encodeRecord(body as SyncRecord));
+    await client.push([{ record, base: 0, data, file: null, deleted: false }]);
+
+    expect(await save(client, keys, { ...JOB, role })).toEqual({
+      ok: true,
+      id: whole,
+      already: true,
+      posting: 'saved',
+    });
+    expect(await savedText(client, keys, whole)).toBe(JOB.posting);
   });
 
   it('names a job whose company has no Latin letters by its link', async () => {

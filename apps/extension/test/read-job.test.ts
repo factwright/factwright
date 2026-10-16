@@ -31,7 +31,7 @@ const JOB_DATA = {
 const withData = (data: unknown, body = '<main><h1>Elsewhere</h1></main>') =>
   page(
     // Job sites write "<" in their job data as \u003c, so a "</script>" in it can't end it early.
-    `<html><head><title>Senior PM | Tidewater</title><script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script></head><body>${body}</body></html>`,
+    `<html><head><title>Senior Product Manager, Data | Tidewater</title><script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script></head><body>${body}</body></html>`,
   );
 
 describe('reading a job page', () => {
@@ -245,6 +245,65 @@ describe('reading a job page', () => {
       source: 'page',
       pay: '',
     });
+  });
+
+  it('leaves out job data for another page of the site, on a site it doesn’t know', () => {
+    const old = { ...JOB_DATA, title: 'Old Job', url: 'https://jobs.example.com/jobs/1' };
+    const job = readJobPage(
+      withData(old, '<main><h1>New Job</h1><p>The new posting.</p></main>'),
+      'https://jobs.example.com/jobs/2',
+      '',
+    );
+    expect(job).toMatchObject<Partial<PageJob>>({ title: 'New Job', source: 'main', pay: '' });
+    expect(job.posting).toContain('The new posting.');
+  });
+
+  it('leaves out job data whose title the page doesn’t show, and keeps one it shows its way', () => {
+    const read = (title: string, heading: string) =>
+      readJobPage(
+        withData({ ...JOB_DATA, title }, `<main><h1>${heading}</h1><p>Posting.</p></main>`),
+        'https://jobs.example.com/jobs/2',
+        '',
+      );
+    const stale = read('Product Designer', 'Data Engineer');
+    expect(stale.source).toBe('main');
+    expect(stale.title).toBe('Data Engineer');
+    expect(read('Sr. Software Engineer', 'Senior Software Engineer').source).toBe('structured');
+  });
+
+  it('reads a title in the job data with entities, as the page shows it', () => {
+    const doc = withData(
+      { ...JOB_DATA, title: 'R&amp;D Engineer' },
+      '<main><h1>R&amp;D Engineer</h1></main>',
+    );
+    const job = readJobPage(doc, 'https://jobs.example.com/rd', '');
+    expect(job).toMatchObject<Partial<PageJob>>({
+      title: 'R&D Engineer',
+      company: 'Tidewater Analytics',
+      source: 'structured',
+    });
+  });
+
+  it('keeps tags a posting only mentions, as in “use <div>”', () => {
+    const doc = withData({
+      ...JOB_DATA,
+      description: '<p>Build pages with &lt;div&gt; and &lt;canvas&gt;.</p>',
+    });
+    expect(readJobPage(doc, 'https://jobs.example.com/fe', '').posting).toBe(
+      'Build pages with <div> and <canvas>.',
+    );
+  });
+
+  it('takes the posting for this page’s route, on a careers site that keeps each job after “#/”', () => {
+    const one = {
+      ...JOB_DATA,
+      title: 'Data Engineer',
+      url: 'https://careers.example.com/#/jobs/1',
+    };
+    const two = { ...JOB_DATA, url: 'https://careers.example.com/#/jobs/2' };
+    expect(
+      readJobPage(withData([one, two]), 'https://careers.example.com/#/jobs/2', '').title,
+    ).toBe('Senior Product Manager, Data');
   });
 
   it('takes what a job site shows over its job data when that’s much fuller', () => {

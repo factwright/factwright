@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collectJobs } from './jobs.ts';
+import { jobIdFor } from './new-job.ts';
 import type {
   FitCheckRecord,
   FolderRecord,
@@ -142,6 +143,14 @@ describe('collectJobs', () => {
     ]);
     // The best-rated run is the one the job's score comes from.
     expect(job?.search).toMatchObject({ source: 'HN October 2026', score: 80 });
+  });
+
+  it('gives a job it finds the ID Add job and Save to Factwright would, cut to fit a folder', () => {
+    const role =
+      'Senior Software Engineer, Machine Learning Infrastructure - Distributed Training Platform';
+    const [job] = collectJobs([search('Acme Robotics', role)]);
+    expect(job?.id).toBe(jobIdFor('Acme Robotics', role));
+    expect(job?.id.length).toBeLessThanOrEqual(142);
   });
 
   it('joins one job’s records across skills by its own link', () => {

@@ -18,6 +18,21 @@ describe('normalizeUrl', () => {
   it('lowercases text that isn’t a full address', () => {
     expect(normalizeUrl('Acme.com/Jobs')).toBe('acme.com/jobs');
   });
+
+  it('keeps a careers site’s route to a job after “#/”, and drops any other “#”', () => {
+    expect(normalizeUrl('https://careers.acme.example/?utm_source=x#/jobs/123/')).toBe(
+      'careers.acme.example#/jobs/123',
+    );
+    expect(normalizeUrl('https://careers.acme.example/#/jobs/123')).not.toBe(
+      normalizeUrl('https://careers.acme.example/#/jobs/456'),
+    );
+    expect(normalizeUrl('https://careers.acme.example/#!/job/7')).toBe(
+      'careers.acme.example#!/job/7',
+    );
+    expect(normalizeUrl('https://acme.example/jobs/42#apply')).toBe('acme.example/jobs/42');
+    expect(normalizeUrl('https://careers.acme.example/#/')).toBe('careers.acme.example');
+    expect(isJobLink('https://careers.acme.example/#/jobs/123')).toBe(true);
+  });
 });
 
 describe('isJobLink', () => {

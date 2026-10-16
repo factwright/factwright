@@ -41,7 +41,7 @@ Before the first upload, the sync server and factwright.com must be deployed wit
 4. **Privacy:**
    - **Single purpose:** Saves the job posting in the current tab to the user's own Factwright job hunt, through Factwright's end-to-end encrypted sync.
    - **activeTab:** To read the job on the tab the user is on, only when they click the extension's button, its menu item or its shortcut. The popup shows what it read and sends nothing until the user saves.
-   - **scripting:** To run the one function that reads the job's title, company and posting in that tab, when the user saves it.
+   - **scripting:** To run the one function that reads the job's title, company and posting in that tab, when the user clicks the extension's button, its menu item or its shortcut.
    - **storage:** To keep the user's settings, such as whether to read LinkedIn postings.
    - **contextMenus:** For the Save job to Factwright item in the page's right-click menu.
    - **Host permission (app.factwright.com):** To save the job to the user's job hunt through Factwright's sync server, the only site the extension reaches.

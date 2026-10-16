@@ -10,6 +10,12 @@ const ID_PARTS = { company: 60, role: 80 } as const;
 /** A key cut to a length, without a hyphen left at its end. */
 const cut = (key: string, length: number) => key.slice(0, length).replace(/-+$/, '');
 
+/**
+ * A company's or a role's key, cut to its half of a job's ID, as every new job's ID is made: by
+ * Add job, Save to Factwright and the jobs Claude's work finds.
+ */
+export const idPart = (key: string, half: keyof typeof ID_PARTS) => cut(key, ID_PARTS[half]);
+
 /** A short, steady code for some text, such as a link: 8 hex digits (FNV-1a, over its UTF-16). */
 export function shortCode(text: string): string {
   let hash = 0x811c9dc5;
@@ -28,8 +34,8 @@ export function shortCode(text: string): string {
  * as a short code of the job's link, when there is one, so such jobs don't all share an ID.
  */
 export function jobIdFor(company: string, role: string, code?: string): string {
-  const companyPart = cut(companyKey(company) || slug(company), ID_PARTS.company);
-  const rolePart = cut(roleKey(role), ID_PARTS.role);
+  const companyPart = idPart(companyKey(company) || slug(company), 'company');
+  const rolePart = idPart(roleKey(role), 'role');
   return `${companyPart || (code ? `job-${code}` : 'job')}--${rolePart || 'general'}`;
 }
 

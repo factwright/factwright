@@ -82,7 +82,8 @@ async function checkFirst(tab: Tab, why: string): Promise<void> {
 
 /**
  * Saves the job on a tab without opening the popup, from the menu or the shortcut. It saves only
- * what's clearly one job, and opens the popup for anything to check first.
+ * what's clearly one job, and opens the popup for anything to check first, or in Firefox, which
+ * opens it only straight from a click, marks the button.
  */
 async function saveTab(tab: Tab): Promise<void> {
   if (!isWebPage(tab.url)) {
@@ -93,9 +94,9 @@ async function saveTab(tab: Tab): Promise<void> {
     await openSetup();
     return;
   }
-  const { page } = await readTab(tab);
+  const { page, unread } = await readTab(tab);
   const job = toSave(page);
-  const check = needsChecking(page, job);
+  const check = needsChecking(page, job, unread);
   if (check) {
     await checkFirst(tab, check);
     return;

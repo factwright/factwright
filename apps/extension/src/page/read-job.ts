@@ -252,8 +252,9 @@ export function readJobPage(
     // Parsed into a document of its own, which never runs scripts or loads anything.
     const parse = (html: string) => textOf(new DOMParser().parseFromString(html, 'text/html').body);
     const text = parse(markup);
-    // Some sites encode the description's markup twice, so the first reading still has its tags.
-    return /<\/?(p|br|li|ul|ol|div|strong|b|h\d)\b[^>]*>/i.test(text) ? parse(text) : text;
+    // Some sites encode the description's markup twice, so the first reading still has its tags,
+    // closing ones too, which a posting that only mentions a tag, as in "use <div>", hasn't.
+    return /<\/(p|li|ul|ol|div|h[1-6])\s*>/i.test(text) ? parse(text) : text;
   }
 
   /** The first of the selectors that finds an element with text, and its text. */
@@ -396,20 +397,33 @@ export function readJobPage(
 
   /** Text to compare, such as two titles: lowercase letters and digits only. */
   const plain = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-  /** Whether two titles name the same job: one holds the other. */
+  /** A title's words, to compare: "Sr. Software Engineer" has "sr", "software" and "engineer". */
+  const words = (text: string) => new Set(text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? []);
+  /**
+   * Whether two titles name the same job: one holds the other, or most of the shorter one's words
+   * are the other's, as "Sr. Software Engineer" and "Senior Software Engineer" are.
+   */
   const sameTitle = (a: string, b: string) => {
     const [x, y] = [plain(a), plain(b)];
-    return Boolean(x && y && (x.includes(y) || y.includes(x)));
+    if (!x || !y) return false;
+    if (x.includes(y) || y.includes(x)) return true;
+    const [one, other] = [words(a), words(b)];
+    const shared = [...one].filter((word) => other.has(word)).length;
+    return shared / Math.min(one.size, other.size) >= 0.6;
   };
-  /** An address without its query or route, to compare: "linkedin.com/jobs/view/42". */
+  /** An address, to compare, without its query, but with a careers site's route after "#/". */
   const place = (address: unknown) => {
     try {
       const url = new URL(String(address), href);
-      return `${url.hostname.replace(/^www\./, '')}${url.pathname.replace(/\/+$/, '')}`;
+      const route = /^#!?\/./.test(url.hash) ? url.hash.replace(/\/+$/, '') : '';
+      const path = url.pathname.replace(/\/+$/, '');
+      return `${url.hostname.replace(/^www\./, '')}${path}${route}`.toLowerCase();
     } catch {
       return '';
     }
   };
+  /** The site an address is on, to compare. */
+  const siteOf = (address: unknown) => place(address).split(/[/#]/, 1)[0] ?? '';
 
   const site = (() => {
     try {
@@ -424,23 +438,45 @@ export function readJobPage(
     first(selectors ?? [], (element) => oneLine(textOf(element)));
   const shownTitle = fromSite(known?.title);
 
+  /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
+  const titleOf = (posting: Record<string, unknown>) =>
+    posting.title ? oneLine(textOfMarkup(String(posting.title))) : '';
+  /**
+   * What the page calls its job, to check its job data against: the job site's own title, or on a
+   * site it doesn't know, the page's heading, its tab's title and its preview's.
+   */
+  const pageNames = shownTitle
+    ? [shownTitle]
+    : [
+        first(['h1'], (element) => oneLine(textOf(element))),
+        oneLine(doc.title),
+        meta('og:title'),
+      ].filter(Boolean);
+
   // The page's own job data: the posting for this page when there are several, and none that the
-  // page no longer shows, as a single-page job site can leave an earlier job's behind.
+  // page no longer shows, as a single-page job site can leave an earlier job's behind: one whose
+  // own address is another page of this site, or whose title the page doesn't show.
   const postings = jobPostings();
   const here = place(href);
+  const isHere = (posting: Record<string, unknown>) =>
+    Boolean(posting.url) && place(posting.url) === here;
+  const elsewhere = (posting: Record<string, unknown>) =>
+    Boolean(posting.url) && !isHere(posting) && siteOf(posting.url) === siteOf(href);
+  const showsTitle = (posting: Record<string, unknown>) => {
+    const title = titleOf(posting);
+    return !title || pageNames.length === 0 || pageNames.some((name) => sameTitle(title, name));
+  };
+  const candidates = postings.filter((each) => !elsewhere(each));
   const matching =
-    postings.find((each) => each.url && place(each.url) === here) ??
-    postings.find((each) => shownTitle && sameTitle(oneLine(each.title), shownTitle)) ??
-    (postings.length === 1 ? postings[0] : undefined);
-  const data =
-    matching && !(shownTitle && !sameTitle(oneLine(matching.title), shownTitle))
-      ? matching
-      : undefined;
+    candidates.find(isHere) ??
+    candidates.find((each) => shownTitle && sameTitle(titleOf(each), shownTitle)) ??
+    (candidates.length === 1 ? candidates[0] : undefined);
+  const data = matching && (isHere(matching) || showsTitle(matching)) ? matching : undefined;
 
   /** A site's name, unless it's a job board's or an applicant system's, which no job is with. */
   const notBoard = (name: string) => (BOARDS.test(name.trim()) ? '' : name);
   const title = (
-    oneLine(data?.title ? textOfMarkup(String(data.title)) : '') ||
+    (data ? titleOf(data) : '') ||
     shownTitle ||
     meta('og:title') ||
     first(['h1'], (element) => oneLine(textOf(element))) ||

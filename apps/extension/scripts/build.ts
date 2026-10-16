@@ -101,7 +101,13 @@ function checkPageReader(folder: string): void {
 }
 
 rmSync(DIST, { recursive: true, force: true });
-await build({ root: ROOT, logLevel: 'warn' });
+await build({
+  root: ROOT,
+  logLevel: 'warn',
+  // The checked server, and nothing from a .env file, which would skip the checks above.
+  envDir: false,
+  define: { 'import.meta.env.VITE_FACTWRIGHT_SYNC_SERVER': JSON.stringify(server) },
+});
 checkPageReader(join(DIST, 'build'));
 
 for (const target of ['chrome', 'firefox'] as const satisfies readonly Target[]) {

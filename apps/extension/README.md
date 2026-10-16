@@ -13,7 +13,7 @@ It's a device on your sync account, as a linked browser is: it signs in with a c
 | `src/account.ts` | The extension's own sign-in and the account's keys, in its IndexedDB, and its requests to sync, which never carry the browser's cookies |
 | `src/popup.ts` | The popup under the toolbar button: the job it read and its posting, to check and save |
 | `src/setup.ts` | The setup page: signing in, linking, the LinkedIn setting and the account |
-| `src/background.ts` | Saves for the popup, the right-click menu and the keyboard shortcut, and opens setup on install. A save without the popup takes only what's clearly one job, and opens the popup for anything else |
+| `src/background.ts` | Saves for the popup, the right-click menu and the keyboard shortcut, and opens setup on install. A save without the popup takes only what's clearly one job, and leaves anything else for the popup: Chrome opens it, and Firefox, which lets only a click open it, marks the button with “!” |
 | `src/manifest.ts` | Each browser's manifest, asking for as little as it can |
 | `scripts/build.ts` | Builds both browsers' folders and zips, and checks the built page reader works on its own |
 | `scripts/e2e.ts` | Runs the built extension in Chromium against a local sync server, from setting up to saving |

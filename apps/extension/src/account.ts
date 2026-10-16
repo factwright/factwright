@@ -7,7 +7,8 @@ import { SYNC_ORIGIN } from './server.ts';
  * What the extension keeps once it's set up: its own sign-in to sync, and the account's keys. The
  * keys open the whole job hunt, as each linked device's do, so they're kept as Web Crypto keys that
  * can't be read back out: this browser's copy of the extension can use them, but nothing can copy
- * them. It only ever uses them to lock what it saves, and to check a job it saved before.
+ * them. It only ever uses them to lock what it saves, and to open the job already at the ID it
+ * would save to, which may be one the app made, to tell whether it's the same job.
  */
 export interface Account {
   /** The account's ID and email, as sync knows them. */

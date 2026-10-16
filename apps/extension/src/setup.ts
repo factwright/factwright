@@ -505,7 +505,7 @@ async function linked(account: Account): Promise<void> {
       h(
         'li',
         {},
-        'Or press Alt+Shift+S (Option+Shift+S on a Mac), or right-click the page and choose Save job to Factwright, to save it without opening anything. Anything to check first, such as a company it can’t tell, opens the popup instead.',
+        'Or press Alt+Shift+S (Option+Shift+S on a Mac), or right-click the page and choose Save job to Factwright, to save it without opening anything. Anything to check first, such as a company it can’t tell, opens the popup instead, or in Firefox, which lets only a click open it, marks the button with “!” for you to click.',
       ),
       h(
         'li',

@@ -62,7 +62,8 @@ export function manifest(
     return {
       ...common,
       background: { service_worker: 'background.js', type: 'module' },
-      minimum_chrome_version: '121',
+      // Chrome 127 is the first to let an extension open its popup, as a save that needs checking does.
+      minimum_chrome_version: '127',
     };
   }
   return {

@@ -156,17 +156,30 @@ describe('a save without the popup', () => {
 
   it('saves what’s clearly one job', () => {
     const page = read({});
-    expect(needsChecking(page, toSave(page))).toBeNull();
+    expect(needsChecking(page, toSave(page), null)).toBeNull();
     const selected = read({ source: 'selection', url: 'https://lumen.example/careers' });
-    expect(needsChecking(selected, toSave(selected))).toBeNull();
+    expect(needsChecking(selected, toSave(selected), null)).toBeNull();
+    // A LinkedIn job by its link alone, as the person chose.
+    const linkOnly = jobFromTab(
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      'Staff Engineer | Northwind | LinkedIn',
+    );
+    expect(needsChecking(linkOnly, toSave(linkOnly), 'linkedin-link-only')).toBeNull();
   });
 
   it('has anything else checked in the popup first', () => {
     const main = read({ source: 'main', url: 'https://lumen.example/careers/7' });
-    expect(needsChecking(main, toSave(main))).toMatch(/posting/);
+    expect(needsChecking(main, toSave(main), null)).toMatch(/posting/);
     const search = read({ url: 'https://www.linkedin.com/jobs/search/?keywords=pm' });
-    expect(needsChecking(search, toSave(search))).toMatch(/one job/);
+    expect(needsChecking(search, toSave(search), null)).toMatch(/one job/);
     const nameless = read({ company: '', url: 'https://www.indeed.com/viewjob?jk=a1' });
-    expect(needsChecking(nameless, toSave(nameless))).toMatch(/company/);
+    expect(needsChecking(nameless, toSave(nameless), null)).toMatch(/company/);
+    const untitled = read({ title: '' });
+    expect(needsChecking(untitled, toSave(untitled), null)).toMatch(/title/);
+    // A page with no posting it could find, such as one inside a form, or one it can't read.
+    const empty = read({ posting: '' });
+    expect(needsChecking(empty, toSave(empty), null)).toMatch(/posting/);
+    const pdf = jobFromTab('https://example.com/annual-report.pdf', 'annual-report.pdf');
+    expect(needsChecking(pdf, toSave(pdf), 'unreadable')).toMatch(/can’t read/);
   });
 });

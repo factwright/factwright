@@ -19,7 +19,8 @@ const TRACKING_PARAM =
 
 /**
  * One form per address, for matching: no "www.", no trailing slash, no tracking parameters, and
- * lowercase. "https://www.acme.com/jobs/42/?utm_source=x" becomes "acme.com/jobs/42".
+ * lowercase. "https://www.acme.com/jobs/42/?utm_source=x" becomes "acme.com/jobs/42". A page's
+ * route after "#/" or "#!/", where some careers sites keep each job, stays: it names the job.
  */
 export function normalizeUrl(url: string): string {
   try {
@@ -29,7 +30,8 @@ export function normalizeUrl(url: string): string {
     }
     const host = parsed.hostname.replace(/^www\./, '');
     const path = trimEndOf(parsed.pathname, '/');
-    return `${host}${path}${parsed.search}`.toLowerCase();
+    const route = /^#!?\/./.test(parsed.hash) ? trimEndOf(parsed.hash, '/') : '';
+    return `${host}${path}${parsed.search}${route}`.toLowerCase();
   } catch {
     return url.toLowerCase();
   }

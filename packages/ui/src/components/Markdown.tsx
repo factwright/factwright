@@ -24,8 +24,9 @@ const link = (url: string, children: ReactNode, key: string) => (
 const INLINE: readonly Inline[] = [
   { pattern: /`([^`]+)`/, render: (match, key) => <code key={key}>{match[1]}</code> },
   {
-    // A link's text is capped, so a page full of "[" can't slow matching to a crawl.
-    pattern: /\[([^\]]{1,500})\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/,
+    // A link's text and address are capped, so a page full of "[" or "](http://" can't slow
+    // matching to a crawl.
+    pattern: /\[([^\]]{1,500})\]\(((?:https?:\/\/|mailto:)[^\s)]{1,2048})\)/,
     render: (match, key) => link(match[2] ?? '', inline(match[1] ?? '', key), key),
   },
   {
