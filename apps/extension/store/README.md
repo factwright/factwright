@@ -14,15 +14,17 @@ Before the first upload, the sync server and factwright.com must be deployed wit
 **Description:**
 > Save to Factwright adds the job you're looking at to your Factwright job hunt, with its link and its posting as you saw it.
 >
-> On a job's page, click the Factwright button, check the title, company and posting, and save it. Or press Alt+Shift+S, or right-click the page, to save it without opening anything. It reads the job data sites publish, the layouts of LinkedIn, Indeed, Greenhouse, Lever, Workday and other job sites, or the text you selected, so it saves postings you can only see signed in. The job shows in Factwright on your computer as New, ready for a fit check, a tailored resume or a cover letter, with the posting kept even after the listing comes down.
+> On a job's page, click the Factwright button, check the title, company and posting, and save it. Or press Alt+Shift+S, or right-click the page, to save it without opening anything. It reads the job details a page publishes, the layout of the job boards and applicant tracking systems people use most, or the text you selected, so it also saves postings you can only see when signed in. The job shows in Factwright on your computer as New, ready for a fit check, a tailored resume or a cover letter, with the posting kept even after the listing comes down.
 >
 > Private by design:
 > • It reads a page only when you click its button, its menu item or its shortcut, and nothing as you browse. The popup sends nothing until you save.
 > • What it saves is locked on your computer with your job hunt's own key before it's sent, so Factwright's sync server stores it in a form it can't read.
 > • It reaches no site but Factwright's sync, and has no analytics or tracking.
-> • You choose whether it reads LinkedIn postings, or saves LinkedIn jobs by their link alone.
+> • A setting lets it save LinkedIn jobs by their link alone, without reading their postings.
 >
 > Needs Factwright, the free desktop app for Mac and Windows, with sync turned on: factwright.com. Factwright is open source: github.com/factwright/factwright
+
+Don't list other companies' names in it. The Chrome Web Store rejected the first submission for keyword spam (violation Yellow Argon) over "LinkedIn, Indeed, Greenhouse, Lever, Workday and other job sites". One mention of LinkedIn, for its setting, is the most it should carry.
 
 **Category:** Chrome: Productivity (Workflow & Planning). Firefox: Productivity.
 
