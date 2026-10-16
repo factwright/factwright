@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Fixed
+- Each account's daily cleanup on the sync server keeps to its schedule when a day's run fails: the next day's is planned and saved before each one runs, and a failure is written down. Before, a cleanup that failed several tries in a row, or never finished, stopped them until one of the account's devices synced a change, so an account no longer in use could keep earlier versions past the 90 days the privacy policy keeps them.
+
 ## 0.5.0 - 2026-10-16
 
 ### Added
