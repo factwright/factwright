@@ -141,17 +141,13 @@ describe('a download page', () => {
     vi.advanceTimersByTime(START_AFTER_MS - 1);
     expect(started).toEqual([]);
     vi.advanceTimersByTime(1);
-    expect(started).toEqual(['https://downloads.factwright.com/Factwright.dmg']);
+    expect(started).toEqual([new URL('/download/get/mac', document.baseURI).href]);
   });
 
-  it('downloads the installer its link offers, as the Worker fills it in', () => {
-    const page = open('windows');
-    page
-      .querySelector('a[data-direct]')
-      ?.setAttribute('href', 'https://downloads.factwright.com/Factwright-Setup-0.1.0.exe');
-    startDownload(page, go);
+  it('follows its own computer’s link, which counts the download on its way to the installer', () => {
+    startDownload(open('windows'), go);
     vi.advanceTimersByTime(START_AFTER_MS);
-    expect(started).toEqual(['https://downloads.factwright.com/Factwright-Setup-0.1.0.exe']);
+    expect(started).toEqual([new URL('/download/get/windows', document.baseURI).href]);
   });
 
   it('doesn’t start by itself once a link is followed, its own or one away', () => {

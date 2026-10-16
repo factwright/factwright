@@ -105,8 +105,8 @@ export async function newestRelease(
 }
 
 /**
- * The installer a download page offers: the release's own file, or without a release, the newest
- * one, under the name that never changes.
+ * The installer a download goes to: the release's own file, or without a release, the newest one,
+ * under the name that never changes.
  */
 export function installerUrl(computer: Computer, release: Release | null): string {
   const files = FILES[computer];
@@ -136,9 +136,9 @@ export const releaseLine = (computer: Computer) =>
   `<p class="get-meta" data-release="${computer}"></p>`;
 
 /**
- * Fills a download page in with the newest release for each computer: its links to the newest
- * installer go to that version's own file, and its line for the version says which it is. For a
- * computer without a release, the page keeps its links to the newest installer, and no version.
+ * Fills a download page in with the newest release for each computer: its line for the version
+ * says which it is. For a computer without a release, the line stays empty. The page's links go
+ * through the Worker, which counts each download and sends it on to the installer (respond.ts).
  */
 export function fillDownloadPage(
   html: string,
@@ -148,12 +148,10 @@ export function fillDownloadPage(
   for (const computer of ['mac', 'windows'] as const) {
     const release = releases[computer];
     if (!release) continue;
-    page = page
-      .replaceAll(installerUrl(computer, null), installerUrl(computer, release))
-      .replaceAll(
-        releaseLine(computer),
-        releaseLine(computer).replace('></p>', `>${escapeHtml(describeRelease(release))}</p>`),
-      );
+    page = page.replaceAll(
+      releaseLine(computer),
+      releaseLine(computer).replace('></p>', `>${escapeHtml(describeRelease(release))}</p>`),
+    );
   }
   return page;
 }

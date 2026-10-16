@@ -30,6 +30,9 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStore"] }],
   // The daily backup, at a quiet hour.
   "triggers": { "crons": ["17 4 * * *"] },
+  // How much sync is used, in totals only: once a day, the daily job counts accounts and sign-ins
+  // here, for the stats command in apps/site. Analytics Engine keeps each day's totals 3 months.
+  "analytics_engine_datasets": [{ "binding": "SYNC_TOTALS", "dataset": "factwright_sync" }],
   // Logs keep only what the Worker writes itself, such as a backup that failed. Cloudflare's log
   // of every request is off, and any address it does record loses its query, which can carry a
   // sign-in code.

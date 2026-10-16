@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { installerUrl, type Release, releaseLine } from './releases.ts';
+import { downloadLink } from './downloads.ts';
+import { type Computer, type Release, releaseLine } from './releases.ts';
 import { respond, SECURITY_HEADERS } from './respond.ts';
 
 /** Stands in for the built pages: answers every request with its path, or a 404. */
@@ -68,11 +69,11 @@ describe('the site', () => {
   });
 });
 
-/** A built download page, as the Worker gets it: links to the newest installers, and no versions. */
+/** A built download page, as the Worker gets it: links that count each download, and no versions. */
 const DOWNLOAD_PAGE = [
-  `<a href="${installerUrl('mac', null)}" data-direct>Download for Mac</a>`,
+  `<a href="${downloadLink('mac')}" data-direct>Download for Mac</a>`,
   releaseLine('mac'),
-  `<a href="${installerUrl('windows', null)}">Download for Windows</a>`,
+  `<a href="${downloadLink('windows')}">Download for Windows</a>`,
   releaseLine('windows'),
 ].join('\n');
 
@@ -115,8 +116,8 @@ describe('the download pages', () => {
     );
     expect(known.asked).toEqual(['mac']);
     const html = await response.text();
-    expect(html).toContain('href="https://downloads.factwright.com/Factwright-0.1.0.dmg"');
     expect(html).toContain('>Version 0.1.0 · 231 MB · October 13, 2026</p>');
+    expect(html).toContain('<a href="/download/get/mac" data-direct>');
     expect(response.headers.get('Cache-Control')).toBe('no-cache');
     expect(response.headers.get('ETag')).toBeNull();
     expect(response.headers.get('Content-Length')).toBeNull();
@@ -138,7 +139,7 @@ describe('the download pages', () => {
     }
   });
 
-  it('keep the newest installer, and no version, when the release can’t be told', async () => {
+  it('say no version when the release can’t be told', async () => {
     const response = await respond(
       get('https://factwright.com/download/windows'),
       pages(),
@@ -154,6 +155,156 @@ describe('the download pages', () => {
     expect(home.headers.get('ETag')).toBe('"abc"');
     const slash = await respond(get('https://factwright.com/download/'), pages(), known.newest);
     expect(slash.status).toBe(307);
+    expect(known.asked).toEqual([]);
+  });
+});
+
+/** The downloads the Worker counted, by computer and version. */
+function counter() {
+  const counted: [Computer, string | null][] = [];
+  return {
+    counted,
+    count: (computer: Computer, version: string | null) => {
+      counted.push([computer, version]);
+    },
+  };
+}
+
+/** Following a link on the site, as a browser marks it, unless the headers say otherwise. */
+const follow = (path: string, headers: Record<string, string> = {}, method = 'GET') =>
+  new Request(`https://factwright.com${path}`, {
+    method,
+    headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', ...headers },
+  });
+
+describe('a download', () => {
+  it('counts, then goes on to the newest version’s installer, asked for again each time', async () => {
+    const known = releases();
+    const site = assets();
+    const { counted, count } = counter();
+    const response = await respond(follow('/download/get/mac'), site, known.newest, count);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(
+      'https://downloads.factwright.com/Factwright-0.1.0.dmg',
+    );
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex');
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+      expect(response.headers.get(name)).toBe(value);
+    }
+    expect(counted).toEqual([['mac', '0.1.0']]);
+    expect(known.asked).toEqual(['mac']);
+    expect(site.asked).toEqual([]);
+  });
+
+  it('counts each computer’s downloads apart', async () => {
+    const { counted, count } = counter();
+    const response = await respond(
+      follow('/download/get/windows'),
+      assets(),
+      releases().newest,
+      count,
+    );
+    expect(response.headers.get('Location')).toBe(
+      'https://downloads.factwright.com/Factwright-Setup-0.1.0.exe',
+    );
+    expect(counted).toEqual([['windows', '0.1.0']]);
+  });
+
+  it('goes on to the newest installer, with no version counted, when the release can’t be told', async () => {
+    const { counted, count } = counter();
+    const response = await respond(
+      follow('/download/get/mac'),
+      assets(),
+      releases(null).newest,
+      count,
+    );
+    expect(response.headers.get('Location')).toBe(
+      'https://downloads.factwright.com/Factwright.dmg',
+    );
+    expect(counted).toEqual([['mac', null]]);
+  });
+
+  it('doesn’t count a request that doesn’t say how it asked, such as a link preview', async () => {
+    const { counted, count } = counter();
+    const request = new Request('https://factwright.com/download/get/mac');
+    const response = await respond(request, assets(), releases().newest, count);
+    expect(response.status).toBe(302);
+    expect(counted).toEqual([]);
+  });
+
+  it('doesn’t count a script, a frame, a prefetch, a resumed download or a check of the headers', async () => {
+    const { counted, count } = counter();
+    for (const request of [
+      follow('/download/get/mac', { 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' }),
+      follow('/download/get/mac', { 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' }),
+      follow('/download/get/mac', { 'Sec-Fetch-Dest': 'iframe' }),
+      follow('/download/get/mac', { 'Sec-Purpose': 'prefetch' }),
+      follow('/download/get/mac', { 'Sec-Purpose': 'prefetch;prerender' }),
+      follow('/download/get/mac', { Purpose: 'prefetch' }),
+      follow('/download/get/mac', { 'X-Moz': 'prefetch' }),
+      follow('/download/get/mac', { Range: 'bytes=1000-' }),
+      follow('/download/get/mac', {}, 'HEAD'),
+    ]) {
+      const response = await respond(request, assets(), releases().newest, count);
+      expect(response.status).toBe(302);
+    }
+    expect(counted).toEqual([]);
+  });
+
+  it('still sends the browser on when counting fails', async () => {
+    const response = await respond(follow('/download/get/mac'), assets(), releases().newest, () => {
+      throw new Error('Analytics Engine is down');
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(
+      'https://downloads.factwright.com/Factwright-0.1.0.dmg',
+    );
+  });
+
+  it('turns away anything but a GET or a HEAD, uncounted', async () => {
+    const { counted, count } = counter();
+    const response = await respond(
+      follow('/download/get/mac', {}, 'POST'),
+      assets(),
+      releases().newest,
+      count,
+    );
+    expect(response.status).toBe(405);
+    expect(response.headers.get('Allow')).toBe('GET, HEAD');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(counted).toEqual([]);
+  });
+
+  it('counts only on the site’s one address, once www and http are sent there', async () => {
+    const { counted, count } = counter();
+    const response = await respond(
+      new Request('http://www.factwright.com/download/get/mac', {
+        headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' },
+      }),
+      assets(),
+      releases().newest,
+      count,
+    );
+    expect(response.status).toBe(301);
+    expect(response.headers.get('Location')).toBe('https://factwright.com/download/get/mac');
+    expect(counted).toEqual([]);
+  });
+
+  it('counts only its two links, and leaves any other address to the pages', async () => {
+    const known = releases();
+    const { counted, count } = counter();
+    for (const path of [
+      '/download/get',
+      '/download/get/',
+      '/download/get/linux',
+      '/download/get/MAC',
+      '/download/get/mac/',
+    ]) {
+      const response = await respond(follow(path), assets(false), known.newest, count);
+      expect(response.status, path).toBe(404);
+    }
+    expect(counted).toEqual([]);
     expect(known.asked).toEqual([]);
   });
 });

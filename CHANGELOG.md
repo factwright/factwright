@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- factwright.com counts downloads, and the sync server counts how much sync is used, so Factwright's maker can see how it's doing. Each download is counted by computer, version and when, and nothing about who downloaded it is kept, not even an IP address. Once a day, the sync server counts its accounts and sign-ins, and keeps only those totals. `pnpm --filter @factwright/site stats` shows both, with a token that can read analytics and nothing else. The app itself still reports nothing, and the privacy policy says all this, from October 15.
+
 ## 0.4.0 - 2026-10-15
 
 ### Added

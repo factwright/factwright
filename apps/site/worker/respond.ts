@@ -1,4 +1,11 @@
-import { type Computer, DOWNLOAD_PAGES, fillDownloadPage, type Release } from './releases.ts';
+import { COUNTED_DOWNLOADS, type Count, isFollowedLink } from './downloads.ts';
+import {
+  type Computer,
+  DOWNLOAD_PAGES,
+  fillDownloadPage,
+  installerUrl,
+  type Release,
+} from './releases.ts';
 
 /** The site's one address. www.factwright.com, and plain http, send visitors here. */
 export const HOME = 'factwright.com';
@@ -33,12 +40,13 @@ export type Releases = (computer: Computer) => Promise<Release | null>;
 /**
  * Answers a request for a page, with the headers above. Built scripts, styles and the template
  * previews skip the Worker (see wrangler.jsonc) and get their headers from public/_headers. The
- * download pages get the newest release filled in.
+ * download pages get the newest release filled in, and their links count each download.
  */
 export async function respond(
   request: Request,
   assets: Pick<Fetcher, 'fetch'>,
   releases: Releases = async () => null,
+  count: Count = () => {},
 ): Promise<Response> {
   const url = new URL(request.url);
   if (PUBLIC_HOSTS.has(url.hostname) && (url.hostname !== HOME || url.protocol !== 'https:')) {
@@ -47,14 +55,57 @@ export async function respond(
     url.port = '';
     return Response.redirect(url.toString(), 301);
   }
+  const counted = COUNTED_DOWNLOADS.get(url.pathname);
+  if (counted) return download(request, counted, releases, count);
   const found = await assets.fetch(request);
   const computers = DOWNLOAD_PAGES.get(url.pathname);
-  const response =
+  return secured(
     computers && found.status === 200
       ? await downloadPage(found, computers, releases)
-      : new Response(found.body, found);
+      : new Response(found.body, found),
+  );
+}
+
+/** Gives a response the Worker made the headers above. */
+function secured(response: Response): Response {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
   return response;
+}
+
+/**
+ * A download: counts it, then sends the browser on to the newest installer for the computer, or
+ * the one under the name that never changes when the release can't be told. Only a person's
+ * browser following the link is counted (downloads.ts), and a count that fails never stops the
+ * download. Browsers ask each time rather than keep the answer, so each download goes to the
+ * newest installer, and counts.
+ */
+async function download(
+  request: Request,
+  computer: Computer,
+  releases: Releases,
+  count: Count,
+): Promise<Response> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return secured(new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } }));
+  }
+  const release = await releases(computer);
+  if (request.method === 'GET' && isFollowedLink(request)) {
+    try {
+      count(computer, release?.version ?? null);
+    } catch {
+      // The download matters more than the count.
+    }
+  }
+  return secured(
+    new Response(null, {
+      status: 302,
+      headers: {
+        Location: installerUrl(computer, release),
+        'Cache-Control': 'no-store',
+        'X-Robots-Tag': 'noindex',
+      },
+    }),
+  );
 }
 
 /**

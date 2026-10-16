@@ -22,13 +22,10 @@ function open(page: string): Document {
 }
 
 /**
- * The installers, on the download site: the newest of each, under names that never change. The
- * download pages offer these, and the Worker points them at the newest version's own file.
+ * The links that start a download: the Worker counts each, then sends it on to the newest
+ * installer on the download site (worker/downloads.ts).
  */
-const DOWNLOADS = [
-  'https://downloads.factwright.com/Factwright.dmg',
-  'https://downloads.factwright.com/Factwright-Setup.exe',
-];
+const DOWNLOADS = ['/download/get/mac', '/download/get/windows'];
 
 /** The download pages: the one that picks, and one for each computer. */
 const DOWNLOAD_PAGES = ['/download', '/download/mac', '/download/windows'];
@@ -108,7 +105,8 @@ describe.each([
   'terms.html',
   '404.html',
 ])('%s', (page) => {
-  it('passes an accessibility check', async () => {
+  // Checking the home page takes a few seconds on CI's slower machines.
+  it('passes an accessibility check', { timeout: 30_000 }, async () => {
     const doc = open(page);
     // jsdom can't lay out a page, so contrast is checked from the tokens in @factwright/ui.
     const results = await axe.run(doc, { rules: { 'color-contrast': { enabled: false } } });
@@ -290,6 +288,19 @@ describe('the download pages', () => {
       expect(links.map((link) => link.getAttribute('href'))).toEqual([installer]);
       expect(links[0]?.closest('.get-again')?.textContent).toContain('Didn’t start?');
     }
+  });
+
+  it('keep search engines from following the links that count downloads', () => {
+    for (const page of ['download/mac.html', 'download/windows.html']) {
+      for (const link of open(page).querySelectorAll('a[href^="/download/get/"]')) {
+        expect(link.getAttribute('rel'), page).toBe('nofollow');
+      }
+    }
+    // Some crawlers take the first rule that matches, so the links' rule comes before Allow: /.
+    const rules = readFileSync(join(SITE, 'public', 'robots.txt'), 'utf8')
+      .split('\n')
+      .filter((rule) => /^(Allow|Disallow):/.test(rule));
+    expect(rules[0]).toBe('Disallow: /download/get/');
   });
 
   it('mark where the Worker says which version each offers', () => {

@@ -13,11 +13,27 @@ function theme(): Plugin {
 }
 
 /**
+ * In `pnpm dev` there's no Worker to count a download and send it on to the installer, so the
+ * download links answer with nothing, and the download page stays where it is.
+ */
+function downloadLinks(): Plugin {
+  return {
+    name: 'factwright-download-links',
+    configureServer(server) {
+      server.middlewares.use('/download/get', (_request, response) => {
+        response.statusCode = 204;
+        response.end();
+      });
+    },
+  };
+}
+
+/**
  * factwright.com: a static page, its download pages, its privacy policy and terms, and its "not
  * found" page, built on the app's design system.
  */
 export default defineConfig({
-  plugins: [theme()],
+  plugins: [theme(), downloadLinks()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

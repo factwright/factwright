@@ -184,6 +184,7 @@ The web view opens your job hunt in the browser, so the page that holds your key
 - Never your file names, the files' contents, what you track, or any key that opens them.
 - Its own logs keep only what it writes itself, such as a backup that failed. Cloudflare's log of every request is off, and a ticket to listen for changes says nothing about the account. Cloudflare, which runs the server, still sees each request's IP address and address as it passes through, as any host does.
 - Sizes and times aren't padded, so they show roughly how much you keep and when you change it.
+- Once a day it counts its accounts, the ones made the day before and in the last week and month, the ones used in the last week and month, and the sign-ins that haven't ended, in the app and in browsers. It keeps only those totals, for 3 months, in Cloudflare's Workers Analytics Engine, where Factwright's maker reads them with a token that can read analytics and nothing else (`apps/site/scripts/stats.ts`). No total names anyone, and the token can't reach the accounts database.
 
 ### What it can't prevent
 A server that misbehaved couldn't read or forge what the desktop app syncs. It could still delete it, hold back new changes, or keep serving an old version of a record. And because it sends the web view's code, it could change that code to read what you've synced, in a browser you've linked, while that code is open there.
@@ -231,6 +232,11 @@ If you lose every device and your recovery key, your data can't be recovered, by
   account it signs in to, whose job hunt is locked with keys only that account's devices hold. No
   one else's build can sign as Neatifai, though: the signing keys are secrets of this repository,
   which a fork's builds don't have, and which the release workflow gives to no pull request's run.
+- **Downloads are counted, not the people downloading.** factwright.com's download links go
+  through its Worker, which counts each download by computer and version, in Cloudflare's
+  Workers Analytics Engine, then sends the browser on to the installer. A count keeps nothing
+  about who downloaded, no IP address, browser or ID, only when, as Analytics Engine notes for
+  every count. Each is kept for 3 months. The installed app still reports nothing.
 - **No debugging the user's data.** Chromium, which the app is built on, can let another program
   drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
   user's own data folder, or any profile in it: only with a folder of its own, as the tests give

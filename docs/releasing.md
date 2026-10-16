@@ -32,7 +32,8 @@ repository's Releases page.
   - Each version's files keep their version in the name, and never change. Each goes up with its
     sha256, so a publish that stopped partway can be finished: running it again leaves the files
     that are up as they are, and puts up the rest.
-  - `Factwright.dmg` and `Factwright-Setup.exe` are always the newest. The website links to them.
+  - `Factwright.dmg` and `Factwright-Setup.exe` are always the newest. The website sends a
+    download to them when it can't tell the newest version.
   - `latest-mac.yml` and `latest.yml` say which version is newest, with each file's checksum.
     They're uploaded last, so nothing finds a version before its files are there.
 - **On GitHub.** Once both computers' installers are out, the version gets a release on the
@@ -217,9 +218,11 @@ within R2 asks for the source's tags. Copies that haven't updated yet stay where
 
 ## The website
 The download pages, `factwright.com/download/mac` and `/download/windows`, offer the newest
-version. The site's Worker reads it from `latest-mac.yml` and `latest.yml`, kept for a minute, and
-links to that version's own installer, so the pages are current within a minute of a release.
-`/download` goes on to the page for the visitor's computer, and the home page's buttons go to them.
+version. The site's Worker reads it from `latest-mac.yml` and `latest.yml`, kept for a minute, so
+the pages are current within a minute of a release. Their links go to `/download/get/mac` and
+`/download/get/windows`, where the Worker counts the download and sends it on to that version's own
+installer. `/download` goes on to the page for the visitor's computer, and the home page's buttons
+go to them.
 
-Until the first release there's no feed, so the pages link to `Factwright.dmg` and
-`Factwright-Setup.exe`, which don't exist yet. Publish 0.1.0 before the site goes online.
+Without a feed, the Worker sends a download to `Factwright.dmg` or `Factwright-Setup.exe`, which
+don't exist until the first release. Publish 0.1.0 before the site goes online.
