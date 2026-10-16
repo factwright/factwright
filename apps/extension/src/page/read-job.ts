@@ -387,16 +387,15 @@ export function readJobPage(
   /**
    * Who a posting's job data says is hiring. Workday's names the legal entity, with its code, as
    * "2100 NVIDIA USA" or "ADUS-Adobe Inc.": there, it's the site's own name, as the entity writes
-   * it ("NVIDIA" at nvidia.wd5.myworkdayjobs.com), or else the entity without its code.
+   * it ("NVIDIA" at nvidia.wd5.myworkdayjobs.com) but with a capital, or else the entity without
+   * its code.
    */
   function hiringOf(posting: Record<string, unknown>): string {
     const name = nameOf(posting.hiringOrganization);
     if (!/(^|\.)myworkdayjobs\.com$/.test(site)) return name;
     const tenant = site.split('.', 1)[0] ?? '';
-    return (
-      name.split(/[^\p{L}\p{N}]+/u).find((word) => word.toLowerCase() === tenant) ||
-      name.replace(ENTITY_CODE, '')
-    );
+    const own = name.split(/[^\p{L}\p{N}]+/u).find((word) => word.toLowerCase() === tenant);
+    return own ? own.charAt(0).toUpperCase() + own.slice(1) : name.replace(ENTITY_CODE, '');
   }
 
   /**

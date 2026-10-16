@@ -194,9 +194,10 @@ describe('Workday', () => {
       posted: '2026-10-16',
       source: 'structured',
     });
-    // The site's own name, as the entity writes it.
+    // The site's own name, as the entity writes it, with a capital.
     expect(hiring('ADUS-Northwind Inc.')).toBe('Northwind');
     expect(hiring('500 NORTHWIND Ireland Ltd.')).toBe('NORTHWIND');
+    expect(hiring('110 northwind.com Canada Corporation')).toBe('Northwind');
     // An entity without it, without its code.
     expect(hiring('IN01 Tidewater Graphics Bengaluru')).toBe('Tidewater Graphics Bengaluru');
     expect(hiring('US: Tidewater International Inc.')).toBe('Tidewater International Inc.');

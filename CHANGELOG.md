@@ -6,6 +6,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Fixed
 - Each account's daily cleanup on the sync server keeps to its schedule when a day's run fails: the next day's is planned and saved before each one runs, and a failure is written down. Before, a cleanup that failed several tries in a row, or never finished, stopped them until one of the account's devices synced a change, so an account no longer in use could keep earlier versions past the 90 days the privacy policy keeps them.
+- Save to Factwright reads job sites as they are today, checked in real Chrome and Firefox. It reads Indeed's job pages, and the job beside its search results, in Indeed's current layout, where before it found neither the job nor the posting. A Hacker News "Who is hiring?" post is read by itself, on its own page or as the post you selected text in, with the company and title its first line names and the post's own link, where before it took the whole page, with "News" as the company. Greenhouse job boards give the company's name as the board writes it, not as its address spells it, Workday gives the company without the legal entity's code ("NVIDIA", not "2100 NVIDIA USA"), and SmartRecruiters' postings leave out the buttons and links after them. These reach the stores with the extension's next version.
 
 ## 0.5.0 - 2026-10-16
 
