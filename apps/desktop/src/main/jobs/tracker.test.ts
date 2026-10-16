@@ -366,11 +366,98 @@ describe('calls', () => {
         kind: 'screen',
         onDate: '2026-10-13',
         atTime: '10:30',
+        minutes: null,
+        mode: null,
+        place: null,
+        people: [],
         state: 'scheduled',
         outcome: null,
         notes: null,
+        debrief: null,
       },
     ]);
+  });
+
+  it('keeps who a call is with, how long it is, how and where it happens, and how it went', () => {
+    tracker.addCall(
+      'acme--staff',
+      {
+        kind: 'panel',
+        onDate: '2026-10-20',
+        atTime: '14:00',
+        minutes: 60,
+        mode: 'video',
+        place: 'https://meet.example/abc',
+        people: [
+          { name: 'Dana Lee', role: 'Hiring manager' },
+          { name: 'Sam Ortiz', role: null },
+        ],
+        notes: 'System design',
+      },
+      AT,
+    );
+    const id = tracker.calls().get('acme--staff')?.[0]?.id ?? '';
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      minutes: 60,
+      mode: 'video',
+      place: 'https://meet.example/abc',
+      people: [
+        { name: 'Dana Lee', role: 'Hiring manager' },
+        { name: 'Sam Ortiz', role: null },
+      ],
+      notes: 'System design',
+      debrief: null,
+    });
+    tracker.updateCall(
+      id,
+      {
+        minutes: 90,
+        mode: 'onsite',
+        place: '1 Main St',
+        people: [{ name: 'Dana Lee', role: 'Hiring manager' }],
+        debrief: 'They asked about on-call.\nDana liked the migration story.',
+      },
+      AT,
+    );
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      minutes: 90,
+      mode: 'onsite',
+      place: '1 Main St',
+      people: [{ name: 'Dana Lee', role: 'Hiring manager' }],
+      debrief: 'They asked about on-call.\nDana liked the migration story.',
+      state: 'scheduled',
+    });
+  });
+
+  it('marks a call done once the user writes how it went, from its day on', () => {
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-14' }, AT);
+    const id = tracker.calls().get('acme--staff')?.[0]?.id ?? '';
+    // Before its day, words about it are notes ahead of it.
+    tracker.updateCall(id, { debrief: 'They’ll ask about on-call.' }, AT);
+    expect(tracker.calls().get('acme--staff')?.[0]?.state).toBe('scheduled');
+    const later: EditContext = { today: '2026-10-14', now: '2026-10-14T18:00:00.000Z' };
+    tracker.updateCall(id, { debrief: 'Went well.' }, later);
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      state: 'done',
+      debrief: 'Went well.',
+    });
+  });
+
+  it('marks a booked call done once the user says how it went', () => {
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-13' }, AT);
+    const id = tracker.calls().get('acme--staff')?.[0]?.id ?? '';
+    tracker.updateCall(id, { outcome: 'waiting' }, AT);
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      state: 'done',
+      outcome: 'waiting',
+    });
+    // Clearing it, or naming a state at the same time, leaves the state as the user set it.
+    tracker.updateCall(id, { state: 'scheduled', outcome: 'advanced' }, AT);
+    tracker.updateCall(id, { outcome: null }, AT);
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      state: 'scheduled',
+      outcome: null,
+    });
   });
 
   it('dates the move on the call’s own day when it’s logged afterward', () => {
@@ -501,7 +588,10 @@ describe('the database file', () => {
     // Sync fills the columns it gained from what other devices sent before, and reads every
     // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(
-      new Map([['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind']]]),
+      new Map([
+        ['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind']],
+        ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
+      ]),
     );
     expect(second.gainedTables()).toEqual(['notes']);
     second.close();
@@ -516,7 +606,12 @@ describe('the database file', () => {
     trackerAsOf(file, 5);
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['kind']]]));
+    expect(second.gainedColumns()).toEqual(
+      new Map([
+        ['jobs', ['kind']],
+        ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
+      ]),
+    );
     second.updateJob('acme--staff', { kind: 'developer' }, AT);
     expect(second.rows()[0]?.kind).toBe('developer');
     second.close();
@@ -539,7 +634,12 @@ describe('the database file', () => {
         .get('acme--staff')
         ?.map((note) => note.text),
     ).toEqual(['Screen went well']);
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason', 'kind']]]));
+    expect(second.gainedColumns()).toEqual(
+      new Map([
+        ['jobs', ['back_on', 'pass_reason', 'kind']],
+        ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
+      ]),
+    );
     expect(second.gainedTables()).toEqual(['notes']);
     second.close();
     // A tracker that's up to date, or new, made nothing.
@@ -564,7 +664,12 @@ describe('the database file', () => {
     before.close();
     const second = new Tracker(file);
     expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
-    expect(second.gainedColumns()).toEqual(new Map([['jobs', ['back_on', 'pass_reason', 'kind']]]));
+    expect(second.gainedColumns()).toEqual(
+      new Map([
+        ['jobs', ['back_on', 'pass_reason', 'kind']],
+        ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
+      ]),
+    );
     second.updateJob('acme--staff', { passReason: 'company' }, AT);
     expect(second.rows()[0]?.passReason).toBe('company');
     second.close();

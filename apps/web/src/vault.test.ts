@@ -331,6 +331,25 @@ describe('opening the job hunt in the browser', () => {
     expect(vault.asked.get(ACME_ID)).toEqual({ '2026-10-09-what-should-i-expect': answer });
   });
 
+  it('reads Claude’s prep sheet and thank-you notes for each of a job’s calls', async () => {
+    const prep = '# Prep: Acme Robotics\n\n## Five minutes before\n- Land the deploy story.';
+    const thanks = '## Sam Lee\n\n**Subject:** Thank you\n\nHi Sam,';
+    await pushFiles(sam.client, keys, {
+      ...FILES,
+      [`calls/${ACME_ID}/c1/prep.md`]: prep,
+      [`calls/${ACME_ID}/c1/thank-you.md`]: thanks,
+      // Only a call's own documents are read.
+      [`calls/${ACME_ID}/c1/scratch.md`]: 'Not one of Claude’s documents',
+    });
+    await pushRecords(sam.client, keys, ROWS);
+    const vault = await openVault(sam.client, keys);
+    expect(vault.calls.get(ACME_ID)).toEqual({ c1: { prep, thanks } });
+    expect(vault.jobs.find((job) => job.id === ACME_ID)?.callDocs).toEqual([
+      expect.objectContaining({ callId: 'c1', kind: 'prep' }),
+      expect.objectContaining({ callId: 'c1', kind: 'thanks' }),
+    ]);
+  });
+
   it('lists a job the files show before the tracker has it', async () => {
     await pushFiles(sam.client, keys, FILES);
     const vault = await openVault(sam.client, keys);

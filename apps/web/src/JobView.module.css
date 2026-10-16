@@ -99,6 +99,30 @@
   font-size: var(--fw-text-sm);
 }
 
+/* A call, with its details under its name, and Claude's work for it. */
+.call .itemNote {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.join {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}
+
+.callDocs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+}
+
 .file {
   display: flex;
   align-items: center;

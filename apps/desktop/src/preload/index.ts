@@ -33,6 +33,15 @@ const api: FactwrightApi = {
   updateNote: (noteId, changes) => ipcRenderer.invoke('notes:update', noteId, changes),
   deleteNote: (noteId) => ipcRenderer.invoke('notes:delete', noteId),
   onJobsChanged: (listener) => subscribe('jobs:changed', listener),
+  onOpenJob: (listener) => {
+    const stop = subscribe('jobs:open', listener);
+    // Says the window is listening, so a job waiting to open, such as from a reminder clicked
+    // while it was closed, comes now.
+    ipcRenderer.send('jobs:listening');
+    return stop;
+  },
+  callReminders: () => ipcRenderer.invoke('reminders:get'),
+  setCallReminders: (on) => ipcRenderer.invoke('reminders:set', on),
   jobExtras: (jobId) => ipcRenderer.invoke('jobs:extras', jobId),
   recordAnswer: (jobId, question, nth, text) =>
     ipcRenderer.invoke('jobs:record-answer', jobId, question, nth, text),

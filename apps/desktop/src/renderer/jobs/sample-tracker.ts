@@ -25,7 +25,7 @@ import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import type { Revision } from '../../shared/revision.ts';
-import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
+import { sampleCallDocs, sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
 
 /** A file the screens preview serves, as bytes. */
@@ -287,9 +287,14 @@ export function sampleTracker(
             kind: input.kind,
             onDate: input.onDate,
             atTime: input.atTime ?? null,
+            minutes: input.minutes ?? null,
+            mode: input.mode ?? null,
+            place: input.place ?? null,
+            people: input.people ?? [],
             state: past ? 'done' : 'scheduled',
             outcome: null,
             notes: input.notes ?? null,
+            debrief: null,
           };
           const calls = [...job.calls, call].sort((a, b) => a.onDate.localeCompare(b.onDate));
           const target = input.kind === 'other' ? undefined : CALL_STAGE[input.kind];
@@ -306,9 +311,19 @@ export function sampleTracker(
         (job) => job.calls.some((call) => call.id === callId),
         (job) => {
           const before = job.calls.find((call) => call.id === callId);
+          // Saying how a booked call went marks it done, as the tracker does.
+          const said =
+            Boolean(changes.outcome) ||
+            (Boolean(changes.debrief) && (before?.onDate ?? '') <= localDate());
+          const done =
+            changes.state === undefined && said && before?.state === 'scheduled'
+              ? { state: 'done' as const }
+              : {};
           const updated = {
             ...job,
-            calls: job.calls.map((call) => (call.id === callId ? { ...call, ...changes } : call)),
+            calls: job.calls.map((call) =>
+              call.id === callId ? { ...call, ...changes, ...done } : call,
+            ),
           };
           const rejects = changes.outcome === 'rejected' && before?.outcome !== 'rejected';
           return rejects && !settled(job) ? mark(updated, 'rejected', localDate()) : updated;
@@ -403,6 +418,7 @@ export function sampleTracker(
           .map((each) => each.shot)
           .filter((shot) => shot.path.startsWith(`${shotsFolder(jobId)}/`)),
         posting: null,
+        calls: sampleCallDocs(job),
       };
     },
     recordAnswer: async (jobId, question, nth, text) =>
@@ -512,7 +528,8 @@ export function sampleTracker(
     },
     saveFile: async (name, text) => {
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+      const type = name.endsWith('.ics') ? 'text/calendar' : 'text/csv';
+      link.href = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
       link.download = name;
       link.click();
       URL.revokeObjectURL(link.href);

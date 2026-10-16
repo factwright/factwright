@@ -17,6 +17,9 @@ export const RUN_SKILLS = [
 
 export type RunSkill = (typeof RUN_SKILLS)[number];
 
+/** The skill that drafts thank-you notes after one of a job's calls, for the user to send. */
+export const THANKS_SKILL = 'thank-you';
+
 /** The skill the jobs page runs to find new jobs, on no job in particular. */
 export const SEARCH_SKILL = 'job-search';
 
@@ -88,14 +91,16 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
 
 /**
  * What the window asks the app to run: a skill on one job, or one of the user's questions about
- * it, a job search (where the user picked, or wherever Claude asks), getting started (or only
- * its starting resumes), more facts, from an interview or from new files and notes, a template
- * in the look of a resume the user likes, or a revision of a job's resume for what its ATS X-ray
- * found.
+ * it, prep for one of its calls or practice for it, thank-you notes after one, a job search
+ * (where the user picked, or wherever Claude asks), getting started (or only its starting
+ * resumes), more facts, from an interview or from new files and notes, a template in the look of
+ * a resume the user likes, or a revision of a job's resume for what its ATS X-ray found.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
   | { skill: 'ask'; jobId: string; askId: string }
+  | { skill: 'interview-prep'; jobId: string; callId: string; practice?: true }
+  | { skill: typeof THANKS_SKILL; jobId: string; callId: string }
   | { skill: typeof SEARCH_SKILL; sources?: SearchSources }
   | { skill: typeof GET_STARTED_SKILL; mode?: 'resumes' }
   | { skill: typeof FACTS_SKILL; mode: 'interview' | 'new' }
@@ -132,3 +137,7 @@ export function scopeOf(task: RunTask | null | undefined): RunScope {
 /** The job a task runs on, or null for one on the whole job hunt. */
 export const taskJob = (task: RunTask | null): string | null =>
   task && 'jobId' in task ? task.jobId : null;
+
+/** The call a task works on, such as prep for it, or null for one on no call in particular. */
+export const taskCall = (task: RunTask | null): string | null =>
+  task && 'callId' in task ? task.callId : null;

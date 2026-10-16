@@ -6,6 +6,10 @@
 declare class URL {
   constructor(url: string, base?: string);
   readonly href: string;
+  readonly protocol: string;
+  readonly username: string;
+  readonly password: string;
+  readonly host: string;
   readonly hostname: string;
   readonly pathname: string;
   readonly search: string;

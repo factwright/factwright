@@ -1,7 +1,7 @@
 import { asksForCoverLetter, type Job, type JobStatus } from '@factwright/core';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { type RunSkill, type RunTask, taskJob } from '../../shared/runs.ts';
+import { type RunSkill, type RunTask, taskCall, taskJob } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
 import { QuestionsDialog } from './QuestionsDialog.tsx';
 import styles from './RunActions.module.css';
@@ -89,7 +89,11 @@ export function RunActions({
       <fieldset className={styles.actions}>
         <legend className={styles.legend}>Run with your Claude</legend>
         {RUN_ACTIONS.map(({ skill, label, why }) => {
-          const mine = run.task?.skill === skill && taskJob(run.task) === job.id;
+          // A run for one of the job's calls, such as its prep, has a button of its own there.
+          const mine =
+            run.task?.skill === skill &&
+            taskJob(run.task) === job.id &&
+            taskCall(run.task) === null;
           const running = mine && busy;
           const done = mine && run.phase === 'done';
           const [state, tone] = stateOf(job, skill, running, done);

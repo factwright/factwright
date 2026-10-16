@@ -23,6 +23,7 @@ export {
   LETTER_CLICHES,
   type LintConfig,
   lintLetter,
+  lintMessage,
   lintResume,
   readConfidentialTerms,
 } from './lint.ts';

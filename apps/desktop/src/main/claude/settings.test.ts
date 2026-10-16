@@ -27,6 +27,8 @@ describe('sessionSettings', () => {
       'mcp__factwright__about_you',
       'mcp__factwright__past_answers',
       'mcp__factwright__save_answer',
+      'mcp__factwright__save_call_prep',
+      'mcp__factwright__save_thank_you',
       'mcp__factwright__list_templates',
       'mcp__factwright__read_template',
       'mcp__factwright__save_fact',

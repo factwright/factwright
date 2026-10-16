@@ -6,7 +6,9 @@ import {
   CALL_STAGE,
   type Call,
   type CallKind,
+  type CallMode,
   type CallOutcome,
+  type CallPerson,
   type CallState,
   effectiveStatus,
   type JobStatus,
@@ -62,6 +64,66 @@ export const CALL_OUTCOME_LABELS: Readonly<Record<CallOutcome, string>> = {
   waiting: 'Waiting to hear',
   rejected: 'Rejected',
 };
+
+/** How each way a call happens reads on screen. */
+export const CALL_MODE_LABELS: Readonly<Record<CallMode, string>> = {
+  phone: 'Phone',
+  video: 'Video',
+  onsite: 'In person',
+};
+
+/** The lengths the call form offers, in minutes. Whole days are an onsite's. */
+export const CALL_LENGTHS: readonly number[] = [15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
+
+/** How long a call is, in a few words: "30 min", "1 hour", "1½ hours". */
+export function callLength(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (rest === 30) return `${hours}½ hours`;
+  if (rest === 0) return hours === 1 ? '1 hour' : `${hours} hours`;
+  return `${hours} h ${rest} min`;
+}
+
+/** A call's meeting link, as the app shows it: where it goes, in a few words, and the link. */
+export interface CallLink {
+  href: string;
+  /** Its site and path, such as "zoom.us/j/8812345678", without anything it asks for after. */
+  shown: string;
+  /** Whether the place is the link alone, so there's nothing else in it to show. */
+  alone: boolean;
+}
+
+/**
+ * The meeting link in a call's place, when there's one the app can open: the first https link in
+ * it, without the punctuation around it. Pasted from an invite, a place can say more, such as
+ * "https://zoom.us/j/8812345678 passcode 4321", which stays to read. Any other kind of link, or
+ * one with a name and password in it, is none.
+ */
+export function callLink(place: string | null): CallLink | null {
+  let token = place?.match(/https:\/\/[^\s<>"'()]+/i)?.[0] ?? '';
+  // Punctuation after it, as at the end of a sentence, is the sentence's. One at a time, from the
+  // end, so a long run of it never makes this slow.
+  while (token && '.,;:!?]'.includes(token.at(-1) ?? '')) token = token.slice(0, -1);
+  if (!place || !token) return null;
+  try {
+    const url = new URL(token);
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
+    const path = url.pathname.length > 1 ? url.pathname : '';
+    return { href: url.href, shown: `${url.host}${path}`, alone: place.trim() === token };
+  } catch {
+    return null;
+  }
+}
+
+/** Who a call is with, in a few words: "Priya Shah (Recruiter) and Dana Lee". */
+export function callPeople(people: readonly CallPerson[]): string {
+  const named = people.map((person) =>
+    person.role ? `${person.name} (${person.role})` : person.name,
+  );
+  if (named.length <= 2) return named.join(' and ');
+  return `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`;
+}
 
 /** How pressing something is: late, waiting on the user now, or good to know. */
 export type AttentionLevel = 'urgent' | 'action' | 'info';
@@ -191,11 +253,51 @@ export function fitTier(job: Pick<Job, 'fit' | 'search'>, score: number | null):
   return score >= 50 ? 'worth' : 'long';
 }
 
+/** A time of day as "HH:MM", some minutes later: past midnight, "24:30" and on. */
+function minutesLater(time: string, minutes: number): string {
+  const total = Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)) + minutes;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Whether a booked call is still to come: on a later day, or today and not started yet. Without
+ * the time of day, a call today is to come all day.
+ */
+const isAhead = (call: Call, today: string, clock?: string) =>
+  call.onDate > today || (call.onDate === today && !(clock && call.atTime && call.atTime <= clock));
+
+/**
+ * Whether a booked call is over: on an earlier day, or today and past its end, an hour after it
+ * starts unless its length says otherwise.
+ */
+const isOver = (call: Call, today: string, clock?: string) =>
+  call.onDate < today ||
+  (call.onDate === today &&
+    Boolean(clock && call.atTime && minutesLater(call.atTime, call.minutes ?? 60) <= clock));
+
+/**
+ * When the time of day next matters to a job's calls today: the start or end of one still to
+ * come, as "HH:MM", or null when nothing changes before midnight.
+ */
+export function nextCallMoment(
+  calls: readonly Call[],
+  today: string,
+  clock: string,
+): string | null {
+  const moments = calls
+    .filter((call) => call.state === 'scheduled' && call.onDate === today && call.atTime)
+    .flatMap((call) => [call.atTime ?? '', minutesLater(call.atTime ?? '', call.minutes ?? 60)])
+    .filter((moment) => moment > clock && moment < '24:00')
+    .sort();
+  return moments[0] ?? null;
+}
+
 function attentionFor(
   job: Job,
   progress: Omit<JobProgress, 'attention'>,
   calls: readonly Call[],
   today: string,
+  clock?: string,
 ): Attention | null {
   if (job.archived) return null;
   const { status, nextCall } = progress;
@@ -207,7 +309,7 @@ function attentionFor(
       text: `${late ? 'Overdue' : 'Due today'}: ${step}`,
     };
   }
-  const unlogged = calls.find((call) => call.state === 'scheduled' && call.onDate < today);
+  const unlogged = calls.find((call) => call.state === 'scheduled' && isOver(call, today, clock));
   if (unlogged) {
     return {
       level: 'action',
@@ -215,8 +317,14 @@ function attentionFor(
     };
   }
   if (nextCall && daysBetween(today, nextCall.onDate) <= 3) {
-    const text = `${CALL_KIND_LABELS[nextCall.kind]} ${callWhen(nextCall, today)}`;
-    return { level: 'info', text };
+    const when = callWhen(nextCall, today);
+    // Two days out, a call with no prep sheet yet needs the user: time to get ready for it.
+    const prepped = job.callDocs.some((doc) => doc.callId === nextCall.id && doc.kind === 'prep');
+    if (!prepped && daysBetween(today, nextCall.onDate) <= 2) {
+      const kind = CALL_KIND_LABELS[nextCall.kind].toLowerCase();
+      return { level: 'action', text: `Prep for the ${kind} ${when}` };
+    }
+    return { level: 'info', text: `${CALL_KIND_LABELS[nextCall.kind]} ${when}` };
   }
   const daysSince = (date: string | null) => (date ? daysBetween(date, today) : null);
   if (status === 'applied') {
@@ -245,8 +353,11 @@ function attentionFor(
   return null;
 }
 
-/** Where a job stands today. */
-export function jobProgress(job: Job, today: string): JobProgress {
+/**
+ * Where a job stands today. With the time of day, as "HH:MM", a call today is next only until it
+ * starts, and asks how it went once it's over.
+ */
+export function jobProgress(job: Job, today: string, clock?: string): JobProgress {
   const status = effectiveStatus(job.status, job.stage);
   const calls = job.calls.filter((call) => call.state !== 'canceled');
   const ended = [status, ...job.statusLog.map((change) => change.status)].some((each) =>
@@ -278,9 +389,10 @@ export function jobProgress(job: Job, today: string): JobProgress {
     score,
     tier: fitTier(job, score),
     lastActivity: dates.sort().at(-1) ?? job.firstSeen,
-    nextCall: calls.find((call) => call.state === 'scheduled' && call.onDate >= today) ?? null,
+    nextCall:
+      calls.find((call) => call.state === 'scheduled' && isAhead(call, today, clock)) ?? null,
   };
-  return { ...progress, attention: attentionFor(job, progress, calls, today) };
+  return { ...progress, attention: attentionFor(job, progress, calls, today, clock) };
 }
 
 /** Whether a job belongs in a view of the jobs page, by the status it shows. */

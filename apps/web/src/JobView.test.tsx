@@ -29,6 +29,11 @@ const ACME = job({
       kind: 'screen',
       onDate: '2026-10-14',
       atTime: '10:30',
+      minutes: null,
+      mode: null,
+      place: null,
+      people: [],
+      debrief: null,
       state: 'scheduled',
       outcome: null,
       notes: 'With Sam, on Zoom',
@@ -95,6 +100,87 @@ describe('a job on the phone', () => {
     expect(posting.getAttribute('href')).toBe('https://jobs.ashbyhq.com/acme/7f3a');
     expect(posting.getAttribute('rel')).toBe('noopener noreferrer');
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('shows each call with who it’s with, how to join, and Claude’s prep for it', async () => {
+    const { keys, vault } = await setUp();
+    const [screenCall] = ACME.calls;
+    if (!screenCall) throw new Error('No call');
+    const detailed = {
+      ...ACME,
+      calls: [
+        {
+          ...screenCall,
+          minutes: 30,
+          mode: 'video' as const,
+          place: 'https://meet.example.com/acme',
+          people: [{ name: 'Dana Lee', role: 'Hiring manager' }],
+        },
+      ],
+    };
+    const calls = new Map([
+      [
+        ACME.id,
+        { c1: { prep: '# Prep: Acme\n\n## Five minutes before\n- Land the deploy story.' } },
+      ],
+    ]);
+    const { container } = render(
+      <JobView job={detailed} vault={{ ...vault, calls }} keys={keys} today={TODAY} />,
+    );
+    const call = within(section('Calls and interviews'));
+    expect(call.getByText('Recruiter screen').parentElement?.textContent).toContain(
+      'Wednesday at 10:30 AM · 30 min · Video',
+    );
+    expect(call.getByText('With Dana Lee (Hiring manager)')).toBeTruthy();
+    const join = call.getByRole('link', { name: 'Join the call' });
+    expect(join.getAttribute('href')).toBe('https://meet.example.com/acme');
+    expect(join.getAttribute('rel')).toBe('noopener noreferrer');
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.click(
+      call.getByRole('button', { name: 'Open the prep sheet for the recruiter screen' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Prep sheet: Recruiter screen' });
+    expect(within(dialog).getByRole('heading', { name: 'Five minutes before' })).toBeTruthy();
+  });
+
+  it('keeps a passcode after a call’s link to read, beside Join', async () => {
+    const { keys, vault } = await setUp();
+    const [screenCall] = ACME.calls;
+    if (!screenCall) throw new Error('No call');
+    const place = 'https://zoom.us/j/8812345678 passcode 4321';
+    render(
+      <JobView
+        job={{ ...ACME, calls: [{ ...screenCall, place }] }}
+        vault={vault}
+        keys={keys}
+        today={TODAY}
+      />,
+    );
+    const call = within(section('Calls and interviews'));
+    expect(call.getByRole('link', { name: 'Join the call' }).getAttribute('href')).toBe(
+      'https://zoom.us/j/8812345678',
+    );
+    expect(call.getByText(place)).toBeTruthy();
+  });
+
+  it('never makes a link of a call’s place unless it’s https', async () => {
+    const { keys, vault } = await setUp();
+    const [screenCall] = ACME.calls;
+    if (!screenCall) throw new Error('No call');
+    for (const place of ['javascript:alert(1)', 'http://meet.example.com/acme', '1 Main St']) {
+      render(
+        <JobView
+          job={{ ...ACME, calls: [{ ...screenCall, place }] }}
+          vault={vault}
+          keys={keys}
+          today={TODAY}
+        />,
+      );
+      const call = within(section('Calls and interviews'));
+      expect(call.queryByRole('link')).toBeNull();
+      expect(call.getByText(place)).toBeTruthy();
+      cleanup();
+    }
   });
 
   it('says which kind of job it is, for a user who wants more than one', async () => {

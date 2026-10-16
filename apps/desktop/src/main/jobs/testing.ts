@@ -4,12 +4,17 @@ import { DatabaseSync } from 'node:sqlite';
  * What each of the tracker's versions after the first added, in order: the first is version 2's.
  * Add one for each step added to the tracker's migrations.
  */
-const ADDED: readonly ({ table: string } | { jobColumns: readonly string[] })[] = [
+const ADDED: readonly (
+  | { table: string }
+  | { jobColumns: readonly string[] }
+  | { callColumns: readonly string[] }
+)[] = [
   { jobColumns: ['questions'] },
   { jobColumns: ['sent', 'asks'] },
   { table: 'notes' },
   { jobColumns: ['back_on', 'pass_reason'] },
   { jobColumns: ['kind'] },
+  { callColumns: ['minutes', 'mode', 'place', 'people', 'debrief'] },
 ];
 
 /**
@@ -30,6 +35,8 @@ export function trackerAsOf(file: string, version: number, { keepTables = false 
       if (!added) continue;
       if ('table' in added) {
         if (!keepTables) db.exec(`DROP TABLE ${added.table}`);
+      } else if ('callColumns' in added) {
+        for (const column of added.callColumns) db.exec(`ALTER TABLE calls DROP COLUMN ${column}`);
       } else {
         for (const column of added.jobColumns) db.exec(`ALTER TABLE jobs DROP COLUMN ${column}`);
       }

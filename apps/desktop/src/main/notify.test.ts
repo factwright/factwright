@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestView } from '../shared/sync.ts';
-import { notifyIfAway, notifyOfRequests } from './notify.ts';
+import { notifyIfAway, notifyOfRequests, remindOfCall } from './notify.ts';
 import { fakeMainWindow } from './testing.ts';
 
 /** The notifications shown, which the tests click as the user does. */
@@ -11,6 +11,9 @@ const { shown } = vi.hoisted(() => ({
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   class Notification extends EventEmitter {
+    static isSupported() {
+      return true;
+    }
     readonly options: Record<string, unknown>;
     constructor(options: Record<string, unknown>) {
       super();
@@ -97,5 +100,24 @@ describe('notifyOfRequests', () => {
     window.show();
     notifyOfRequests([request('looking-1')], window);
     expect(shown).toHaveLength(0);
+  });
+});
+
+describe('remindOfCall', () => {
+  it('shows the call and whether its prep is ready, and opens its job when clicked', () => {
+    const open = vi.fn();
+    const reminder = {
+      jobId: 'acme--staff',
+      callId: 'acme-panel',
+      title: 'Panel interview with Acme at 2:00 PM',
+      body: 'Your prep sheet is ready. Open Factwright to read it.',
+    };
+    remindOfCall(reminder, open);
+    expect(shown.map((notification) => notification.options)).toEqual([
+      { title: reminder.title, body: reminder.body },
+    ]);
+    expect(open).not.toHaveBeenCalled();
+    shown[0]?.emit('click');
+    expect(open).toHaveBeenCalledWith('acme--staff');
   });
 });

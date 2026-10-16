@@ -1,5 +1,6 @@
 import {
   byJob,
+  type CallDocKind,
   type CollectedJob,
   callOrder,
   changeOrder,
@@ -11,6 +12,7 @@ import {
   type KindName,
   kindNamesIn,
   noteOrder,
+  readAllCallDocs,
   readJobExtras,
   readRecords,
   type StoredRow,
@@ -55,6 +57,8 @@ export interface Vault {
   docs: Map<string, JobDocs>;
   /** Claude's answers to the user's questions about each job, by the question's ID. */
   asked: Map<string, Record<string, string>>;
+  /** Claude's prep sheets and thank-you notes for each job's calls, by the call's ID. */
+  calls: Map<string, Record<string, Partial<Record<CallDocKind, string>>>>;
   /** The tracker's rows as stored, by table, for downloading a copy. */
   rows: Record<string, StoredRow[]>;
   /** Records that wouldn't open: locked with another key, or damaged. */
@@ -72,10 +76,11 @@ const PAGE_CODE_LENGTH = 16;
 
 /**
  * The files the job list is read from: each job's notes and cover letter, the logs, job searches,
- * and Claude's answers to the user's questions about a job.
+ * Claude's answers to the user's questions about a job, and its prep sheets and thank-you notes
+ * for the job's calls.
  */
 const READ_FOR_JOBS =
-  /^(applications\/[^/]+\/(?:[^/]+\.md|cover-letter\.json)|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json|asked\/[^/]+\/[^/]+\.md)$/;
+  /^(applications\/[^/]+\/(?:[^/]+\.md|cover-letter\.json)|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json|asked\/[^/]+\/[^/]+\.md|calls\/[^/]+\/[^/]+\/(?:prep|thank-you)\.md)$/;
 
 /** The kinds of job the user wants, as the desktop app reads them, or none from a broken file. */
 function readKinds(text: string | null): KindName[] {
@@ -222,8 +227,10 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
   const history = byJob([...(rows.status_log ?? [])].sort(changeOrder), trackedChange);
   const notes = byJob([...(rows.notes ?? [])].sort(noteOrder), trackedNote);
   const docs = new Map(collected.map((job) => [job.id, job.docs]));
-  const jobs = jobList(all, found, { calls, history, notes });
-  const asked = new Map(jobs.map((job) => [job.id, readJobExtras(reader, job.id).asked]));
+  const jobs = jobList(all, found, { calls, history, notes, callDocs: readAllCallDocs(reader) });
+  const extras = new Map(jobs.map((job) => [job.id, readJobExtras(reader, job.id)]));
+  const asked = new Map([...extras].map(([id, each]) => [id, each.asked]));
+  const callTexts = new Map([...extras].map(([id, each]) => [id, each.calls]));
   const pages = new Map(
     await Promise.all(
       jobs.map(
@@ -238,6 +245,7 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
     files,
     docs,
     asked,
+    calls: callTexts,
     rows,
     unreadable,
     pages,

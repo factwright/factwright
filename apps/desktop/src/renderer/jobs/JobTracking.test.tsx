@@ -38,7 +38,7 @@ function panel(job: Job, result: EditResult = { ok: true }) {
     updateNote: answer,
     deleteNote: answer,
     jobDocs: vi.fn(async () => null),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
     openFile: answer,
   } as unknown as FactwrightApi;
   const shown = (each: Job) => (
@@ -71,66 +71,6 @@ describe('the next step', () => {
     await userEvent.click(screen.getByRole('textbox', { name: 'Next step' }));
     await userEvent.tab();
     expect(api.updateJob).not.toHaveBeenCalled();
-  });
-});
-
-describe('calls and interviews', () => {
-  it('logs a call, saying where it moves the job', async () => {
-    const { api } = panel(byCompany('Harbor & Pine'));
-    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
-    const form = screen.getByRole('form', { name: 'Log a call' });
-    expect(within(form).getByText('Logging it moves the job to Screen.')).toBeTruthy();
-    await userEvent.selectOptions(
-      within(form).getByRole('combobox', { name: 'Kind' }),
-      'Final round',
-    );
-    expect(within(form).getByText('Logging it moves the job to Interview.')).toBeTruthy();
-    await userEvent.type(
-      within(form).getByRole('textbox', { name: 'Notes, if any' }),
-      'With the CTO',
-    );
-    await userEvent.click(within(form).getByRole('button', { name: 'Log call' }));
-    expect(api.addCall).toHaveBeenCalledWith('harbor-and-pine--senior-engineer-payments', {
-      kind: 'final',
-      onDate: TODAY,
-      atTime: null,
-      notes: 'With the CTO',
-    });
-    expect(screen.queryByRole('form', { name: 'Log a call' })).toBeNull();
-  });
-
-  it('says when a call won’t change the status', async () => {
-    panel(byCompany('Northwind Labs'));
-    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Kind' }),
-      'Recruiter screen',
-    );
-    expect(screen.getByText('The job stays at Interview.')).toBeTruthy();
-  });
-
-  it('changes and deletes a logged call', async () => {
-    const { api } = panel(byCompany('Northwind Labs'));
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'How the panel interview went' }),
-      'Moved forward',
-    );
-    expect(api.updateCall).toHaveBeenCalledWith('northwind-panel', { outcome: 'advanced' });
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Where the panel interview stands' }),
-      'Done',
-    );
-    expect(api.updateCall).toHaveBeenLastCalledWith('northwind-panel', { state: 'done' });
-    await userEvent.click(screen.getByRole('button', { name: 'Delete the panel interview' }));
-    expect(api.deleteCall).toHaveBeenCalledWith('northwind-panel');
-  });
-
-  it('says why a call couldn’t be saved', async () => {
-    panel(byCompany('Harbor & Pine'), { ok: false, message: 'That job isn’t here anymore.' });
-    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Log call' }));
-    expect((await screen.findByRole('alert')).textContent).toBe('That job isn’t here anymore.');
-    expect(screen.getByRole('form', { name: 'Log a call' })).toBeTruthy();
   });
 });
 
@@ -348,9 +288,14 @@ describe('progress', () => {
           kind: 'screen',
           onDate: '2020-01-02',
           atTime: null,
+          minutes: null,
+          mode: null,
+          place: null,
+          people: [],
           state: 'done',
           outcome: null,
           notes: null,
+          debrief: null,
         },
       ],
     });
@@ -374,17 +319,61 @@ describe('progress', () => {
   });
 });
 
-describe('activity', () => {
-  it('lists what happened, newest first, once opened', async () => {
+describe('history', () => {
+  it('lists what happened with the company, newest first, and who the user met, once opened', async () => {
     panel(byCompany('Northwind Labs'));
-    const toggle = screen.getByRole('button', { name: /^Activity/ });
+    const toggle = screen.getByRole('button', { name: /^History/ });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('1 person met');
     await userEvent.click(toggle);
-    const activity = screen.getByRole('region', { name: 'Activity' });
-    expect(within(activity).getByText('Marked Interview')).toBeTruthy();
-    expect(within(activity).getByText('Fit check: Strong 86')).toBeTruthy();
-    // A call still to come isn't history yet.
-    expect(within(activity).queryByText('Panel interview: scheduled')).toBeNull();
+    const history = screen.getByRole('region', { name: 'History' });
+    expect(within(history).getByText('Marked Interview')).toBeTruthy();
+    expect(within(history).getByText('Fit check: Strong 86')).toBeTruthy();
+    expect(
+      within(history).getByText('Recruiter screen with Priya Shah (Recruiter): moved forward'),
+    ).toBeTruthy();
+    // The user's notes are part of it, by their first line.
+    expect(
+      within(history).getByText(
+        'Screen with Priya, the recruiter. Team of six, mostly Go. She liked the deploy pipeline story.',
+      ),
+    ).toBeTruthy();
+    // A call still to come isn't history yet, and nor is anyone met only on it.
+    expect(within(history).queryByText(/^Panel interview/)).toBeNull();
+    const people = within(history)
+      .getAllByRole('listitem')
+      .filter((item) => item.closest('ul'));
+    expect(people.map((item) => item.textContent)).toEqual([
+      expect.stringMatching(/^Priya ShahRecruiterRecruiter screen, /),
+    ]);
+  });
+
+  it('adds the user’s other jobs at the company, each line with its role', async () => {
+    const job = byCompany('Northwind Labs');
+    const other: Job = {
+      ...byCompany('Tidewater Analytics'),
+      id: 'northwind-labs--staff-engineer',
+      company: 'Northwind Labs',
+      companyKey: job.companyKey,
+      role: 'Staff Engineer',
+      calls: [],
+      notes: [],
+      statusLog: [{ id: 'other-applied', status: 'applied', at: '2025-03-02' }],
+      events: [],
+    };
+    render(
+      <JobPanel
+        row={jobRows([job], TODAY)[0] ?? null}
+        api={{ jobDocs: vi.fn(async () => null), jobExtras: vi.fn(async () => null) } as never}
+        today={TODAY}
+        onClose={() => {}}
+        related={[other]}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^History/ }));
+    const history = screen.getByRole('region', { name: 'History' });
+    const last = within(history).getAllByRole('listitem').at(-1);
+    expect(last?.textContent).toMatch(/Staff Engineer: Marked Applied$/);
   });
 });
 
@@ -406,7 +395,10 @@ describe('archiving', () => {
 describe('accessibility', () => {
   it('finds no problems in the panel with every tracking part open', async () => {
     const { container } = panel(byCompany('Northwind Labs'));
-    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add a call' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change the panel interview' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete the recruiter screen' }));
+    await userEvent.click(screen.getByRole('button', { name: /^History/ }));
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
   });

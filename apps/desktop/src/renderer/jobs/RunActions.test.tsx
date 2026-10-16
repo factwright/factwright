@@ -66,6 +66,18 @@ function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunCon
 
 const action = (name: RegExp) => screen.getByRole('button', { name });
 
+describe('RunActions for a job with calls', () => {
+  it('leaves Interview prep alone while Claude preps for one of the job’s calls', () => {
+    const task: RunTask = { skill: 'interview-prep', jobId: job.id, callId: 'call-1' };
+    render(
+      <RunActions job={job} status="screen" run={controls('working', task)} api={apiStub()} />,
+    );
+    const prep = screen.getByRole('button', { name: /^Interview prep/ });
+    expect(prep.textContent).not.toContain('Running');
+    expect((prep as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe('RunActions', () => {
   it('offers each skill, with what it does, and suggests the next step', async () => {
     const { container } = render(
@@ -286,6 +298,7 @@ describe('the application questions', () => {
     vi.mocked(api.jobExtras).mockResolvedValue({
       asked: {},
       posting: null,
+      calls: {},
       shots: [
         { path, name: 'form-2026-10-11-1.png', kind: 'form', ask: null, size: 8, modified: '' },
       ],

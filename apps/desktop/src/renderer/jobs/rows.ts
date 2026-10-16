@@ -167,9 +167,11 @@ export function jobRows(
   jobs: readonly Job[],
   today: string,
   kinds: readonly KindName[] = [],
+  /** The time of day, as "HH:MM", so a call today stops being next once it starts. */
+  clock?: string,
 ): JobRow[] {
   return jobs.map((job) => {
-    const progress = jobProgress(job, today);
+    const progress = jobProgress(job, today, clock);
     const id = kinds.length > 1 ? kindOfJob(job, kinds) : null;
     const kind = kinds.find((each) => each.id === id) ?? null;
     const searchText = [

@@ -118,12 +118,48 @@ describe('parseNewCall', () => {
     });
   });
 
+  it('reads who a call is with, how long it is, how and where, trimmed', () => {
+    expect(
+      parseNewCall({
+        kind: 'panel',
+        onDate: '2026-10-20',
+        minutes: 60,
+        mode: 'video',
+        place: ' https://meet.example.com/x ',
+        people: [
+          { name: ' Dana Lee ', role: ' Hiring manager ' },
+          { name: 'Sam Ortiz', role: null },
+          // A row left empty, or with only a role, is left out.
+          { name: ' ', role: '' },
+        ],
+      }),
+    ).toEqual({
+      kind: 'panel',
+      onDate: '2026-10-20',
+      minutes: 60,
+      mode: 'video',
+      place: 'https://meet.example.com/x',
+      people: [
+        { name: 'Dana Lee', role: 'Hiring manager' },
+        { name: 'Sam Ortiz', role: null },
+      ],
+    });
+  });
+
   it.each([
     { onDate: '2026-10-13' },
     { kind: 'screen' },
     { kind: 'chat', onDate: '2026-10-13' },
     { kind: 'screen', onDate: '2026-10-13', atTime: '9:30' },
     { kind: 'screen', onDate: '2026-10-13', atTime: '24:00' },
+    { kind: 'screen', onDate: '2026-10-13', minutes: 0 },
+    { kind: 'screen', onDate: '2026-10-13', minutes: 30.5 },
+    { kind: 'screen', onDate: '2026-10-13', minutes: 24 * 60 + 1 },
+    { kind: 'screen', onDate: '2026-10-13', mode: 'carrier pigeon' },
+    { kind: 'screen', onDate: '2026-10-13', people: [{ name: 'Dana', email: 'd@x.com' }] },
+    { kind: 'screen', onDate: '2026-10-13', people: [{ name: 42 }] },
+    { kind: 'screen', onDate: '2026-10-13', people: 'Dana Lee' },
+    { kind: 'screen', onDate: '2026-10-13', place: 'x'.repeat(LIMITS.place + 1) },
   ])('refuses %j', (value) => {
     expect(parseNewCall(value)).toBeNull();
   });
@@ -136,6 +172,17 @@ describe('parseCallChanges', () => {
       outcome: 'advanced',
       atTime: null,
     });
+  });
+
+  it('takes a call that two devices’ changes made longer than one lets it get', () => {
+    const many = Array.from({ length: LIMITS.people + 3 }, (_, i) => ({
+      name: `Person ${i}`,
+      role: null,
+    }));
+    expect(parseCallChanges({ people: many })?.people).toHaveLength(LIMITS.people + 3);
+    const merged = 'x'.repeat(LIMITS.debrief + 100);
+    expect(parseCallChanges({ debrief: merged })?.debrief).toBe(merged);
+    expect(parseCallChanges({ debrief: 'x'.repeat(LIMITS.debrief * 4 + 1) })).toBeNull();
   });
 
   it.each([{ state: 'later' }, { outcome: 'great' }, { onDate: null }])('refuses %j', (value) => {

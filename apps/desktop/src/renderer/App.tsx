@@ -1,4 +1,11 @@
-import { JOB_VIEWS, type JobView, type KindName, LIVE_STATUSES } from '@factwright/core';
+import {
+  JOB_VIEWS,
+  type JobView,
+  type KindName,
+  LIVE_STATUSES,
+  sameCompany,
+  viewOf,
+} from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
@@ -11,6 +18,7 @@ import {
   GET_STARTED_SKILL,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
+  THANKS_SKILL,
   taskJob,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
@@ -38,8 +46,9 @@ import {
   visibleRows,
   withKnownKind,
 } from './jobs/rows.ts';
+import { useCallReminders } from './jobs/useCallReminders.ts';
 import { useJobs } from './jobs/useJobs.ts';
-import { useToday } from './jobs/useToday.ts';
+import { useCallClock, useToday } from './jobs/useToday.ts';
 import { WithdrawDialog } from './jobs/WithdrawDialog.tsx';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
@@ -79,10 +88,17 @@ export function App({ api }: { api: FactwrightApi }) {
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
   const today = useToday();
+  const listed = useMemo(() => (jobs.state === 'ready' ? jobs.list.jobs : []), [jobs]);
+  const clock = useCallClock(listed, today);
   const update = useUpdates(api);
   const levels = useLevelChoices(api);
   const profiles = useProfiles(api);
+  const reminders = useCallReminders(api);
   const profile = about.profile;
+  // The user, by name and email, whom an invite for a call names among its people.
+  const myName = profile?.answers.you.name ?? '';
+  const myEmail = profile?.answers.you.email ?? '';
+  const me = useMemo(() => ({ name: myName, email: myEmail }), [myName, myEmail]);
   // The kinds of job the user wants, by id and name, when there's more than one. They change
   // only when a kind is added, renamed or removed, so the rows aren't made again as they type.
   const kindKey = JSON.stringify(
@@ -92,8 +108,8 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
   const rows = useMemo(
-    () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds) : []),
-    [jobs, today, kinds],
+    () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds, clock) : []),
+    [jobs, today, kinds, clock],
   );
   // The view the user last picked, or, the first time, one chosen once the jobs load.
   const [chosen, setFilter] = useState<ListFilter>(() => ({
@@ -109,6 +125,10 @@ export function App({ api }: { api: FactwrightApi }) {
     setFilter(next);
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A job the app asked to open, such as from a call's reminder the user clicked, until the jobs
+  // are in to open it among.
+  const [opening, setOpening] = useState<string | null>(null);
+  useEffect(() => api.onOpenJob(setOpening), [api]);
   // Whether a picked job has the window to itself, kept for next time.
   const [expanded, setExpanded] = usePref('panel.expanded', false, isBoolean);
   const [dialog, setDialog] = useState<
@@ -197,6 +217,18 @@ export function App({ api }: { api: FactwrightApi }) {
     setFilter((current) => ({ ...current, view: startingView(rows) }));
   }, [jobs.state, rows]);
 
+  // A job to open shows on the jobs page, in the list in its own view as well as in the panel.
+  useEffect(() => {
+    if (!opening || jobs.state !== 'ready') return;
+    setOpening(null);
+    const row = rows.find((each) => each.job.id === opening);
+    if (!row) return;
+    setPicked('jobs');
+    setFilter((current) => filterForAdded(current, row.progress.status, row.kind?.id ?? null));
+    writePref(VIEW_PREF, viewOf(row.progress.status));
+    setSelectedId(row.job.id);
+  }, [opening, jobs.state, rows]);
+
   // ⌘K on a Mac, Ctrl K elsewhere, jumps to the search box.
   useEffect(() => {
     const jump = (event: KeyboardEvent) => {
@@ -246,6 +278,16 @@ export function App({ api }: { api: FactwrightApi }) {
   }, [titled]);
   const openJobs = rows.filter((row) => !row.job.archived).length;
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
+  // The user's other jobs at the same company, for the history with it.
+  const related = useMemo(
+    () =>
+      selected
+        ? rows
+            .map((row) => row.job)
+            .filter((job) => job.id !== selected.job.id && sameCompany(job, selected.job))
+        : [],
+    [rows, selected],
+  );
   // The list as it shows, for moving from job to job while one has the window to itself.
   const shown = useMemo(() => visibleRows(rows, filter), [rows, filter]);
   // The list's order when a job took the window, to step through. It holds still as jobs get
@@ -275,7 +317,13 @@ export function App({ api }: { api: FactwrightApi }) {
       ? 'Your question'
       : task?.skill === REVISE_SKILL
         ? 'Resume revision'
-        : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+        : task?.skill === THANKS_SKILL
+          ? 'Thank-you notes'
+          : task && 'callId' in task
+            ? 'practice' in task && task.practice
+              ? 'Practice'
+              : 'Call prep'
+            : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'
@@ -441,6 +489,9 @@ export function App({ api }: { api: FactwrightApi }) {
                   at >= 0 && { navigation: { index: at + 1, count: order.length, onStep: step } })}
                 {...(ready && { run: runControls })}
                 onAccepted={offerAccepted}
+                related={related}
+                me={me}
+                reminders={reminders ?? undefined}
               />
             )}
           </div>

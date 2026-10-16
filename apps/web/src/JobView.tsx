@@ -2,7 +2,11 @@ import {
   applicationAnswers,
   askAnswer,
   CALL_KIND_LABELS,
+  CALL_MODE_LABELS,
   CALL_OUTCOME_LABELS,
+  callLength,
+  callLink,
+  callPeople,
   callWhen,
   fileSize,
   type Job,
@@ -80,6 +84,7 @@ export function JobView({
   const letter = readLetterText(docs.letter);
   const built = [...job.files, ...job.letters];
   const asked = vault.asked.get(job.id) ?? {};
+  const callTexts = vault.calls.get(job.id) ?? {};
   const kind =
     vault.kinds.length > 1
       ? vault.kinds.find((each) => each.id === kindOfJob(job, vault.kinds))
@@ -244,13 +249,74 @@ export function JobView({
             Calls and interviews
           </h2>
           <ul className={styles.items}>
-            {job.calls.map((call) => (
-              <li key={call.id}>
-                <strong>{CALL_KIND_LABELS[call.kind]}</strong> {callWhen(call, today)}
-                {call.outcome && ` · ${CALL_OUTCOME_LABELS[call.outcome]}`}
-                {call.notes && <span className={styles.itemNote}>{call.notes}</span>}
-              </li>
-            ))}
+            {job.calls.map((call) => {
+              const link = callLink(call.place);
+              const docs = callTexts[call.id] ?? {};
+              const name = CALL_KIND_LABELS[call.kind];
+              const details = [
+                callWhen(call, today),
+                call.minutes && callLength(call.minutes),
+                call.mode && CALL_MODE_LABELS[call.mode],
+                call.state === 'canceled'
+                  ? 'Canceled'
+                  : call.outcome && CALL_OUTCOME_LABELS[call.outcome],
+              ].filter(Boolean);
+              return (
+                <li key={call.id} className={styles.call}>
+                  <strong>{name}</strong> {details.join(' · ')}
+                  {link && (
+                    <a
+                      className={styles.join}
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Join the call
+                      <ExternalLink size={13} aria-hidden="true" />
+                    </a>
+                  )}
+                  {/* What else the place says, such as a passcode after the link, stays to read. */}
+                  {call.place && !link?.alone && (
+                    <span className={styles.itemNote}>{call.place}</span>
+                  )}
+                  {call.people.length > 0 && (
+                    <span className={styles.itemNote}>With {callPeople(call.people)}</span>
+                  )}
+                  {call.notes && <span className={styles.itemNote}>{call.notes}</span>}
+                  {call.debrief && (
+                    <span className={styles.itemNote}>How it went: {call.debrief}</span>
+                  )}
+                  {(docs.prep || docs.thanks) && (
+                    <span className={styles.callDocs}>
+                      {docs.prep && (
+                        <Button
+                          size="sm"
+                          icon={<FileText size={13} aria-hidden="true" />}
+                          aria-label={`Open the prep sheet for the ${name.toLowerCase()}`}
+                          onClick={() =>
+                            setOpen({ title: `Prep sheet: ${name}`, text: docs.prep ?? '' })
+                          }
+                        >
+                          Prep sheet
+                        </Button>
+                      )}
+                      {docs.thanks && (
+                        <Button
+                          size="sm"
+                          variant="quiet"
+                          aria-label={`Open the thank-you notes for the ${name.toLowerCase()}`}
+                          onClick={() =>
+                            setOpen({ title: `Thank-you notes: ${name}`, text: docs.thanks ?? '' })
+                          }
+                        >
+                          Thank-you notes
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

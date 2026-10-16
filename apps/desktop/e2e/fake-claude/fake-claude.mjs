@@ -132,6 +132,23 @@ async function work(text) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
   }
+  // As Claude would for a call's prep: read what's on file, find the call by its ID, and save a
+  // sheet for it with the tool that keeps it with the call. Practice writes nothing.
+  const prepping = text.match(/^\/factwright:interview-prep job (\S+) call (\S+)( practice)?$/);
+  if (prepping) {
+    const [, job, callId, practice] = prepping;
+    const details = await call('job_details', { job });
+    const lines = details.split('\n');
+    const at = lines.findIndex((line) => line.endsWith(`· call ${callId}`));
+    const people = lines
+      .slice(at + 1)
+      .find((line) => /^ {6}With /.test(line))
+      ?.trim();
+    if (at >= 0 && !practice) {
+      const prep = `# Prep: ${lines[at]?.trim()}\n\n## Five minutes before\n- ${people ?? 'Nobody named'}, from the stand-in Claude.`;
+      show(`${await call('save_call_prep', { job, call: callId, prep })}\n`);
+    }
+  }
   // As Claude would for a cover letter: read what's on file, write the letter in the job's
   // folder, and build it with the tool that checks it.
   const lettered = text.match(/^\/factwright:cover-letter job (\S+)$/);

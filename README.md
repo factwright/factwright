@@ -37,7 +37,8 @@ Factwright is a desktop app that runs your job hunt on top of Claude Code, using
 - **Cover letters.** A letter for each job, in your own voice, from your facts and what's on file about the company, addressed to the hiring manager when one is known. It's fact-checked like the resume and built in the same template, so the two look like a set, with its text ready to copy into a form.
 - **Answers and interview prep.** Application answers and prep sheets drafted from the same facts, in your voice. Keep what you actually sent beside each question, so it's there when the job moves on.
 - **Ask about a job.** Ask anything, such as what to expect from a call, with screenshots if you have them. Claude answers from everything on file for the job and the web, and the answer stays with the job.
-- **Tracking.** Every job's progress, calls, interviews and dated notes in one place, on your computer and your phone, and your whole journey drawn as a flow chart.
+- **Calls and interviews.** Each step of a company's process, with who it's with, when, for how long and how to join. Fill one in from the company's calendar invite, add it to your own calendar, and get a reminder an hour before. Call prep writes a sheet for that call that builds on how the earlier rounds went: what to expect, who you're meeting, likely questions answered from your facts, and questions to ask each person. Practice it in a mock interview, note how it went afterward, and get thank-you notes to send.
+- **Tracking.** Every job's progress, calls, interviews and dated notes in one place, with your history with each company, on your computer and your phone, and your whole journey drawn as a flow chart.
 
 <table>
   <tr>

@@ -1,7 +1,9 @@
 import {
   CALL_KINDS,
+  CALL_MODES,
   CALL_OUTCOMES,
   CALL_STATES,
+  type CallPerson,
   isIsoDate,
   JOB_STATUSES,
   KIND_ID,
@@ -57,6 +59,33 @@ const date: Reader<string> = (value) => (isIsoDate(value) ? value : BAD);
 const time: Reader<string> = (value) =>
   typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : BAD;
 const flag: Reader<boolean> = (value) => (typeof value === 'boolean' ? value : BAD);
+/** A call's length in minutes: a whole number, up to a day. */
+const minutes: Reader<number> = (value) =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 24 * 60
+    ? value
+    : BAD;
+
+/**
+ * How far past the window's limits a call's people and texts may run: two devices' changes to the
+ * same call keep both, so a call can come back from a sync longer than one device lets it get, and
+ * changing it then should still save.
+ */
+const MERGED = 4;
+
+/** The people on a call, trimmed. A row the user left without a name is left out. */
+const people: Reader<CallPerson[]> = (value) => {
+  if (!Array.isArray(value) || value.length > LIMITS.people * MERGED) return BAD;
+  const named: CallPerson[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return BAD;
+    const { name, role, ...rest } = item;
+    if (Object.keys(rest).length > 0) return BAD;
+    if (typeof name !== 'string' || name.length > LIMITS.person) return BAD;
+    if (role !== null && (typeof role !== 'string' || role.length > LIMITS.person)) return BAD;
+    if (name.trim()) named.push({ name: name.trim(), role: role?.trim() || null });
+  }
+  return named;
+};
 const kindId: Reader<string> = (value) =>
   typeof value === 'string' && KIND_ID.test(value) ? value : BAD;
 
@@ -122,7 +151,11 @@ export function parseNewCall(value: unknown): NewCall | null {
     kind: oneOf(CALL_KINDS),
     onDate: date,
     atTime: orNull(time),
-    notes: textUpTo(LIMITS.callNotes),
+    minutes: orNull(minutes),
+    mode: orNull(oneOf(CALL_MODES)),
+    place: textUpTo(LIMITS.place),
+    people,
+    notes: textUpTo(LIMITS.callNotes * MERGED),
   });
   if (!fields?.kind || !fields.onDate) return null;
   return { ...fields, kind: fields.kind, onDate: fields.onDate };
@@ -133,9 +166,14 @@ export function parseCallChanges(value: unknown): CallChanges | null {
     kind: oneOf(CALL_KINDS),
     onDate: date,
     atTime: orNull(time),
+    minutes: orNull(minutes),
+    mode: orNull(oneOf(CALL_MODES)),
+    place: textUpTo(LIMITS.place),
+    people,
     state: oneOf(CALL_STATES),
     outcome: orNull(oneOf(CALL_OUTCOMES)),
-    notes: textUpTo(LIMITS.callNotes),
+    notes: textUpTo(LIMITS.callNotes * MERGED),
+    debrief: textUpTo(LIMITS.debrief * MERGED),
   });
 }
 

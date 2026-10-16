@@ -48,6 +48,7 @@ import {
 } from './jobs/input.ts';
 import type { Revisions } from './jobs/revisions.ts';
 import type { JobsService } from './jobs/service.ts';
+import type { JobOpener } from './open-job.ts';
 import {
   JOB_ID,
   MAX_PREVIEW_BYTES,
@@ -60,6 +61,7 @@ import {
   saveableFileName,
 } from './policy.ts';
 import type { Profiles } from './profiles.ts';
+import type { CallReminders } from './reminders.ts';
 import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
 import type { UpdateWatcher } from './updates.ts';
@@ -118,6 +120,10 @@ export interface IpcDeps {
   updates: UpdateWatcher | null;
   /** The profiles on this computer: each person's own job hunt, one open at a time. */
   profiles: Profiles;
+  /** Reminders before calls, which the user can turn off. */
+  reminders: CallReminders;
+  /** Opens a job in the window, such as from a reminder's click. */
+  opener: JobOpener;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -153,6 +159,8 @@ export function registerIpc({
   dataDir,
   updates,
   profiles,
+  reminders,
+  opener,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -210,14 +218,17 @@ export function registerIpc({
   });
 
   /**
-   * A task the window asked for, if it's a job search, names a skill and a job the app knows, or
-   * a resume to copy that the app kept.
+   * A task the window asked for, if it's a job search, names a skill and a job the app knows, with
+   * one of its calls when it's for one, or a resume to copy that the app kept.
    */
   const knownTask = (value: unknown) => {
     const task = parseRunTask(value);
     if (task && 'source' in task) return templates.hasSource(task.source) ? task : null;
     if (!task || !('jobId' in task)) return task;
-    return jobs.list().jobs.some((job) => job.id === task.jobId) ? task : null;
+    const job = jobs.list().jobs.find((each) => each.id === task.jobId);
+    if (!job) return null;
+    if ('callId' in task) return job.calls.some((call) => call.id === task.callId) ? task : null;
+    return task;
   };
 
   answer('claude:start', (size, task) => {
@@ -432,6 +443,18 @@ export function registerIpc({
       return { ok: false, message: 'That Word file is too big to read here. Open it instead.' };
     }
     return { ok: true, data: new Uint8Array(await readFile(file)) };
+  });
+
+  // Reminders an hour before each call, on this computer, until the user turns them off.
+  answer('reminders:get', () => reminders.isOn());
+  answer('reminders:set', (on) => {
+    if (typeof on !== 'boolean')
+      throw new Error('Refused a change to reminders that isn’t on or off.');
+    return reminders.turn(on);
+  });
+  // The window's page listens for jobs to open, and gets one waiting, if any.
+  ipcMain.on('jobs:listening', (event) => {
+    if (fromApp(event)) opener.listen(event.sender);
   });
 
   answer('clipboard:write', (text): EditResult => {

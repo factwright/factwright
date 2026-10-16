@@ -252,6 +252,82 @@ test('answers a question about the job, and keeps the answer with it', async () 
   expect(await terminalText(window)).toMatch(/\/factwright:ask job \S+ question 20\d\d-/);
 });
 
+test('adds a call with who it’s with, preps for it, and keeps the prep sheet with the call', async () => {
+  const { window } = opened;
+  const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });
+  await calls.getByRole('button', { name: 'Add a call' }).click();
+  const form = calls.getByRole('form', { name: 'Add a call' });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const day = [tomorrow.getFullYear(), tomorrow.getMonth() + 1, tomorrow.getDate()]
+    .map((part) => String(part).padStart(2, '0'))
+    .join('-');
+  await form.getByLabel('Date').fill(day);
+  await form.getByLabel('How', { exact: true }).selectOption('video');
+  await form.getByLabel('Meeting link').fill('https://meet.example.com/acme');
+  await form.getByLabel('Name of person 1').fill('Dana Lee');
+  await form.getByLabel('Role of person 1').fill('Hiring manager');
+  await form.getByRole('button', { name: 'Add call' }).click();
+  await expect(calls.getByText('With Dana Lee (Hiring manager)')).toBeVisible();
+  // Adding a recruiter screen moves the job on.
+  await expect(window.getByRole('combobox', { name: 'Status for Acme Robotics' })).toHaveValue(
+    'screen',
+  );
+
+  await calls.getByRole('button', { name: 'Call prep for the recruiter screen' }).click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The app types only the job's and the call's IDs; who it's with reaches Claude through its tools.
+  const typed = await terminalText(window);
+  expect(typed).toMatch(new RegExp(`/factwright:interview-prep job ${ACME_ID} call [0-9a-f-]{36}`));
+  expect(typed).not.toContain('Dana Lee');
+  await calls.getByRole('button', { name: 'Open the prep sheet for the recruiter screen' }).click();
+  const sheet = window.getByRole('dialog', { name: /^Prep sheet: Recruiter screen/ });
+  await expect(
+    sheet.getByText('With Dana Lee (Hiring manager), from the stand-in Claude.'),
+  ).toBeVisible();
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(
+    calls.getByRole('button', { name: 'Prep again for the recruiter screen' }),
+  ).toBeVisible();
+});
+
+test('fills in a call from the company’s invite, read in the window', async () => {
+  const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });
+  await calls.getByRole('button', { name: 'Add a call' }).click();
+  const form = calls.getByRole('form', { name: 'Add a call' });
+  // 3:30 PM in UTC, which the form gives in this computer's time zone.
+  const at = new Date(Date.UTC(2026, 10, 5, 15, 30));
+  const pad = (part: number) => String(part).padStart(2, '0');
+  const invite = [
+    'BEGIN:VCALENDAR',
+    'BEGIN:VEVENT',
+    'DTSTART:20261105T153000Z',
+    'DURATION:PT45M',
+    'LOCATION:https://zoom.us/j/8812345678',
+    'ORGANIZER;CN=Priya Shah:mailto:priya@acme.example',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  await form.locator('input[type="file"]').setInputFiles({
+    name: 'invite.ics',
+    mimeType: 'text/calendar',
+    buffer: Buffer.from(invite),
+  });
+  await expect(form.getByRole('status')).toHaveText(
+    'Filled in the date, time, length, meeting link and 1 person from the invite. Check them before you add it.',
+  );
+  await expect(form.getByLabel('Date')).toHaveValue(
+    `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`,
+  );
+  await expect(form.getByLabel('Time, if you know it')).toHaveValue(
+    `${pad(at.getHours())}:${pad(at.getMinutes())}`,
+  );
+  await expect(form.getByLabel('Meeting link')).toHaveValue('https://zoom.us/j/8812345678');
+  await expect(form.getByLabel('Name of person 1')).toHaveValue('Priya Shah');
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await expect(form).toBeHidden();
+});
+
 test('keeps a picture pasted into Claude’s panel with the run’s job, for Claude to read', async () => {
   const { window } = opened;
   // A picture on the clipboard, pasted into the terminal, as the system hands it to the page.
@@ -490,11 +566,17 @@ test('keeps everything tracked after a restart', async () => {
   await expect(window.getByRole('button', { name: /^Northwind Labs/ })).toBeVisible();
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
   await expect(window.getByRole('combobox', { name: 'Status for Acme Robotics' })).toHaveValue(
-    'applied',
+    'screen',
   );
   await expect(jobPanel().getByRole('list', { name: 'Your notes' })).toContainText(
     'Recruiter: Sam',
   );
+  // The call keeps who it's with, and Claude's prep sheet for it.
+  const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });
+  await expect(calls.getByText('With Dana Lee (Hiring manager)')).toBeVisible();
+  await expect(
+    calls.getByRole('button', { name: 'Open the prep sheet for the recruiter screen' }),
+  ).toBeVisible();
   await jobPanel().getByText('Why Acme?', { exact: true }).click();
   await expect(jobPanel().getByRole('textbox', { name: /What you sent/ })).toHaveValue(
     'Deploys, mostly.',

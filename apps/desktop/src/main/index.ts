@@ -23,7 +23,8 @@ import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
 import { MainWindow } from './main-window.ts';
-import { notifyIfAway, notifyOfRequests } from './notify.ts';
+import { notifyIfAway, notifyOfRequests, remindOfCall } from './notify.ts';
+import { JobOpener } from './open-job.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
   chooseProfile,
@@ -37,6 +38,7 @@ import {
   stoppedStart,
 } from './profiles.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
+import { CallReminders } from './reminders.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
@@ -178,13 +180,21 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
     denyPermissions(session.defaultSession);
 
+    // Opens a job in the window, such as when the user clicks a call's reminder.
+    const opener = new JobOpener();
     // The app's window, whichever one is open: everything reaches it through this. A run belongs
     // to its window, so closing it stops the run. On Windows and Linux, the app quits once its
     // last window closes, and the hidden window resumes print in would keep it running unseen, so
     // that closes first. A Mac app keeps running with its window closed, and so does that one,
     // ready for the next print: closing it there could leave a print it was doing unfinished.
     const window = new MainWindow({
-      open: () => createMainWindow(startUrl),
+      open: () => {
+        const opened = createMainWindow(startUrl);
+        // A page loading again can't hear a job to open until it says it's listening.
+        const page = opened.webContents;
+        page.on('did-start-loading', () => opener.forget(page));
+        return opened;
+      },
       closed: () => {
         if (process.platform !== 'darwin') printer.close();
         claude.stop();
@@ -214,6 +224,18 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         app.quit();
       },
     });
+    // A reminder an hour before each call. Clicking it brings the window forward, or opens it
+    // again on a Mac, on the call's job.
+    const reminders = new CallReminders({
+      file: join(dataDir, 'call-reminders.json'),
+      jobs: () => jobs.list().jobs,
+      notify: (reminder) =>
+        remindOfCall(reminder, (jobId) => {
+          window.show();
+          const page = window.current()?.webContents;
+          if (page) opener.open(jobId, page);
+        }),
+    });
     const sync = new SyncAccount({
       dataDir,
       server: syncServer,
@@ -238,7 +260,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.
-      onApplied: () => window.send('jobs:changed', jobs.read()),
+      onApplied: () => {
+        window.send('jobs:changed', jobs.read());
+        reminders.check({ synced: true });
+      },
     });
     const jobs = new JobsService({
       workspace,
@@ -247,6 +272,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onChange: (list) => {
         window.send('jobs:changed', list);
         sync.requestSync();
+        reminders.check();
       },
     });
     jobs.read();
@@ -358,8 +384,14 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       dataDir,
       updates,
       profiles,
+      reminders,
+      opener,
     });
     void sync.start();
+    void reminders.start();
+    // A call's hour can begin while the computer sleeps, so waking looks again.
+    powerMonitor.on('resume', () => reminders.check());
+    powerMonitor.on('unlock-screen', () => reminders.check());
 
     // A request to link this computer is called off before the app goes, so it doesn't wait on
     // the other devices. Quitting waits for that once, for a moment at most.
@@ -374,6 +406,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       }
       profiles.started();
       updates?.stop();
+      reminders.stop();
       claude.stop();
       setup.stop();
       server.stop();

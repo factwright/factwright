@@ -124,6 +124,15 @@ const MIGRATIONS = [
   // The kind of job the user put a job under, such as "project-manager", when they want more
   // than one kind. Empty goes by what the job search or fit check found it as.
   `ALTER TABLE jobs ADD COLUMN kind TEXT;`,
+  // A call's details: how long it's booked for in minutes, phone, video or in person, its link,
+  // number or address, who it's with as a JSON list, and how it went in the user's words. Each
+  // can be empty, as on a call an earlier version logged: a column a merge can't fill must never
+  // stop a row from landing.
+  `ALTER TABLE calls ADD COLUMN minutes INTEGER;
+  ALTER TABLE calls ADD COLUMN mode TEXT;
+  ALTER TABLE calls ADD COLUMN place TEXT;
+  ALTER TABLE calls ADD COLUMN people TEXT;
+  ALTER TABLE calls ADD COLUMN debrief TEXT;`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -572,8 +581,9 @@ export class Tracker {
     this.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO calls (id, job_id, kind, on_date, at_time, state, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO calls (id, job_id, kind, on_date, at_time, minutes, mode, place, people,
+             state, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           randomUUID(),
@@ -581,6 +591,10 @@ export class Tracker {
           input.kind,
           input.onDate,
           input.atTime ?? null,
+          input.minutes ?? null,
+          input.mode ?? null,
+          input.place ?? null,
+          JSON.stringify(input.people ?? []),
           past ? 'done' : 'scheduled',
           input.notes ?? null,
           now,
@@ -590,22 +604,34 @@ export class Tracker {
     return DONE;
   }
 
-  /** Changes a call. Marking its outcome "rejected" closes the job, unless it's settled. */
+  /**
+   * Changes a call. Saying how a booked call went, by its outcome or in words once its day has
+   * come, marks it done. Marking its outcome "rejected" closes the job, unless it's settled.
+   */
   updateCall(callId: string, changes: CallChanges, context: EditContext): EditResult {
     const call = this.db.prepare('SELECT * FROM calls WHERE id = ?').get(callId);
     if (!call) return failed('That call isn’t in your tracker anymore. Reload and try again.');
     const sets: string[] = [];
-    const values: (string | null)[] = [];
-    const set = (column: string, value: string | null) => {
+    const values: (string | number | null)[] = [];
+    const set = (column: string, value: string | number | null) => {
       sets.push(`${column} = ?`);
       values.push(value);
     };
     if (changes.kind !== undefined) set('kind', changes.kind);
     if (changes.onDate !== undefined) set('on_date', changes.onDate);
     if (changes.atTime !== undefined) set('at_time', changes.atTime);
+    if (changes.minutes !== undefined) set('minutes', changes.minutes);
+    if (changes.mode !== undefined) set('mode', changes.mode);
+    if (changes.place !== undefined) set('place', changes.place);
+    if (changes.people !== undefined) set('people', JSON.stringify(changes.people));
+    const said =
+      Boolean(changes.outcome) ||
+      (Boolean(changes.debrief) && required(call.on_date) <= context.today);
     if (changes.state !== undefined) set('state', changes.state);
+    else if (said && call.state === 'scheduled') set('state', 'done');
     if (changes.outcome !== undefined) set('outcome', changes.outcome);
     if (changes.notes !== undefined) set('notes', changes.notes);
+    if (changes.debrief !== undefined) set('debrief', changes.debrief);
     if (sets.length === 0) return DONE;
 
     const jobId = required(call.job_id);

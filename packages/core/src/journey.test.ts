@@ -55,6 +55,7 @@ function job(extra: Partial<Job> = {}): Job {
     kind: null,
     manual: false,
     calls: [],
+    callDocs: [],
     statusLog: [],
     notes: [],
     docKinds: [],
@@ -67,9 +68,14 @@ const call = (kind: Call['kind'], onDate: string, extra: Partial<Call> = {}): Ca
   kind,
   onDate,
   atTime: null,
+  minutes: null,
+  mode: null,
+  place: null,
+  people: [],
   state: 'done',
   outcome: null,
   notes: null,
+  debrief: null,
   ...extra,
 });
 

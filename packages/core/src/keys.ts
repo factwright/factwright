@@ -36,6 +36,19 @@ export function companyKey(name: string): string {
   return slug(withoutParentheticals(name.toLowerCase()).replace(COMPANY_NOISE, ' '));
 }
 
+/**
+ * Whether two jobs are at the same company: by its key, or for a name with no key, such as
+ * 株式会社メルカリ or "The Company", by the name itself. Two names with no key aren't one company.
+ */
+export function sameCompany(
+  a: { company: string; companyKey: string },
+  b: { company: string; companyKey: string },
+): boolean {
+  if (a.companyKey || b.companyKey) return a.companyKey === b.companyKey;
+  const name = (each: { company: string }) => each.company.normalize('NFKC').trim().toLowerCase();
+  return name(a) !== '' && name(a) === name(b);
+}
+
 /** One key per role title, ignoring parentheticals: "Senior Engineer (Remote)" is "senior-engineer". */
 export function roleKey(title: string): string {
   return slug(withoutParentheticals(title));

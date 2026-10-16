@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { companyKey, roleKey, slug } from './keys.ts';
+import { companyKey, roleKey, sameCompany, slug } from './keys.ts';
 
 /** How long something takes, in milliseconds. */
 function timed(work: () => unknown): number {
@@ -45,5 +45,22 @@ describe('keys from names made to keep the app busy', () => {
     expect(roleKey('Engineer (left open')).toBe('engineer-left-open');
     // A "(…)" ends on its own line.
     expect(companyKey('Acme (x\ny) Co')).toBe('acme-x-y');
+  });
+});
+
+describe('sameCompany', () => {
+  const at = (company: string) => ({ company, companyKey: companyKey(company) });
+
+  it('matches a company however it’s written, by its key', () => {
+    expect(sameCompany(at('Acme, Inc.'), at('The Acme Company (US)'))).toBe(true);
+    expect(sameCompany(at('Acme'), at('Globex'))).toBe(false);
+  });
+
+  it('matches a name with no key by the name itself, and never two different ones', () => {
+    expect(companyKey('株式会社メルカリ')).toBe('');
+    expect(sameCompany(at('株式会社メルカリ'), at(' 株式会社メルカリ '))).toBe(true);
+    expect(sameCompany(at('株式会社メルカリ'), at('Яндекс'))).toBe(false);
+    expect(sameCompany(at('株式会社メルカリ'), at('Acme'))).toBe(false);
+    expect(sameCompany(at(''), at(''))).toBe(false);
   });
 });

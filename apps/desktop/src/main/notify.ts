@@ -2,6 +2,7 @@ import { app, Notification } from 'electron';
 import type { RunSignal } from '../shared/api.ts';
 import type { RequestView } from '../shared/sync.ts';
 import type { MainWindow, WindowLike } from './main-window.ts';
+import type { CallReminder } from './reminders.ts';
 
 const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
   'needs-answer': { title: 'Claude needs your answer', body: 'Open Factwright to reply.' },
@@ -54,4 +55,32 @@ export function notifyIfAway(
   notification.on('click', () => window.show());
   notification.show();
   if (signal === 'needs-answer') app.dock?.bounce('informational');
+}
+
+/**
+ * The reminders on screen. Something has to hold each one, or Electron can let it go, and a click
+ * on it then does nothing. The latest few are held, in case a system never says one closed.
+ */
+const reminding = new Set<Notification>();
+
+/**
+ * Reminds the user of a call coming up, whether or not they're in the app, as a calendar would.
+ * Clicking it opens the call's job.
+ */
+export function remindOfCall(reminder: CallReminder, open: (jobId: string) => void): void {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({ title: reminder.title, body: reminder.body });
+  const forget = () => reminding.delete(notification);
+  notification.on('click', () => {
+    forget();
+    open(reminder.jobId);
+  });
+  notification.on('close', forget);
+  notification.on('failed', forget);
+  reminding.add(notification);
+  for (const held of reminding) {
+    if (reminding.size <= 20) break;
+    reminding.delete(held);
+  }
+  notification.show();
 }
