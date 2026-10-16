@@ -1,5 +1,5 @@
 import { join, normalize, resolve, sep } from 'node:path';
-import { ASK_ID, KIND_ID } from '@factwright/core';
+import { ASK_ID, CALL_ID, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
   FINDING_ID,
@@ -23,6 +23,7 @@ import {
   searchCompany,
   TEMPLATE_SKILL,
   TEMPLATE_SOURCE,
+  THANKS_SKILL,
 } from '../shared/runs.ts';
 import { SOURCES_FOLDER } from './resume/templates.ts';
 
@@ -155,8 +156,27 @@ export function parseSearchSources(value: unknown): SearchSources | null {
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
   if ((value as Record<string, unknown>).skill === REVISE_SKILL) return parseRevision(value);
-  const { skill, jobId, mode, askId, source, sources, ...rest } = value as Record<string, unknown>;
+  const { skill, jobId, mode, askId, source, sources, callId, practice, ...rest } = value as Record<
+    string,
+    unknown
+  >;
   if (Object.keys(rest).length > 0) return null;
+  // Prep for one of a job's calls, or practice for it, or thank-you notes after it.
+  if (callId !== undefined || practice !== undefined) {
+    const others = [mode, askId, source, sources].every((field) => field === undefined);
+    const valid =
+      others &&
+      typeof jobId === 'string' &&
+      JOB_ID.test(jobId) &&
+      typeof callId === 'string' &&
+      CALL_ID.test(callId);
+    if (valid && skill === 'interview-prep' && (practice === undefined || practice === true)) {
+      return practice ? { skill, jobId, callId, practice } : { skill, jobId, callId };
+    }
+    return valid && skill === THANKS_SKILL && practice === undefined
+      ? { skill, jobId, callId }
+      : null;
+  }
   if (sources !== undefined) {
     const valid = skill === SEARCH_SKILL && jobId === undefined && mode === undefined;
     const parsed =
@@ -263,6 +283,10 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${template}`;
   }
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
+  if ('callId' in task) {
+    const practice = 'practice' in task && task.practice ? ' practice' : '';
+    return `/factwright:${task.skill} job ${task.jobId} call ${task.callId}${practice}`;
+  }
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;
   const mode = 'mode' in task ? task.mode : undefined;
   return mode ? `/factwright:${task.skill} ${MODE_WORDS[mode]}` : `/factwright:${task.skill}`;

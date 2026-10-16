@@ -1,4 +1,4 @@
-import { FACT_TAGS, localDate } from '@factwright/core';
+import { type CallDocKind, FACT_TAGS, localDate } from '@factwright/core';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import type { FactBankFiles } from '../about/facts.ts';
 import type { AboutStore } from '../about/store.ts';
@@ -7,6 +7,7 @@ import type { ResumePrinter } from '../resume/printer.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
+import { saveCallDoc } from './calls.ts';
 import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
 import { buildCoverLetter } from './letter.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
@@ -42,7 +43,7 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, facts from the user’s answers, templates, and resume and cover letter files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, and resume and cover letter files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
@@ -54,6 +55,8 @@ export const LOCAL_TOOLS = [
   'about_you',
   'past_answers',
   'save_answer',
+  'save_call_prep',
+  'save_thank_you',
   'list_templates',
   'read_template',
 ];
@@ -155,6 +158,22 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     ...(deps.fetch && { fetch: deps.fetch }),
     ...(deps.now && { now: deps.now }),
   };
+  // Saves a prep sheet or thank-you notes for one of a job's calls, given as Markdown in `field`.
+  const saveForCall = (input: Record<string, unknown>, kind: CallDocKind, field: string) => {
+    const id = textInput(input, 'job', true) ?? '';
+    const job = deps.jobs.list().jobs.find((each) => each.id === id);
+    if (!job) throw new Error(`Nothing on file for ${id}.`);
+    const markdown = input[field];
+    if (typeof markdown !== 'string') throw new Error(`Give the ${field} as Markdown text.`);
+    return saveCallDoc(job, textInput(input, 'call', true) ?? '', kind, markdown, deps.workspace);
+  };
+  const CALL_PROPERTIES = {
+    job: {
+      type: 'string',
+      description: 'The job’s id, such as acme-robotics--staff-engineer.',
+    },
+    call: { type: 'string', description: 'The call’s id, as job_details lists it.' },
+  };
   return [
     {
       name: 'find_job',
@@ -171,7 +190,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'job_details',
       description:
-        'Everything on file for a job: its status and dates, the user’s notes, calls and interviews, history, links, and the files in its folder. Give the job’s id from find_job, or its company (and role).',
+        'Everything on file for a job: its status and dates, the user’s notes, each call and interview with who it’s with and how it went, history, links, the files in its folder, and the other jobs the user has at the company. Give the job’s id from find_job, or its company (and role).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -195,7 +214,15 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           return `Nothing on file for ${id ?? (query?.company || query?.link)}.`;
         }
         const details = await Promise.all(
-          found.map((job) => jobDetails(job, deps.workspace, today(), kinds())),
+          found.map((job) =>
+            jobDetails(
+              job,
+              deps.workspace,
+              today(),
+              kinds(),
+              jobs.filter((other) => other.companyKey === job.companyKey && other.id !== job.id),
+            ),
+          ),
         );
         return details.join('\n\n');
       },
@@ -303,6 +330,42 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             ...(deps.now && { now: deps.now }),
           },
         ),
+    },
+    {
+      name: 'save_call_prep',
+      description:
+        'Saves your prep sheet for one of the user’s calls or interviews for a job, which job_details lists with their ids. The app shows it on that call and keeps each call’s sheet, so a later round’s prep can build on it. Give the sheet as Markdown. Saving again replaces it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...CALL_PROPERTIES,
+          prep: { type: 'string', description: 'The prep sheet, as Markdown.' },
+        },
+        required: ['job', 'call', 'prep'],
+        additionalProperties: false,
+      },
+      // It writes only the call's own file, from what's on this computer.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) => saveForCall(input, 'prep', 'prep'),
+    },
+    {
+      name: 'save_thank_you',
+      description:
+        'Saves the thank-you notes you drafted after one of the user’s calls or interviews for a job, one for each person they met, which job_details lists with the call’s id. The user sends them themselves; the app shows them on that call. Give them as Markdown. Saving again replaces them.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...CALL_PROPERTIES,
+          notes: {
+            type: 'string',
+            description: 'The notes, as Markdown: a heading with each person’s name, then theirs.',
+          },
+        },
+        required: ['job', 'call', 'notes'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) => saveForCall(input, 'thanks', 'notes'),
     },
     {
       name: 'list_templates',

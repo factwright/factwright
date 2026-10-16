@@ -8,7 +8,8 @@ import type { SyncState } from './state.ts';
  * How each tracker table merges when two devices change the same row. A job's links,
  * application questions, the answers the user sent and the questions they asked Claude keep
  * what either device added, its earlier notes keep both texts, and on a clash the later change
- * wins, by when the row changed. A call's notes keep both too, and so does a note's text.
+ * wins, by when the row changed. A call's notes and how it went keep both too, its people keep
+ * whoever either device added, by name, and a note's text keeps both.
  */
 export const MERGE_RULES: Record<SyncTable, MergeRules> = {
   jobs: {
@@ -27,7 +28,19 @@ export const MERGE_RULES: Record<SyncTable, MergeRules> = {
     stamp: 'updated_at',
   },
   status_log: {},
-  calls: { texts: ['notes'] },
+  calls: {
+    lists: {
+      // A change to someone is them gone and back again, as with the answers sent, so a role
+      // one device gave someone stays even when the other changed the list.
+      people: (person) => {
+        const { name, role } = (person ?? {}) as Record<string, unknown>;
+        return `${String(name ?? '')
+          .trim()
+          .toLowerCase()}\u0000${String(role ?? '').trim()}`;
+      },
+    },
+    texts: ['notes', 'debrief'],
+  },
   notes: { texts: ['text'], stamp: 'updated_at' },
 };
 

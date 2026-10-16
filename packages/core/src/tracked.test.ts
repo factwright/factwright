@@ -74,9 +74,49 @@ describe('tracker rows', () => {
       kind: 'screen',
       onDate: '2026-10-14',
       atTime: null,
+      minutes: null,
+      mode: null,
+      place: null,
+      people: [],
       state: 'scheduled',
       outcome: null,
       notes: null,
+      debrief: null,
+    });
+    expect(
+      trackedCall({
+        id: 'c2',
+        kind: 'panel',
+        on_date: '2026-10-20',
+        at_time: '14:00',
+        minutes: 60,
+        mode: 'video',
+        place: 'https://meet.example/abc',
+        people: JSON.stringify([
+          { name: ' Dana Lee ', role: 'Hiring manager' },
+          { name: 'Sam Ortiz', role: '' },
+        ]),
+        state: 'done',
+        outcome: 'advanced',
+        notes: 'System design',
+        debrief: 'Went well. They asked about on-call.',
+      }),
+    ).toEqual({
+      id: 'c2',
+      kind: 'panel',
+      onDate: '2026-10-20',
+      atTime: '14:00',
+      minutes: 60,
+      mode: 'video',
+      place: 'https://meet.example/abc',
+      people: [
+        { name: 'Dana Lee', role: 'Hiring manager' },
+        { name: 'Sam Ortiz', role: null },
+      ],
+      state: 'done',
+      outcome: 'advanced',
+      notes: 'System design',
+      debrief: 'Went well. They asked about on-call.',
     });
     expect(trackedChange({ id: 's1', status: 'applied', at: '2026-10-10' })).toEqual({
       id: 's1',
@@ -95,6 +135,20 @@ describe('tracker rows', () => {
     expect(
       trackedCall({ id: 'c1', kind: 'hologram', on_date: '2026-10-14', state: 'done' }),
     ).toBeNull();
+    expect(
+      trackedCall({
+        id: 'c1',
+        kind: 'screen',
+        on_date: '2026-10-14',
+        state: 'done',
+        mode: 'hologram',
+        minutes: -5,
+        people: JSON.stringify([{ name: '  ' }, { role: 'Recruiter' }, 'Dana']),
+      }),
+    ).toMatchObject({ mode: null, minutes: null, people: [] });
+    expect(
+      trackedCall({ id: 'c1', kind: 'screen', on_date: '2026-10-14', state: 'done', people: '{' }),
+    ).toMatchObject({ people: [] });
     expect(trackedChange({ id: 's1', status: 'teleported', at: '2026-10-10' })).toBeNull();
   });
 

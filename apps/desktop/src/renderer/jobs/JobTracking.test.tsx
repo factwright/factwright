@@ -38,7 +38,7 @@ function panel(job: Job, result: EditResult = { ok: true }) {
     updateNote: answer,
     deleteNote: answer,
     jobDocs: vi.fn(async () => null),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
     openFile: answer,
   } as unknown as FactwrightApi;
   const shown = (each: Job) => (
@@ -348,9 +348,14 @@ describe('progress', () => {
           kind: 'screen',
           onDate: '2020-01-02',
           atTime: null,
+          minutes: null,
+          mode: null,
+          place: null,
+          people: [],
           state: 'done',
           outcome: null,
           notes: null,
+          debrief: null,
         },
       ],
     });

@@ -43,6 +43,7 @@ export function job(base: Partial<Job> & Pick<Job, 'id' | 'company'>): Job {
     kind: null,
     manual: false,
     calls: [],
+    callDocs: [],
     statusLog: [],
     notes: [],
     docKinds: [],

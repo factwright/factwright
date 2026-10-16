@@ -167,6 +167,18 @@ export const CALL_OUTCOMES = ['advanced', 'waiting', 'rejected'] as const;
 
 export type CallOutcome = (typeof CALL_OUTCOMES)[number];
 
+/** How a call happens: by phone, on a video call, or in person. */
+export const CALL_MODES = ['phone', 'video', 'onsite'] as const;
+
+export type CallMode = (typeof CALL_MODES)[number];
+
+/** Someone the user meets on a call. */
+export interface CallPerson {
+  name: string;
+  /** Their part in it, such as "Recruiter" or "Hiring manager", when the user gave it. */
+  role: string | null;
+}
+
 /** What the user actually sent for one of an application's questions, in their own words. */
 export interface SentAnswer {
   /** The question, as the form asked it. */
@@ -220,16 +232,27 @@ export interface TrackerFields {
   kind: string | null;
 }
 
-/** A call or interview the user logged for a job. */
+/** A call or interview the user logged for a job: one step in the company's hiring process. */
 export interface Call {
   id: string;
   kind: CallKind;
   onDate: string;
   /** "HH:MM", when the user gave a time. */
   atTime: string | null;
+  /** How long it's booked for, in minutes, when the user gave it. */
+  minutes: number | null;
+  /** By phone, video or in person, when the user gave it. */
+  mode: CallMode | null;
+  /** Where it happens: the meeting's link, a number to call, or an address. */
+  place: string | null;
+  /** Who it's with, in the order the user gave them. */
+  people: CallPerson[];
   state: CallState;
   outcome: CallOutcome | null;
+  /** What it's about, written before it: who asked for it, what to bring. */
   notes: string | null;
+  /** How it went, in the user's own words, written after it. */
+  debrief: string | null;
 }
 
 /** A note the user jotted about a job along the way, such as what was said on a call. */

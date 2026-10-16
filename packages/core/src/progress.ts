@@ -6,7 +6,9 @@ import {
   CALL_STAGE,
   type Call,
   type CallKind,
+  type CallMode,
   type CallOutcome,
+  type CallPerson,
   type CallState,
   effectiveStatus,
   type JobStatus,
@@ -62,6 +64,35 @@ export const CALL_OUTCOME_LABELS: Readonly<Record<CallOutcome, string>> = {
   waiting: 'Waiting to hear',
   rejected: 'Rejected',
 };
+
+/** How each way a call happens reads on screen. */
+export const CALL_MODE_LABELS: Readonly<Record<CallMode, string>> = {
+  phone: 'Phone',
+  video: 'Video',
+  onsite: 'In person',
+};
+
+/** The lengths the call form offers, in minutes. Whole days are an onsite's. */
+export const CALL_LENGTHS: readonly number[] = [15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
+
+/** How long a call is, in a few words: "30 min", "1 hour", "1½ hours". */
+export function callLength(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (rest === 30) return `${hours}½ hours`;
+  if (rest === 0) return hours === 1 ? '1 hour' : `${hours} hours`;
+  return `${hours} h ${rest} min`;
+}
+
+/** Who a call is with, in a few words: "Priya Shah (Recruiter) and Dana Lee". */
+export function callPeople(people: readonly CallPerson[]): string {
+  const named = people.map((person) =>
+    person.role ? `${person.name} (${person.role})` : person.name,
+  );
+  if (named.length <= 2) return named.join(' and ');
+  return `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`;
+}
 
 /** How pressing something is: late, waiting on the user now, or good to know. */
 export type AttentionLevel = 'urgent' | 'action' | 'info';
@@ -215,8 +246,14 @@ function attentionFor(
     };
   }
   if (nextCall && daysBetween(today, nextCall.onDate) <= 3) {
-    const text = `${CALL_KIND_LABELS[nextCall.kind]} ${callWhen(nextCall, today)}`;
-    return { level: 'info', text };
+    const when = callWhen(nextCall, today);
+    // Two days out, a call with no prep sheet yet needs the user: time to get ready for it.
+    const prepped = job.callDocs.some((doc) => doc.callId === nextCall.id && doc.kind === 'prep');
+    if (!prepped && daysBetween(today, nextCall.onDate) <= 2) {
+      const kind = CALL_KIND_LABELS[nextCall.kind].toLowerCase();
+      return { level: 'action', text: `Prep for the ${kind} ${when}` };
+    }
+    return { level: 'info', text: `${CALL_KIND_LABELS[nextCall.kind]} ${when}` };
   }
   const daysSince = (date: string | null) => (date ? daysBetween(date, today) : null);
   if (status === 'applied') {

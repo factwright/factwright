@@ -1,6 +1,6 @@
 import type { PlanLevels } from './levels.ts';
 import { REVISE_SKILL } from './revision.ts';
-import { HUNT_SKILLS, RUN_SKILLS, type RunTask } from './runs.ts';
+import { HUNT_SKILLS, RUN_SKILLS, type RunTask, THANKS_SKILL } from './runs.ts';
 
 /**
  * The models a run can use, by Claude Code's names for them. Each name means the newest model
@@ -113,7 +113,11 @@ export const modelFor = (
 
 /**
  * The task whose levels a run takes: its own, but for a revision of a resume, which is writing,
- * at a tailored resume's.
+ * at a tailored resume's, and for thank-you notes after a call, at interview prep's.
  */
 export const levelsTask = (task: RunTask): ModelTask =>
-  task.skill === REVISE_SKILL ? 'focused-resume' : task.skill;
+  task.skill === REVISE_SKILL
+    ? 'focused-resume'
+    : task.skill === THANKS_SKILL
+      ? 'interview-prep'
+      : task.skill;

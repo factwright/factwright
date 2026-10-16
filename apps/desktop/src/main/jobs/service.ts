@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import {
   ASK_ID,
   askedFile,
+  type CallDoc,
   type CollectedJob,
   collectJobs,
   type JobDocs,
   jobList,
   localDate,
+  readAllCallDocs,
   readJobExtras,
   readRecords,
 } from '@factwright/core';
@@ -49,6 +51,8 @@ export interface JobsDeps {
 export class JobsService {
   private readonly deps: JobsDeps;
   private found = new Map<string, CollectedJob>();
+  /** Claude's prep sheets and thank-you notes for each job's calls, by the job's ID. */
+  private callDocs = new Map<string, CallDoc[]>();
   private readAt: string | null = null;
   private stopWatching: (() => void) | undefined;
 
@@ -72,10 +76,12 @@ export class JobsService {
   /** Reads the workspace, keeps each job it finds in the tracker, and returns the list. */
   read(): JobList {
     const { now } = this.context();
-    const records = readRecords(diskWorkspace(this.deps.workspace));
+    const workspace = diskWorkspace(this.deps.workspace);
+    const records = readRecords(workspace);
     const jobs = collectJobs(records, this.deps.tracker.knownJobs());
     this.deps.tracker.saveCollected(jobs, now);
     this.found = new Map(jobs.map((job) => [job.id, job]));
+    this.callDocs = readAllCallDocs(workspace);
     this.readAt = now;
     return this.list();
   }
@@ -87,6 +93,7 @@ export class JobsService {
       calls: tracker.calls(),
       history: tracker.history(),
       notes: tracker.notes(),
+      callDocs: this.callDocs,
     });
     return { jobs, readAt: this.readAt };
   }
@@ -95,7 +102,10 @@ export class JobsService {
     return this.found.get(jobId)?.docs ?? null;
   }
 
-  /** Claude's answers to the user's questions about a job, and the job's screenshots. */
+  /**
+   * Claude's answers to the user's questions about a job, the job's screenshots, the posting
+   * the user saved, and Claude's prep sheets and thank-you notes for its calls.
+   */
   extras(jobId: string): JobExtras {
     return readJobExtras(diskWorkspace(this.deps.workspace), jobId);
   }

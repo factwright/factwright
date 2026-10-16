@@ -1,5 +1,6 @@
 import { ASK_ID, questionKey } from './answers.ts';
 import { isIsoDate } from './dates.ts';
+import type { CallDoc } from './extras.ts';
 import type { CollectedJob, Job, JobPay } from './jobs.ts';
 import { KIND_ID } from './kinds.ts';
 import type { Link } from './links.ts';
@@ -8,9 +9,11 @@ import type { JobDocKind } from './records.ts';
 import {
   type Ask,
   CALL_KINDS,
+  CALL_MODES,
   CALL_OUTCOMES,
   CALL_STATES,
   type Call,
+  type CallPerson,
   type Note,
   PASS_REASONS,
   readStatus,
@@ -135,6 +138,20 @@ export function trackedRow(row: StoredRow): TrackedRow {
   };
 }
 
+/** The people on a call, leaving out any without a name. */
+const peopleOf = (json: unknown): CallPerson[] =>
+  listOf(json).flatMap((item) => {
+    const { name, role } = (item ?? {}) as StoredRow;
+    if (typeof name !== 'string' || !name.trim()) return [];
+    return [
+      { name: name.trim(), role: typeof role === 'string' && role.trim() ? role.trim() : null },
+    ];
+  });
+
+/** A call's length in minutes, or null for none or one that doesn't read. */
+const minutesOf = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+
 /** A call, read from the tracker's calls table, or null when it isn't one this version knows. */
 export function trackedCall(row: StoredRow): Call | null {
   if (!isOneOf(CALL_KINDS, row.kind) || !isOneOf(CALL_STATES, row.state)) return null;
@@ -143,9 +160,14 @@ export function trackedCall(row: StoredRow): Call | null {
     kind: row.kind,
     onDate: required(row.on_date),
     atTime: text(row.at_time),
+    minutes: minutesOf(row.minutes),
+    mode: isOneOf(CALL_MODES, row.mode) ? row.mode : null,
+    place: text(row.place),
+    people: peopleOf(row.people),
     state: row.state,
     outcome: isOneOf(CALL_OUTCOMES, row.outcome) ? row.outcome : null,
     notes: text(row.notes),
+    debrief: text(row.debrief),
   };
 }
 
@@ -283,18 +305,23 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
   };
 }
 
-/** What the tracker keeps for each job in tables of their own, by the job's ID. */
+/**
+ * What the tracker keeps for each job in tables of their own, by the job's ID, and Claude's
+ * documents for its calls, from the workspace.
+ */
 export interface TrackedItems {
   calls: ReadonlyMap<string, Call[]>;
   history: ReadonlyMap<string, StatusChange[]>;
   notes: ReadonlyMap<string, Note[]>;
+  callDocs?: ReadonlyMap<string, CallDoc[]>;
 }
 
-/** One job's calls, changes of status and notes. */
+/** One job's calls, changes of status and notes, and Claude's documents for its calls. */
 interface Kept {
   calls: Call[];
   statusLog: StatusChange[];
   notes: Note[];
+  callDocs: CallDoc[];
 }
 
 /**
@@ -308,10 +335,15 @@ export function jobList(
 ): Job[] {
   return rows.flatMap((row) => {
     const job = found.get(row.id);
+    const calls = items.calls.get(row.id) ?? [];
     const kept: Kept = {
-      calls: items.calls.get(row.id) ?? [],
+      calls,
       statusLog: items.history.get(row.id) ?? [],
       notes: items.notes.get(row.id) ?? [],
+      // Only a call the job still has keeps its documents on show.
+      callDocs: (items.callDocs?.get(row.id) ?? []).filter((doc) =>
+        calls.some((call) => call.id === doc.callId),
+      ),
     };
     if (!job && !isTracked(row, kept.calls.length + kept.notes.length)) return [];
     return [assemble(row, job, kept)];

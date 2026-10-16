@@ -1,5 +1,8 @@
 import {
   type Call,
+  type CallDoc,
+  type CallDocKind,
+  callDocFile,
   type FitReport,
   type Job,
   type JobDocs,
@@ -10,6 +13,9 @@ import {
   type SearchDetail,
   type Sentiment,
 } from '@factwright/core';
+
+/** The sample job that's furthest along, with a screen done and a panel coming up. */
+const NORTHWIND = 'northwind-labs--senior-software-engineer-platform';
 
 /** A date some days from today, so the samples always look current. */
 function day(offset: number): string {
@@ -95,15 +101,30 @@ function sentiment(mood: Sentiment['mood'], summary: string, date: string): Sent
   };
 }
 
+/** Claude's prep sheet or thank-you notes for a sample job's call, written some days ago. */
+function callDoc(jobId: string, callId: string, kind: CallDocKind, offset: number): CallDoc {
+  return {
+    callId,
+    kind,
+    path: callDocFile(jobId, callId, kind),
+    modified: `${day(offset)}T16:00:00.000Z`,
+  };
+}
+
 function call(id: string, extra: Partial<Call>): Call {
   return {
     id,
     kind: 'screen',
     onDate: day(1),
     atTime: null,
+    minutes: null,
+    mode: null,
+    place: null,
+    people: [],
     state: 'scheduled',
     outcome: null,
     notes: null,
+    debrief: null,
     ...extra,
   };
 }
@@ -174,6 +195,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     kind: null,
     manual: false,
     calls: [],
+    callDocs: [],
     statusLog: [],
     notes: [],
     docKinds: [],
@@ -195,7 +217,7 @@ const changes = (id: string, steps: [JobStatus, number][]) =>
 export function sampleJobs(): Job[] {
   return [
     sampleJob({
-      id: 'northwind-labs--senior-software-engineer-platform',
+      id: NORTHWIND,
       company: 'Northwind Labs',
       role: 'Senior Software Engineer, Platform',
       location: 'Hybrid, Seattle',
@@ -239,11 +261,34 @@ export function sampleJobs(): Job[] {
         call('northwind-screen', {
           onDate: day(-9),
           atTime: '10:00',
+          minutes: 30,
+          mode: 'phone',
+          people: [{ name: 'Priya Shah', role: 'Recruiter' }],
           state: 'done',
           outcome: 'advanced',
-          notes: 'Recruiter was friendly. Team of six.',
+          notes: 'She calls my cell.',
+          debrief:
+            'Friendly. She asked why I’m leaving and my notice period (two weeks). Team of six, mostly Go. She liked the deploy pipeline story. Next: a panel with the hiring manager, a staff engineer and a PM.',
         }),
-        call('northwind-panel', { kind: 'panel', onDate: day(4), atTime: '14:00' }),
+        call('northwind-panel', {
+          kind: 'panel',
+          onDate: day(4),
+          atTime: '14:00',
+          minutes: 60,
+          mode: 'video',
+          place: 'https://meet.example.com/northwind-panel',
+          people: [
+            { name: 'Dana Lee', role: 'Hiring manager' },
+            { name: 'Sam Ortiz', role: 'Staff engineer' },
+            { name: 'Ana Ruiz', role: 'Product manager' },
+          ],
+          notes: 'System design and team fit. Bring the cost-tooling numbers.',
+        }),
+      ],
+      callDocs: [
+        callDoc(NORTHWIND, 'northwind-screen', 'prep', -10),
+        callDoc(NORTHWIND, 'northwind-screen', 'thanks', -9),
+        callDoc(NORTHWIND, 'northwind-panel', 'prep', -1),
       ],
       notes: [
         note(
@@ -343,7 +388,15 @@ export function sampleJobs(): Job[] {
         ['applied', -11],
         ['screen', -2],
       ]),
-      calls: [call('tidewater-screen', { onDate: day(2), atTime: '10:30' })],
+      calls: [
+        call('tidewater-screen', {
+          onDate: day(2),
+          atTime: '10:30',
+          minutes: 30,
+          mode: 'phone',
+          people: [{ name: 'Jordan Wells', role: 'Recruiter' }],
+        }),
+      ],
       notes: [
         note('tidewater-note', -2, 'Recruiter reached out on email. Asked for my notice period.'),
       ],
@@ -677,4 +730,70 @@ export function sampleDocs(job: Job): JobDocs {
             : `# ${job.company}\n\nA sample ${kind} document.`,
     ]),
   );
+}
+
+/** The panel's prep sheet, as the interview prep skill writes one for a call. */
+const PANEL_PREP = [
+  '# Prep: Northwind Labs, Senior Software Engineer, Platform',
+  '',
+  '- **Conversation:** Panel interview, 1 hour on video, with Dana Lee (Hiring manager), Sam Ortiz (Staff engineer) and Ana Ruiz (Product manager)',
+  '',
+  '## Five minutes before',
+  '- **Land:** the deploy pipeline you rebuilt (deploys from 40 minutes to 6), the cost tooling that saved $310k a year, and how you bring product along.',
+  '- **Pitch:** platform engineer who makes other teams faster, with numbers to show it.',
+  '- **Gap:** no production Rust. Say so, then point to the Go services you own.',
+  '- **Ask Dana:** what would make the first six months a success? **Ask Sam:** where does the platform hurt most today?',
+  '- **Logistics:** join from the link on the call; have the resume you sent open.',
+  '',
+  '## What this round is for',
+  'A panel checks the same story from three seats: can you do the work (Sam), will the team be better with you (Dana), and can you work with product (Ana). Expect 15 to 20 minutes each.',
+  '',
+  '## Who you’re meeting',
+  '- **Dana Lee, hiring manager:** runs the platform team of six. Cares about delivery and how you grow others.',
+  '- **Sam Ortiz, staff engineer:** wrote the team’s posts on their move to Kubernetes. Expect system design.',
+  '- **Ana Ruiz, product manager:** owns the developer portal. Expect questions about trade-offs and saying no.',
+  '',
+  '## So far',
+  '- Priya liked the deploy pipeline story on the screen. Tell it again here, with the numbers, but lead with the cost tooling for Dana.',
+  '- You said two weeks’ notice. Keep it the same.',
+  '',
+  '## Likely questions',
+  '1. **Walk us through a platform you designed.** The deploy pipeline: the problem, the design, 40 → 6 minutes. (facts/acme.md#deploys)',
+  '2. **How do you decide what the platform builds next?** Usage data plus the cost review; the $310k story. (facts/acme.md#cost-tooling)',
+  '3. **Tell me about a disagreement with product.** The rollout you slowed down for safety, and how you found a middle path.',
+  '',
+  '## Questions to ask them',
+  '- Dana: what would make the first six months a success?',
+  '- Sam: what’s the one part of the platform you’d rebuild first?',
+  '- Ana: how do platform requests get weighed against product work?',
+].join('\n');
+
+/** Thank-you notes after the screen, as the thank-you skill writes them. */
+const SCREEN_THANKS = [
+  '## Priya Shah',
+  '',
+  '**Subject:** Thank you: today’s call about the platform role',
+  '',
+  'Hi Priya,',
+  '',
+  'Thank you for the call today. It was good to hear how the team of six works, and that Go is most of what they write: it’s what I’ve built in for the last four years. I’m keen on the role, and I’m free for the panel any afternoon next week.',
+  '',
+  'Best,',
+  'Alex',
+].join('\n');
+
+/** What Claude wrote for each of a sample job's calls, by the call's ID. */
+export function sampleCallDocs(job: Job): Record<string, Partial<Record<CallDocKind, string>>> {
+  const docs: Record<string, Partial<Record<CallDocKind, string>>> = {};
+  for (const doc of job.callDocs) {
+    const call = job.calls.find((each) => each.id === doc.callId);
+    const text =
+      doc.callId === 'northwind-panel'
+        ? PANEL_PREP
+        : doc.kind === 'thanks'
+          ? SCREEN_THANKS
+          : `# Prep: ${job.company}, ${job.role}\n\nA sample prep sheet for the ${call?.kind ?? 'call'}.`;
+    docs[doc.callId] = { ...docs[doc.callId], [doc.kind]: text };
+  }
+  return docs;
 }

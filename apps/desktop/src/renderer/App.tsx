@@ -11,6 +11,7 @@ import {
   GET_STARTED_SKILL,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
+  THANKS_SKILL,
   taskJob,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
@@ -246,6 +247,18 @@ export function App({ api }: { api: FactwrightApi }) {
   }, [titled]);
   const openJobs = rows.filter((row) => !row.job.archived).length;
   const selected = rows.find((row) => row.job.id === selectedId) ?? null;
+  // The user's other jobs at the same company, for the history with it.
+  const related = useMemo(
+    () =>
+      selected
+        ? rows
+            .map((row) => row.job)
+            .filter(
+              (job) => job.companyKey === selected.job.companyKey && job.id !== selected.job.id,
+            )
+        : [],
+    [rows, selected],
+  );
   // The list as it shows, for moving from job to job while one has the window to itself.
   const shown = useMemo(() => visibleRows(rows, filter), [rows, filter]);
   // The list's order when a job took the window, to step through. It holds still as jobs get
@@ -275,7 +288,13 @@ export function App({ api }: { api: FactwrightApi }) {
       ? 'Your question'
       : task?.skill === REVISE_SKILL
         ? 'Resume revision'
-        : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+        : task?.skill === THANKS_SKILL
+          ? 'Thank-you notes'
+          : task && 'callId' in task
+            ? 'practice' in task && task.practice
+              ? 'Practice'
+              : 'Call prep'
+            : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'
@@ -441,6 +460,7 @@ export function App({ api }: { api: FactwrightApi }) {
                   at >= 0 && { navigation: { index: at + 1, count: order.length, onStep: step } })}
                 {...(ready && { run: runControls })}
                 onAccepted={offerAccepted}
+                related={related}
               />
             )}
           </div>

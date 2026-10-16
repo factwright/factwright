@@ -1,4 +1,5 @@
 import { localDate } from './dates.ts';
+import type { CallDoc } from './extras.ts';
 import type { FitTier } from './fit.ts';
 import {
   type FitReport,
@@ -122,6 +123,8 @@ export interface Job extends Omit<CollectedJob, 'docs'>, TrackerFields {
   /** Added by hand, rather than found by a skill. */
   manual: boolean;
   calls: Call[];
+  /** Claude's prep sheets and thank-you notes for its calls. Their text loads when it's opened. */
+  callDocs: CallDoc[];
   statusLog: StatusChange[];
   /** The user's dated notes, oldest first. */
   notes: Note[];

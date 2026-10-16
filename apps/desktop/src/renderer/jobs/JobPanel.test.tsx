@@ -44,7 +44,7 @@ function panel(
     updateJob: vi.fn(async () => ({ ok: true as const })),
     undoStatusChange: vi.fn(async () => ({ ok: true as const })),
     jobDocs: vi.fn(async () => (job ? sampleDocs(job) : null)),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
     openFile: vi.fn(async () => ({ ok: true as const })),
     ...api,
   } as unknown as FactwrightApi;
@@ -86,7 +86,7 @@ describe('sorting a job before applying', () => {
     const api = {
       updateJob: vi.fn(async () => ({ ok: true as const })),
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
     } as unknown as FactwrightApi;
     const shown = (each: Job) => (
       <JobPanel
@@ -117,7 +117,7 @@ describe('sorting a job before applying', () => {
       updateJob: vi.fn(async () => ({ ok: true as const })),
       undoStatusChange: vi.fn(async () => ({ ok: true as const })),
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
     } as unknown as FactwrightApi;
     // A fit check is running on another job, so its button here can't take focus.
     const run: RunControls = { ...controls(), phase: 'working' };
@@ -369,7 +369,9 @@ describe('JobPanel', () => {
       saved: TODAY,
       text: '## About the job\n\nPlace engineers with clients.',
     };
-    panel(job, { jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved })) });
+    panel(job, {
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved, calls: {} })),
+    });
     await userEvent.click(
       await screen.findByRole('button', { name: 'Open the posting saved from your browser' }),
     );
@@ -381,7 +383,9 @@ describe('JobPanel', () => {
   it('shows the folder’s posting, not the browser’s, once Claude has saved it', async () => {
     const job = byCompany('Northwind Labs');
     const saved = { path: 'x', source: null, saved: null, text: 'From the browser.' };
-    panel(job, { jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved })) });
+    panel(job, {
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved, calls: {} })),
+    });
     await screen.findByRole('button', { name: 'Open Posting' });
     expect(
       screen.queryByRole('button', { name: 'Open the posting saved from your browser' }),
@@ -392,7 +396,7 @@ describe('JobPanel', () => {
     const job = byCompany('Bluewave Staffing');
     const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
     let posting: typeof saved | null = null;
-    const jobExtras = vi.fn(async () => ({ asked: {}, shots: [], posting }));
+    const jobExtras = vi.fn(async () => ({ asked: {}, shots: [], posting, calls: {} }));
     const { api, rerender } = panel(job, { jobExtras });
     await vi.waitFor(() => expect(jobExtras).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -410,7 +414,9 @@ describe('JobPanel', () => {
   it('keeps the job notes’ own name beside a posting saved from the browser', async () => {
     const job: Job = { ...byCompany('Bluewave Staffing'), docKinds: ['job'] };
     const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
-    panel(job, { jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved })) });
+    panel(job, {
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved, calls: {} })),
+    });
     await screen.findByRole('button', { name: 'Open the posting saved from your browser' });
     expect(screen.getByRole('button', { name: 'Open Job notes' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Open Posting' })).toBeNull();
@@ -478,7 +484,7 @@ describe('JobPanel', () => {
     const row = jobRows([job], TODAY)[0] ?? null;
     const api = {
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
     } as unknown as FactwrightApi;
     const shown = (expanded: boolean) => (
       <JobPanel

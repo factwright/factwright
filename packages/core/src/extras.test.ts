@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   askAnswer,
   askedFile,
+  callDocFile,
+  readAllCallDocs,
+  readCallDocs,
   readJobExtras,
   savedPostingFile,
   savedPostingMarkdown,
@@ -113,7 +116,46 @@ describe('readJobExtras', () => {
       asked: {},
       shots: [],
       posting: null,
+      calls: {},
     });
+  });
+
+  it('reads Claude’s prep sheets and thank-you notes for each of the job’s calls', () => {
+    const workspace = memoryWorkspace({
+      [callDocFile(JOB, 'call-1', 'prep')]: '# Prep: Acme',
+      [callDocFile(JOB, 'call-1', 'thanks')]: '## Dana Lee\n\nThanks!',
+      [callDocFile(JOB, 'call-2', 'prep')]: '# Prep: Acme, the panel',
+      // Not a call's document: a note of the user's own, and a folder no call could have.
+      [`calls/${JOB}/call-2/notes.md`]: 'Mine',
+      [`calls/${JOB}/../prep.md`]: 'Out of place',
+      [`calls/${JOB}/Call 3/prep.md`]: 'Not an ID',
+    });
+    expect(readJobExtras(workspace, JOB).calls).toEqual({
+      'call-1': { prep: '# Prep: Acme', thanks: '## Dana Lee\n\nThanks!' },
+      'call-2': { prep: '# Prep: Acme, the panel' },
+    });
+    expect(readCallDocs(workspace, JOB)).toEqual([
+      {
+        callId: 'call-1',
+        kind: 'prep',
+        path: `calls/${JOB}/call-1/prep.md`,
+        modified: MODIFIED,
+      },
+      {
+        callId: 'call-1',
+        kind: 'thanks',
+        path: `calls/${JOB}/call-1/thank-you.md`,
+        modified: MODIFIED,
+      },
+      {
+        callId: 'call-2',
+        kind: 'prep',
+        path: `calls/${JOB}/call-2/prep.md`,
+        modified: MODIFIED,
+      },
+    ]);
+    expect(readAllCallDocs(workspace)).toEqual(new Map([[JOB, readCallDocs(workspace, JOB)]]));
+    expect(readAllCallDocs(memoryWorkspace({}))).toEqual(new Map());
   });
 });
 

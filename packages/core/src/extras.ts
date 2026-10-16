@@ -4,7 +4,8 @@ import type { WorkspaceEntry, WorkspaceReader } from './records.ts';
 /**
  * Where the app keeps what the user adds for a job, by the job's ID, apart from the job's own
  * folder, so adding something never makes one: Claude's answers to the user's questions about
- * the job, the user's screenshots, and the posting they saved from their browser.
+ * the job, the user's screenshots, the posting they saved from their browser, and Claude's work
+ * for each call they logged.
  */
 export const JOB_EXTRAS = {
   /** Claude's answer to each question: asked/<job ID>/<question ID>.md. */
@@ -13,7 +14,75 @@ export const JOB_EXTRAS = {
   screenshots: 'screenshots',
   /** The posting as the user saw it, saved with Save to Factwright: saved/<job ID>/posting.md. */
   saved: 'saved',
+  /** Claude's work for each of the job's calls: calls/<job ID>/<call ID>/prep.md, and so on. */
+  calls: 'calls',
 } as const;
+
+const byName = (a: WorkspaceEntry, b: WorkspaceEntry) =>
+  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+
+/** What Claude writes for one call: a prep sheet before it, and thank-you notes after. */
+export const CALL_DOCS = { prep: 'prep.md', thanks: 'thank-you.md' } as const;
+
+export type CallDocKind = keyof typeof CALL_DOCS;
+
+/**
+ * A call's ID as the tracker makes it, a random UUID, or one in the sample jobs: safe in a path,
+ * and in what the app types to Claude.
+ */
+export const CALL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** Where one of Claude's documents for a call is kept. */
+export const callDocFile = (jobId: string, callId: string, kind: CallDocKind) =>
+  `${JOB_EXTRAS.calls}/${jobId}/${callId}/${CALL_DOCS[kind]}`;
+
+/** One of Claude's documents for a call, and when it was written. */
+export interface CallDoc {
+  callId: string;
+  kind: CallDocKind;
+  path: string;
+  /** When it last changed, as an ISO time. */
+  modified: string;
+}
+
+/** Claude's documents for one job's calls, in the order of their calls' IDs, then their kinds. */
+export function readCallDocs(workspace: WorkspaceReader, jobId: string): CallDoc[] {
+  const folder = `${JOB_EXTRAS.calls}/${jobId}`;
+  return workspace
+    .list(folder)
+    .sort(byName)
+    .flatMap((entry): CallDoc[] => {
+      if (!entry.folder || !CALL_ID.test(entry.name)) return [];
+      const files = workspace.list(`${folder}/${entry.name}`);
+      return (Object.entries(CALL_DOCS) as [CallDocKind, string][]).flatMap(([kind, name]) => {
+        const file = files.find((each) => !each.folder && each.name === name);
+        return file
+          ? [
+              {
+                callId: entry.name,
+                kind,
+                path: `${folder}/${entry.name}/${name}`,
+                modified: file.modified,
+              },
+            ]
+          : [];
+      });
+    });
+}
+
+/**
+ * Every job's documents for its calls, by the job's ID, from one look through calls/. A job's
+ * folder there is named by its ID, which the tracker checks against its jobs.
+ */
+export function readAllCallDocs(workspace: WorkspaceReader): Map<string, CallDoc[]> {
+  const docs = new Map<string, CallDoc[]>();
+  for (const entry of workspace.list(JOB_EXTRAS.calls)) {
+    if (!entry.folder) continue;
+    const found = readCallDocs(workspace, entry.name);
+    if (found.length > 0) docs.set(entry.name, found);
+  }
+  return docs;
+}
 
 /** Where the posting the user saved from their browser is kept. */
 export const savedPostingFile = (jobId: string) => `${JOB_EXTRAS.saved}/${jobId}/posting.md`;
@@ -113,17 +182,20 @@ function shotOf(name: string): Pick<JobShot, 'kind' | 'ask'> {
   return ask && ASK_ID.test(ask) ? { kind: 'ask', ask } : { kind: 'other', ask: null };
 }
 
-const byName = (a: WorkspaceEntry, b: WorkspaceEntry) =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-
 /**
- * What the user added for a job: Claude's answers to their questions, their screenshots, and the
- * posting they saved from their browser.
+ * What the user added for a job: Claude's answers to their questions, their screenshots, the
+ * posting they saved from their browser, and Claude's prep sheets and thank-you notes for its
+ * calls, by the call's ID.
  */
 export function readJobExtras(
   workspace: WorkspaceReader,
   jobId: string,
-): { asked: Record<string, string>; shots: JobShot[]; posting: SavedPosting | null } {
+): {
+  asked: Record<string, string>;
+  shots: JobShot[];
+  posting: SavedPosting | null;
+  calls: Record<string, Partial<Record<CallDocKind, string>>>;
+} {
   const asked: Record<string, string> = {};
   const folder = `${JOB_EXTRAS.asked}/${jobId}`;
   for (const entry of workspace.list(folder).sort(byName)) {
@@ -142,5 +214,10 @@ export function readJobExtras(
     });
   const saved = workspace.readText(savedPostingFile(jobId));
   const posting = saved ? readSavedPosting(savedPostingFile(jobId), saved) : null;
-  return { asked, shots, posting: posting?.text ? posting : null };
+  const calls: Record<string, Partial<Record<CallDocKind, string>>> = {};
+  for (const doc of readCallDocs(workspace, jobId)) {
+    const text = workspace.readText(doc.path);
+    if (text) calls[doc.callId] = { ...calls[doc.callId], [doc.kind]: text };
+  }
+  return { asked, shots, posting: posting?.text ? posting : null, calls };
 }

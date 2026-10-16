@@ -35,11 +35,12 @@ import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
 import { CoverLetterSection } from './CoverLetterSection.tsx';
 import { focusNext, PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
+import { CallsSection } from './JobCalls.tsx';
 import { FilesSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
-import { ActivitySection, ArchiveFooter, NextStep, ProgressSection } from './JobTracking.tsx';
+import { ArchiveFooter, HistorySection, NextStep, ProgressSection } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
 import { BUSY, RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
@@ -124,6 +125,8 @@ export interface JobPanelProps {
   navigation?: PanelNavigation;
   /** Called when the user marks a job's offer accepted, to offer to withdraw from the rest. */
   onAccepted?: (jobId: string) => void;
+  /** The user's other jobs at the same company, for the history with it. */
+  related?: readonly Job[];
 }
 
 /** Everything on file for the job picked in the list, in sections that open and close. */
@@ -138,6 +141,7 @@ export function JobPanel({
   onExpand,
   navigation,
   onAccepted,
+  related = [],
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
@@ -258,6 +262,14 @@ export function JobPanel({
       api={api}
       today={today}
     />,
+    <CallsSection
+      key={`calls-${job.id}`}
+      job={job}
+      progress={progress}
+      api={api}
+      today={today}
+      run={run}
+    />,
     <PanelSection
       key="notes"
       id="notes"
@@ -297,7 +309,7 @@ export function JobPanel({
     />,
     <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
     <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} run={run} />,
-    <ActivitySection key="activity" job={job} today={today} />,
+    <HistorySection key="activity" job={job} related={related} today={today} />,
   ];
 
   return (

@@ -381,6 +381,104 @@ describe('two computers on one account', () => {
     expect(await pc.sync()).toMatchObject({ pushed: 0 });
   });
 
+  it('keep a call’s details through a computer from before them, which gets them once it updates', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    mac.tracker.addCall(
+      'acme--staff',
+      {
+        kind: 'panel',
+        onDate: '2026-10-20',
+        atTime: '14:00',
+        minutes: 60,
+        mode: 'video',
+        place: 'https://meet.example/abc',
+        people: [
+          { name: 'Dana Lee', role: 'Hiring manager' },
+          { name: 'Sam Ortiz', role: 'Staff engineer' },
+        ],
+      },
+      AT,
+    );
+    await mac.sync();
+    // The PC is on the version before a call's details, as 0.4.0 is.
+    pc.goBackTo(6);
+    await pc.sync();
+    const id = mac.tracker.calls().get('acme--staff')?.[0]?.id ?? '';
+    expect(pc.tracker.syncRow('calls', id)).not.toHaveProperty('people');
+    // Both change the call: the PC says it's done, while the Mac writes how it went.
+    const later: EditContext = { today: '2026-10-20', now: '2026-10-20T16:00:00.000Z' };
+    pc.tracker.updateCall(id, { state: 'done', outcome: 'advanced' }, later);
+    mac.tracker.updateCall(id, { debrief: 'Dana asked about on-call.' }, later);
+    await pc.sync();
+    expect(await mac.sync()).toMatchObject({ conflicts: 1 });
+    await pc.sync();
+    const call = {
+      state: 'done',
+      outcome: 'advanced',
+      minutes: 60,
+      mode: 'video',
+      place: 'https://meet.example/abc',
+      people: [
+        { name: 'Dana Lee', role: 'Hiring manager' },
+        { name: 'Sam Ortiz', role: 'Staff engineer' },
+      ],
+      debrief: 'Dana asked about on-call.',
+    };
+    expect(mac.tracker.calls().get('acme--staff')).toEqual([expect.objectContaining(call)]);
+    // Once the PC updates, it has them all, and nothing more to send.
+    pc.update();
+    expect(pc.tracker.calls()).toEqual(mac.tracker.calls());
+    expect(await pc.sync()).toMatchObject({ pushed: 0 });
+  });
+
+  it('keep the people both computers added to a call, and both accounts of how it went', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    mac.tracker.addCall(
+      'acme--staff',
+      { kind: 'panel', onDate: '2026-10-11', people: [{ name: 'Dana Lee', role: null }] },
+      AT,
+    );
+    await mac.sync();
+    await pc.sync();
+    const id = mac.tracker.calls().get('acme--staff')?.[0]?.id ?? '';
+    mac.tracker.updateCall(
+      id,
+      {
+        people: [
+          { name: 'Dana Lee', role: 'Hiring manager' },
+          { name: 'Sam Ortiz', role: null },
+        ],
+        debrief: 'Went long on the migration.',
+      },
+      AT,
+    );
+    pc.tracker.updateCall(
+      id,
+      {
+        people: [
+          { name: 'Dana Lee', role: null },
+          { name: 'Ana Ruiz', role: 'Product manager' },
+        ],
+        debrief: 'Ana asked about roadmaps.',
+      },
+      AT,
+    );
+    await mac.sync();
+    expect(await pc.sync()).toMatchObject({ conflicts: 1 });
+    await mac.sync();
+    // Dana keeps the role the Mac gave her, since the PC didn't change her.
+    for (const each of [mac, pc]) {
+      expect(each.tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+        people: [
+          { name: 'Ana Ruiz', role: 'Product manager' },
+          { name: 'Dana Lee', role: 'Hiring manager' },
+          { name: 'Sam Ortiz', role: null },
+        ],
+        debrief: 'Ana asked about roadmaps.\n\nFrom Sam’s Mac:\nWent long on the migration.',
+      });
+    }
+  });
+
   it('keep the statuses a newer version sets through a computer still on an earlier one', async () => {
     const globex = { ...job('globex--staff'), company: 'Globex', companyKey: 'globex' };
     mac.tracker.saveCollected([job('acme--staff'), globex], AT.now);

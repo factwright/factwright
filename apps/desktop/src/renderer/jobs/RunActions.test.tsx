@@ -286,6 +286,7 @@ describe('the application questions', () => {
     vi.mocked(api.jobExtras).mockResolvedValue({
       asked: {},
       posting: null,
+      calls: {},
       shots: [
         { path, name: 'form-2026-10-11-1.png', kind: 'form', ask: null, size: 8, modified: '' },
       ],

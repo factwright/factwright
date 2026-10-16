@@ -1,6 +1,9 @@
 import type {
+  CallDocKind,
   CallKind,
+  CallMode,
   CallOutcome,
+  CallPerson,
   CallState,
   Job,
   JobDocs,
@@ -155,11 +158,15 @@ export interface NoteChanges {
   on?: string;
 }
 
-/** A call or interview the user logs. */
+/** A call or interview the user logs, with as much as they know about it. */
 export interface NewCall {
   kind: CallKind;
   onDate: string;
   atTime?: string | null;
+  minutes?: number | null;
+  mode?: CallMode | null;
+  place?: string | null;
+  people?: CallPerson[];
   notes?: string | null;
 }
 
@@ -168,9 +175,14 @@ export interface CallChanges {
   kind?: CallKind;
   onDate?: string;
   atTime?: string | null;
+  minutes?: number | null;
+  mode?: CallMode | null;
+  place?: string | null;
+  people?: CallPerson[];
   state?: CallState;
   outcome?: CallOutcome | null;
   notes?: string | null;
+  debrief?: string | null;
 }
 
 /** Whether an edit was saved, and if not, why, in words the user can act on. */
@@ -193,12 +205,14 @@ export type ShotResult = { ok: true; path: string } | { ok: false; message: stri
 
 /**
  * Claude's answers to the user's questions about a job, by the question's ID, its screenshots,
- * and the posting the user saved from their browser.
+ * the posting the user saved from their browser, and Claude's prep sheets and thank-you notes
+ * for its calls, by the call's ID.
  */
 export interface JobExtras {
   asked: Record<string, string>;
   shots: JobShot[];
   posting: SavedPosting | null;
+  calls: Record<string, Partial<Record<CallDocKind, string>>>;
 }
 
 /** A picture pasted into Claude's panel, saved where Claude can read it, by its full path. */

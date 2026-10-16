@@ -62,6 +62,7 @@ function job(extra: Partial<Job> = {}): Job {
     kind: null,
     manual: false,
     calls: [],
+    callDocs: [],
     statusLog: [],
     notes: [],
     docKinds: [],
@@ -75,9 +76,14 @@ function call(extra: Partial<Call> = {}): Call {
     kind: 'screen',
     onDate: '2026-10-12',
     atTime: null,
+    minutes: null,
+    mode: null,
+    place: null,
+    people: [],
     state: 'scheduled',
     outcome: null,
     notes: null,
+    debrief: null,
     ...extra,
   };
 }
@@ -223,11 +229,33 @@ describe('attention', () => {
       level: 'action',
       text: 'How did the technical interview go?',
     });
-    expect(attention({ calls: [call({ onDate: '2026-10-12', atTime: '10:30' })] })).toEqual({
+    expect(attention({ calls: [call({ onDate: '2026-10-13', atTime: '10:30' })] })).toEqual({
       level: 'info',
-      text: 'Recruiter screen Monday at 10:30 AM',
+      text: 'Recruiter screen Tuesday at 10:30 AM',
     });
     expect(attention({ calls: [call({ onDate: '2026-10-20' })] })).toBeNull();
+  });
+
+  it('asks the user to prep for a call two days out that has no prep sheet yet', () => {
+    const soon = call({ id: 'soon', kind: 'panel', onDate: '2026-10-12', atTime: '14:00' });
+    expect(attention({ calls: [soon] })).toEqual({
+      level: 'action',
+      text: 'Prep for the panel interview Monday at 2:00 PM',
+    });
+    const prep = {
+      callId: 'soon',
+      kind: 'prep' as const,
+      path: 'calls/acme--staff/soon/prep.md',
+      modified: '2026-10-09T12:00:00.000Z',
+    };
+    expect(attention({ calls: [soon], callDocs: [prep] })).toEqual({
+      level: 'info',
+      text: 'Panel interview Monday at 2:00 PM',
+    });
+    // Thank-you notes from an earlier call aren't prep for this one.
+    expect(attention({ calls: [soon], callDocs: [{ ...prep, kind: 'thanks' }] })?.level).toBe(
+      'action',
+    );
   });
 
   it('nudges about applications with no answer', () => {
