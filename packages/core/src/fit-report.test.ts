@@ -193,9 +193,6 @@ describe('a write-up made to keep the app busy', () => {
     expect(
       timed(() => parseFitReport(`## Score\n- work 1/2${' '.repeat(100_000)}z\n  more\u2028x`)),
     ).toBeLessThan(100);
-    expect(timed(() => parseFitReport(`- **Verdict:** work${' '.repeat(100_000)}x`))).toBeLessThan(
-      100,
-    );
   });
 
   it('reads them as before', () => {

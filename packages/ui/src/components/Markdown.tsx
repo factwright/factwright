@@ -316,6 +316,9 @@ function list(nodes: readonly ListNode[], key: string): ReactNode {
 function blocks(text: string, headingOffset: number): ReactNode[] {
   const all = text.replace(/\r\n?/g, '\n').split('\n');
   const out: ReactNode[] = [];
+  // How many empty cells short table rows can still be filled out with: 10,000, or one for each
+  // character of the text. A wide header over many short rows could make millions of them.
+  let fill = Math.max(10_000, text.length);
   let i = 0;
   while (i < all.length) {
     const line = all[i] ?? '';
@@ -338,7 +341,17 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
     } else if (isTableStart(all, i)) {
       const head = cells(line);
       const rows: string[][] = [];
-      for (i += 2; i < all.length && isRow(all[i] ?? ''); i++) rows.push(cells(all[i] ?? ''));
+      for (i += 2; i < all.length && isRow(all[i] ?? ''); i++) {
+        // A row has as many cells as the header: past that they're left out, and a short row is
+        // filled out with empty ones while there are any left to fill with.
+        const row = cells(all[i] ?? '').slice(0, head.length);
+        const missing = head.length - row.length;
+        if (missing <= fill) {
+          fill -= missing;
+          while (row.length < head.length) row.push('');
+        }
+        rows.push(row);
+      }
       out.push(
         <div key={key} className={styles.table}>
           <table>
@@ -352,8 +365,8 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
             <tbody>
               {rows.map((row, r) => (
                 <tr key={`${key}.r${r}`}>
-                  {head.map((_, k) => (
-                    <td key={`${key}.r${r}.${k}`}>{inline(row[k] ?? '', `${key}.r${r}.${k}`)}</td>
+                  {row.map((cell, k) => (
+                    <td key={`${key}.r${r}.${k}`}>{inline(cell, `${key}.r${r}.${k}`)}</td>
                   ))}
                 </tr>
               ))}
