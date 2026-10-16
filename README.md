@@ -91,6 +91,7 @@ Factwright is free and open source. It's built by [Steve Hillyer](https://github
 | [`packages/sync`](packages/sync) | End-to-end encryption and the sync protocol |
 | [`packages/ui`](packages/ui) | The design system and shared screens |
 | [`packages/engine`](packages/engine) | Turns resume data into PDF and Word files |
+| [`packages/xray`](packages/xray) | The ATS X-ray: reads a resume file the way an applicant tracking system does, and checks it |
 | [`plugin`](plugin) | The skills Factwright gives Claude Code, such as the fit check and interview prep |
 | [`docs`](docs) | Architecture, security, releasing and the roadmap |
 

@@ -7,6 +7,7 @@ import {
   parseRunTask,
   parseTerminalSize,
   previewablePdf,
+  readableWord,
   resolveInside,
   runPrompt,
   saveableFileName,
@@ -86,6 +87,18 @@ describe('previewablePdf', () => {
     );
     expect(previewablePdf(workspace, 'applications/acme/resume.docx')).toBeNull();
     expect(previewablePdf(workspace, '../elsewhere/secret.pdf')).toBeNull();
+  });
+});
+
+describe('readableWord', () => {
+  const workspace = resolve(sep, 'data', 'workspace');
+
+  it('reads only Word files inside the workspace', () => {
+    expect(readableWord(workspace, 'base/startup-ic.DOCX')).toBe(
+      join(workspace, 'base', 'startup-ic.DOCX'),
+    );
+    expect(readableWord(workspace, 'applications/acme/resume.pdf')).toBeNull();
+    expect(readableWord(workspace, '../elsewhere/secret.docx')).toBeNull();
   });
 });
 

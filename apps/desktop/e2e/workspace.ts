@@ -1,10 +1,15 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { samplePdf } from '../src/renderer/jobs/sample-pdf.ts';
 
 export const ACME_FOLDER = 'applications/2026-10-07-acme-robotics-staff-engineer';
 export const ACME_RESUME = 'AlexRiveraResume10072026_Acme.pdf';
+export const ACME_WORD = 'AlexRiveraResume10072026_Acme.docx';
+
+/** A made-up resume the engine printed, as the app prints them, from the ATS X-ray's tests. */
+const resume = (name: string) =>
+  readFileSync(createRequire(import.meta.url).resolve(`@factwright/xray/fixtures/${name}`));
 
 /** Files of a made-up job hunt, as the skills write them. */
 const FILES: Readonly<Record<string, string | Uint8Array>> = {
@@ -24,7 +29,8 @@ const FILES: Readonly<Record<string, string | Uint8Array>> = {
   ].join('\n'),
   [`${ACME_FOLDER}/posting.md`]:
     '# Staff Engineer\n\n- **Source:** https://jobs.ashbyhq.com/acme/7f3a\n\nBuild the tools our engineers use.',
-  [`${ACME_FOLDER}/${ACME_RESUME}`]: samplePdf(),
+  [`${ACME_FOLDER}/${ACME_RESUME}`]: resume('engineer.pdf'),
+  [`${ACME_FOLDER}/${ACME_WORD}`]: resume('engineer.docx'),
   'searches/2026-10-hn-whos-hiring/jobs.json': JSON.stringify({
     meta: { source: 'HN October 2026', checked: '2026-10-05' },
     jobs: [

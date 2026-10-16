@@ -13,9 +13,35 @@ import {
   STATUS_RANK,
   shotsFolder,
 } from '@factwright/core';
+import datesLastPdf from '@factwright/xray/fixtures/dates-last.pdf?url';
+import engineerWord from '@factwright/xray/fixtures/engineer.docx?url';
+import engineerPdf from '@factwright/xray/fixtures/engineer.pdf?url';
+import footerPdf from '@factwright/xray/fixtures/footer.pdf?url';
+import headerWord from '@factwright/xray/fixtures/header.docx?url';
+import iconsPdf from '@factwright/xray/fixtures/icons.pdf?url';
+import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
+import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import { sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
+
+/** A file the screens preview serves, as bytes. */
+async function fileBytes(url: string): Promise<Uint8Array> {
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+}
+
+/**
+ * The resume every sample job and starting resume has, as a PDF and a Word file: one the engine
+ * made, or, for ?resume=, one of the X-ray's files with a problem in it.
+ */
+const RESUMES: Readonly<Record<string, { pdf: string; word: string }>> = {
+  engineer: { pdf: engineerPdf, word: engineerWord },
+  spaced: { pdf: spacedPdf, word: headerWord },
+  'dates-last': { pdf: datesLastPdf, word: headerWord },
+  icons: { pdf: iconsPdf, word: headerWord },
+  sidebar: { pdf: sidebarPdf, word: headerWord },
+  footer: { pdf: footerPdf, word: headerWord },
+};
 
 type TrackerApi = Pick<
   FactwrightApi,
@@ -35,6 +61,7 @@ type TrackerApi = Pick<
   | 'onJobsChanged'
   | 'openFile'
   | 'readPdf'
+  | 'readWord'
   | 'copyText'
   | 'saveFile'
   | 'jobExtras'
@@ -72,7 +99,8 @@ const SAVED: EditResult = { ok: true };
  * real tracker's main rules (a call moves a job forward, Undo puts it back) closely enough to
  * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading.
  */
-export function sampleTracker(jobs: string | null): TrackerApi {
+export function sampleTracker(jobs: string | null, resume: string | null = null): TrackerApi {
+  const files = RESUMES[resume ?? ''] ?? { pdf: engineerPdf, word: engineerWord };
   let list: JobList = {
     jobs: jobs === 'none' ? [] : sampleJobs(),
     readAt: new Date().toISOString(),
@@ -385,8 +413,13 @@ export function sampleTracker(jobs: string | null): TrackerApi {
     readShot: async (path) => shots.get(path)?.bytes ?? null,
     pasteImage: async () => ({ ok: true, file: '/sample/workspace/screenshots/pasted-1.png' }),
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
-    // Every resume previews as the same made-up page.
-    readPdf: async () => ({ ok: true, data: samplePdf() }),
+    // Every resume is the same made-up one, made by the engine as the app makes it. A cover
+    // letter shows the sample page.
+    readPdf: async (path) => ({
+      ok: true,
+      data: /CoverLetter/.test(path) ? samplePdf() : await fileBytes(files.pdf),
+    }),
+    readWord: async () => ({ ok: true, data: await fileBytes(files.word) }),
     copyText: async (text) => {
       await navigator.clipboard?.writeText(text).catch(() => {});
       return SAVED;

@@ -13,6 +13,8 @@ import { ResumePreview } from '../jobs/ResumePreview.tsx';
 import { BUSY } from '../jobs/RunActions.tsx';
 import { ProfilesLine } from '../profiles/ProfilesLine.tsx';
 import type { RunPhase } from '../useClaudeRun.ts';
+import { OpenXRay } from '../xray/OpenXRay.tsx';
+import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
 import { FilesStep } from './steps/FilesStep.tsx';
@@ -80,16 +82,18 @@ function Card({
   );
 }
 
-/** A starting resume, with buttons to preview it and open it. */
+/** A starting resume, with buttons to preview it, X-ray it and open it. */
 function ResumeRow({
   resume,
   templates,
   onPreview,
+  onXRay,
   onOpen,
 }: {
   resume: StartingResume;
   templates: readonly TemplateInfo[];
   onPreview: (path: string) => void;
+  onXRay: () => void;
   onOpen: (path: string) => void;
 }) {
   return (
@@ -99,23 +103,42 @@ function ResumeRow({
         {resume.title}
         <span className={styles.resumeLook}>{templateName(resume.layout, templates)}</span>
       </span>
-      {resume.pdf && (
-        <Button size="sm" variant="quiet" onClick={() => onPreview(resume.pdf as string)}>
-          Preview
-        </Button>
-      )}
-      {(resume.pdf || resume.docx) && (
-        <Button
-          size="sm"
-          variant="quiet"
-          onClick={() => onOpen((resume.pdf ?? resume.docx) as string)}
-        >
-          Open
-        </Button>
-      )}
+      <span className={styles.resumeActions}>
+        {resume.pdf && (
+          <Button size="sm" variant="quiet" onClick={() => onPreview(resume.pdf as string)}>
+            Preview
+          </Button>
+        )}
+        {(resume.pdf || resume.docx) && (
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-label={`ATS X-ray of ${resume.title}`}
+            onClick={onXRay}
+          >
+            ATS X-ray
+          </Button>
+        )}
+        {(resume.pdf || resume.docx) && (
+          <Button
+            size="sm"
+            variant="quiet"
+            onClick={() => onOpen((resume.pdf ?? resume.docx) as string)}
+          >
+            Open
+          </Button>
+        )}
+      </span>
     </li>
   );
 }
+
+/** A starting resume's files, its PDF first, for its X-ray. */
+const filesOf = (resume: StartingResume): XRayFile[] =>
+  (['pdf', 'docx'] as const).flatMap((format) => {
+    const path = resume[format];
+    return path ? [{ path, name: path.split('/').at(-1) ?? path, format }] : [];
+  });
 
 /** A starting resume's file, as a job's panel would show one, for its preview. */
 const asJobFile = (path: string, format: 'pdf' | 'docx'): JobFile => ({
@@ -156,6 +179,7 @@ export function ProfilePage({
   const { answers, status } = profile;
   const [editing, setEditing] = useState<Editing>(null);
   const [preview, setPreview] = useState<JobFile | null>(null);
+  const [xray, setXray] = useState<StartingResume | null>(null);
   const busy = BUSY.includes(phase);
   const canRun = ready && !busy;
   const { claims, unconfirmed, files } = status.facts;
@@ -190,6 +214,7 @@ export function ProfilePage({
       resume={resume}
       templates={profile.templates}
       onPreview={(path) => setPreview(asJobFile(path, 'pdf'))}
+      onXRay={() => setXray(resume)}
       onOpen={(path) => void api.openFile(path)}
     />
   );
@@ -478,6 +503,16 @@ export function ProfilePage({
         </Dialog>
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
+      {xray && filesOf(xray)[0] && (
+        <OpenXRay
+          api={api}
+          files={filesOf(xray)}
+          start={(filesOf(xray)[0] as XRayFile).path}
+          // A starting resume isn't for one job, so there's no posting to check its terms against.
+          posting={null}
+          onClose={() => setXray(null)}
+        />
+      )}
     </main>
   );
 }

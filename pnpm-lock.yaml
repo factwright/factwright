@@ -278,6 +278,9 @@ importers:
       '@factwright/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@factwright/xray':
+        specifier: workspace:*
+        version: link:../../packages/xray
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.63.0
@@ -551,6 +554,37 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.3.2(@types/node@24.19.1)(esbuild@0.28.1)(jiti@2.7.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.3(@types/node@24.19.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.1)(jiti@2.7.0))
+
+  packages/xray:
+    dependencies:
+      '@factwright/core':
+        specifier: workspace:*
+        version: link:../core
+      fflate:
+        specifier: 'catalog:'
+        version: 0.8.3
+    devDependencies:
+      '@factwright/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.1
+      docx:
+        specifier: 9.8.1
+        version: 9.8.1
+      electron:
+        specifier: 'catalog:'
+        version: 43.7.7(supports-color@10.2.2)
+      pdfjs-dist:
+        specifier: 'catalog:'
+        version: 6.4.299
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 5.0.3(@types/node@24.19.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.1)(jiti@2.7.0))

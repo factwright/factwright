@@ -2,8 +2,9 @@ import type { Job, JobDocKind, JobDocs, JobFile } from '@factwright/core';
 import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { OpenXRay } from '../xray/OpenXRay.tsx';
 import styles from './JobPanel.module.css';
 import { PanelSection } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
@@ -19,20 +20,26 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
 
+/** A file's name without its extension, which a resume's PDF and Word file share. */
+const stem = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
+
 /**
  * A resume's or cover letter's file: a PDF previews here, and either opens in the user's own app,
- * ready to attach.
+ * ready to attach. A resume can be X-rayed too, to see what an applicant tracking system reads.
  */
 export function FileRow({
   file,
   today,
   onPreview,
   onOpen,
+  onXRay,
 }: {
   file: JobFile;
   today: string;
   onPreview: (file: JobFile) => void;
   onOpen: (path: string) => void;
+  /** For a resume: opens its ATS X-ray. A cover letter has none. */
+  onXRay?: (file: JobFile) => void;
 }) {
   return (
     <li className={styles.file}>
@@ -43,24 +50,36 @@ export function FileRow({
           {file.format.toUpperCase()} · {fileSize(file.size)} · {shortDate(file.modified, today)}
         </span>
       </span>
-      {file.format === 'pdf' && (
+      <span className={styles.fileActions}>
+        {file.format === 'pdf' && (
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-label={`Preview ${file.name}`}
+            onClick={() => onPreview(file)}
+          >
+            Preview
+          </Button>
+        )}
+        {onXRay && (
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-label={`ATS X-ray of ${file.name}`}
+            onClick={() => onXRay(file)}
+          >
+            ATS X-ray
+          </Button>
+        )}
         <Button
           size="sm"
           variant="quiet"
-          aria-label={`Preview ${file.name}`}
-          onClick={() => onPreview(file)}
+          aria-label={`Open ${file.name}`}
+          onClick={() => onOpen(file.path)}
         >
-          Preview
+          Open
         </Button>
-      )}
-      <Button
-        size="sm"
-        variant="quiet"
-        aria-label={`Open ${file.name}`}
-        onClick={() => onOpen(file.path)}
-      >
-        Open
-      </Button>
+      </span>
     </li>
   );
 }
@@ -73,7 +92,17 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
   const [preview, setPreview] = useState<JobFile | null>(null);
+  const [xray, setXray] = useState<JobFile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+
+  // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes.
+  const posting = useCallback(async () => {
+    const loaded = await api.jobDocs(job.id);
+    return loaded?.posting ?? loaded?.job ?? null;
+  }, [api, job.id]);
+  /** A resume's PDF and Word file, which share a name, for the X-ray to switch between. */
+  const sameResume = (file: JobFile) =>
+    job.files.filter((each) => stem(each.name) === stem(file.name));
 
   // Older folders keep the posting inside the job notes.
   const documents = DOCUMENTS.filter(({ kind }) => job.docKinds.includes(kind)).map((doc) =>
@@ -115,7 +144,18 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
         <p className={styles.quiet}>No files yet.</p>
       ) : (
         <ul className={styles.files}>
-          {built.map((file) => (
+          {job.files.map((file) => (
+            <FileRow
+              key={file.path}
+              file={file}
+              today={today}
+              onPreview={setPreview}
+              onOpen={openFile}
+              onXRay={setXray}
+            />
+          ))}
+          {/* Cover letters have no X-ray: it reads resumes. */}
+          {job.letters.map((file) => (
             <FileRow
               key={file.path}
               file={file}
@@ -154,6 +194,15 @@ export function FilesSection({ job, api, today }: { job: Job; api: FactwrightApi
         </Dialog>
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
+      {xray && (
+        <OpenXRay
+          api={api}
+          files={sameResume(xray)}
+          start={xray.path}
+          posting={posting}
+          onClose={() => setXray(null)}
+        />
+      )}
     </PanelSection>
   );
 }

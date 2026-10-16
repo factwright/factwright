@@ -108,13 +108,13 @@ function call(id: string, extra: Partial<Call>): Call {
   };
 }
 
-function resume(company: string, modified: string) {
-  const name = `Resume - ${company}.pdf`;
+function resume(company: string, modified: string, format: 'pdf' | 'docx' = 'pdf') {
+  const name = `Resume - ${company}.${format}`;
   return {
     path: `applications/${company.toLowerCase().replace(/\W+/g, '-')}/${name}`,
     name,
-    format: 'pdf' as const,
-    size: 52_400,
+    format,
+    size: format === 'pdf' ? 52_400 : 11_900,
     modified: `${modified}T15:00:00.000Z`,
   };
 }
@@ -257,7 +257,7 @@ export function sampleJobs(): Job[] {
           'Panel set for Friday: the hiring manager, a staff engineer and a PM. Bring the cost-tooling numbers.',
         ),
       ],
-      files: [resume('Northwind Labs', day(-17))],
+      files: [resume('Northwind Labs', day(-17)), resume('Northwind Labs', day(-17), 'docx')],
       docKinds: ['posting', 'job', 'fit', 'prep', 'answers'],
       questions: [
         'Why do you want to work at Northwind?',
@@ -657,6 +657,13 @@ export function sampleDocs(job: Job): JobDocs {
     '## What you bring',
     '- Eight or more years building production systems',
     '- Experience with **Go** or **TypeScript**',
+    '- Kubernetes in production, and CI/CD you’ve built yourself',
+    '- Observability with Datadog or Prometheus',
+    '',
+    '## Nice to have',
+    '- Rust',
+    '- Terraform',
+    '- Developer experience work',
   ].join('\n');
   return Object.fromEntries(
     job.docKinds.map((kind) => [

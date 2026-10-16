@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- An ATS X-ray for every resume. The ATS X-ray button beside each resume in a job's Files, and beside each starting resume in Profile, shows what an applicant tracking system reads in it, worked out on your computer from the PDF or Word file itself, with no Claude. The text in the order a parser gets it sits beside what it fills in (your name and contact details, each job's title, company and dates, schools and skills), the sections it knows, and checks for what trips parsers up: text read out of order, columns, headers and footers, junk characters and icons, letters joined into one or spaced apart, tables and text boxes, missing contact details, dates it can't read, fonts and length. For a job's resume it also checks the posting's must-have and nice-to-have terms. A missing skill your fact bank backs plainly says Add it. One with a note beside it, an unverified fact, or a certification or license your profile lists says Check it first, quoting your words. One it doesn't back is a real gap that stays off.
+
 ## 0.3.0 - 2026-10-15
 
 ### Added

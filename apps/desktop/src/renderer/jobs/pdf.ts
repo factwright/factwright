@@ -1,3 +1,4 @@
+import { readPdf } from '@factwright/xray';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -80,3 +81,6 @@ export async function pdfText(data: Uint8Array): Promise<string> {
     await loading.destroy();
   }
 }
+
+/** A resume PDF, read the way an applicant system reads it, for its ATS X-ray. */
+export const readResumePdf = (data: Uint8Array) => readPdf(data, getDocument);

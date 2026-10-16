@@ -400,8 +400,9 @@
 
 .file {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 2px 10px;
   padding: 6px 6px 6px 10px;
   border: 1px solid var(--fw-border);
   border-radius: 10px;
@@ -414,9 +415,16 @@
 
 .fileText {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 150px;
   flex-direction: column;
   min-width: 0;
+}
+
+/* A resume's buttons, which go under its name when the panel is too narrow for both. */
+.fileActions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .fileName {

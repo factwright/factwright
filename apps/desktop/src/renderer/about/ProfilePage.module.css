@@ -159,19 +159,26 @@
 
 .resume {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   padding: var(--fw-space-1) 0;
-  gap: var(--fw-space-2);
+  gap: 0 var(--fw-space-2);
   min-height: 34px;
   color: var(--fw-muted);
 }
 
 .resumeName {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 150px;
   flex-direction: column;
   min-width: 0;
   color: var(--fw-text);
+}
+
+/* Its buttons, which go under its name when the card is too narrow for both. */
+.resumeActions {
+  display: flex;
+  margin-left: auto;
 }
 
 .resumeLook {

@@ -44,6 +44,7 @@ const api: FactwrightApi = {
   pasteImage: (shot, jobId) => ipcRenderer.invoke('claude:paste-image', shot, jobId),
   openFile: (path) => ipcRenderer.invoke('files:open', path),
   readPdf: (path) => ipcRenderer.invoke('files:pdf', path),
+  readWord: (path) => ipcRenderer.invoke('files:docx', path),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   saveFile: (name, text) => ipcRenderer.invoke('files:save', name, text),
   claudeModels: () => ipcRenderer.invoke('claude:models'),

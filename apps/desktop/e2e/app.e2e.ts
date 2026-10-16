@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp, terminalText } from './app.ts';
 import { version } from './paths.ts';
-import { ACME_FOLDER, ACME_RESUME, newDataFolder } from './workspace.ts';
+import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder } from './workspace.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -131,6 +131,29 @@ test('previews a resume’s pages', async () => {
   await expect(dialog.getByRole('img', { name: 'Page 1 of 1' })).toBeVisible();
   await expect(dialog.getByText('1 page')).toBeVisible();
   await dialog.getByRole('button', { name: 'Done' }).click();
+});
+
+test('X-rays a resume as applicant systems read it, its PDF and its Word file', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: `ATS X-ray of ${ACME_RESUME}` }).click();
+  const dialog = window.getByRole('dialog', { name: 'ATS X-ray' });
+  // pdf.js reads the PDF in the window, with its own worker, as it does for previews.
+  await expect(dialog.getByText('Reads cleanly')).toBeVisible();
+  await expect(dialog.getByRole('region', { name: 'The text' })).toContainText(
+    'Platform Engineering Lead 03/2021 – Present',
+  );
+  const pick = (name: string) =>
+    dialog
+      .locator('label')
+      .filter({ has: window.getByRole('radio', { name, exact: true }) })
+      .click();
+  await pick('What it fills in');
+  await expect(dialog.getByText('alex@example.com', { exact: true })).toBeVisible();
+  await pick('Word');
+  await expect(dialog).toContainText(`${ACME_WORD}, read the way`);
+  await expect(dialog.getByText('Reads cleanly')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toHaveCount(0);
 });
 
 test('writes a cover letter, and shows it to read, copy, preview and open', async () => {

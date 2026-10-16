@@ -239,12 +239,35 @@ describe('JobPanel', () => {
       screen.getByRole('button', { name: 'Preview Resume - Northwind Labs.pdf' }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Preview (?!Resume)/ })).toBeNull();
+    // The resume's PDF and Word file each have an ATS X-ray; documents don't.
+    expect(
+      screen
+        .getAllByRole('button', { name: /^ATS X-ray of / })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual([
+      'ATS X-ray of Resume - Northwind Labs.pdf',
+      'ATS X-ray of Resume - Northwind Labs.docx',
+    ]);
     expect(screen.getByText('Recruiter was friendly. Team of six.')).toBeTruthy();
     expect(screen.getByText('Marked Interview')).toBeTruthy();
     // A call still to come isn't history yet.
     expect(screen.queryByText('Panel interview: scheduled')).toBeNull();
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
+  });
+
+  it('offers an ATS X-ray for a job’s resume, and none for its cover letter', async () => {
+    panel(byCompany('Lumen Health'));
+    const files = screen.getByRole('region', { name: 'Files' });
+    expect(
+      within(files).getByRole('button', { name: 'Open AlexRiveraCoverLetter_LumenHealth.pdf' }),
+    ).toBeTruthy();
+    // The X-ray reads resumes; a cover letter is another kind of document.
+    expect(
+      within(files)
+        .getAllByRole('button', { name: /^ATS X-ray of / })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['ATS X-ray of Resume - Lumen Health.pdf']);
   });
 
   it('puts the job under another kind of job, for a user who wants more than one', async () => {

@@ -52,6 +52,7 @@ import {
   parseRunTask,
   parseTerminalSize,
   previewablePdf,
+  readableWord,
   runPrompt,
   saveableFileName,
 } from './policy.ts';
@@ -380,6 +381,18 @@ export function registerIpc({
     }
     if (size > MAX_PREVIEW_BYTES) {
       return { ok: false, message: 'That PDF is too big to preview here. Open it instead.' };
+    }
+    return { ok: true, data: new Uint8Array(await readFile(file)) };
+  });
+
+  answer('files:docx', async (path): Promise<PdfResult> => {
+    const file = typeof path === 'string' ? readableWord(workspace, path) : null;
+    const size = file ? fileSize(file) : null;
+    if (!file || size === null) {
+      return { ok: false, message: 'That file isn’t in your workspace anymore.' };
+    }
+    if (size > MAX_PREVIEW_BYTES) {
+      return { ok: false, message: 'That Word file is too big to read here. Open it instead.' };
     }
     return { ok: true, data: new Uint8Array(await readFile(file)) };
   });
