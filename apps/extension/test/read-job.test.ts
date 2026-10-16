@@ -412,6 +412,33 @@ describe('reading a job page', () => {
     }
   });
 
+  it('takes no job data whose own address leaves out a place on the page it moved to', () => {
+    const data = (url: string) =>
+      withData(
+        { ...JOB_DATA, title: 'Data Engineer', url },
+        '<main><h2>Open roles</h2><h3>Data Engineer</h3><h3>Product Manager</h3></main>',
+      );
+    for (const board of [
+      'https://acme.example/hash-board?team=data',
+      'https://acme.example/hash-board-7',
+    ]) {
+      expect(readJobPage(data(board), `${board}#job-2`, '', `${board}#job-1`).source, board).toBe(
+        'main',
+      );
+      // Where it loaded, it's the page's own.
+      expect(readJobPage(data(board), `${board}#job-1`, '', `${board}#job-1`).source, board).toBe(
+        'structured',
+      );
+    }
+  });
+
+  it('takes no account of a link’s “#:~:text=”, which only highlights words', () => {
+    const page = 'https://jobs.example.com/jobs/42-senior-pm';
+    const job = readJobPage(withData(JOB_DATA), page, '', `${page}#:~:text=Senior`);
+    expect(job.source).toBe('structured');
+    expect(readJobPage(withData(JOB_DATA), `${page}#:~:text=Senior`, '').url).toBe(page);
+  });
+
   it('counts moving to another place on the page, as “#job-2”, as moving on', () => {
     const doc = withData(
       { ...JOB_DATA, title: 'Data Engineer' },

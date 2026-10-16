@@ -22,6 +22,8 @@ const ADDRESSES = [
   'https://www.indeed.com/cmp/Acme/jobs?jk=abc123',
   'https://careers.example.com/?utm_source=x#/jobs/42',
   'https://careers.example.com/#!/job/7',
+  'https://careers.example.com/#/jobs/42:~:text=Data',
+  'https://jobs.example.com/jobs/42#:~:text=Senior',
   'not a link',
 ];
 

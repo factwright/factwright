@@ -66,7 +66,9 @@ export function jobAddress(href: string): string {
     .split('&')
     .filter((pair) => pair && !TRACKING_PARAM.test(decoded(pair.split('=', 1)[0] ?? '')));
   url.search = kept.length > 0 ? `?${kept.join('&')}` : '';
-  if (!/^#!?\//.test(url.hash)) url.hash = '';
+  // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
+  const hash = url.hash.replace(/:~:.*$/s, '');
+  url.hash = /^#!?\//.test(hash) ? hash : '';
   return url.toString();
 }
 

@@ -427,7 +427,9 @@ export function readJobPage(
       if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
     }
     url.search = untracked(url.search);
-    if (!/^#!?\//.test(url.hash)) url.hash = '';
+    // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
+    const hash = url.hash.replace(/:~:.*$/s, '');
+    url.hash = /^#!?\//.test(hash) ? hash : '';
     return url.toString();
   }
 
@@ -453,14 +455,17 @@ export function readJobPage(
     if (typeof named !== 'string') return null;
     try {
       const url = new URL(named, href);
-      const route = /^#!?\/./.test(url.hash) ? url.hash.replace(/\/+$/, '').toLowerCase() : '';
+      // Without a link's "#:~:text=…", which Chrome keeps in where a page loaded, but not in its
+      // address.
+      const hash = url.hash.replace(/:~:.*$/s, '').replace(/^#$/, '');
+      const route = /^#!?\/./.test(hash) ? hash.replace(/\/+$/, '').toLowerCase() : '';
       return {
         host: url.hostname.replace(/^www\./, '').toLowerCase(),
         segments: url.pathname.toLowerCase().split('/').filter(Boolean),
         query: queryOf(url.search).filter(([key]) => !TRACKING_PARAM.test(key)),
         route,
         /** A place on the page, such as "#job-2", which some pages of several jobs use. */
-        anchor: route ? '' : url.hash.toLowerCase(),
+        anchor: route ? '' : hash.toLowerCase(),
       };
     } catch {
       return null;
@@ -487,11 +492,10 @@ export function readJobPage(
     const parts = partsOf(address);
     return parts ? keyOf(parts) : '';
   };
+  /** Whether the page has moved to another place on it since it loaded, as "#job-1" to "#job-2". */
+  const anchorMoved = Boolean(loadedAt) && partsOf(loadedAt)?.anchor !== partsOf(href)?.anchor;
   /** Whether the page has moved on from the address it loaded at, as a single-page site does. */
-  const moved =
-    Boolean(loadedAt) &&
-    (addressOf(loadedAt) !== addressOf(href) ||
-      partsOf(loadedAt)?.anchor !== partsOf(href)?.anchor);
+  const moved = (Boolean(loadedAt) && addressOf(loadedAt) !== addressOf(href)) || anchorMoved;
 
   const site = (() => {
     try {
@@ -563,7 +567,8 @@ export function readJobPage(
     const own = ownPartsOf(posting);
     if (!own) return false;
     const at = pages.some(
-      (page) => keyOf(page) === keyOf(own) && (!own.anchor || own.anchor === page.anchor),
+      (page) =>
+        keyOf(page) === keyOf(own) && (own.anchor ? own.anchor === page.anchor : !anchorMoved),
     );
     const namesJob =
       own.query.length > 0 || own.route !== '' || /\d/.test(own.segments.at(-1) ?? '');
