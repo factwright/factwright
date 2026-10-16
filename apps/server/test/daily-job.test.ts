@@ -63,6 +63,13 @@ describe('the daily job', () => {
   });
 });
 
+/** What the Worker has written down as errors since its logs were last cleared. */
+const errors = (server: TestServer) =>
+  server.server
+    .getLogs()
+    .filter((log) => log.level === 'error')
+    .map((log) => log.message);
+
 /** Runs the Worker's daily job, as Cloudflare would on a day. */
 const runDailyJob = (server: TestServer, day: string) =>
   server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date(`${day}T04:17:00Z`) });
@@ -105,16 +112,22 @@ describe('the daily job, when cleaning up old sign-ins fails', () => {
   afterAll(() => server?.close());
 
   it('backs up every account all the same, and the run fails', async () => {
-    failures();
     const accounts = await accountsWithData(server, 6);
     // The cleanup clears sign-in's limits too, so without their table, it fails. That leaves this
     // server's cleanup broken, so it's the only test here.
     await server.env.DB.prepare('DROP TABLE "rateLimit"').bind().run();
 
+    server.server.clearLogs();
     const run = await runDailyJob(server, '2026-10-16');
 
     expect(run.outcome).toBe('exception');
     expect(await backedUp(server, accounts, '2026-10-16')).toEqual(accounts.map(({ id }) => id));
+    // The runtime's logs arrive a moment after the run.
+    await vi.waitFor(() =>
+      expect(errors(server).join('\n')).toContain(
+        "The daily job's cleanup of old sign-ins failed:",
+      ),
+    );
   });
 });
 
@@ -140,18 +153,29 @@ describe('the daily job’s backup', () => {
   });
 
   it('backs up the rest when one account’s backup fails, and then the run fails', async () => {
-    failures();
     const accounts = await accountsWithData(server, 3);
-    const [, broken] = accounts;
-    if (!broken) throw new Error('no account');
+    // Backups go in order of account ID, so breaking the first one shows the rest still go on.
+    const broken = accounts.reduce((first, each) => (each.id < first.id ? each : first));
     // A store that answers to another account turns its backup away.
     const storage = await server.worker.getDurableObjectStorage('STORES', { name: broken.id });
     await storage.exec("UPDATE meta SET value = 'someone-else' WHERE key = 'owner'");
+    try {
+      server.server.clearLogs();
+      const run = await runDailyJob(server, '2026-10-18');
 
-    const run = await runDailyJob(server, '2026-10-18');
-
-    expect(run.outcome).toBe('exception');
-    const others = accounts.filter(({ id }) => id !== broken.id).map(({ id }) => id);
-    expect(await backedUp(server, accounts, '2026-10-18')).toEqual(others);
+      expect(run.outcome).toBe('exception');
+      const others = accounts.filter(({ id }) => id !== broken.id).map(({ id }) => id);
+      expect(await backedUp(server, accounts, '2026-10-18')).toEqual(others);
+      await vi.waitFor(() => {
+        const written = errors(server).join('\n');
+        expect(written).toContain(
+          `Couldn't back up account ${broken.id}'s store: Error: This store belongs to another account.`,
+        );
+        expect(written).toContain("The daily job's backup failed: Error: 1 of");
+      });
+    } finally {
+      // So the other tests here find every store as it was.
+      await storage.exec("UPDATE meta SET value = ? WHERE key = 'owner'", broken.id);
+    }
   });
 });

@@ -126,8 +126,8 @@ async function deleteForOperator(request: Request, env: Env): Promise<Response> 
 
 /**
  * Backs up every account's store, one at a time, as the day's snapshot. One that fails doesn't
- * stop the rest, and once they're all done, the backup fails, so the run is marked as failed. An
- * account deleted partway has no store left to back up, so it isn't a failure.
+ * stop the rest. Once they're all done, the backup fails if any did, so the run is marked as
+ * failed. An account deleted partway has no store left to back up, so it isn't a failure.
  */
 async function backUpAll(env: Env, when: Date): Promise<void> {
   const day = when.toISOString().slice(0, 10);
@@ -141,7 +141,7 @@ async function backUpAll(env: Env, when: Date): Promise<void> {
     } catch (error) {
       if (error instanceof Error && error.message === DELETED) continue;
       failed += 1;
-      console.error(`Couldn't back up an account's store: ${String(error)}`);
+      console.error(`Couldn't back up account ${id}'s store: ${String(error)}`);
     }
   }
   if (failed > 0) {
