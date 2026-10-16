@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Call, CallDoc, Job } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { settled } from './claude/save.ts';
 import { type CallReminder, CallReminders, callStart, reminderFor } from './reminders.ts';
 
 let dataDir: string;
@@ -16,8 +17,10 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 9, 20, 12, 0));
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers();
+  // A save still under way would write into the folder as it's removed.
+  await settled(file);
   rmSync(dataDir, { recursive: true, force: true });
 });
 
