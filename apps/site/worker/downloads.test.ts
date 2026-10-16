@@ -45,6 +45,10 @@ describe('a followed link', () => {
     expect(asked(tab)).toBe(true);
   });
 
+  it('is Chrome’s Save link as, a navigation with no destination', () => {
+    expect(asked({ 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'empty' })).toBe(true);
+  });
+
   it('isn’t anything that doesn’t say how it asked, such as a link preview or a download tool', () => {
     expect(asked({})).toBe(false);
     expect(asked({ 'Sec-Fetch-Mode': 'navigate' })).toBe(false);

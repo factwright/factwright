@@ -50,6 +50,9 @@ export interface SyncTotals {
   accounts: number;
   /** Accounts made on the day the totals are for. */
   newAccounts: number;
+  /** Accounts made in the 7 days up to the count, and in the 30 days up to it. */
+  newThisWeek: number;
+  newThisMonth: number;
   usedThisWeek: number;
   usedThisMonth: number;
   appSignIns: number;
@@ -158,25 +161,27 @@ function downloadLines(rows: DownloadRow[]): string[] {
   ];
 }
 
-/** The sync part of the report, from the newest day's totals and the days before it. */
-function syncLines(days: SyncDay[]): string[] {
+/**
+ * The sync part of the report, from the newest totals, and each day's new accounts. A day the
+ * server counted twice, as when its daily job ran again, shows its newest count once.
+ */
+function syncLines(rows: SyncDay[]): string[] {
+  const newestFirst = [...rows].sort((a, b) => b.at.localeCompare(a.at));
+  const days = newestFirst.filter(
+    (each, at) => newestFirst.findIndex((other) => other.day === each.day) === at,
+  );
   const [newest] = days;
   if (!newest) {
-    return ['Sync: no totals yet. The sync server counts them once a day, at 04:17 UTC.'];
+    return [
+      `Sync: no totals in the last ${SYNC_DAYS} days. The sync server counts them once a day, at 04:17 UTC.`,
+    ];
   }
   const latest = newest.totals;
-  /** New accounts on the newest day and the ones before it, over so many days. */
-  const newOver = (count: number) => {
-    const from = Date.parse(`${newest.day}T00:00:00Z`) - (count - 1) * 86_400_000;
-    return days
-      .filter((each) => Date.parse(`${each.day}T00:00:00Z`) >= from)
-      .reduce((sum, each) => sum + each.totals.newAccounts, 0);
-  };
   return [
     `Sync, as the server counted it on ${moment(newest.at)}`,
     line('Accounts', latest.accounts, 1),
-    line('New in the last 7 days', newOver(7), 2),
-    line('New in the last 30 days', newOver(30), 2),
+    line('New in the last 7 days', latest.newThisWeek, 2),
+    line('New in the last 30 days', latest.newThisMonth, 2),
     line('Used in the last 7 days', latest.usedThisWeek, 2),
     line('Used in the last 30 days', latest.usedThisMonth, 2),
     '  Signed in now',

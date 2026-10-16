@@ -1,7 +1,7 @@
 // How often Factwright is downloaded, and how much sync is used: counts only, never who.
 // FACTWRIGHT_STATS_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… pnpm --filter @factwright/site stats
 // The token needs Account Analytics Read and nothing else. This app's README says how to make it.
-import { PERMISSION, readStats } from './stats-read.ts';
+import { PERMISSION, readStats, sourceProblem } from './stats-read.ts';
 import { report } from './stats-report.ts';
 
 const token = process.env.FACTWRIGHT_STATS_TOKEN;
@@ -14,6 +14,12 @@ if (!token || !account) {
       'apps/site/README.md says how.',
     ].join('\n'),
   );
+  process.exit(1);
+}
+
+const problem = sourceProblem(token, account);
+if (problem) {
+  console.error(problem);
   process.exit(1);
 }
 

@@ -73,6 +73,8 @@ function downloadRow(row: Record<string, unknown>): DownloadRow | null {
 const TOTALS: readonly (keyof SyncTotals)[] = [
   'accounts',
   'newAccounts',
+  'newThisWeek',
+  'newThisMonth',
   'usedThisWeek',
   'usedThisMonth',
   'appSignIns',
@@ -99,6 +101,28 @@ function syncDay(row: Record<string, unknown>): SyncDay | null {
   return { at: timestamp, day, totals: read };
 }
 
+/**
+ * What's wrong with the token or the account's ID, if anything, checked before any request.
+ * Cloudflare's API tokens are one line of letters, digits, - and _, so one pasted with a line break
+ * can't end up in an error, and an account's ID is 32 hex digits.
+ */
+export function sourceProblem(token: string, account: string): string | null {
+  if (!/^[\w-]{20,}$/.test(token)) {
+    return 'FACTWRIGHT_STATS_TOKEN isn’t one line of letters, digits, - and _, as Cloudflare’s tokens are.';
+  }
+  if (!/^[0-9a-f]{32}$/.test(account)) {
+    return 'CLOUDFLARE_ACCOUNT_ID isn’t an account’s ID, which is 32 digits and letters a to f.';
+  }
+  return null;
+}
+
+/** What went wrong, with its cause, such as the address that couldn't be found. */
+function described(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? error.cause.message : '';
+  return cause && !error.message.includes(cause) ? `${error.message}: ${cause}` : error.message;
+}
+
 /** One dataset's rows, read by a query, or why they couldn't be. */
 async function rows<Row>(
   source: Source,
@@ -119,7 +143,8 @@ async function rows<Row>(
     }
     return found as Row[];
   } catch (error) {
-    return { problem: error instanceof Error ? error.message : String(error) };
+    // Whatever a request's error says, the token stays out of it.
+    return { problem: described(error).replaceAll(source.token, '[the token]') };
   }
 }
 

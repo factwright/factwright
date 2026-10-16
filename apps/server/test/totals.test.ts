@@ -73,6 +73,9 @@ describe('how much sync is used', () => {
     expect(await countSync(server.env.DB, NOW)).toEqual({
       accounts: 4,
       newAccounts: 2,
+      // All four were made in the last week, the last of them on the day of the count.
+      newThisWeek: 4,
+      newThisMonth: 4,
       usedThisWeek: 1,
       usedThisMonth: 2,
       appSignIns: 2,
@@ -86,6 +89,8 @@ describe('how much sync is used', () => {
     const totals = {
       accounts: 4,
       newAccounts: 2,
+      newThisWeek: 4,
+      newThisMonth: 4,
       usedThisWeek: 1,
       usedThisMonth: 2,
       appSignIns: 2,
@@ -127,9 +132,17 @@ describe('how much sync is used', () => {
   });
 
   it('asks only for counts, never for anything about a person', () => {
-    expect(TOTALS_SQL.match(/\(SELECT COUNT\(/g)).toHaveLength(6);
-    expect(TOTALS_SQL.match(/SELECT/g)).toHaveLength(7);
+    // Each table is read once, and everything it gives back is a count.
+    expect(TOTALS_SQL.match(/\bFROM\b/g)).toHaveLength(3);
+    expect(TOTALS_SQL.match(/\(\s*SELECT COUNT\(/g)).toHaveLength(2);
+    expect(TOTALS_SQL.match(/\bAS \w+/g)).toHaveLength(8);
+    expect(TOTALS_SQL.match(/\bTHEN userId END\)/g)).toHaveLength(2);
     expect(TOTALS_SQL).not.toMatch(/\b(name|email|image|token|ipAddress|userAgent)\b/);
+  });
+
+  it('is written where the stats command reads it', () => {
+    // Wrangler's stand-in for the dataset, from wrangler.jsonc: renamed, the count would stop.
+    expect((server.env as unknown as Record<string, unknown>).SYNC_TOTALS).toBeDefined();
   });
 
   it('names the day before in UTC, across a month and a year', () => {

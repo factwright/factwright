@@ -13,6 +13,10 @@ export interface SyncTotals {
   accounts: number;
   /** Accounts made on the day before the count, in UTC. */
   newAccounts: number;
+  /** Accounts made in the 7 days up to the count. */
+  newThisWeek: number;
+  /** Accounts made in the 30 days up to the count. */
+  newThisMonth: number;
   /** Accounts with a sign-in used in the last 7 days. A sign-in notes its use at most once a day. */
   usedThisWeek: number;
   /** Accounts with a sign-in used in the last 30 days. */
@@ -36,16 +40,25 @@ interface Dataset {
 }
 
 /**
- * Every total in one query. Better Auth keeps its dates as ISO text, so they compare as text, as
- * the daily cleanup does. Only counts come back: no name, email, ID or sign-in.
+ * Every total in one query, reading each table once. Better Auth keeps its dates as ISO text, so
+ * they compare as text, as the daily cleanup does. Only counts come back: no name, email, ID or
+ * sign-in.
  */
-export const TOTALS_SQL = `SELECT
-  (SELECT COUNT(*) FROM "user") AS accounts,
-  (SELECT COUNT(*) FROM "user" WHERE createdAt >= ?1 AND createdAt < ?2) AS newAccounts,
-  (SELECT COUNT(DISTINCT userId) FROM "session" WHERE expiresAt > ?3 AND updatedAt > ?4) AS usedThisWeek,
-  (SELECT COUNT(DISTINCT userId) FROM "session" WHERE expiresAt > ?3 AND updatedAt > ?5) AS usedThisMonth,
-  (SELECT COUNT(*) FROM "session" WHERE expiresAt > ?3 AND via = 'device') AS appSignIns,
-  (SELECT COUNT(*) FROM "session" WHERE expiresAt > ?3 AND via = 'web') AS browserSignIns`;
+export const TOTALS_SQL = `SELECT accounts, newAccounts, newThisWeek, newThisMonth,
+  usedThisWeek, usedThisMonth, appSignIns, browserSignIns
+FROM (
+  SELECT COUNT(*) AS accounts,
+    COUNT(CASE WHEN createdAt >= ?1 AND createdAt < ?2 THEN 1 END) AS newAccounts,
+    COUNT(CASE WHEN createdAt > ?4 THEN 1 END) AS newThisWeek,
+    COUNT(CASE WHEN createdAt > ?5 THEN 1 END) AS newThisMonth
+  FROM "user"
+), (
+  SELECT COUNT(DISTINCT CASE WHEN updatedAt > ?4 THEN userId END) AS usedThisWeek,
+    COUNT(DISTINCT CASE WHEN updatedAt > ?5 THEN userId END) AS usedThisMonth,
+    COUNT(CASE WHEN via = 'device' THEN 1 END) AS appSignIns,
+    COUNT(CASE WHEN via = 'web' THEN 1 END) AS browserSignIns
+  FROM "session" WHERE expiresAt > ?3
+)`;
 
 /** The UTC day before a moment, such as "2026-10-15": the day a count's new accounts were made on. */
 export function dayBefore(now: Date): string {
@@ -65,6 +78,8 @@ export async function countSync(db: Database, now: Date): Promise<SyncTotals> {
   return {
     accounts: Number(row?.accounts ?? 0),
     newAccounts: Number(row?.newAccounts ?? 0),
+    newThisWeek: Number(row?.newThisWeek ?? 0),
+    newThisMonth: Number(row?.newThisMonth ?? 0),
     usedThisWeek: Number(row?.usedThisWeek ?? 0),
     usedThisMonth: Number(row?.usedThisMonth ?? 0),
     appSignIns: Number(row?.appSignIns ?? 0),
@@ -81,8 +96,9 @@ export function recordSyncTotals(dataset: Dataset, totals: SyncTotals, now: Date
 }
 
 /**
- * The daily count. Without the dataset, it counts nothing. A count that fails is written down and
- * waits for the next day's, and never stops the rest of the daily job, such as the backup.
+ * The daily count. Without the dataset, it counts nothing. A count that fails is written down, and
+ * that day goes without, though the next day's totals cover it. It never stops the rest of the
+ * daily job, such as the backup.
  */
 export async function countSyncDaily(
   env: { DB: Database; SYNC_TOTALS?: Dataset },

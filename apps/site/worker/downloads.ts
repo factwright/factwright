@@ -37,9 +37,10 @@ const PREFETCH_HEADERS = ['Sec-Purpose', 'Purpose', 'X-Moz'];
 
 /**
  * Whether a request is a person's browser following a link to the installer: a navigation of the
- * whole tab, as every current browser marks one. A page's script, a frame, a prefetch, a download
- * picking up where it left off, and anything that doesn't say how it asked, such as a link preview
- * in a chat app or a download tool, isn't counted.
+ * whole tab, as every current browser marks one, or Chrome's Save link as, which it marks as a
+ * navigation with no destination. A page's script, a frame, a prefetch, a download picking up
+ * where it left off, and anything that doesn't say how it asked, such as a download tool or a
+ * link preview a chat service fetches, isn't counted.
  */
 export function isFollowedLink(request: Request): boolean {
   const { headers } = request;
@@ -48,7 +49,7 @@ export function isFollowedLink(request: Request): boolean {
   );
   return (
     headers.get('Sec-Fetch-Mode') === 'navigate' &&
-    headers.get('Sec-Fetch-Dest') === 'document' &&
+    ['document', 'empty'].includes(headers.get('Sec-Fetch-Dest') ?? '') &&
     !headers.has('Range') &&
     !prefetch
   );

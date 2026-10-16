@@ -1,12 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { API, readStats, type Source } from '../scripts/stats-read.ts';
+import { API, readStats, type Source, sourceProblem } from '../scripts/stats-read.ts';
 import {
   byVersion,
+  DOWNLOADS_DATASET,
   DOWNLOADS_SQL,
   type DownloadRow,
   report,
+  SYNC_DATASET,
   SYNC_SQL,
   type SyncDay,
+  type SyncTotals,
 } from '../scripts/stats-report.ts';
 
 const NOW = new Date('2026-10-16T18:00:00Z');
@@ -19,20 +23,24 @@ const DOWNLOADS: DownloadRow[] = [
   { day: '2026-10-09 00:00:00', computer: 'mac', version: 'unknown', downloads: 1 },
 ];
 
-/** The sync server's totals, a day at a time, newest first. */
-const totals = (accounts: number, newAccounts: number) => ({
+/** The sync server's totals for a day. */
+const totals = (accounts: number, newAccounts: number, more: Partial<SyncTotals> = {}) => ({
   accounts,
   newAccounts,
+  newThisWeek: 3,
+  newThisMonth: 14,
   usedThisWeek: 8,
   usedThisMonth: 10,
   appSignIns: 11,
   browserSignIns: 9,
+  ...more,
 });
+
+/** The sync server's totals, a day at a time, newest first. */
 const SYNC: SyncDay[] = [
   { at: '2026-10-16 04:17:00', day: '2026-10-15', totals: totals(1234, 2) },
   { at: '2026-10-15 04:17:00', day: '2026-10-14', totals: totals(1232, 1) },
   { at: '2026-10-09 04:17:00', day: '2026-10-08', totals: totals(1231, 4) },
-  { at: '2026-09-20 04:17:00', day: '2026-09-19', totals: totals(1200, 7) },
 ];
 
 /** The report's lines, without the spaces that line its counts up. */
@@ -57,7 +65,7 @@ describe('the stats report', () => {
     );
   });
 
-  it('shows the newest sync totals, with the new accounts of the week and the month', () => {
+  it('shows the newest sync totals, and each day’s new accounts', () => {
     expect(lines(report({ downloads: DOWNLOADS, sync: SYNC }, NOW))).toEqual(
       expect.arrayContaining([
         'Sync, as the server counted it on Oct 16, 04:17 UTC',
@@ -75,6 +83,14 @@ describe('the stats report', () => {
     );
   });
 
+  it('shows a day the server counted twice once, at its newest count', () => {
+    const again = { at: '2026-10-16 04:31:00', day: '2026-10-15', totals: totals(1235, 3) };
+    const text = lines(report({ downloads: [], sync: [...SYNC, again] }, NOW));
+    expect(text).toContain('Sync, as the server counted it on Oct 16, 04:31 UTC');
+    expect(text).toContain('Accounts 1,235');
+    expect(text.filter((each) => each.startsWith('Oct 15 '))).toEqual(['Oct 15 3']);
+  });
+
   it('lines the counts up', () => {
     const text = report({ downloads: DOWNLOADS, sync: SYNC }, NOW);
     const ends = text
@@ -89,7 +105,7 @@ describe('the stats report', () => {
     expect(text).toContain('Downloads, last 90 days 0');
     expect(text).not.toContain('By computer');
     expect(text).toContain(
-      'Sync: no totals yet. The sync server counts them once a day, at 04:17 UTC.',
+      'Sync: no totals in the last 31 days. The sync server counts them once a day, at 04:17 UTC.',
     );
   });
 
@@ -141,33 +157,45 @@ describe('the stats queries', () => {
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/i);
       expect(sql).not.toContain('*');
     }
-    expect(DOWNLOADS_SQL).toContain('FROM factwright_downloads');
-    expect(SYNC_SQL).toContain('FROM factwright_sync');
+    expect(DOWNLOADS_SQL).toContain(`FROM ${DOWNLOADS_DATASET}`);
+    expect(SYNC_SQL).toContain(`FROM ${SYNC_DATASET}`);
   });
 
   it('weigh each download by how Analytics Engine sampled it', () => {
     expect(DOWNLOADS_SQL).toContain('SUM(_sample_interval)');
   });
+
+  it('read the datasets the site and the sync server write to', () => {
+    const config = (app: string) =>
+      readFileSync(new URL(`../../${app}/wrangler.jsonc`, import.meta.url), 'utf8');
+    expect(config('site')).toContain(
+      `{ "binding": "DOWNLOADS", "dataset": "${DOWNLOADS_DATASET}" }`,
+    );
+    expect(config('server')).toContain(
+      `{ "binding": "SYNC_TOTALS", "dataset": "${SYNC_DATASET}" }`,
+    );
+  });
 });
 
-/** What the stubbed API answers, by the start of the SQL it's sent. */
+/** What the stubbed API answers, by a part of the SQL it's sent. */
 type Answers = Record<string, () => Response>;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-const TOKEN = 'test-token-never-shown';
+const TOKEN = 'test_token-never-shown-0123456789';
+const ACCOUNT = '0123456789abcdef0123456789abcdef';
 
 /** A source whose API answers as told, noting what it was asked. */
 function source(answers: Answers) {
   const asked: { url: string; init: RequestInit }[] = [];
   const stub: Source = {
     token: TOKEN,
-    account: 'acct123',
+    account: ACCOUNT,
     fetch: async (url, init) => {
       asked.push({ url, init });
       const sql = String(init.body);
-      const key = Object.keys(answers).find((start) => sql.includes(start));
+      const key = Object.keys(answers).find((part) => sql.includes(part));
       return key
         ? (answers[key] as () => Response)()
         : new Response('Unknown query', { status: 422 });
@@ -176,14 +204,23 @@ function source(answers: Answers) {
   return { asked, stub };
 }
 
+/** A source whose every request fails the way Node's fetch does, before any answer. */
+const failing = (error: Error): Source => ({
+  token: TOKEN,
+  account: ACCOUNT,
+  fetch: async () => {
+    throw error;
+  },
+});
+
 describe('reading the stats', () => {
   it('asks Analytics Engine for each dataset, as the account, with the token', async () => {
     const { asked, stub } = source({
-      factwright_downloads: () =>
+      [DOWNLOADS_DATASET]: () =>
         json({
           data: [{ day: '2026-10-16 00:00:00', computer: 'mac', version: '0.4.0', downloads: '3' }],
         }),
-      factwright_sync: () =>
+      [SYNC_DATASET]: () =>
         json({
           data: [
             {
@@ -202,7 +239,7 @@ describe('reading the stats', () => {
       { at: '2026-10-16 04:17:00', day: '2026-10-15', totals: totals(5, 1) },
     ]);
     for (const { url, init } of asked) {
-      expect(url).toBe(`${API}/accounts/acct123/analytics_engine/sql`);
+      expect(url).toBe(`${API}/accounts/${ACCOUNT}/analytics_engine/sql`);
       expect(init.method).toBe('POST');
       expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
     }
@@ -210,20 +247,20 @@ describe('reading the stats', () => {
 
   it('counts nothing yet for a dataset Analytics Engine hasn’t made', async () => {
     const { stub } = source({
-      'SHOW TABLES': () => json({ data: [{ dataset: 'factwright_downloads' }] }),
-      factwright_downloads: () => json({ data: [] }),
-      factwright_sync: () => new Response('unknown dataset factwright_sync', { status: 422 }),
+      'SHOW TABLES': () => json({ data: [{ dataset: DOWNLOADS_DATASET }] }),
+      [DOWNLOADS_DATASET]: () => json({ data: [] }),
+      [SYNC_DATASET]: () => new Response(`unknown dataset ${SYNC_DATASET}`, { status: 422 }),
     });
     expect(await readStats(stub)).toEqual({ downloads: [], sync: [] });
   });
 
-  it('says which permission a token without it needs, and never shows the token', async () => {
+  it('says which permission a token without it needs', async () => {
     const denied = () =>
       json({ success: false, errors: [{ code: 10000, message: 'Authentication error' }] }, 403);
     const { stub } = source({
       'SHOW TABLES': denied,
-      factwright_downloads: denied,
-      factwright_sync: denied,
+      [DOWNLOADS_DATASET]: denied,
+      [SYNC_DATASET]: denied,
     });
     const stats = await readStats(stub);
     expect(stats.downloads).toEqual({
@@ -234,8 +271,8 @@ describe('reading the stats', () => {
 
   it('turns down an answer in a form it doesn’t know, rather than showing wrong numbers', async () => {
     const { stub } = source({
-      factwright_downloads: () => json({ data: [{ day: 7, downloads: 'many' }] }),
-      factwright_sync: () =>
+      [DOWNLOADS_DATASET]: () => json({ data: [{ day: 7, downloads: 'many' }] }),
+      [SYNC_DATASET]: () =>
         json({
           data: [{ timestamp: '2026-10-16 04:17:00', day: '2026-10-15', totals: 'not json' }],
         }),
@@ -245,41 +282,54 @@ describe('reading the stats', () => {
     expect(stats.sync).toHaveProperty('problem');
   });
 
-  it('reads older totals that lack a newer count as 0', async () => {
+  it('reads totals that lack a count as 0', async () => {
     const { stub } = source({
-      factwright_downloads: () => json({ data: [] }),
-      factwright_sync: () =>
+      [DOWNLOADS_DATASET]: () => json({ data: [] }),
+      [SYNC_DATASET]: () =>
         json({
           data: [{ timestamp: '2026-10-16 04:17:00', day: '2026-10-15', totals: '{"accounts":3}' }],
         }),
     });
-    const { sync } = await readStats(stub);
-    expect(sync).toEqual([
-      {
-        at: '2026-10-16 04:17:00',
-        day: '2026-10-15',
-        totals: {
-          ...totals(3, 0),
-          usedThisWeek: 0,
-          usedThisMonth: 0,
-          appSignIns: 0,
-          browserSignIns: 0,
-        },
-      },
+    const zero = {
+      newThisWeek: 0,
+      newThisMonth: 0,
+      usedThisWeek: 0,
+      usedThisMonth: 0,
+      appSignIns: 0,
+      browserSignIns: 0,
+    };
+    expect((await readStats(stub)).sync).toEqual([
+      { at: '2026-10-16 04:17:00', day: '2026-10-15', totals: totals(3, 0, zero) },
     ]);
   });
 
-  it('says when it can’t reach Cloudflare at all', async () => {
-    const stub: Source = {
-      token: TOKEN,
-      account: 'acct123',
-      fetch: async () => {
-        throw new Error('getaddrinfo ENOTFOUND api.cloudflare.com');
-      },
-    };
-    expect(await readStats(stub)).toEqual({
-      downloads: { problem: 'getaddrinfo ENOTFOUND api.cloudflare.com' },
-      sync: { problem: 'getaddrinfo ENOTFOUND api.cloudflare.com' },
+  it('says why it can’t reach Cloudflare, with the cause Node gives', async () => {
+    const offline = new TypeError('fetch failed', {
+      cause: new Error('getaddrinfo ENOTFOUND api.cloudflare.com'),
     });
+    expect(await readStats(failing(offline))).toEqual({
+      downloads: { problem: 'fetch failed: getaddrinfo ENOTFOUND api.cloudflare.com' },
+      sync: { problem: 'fetch failed: getaddrinfo ENOTFOUND api.cloudflare.com' },
+    });
+  });
+
+  it('never shows the token, even when an error quotes it', async () => {
+    const quoting = new TypeError(`Headers.append: "Bearer ${TOKEN}" is an invalid header value.`);
+    const stats = await readStats(failing(quoting));
+    expect(report(stats, NOW)).not.toContain(TOKEN);
+    expect(report(stats, NOW)).toContain('"Bearer [the token]"');
+  });
+});
+
+describe('the token and the account', () => {
+  it('pass as Cloudflare makes them', () => {
+    expect(sourceProblem(TOKEN, ACCOUNT)).toBeNull();
+  });
+
+  it('are turned down before any request when they can’t be right', () => {
+    expect(sourceProblem(`${TOKEN}\n`, ACCOUNT)).toMatch(/^FACTWRIGHT_STATS_TOKEN isn’t/);
+    expect(sourceProblem('short', ACCOUNT)).toMatch(/^FACTWRIGHT_STATS_TOKEN isn’t/);
+    expect(sourceProblem(TOKEN, 'acct123')).toMatch(/^CLOUDFLARE_ACCOUNT_ID isn’t/);
+    expect(sourceProblem(TOKEN, `${ACCOUNT}/../zones`)).toMatch(/^CLOUDFLARE_ACCOUNT_ID isn’t/);
   });
 });
