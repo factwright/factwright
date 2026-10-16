@@ -13,16 +13,38 @@ export interface RoundOption {
   preview: string | null;
 }
 
+/** What a number question takes: the least and most, its step, its unit, and where it starts. */
+export interface NumberAsked {
+  min: number | null;
+  max: number | null;
+  step: number | null;
+  /** What the number counts, such as "years". */
+  unit: string | null;
+  /** The number the box starts at, when Claude suggests one. */
+  start: number | null;
+}
+
 /** One question in a round. */
 export interface RoundQuestion {
   /** Its words, exactly as Claude wrote them. */
   question: string;
   /** A short label for it, such as "Experience", when Claude gave one. */
   header: string | null;
+  /**
+   * What answer it takes: a pick from its options, or the user's own words where none fits;
+   * words alone; or a number.
+   */
+  kind: 'choice' | 'text' | 'number';
+  /** More about the question, under it, when Claude gives some. */
+  description: string | null;
+  /** What the box for words or a number shows before the user types. */
+  placeholder: string | null;
   /** Whether the user may pick more than one option. */
   multiSelect: boolean;
   /** The options to pick from. With none, the user answers in their own words. */
   options: RoundOption[];
+  /** For a number question, what it takes; null for any other. */
+  number: NumberAsked | null;
 }
 
 /** A round Claude is waiting on the user to answer, by its tool call's ID. */
@@ -50,3 +72,15 @@ export const MAX_ROUND_TEXT = 10_000;
 /** Whether the user answered a question: an option picked, or words of their own. */
 export const isAnswered = (answer: RoundAnswer) =>
   answer.picks.length > 0 || answer.other.trim() !== '';
+
+/**
+ * Whether words are an answer a number question takes, as Claude Code checks them: digits, maybe
+ * with a minus sign and a decimal point, within its least and most.
+ */
+export function takesNumber(question: RoundQuestion, text: string): boolean {
+  const words = text.trim();
+  if (!/^-?\d+(\.\d+)?$/.test(words)) return false;
+  const value = Number(words);
+  const { min = null, max = null } = question.number ?? {};
+  return Number.isFinite(value) && (min === null || value >= min) && (max === null || value <= max);
+}

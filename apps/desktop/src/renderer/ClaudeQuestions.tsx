@@ -8,17 +8,28 @@ import {
   type RoundAnswer,
   type RoundQuestion,
   type RoundReply,
+  takesNumber,
 } from '../shared/rounds.ts';
 import styles from './ClaudeQuestions.module.css';
 import type { Choice } from './useClaudeQuestions.ts';
 
 const startChoice = (question: RoundQuestion): Choice => ({
   picks: [],
-  other: '',
+  // A number question starts at the number Claude suggests, if it gave one.
+  other: question.number?.start == null ? '' : String(question.number.start),
   otherOn: question.options.length === 0,
   note: '',
   noting: false,
 });
+
+/** A number question's range, in words, such as "a number from 0 to 40". */
+function rangeWords(question: RoundQuestion): string {
+  const { min = null, max = null } = question.number ?? {};
+  if (min !== null && max !== null) return `a number from ${min} to ${max}`;
+  if (min !== null) return `a number of at least ${min}`;
+  if (max !== null) return `a number of at most ${max}`;
+  return 'a number';
+}
 
 /** A choice as the answer Claude gets. */
 const answerOf = (choice: Choice): RoundAnswer => ({
@@ -67,6 +78,11 @@ export function ClaudeQuestions({
   const answers = choices.map(answerOf);
   const answered = answers.filter(isAnswered).length;
   const unanswered = round.questions.length - answered;
+  // A number Claude Code wouldn't take, such as one past the question's most, can't be sent.
+  const wrongNumber = round.questions.some((question, at) => {
+    const other = answers[at]?.other ?? '';
+    return question.kind === 'number' && other.trim() !== '' && !takesNumber(question, other);
+  });
   const change = (at: number, changes: Partial<Choice>) =>
     setChoices((current) =>
       current.map((choice, index) => (index === at ? { ...choice, ...changes } : choice)),
@@ -85,7 +101,7 @@ export function ClaudeQuestions({
   };
   const send = (event: FormEvent, close: () => void) => {
     event.preventDefault();
-    if (answered > 0 && !sending) void reply(close, answers);
+    if (answered > 0 && !wrongNumber && !sending) void reply(close, answers);
   };
   // Enter in a box or on an option sends the round only once every question has an answer, so it
   // never sends half of one by accident. Send still sends what's answered.
@@ -139,7 +155,11 @@ export function ClaudeQuestions({
                 Answer in the terminal
               </Button>
               <Button onClick={close}>Not now</Button>
-              <Button variant="primary" type="submit" disabled={sending || answered === 0}>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={sending || answered === 0 || wrongNumber}
+              >
                 {round.questions.length === 1 ? 'Send answer' : 'Send answers'}
               </Button>
             </DialogActions>
@@ -194,6 +214,11 @@ function QuestionField({
           <MarkdownLine text={question.question} />
         </span>
       </legend>
+      {question.description && (
+        <p className={styles.about}>
+          <MarkdownLine text={question.description} />
+        </p>
+      )}
       {multiSelect && <p className={styles.hint}>Pick any that apply.</p>}
       <div className={styles.options}>
         {options.map((option, index) => {
@@ -225,11 +250,18 @@ function QuestionField({
             </label>
           );
         })}
-        {options.length === 0 ? (
+        {question.kind === 'number' ? (
+          <NumberBox
+            question={question}
+            value={choice.other}
+            first={first}
+            onChange={(other) => onChange({ other })}
+          />
+        ) : options.length === 0 ? (
           <TextArea
             className={styles.own}
             aria-label="Your answer"
-            placeholder="Your answer"
+            placeholder={question.placeholder ?? 'Your answer'}
             rows={3}
             maxLength={MAX_ROUND_TEXT}
             value={choice.other}
@@ -289,5 +321,47 @@ function QuestionField({
         </button>
       )}
     </fieldset>
+  );
+}
+
+/** A number question's box, with its unit, saying when the number isn't one the question takes. */
+function NumberBox({
+  question,
+  value,
+  first,
+  onChange,
+}: {
+  question: RoundQuestion;
+  value: string;
+  first: boolean;
+  onChange: (value: string) => void;
+}) {
+  const wrongId = useId();
+  const { min = null, max = null, step = null, unit = null } = question.number ?? {};
+  const wrong = value.trim() !== '' && !takesNumber(question, value);
+  return (
+    <div className={styles.numberRow}>
+      <Input
+        type="number"
+        inputMode="decimal"
+        className={styles.numberBox}
+        aria-label={unit ? `Your answer, in ${unit}` : 'Your answer'}
+        aria-invalid={wrong || undefined}
+        aria-describedby={wrong ? wrongId : undefined}
+        placeholder={question.placeholder ?? undefined}
+        min={min ?? undefined}
+        max={max ?? undefined}
+        step={step ?? 'any'}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        {...(first && { 'data-autofocus': true })}
+      />
+      {unit && <span className={styles.unit}>{unit}</span>}
+      {wrong && (
+        <p id={wrongId} className={styles.wrong} role="alert">
+          Give {rangeWords(question)}.
+        </p>
+      )}
+    </div>
   );
 }

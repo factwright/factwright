@@ -2,12 +2,14 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { FiledFacts } from '../../shared/facts.ts';
+import type { PermissionAnswer, PermissionAsk } from '../../shared/permission-asks.ts';
 import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
-import { type HeardRound, hookReply, roundFrom } from './rounds.ts';
+import { permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
+import { hookReply, roundFrom } from './rounds.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -34,12 +36,34 @@ export type QuestionAsker = (
   signal: AbortSignal,
 ) => Promise<RoundReply | null>;
 
+/**
+ * Asks the user in the app for the OK Claude Code is asking for: their answer, or null to have
+ * Claude Code ask in the terminal. The signal aborts once Claude Code stops waiting.
+ */
+export type PermissionAsker = (
+  ask: PermissionAsk,
+  signal: AbortSignal,
+) => Promise<PermissionAnswer | null>;
+
+/** A call the user said no to in the app, by its tool and input, which never runs. */
+export type DeniedListener = (call: { tool_name: string; tool_input: unknown }) => void;
+
+/** The hooks after which nothing from before can still be waiting on the user. */
+const MOVED_ON = ['UserPromptSubmit', 'Stop', 'SessionEnd'];
+
 interface RunListeners {
   hooks: HookListener;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
-  /** The rounds of questions held for the run, which it lets go once it stops listening. */
-  held: Set<AbortController>;
+  permit: PermissionAsker | undefined;
+  onDenied: DeniedListener | undefined;
+  /** The run's workspace, which the paths in its permission prompts are shown from. */
+  workspace: string | undefined;
+  /**
+   * What's held for the run, waiting on the user, by the call each waits on when it's known. The
+   * run lets all of them go once it stops listening.
+   */
+  held: Map<AbortController, string | null>;
   /** What the run is for, what it's saved, and what the user answered, which its tool calls carry. */
   call: ToolCall;
 }
@@ -56,6 +80,12 @@ export interface ListenOptions {
   revision?: BoundRevision;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
+  /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
+  permit?: PermissionAsker;
+  /** Hears each call the user said no to in the app, which never runs. */
+  onDenied?: DeniedListener;
+  /** The run's workspace, which the paths in its permission prompts are shown from. */
+  workspace?: string;
 }
 
 /**
@@ -96,12 +126,21 @@ export class RunServer {
    * it was asking, so their dialog closes.
    */
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
-    const { tools, scope = 'hunt', onFiled, revision, ask } = options;
-    const held = new Set<AbortController>();
-    this.listeners.set(token, { hooks, tools, ask, held, call: newCall(scope, onFiled, revision) });
+    const { tools, scope = 'hunt', onFiled, revision, ask, permit, onDenied, workspace } = options;
+    const held = new Map<AbortController, string | null>();
+    this.listeners.set(token, {
+      hooks,
+      tools,
+      ask,
+      permit,
+      onDenied,
+      workspace,
+      held,
+      call: newCall(scope, onFiled, revision),
+    });
     return () => {
       this.listeners.delete(token);
-      for (const round of held) round.abort();
+      for (const waiting of held.keys()) waiting.abort();
     };
   }
 
@@ -136,8 +175,32 @@ export class RunServer {
         } catch {
           // Nothing kept: a filing tool then finds no record, and saves nothing.
         }
-        const heard = listener.ask ? roundFrom(event) : null;
-        if (heard && listener.ask) void this.answerRound(heard, listener, response);
+        this.letGo(listener, event);
+        const { ask, permit } = listener;
+        const round = ask ? roundFrom(event) : null;
+        const permission = !round && permit ? permissionAskFrom(event, listener.workspace) : null;
+        if (ask && round) {
+          void this.hold(
+            listener,
+            response,
+            null,
+            (signal) => ask(round.round, signal),
+            (reply) => hookReply(round, reply),
+          );
+        } else if (permit && permission) {
+          void this.hold(
+            listener,
+            response,
+            permission.key,
+            (signal) => permit(permission.ask, signal),
+            permissionReply,
+          ).then((answer) => {
+            // A no means the call never runs, so nothing else says it's over.
+            if (answer?.allow === false) {
+              listener.onDenied?.({ tool_name: permission.tool, tool_input: permission.input });
+            }
+          });
+        }
         // An empty answer lets Claude Code carry on as it would have.
         else response.writeHead(204).end();
         listener.hooks(event);
@@ -155,37 +218,61 @@ export class RunServer {
   }
 
   /**
-   * Holds Claude Code's hook for a round of questions until the user answers it in the app's
-   * dialog, then answers the hook with their answers, so Claude Code asks nothing in the terminal.
-   * Without answers from the dialog, an empty answer has the terminal ask, as before. When Claude
-   * Code stops waiting first, as when the user interrupts the run, the hook's time runs out, or
-   * the run ends, the dialog lets the round go.
+   * Holds one of Claude Code's hooks until the user answers in the app's dialog, a round of
+   * questions or a permission prompt, then answers the hook with what they said, so Claude Code
+   * asks nothing in the terminal. Without an answer from the dialog, an empty answer has the
+   * terminal ask, as before. When Claude Code stops waiting first, as when the user interrupts the
+   * run or answers in the terminal, the hook's time runs out, or the run ends, the dialog lets it
+   * go. Answers with what reached Claude Code, if anything.
    */
-  private async answerRound(
-    heard: HeardRound,
+  private async hold<R>(
     listener: RunListeners,
     response: ServerResponse,
-  ): Promise<void> {
+    key: string | null,
+    wait: (signal: AbortSignal) => Promise<R | null>,
+    reply: (answer: R) => unknown,
+  ): Promise<R | null> {
     const stopped = new AbortController();
-    listener.held.add(stopped);
+    listener.held.set(stopped, key);
     response.once('close', () => stopped.abort());
-    let reply: RoundReply | null = null;
+    let answer: R | null = null;
     try {
-      reply = (await listener.ask?.(heard.round, stopped.signal)) ?? null;
+      answer = await wait(stopped.signal);
     } catch {
-      // No answers: the terminal asks.
+      // No answer: the terminal asks.
     } finally {
       listener.held.delete(stopped);
     }
-    if (response.writableEnded || response.destroyed) return;
-    // A round let go, as when the run ends, takes no answers.
-    if (!reply || stopped.signal.aborted) {
+    if (response.writableEnded || response.destroyed) return null;
+    // What was let go, as when the run ends, takes no answer.
+    if (answer === null || stopped.signal.aborted) {
       response.writeHead(204).end();
-      return;
+      return null;
     }
     response
       .writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify(hookReply(heard, reply)));
+      .end(JSON.stringify(reply(answer)));
+    return answer;
+  }
+
+  /**
+   * Lets go of what the run no longer waits on: a permission prompt the user answered in the
+   * terminal, as the call it asked about has run, or failed, and everything once the run moved on.
+   * Claude Code doesn't drop a permission hook when the terminal is answered first.
+   */
+  private letGo(listener: RunListeners, event: unknown): void {
+    if (typeof event !== 'object' || event === null || listener.held.size === 0) return;
+    const fields = event as Record<string, unknown>;
+    const name = fields.hook_event_name;
+    if (typeof name === 'string' && MOVED_ON.includes(name)) {
+      for (const waiting of listener.held.keys()) waiting.abort();
+      return;
+    }
+    if (name !== 'PostToolUse' && name !== 'PostToolUseFailure') return;
+    const ran = toolKey(fields.tool_name, fields.tool_input);
+    for (const [waiting, key] of listener.held) {
+      if (key !== null && key === ran) waiting.abort();
+    }
   }
 
   private async answerTools(body: string, response: ServerResponse, call: ToolCall): Promise<void> {

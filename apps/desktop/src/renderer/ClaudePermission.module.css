@@ -1,0 +1,169 @@
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+}
+
+/* The file it's about, as a path to read at a glance. */
+.file,
+.url {
+  margin: 0;
+  padding: var(--fw-space-2) var(--fw-space-3);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* A web page's whole address, every character of it. */
+.url {
+  word-break: break-all;
+}
+
+.warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--fw-need);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.note strong {
+  color: var(--fw-text);
+  font-weight: 650;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* What Claude would write, as it is, scrolling past a screenful. */
+.text {
+  max-height: 260px;
+  margin: 0;
+  padding: var(--fw-space-2) var(--fw-space-3);
+  overflow: auto;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.removed {
+  border-color: color-mix(in srgb, var(--fw-bad) 30%, var(--fw-border));
+  background: var(--fw-bad-soft);
+}
+
+.added {
+  border-color: color-mix(in srgb, var(--fw-ok) 30%, var(--fw-border));
+  background: var(--fw-ok-soft);
+}
+
+.empty {
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* What it saves to the profile: each field, and what it says. */
+.changes {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.change {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.9fr) 1.6fr;
+  gap: var(--fw-space-3);
+  padding: 10px 14px;
+}
+
+.change + .change {
+  border-top: 1px solid var(--fw-border);
+}
+
+.change dt {
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+.change dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.addWhy {
+  align-self: flex-start;
+  margin-top: var(--fw-space-4);
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.addWhy:hover {
+  text-decoration: underline;
+}
+
+.why {
+  width: 100%;
+  margin-top: var(--fw-space-4);
+}
+
+/* The buttons stay in view along the bottom of the dialog, however long what's above them runs. */
+.footer {
+  position: sticky;
+  /* The dialog's body keeps its padding clear of anything sticky, so this reaches past it. */
+  bottom: calc(-1 * var(--fw-space-6));
+  z-index: 1;
+  margin: var(--fw-space-5) calc(-1 * var(--fw-space-6)) calc(-1 * var(--fw-space-6));
+  padding: 0 var(--fw-space-6) var(--fw-space-5);
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.problem {
+  margin: var(--fw-space-3) 0 0;
+  color: var(--fw-bad);
+  font-size: 13px;
+}
+
+/* Answering in the terminal sits apart from the dialog's own two answers. */
+.terminal {
+  margin-right: auto;
+}

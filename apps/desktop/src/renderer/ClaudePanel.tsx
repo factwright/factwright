@@ -1,11 +1,12 @@
 import { Button, IconButton, Notice, RunStatus } from '@factwright/ui';
-import { BookCheck, MessageCircleQuestionMark, X } from 'lucide-react';
+import { ArrowDown, BookCheck, MessageCircleQuestionMark, X } from 'lucide-react';
 import { useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { taskJob } from '../shared/runs.ts';
 import styles from './ClaudePanel.module.css';
 import { chipState, isRunning, PanelHeader } from './PanelHeader.tsx';
+import { isBoolean, usePref } from './prefs.ts';
 import { TerminalView } from './TerminalView.tsx';
 import type { ClaudeRun } from './useClaudeRun.ts';
 
@@ -30,8 +31,11 @@ export function filedWords(filed: FiledFacts): { lead: string; more: string } {
 /**
  * Claude's panel along the bottom of the window: the user's own Claude Code, live. It can tuck
  * away into a slim bar while Claude works, and comes back when Claude needs the user. Claude's
- * questions open in a dialog, and one the user puts aside waits here, with a way back to it. When
- * the run saves the user's answers to their fact bank, it says so, with a way to verify them.
+ * questions and Claude Code's permission prompts open in dialogs, and one the user puts aside
+ * waits here, with a way back to it. What only the terminal can answer, such as Claude Code's
+ * question about trusting the workspace, gets the terminal a pulsing outline and a note pointing
+ * down to it. When the run saves the user's answers to their fact bank, it says so, with a way to
+ * verify them.
  */
 export function ClaudePanel({
   api,
@@ -54,12 +58,20 @@ export function ClaudePanel({
   onReviewFiled?: (part: 'unverified' | 'gaps') => void;
   onDismissFiled?: () => void;
   /**
-   * The questions Claude is waiting on the user to answer in the app: how many, whether their
-   * dialog is open, and a way to open it again once the user puts it aside.
+   * What Claude Code is waiting on the user to answer in the app: Claude's questions, how many, or
+   * a permission prompt, whether its dialog is open, and a way to open it again once the user
+   * puts it aside.
    */
-  asking?: { count: number; open: boolean; onAnswer: () => void } | null;
+  asking?: {
+    what: 'questions' | 'permission';
+    count: number;
+    open: boolean;
+    onAnswer: () => void;
+  } | null;
 }) {
   const [pasteProblem, setPasteProblem] = useState<string | null>(null);
+  // Said once, for someone new to Claude Code, the first time it asks in the terminal.
+  const [explained, setExplained] = usePref('claude.terminal-explained', false, isBoolean);
   if (run.phase === 'idle' && !run.problem) return null;
   const hidden = !run.open && isRunning(run.phase);
   // The question about trust waits on the user like any other.
@@ -68,6 +80,9 @@ export function ClaudePanel({
   const part = filing && filing.facts.length > 0 ? 'unverified' : 'gaps';
   const words = filing ? filedWords(filing) : null;
   const aside = asking && !asking.open ? asking : null;
+  // Claude Code waits on an answer only the terminal takes: its question about trust, or anything
+  // the app's dialogs leave to it, such as a question sent there.
+  const inTerminal = run.trustAsked || (run.phase === 'needs-answer' && asking === null);
   const review = (
     <Button size="sm" onClick={() => onReviewFiled?.(part)}>
       {part === 'unverified' ? 'Verify them' : 'Review'}
@@ -84,15 +99,21 @@ export function ClaudePanel({
           onStop={run.stop}
           onHide={run.hide}
           onClose={run.close}
-          asking={asking !== null}
+          asking={asking?.what ?? null}
         />
         {aside && (
           <div className={styles.asking}>
             <MessageCircleQuestionMark size={15} aria-hidden="true" className={styles.askingIcon} />
-            <p className={styles.askingText}>
-              <strong>Claude is waiting for your answer</strong>
-              {aside.count === 1 ? ' to a question.' : ` to ${aside.count} questions.`}
-            </p>
+            {aside.what === 'questions' ? (
+              <p className={styles.askingText}>
+                <strong>Claude is waiting for your answer</strong>
+                {aside.count === 1 ? ' to a question.' : ` to ${aside.count} questions.`}
+              </p>
+            ) : (
+              <p className={styles.askingText}>
+                <strong>Claude Code is waiting for your OK</strong> before Claude carries on.
+              </p>
+            )}
             <Button size="sm" variant="primary" onClick={aside.onAnswer}>
               Answer
             </Button>
@@ -125,6 +146,22 @@ export function ClaudePanel({
             </Notice>
           </div>
         )}
+        {inTerminal && !run.trustAsked && (
+          <div className={styles.terminalAsks}>
+            <ArrowDown size={15} aria-hidden="true" className={styles.terminalAsksIcon} />
+            <p className={styles.terminalAsksText}>
+              <strong>Claude Code is asking you something in the terminal below.</strong> Click in
+              it, use ↑ and ↓ to pick an answer, then press Enter.
+              {!explained &&
+                ' This is your own Claude Code. Factwright asks in a window of its own when it can, and Claude Code asks here when it can’t.'}
+            </p>
+            {!explained && (
+              <Button size="sm" onClick={() => setExplained(true)}>
+                Got it
+              </Button>
+            )}
+          </div>
+        )}
         {pasteProblem && (
           <p className={styles.problem} role="alert">
             {pasteProblem}
@@ -138,6 +175,7 @@ export function ClaudePanel({
             onTyped={run.typed}
             jobId={taskJob(run.task)}
             onPasteProblem={setPasteProblem}
+            attention={inTerminal}
           />
         )}
       </section>

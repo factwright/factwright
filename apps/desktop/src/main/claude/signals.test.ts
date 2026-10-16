@@ -89,6 +89,17 @@ describe('RunSignals', () => {
     hear({ hook_event_name: 'PostToolUse', ...read('facts/profile.md') });
     expect(signals.slice(-3)).toEqual(['needs-answer', 'done', 'working']);
   });
+
+  it('stops waiting on a call the user said no to in the app, which never runs', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...page });
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...read('notes/a.md') });
+    tracker.answered(page);
+    expect(signals).toEqual(['needs-answer', 'needs-answer']);
+    tracker.answered(read('notes/a.md'));
+    expect(signals.at(-1)).toBe('working');
+  });
 });
 
 describe('bearerToken', () => {

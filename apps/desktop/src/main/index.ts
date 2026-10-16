@@ -11,10 +11,12 @@ import {
   shell,
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import type { PermissionAnswer, PermissionAsk } from '../shared/permission-asks.ts';
+import type { QuestionRound, RoundReply } from '../shared/rounds.ts';
 import { TemplatePreviews } from './about/previews.ts';
 import { AboutStore } from './about/store.ts';
+import { Desk } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
-import { QuestionDesk } from './claude/rounds.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
@@ -303,7 +305,13 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       500,
     );
     // Claude's questions, which the user answers in a dialog in the window rather than the terminal.
-    const questions = new QuestionDesk((round) => window.send('claude:question', round));
+    const questions = new Desk<QuestionRound, RoundReply>((round) =>
+      window.send('claude:question', round),
+    );
+    // Claude Code's permission prompts, which the user answers in a dialog in the window too.
+    const permissionAsks = new Desk<PermissionAsk, PermissionAnswer>((ask) =>
+      window.send('claude:permission', ask),
+    );
     const claude = new ClaudeSession({
       dataDir,
       pluginDir: pluginDir(),
@@ -320,6 +328,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       onFiled: (filed) => window.send('facts:filed', filed),
       ask: (round, signal) => questions.ask(round, signal),
+      permit: (ask, signal) => permissionAsks.ask(ask, signal),
     });
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.
@@ -381,6 +390,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       previews,
       claude,
       questions,
+      permissionAsks,
       setup,
       jobs,
       revisions: new Revisions({ workspace, jobs: () => jobs.list().jobs }),

@@ -139,6 +139,53 @@
   font-weight: 650;
 }
 
+/* What only the terminal can answer, pointing down to it. */
+.terminalAsks {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 7px var(--fw-space-3) 7px var(--fw-space-4);
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-need-soft);
+}
+
+.terminalAsksIcon {
+  flex: none;
+  color: var(--fw-need);
+  animation: nudge 1.2s ease-in-out 3;
+}
+
+.terminalAsksText {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.terminalAsksText strong {
+  font-weight: 650;
+}
+
+@keyframes nudge {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* The terminal while it waits on the user: an outline that pulses a few times, then stays. */
+.attention {
+  box-shadow: inset 0 0 0 2px var(--fw-need);
+  animation: attention 1.2s ease-in-out 3;
+}
+
+@keyframes attention {
+  50% {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+
 /* The note about Claude Code's trust question, above the terminal while it's asked. */
 .trust {
   padding: var(--fw-space-2) var(--fw-space-3) 0;

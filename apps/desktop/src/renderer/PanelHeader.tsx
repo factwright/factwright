@@ -12,8 +12,11 @@ const HINTS: Readonly<Record<RunPhase, string>> = {
   failed: 'Claude Code stopped before it finished.',
 };
 
-/** The hint while Claude's questions wait in the app, which asks them rather than the terminal. */
-const ASKING_HINT = 'Claude has a question for you.';
+/** The hint while something waits in the app, which asks it rather than the terminal. */
+const ASKING_HINTS = {
+  questions: 'Claude has a question for you.',
+  permission: 'Claude Code is asking for your OK.',
+} as const;
 
 /** The run's state as the status chip shows it. A run that couldn't start counts as failed. */
 export function chipState(phase: RunPhase, problem: string | undefined): RunState {
@@ -37,13 +40,13 @@ export function PanelHeader({
   onStop,
   onHide,
   onClose,
-  asking = false,
+  asking = null,
 }: {
   /** What the run is, such as "Fit check · Acme". */
   title?: string;
   phase: RunPhase;
-  /** Whether Claude's questions wait in the app, rather than in the terminal. */
-  asking?: boolean;
+  /** What waits on the user in the app rather than in the terminal, if anything. */
+  asking?: keyof typeof ASKING_HINTS | null;
   plan: string | undefined;
   problem: string | undefined;
   onStop: () => void;
@@ -51,7 +54,8 @@ export function PanelHeader({
   onClose: () => void;
 }) {
   const running = isRunning(phase);
-  const hint = problem ?? (asking && phase === 'needs-answer' ? ASKING_HINT : HINTS[phase]);
+  const hint =
+    problem ?? (asking && phase === 'needs-answer' ? ASKING_HINTS[asking] : HINTS[phase]);
   return (
     <div className={styles.header}>
       <span role="status">

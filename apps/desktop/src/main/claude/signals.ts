@@ -51,6 +51,14 @@ export class RunSignals {
     }
   }
 
+  /**
+   * A permission prompt the user answered no to in the app. Its call never runs, so nothing else
+   * says it's over.
+   */
+  answered(call: { tool_name: string; tool_input: unknown }): void {
+    this.settle(call);
+  }
+
   private wait(fields: Record<string, unknown>): void {
     this.waiting.push(waitKey(fields));
     this.emit('needs-answer');

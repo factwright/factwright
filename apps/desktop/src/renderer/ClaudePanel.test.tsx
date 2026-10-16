@@ -7,18 +7,27 @@ import { ClaudePanel } from './ClaudePanel.tsx';
 import type { ClaudeRun } from './useClaudeRun.ts';
 
 // The terminal itself needs a real browser, and these tests are about what's around it.
-vi.mock('./TerminalView.tsx', () => ({ TerminalView: () => null }));
+const { terminal } = vi.hoisted(() => ({
+  terminal: vi.fn((_props: { attention?: boolean }) => null),
+}));
+vi.mock('./TerminalView.tsx', () => ({ TerminalView: terminal }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
-const run = (open: boolean) =>
+/** Whether the terminal was last drawn outlined, as waiting on the user. */
+const outlined = () => terminal.mock.lastCall?.[0]?.attention === true;
+
+const run = (open: boolean, trustAsked = false) =>
   ({
     phase: 'needs-answer',
     open,
     problem: undefined,
     runId: 1,
     task: null,
-    trustAsked: false,
+    trustAsked,
     typed: vi.fn(),
     requestStart: vi.fn(),
     onTerminalSize: vi.fn(),
@@ -36,7 +45,7 @@ describe('ClaudePanel', () => {
         api={{} as FactwrightApi}
         run={run(true)}
         plan="Max"
-        asking={{ count: 2, open: false, onAnswer }}
+        asking={{ what: 'questions', count: 2, open: false, onAnswer }}
       />,
     );
     const panel = screen.getByRole('region', { name: 'Claude' });
@@ -55,7 +64,7 @@ describe('ClaudePanel', () => {
         api={{} as FactwrightApi}
         run={run(false)}
         plan="Max"
-        asking={{ count: 1, open: false, onAnswer }}
+        asking={{ what: 'questions', count: 1, open: false, onAnswer }}
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Answer Claude' }));
@@ -68,7 +77,7 @@ describe('ClaudePanel', () => {
         api={{} as FactwrightApi}
         run={run(true)}
         plan="Max"
-        asking={{ count: 1, open: true, onAnswer: vi.fn() }}
+        asking={{ what: 'questions', count: 1, open: true, onAnswer: vi.fn() }}
       />,
     );
     expect(screen.queryByText(/waiting for your answer/)).toBeNull();
@@ -78,5 +87,58 @@ describe('ClaudePanel', () => {
     rerender(<ClaudePanel api={{} as FactwrightApi} run={run(true)} plan="Max" />);
     expect(screen.queryByText(/waiting for your answer/)).toBeNull();
     expect(screen.getByText('Claude has a question. Answer it in the panel below.')).toBeTruthy();
+  });
+
+  it('keeps a permission prompt put aside waiting, saying Claude Code wants an OK', async () => {
+    const onAnswer = vi.fn();
+    render(
+      <ClaudePanel
+        api={{} as FactwrightApi}
+        run={run(true)}
+        plan="Max"
+        asking={{ what: 'permission', count: 1, open: false, onAnswer }}
+      />,
+    );
+    const panel = screen.getByRole('region', { name: 'Claude' });
+    expect(panel.textContent).toContain(
+      'Claude Code is waiting for your OK before Claude carries on.',
+    );
+    expect(panel.textContent).toContain('Claude Code is asking for your OK.');
+    await userEvent.click(screen.getByRole('button', { name: 'Answer' }));
+    expect(onAnswer).toHaveBeenCalled();
+    expect(outlined()).toBe(false);
+  });
+
+  it('points to the terminal when only it can answer, explaining it once to someone new', async () => {
+    const { rerender } = render(
+      <ClaudePanel api={{} as FactwrightApi} run={run(true)} plan="Max" />,
+    );
+    const panel = screen.getByRole('region', { name: 'Claude' });
+    expect(panel.textContent).toContain(
+      'Claude Code is asking you something in the terminal below.',
+    );
+    expect(panel.textContent).toContain('This is your own Claude Code.');
+    expect(outlined()).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    expect(panel.textContent).not.toContain('This is your own Claude Code.');
+    expect(panel.textContent).toContain(
+      'Claude Code is asking you something in the terminal below.',
+    );
+    // Its question about trust has a note of its own, and outlines the terminal too.
+    rerender(<ClaudePanel api={{} as FactwrightApi} run={run(true, true)} plan="Max" />);
+    expect(panel.textContent).toContain('Claude Code asks once whether to trust your workspace');
+    expect(panel.textContent).not.toContain('asking you something in the terminal below');
+    expect(outlined()).toBe(true);
+    // While the app asks, the terminal has nothing to point to.
+    rerender(
+      <ClaudePanel
+        api={{} as FactwrightApi}
+        run={run(true)}
+        plan="Max"
+        asking={{ what: 'questions', count: 1, open: true, onAnswer: vi.fn() }}
+      />,
+    );
+    expect(panel.textContent).not.toContain('asking you something in the terminal below');
+    expect(outlined()).toBe(false);
   });
 });

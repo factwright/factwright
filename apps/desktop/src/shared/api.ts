@@ -24,6 +24,7 @@ import type {
   NewFact,
 } from './facts.ts';
 import type { ModelChoices } from './models.ts';
+import type { PermissionAnswer, PermissionAsk } from './permission-asks.ts';
 import type { ClaudePermissions } from './permissions.ts';
 import type {
   AddFileResult,
@@ -267,6 +268,15 @@ export interface FactwrightApi {
   onClaudeQuestion(listener: (round: QuestionRound | null) => void): () => void;
   /** Answers a round of Claude's questions, or sends it to the terminal to answer there. */
   answerClaude(id: string, reply: RoundReply | 'terminal'): Promise<EditResult>;
+  /** The permission prompt Claude Code is waiting on the user to answer in the window, or null. */
+  claudePermission(): Promise<PermissionAsk | null>;
+  /**
+   * Listens for Claude Code's permission prompts: the one waiting on the user, or null once none
+   * is. Returns a function that stops listening.
+   */
+  onClaudePermission(listener: (ask: PermissionAsk | null) => void): () => void;
+  /** Answers a permission prompt, or sends it to the terminal to answer there. */
+  answerPermission(id: string, answer: PermissionAnswer | 'terminal'): Promise<EditResult>;
   listJobs(): Promise<JobList>;
   /** The text of a job's documents, such as its posting and fit check. */
   jobDocs(jobId: string): Promise<JobDocs | null>;

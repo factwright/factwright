@@ -40,6 +40,37 @@
   line-height: 1.4;
 }
 
+/* More about the question, under it, when Claude gives some. */
+.about {
+  margin: calc(-1 * var(--fw-space-1)) 0 var(--fw-space-3);
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* A number question's box, with what it counts beside it. */
+.numberRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+.numberBox {
+  width: 140px;
+}
+
+.unit {
+  color: var(--fw-muted);
+}
+
+.wrong {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: 13px;
+}
+
 .hint {
   margin: calc(-1 * var(--fw-space-1)) 0 var(--fw-space-2);
   color: var(--fw-muted);

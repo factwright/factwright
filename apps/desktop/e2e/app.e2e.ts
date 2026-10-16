@@ -359,6 +359,42 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
   await closeRun();
 });
 
+test('asks the user’s OK in a dialog, and saves to their profile only once they allow it', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const panel = claudePanel();
+  await expect(panel.getByRole('status').first()).toHaveText('Done');
+  const typing = panel.locator('.xterm-helper-textarea');
+  const ask = async () => {
+    await typing.pressSequentially('save my notice period');
+    await typing.press('Enter');
+    return window.getByRole('dialog', { name: 'Let Claude save this to your profile?' });
+  };
+  // Allowed, it's saved.
+  const first = await ask();
+  await expect(first).toContainText('When you can start');
+  await expect(first).toContainText('Two weeks’ notice');
+  await expect(panel.getByRole('status').first()).toHaveText('Needs your answer');
+  await first.getByRole('button', { name: 'Allow', exact: true }).click();
+  await expect(first).toHaveCount(0);
+  await expect.poll(() => terminalText(window)).toContain('Saved to the user’s profile');
+  await expect(panel.getByRole('status').first()).not.toHaveText('Needs your answer');
+  // Said no to, with a note, it isn't, and Claude hears why.
+  const second = await ask();
+  await second.getByRole('button', { name: 'Tell Claude why not' }).click();
+  await second.getByRole('textbox', { name: 'Note for Claude' }).fill('I said a month');
+  await second.getByRole('button', { name: 'Don’t allow' }).click();
+  await expect(second).toHaveCount(0);
+  await expect
+    .poll(() => terminalText(window))
+    .toContain('Not saved: The user said no, in Factwright, and added: I said a month');
+  await closeRun();
+});
+
 test('finds jobs where the user picks, and keeps each search’s jobs together', async () => {
   const { window } = opened;
   // Done with Acme. In a narrow window, a job's details cover the page's buttons.
@@ -624,8 +660,12 @@ test('explains the first run’s question about trusting the workspace', async (
     'Use the arrow keys to pick “Yes, I trust this folder”',
   );
   await expect(panel.getByRole('status')).toHaveText('Needs your answer');
+  // The terminal is outlined, as the place to answer.
+  const outlined = panel.locator('[class*="attention"]');
+  await expect(outlined).toHaveCount(1);
   await panel.locator('.xterm-helper-textarea').press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
+  await expect(outlined).toHaveCount(0);
   await expect(panel.getByRole('status')).toHaveText('Done');
   await closeRun();
 });
