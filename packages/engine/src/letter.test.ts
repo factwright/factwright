@@ -164,6 +164,7 @@ describe('renderLetterHtml', () => {
       ['Franklin Gothic Book', 'sans-serif'],
       ['Microsoft Sans Serif', 'sans-serif'],
       ['Century Gothic', 'sans-serif'],
+      ['CenturyGothic', 'sans-serif'],
     ] as const) {
       const own: Template = { ...sidebar, fonts: [], word: { ...sidebar.word, body: font } };
       expect(renderLetterHtml(sampleLetter(), own)).toContain(

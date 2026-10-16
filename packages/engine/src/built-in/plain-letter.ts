@@ -15,7 +15,7 @@ const STAND_INS: Readonly<Record<string, string>> = {
  * Serif", and "Book" only in serif names such as Book Antiqua.
  */
 const SERIF =
-  /cambria|caladea|georgia|times|garamond|palatino|baskerville|caslon|constantia|goudy|bodoni|rockwell|book antiqua|bookman|century(?! gothic)|(?<!sans[\s-]?)serif/i;
+  /cambria|caladea|georgia|times|garamond|palatino|baskerville|caslon|constantia|goudy|bodoni|rockwell|book antiqua|bookman|century(?![\s-]?gothic)|(?<!sans[\s-]?)serif/i;
 
 /** The open fonts that can set a letter's text, by their regular face, and their kind. */
 const TEXT_FONTS: Readonly<Partial<Record<FontFile, 'serif' | 'sans-serif'>>> = {
