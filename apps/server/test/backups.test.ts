@@ -110,12 +110,16 @@ describe('deleting an account for someone who asked', () => {
 });
 
 describe('the daily cleanup', () => {
-  /** An account's store, to run its cleanup as if at another time. */
-  const storeOf = async (account: Account) => {
+  /** An account's store, to run its cleanup as if at another time, or its alarm. */
+  const storeOf = async (account: Pick<Account, 'id'>) => {
     const env = (await server.worker.getEnv()) as unknown as {
       STORES: {
         idFromName(name: string): unknown;
-        get(id: unknown): { cleanup(now?: number): Promise<void> };
+        get(id: unknown): {
+          cleanup(now?: number): Promise<void>;
+          runAlarm(): Promise<void>;
+          nextAlarm(): Promise<number | null>;
+        };
       };
     };
     return env.STORES.get(env.STORES.idFromName(account.id));
@@ -231,5 +235,47 @@ describe('the daily cleanup', () => {
     await (await storeOf(sam)).cleanup();
     expect(await sam.client.getFile(file)).not.toBeNull();
     expect(await storage.exec('SELECT key FROM trash')).toEqual([]);
+  });
+
+  it('is planned for the next day before it runs, so one that fails can’t end them', async () => {
+    const sam = await server.signUp();
+    // Signing in claims the store, which plans no cleanup until something's stored.
+    await sam.client.account();
+    const store = await storeOf(sam);
+    expect(await store.nextAlarm()).toBeNull();
+    // Without one of its tables, the cleanup's transaction fails, as one can when storage does.
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec('DROP TABLE links');
+    server.server.clearLogs();
+
+    const ran = Date.now();
+    await store.runAlarm();
+    expect(await store.nextAlarm()).toBeGreaterThanOrEqual(ran + 86_400_000);
+    expect(await store.nextAlarm()).toBeLessThanOrEqual(Date.now() + 86_400_000);
+    // The runtime's logs arrive a moment after the run.
+    await vi.waitFor(() =>
+      expect(errors()).toMatch(
+        new RegExp(`Couldn't clean up account ${sam.id}'s store: .*no such table: links`),
+      ),
+    );
+  });
+
+  it('isn’t planned after a deleted account’s last sweep', async () => {
+    const sam = await server.signUp();
+    await sam.client.account();
+    await server.env.FILES.put(`users/${sam.id}/files/left-behind`, 'locked');
+    // Deleted, with a file for its last sweep, such as an upload that was on its way.
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec("INSERT INTO meta (key, value) VALUES ('deleted', ?)", sam.id);
+    const store = await storeOf(sam);
+    await store.runAlarm();
+    expect((await server.env.FILES.list({ prefix: `users/${sam.id}/` })).objects).toEqual([]);
+    expect(await store.nextAlarm()).toBeNull();
+  });
+
+  it('isn’t planned for a store no account has claimed', async () => {
+    const store = await storeOf({ id: someId() });
+    await store.runAlarm();
+    expect(await store.nextAlarm()).toBeNull();
   });
 });

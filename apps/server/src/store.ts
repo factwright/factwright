@@ -642,15 +642,35 @@ export class UserStore extends DurableObject<Env> {
     await cleanUp(this.upkeep, now);
   }
 
-  override async alarm(): Promise<void> {
-    // A deleted account's last sweep, and nothing after it.
+  /**
+   * What the alarm does, kept apart from it so the tests can run it: nothing can call the alarm
+   * itself. A deleted account gets its last sweep, and nothing after it. A store no account has
+   * claimed gets nothing. Otherwise the next day's cleanup is planned before this one runs, so a
+   * cleanup that fails, or never finishes, can't end them. Deleting the account while this one
+   * waits on R2 plans its sweep in place of that.
+   */
+  async runAlarm(): Promise<void> {
     const deleted = this.meta.get('deleted');
     if (deleted !== null) return this.sweep(deleted);
-    if (this.meta.get('owner') === null) return;
-    await this.cleanup();
-    // Deleted while the cleanup waited on R2: its sweep's alarm stays as it is.
-    if (this.isDeleted()) return;
+    const owner = this.meta.get('owner');
+    if (owner === null) return;
     await this.ctx.storage.setAlarm(Date.now() + DAY_MS);
+    try {
+      await this.cleanup();
+    } catch (error) {
+      // The next day's cleanup tries again. Failing this one instead would only ask Cloudflare
+      // for a retry, which it skips once the alarm has moved.
+      console.error(`Couldn't clean up account ${owner}'s store: ${String(error)}`);
+    }
+  }
+
+  /** When the alarm goes off next, or null when none is planned. The tests check it. */
+  async nextAlarm(): Promise<number | null> {
+    return this.ctx.storage.getAlarm();
+  }
+
+  override async alarm(): Promise<void> {
+    await this.runAlarm();
   }
 
   /** Whether the account is deleted, or being deleted. */
