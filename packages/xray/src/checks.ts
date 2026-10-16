@@ -331,7 +331,7 @@ function joinedCheck(file: ReadFile): Check {
     status: 'fix',
     summary: `${count(words.length, 'word')} with letters joined into one character`,
     detail:
-      'The font joins letters such as “fi” into a single character, so “efficient” reads as a different word, and a search for it misses. A resume Factwright built doesn’t have this.',
+      'The font joins letters such as “fi” into a single character, so “efficient” reads as a different word, and a search for it misses. Resumes Factwright builds don’t have this, so building it in Factwright fixes it.',
     examples: words.slice(0, 6),
     lines,
   };

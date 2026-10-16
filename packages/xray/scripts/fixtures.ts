@@ -2,8 +2,8 @@
 // PDFs and Word files, the way the app makes them, files with each problem the X-ray looks for,
 // and words with fi and fl, in the app's templates and one of a user's own, which must read as
 // letters. Run it in Electron, which prints with the same Chromium as the app:
-// `pnpm --filter @factwright/xray fixtures`. Run it again after a change to the templates or
-// the engine, and check the tests still pass.
+// `pnpm --filter @factwright/xray fixtures`. Run it again after a change to the templates, the
+// engine or its fonts, or Electron, and check the tests still pass.
 import { readFileSync, writeFileSync } from 'node:fs';
 import {
   builtInTemplate,
@@ -357,9 +357,23 @@ const PDFS: [name: string, template: Template, resume: Resume][] = [
   ['fi-own', own, plannerResume()],
 ];
 
+/**
+ * A template in Classic's look whose Word files are in Garamond, as one made from a Garamond
+ * resume can be, with no letter of its own. The app carries no Garamond, so a letter prints in
+ * the serif the template carries.
+ */
+const garamond: Template = {
+  ...classic,
+  id: 'garamond',
+  name: 'garamond',
+  word: { ...classic.word, head: 'Garamond', body: 'Garamond' },
+  letter: undefined,
+};
+
 /** Cover letters. A template with no letter of its own, such as own, prints one plainly. */
 const LETTERS: [name: string, template: Template, letter: CoverLetter][] = [
   ['fi-letter', own, plannerLetter()],
+  ['fi-letter-garamond', garamond, plannerLetter()],
 ];
 
 /** Prints a page as the app does: Letter, with backgrounds, after its fonts load. */

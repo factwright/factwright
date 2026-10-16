@@ -41,4 +41,4 @@ python3 -m venv .venv && .venv/bin/pip install fonttools brotli
 .venv/bin/python -I build.py <that folder> packages/engine/fonts
 ```
 
-Then make the X-ray's test files again, with `pnpm --filter @factwright/xray fixtures`: its tests check that words with fi and fl read as letters in every template.
+Then make the X-ray's test files again, with `pnpm --filter @factwright/xray fixtures`: its tests check that words with fi and fl read as letters in Classic, Minimal, a template of a user's own and plain letters. The desktop app's tests check that no font gives such letters a character of its own.

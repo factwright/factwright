@@ -2,12 +2,15 @@
 const JOINED = /[\uFB00-\uFB06]/g;
 
 /**
- * Text made safe for HTML. Letters typed as one character are written out, "ﬁ" as "fi": the
- * fonts a page carries don't have those characters, and applicant systems misread them.
+ * Text with letters typed as one character written out, "ﬁ" as "fi". Applicant systems misread
+ * those characters, and the fonts a page carries don't have them.
  */
+export const plainLetters = (text: string) =>
+  text.replace(JOINED, (joined) => joined.normalize('NFKC'));
+
+/** Text made safe for HTML, with its letters written out, as plainLetters does. */
 export const escapeHtml = (value: unknown) =>
-  String(value ?? '')
-    .replace(JOINED, (joined) => joined.normalize('NFKC'))
+  plainLetters(String(value ?? ''))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

@@ -138,11 +138,22 @@ describe('renderLetterHtml', () => {
     expect(html).not.toContain('text-transform:uppercase');
   });
 
-  it('names a Word font plainly when the template doesn’t carry the font that stands in for it', () => {
+  it('names a Word font plainly when the template carries no font of its kind to stand in', () => {
     const own = { ...sidebar, fonts: ['caladea-regular.woff2' as const] };
     expect(renderLetterHtml(sampleLetter(), own)).toContain(
       'body{font-family:"Segoe UI",sans-serif',
     );
+  });
+
+  it('sets a Word font with no stand-in it carries in a font of the same kind it does carry', () => {
+    const own: Template = {
+      ...sidebar,
+      fonts: ['caladea-regular.woff2', 'caladea-bold.woff2', 'selawik-regular.woff2'],
+      word: { ...sidebar.word, head: 'Garamond', body: 'Calibri' },
+    };
+    const html = renderLetterHtml(sampleLetter(), own);
+    expect(html).toContain('.name{font-family:"Caladea","Garamond",serif;');
+    expect(html).toContain('body{font-family:"Selawik","Calibri",sans-serif;');
   });
 
   it('signs with the letter’s own signature, and leaves out what it doesn’t have', () => {

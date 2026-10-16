@@ -14,14 +14,28 @@ const STAND_INS: Readonly<Record<string, string>> = {
 const SERIF = /cambria|caladea|georgia|times|garamond|palatino|book|baskerville|caslon|serif/i;
 
 /**
+ * The open fonts of each kind that can set a letter's text, by their regular face. A template
+ * whose Word font has no stand-in it carries, such as Garamond, prints its letter in one of
+ * these that it carries instead: a font on the computer looks different on each one, and some
+ * write letters such as "fi" into the PDF as one character, which applicant systems misread.
+ */
+const OF_KIND: Readonly<Record<'serif' | 'sans-serif', readonly FontFile[]>> = {
+  serif: ['caladea-regular.woff2'],
+  'sans-serif': ['factwright-sans-regular.woff2', 'selawik-regular.woff2'],
+};
+
+/**
  * A font-family for one of a template's Word fonts: the open font it stands in for first, when
- * the template carries it, so the letter matches the resume's PDF, then the font itself.
+ * the template carries it, or else an open font of the same kind the template carries, so the
+ * letter matches the resume's PDF, then the font itself.
  */
 function family(word: string, fonts: readonly FontFile[]): string {
   const carried = new Set(fonts.map((file) => FONT_FACES[file].family));
   const stand = STAND_INS[word.toLowerCase()];
   const generic = SERIF.test(stand ?? word) ? 'serif' : 'sans-serif';
-  return [...(stand && carried.has(stand) ? [`"${stand}"`] : []), `"${word}"`, generic].join(',');
+  const kin = OF_KIND[generic].find((file) => fonts.includes(file));
+  const open = stand && carried.has(stand) ? stand : kin && FONT_FACES[kin].family;
+  return [...(open ? [`"${open}"`] : []), `"${word}"`, generic].join(',');
 }
 
 /**
