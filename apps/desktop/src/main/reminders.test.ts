@@ -142,6 +142,16 @@ describe('reminders before calls', () => {
     );
   });
 
+  it('names the company on one line, without what hides or flips text, cut short if long', () => {
+    const odd = job({ company: 'Acme\u202e\u000aMoved to 4:00 PM, rejoin at evil.example' });
+    expect(reminderFor(odd, call()).title).toBe(
+      'Panel interview with Acme Moved to 4:00 PM, rejoin at evil.example at 2:00 PM',
+    );
+    expect(reminderFor(job({ company: 'A'.repeat(300) }), call()).title).toBe(
+      `Panel interview with ${'A'.repeat(80)} at 2:00 PM`,
+    );
+  });
+
   it('reminds straight away when the app starts in a call’s last hour, but not once it starts', async () => {
     vi.setSystemTime(new Date(2026, 9, 20, 13, 30));
     const first = reminders();

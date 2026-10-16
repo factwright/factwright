@@ -507,10 +507,12 @@ function onMeetingHost(href: string): boolean {
 /** Every https link in some text, cleaned as the call card cleans a place's, up to a number. */
 function linksIn(text: string): string[] {
   const links: string[] = [];
+  let tried = 0;
   for (const match of text.matchAll(/https:\/\/[^\s<>"'()]+/gi)) {
+    // Every one tried counts, as one that doesn't read costs as much to try.
+    if (++tried > MAX_LINKS) break;
     const href = callLink(match[0])?.href;
     if (href) links.push(href);
-    if (links.length >= MAX_LINKS) break;
   }
   return links;
 }
@@ -538,18 +540,39 @@ function meetingLink(event: Map<string, Line[]>, max: number): string | null {
   );
 }
 
+/** A number to call, as a tel: link gives it: digits and the marks a phone takes, and an extension. */
+const PHONE = /^[+\d\s().,#*pPwW-]+(?:;ext=\d+)?$/;
+
+/** The kinds of link, other than a web address, that a place's words can hold. */
+const SCHEMES = /^\W*(?:javascript|vbscript|data|file|blob|mailto|tel|sms|callto):/i;
+
+/**
+ * Whether a word of a place is a link. A place keeps none: an https link it could hold is the
+ * meeting's already, and one of any other kind, or one with a name and password in it, has no
+ * place in the call.
+ */
+const isLink = (word: string) => word.includes('://') || SCHEMES.test(word);
+
 /**
  * Where the event is, from its location, when it isn't a meeting's link: an address on one line,
- * or a number to call. A link of another kind than https is left out.
+ * or a number to call, without any link it holds.
  */
 function placeOf(event: Map<string, Line[]>, max: number): string | null {
   const location = event.get('LOCATION')?.[0];
   if (!location) return null;
-  const text = unescaped(location.value).trim();
-  const number = /^tel:(.+)$/i.exec(text)?.[1];
-  if (number) return fitted(number, max) || null;
-  if (/^[a-z][a-z0-9+.-]*:\S*$/i.test(text)) return null;
-  return fitted(text.replace(/\s*\n\s*/g, ', '), max) || null;
+  // A place is a line or two, so a little more than it can hold is plenty to read it from.
+  const text = unescaped(location.value)
+    .slice(0, max * 4)
+    .trim();
+  const number = /^tel:(.+)$/i.exec(text)?.[1]?.trim();
+  if (number) return PHONE.test(number) ? fitted(number, max) || null : null;
+  // Each run of spaces becomes one, or a comma where it breaks a line, in one pass.
+  const words = text
+    .replace(/\s+/g, (run) => (run.includes('\n') ? ', ' : ' '))
+    .split(' ')
+    .filter((word) => !isLink(word));
+  const place = words.join(' ').replace(/^[\s,;]+|[\s,;]+$/g, '');
+  return fitted(place, max) || null;
 }
 
 /** Whether a name is the user's own, ignoring case and spacing. */

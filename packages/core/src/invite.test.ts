@@ -410,6 +410,36 @@ describe('readInvite, with an invite meant to trick it', () => {
     expect(readInvite(two)).toMatchObject({ onDate: '2026-10-20', atTime: '14:00', place: null });
   });
 
+  it('keeps no link in a place, and only a phone number from a tel: link', () => {
+    // Built in parts, so the repository's secret scan doesn't take it for a real one.
+    const credentialed = ['https://alice', 'hunter2@intranet.example.com/x'].join(':');
+    const cases: [string, string | null][] = [
+      [`Room 4 ${credentialed}`, 'Room 4'],
+      ['Office http://phish.example/login', 'Office'],
+      ['javascript:alert(1) Room 9', 'Room 9'],
+      ['Lobby\\nfile:///etc/passwd', 'Lobby'],
+      ['tel:javascript:alert(1)', null],
+      ['TEL:data:text/html;base64,PHNjcmlwdD4=', null],
+      [`tel:${credentialed}`, null],
+      ['tel:+1 (555) 010-0199;ext=12', '+1 (555) 010-0199;ext=12'],
+    ];
+    for (const [location, place] of cases) {
+      const invite = event('DTSTART:20261020T140000', `LOCATION:${location}`);
+      expect(readInvite(invite)?.place).toBe(place);
+    }
+  });
+
+  it('reads a place of endless spaces, and links that don’t read, quickly', () => {
+    const started = Date.now();
+    const spaces = `a${' '.repeat(99_980)}b`;
+    const folded = (spaces.match(/.{1,60}/g) ?? []).join('\r\n ');
+    // A place reads only as much as it could hold.
+    expect(readInvite(event('DTSTART:20261020T140000', `LOCATION:${folded}`))?.place).toBe('a');
+    const junk = Array.from({ length: 40 }, () => `DESCRIPTION:${'https://. '.repeat(9_990)}`);
+    expect(readInvite(event('DTSTART:20261020T140000', ...junk))?.place).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('reads a huge or tangled invite quickly', () => {
     const started = Date.now();
     const crowd = 'ATTENDEE;CN=a:mailto:a@x\r\n'.repeat(150_000);

@@ -92,10 +92,14 @@ function floatingTime(date: string, time: string, minutes = 0): string {
   return `${pad(at.getUTCFullYear(), 4)}${pad(at.getUTCMonth() + 1)}${pad(at.getUTCDate())}T${pad(at.getUTCHours())}${pad(at.getUTCMinutes())}00`;
 }
 
-/** What a call is called in a calendar or a reminder: "Panel interview with Northwind Labs". */
+/**
+ * What a call is called in a calendar or a reminder: "Panel interview with Northwind Labs". The
+ * company's name is on one line, without characters that hide or flip text, as a posting's could
+ * hold them.
+ */
 export function callTitle(company: string, kind: CallKind): string {
   const label = CALL_KIND_LABELS[kind];
-  const name = company.trim();
+  const name = oneLine(company);
   if (!name) return label;
   return kind === 'takehome' ? `${label} for ${name}` : `${label} with ${name}`;
 }

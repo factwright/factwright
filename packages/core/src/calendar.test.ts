@@ -214,6 +214,10 @@ describe('callTitle', () => {
     expect(callTitle('Northwind Labs', 'takehome')).toBe('Take-home for Northwind Labs');
     expect(callTitle('Northwind Labs', 'other')).toBe('Call with Northwind Labs');
     expect(callTitle('  ', 'screen')).toBe('Recruiter screen');
+    // A posting's name for the company can hide or flip text, or break the line.
+    expect(callTitle('Acme\u202e\u000aRobotics', 'panel')).toBe(
+      'Panel interview with Acme Robotics',
+    );
   });
 });
 

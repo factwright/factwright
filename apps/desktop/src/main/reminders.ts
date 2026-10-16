@@ -7,6 +7,7 @@ import {
   isIsoDate,
   type Job,
   localDate,
+  oneLine,
 } from '@factwright/core';
 import { REMINDER_LEAD } from '../shared/reminders.ts';
 import { saveJson, settled } from './claude/save.ts';
@@ -33,17 +34,21 @@ export function callStart(call: Pick<Call, 'onDate' | 'atTime'>): Date | null {
   return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0);
 }
 
+/** The most of a company's name a reminder shows, so the time still shows after it. */
+const COMPANY_LENGTH = 80;
+
 /**
  * What a call's reminder says: "Panel interview with Northwind Labs at 2:00 PM", and whether
- * its prep sheet is ready.
+ * its prep sheet is ready. The company's name is on one line, cut short if it runs long.
  */
 export function reminderFor(job: Job, call: Call): CallReminder {
   const at = `${call.kind === 'takehome' ? 'due at' : 'at'} ${clockTime(call.atTime ?? '00:00')}`;
   const prepped = job.callDocs.some((doc) => doc.callId === call.id && doc.kind === 'prep');
+  const company = [...oneLine(job.company)].slice(0, COMPANY_LENGTH).join('').trim();
   return {
     jobId: job.id,
     callId: call.id,
-    title: `${callTitle(job.company, call.kind)} ${at}`,
+    title: `${callTitle(company, call.kind)} ${at}`,
     body: prepped
       ? 'Your prep sheet is ready. Open Factwright to read it.'
       : 'No prep sheet yet. Open Factwright for Call prep.',
