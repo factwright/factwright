@@ -8,6 +8,7 @@ import type { FiledFacts } from '../../shared/facts.ts';
 import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import type { BoundRevision } from '../jobs/revisions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -125,6 +126,8 @@ export interface RunOptions {
   /** Its model and effort, from the levels that suit the user's plan. */
   choose?: ((levels: PlanLevels) => RunLevels) | undefined;
   scope?: RunScope;
+  /** The revision it's started for, which its calls to revision_findings read. */
+  revision?: BoundRevision | undefined;
 }
 
 /** What a run needs from the app: where things live, and where its output and signals go. */
@@ -208,7 +211,7 @@ export class ClaudeSession {
   }
 
   private async launch(size: TerminalSize, options: RunOptions): Promise<StartResult> {
-    const { prompt, choose, scope = 'hunt' } = options;
+    const { prompt, choose, scope = 'hunt', revision } = options;
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,
@@ -230,7 +233,7 @@ export class ClaudeSession {
         trust.pastIt();
         signals.hear(event);
       },
-      { scope, onFiled: this.deps.onFiled },
+      { scope, onFiled: this.deps.onFiled, ...(revision && { revision }) },
     );
     let terminal: IPty;
     try {

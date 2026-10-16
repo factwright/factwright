@@ -1,3 +1,5 @@
+import { REVISE_SKILL, type TemplateChoice } from './revision.ts';
+
 /**
  * The skills a job's panel can run on it, by their names in Factwright's plugin: its Run buttons,
  * then answering the user's own questions about the job.
@@ -87,8 +89,9 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
 /**
  * What the window asks the app to run: a skill on one job, or one of the user's questions about
  * it, a job search (where the user picked, or wherever Claude asks), getting started (or only
- * its starting resumes), more facts, from an interview or from new files and notes, or a
- * template in the look of a resume the user likes.
+ * its starting resumes), more facts, from an interview or from new files and notes, a template
+ * in the look of a resume the user likes, or a revision of a job's resume for what its ATS X-ray
+ * found.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
@@ -96,7 +99,16 @@ export type RunTask =
   | { skill: typeof SEARCH_SKILL; sources?: SearchSources }
   | { skill: typeof GET_STARTED_SKILL; mode?: 'resumes' }
   | { skill: typeof FACTS_SKILL; mode: 'interview' | 'new' }
-  | { skill: typeof TEMPLATE_SKILL; source: string };
+  | { skill: typeof TEMPLATE_SKILL; source: string }
+  | {
+      skill: typeof REVISE_SKILL;
+      jobId: string;
+      /** The resume's file in the job's folder. */
+      resume: string;
+      /** The IDs of the findings to fix, as the X-ray gave them. */
+      findings: string[];
+      template?: TemplateChoice;
+    };
 
 /** The skills the app starts that aren't for one job. */
 export const HUNT_SKILLS = [SEARCH_SKILL, GET_STARTED_SKILL, FACTS_SKILL, TEMPLATE_SKILL] as const;
@@ -105,12 +117,15 @@ export const HUNT_SKILLS = [SEARCH_SKILL, GET_STARTED_SKILL, FACTS_SKILL, TEMPLA
  * What a run may change without asking. A run started to get to know the user, or to add facts,
  * may save their facts, starting resumes and guide. A run started to make a template may read
  * and save templates, and nothing else, and may replace only the ones it saved: the resume it
- * copies came from anywhere. Every other run asks first. Neither of those two reads the web.
+ * copies came from anywhere. A revision may do what a run on the job hunt does, but reads what
+ * the X-ray found in a posting, and needs nothing from the web, so it can't reach it. Every
+ * other run asks first. None of the last three reads the web.
  */
-export type RunScope = 'hunt' | 'profile' | 'template';
+export type RunScope = 'hunt' | 'profile' | 'template' | 'revise';
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
   if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
+  if (task?.skill === REVISE_SKILL) return 'revise';
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }
 

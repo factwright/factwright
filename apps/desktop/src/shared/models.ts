@@ -1,4 +1,5 @@
 import type { PlanLevels } from './levels.ts';
+import { REVISE_SKILL } from './revision.ts';
 import { HUNT_SKILLS, RUN_SKILLS, type RunTask } from './runs.ts';
 
 /**
@@ -105,4 +106,14 @@ export const modelFor = (
   choices: ModelChoices,
   task?: RunTask | null,
   levels?: PlanLevels,
-): Model => (task && choices.tasks[task.skill]) || modelWithout(choices, task?.skill, levels);
+): Model => {
+  const levelled = task ? levelsTask(task) : undefined;
+  return (levelled && choices.tasks[levelled]) || modelWithout(choices, levelled, levels);
+};
+
+/**
+ * The task whose levels a run takes: its own, but for a revision of a resume, which is writing,
+ * at a tailored resume's.
+ */
+export const levelsTask = (task: RunTask): ModelTask =>
+  task.skill === REVISE_SKILL ? 'focused-resume' : task.skill;

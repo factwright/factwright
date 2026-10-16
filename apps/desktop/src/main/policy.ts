@@ -2,6 +2,14 @@ import { join, normalize, resolve, sep } from 'node:path';
 import { ASK_ID, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
+  FINDING_ID,
+  MAX_FINDINGS,
+  RESUME_FILE,
+  REVISE_SKILL,
+  TEMPLATE_CHOICES,
+  type TemplateChoice,
+} from '../shared/revision.ts';
+import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
   MONTH,
@@ -109,7 +117,7 @@ export function resolveInside(root: string, urlPath: string): string | null {
 }
 
 /** A job's ID, as the app makes them: "acme-robotics--staff-engineer", maybe with "-2". */
-const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
+export const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 /**
  * Where a search should look, as the Find jobs dialog sent it: known places, each once, an HN
@@ -146,6 +154,7 @@ export function parseSearchSources(value: unknown): SearchSources | null {
  */
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
+  if ((value as Record<string, unknown>).skill === REVISE_SKILL) return parseRevision(value);
   const { skill, jobId, mode, askId, source, sources, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0) return null;
   if (sources !== undefined) {
@@ -187,6 +196,34 @@ export function parseRunTask(value: unknown): RunTask | null {
   return { skill: skill as RunSkill, jobId };
 }
 
+/**
+ * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
+ * findings to fix, each once, with a choice for the template when one's given.
+ */
+function parseRevision(value: object): RunTask | null {
+  const { skill, jobId, resume, findings, template, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0 || skill !== REVISE_SKILL) return null;
+  if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
+  if (typeof resume !== 'string' || !RESUME_FILE.test(resume)) return null;
+  if (!Array.isArray(findings) || findings.length === 0 || findings.length > MAX_FINDINGS) {
+    return null;
+  }
+  if (!findings.every((id) => typeof id === 'string' && id.length <= 60 && FINDING_ID.test(id))) {
+    return null;
+  }
+  if (new Set(findings).size !== findings.length) return null;
+  if (template !== undefined && !(TEMPLATE_CHOICES as readonly unknown[]).includes(template)) {
+    return null;
+  }
+  return {
+    skill: REVISE_SKILL,
+    jobId,
+    resume,
+    findings: [...findings] as string[],
+    ...(template !== undefined && { template: template as TemplateChoice }),
+  };
+}
+
 /** What the app types for each place a search looks, word for word. */
 const SITE_WORDS: Readonly<Record<SearchSite, string>> = {
   hn: 'HN',
@@ -219,6 +256,12 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} ${kind ? `for ${kind}: ` : ''}${places.join(' · ')}`;
   }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
+  // The findings by their IDs alone, which hold no posting's words. The run reads the resume
+  // and what the findings say with revision_findings.
+  if ('findings' in task) {
+    const template = task.template ? ` template ${task.template}` : '';
+    return `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${template}`;
+  }
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;
   const mode = 'mode' in task ? task.mode : undefined;

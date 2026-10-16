@@ -1,6 +1,7 @@
 import { WORKSPACE_PATHS } from '@factwright/core';
 import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import { TEMPLATES_FOLDER } from '../resume/templates.ts';
 import {
   FACT_TOOLS,
   LOCAL_TOOLS,
@@ -67,25 +68,30 @@ const OFF_THE_WEB = [
 function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
   // Saving to the user's profile is like changing their facts: allowed when those are.
   const profile = scope === 'profile' || permissions.anyFile ? PROFILE_TOOLS : [];
-  // Saving a template is the point of a template run. Otherwise it's like changing a file.
-  const templates = scope === 'template' || permissions.anyFile ? TEMPLATE_TOOLS : [];
+  // Saving a template is the point of a template run. Otherwise it's like changing a file, but
+  // a revision reads what an X-ray found in a posting, so it always asks first.
+  const templates =
+    scope === 'template' || (permissions.anyFile && scope !== 'revise') ? TEMPLATE_TOOLS : [];
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
   // else without asking: not building a resume or saving an answer, either. A run on the job hunt
   // files what the user answers it without asking, since that files only what they answered.
-  // Getting started and adding facts change the facts themselves, as the user confirms them.
+  // Getting started and adding facts change the facts themselves, as the user confirms them. A
+  // revision does what a run on the job hunt does on this computer, and nothing on the web.
   const tools =
     scope === 'template'
       ? [...TEMPLATE_READS, ...templates, ...profile]
       : scope === 'profile'
         ? [...LOCAL_TOOLS, ...profile, ...templates]
-        : [
-            ...LOCAL_TOOLS,
-            ...FACT_TOOLS,
-            ...profile,
-            ...templates,
-            ...PUBLIC_API_TOOLS,
-            ...(permissions.anySite ? WEB_TOOLS : []),
-          ];
+        : scope === 'revise'
+          ? [...LOCAL_TOOLS, ...FACT_TOOLS, ...profile, ...templates]
+          : [
+              ...LOCAL_TOOLS,
+              ...FACT_TOOLS,
+              ...profile,
+              ...templates,
+              ...PUBLIC_API_TOOLS,
+              ...(permissions.anySite ? WEB_TOOLS : []),
+            ];
   // A template run copies a resume from anywhere, so it changes no file without asking.
   const files =
     scope === 'template'
@@ -118,7 +124,8 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  *   to a site in a link. A run started to get to know the user, or to add facts, may change their
  *   facts, starting resumes and guide without asking too, and in return never reads the web. A
  *   run started to make a template may read and save templates without asking, and nothing
- *   else, and never reads the web either.
+ *   else, and never reads the web either. Nor does a revision, which reads what a resume's X-ray
+ *   found in a posting, and otherwise runs as a run on the job hunt does.
  * - never: changing Claude Code's settings or the instructions it loads
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
@@ -149,7 +156,12 @@ export function sessionSettings({
     disableClaudeAiConnectors: true,
     permissions: {
       allow: allowed(permissions, scope),
-      deny: [...NEVER_CHANGED.map(edits), ...(scope === 'hunt' ? [] : OFF_THE_WEB)],
+      deny: [
+        ...NEVER_CHANGED.map(edits),
+        ...(scope === 'hunt' ? [] : OFF_THE_WEB),
+        // A revision changes a template only through save_template, which asks.
+        ...(scope === 'revise' ? [edits(`${TEMPLATES_FOLDER}/**`)] : []),
+      ],
     },
     hooks: {
       UserPromptSubmit: [{ hooks: hook }],

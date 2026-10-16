@@ -8,6 +8,8 @@ export interface XRayFile {
   path: string;
   name: string;
   format: 'pdf' | 'docx';
+  /** When it last changed, so the X-ray reads it again once it's rebuilt. */
+  modified?: string;
 }
 
 export type XRayState =
@@ -77,7 +79,7 @@ export function useXRay(
     return () => {
       live = false;
     };
-  }, [api, file.path, file.format, posting]);
+  }, [api, file.path, file.format, file.modified, posting]);
 
   return state;
 }

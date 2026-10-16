@@ -296,7 +296,7 @@ export function JobPanel({
       }
     />,
     <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
-    <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} />,
+    <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} run={run} />,
     <ActivitySection key="activity" job={job} today={today} />,
   ];
 

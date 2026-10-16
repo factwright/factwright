@@ -22,6 +22,7 @@ It answers four questions:
 | `facts` | What the fact bank says: skills.md, the degrees and certifications in profile.md, each claim's Keywords line, and what gaps.md says the user doesn't have |
 | `keywords` | The posting's key terms against the resume, and for each one missing, what the fact bank says: add it, confirm it first, or leave it off |
 | `xray` | All of it together, with a summary such as "Reads cleanly · 14 of 18 key terms · 2 things to fix" |
+| `findings` | What a revision could fix, each with how it gets fixed (in the resume's words, by asking the user first, or in the template) and an ID that stays the same from one X-ray to the next, with none of the posting's words. Then, after a revision, what became of each one picked, and which this X-ray didn't check |
 
 ```ts
 import { getDocument } from 'pdfjs-dist';
