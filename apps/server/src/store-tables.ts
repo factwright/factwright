@@ -38,6 +38,8 @@ export const SCHEMA = `
     at INTEGER NOT NULL,
     doomed INTEGER
   ) WITHOUT ROWID;
+  -- The R2 keys of file contents the cleanup removed from files, until R2 has deleted them too.
+  CREATE TABLE IF NOT EXISTS trash (key TEXT PRIMARY KEY) WITHOUT ROWID;
   -- Account keys locked with link codes, waiting for a new device.
   CREATE TABLE IF NOT EXISTS links (
     id TEXT PRIMARY KEY,
