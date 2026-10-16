@@ -34,6 +34,7 @@ import type { AboutStore } from './about/store.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
 import { loadModels, saveModels } from './claude/models.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
+import { parseReply, type QuestionDesk } from './claude/rounds.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
@@ -78,6 +79,13 @@ const isText = (value: unknown): value is string =>
 /** The answer to an edit the window sent in a shape the app doesn't take. */
 const REFUSED = { ok: false, message: 'That change couldn’t be saved.' } as const;
 
+/** Why answers to Claude's questions didn't reach it: it stopped waiting for them. */
+const QUESTIONS_GONE = {
+  ok: false,
+  message:
+    'Claude isn’t waiting for these answers anymore. If it still needs them, it asks in its panel.',
+} as const;
+
 const isId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 300;
 
@@ -107,6 +115,8 @@ export interface IpcDeps {
   templates: TemplateLibrary;
   previews: TemplatePreviews;
   claude: ClaudeSession;
+  /** Claude's questions waiting on the user, which the window's dialog answers. */
+  questions: QuestionDesk;
   /** Checks that Factwright's setup still works with each version of Claude Code. */
   setup: SetupChecker;
   jobs: JobsService;
@@ -151,6 +161,7 @@ export function registerIpc({
   templates,
   previews,
   claude: session,
+  questions,
   setup,
   jobs,
   revisions,
@@ -314,6 +325,20 @@ export function registerIpc({
 
   ipcMain.on('claude:stop', (event) => {
     if (fromApp(event)) session.stop();
+  });
+
+  // Claude's questions, answered in the window's dialog, or sent to the terminal to answer there.
+  answer('claude:question', () => questions.current());
+  answer('claude:answer', (id, reply): EditResult => {
+    const round = typeof id === 'string' ? questions.find(id) : null;
+    if (!round) return QUESTIONS_GONE;
+    if (reply === 'terminal') {
+      questions.answer(round.id, null);
+      return { ok: true };
+    }
+    const answers = parseReply(round, reply);
+    if (!answers) throw new Error('Refused answers that don’t fit Claude’s questions.');
+    return questions.answer(round.id, answers) ? { ok: true } : QUESTIONS_GONE;
   });
 
   answer('jobs:list', () => jobs.list());

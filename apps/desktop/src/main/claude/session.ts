@@ -14,7 +14,7 @@ import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
 import { loadPermissions } from './permissions.ts';
-import type { RunServer } from './run-server.ts';
+import type { QuestionAsker, RunServer } from './run-server.ts';
 import { TrustWatch } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
 import { RunSignals } from './signals.ts';
@@ -144,6 +144,8 @@ export interface SessionDeps {
   onTrust: () => void;
   /** The run filed facts from the user's answers, which wait for the user to verify them. */
   onFiled?: (filed: FiledFacts) => void;
+  /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
+  ask?: QuestionAsker;
 }
 
 interface Run {
@@ -233,7 +235,7 @@ export class ClaudeSession {
         trust.pastIt();
         signals.hear(event);
       },
-      { scope, onFiled: this.deps.onFiled, ...(revision && { revision }) },
+      { scope, onFiled: this.deps.onFiled, ask: this.deps.ask, ...(revision && { revision }) },
     );
     let terminal: IPty;
     try {

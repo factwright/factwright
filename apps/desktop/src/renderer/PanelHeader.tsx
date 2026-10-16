@@ -12,6 +12,9 @@ const HINTS: Readonly<Record<RunPhase, string>> = {
   failed: 'Claude Code stopped before it finished.',
 };
 
+/** The hint while Claude's questions wait in the app, which asks them rather than the terminal. */
+const ASKING_HINT = 'Claude has a question for you.';
+
 /** The run's state as the status chip shows it. A run that couldn't start counts as failed. */
 export function chipState(phase: RunPhase, problem: string | undefined): RunState {
   if (phase === 'idle') return problem ? 'failed' : 'stopped';
@@ -34,10 +37,13 @@ export function PanelHeader({
   onStop,
   onHide,
   onClose,
+  asking = false,
 }: {
   /** What the run is, such as "Fit check · Acme". */
   title?: string;
   phase: RunPhase;
+  /** Whether Claude's questions wait in the app, rather than in the terminal. */
+  asking?: boolean;
   plan: string | undefined;
   problem: string | undefined;
   onStop: () => void;
@@ -45,14 +51,15 @@ export function PanelHeader({
   onClose: () => void;
 }) {
   const running = isRunning(phase);
+  const hint = problem ?? (asking && phase === 'needs-answer' ? ASKING_HINT : HINTS[phase]);
   return (
     <div className={styles.header}>
       <span role="status">
         <RunStatus state={chipState(phase, problem)} />
       </span>
       <span className={styles.title}>{title}</span>
-      <span className={styles.hint} title={problem ?? HINTS[phase]}>
-        {problem ?? HINTS[phase]}
+      <span className={styles.hint} title={hint}>
+        {hint}
       </span>
       <span className={styles.plan}>
         <span className={styles.planDot} aria-hidden="true" />

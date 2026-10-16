@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { McpTool } from '../tools/mcp.ts';
 import { RunServer } from './run-server.ts';
 
@@ -157,6 +158,161 @@ describe('RunServer', () => {
     };
     expect(await findings(TOKEN)).toBe('term-9f8e7d6c');
     expect(await findings(other)).toBe('No revision');
+  });
+
+  describe('Claude’s questions', () => {
+    const question = 'Have you used GraphQL in production?';
+    const questions = [
+      {
+        question,
+        header: 'GraphQL',
+        options: [{ label: 'Yes, in production' }, { label: 'No' }],
+        multiSelect: false,
+      },
+    ];
+    const asked = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'toolu_q',
+      tool_input: { questions },
+    };
+    const yes: RoundReply = [{ picks: ['Yes, in production'], other: '', note: '' }];
+
+    /** A dialog the test answers, by hand, once the hook reaches it. */
+    function dialog() {
+      const answers: ((reply: RoundReply | null) => void)[] = [];
+      const ask = vi.fn(
+        (_round: QuestionRound, _signal: AbortSignal) =>
+          new Promise<RoundReply | null>((resolve) => answers.push(resolve)),
+      );
+      const answer = async (reply: RoundReply | null) => {
+        await vi.waitFor(() => expect(answers).toHaveLength(1));
+        answers.shift()?.(reply);
+      };
+      return { ask, answer };
+    }
+
+    it('holds the hook until the user answers in the app, then allows the round with their answers', async () => {
+      await server.start();
+      const { ask, answer } = dialog();
+      const hooks = vi.fn();
+      server.listen(TOKEN, hooks, { ask });
+      const held = post(server.hookUrl, asked);
+      await answer(yes);
+      expect(ask.mock.calls[0]?.[0]).toEqual({
+        id: 'toolu_q',
+        questions: [
+          {
+            question,
+            header: 'GraphQL',
+            multiSelect: false,
+            options: [
+              { label: 'Yes, in production', description: null, preview: null },
+              { label: 'No', description: null, preview: null },
+            ],
+          },
+        ],
+      });
+      const response = await held;
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe('application/json');
+      expect(await response.json()).toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          updatedInput: { questions, answers: { [question]: 'Yes, in production' } },
+        },
+      });
+      // The run still hears the question as it's asked, to read "Needs your answer".
+      expect(hooks).toHaveBeenCalledWith(asked);
+    });
+
+    it('has the terminal ask when the dialog gives no answers, and answers other hooks meanwhile', async () => {
+      await server.start();
+      const { ask, answer } = dialog();
+      server.listen(TOKEN, () => {}, { ask });
+      const held = post(server.hookUrl, asked);
+      await vi.waitFor(() => expect(ask).toHaveBeenCalled());
+      expect((await post(server.hookUrl, { hook_event_name: 'Notification' })).status).toBe(204);
+      await answer(null);
+      const response = await held;
+      expect(response.status).toBe(204);
+      expect(await response.text()).toBe('');
+
+      const failing = vi.fn(async () => {
+        throw new Error('No window');
+      });
+      server.listen(TOKEN, () => {}, { ask: failing });
+      expect((await post(server.hookUrl, asked)).status).toBe(204);
+      expect(failing).toHaveBeenCalled();
+    });
+
+    it('lets the dialog go once Claude Code stops waiting, as when the user interrupts the run', async () => {
+      await server.start();
+      const stopped = vi.fn();
+      const ask = vi.fn(
+        (_round: QuestionRound, signal: AbortSignal) =>
+          new Promise<RoundReply | null>((resolve) => {
+            signal.addEventListener('abort', () => {
+              stopped();
+              resolve(yes);
+            });
+          }),
+      );
+      server.listen(TOKEN, () => {}, { ask });
+      const gone = new AbortController();
+      const held = fetch(server.hookUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(asked),
+        signal: gone.signal,
+      }).catch(() => 'stopped');
+      await vi.waitFor(() => expect(ask).toHaveBeenCalled());
+      gone.abort();
+      await expect(held).resolves.toBe('stopped');
+      await vi.waitFor(() => expect(stopped).toHaveBeenCalled());
+    });
+
+    it('leaves to the terminal a subagent’s questions, and those of a run with no dialog', async () => {
+      await server.start();
+      const { ask } = dialog();
+      const other = 'e'.repeat(64);
+      server.listen(TOKEN, () => {}, { ask });
+      server.listen(other, () => {});
+      expect((await post(server.hookUrl, { ...asked, agent_id: 'research' })).status).toBe(204);
+      expect((await post(server.hookUrl, asked, { Authorization: `Bearer ${other}` })).status).toBe(
+        204,
+      );
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('keeps what the user answered in the dialog for the run’s tools, once Claude Code reports it', async () => {
+      await server.start();
+      const { ask, answer } = dialog();
+      server.listen(TOKEN, () => {}, { ask });
+      const held = post(server.hookUrl, asked);
+      await answer(yes);
+      const { hookSpecificOutput } = (await (await held).json()) as {
+        hookSpecificOutput: { updatedInput: Record<string, unknown> };
+      };
+      // As Claude Code reports a round once AskUserQuestion has run with the answers.
+      await post(server.hookUrl, {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'AskUserQuestion',
+        tool_use_id: 'toolu_q',
+        tool_input: hookSpecificOutput.updatedInput,
+        tool_response: hookSpecificOutput.updatedInput,
+      });
+      const response = await post(server.toolsUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'recall', arguments: { question } },
+      });
+      expect(await response.json()).toMatchObject({
+        result: { content: [{ type: 'text', text: 'Yes, in production' }] },
+      });
+    });
   });
 
   it('refuses requests without a live token, from a web page, or by other methods', async () => {

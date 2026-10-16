@@ -92,7 +92,10 @@ const CHOICES = ['Yes, in production', 'Some: a side project, a course, or an ea
 
 /**
  * As Claude Code does for a question round: PreToolUse with the questions as Claude wrote them,
- * then, once the user answers in its dialog, PostToolUse with their answers.
+ * which the app holds while the user answers in its dialog. A hook that answers "allow" with the
+ * answers has the round run with them, and nothing is asked in the terminal. With no answers from
+ * the hook, the user answers in the terminal, as `answers` says. Then PostToolUse, with what they
+ * answered.
  */
 async function askUser(answers) {
   const id = `toolu_${Date.now()}`;
@@ -102,16 +105,26 @@ async function askUser(answers) {
     options: CHOICES.map((label) => ({ label, description: '' })),
     multiSelect: false,
   }));
-  await hook('PreToolUse', {
+  const asked = await post(hookUrl, {
+    hook_event_name: 'PreToolUse',
+    session_id: 'fake',
     tool_name: 'AskUserQuestion',
     tool_use_id: id,
     tool_input: { questions },
   });
+  const decision = asked.status === 200 ? (await asked.json()).hookSpecificOutput : undefined;
+  const fromHook = decision?.permissionDecision === 'allow' && decision.updatedInput?.answers;
+  if (!fromHook) show('Claude Code asked in the terminal.\n');
+  const round = fromHook ? decision.updatedInput : { questions, answers };
+  const noted = Object.entries(round.answers).map(
+    ([question, answer]) => `  · ${question} → ${answer}`,
+  );
+  show(`User answered Claude's questions:\n${noted.join('\n')}\n`);
   await hook('PostToolUse', {
     tool_name: 'AskUserQuestion',
     tool_use_id: id,
-    tool_input: { questions, answers },
-    tool_response: { questions, answers },
+    tool_input: round,
+    tool_response: round,
   });
 }
 

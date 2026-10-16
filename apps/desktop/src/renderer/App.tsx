@@ -26,6 +26,7 @@ import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import { ClaudePanel } from './ClaudePanel.tsx';
+import { ClaudeQuestions } from './ClaudeQuestions.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
 import { FactBankPage } from './facts/FactBankPage.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
@@ -62,6 +63,7 @@ import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
+import { useClaudeQuestions } from './useClaudeQuestions.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { useClaudeStatus } from './useClaudeStatus.ts';
 import { useLevelChoices } from './useLevelChoices.ts';
@@ -85,6 +87,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const sync = useSync(api);
   const approvals = useApprovals(api);
   const run = useClaudeRun(api);
+  const questions = useClaudeQuestions(api);
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
   const today = useToday();
@@ -507,6 +510,13 @@ export function App({ api }: { api: FactwrightApi }) {
               setFactsShown((was) => ({ part, at: (was?.at ?? 0) + 1 }));
             }}
             onDismissFiled={seeFiled}
+            asking={
+              questions.round && {
+                count: questions.round.questions.length,
+                open: questions.open,
+                onAnswer: questions.show,
+              }
+            }
           />
         </div>
       </div>
@@ -634,6 +644,17 @@ export function App({ api }: { api: FactwrightApi }) {
             </DialogActions>
           )}
         </Dialog>
+      )}
+      {questions.round && questions.open && (
+        <ClaudeQuestions
+          key={questions.round.id}
+          api={api}
+          round={questions.round}
+          about={runTitle ?? null}
+          draft={questions.draft}
+          onDraft={questions.keepDraft}
+          onClose={questions.hide}
+        />
       )}
       {profileProblem && (
         <Dialog

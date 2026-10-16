@@ -107,7 +107,14 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
 
   const panel = claudePanel();
   await expect(panel.getByText('Resume revision · Acme Robotics')).toBeVisible();
+  // Its question about GraphQL opens in the app's dialog. Answered in the terminal instead, Claude
+  // Code asks it there, as it did before the dialog.
+  const asks = window.getByRole('dialog', { name: 'Claude has a question' });
+  await expect(asks).toContainText('Have you used GraphQL?');
+  await asks.getByRole('button', { name: 'Answer in the terminal' }).click();
+  await expect(asks).toHaveCount(0);
   await expect(panel.getByRole('status').first()).toHaveText('Done');
+  expect(await terminalText(window)).toContain('Claude Code asked in the terminal.');
   const text = await terminalText(window);
   // The app types the skill, the job and the findings' IDs, which hold no posting's words, and
   // nothing after them. The resume, and what the X-ray found, reach the run through its tool.

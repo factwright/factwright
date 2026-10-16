@@ -1,0 +1,191 @@
+.questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-6);
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The question's label above its words, and the words as the heading of its options. */
+.legend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: var(--fw-space-3);
+  padding: 0;
+}
+
+.header {
+  letter-spacing: 0.02em;
+}
+
+.text {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.hint {
+  margin: calc(-1 * var(--fw-space-1)) 0 var(--fw-space-2);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+}
+
+/* Each option is a card to click anywhere on, which fills in once it's picked. */
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+  padding: 11px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.option:hover {
+  background: var(--fw-hover);
+}
+
+.option:has(> input[type="radio"]:focus-visible),
+.option:has(> input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+.option.picked {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent-soft);
+}
+
+.option > input[type="radio"],
+.option > input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--fw-accent);
+  cursor: pointer;
+}
+
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.description {
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.preview {
+  margin: 6px 0 0;
+  padding: var(--fw-space-2) 10px;
+  overflow-x: auto;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* The user's own answer: the box sits in the card, in place of an option's words. */
+.otherRow {
+  align-items: center;
+  padding-block: 7px;
+  cursor: default;
+}
+
+.otherRow > input[type="radio"],
+.otherRow > input[type="checkbox"] {
+  margin: 0;
+}
+
+.otherBox {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.own,
+.note {
+  width: 100%;
+}
+
+.note {
+  margin-top: var(--fw-space-2);
+}
+
+.addNote {
+  align-self: flex-start;
+  margin-top: var(--fw-space-2);
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.addNote:hover {
+  text-decoration: underline;
+}
+
+/*
+ * The buttons stay in view along the bottom of the dialog, however many questions scroll above
+ * them, with a note about any question left unanswered.
+ */
+.footer {
+  position: sticky;
+  /* The dialog's body keeps its padding clear of anything sticky, so this reaches past it. */
+  bottom: calc(-1 * var(--fw-space-6));
+  z-index: 1;
+  margin: var(--fw-space-5) calc(-1 * var(--fw-space-6)) calc(-1 * var(--fw-space-6));
+  padding: 0 var(--fw-space-6) var(--fw-space-5);
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.unanswered,
+.problem {
+  margin: var(--fw-space-3) 0 0;
+  font-size: 13px;
+}
+
+.unanswered {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+/* Answering in the terminal sits apart from the dialog's own two buttons. */
+.terminal {
+  margin-right: auto;
+}
