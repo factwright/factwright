@@ -11,16 +11,26 @@ const mac = process.platform === 'darwin';
 
 let dataDir: string;
 let opened: Opened | undefined;
+/** What the app's process printed, which says what went wrong as it quit. */
+let printed: string[];
+
+/** How the app's process marks a problem it had. */
+const PROBLEM = 'Problem in the app:';
 
 test.beforeEach(async () => {
   dataDir = newDataFolder();
   opened = await openApp(dataDir);
+  printed = [];
+  opened.app.process().stderr?.on('data', (data) => printed.push(String(data)));
   // A problem in the app's own process shows nowhere else: Electron puts it in a dialog.
-  await opened.app.evaluate(() => {
+  await opened.app.evaluate((_electron, marker) => {
     const problems: string[] = [];
     Object.assign(globalThis, { problems });
-    process.on('uncaughtException', (error) => problems.push(String(error)));
-  });
+    process.on('uncaughtException', (error) => {
+      problems.push(String(error));
+      console.error(marker, error);
+    });
+  }, PROBLEM);
 });
 
 test.afterEach(async () => {
@@ -36,17 +46,17 @@ test.afterEach(async () => {
 });
 
 /**
- * Prints a template's preview, which the app does in a hidden window of its own, kept for the
- * next one. It stays open after the app's window closes.
+ * Prints a template's preview, which the app does in a hidden window of its own. Each name on top
+ * prints anew, where the same one would show the preview kept from before.
  */
-async function printPreview({ window }: Opened): Promise<void> {
-  const printed = await window.evaluate(async () => {
+async function printPreview({ window }: Opened, name: string): Promise<void> {
+  const done = await window.evaluate(async (shown) => {
     const { factwright } = globalThis as unknown as {
       factwright: { templatePreview(id: string, name: string): Promise<{ ok: boolean }> };
     };
-    return (await factwright.templatePreview('classic', '')).ok;
-  });
-  expect(printed).toBe(true);
+    return (await factwright.templatePreview('classic', shown)).ok;
+  }, name);
+  expect(done).toBe(true);
 }
 
 /** Closes the app's window, as its close button does. */
@@ -72,81 +82,88 @@ async function opensAgain(open: () => Promise<unknown>): Promise<Page> {
   return window;
 }
 
-test('opens its window again from the Dock, after printing in a window of its own', async () => {
+test.describe('on a Mac', () => {
   test.skip(!mac, 'Only a Mac app keeps running with its window closed.');
-  if (!opened) throw new Error('The app isn’t open.');
-  await printPreview(opened);
-  await closeWindow(opened);
-  const window = await opensAgain(() =>
-    (opened as Opened).app.evaluate(({ app }) => {
-      app.emit('activate', {}, false);
-    }),
-  );
-  // What changes from now on shows in the new window: a job added to the workspace, here.
-  const folder = join(dataDir, 'workspace', 'applications', '2026-10-16-harbor-labs-platform');
-  mkdirSync(folder, { recursive: true });
-  writeFileSync(
-    join(folder, 'job.md'),
-    '# Harbor Labs: Platform Engineer\n\n- **Date:** 2026-10-16\n',
-  );
-  await window
-    .locator('label')
-    .filter({ has: window.getByRole('radio', { name: /^All/ }) })
-    .click();
-  await expect(window.getByRole('button', { name: /^Harbor Labs/ })).toBeVisible();
-});
 
-test('opens its window again when it’s opened a second time, after it was closed', async () => {
-  test.skip(!mac, 'Only a Mac app keeps running with its window closed.');
-  if (!opened) throw new Error('The app isn’t open.');
-  await closeWindow(opened);
-  await opensAgain(() =>
-    (opened as Opened).app.evaluate(({ app }) => {
-      app.emit('second-instance', {}, [], process.cwd(), {});
-    }),
-  );
-});
-
-test('opens its window again from a notification about a run, after it was closed', async () => {
-  test.skip(!mac, 'Only a Mac app keeps running with its window closed.');
-  if (!opened) throw new Error('The app isn’t open.');
-  const { app, window } = opened;
-  // The user is looking elsewhere, and notifications are kept here, not shown.
-  await app.evaluate(({ BrowserWindow, Notification }) => {
-    const shown: unknown[] = [];
-    Object.assign(globalThis, { shown });
-    BrowserWindow.prototype.isFocused = () => false;
-    Notification.prototype.show = function (this: unknown) {
-      shown.push(this);
-    };
+  test('opens its window again from the Dock, after printing in a window of its own', async () => {
+    if (!opened) throw new Error('The app isn’t open.');
+    await printPreview(opened, 'Alex Rivera');
+    await closeWindow(opened);
+    const window = await opensAgain(() =>
+      (opened as Opened).app.evaluate(({ app }) => {
+        app.emit('activate', {}, false);
+      }),
+    );
+    // What changes from now on shows in the new window: a job added to the workspace, here.
+    const folder = join(dataDir, 'workspace', 'applications', '2026-10-16-harbor-labs-platform');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'job.md'),
+      '# Harbor Labs: Platform Engineer\n\n- **Date:** 2026-10-16\n',
+    );
+    await window
+      .locator('label')
+      .filter({ has: window.getByRole('radio', { name: /^All/ }) })
+      .click();
+    await expect(window.getByRole('button', { name: /^Harbor Labs/ })).toBeVisible();
+    // And it prints, in the hidden window kept from before.
+    await printPreview(opened as Opened, 'Sam Rivera');
   });
-  await window.getByRole('button', { name: 'Find jobs' }).click();
-  await window
-    .getByRole('dialog', { name: 'Find jobs' })
-    .getByRole('button', { name: 'Search', exact: true })
-    .click();
-  await expect(window.locator('section[aria-label="Claude"]').getByRole('status')).toHaveText(
-    'Done',
-  );
-  expect(
-    await app.evaluate(() => (globalThis as unknown as { shown: unknown[] }).shown.length),
-  ).toBe(1);
-  await closeWindow(opened);
-  await opensAgain(() =>
-    app.evaluate(() => {
-      const { shown } = globalThis as unknown as { shown: { emit(event: string): void }[] };
-      shown[0]?.emit('click');
-    }),
-  );
+
+  test('opens its window again when it’s opened a second time, after it was closed', async () => {
+    if (!opened) throw new Error('The app isn’t open.');
+    await closeWindow(opened);
+    await opensAgain(() =>
+      (opened as Opened).app.evaluate(({ app }) => {
+        app.emit('second-instance', {}, [], process.cwd(), {});
+      }),
+    );
+  });
+
+  test('opens its window again from a notification about a run, after it was closed', async () => {
+    if (!opened) throw new Error('The app isn’t open.');
+    const { app, window } = opened;
+    // The user is looking elsewhere, and notifications are kept here, not shown.
+    await app.evaluate(({ BrowserWindow, Notification }) => {
+      const shown: unknown[] = [];
+      Object.assign(globalThis, { shown });
+      BrowserWindow.prototype.isFocused = () => false;
+      Notification.prototype.show = function (this: unknown) {
+        shown.push(this);
+      };
+    });
+    await window.getByRole('button', { name: 'Find jobs' }).click();
+    await window
+      .getByRole('dialog', { name: 'Find jobs' })
+      .getByRole('button', { name: 'Search', exact: true })
+      .click();
+    await expect(window.locator('section[aria-label="Claude"]').getByRole('status')).toHaveText(
+      'Done',
+    );
+    expect(
+      await app.evaluate(() => (globalThis as unknown as { shown: unknown[] }).shown.length),
+    ).toBe(1);
+    await closeWindow(opened);
+    await opensAgain(() =>
+      app.evaluate(() => {
+        const { shown } = globalThis as unknown as { shown: { emit(event: string): void }[] };
+        shown[0]?.emit('click');
+      }),
+    );
+  });
 });
 
-// With a window of its own still open, hidden, the app never heard that its last window closed.
-test('quits when its window closes on Windows and Linux, even after printing', async () => {
+test.describe('on Windows and Linux', () => {
   test.skip(mac, 'A Mac app keeps running with its window closed.');
-  if (!opened) throw new Error('The app isn’t open.');
-  await printPreview(opened);
-  const quit = opened.app.waitForEvent('close', { timeout: 15_000 });
-  await closeWindow(opened);
-  await quit;
-  opened = undefined;
+
+  // With a window of its own still open, hidden, the app never heard that its last window closed.
+  test('quits when its window closes, even after printing', async () => {
+    if (!opened) throw new Error('The app isn’t open.');
+    await printPreview(opened, 'Alex Rivera');
+    const quit = opened.app.waitForEvent('close', { timeout: 15_000 });
+    await closeWindow(opened);
+    await quit;
+    opened = undefined;
+    expect(printed.join('')).not.toContain(PROBLEM);
+  });
 });

@@ -140,8 +140,8 @@ test('reaches Claude Code with its own plugin, and the setup check passes', asyn
 
 // Factwright's own releases, which release.yml builds with FACTWRIGHT_SYNC_SERVER, can sync. A
 // copy built without it, such as from a fork or on this computer, can't. Nor can a copy another
-// program drives, as these tests do: every copy on a computer shares one keychain, so a driven
-// one gets none, and the keys in its data folder stay locked and as they are.
+// program drives, as these tests do: it never asks the keychain for sync's keys, as on a Mac every
+// copy shares one Keychain item, and the keys in its data folder stay locked and as they are.
 test('syncs only if built with a sync server, and never while driven', async () => {
   const sync = window.getByRole('region', { name: 'Sync' });
   if (process.env.FACTWRIGHT_SYNC_SERVER) {

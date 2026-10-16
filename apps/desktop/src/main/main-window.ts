@@ -12,7 +12,7 @@ export interface WindowLike {
 export interface MainWindowDeps<W extends WindowLike> {
   /** Opens a new window. */
   open: () => W;
-  /** Once a window closes, whether by the user or as the app quits. */
+  /** Once the window that's open closes, whether by the user or as the app quits. */
   closed: () => void;
 }
 
@@ -43,7 +43,9 @@ export class MainWindow<W extends WindowLike> {
     const window = this.deps.open();
     this.window = window;
     window.once('closed', () => {
-      if (this.window === window) this.window = null;
+      // One that says so after another opened was over already, and stops nothing of the new one.
+      if (this.window !== window) return;
+      this.window = null;
       this.deps.closed();
     });
     return window;

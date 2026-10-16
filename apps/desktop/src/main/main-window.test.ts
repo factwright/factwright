@@ -48,14 +48,17 @@ describe('MainWindow', () => {
     expect(opened).toHaveLength(1);
   });
 
-  it('keeps a new window, however late an old one says it closed', () => {
-    const { window, opened } = fakeMainWindow();
+  it('keeps a new window, and what it runs, however late an old one says it closed', () => {
+    const { window, opened, closed } = fakeMainWindow();
     const first = window.open();
     first.destroy();
     const second = window.open();
     expect(second).not.toBe(first);
     first.emit('closed');
     expect(window.current()).toBe(second);
+    expect(closed.count).toBe(0);
     expect(opened).toHaveLength(2);
+    second.close();
+    expect(closed.count).toBe(1);
   });
 });

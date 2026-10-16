@@ -179,14 +179,15 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     denyPermissions(session.defaultSession);
 
     // The app's window, whichever one is open: everything reaches it through this. A run belongs
-    // to its window, so closing it stops the run. On Windows and Linux, closing it quits the app
-    // too, even with the hidden window resumes print in still open, which would otherwise keep
-    // the app running unseen.
+    // to its window, so closing it stops the run. On Windows and Linux, the app quits once its
+    // last window closes, and the hidden window resumes print in would keep it running unseen, so
+    // that closes first. A Mac app keeps running with its window closed, and so does that one,
+    // ready for the next print: closing it there could leave a print it was doing unfinished.
     const window = new MainWindow({
       open: () => createMainWindow(startUrl),
       closed: () => {
+        if (process.platform !== 'darwin') printer.close();
         claude.stop();
-        if (process.platform !== 'darwin') app.quit();
       },
     });
 
@@ -217,10 +218,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       dataDir,
       server: syncServer,
       version: app.getVersion(),
-      // Every copy of Factwright on this computer shares one keychain item, which locks every
-      // profile's sync keys. So a driven copy gets no keychain, wherever its data folder is: sync
-      // can't turn on in it, and keys in its folder, even ones copied or linked from the user's
-      // own, stay locked and as they are.
+      // On a Mac every copy of Factwright shares one Keychain item, which locks every profile's
+      // sync keys. So a driven copy gets no keychain for sync, on any computer, wherever its data
+      // folder is: sync can't turn on in it, and keys in its folder, even ones copied or linked
+      // from the user's own, stay locked and as they are.
       keychain: driven ? NO_KEYCHAIN : safeStorage,
       tracker,
       workspace,
@@ -264,10 +265,6 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     });
     await server.start();
 
-    // Once the window shows, the profile has started, so it opens again next time. A note that
-    // couldn't be written then is tried again as the window comes forward, or the app quits.
-    window.open().once('ready-to-show', () => profiles.started());
-    app.on('browser-window-focus', () => profiles.started());
     jobs.watch();
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
     // so the profile follows the workspace too.
@@ -294,6 +291,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       onFiled: (filed) => window.send('facts:filed', filed),
     });
+    // Once the window shows, the profile has started, so it opens again next time. A note that
+    // couldn't be written then is tried again as the window comes forward, or the app quits.
+    window.open().once('ready-to-show', () => profiles.started());
+    app.on('browser-window-focus', () => profiles.started());
     // Claude Code updates itself, so each new version gets a check, hidden, that uses no plan.
     const setup = new SetupChecker({
       file: join(dataDir, 'setup-check.json'),

@@ -327,7 +327,7 @@ describe('a copy built without a sync server', () => {
 });
 
 // An installed copy that another program drives through Chromium's debugging port, as tests do,
-// gets no keychain, since every copy on a computer shares one.
+// gets no keychain for sync, since on a Mac every copy shares one Keychain item.
 describe('a copy without the keychain', () => {
   const refused = { ok: false, message: NO_KEYCHAIN_MESSAGE };
 
