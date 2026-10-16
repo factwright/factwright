@@ -9,7 +9,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Fixed
 - The sync server's daily backup no longer stops partway when another part of its daily job fails, such as clearing out sign-ins that ended. Before, such a failure could end the job with most accounts not yet backed up that day. A backup that fails for any account now marks the run as failed too, and each failure is written down as it happens.
-- The sync server removes a file's locked contents once nothing needs them, even when its storage fails the first time it tries: the next cleanup finishes. Before, a failed try, or more than 1,000 files going at once, left them on the server until the account was deleted, past the 90 days the privacy policy keeps earlier versions.
+- The sync server removes a file's locked contents once nothing needs them, even when its storage fails the first time it tries: a later daily cleanup finishes. Before, a failed try left them on the server until the account was deleted, past the 90 days the privacy policy keeps earlier versions.
 
 ## 0.4.0 - 2026-10-15
 

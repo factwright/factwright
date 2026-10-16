@@ -144,10 +144,12 @@ export async function restore(
 
 /**
  * Deletes from R2 the file contents in the trash, as many at a time as R2 takes. Each key stays
- * in the trash until R2 has deleted it, so a cleanup that R2 fails finishes the next time. Each
+ * in the trash until R2 has deleted it, so what a failure leaves, a later cleanup finishes. Each
  * R2 key belongs to one upload, so this can't catch a file uploaded again.
  */
 async function emptyTrash(sql: SqlStorage, files: R2Bucket): Promise<void> {
+  // Most days it's empty, and the store's files needn't be read.
+  if (sql.exec('SELECT 1 FROM trash LIMIT 1').toArray().length === 0) return;
   for (;;) {
     // A key the store has again, as restoring a backup can bring back, stays in R2.
     sql.exec('DELETE FROM trash WHERE key IN (SELECT key FROM files)');
@@ -203,5 +205,14 @@ export async function cleanUp({ sql, storage, files, meta }: Upkeep, now: number
     const freed = [...old, ...gone].reduce((total, row) => total + row.size, 0);
     meta.set('bytes', Math.max(0, meta.count('bytes') - freed));
   });
-  await emptyTrash(sql, files);
+  try {
+    await emptyTrash(sql, files);
+  } catch (error) {
+    // What's left waits in the trash for tomorrow's cleanup. Failing this one instead would leave
+    // it to the alarm's few retries, and once those ran out, no cleanup would be planned again
+    // until a device synced a change.
+    console.error(
+      `Couldn't delete account ${meta.get('owner')}'s unused files from R2: ${String(error)}`,
+    );
+  }
 }

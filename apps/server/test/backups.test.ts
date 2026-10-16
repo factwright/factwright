@@ -121,12 +121,15 @@ describe('the daily cleanup', () => {
     return env.STORES.get(env.STORES.idFromName(account.id));
   };
 
-  /**
-   * A key too long for R2, so a delete that names it fails, as one does when R2 is down. The
-   * harness hands back an error of its own for one the store throws, so the tests check what
-   * the failed cleanup left.
-   */
+  /** A key too long for R2, so a delete that names it fails, as one does when R2 is down. */
   const refused = (account: Account) => `users/${account.id}/files/${'x'.repeat(1024)}`;
+
+  /** The failures the Worker wrote down since the last time this was asked. */
+  const failuresLogged = () => {
+    const logged = server.server.getLogs().filter((log) => log.level === 'error');
+    server.server.clearLogs();
+    return logged.map((log) => log.message);
+  };
 
   it('drops old versions and unused files, but keeps every record’s current version', async () => {
     const sam = await server.signUp();
@@ -177,9 +180,16 @@ describe('the daily cleanup', () => {
     const store = await storeOf(sam);
     await store.cleanup();
 
-    // R2 fails the delete, after the store has forgotten the file and freed its space.
+    // R2 fails the delete, after the store has forgotten the file and freed its space. The
+    // cleanup writes that down and still succeeds, so the alarm plans the next one.
     await storage.exec('INSERT INTO trash (key) VALUES (?)', refused(sam));
-    await expect(store.cleanup(Date.now() + 86_400_000)).rejects.toThrow();
+    server.server.clearLogs();
+    await store.cleanup(Date.now() + 86_400_000);
+    expect(failuresLogged()).toEqual([
+      expect.stringMatching(
+        `^Couldn't delete account ${sam.id}'s unused files from R2: .*not valid`,
+      ),
+    ]);
     expect(await sam.client.getFile(unused)).toBeNull();
     expect((await sam.client.account()).usage).toMatchObject({ files: 1, bytes: 22 });
     expect(await inR2()).toBe(2);
@@ -188,6 +198,7 @@ describe('the daily cleanup', () => {
     // Once R2 deletes again, the next cleanup finishes, and frees nothing twice.
     await storage.exec('DELETE FROM trash WHERE key = ?', refused(sam));
     await store.cleanup(Date.now() + 86_400_000);
+    expect(failuresLogged()).toEqual([]);
     expect(await inR2()).toBe(1);
     expect(await storage.exec('SELECT key FROM trash')).toEqual([]);
     expect((await sam.client.account()).usage).toMatchObject({ files: 1, bytes: 22 });
@@ -204,7 +215,7 @@ describe('the daily cleanup', () => {
     );
     // Sorted after the thousand, it's alone in the second delete, so only that one fails.
     await storage.exec('INSERT INTO trash (key) VALUES (?)', refused(sam));
-    await expect((await storeOf(sam)).cleanup()).rejects.toThrow();
+    await (await storeOf(sam)).cleanup();
     expect(await storage.exec('SELECT key FROM trash')).toEqual([{ key: refused(sam) }]);
   });
 
