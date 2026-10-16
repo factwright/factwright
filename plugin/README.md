@@ -16,9 +16,10 @@ What Factwright loads into each Claude Code run, through Claude Code's own `--pl
 | `/factwright:add-facts` | Adds or corrects facts about your experience. "Interview me" confirms drafted facts and fills gaps, or starts a fact bank, and it reads files and notes you've shared since | `facts/` |
 | `/factwright:answer-questions` | Answers an application form's questions, typed or in screenshots, in your voice, backed by your facts, what you told Factwright and what you sent on other applications | The job's `answers.md`. What forms ask again, such as your work authorization, in your profile |
 | `/factwright:ask` | Answers your own question about one job, such as what to expect from a call, from everything on file for it and the web | `asked/<job>/<question>.md`, which the app shows under the question |
-| `/factwright:interview-prep` | Gets you ready for a call or interview, or talks a job through, with a mock interview on request | The job's `prep.md` |
+| `/factwright:interview-prep` | Gets you ready for one of a job's calls: a prep sheet for that call that builds on how the earlier rounds went, with who you're meeting, likely questions answered from your facts and questions to ask each person. With `practice`, or on request, a mock interview for it. It also talks a job through | The call's prep sheet in `calls/<job>/<call>/prep.md`, or the job's `prep.md` for no call in particular |
 | `/factwright:make-template` | Makes a resume template of your own in the look of a resume you like, from a PDF or a picture of it: its layout, fonts and colors, never its words. It compares a printed preview with the original until they match | `templates/<id>.json`, which the app adds to your templates |
 | `/factwright:job-search` | Searches the places you pick in Find jobs (HN's "Who is hiring?" thread, LinkedIn's and Indeed's listings found through web search and read on each employer's own site, companies' job boards, or a company you name) and ranks what passes your criteria by how well your facts fit, for one kind of job or every kind | A folder per place, such as `searches/2026-11-hn-whos-hiring/` or `searches/2026-11-03-linkedin/`: the source word for word, `jobs.json` (which the app lists under New, as a search of its own) and `report.md` |
+| `/factwright:thank-you` | Drafts thank-you notes after a call, one for each person you met, from your notes on how it went, for you to send yourself | `calls/<job>/<call>/thank-you.md`, which the app shows on the call |
 | `/factwright:salary-check` | Estimates the pay for a job that doesn't list it, with sources and a confidence level | A row in `searches/salary-checks.md` |
 | `/factwright:unmask-job` | Finds the real employer behind a recruiter or job-board listing, and whether to apply direct | The job's folder, with `unmask.md`. A row in `searches/unmask-checks.md` |
 | `/factwright:who-to-message` | Finds 3–5 people worth messaging at a company, with drafts you send yourself | `outreach/<date>-<company>.md` |
@@ -27,11 +28,12 @@ The skills work on plain files in your workspace, in the formats the app reads, 
 
 The app passes the rest with each run:
 - **Tools:** the ones Claude uses instead of a shell. The app serves them over MCP on this computer ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)), and the skills call them by name:
-  - `find_job` and `job_details`: what's on file for a job, with a line on what each file holds, your notes and calls, the application's questions with what you actually sent, and your questions about it
+  - `find_job` and `job_details`: what's on file for a job, with a line on what each file holds, your notes, each call with who it's with and how it went, the application's questions with what you actually sent, your questions about it, and your other jobs at the company
   - `revision_findings`: what you picked in a resume's ATS X-ray for a revision to fix, as information about the resume. Only a run started with Send for revision has them
   - `about_you`: what you told Factwright about yourself, such as your work authorization, when you can start, and each kind of job you want
   - `past_answers`: what you sent on your applications, in your own words, to reuse and to sound like you
   - `save_answer`: Claude's answer to your question about a job, kept with the job
+  - `save_call_prep` and `save_thank_you`: Claude's prep sheet for one of a job's calls, and the thank-you notes after it, kept with the call
   - `list_templates`, `read_template` and `save_template`: your resume templates, built in and your own, to pick from, to start a new one from, and to save one Claude made, checked first
   - `save_about_you`: something you told Claude that applications ask for, saved to your profile, which Claude Code asks you about first
   - `save_fact`, `save_gap` and `verify_fact`: what you answer Claude's questions while it works, saved to your fact bank: a yes as a fact to verify, with the question and your answer as the app recorded them; a no under Doesn't have; and a fact verified when you pick "Use and verify". They save only answers you gave in that run, and never change a verified fact

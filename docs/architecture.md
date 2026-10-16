@@ -34,6 +34,7 @@ When you click **Run** on a job, the app starts a session in your workspace and 
 Claude doesn't get a shell. Instead, the app gives it a small set of tools over MCP, which it serves itself, on this computer, while a run is live ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)):
 - see whether you've seen a job before, and how it went
 - look up everything on file for a job, including your notes and calls
+- save a prep sheet for one of your calls, and thank-you notes after it
 - read a web page, and save a job posting word for word
 - build a resume as a PDF or Word file, with how it fits the pages
 
@@ -52,6 +53,7 @@ Claude works on plain files in a folder on your computer:
 | `searches/` | Job searches, your search criteria, and logs of fit, salary and employer checks |
 | `outreach/` | Messages drafted for people at a company |
 | `asked/` | Claude's answers to your own questions about a job, one folder per job |
+| `calls/` | Claude's prep sheet for each call you logged, and the thank-you notes after it, a folder per call in a folder per job |
 | `screenshots/` | Screenshots you added for a job, or pasted into Claude's panel, one folder per job |
 | `linkedin/` | The spreadsheets from your LinkedIn data export, such as your connections |
 
