@@ -35,7 +35,7 @@ import { computerName, userAgent } from './device.ts';
 import { SyncEngine } from './engine.ts';
 import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
 import { SyncRunner } from './runner.ts';
-import { type Keychain, Secrets } from './secrets.ts';
+import { type Keychain, NO_KEYCHAIN_MESSAGE, Secrets } from './secrets.ts';
 import { SyncState } from './state.ts';
 
 export interface SyncAccountDeps {
@@ -258,7 +258,7 @@ export class SyncAccount {
     }
     if (!this.secrets.available()) {
       this.set({ state: 'unavailable' });
-      return failed('This computer’s keychain isn’t available.');
+      return failed(NO_KEYCHAIN_MESSAGE);
     }
     this.signIn?.cancel();
     const before: SyncStatus =
@@ -425,6 +425,8 @@ export class SyncAccount {
     // A copy with no server never signed in. What sync keeps here is a copy with one's, such as
     // one installed that shares this data folder, so it stays as it is.
     if (!this.deps.server) return failed(NO_SERVER);
+    // Nor does a copy without the keychain change secrets it can't open.
+    if (!this.secrets.available()) return failed(NO_KEYCHAIN_MESSAGE);
     const token = this.secrets.get('session');
     // First, so a step still waiting on the server for this sign-in does nothing more.
     this.useClient(null);
@@ -801,8 +803,10 @@ export class SyncAccount {
    * key. The job hunt here stays as it is, and so does the account's data on other devices.
    */
   async signOut(): Promise<EditResult> {
-    // As with signing in to a different account, a copy with no server leaves sync's keys alone.
+    // As with signing in to a different account, a copy with no server leaves sync's keys alone,
+    // and so does one without the keychain.
     if (!this.deps.server) return failed(NO_SERVER);
+    if (!this.secrets.available()) return failed(NO_KEYCHAIN_MESSAGE);
     const token = this.secrets.get('session');
     await this.forget();
     if (token) await this.signOutOnServer(token);
