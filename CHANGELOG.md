@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.8.0 - 2026-10-16
+
 ### Added
 - Claude Code's permission prompts in a dialog of their own. When Claude Code asks your OK before Claude goes on, such as to read a web page, change one of your facts, save to your profile or save a template, Factwright asks it in a dialog, in plain words and in full: the file and the text a change takes out and puts in, all of what a new file holds, a page's whole address and the site it goes to, what goes in your profile field by field, including any it clears, or a template's name and ID, the template of yours it replaces, and its whole file. Allow lets that one call through. Don't allow tells Claude you said no, with anything you add, and Claude carries on without it. The dialog never offers to allow anything for good, so what Claude may do without asking stays as you set it. Claude Code's own prompt is still in the terminal behind it, and whichever you answer first counts.
 - Questions that ask for a number or a line of words open in the questions dialog too: a box for the number, with its unit and any number Claude suggests as a hint, which Send waits on until it's in the question's range, or a box for your words.
