@@ -79,7 +79,7 @@ function checkPageReader(folder: string): void {
       title: 'Staff Engineer',
       hiringOrganization: { name: 'Northwind' },
       description: '<p>Build things.</p>',
-    })}</script>`,
+    })}</script><h1>Staff Engineer</h1>`,
     // The function runs in the page's own window, as the browser runs it, with only what a page has.
     { url: 'https://jobs.example.com/staff?utm_source=x', runScripts: 'outside-only' },
   );

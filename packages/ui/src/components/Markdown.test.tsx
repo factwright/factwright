@@ -45,7 +45,9 @@ describe('Markdown', () => {
     const start = performance.now();
     // Uncapped, this took seconds: each "[" read the rest of the text as a link's address.
     render(<Markdown text={'[a](http://'.repeat(20_000)} />);
-    expect(performance.now() - start).toBeLessThan(1000);
+    // And this took most of a minute, when each mark had every unfinished link read again.
+    render(<Markdown text={'**a**[a](mailto:'.repeat(6000)} />);
+    expect(performance.now() - start).toBeLessThan(1500);
   });
 
   it('never turns text into markup', () => {

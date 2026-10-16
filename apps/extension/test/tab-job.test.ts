@@ -154,7 +154,7 @@ describe('a save without the popup', () => {
     ...overrides,
   });
 
-  it('saves what’s clearly one job', () => {
+  it('saves what looks like one job', () => {
     const page = read({});
     expect(needsChecking(page, toSave(page), null)).toBeNull();
     const selected = read({ source: 'selection', url: 'https://lumen.example/careers' });

@@ -171,7 +171,7 @@ export function companyFromAddress(url: string): string {
 }
 
 /**
- * What a save without the popup would need checked first, or null when it's clearly one job, with
+ * What a save without the popup would need checked first, or null when it looks like one job, with
  * its title, company and posting: a page that isn't one job's own, or that can't be read, a title,
  * company or posting it couldn't find, or a posting taken from the page's main text, which may not
  * be a posting at all. A LinkedIn job saved by its link alone, as you chose, needs no posting. The

@@ -31,6 +31,12 @@ describe('normalizeUrl', () => {
     );
     expect(normalizeUrl('https://acme.example/jobs/42#apply')).toBe('acme.example/jobs/42');
     expect(normalizeUrl('https://careers.acme.example/#/')).toBe('careers.acme.example');
+    expect(normalizeUrl('https://careers.acme.example/#/jobs/42/?source=x&team=data')).toBe(
+      'careers.acme.example#/jobs/42?team=data',
+    );
+    expect(normalizeUrl('https://careers.acme.example/#/jobs/42?utm_source=x')).toBe(
+      normalizeUrl('https://careers.acme.example/#/jobs/42'),
+    );
     expect(isJobLink('https://careers.acme.example/#/jobs/123')).toBe(true);
   });
 });

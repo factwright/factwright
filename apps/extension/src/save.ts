@@ -255,14 +255,17 @@ export async function saveJob(
   }
 }
 
-/** Tries something again while the connection is lost, a second, then two, apart. */
+/**
+ * Tries something again while the connection is lost, a second, then two, apart. `again` says a
+ * try before this one was made, which may have got there without its answer getting back.
+ */
 async function retried<T>(
-  work: () => Promise<T>,
+  work: (again: boolean) => Promise<T>,
   pause: (ms: number) => Promise<void>,
 ): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await work();
+      return await work(attempt > 1);
     } catch (error) {
       const offline = error instanceof SyncError && error.kind === 'offline';
       if (!offline || attempt >= TRIES) throw error;
@@ -291,8 +294,11 @@ async function saveRest(
       return 'none';
     }
     // A posting left from an earlier job with this ID, since deleted: this one takes its place.
-    const options = { replace: true, with: [history] };
-    return await retried(() => pushPosting(client, keys, id, posting, made, options), pause);
+    return await retried(
+      (again) =>
+        pushPosting(client, keys, id, posting, made, { replace: true, again, with: [history] }),
+      pause,
+    );
   } catch {
     // The job is in: saving it again adds its posting.
     return posting.text ? 'failed' : 'none';
@@ -309,16 +315,16 @@ async function addPosting(
   pause: (ms: number) => Promise<void>,
 ): Promise<PostingSaved> {
   if (!posting.text) return 'none';
-  const options = { replace: false };
-  return retried(() => pushPosting(client, keys, id, posting, made, options), pause).catch(
-    () => 'failed' as const,
-  );
+  return retried(
+    (again) => pushPosting(client, keys, id, posting, made, { replace: false, again }),
+    pause,
+  ).catch(() => 'failed' as const);
 }
 
 /**
  * Keeps a job's posting in its saved extras: `saved/<job ID>/posting.md`. One that's there already
  * is kept, unless `replace` says it's left from an earlier job with this ID. One that was deleted
- * is put back.
+ * is put back. On a try after one whose answer was lost, the same posting there is this one's.
  */
 async function pushPosting(
   client: SyncClient,
@@ -326,7 +332,7 @@ async function pushPosting(
   jobId: string,
   posting: Posting,
   made: Made,
-  options: { replace: boolean; with?: PushChange[] },
+  options: { replace: boolean; again: boolean; with?: PushChange[] },
 ): Promise<'saved' | 'kept' | 'failed'> {
   const path = savedPostingFile(jobId);
   const contents = utf8(
@@ -362,6 +368,10 @@ async function pushPosting(
   if (!result) return 'failed';
   if (result.ok) return 'saved';
   if (result.reason !== 'conflict' || !result.current) return 'failed';
+  // A try before this one got there, but its answer didn't get back: the same contents are there.
+  if (options.again && !result.current.deleted && result.current.file === sealed.id) {
+    return 'saved';
+  }
   if (!options.replace && !result.current.deleted) return 'kept';
   const [again] = (await client.push([await change(result.current.version)])).results;
   return again?.ok ? 'saved' : 'failed';

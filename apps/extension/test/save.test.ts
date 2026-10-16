@@ -173,6 +173,11 @@ describe('saving a job through sync', () => {
     expect(await readRecord(client, keys, rowName('status_log', 'status-2'))).toBeNull();
     // The posting as it was first saved.
     expect(await savedText(client, keys, 'northwind--staff-engineer-payments')).toBe(JOB.posting);
+    // And the same posting again is kept too, not added.
+    expect(await save(client, keys, JOB, 'status-3')).toMatchObject({
+      already: true,
+      posting: 'kept',
+    });
   });
 
   it('adds the posting to a job saved before without one', async () => {
@@ -200,6 +205,33 @@ describe('saving a job through sync', () => {
       posting: 'saved',
     });
     expect(await readRecord(client, keys, rowName('status_log', 'status-1'))).not.toBeNull();
+    expect(await savedText(client, keys, 'northwind--staff-engineer-payments')).toBe(JOB.posting);
+  });
+
+  it('says the posting saved when an earlier try got there but its answer was lost', async () => {
+    const { client, keys } = await account();
+    await save(client, keys, { ...JOB, posting: '' });
+    // Saved again with its posting: the job's row is found in the first push, and the posting
+    // gets there in the second, but its answer doesn't.
+    let pushes = 0;
+    const lossy = new Proxy(client, {
+      get(target, key) {
+        if (key === 'push') {
+          return async (changes: Parameters<SyncClient['push']>[0]) => {
+            const answer = await target.push(changes);
+            pushes += 1;
+            if (pushes === 2) throw new SyncError('offline', 'Gone.');
+            return answer;
+          };
+        }
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    expect(await save(lossy, keys, JOB, 'status-2')).toMatchObject({
+      already: true,
+      posting: 'saved',
+    });
     expect(await savedText(client, keys, 'northwind--staff-engineer-payments')).toBe(JOB.posting);
   });
 

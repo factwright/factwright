@@ -252,9 +252,12 @@ export function readJobPage(
     // Parsed into a document of its own, which never runs scripts or loads anything.
     const parse = (html: string) => textOf(new DOMParser().parseFromString(html, 'text/html').body);
     const text = parse(markup);
-    // Some sites encode the description's markup twice, so the first reading still has its tags,
-    // closing ones too, which a posting that only mentions a tag, as in "use <div>", hasn't.
-    return /<\/(p|li|ul|ol|div|h[1-6])\s*>/i.test(text) ? parse(text) : text;
+    // Some sites encode the description's markup twice, so the first reading still has its tags:
+    // closing ones, or line breaks, which a posting that only mentions a tag, as in "use <div>",
+    // hasn't.
+    return /<\/(p|li|ul|ol|div|h[1-6]|b|strong|i|em|u|span|a)\s*>|<br\s*\/?>/i.test(text)
+      ? parse(text)
+      : text;
   }
 
   /** The first of the selectors that finds an element with text, and its text. */
@@ -411,19 +414,24 @@ export function readJobPage(
     const shared = [...one].filter((word) => other.has(word)).length;
     return shared / Math.min(one.size, other.size) >= 0.6;
   };
-  /** An address, to compare, without its query, but with a careers site's route after "#/". */
+  /**
+   * An address, to compare: without its tracking, but with its query, which can name the job, as
+   * "?jl=2002" does, and a careers site's route after "#/".
+   */
   const place = (address: unknown) => {
+    if (typeof address !== 'string') return '';
     try {
-      const url = new URL(String(address), href);
+      const url = new URL(address, href);
+      for (const key of [...url.searchParams.keys()]) {
+        if (TRACKING_PARAM.test(key)) url.searchParams.delete(key);
+      }
       const route = /^#!?\/./.test(url.hash) ? url.hash.replace(/\/+$/, '') : '';
       const path = url.pathname.replace(/\/+$/, '');
-      return `${url.hostname.replace(/^www\./, '')}${path}${route}`.toLowerCase();
+      return `${url.hostname.replace(/^www\./, '')}${path}${url.search}${route}`.toLowerCase();
     } catch {
       return '';
     }
   };
-  /** The site an address is on, to compare. */
-  const siteOf = (address: unknown) => place(address).split(/[/#]/, 1)[0] ?? '';
 
   const site = (() => {
     try {
@@ -442,36 +450,42 @@ export function readJobPage(
   const titleOf = (posting: Record<string, unknown>) =>
     posting.title ? oneLine(textOfMarkup(String(posting.title))) : '';
   /**
-   * What the page calls its job, to check its job data against: the job site's own title, or on a
-   * site it doesn't know, the page's heading, its tab's title and its preview's.
+   * The text the page shows, to check its job data against: never its head or its scripts, which
+   * hold the job data itself, and which a single-page site can leave from an earlier job.
    */
-  const pageNames = shownTitle
-    ? [shownTitle]
-    : [
-        first(['h1'], (element) => oneLine(textOf(element))),
-        oneLine(doc.title),
-        meta('og:title'),
-      ].filter(Boolean);
+  let bodyText: string | null = null;
+  const shownText = () => {
+    bodyText ??= plain(
+      (doc.body as HTMLElement | null)?.innerText ?? (doc.body ? textOf(doc.body) : ''),
+    );
+    return bodyText;
+  };
+  /** The page's headings, where a job's title often is, put its own way. */
+  let pageHeadings: string[] | null = null;
+  const headings = () => {
+    pageHeadings ??= Array.from(doc.querySelectorAll('h1, h2, h3'))
+      .slice(0, 50)
+      .map((element) => oneLine(textOf(element)))
+      .filter(Boolean);
+    return pageHeadings;
+  };
 
-  // The page's own job data: the posting for this page when there are several, and none that the
-  // page no longer shows, as a single-page job site can leave an earlier job's behind: one whose
-  // own address is another page of this site, or whose title the page doesn't show.
+  // The page's own job data: a posting the page shows, by the job site's own title, or on a site it
+  // doesn't know, by its text or its headings. A single-page job site can leave an earlier job's
+  // behind, which the page no longer shows. Of several, the one whose address is this page's.
   const postings = jobPostings();
-  const here = place(href);
-  const isHere = (posting: Record<string, unknown>) =>
-    Boolean(posting.url) && place(posting.url) === here;
-  const elsewhere = (posting: Record<string, unknown>) =>
-    Boolean(posting.url) && !isHere(posting) && siteOf(posting.url) === siteOf(href);
   const showsTitle = (posting: Record<string, unknown>) => {
     const title = titleOf(posting);
-    return !title || pageNames.length === 0 || pageNames.some((name) => sameTitle(title, name));
+    if (!title) return postings.length === 1;
+    if (shownTitle) return sameTitle(title, shownTitle);
+    return (
+      shownText().includes(plain(title)) || headings().some((heading) => sameTitle(title, heading))
+    );
   };
-  const candidates = postings.filter((each) => !elsewhere(each));
-  const matching =
-    candidates.find(isHere) ??
-    candidates.find((each) => shownTitle && sameTitle(titleOf(each), shownTitle)) ??
-    (candidates.length === 1 ? candidates[0] : undefined);
-  const data = matching && (isHere(matching) || showsTitle(matching)) ? matching : undefined;
+  const here = place(href);
+  const showing = postings.filter(showsTitle);
+  const data =
+    showing.length === 1 ? showing[0] : showing.find((posting) => place(posting.url) === here);
 
   /** A site's name, unless it's a job board's or an applicant system's, which no job is with. */
   const notBoard = (name: string) => (BOARDS.test(name.trim()) ? '' : name);
@@ -485,7 +499,7 @@ export function readJobPage(
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
-  const shown = first(known?.posting ?? [], (element) => textOf(element));
+  const onSite = first(known?.posting ?? [], (element) => textOf(element));
   // The page's main text, without its navigation, headers, footers and forms. Never LinkedIn's,
   // where anything but the job's own posting, such as messages, isn't the job's.
   const main = () => {
@@ -502,12 +516,12 @@ export function readJobPage(
   if (selection) {
     posting = selection;
     source = 'selection';
-  } else if (described && described.length >= shown.length * 0.6) {
+  } else if (described && described.length >= onSite.length * 0.6) {
     // The job data's description, unless what the site shows is clearly fuller.
     posting = described;
     source = 'structured';
-  } else if (shown) {
-    posting = shown;
+  } else if (onSite) {
+    posting = onSite;
     source = 'page';
   } else {
     posting = main();

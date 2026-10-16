@@ -9,7 +9,7 @@ import {
 } from './fit-report.ts';
 import { companyKey, roleKey, slug } from './keys.ts';
 import { isJobLink, type Link, normalizeUrl } from './links.ts';
-import { idPart } from './new-job.ts';
+import { idPart, shortCode } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import {
   type FolderRecord,
@@ -466,9 +466,12 @@ export function collectJobs(
     }
     draft.records.push(record);
   };
-  const create = (company: string, key: string, role: string) => {
-    // Cut as Add job cuts them, so the ID fits a folder's name, and Save to Factwright finds it.
-    const base = `${idPart(key || slug(company), 'company') || 'unknown'}--${idPart(role, 'role') || 'general'}`;
+  const create = (company: string, key: string, role: string, link?: string) => {
+    // Made as Add job and Save to Factwright make them, so the ID fits a folder's name and both
+    // find the job: a company with no Latin letters by the job's link.
+    const named = idPart(key || slug(company), 'company');
+    const code = link ? `job-${shortCode(normalizeUrl(link))}` : 'unknown';
+    const base = `${named || code}--${idPart(role, 'role') || 'general'}`;
     let id = base;
     for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
     ids.add(id);
@@ -490,7 +493,11 @@ export function collectJobs(
     if (record.tool === 'outreach') continue;
     const company = companyKey(record.company);
     const role = roleKey(record.role);
-    add(findDraft(drafts, record, company, role) ?? create(record.company, company, role), record);
+    const link = record.links.map((each) => each.url).find(isJobLink);
+    add(
+      findDraft(drafts, record, company, role) ?? create(record.company, company, role, link),
+      record,
+    );
   }
   // Messages are about a company, so they join every job there.
   for (const record of ordered) {

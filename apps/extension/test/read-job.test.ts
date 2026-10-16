@@ -28,7 +28,10 @@ const JOB_DATA = {
     '<p>Lead our <b>data platform</b>.</p><h3>What you’ll do</h3><ul><li>Own the roadmap</li><li>Ship weekly</li></ul><script>alert(1)</script>',
 };
 
-const withData = (data: unknown, body = '<main><h1>Elsewhere</h1></main>') =>
+const withData = (
+  data: unknown,
+  body = '<main><h1>Senior Product Manager, Data</h1><p>Apply today.</p></main>',
+) =>
   page(
     // Job sites write "<" in their job data as \u003c, so a "</script>" in it can't end it early.
     `<html><head><title>Senior Product Manager, Data | Tidewater</title><script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script></head><body>${body}</body></html>`,
@@ -222,12 +225,20 @@ describe('reading a job page', () => {
     expect(readJobPage(withData([other, mine]), 'https://a.example/jobs/1', '').title).toBe(
       'Senior Product Manager, Data',
     );
-    // With no address to go by, none: it can't tell which is this page's.
+    // With no address to go by, the one the page shows.
     const unnamed = [
       { ...other, url: undefined },
       { ...mine, url: undefined },
     ];
-    expect(readJobPage(withData(unnamed), 'https://a.example/jobs/1', '').source).toBe('main');
+    expect(readJobPage(withData(unnamed), 'https://a.example/jobs/1', '').title).toBe(
+      'Senior Product Manager, Data',
+    );
+    // And none when it shows both, as a list of jobs does: it can't tell which is this page's.
+    const both = withData(
+      unnamed,
+      '<main><h2>Data Engineer</h2><h2>Senior Product Manager, Data</h2></main>',
+    );
+    expect(readJobPage(both, 'https://a.example/jobs', '').source).toBe('main');
   });
 
   it('leaves out job data the page no longer shows, as a single-page site can keep', () => {
@@ -284,6 +295,16 @@ describe('reading a job page', () => {
     });
   });
 
+  it('reads a description encoded twice with only line breaks and bold', () => {
+    const doc = withData({
+      ...JOB_DATA,
+      description: '&lt;b&gt;Responsibilities&lt;/b&gt;&lt;br&gt;- Build things',
+    });
+    expect(readJobPage(doc, 'https://jobs.example.com/x', '').posting).toBe(
+      'Responsibilities\n- Build things',
+    );
+  });
+
   it('keeps tags a posting only mentions, as in “use <div>”', () => {
     const doc = withData({
       ...JOB_DATA,
@@ -301,9 +322,72 @@ describe('reading a job page', () => {
       url: 'https://careers.example.com/#/jobs/1',
     };
     const two = { ...JOB_DATA, url: 'https://careers.example.com/#/jobs/2' };
-    expect(
-      readJobPage(withData([one, two]), 'https://careers.example.com/#/jobs/2', '').title,
-    ).toBe('Senior Product Manager, Data');
+    // The page lists both, beside the one it shows.
+    const doc = withData(
+      [one, two],
+      '<main><h1>Senior Product Manager, Data</h1><aside>Data Engineer</aside></main>',
+    );
+    expect(readJobPage(doc, 'https://careers.example.com/#/jobs/2', '').title).toBe(
+      'Senior Product Manager, Data',
+    );
+    expect(readJobPage(doc, 'https://careers.example.com/#/jobs/1', '').title).toBe(
+      'Data Engineer',
+    );
+  });
+
+  it('leaves out job data for another job, even at an address that differs only by its query', () => {
+    const old = { ...JOB_DATA, title: 'Old Job', url: 'https://jobs.example.com/job?id=1' };
+    const glassdoor = withData(
+      { ...old, url: 'https://www.glassdoor.com/job-listing/x.htm?jl=1001' },
+      `<div data-test="job-title">New Job</div>
+       <div id="JobDescriptionContainer"><p>The new posting.</p></div>`,
+    );
+    const shown = readJobPage(glassdoor, 'https://www.glassdoor.com/job-listing/x.htm?jl=2002', '');
+    expect(shown).toMatchObject<Partial<PageJob>>({ title: 'New Job', source: 'page', pay: '' });
+    const elsewhere = withData(old, '<main><h1>New Job</h1><p>The new posting.</p></main>');
+    expect(readJobPage(elsewhere, 'https://jobs.example.com/job?id=2', '').source).toBe('main');
+  });
+
+  it('tells two jobs with one title apart by their address’s query', () => {
+    const place = (city: string) => [{ address: { addressLocality: city } }];
+    const austin = { ...JOB_DATA, jobLocationType: undefined, jobLocation: place('Austin') };
+    const boston = { ...JOB_DATA, jobLocationType: undefined, jobLocation: place('Boston') };
+    const doc = withData([
+      { ...austin, url: 'https://jobs.example.com/job?id=1&utm_source=x' },
+      { ...boston, url: 'https://jobs.example.com/job?id=2' },
+    ]);
+    expect(readJobPage(doc, 'https://jobs.example.com/job?id=1', '').location).toBe('Austin');
+    expect(readJobPage(doc, 'https://jobs.example.com/job?id=2&ref=feed', '').location).toBe(
+      'Boston',
+    );
+  });
+
+  it('checks job data against the page’s body, not its head, which a single-page site can leave', () => {
+    const stale = page(`<html><head><title>Old Job | Acme</title>
+      <meta property="og:title" content="Old Job">
+      <script type="application/ld+json">${JSON.stringify({ ...JOB_DATA, title: 'Old Job' })}</script>
+      </head><body><main><h1>New Job</h1><p>The new posting.</p></main></body></html>`);
+    expect(readJobPage(stale, 'https://jobs.example.com/2', '').source).toBe('main');
+    // A logo's heading first, and a tab's title with only the company's name, are fine.
+    const logo = withData(
+      JOB_DATA,
+      '<header><h1>Acme</h1></header><main><h2>Senior Product Manager, Data</h2></main>',
+    );
+    expect(readJobPage(logo, 'https://jobs.example.com/2', '')).toMatchObject<Partial<PageJob>>({
+      title: 'Senior Product Manager, Data',
+      company: 'Tidewater Analytics',
+      source: 'structured',
+    });
+  });
+
+  it('keeps job data whose own address leaves out the page’s words, or isn’t one', () => {
+    const canonical = { ...JOB_DATA, url: 'https://jobs.example.com/jobs/42' };
+    const odd = { ...JOB_DATA, url: { href: 'x' } };
+    for (const data of [canonical, odd]) {
+      expect(
+        readJobPage(withData(data), 'https://jobs.example.com/en-us/jobs/42-senior-pm', '').source,
+      ).toBe('structured');
+    }
   });
 
   it('takes what a job site shows over its job data when that’s much fuller', () => {

@@ -18,6 +18,21 @@ const TRACKING_PARAM =
   /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
 
 /**
+ * A page's route after "#/" or "#!/", where some careers sites keep each job, without its own
+ * tracking parameters or a trailing slash: "#/jobs/42?source=x" is "#/jobs/42". Any other "#" is
+ * a place on the page, which names nothing.
+ */
+function routeOf(hash: string): string {
+  if (!/^#!?\/./.test(hash)) return '';
+  const [path = '', query = ''] = hash.split('?', 2);
+  const kept = query.split('&').filter((pair) => {
+    const name = pair.split('=', 1)[0] ?? '';
+    return name !== '' && !TRACKING_PARAM.test(name);
+  });
+  return `${trimEndOf(path, '/')}${kept.length > 0 ? `?${kept.join('&')}` : ''}`;
+}
+
+/**
  * One form per address, for matching: no "www.", no trailing slash, no tracking parameters, and
  * lowercase. "https://www.acme.com/jobs/42/?utm_source=x" becomes "acme.com/jobs/42". A page's
  * route after "#/" or "#!/", where some careers sites keep each job, stays: it names the job.
@@ -30,8 +45,7 @@ export function normalizeUrl(url: string): string {
     }
     const host = parsed.hostname.replace(/^www\./, '');
     const path = trimEndOf(parsed.pathname, '/');
-    const route = /^#!?\/./.test(parsed.hash) ? trimEndOf(parsed.hash, '/') : '';
-    return `${host}${path}${parsed.search}${route}`.toLowerCase();
+    return `${host}${path}${parsed.search}${routeOf(parsed.hash)}`.toLowerCase();
   } catch {
     return url.toLowerCase();
   }
