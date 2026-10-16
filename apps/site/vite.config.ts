@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import { siteThemeCss } from './scripts/theme.ts';
+import { fillStores } from './src/stores.ts';
 
 /** The design system's colors, type and spacing, as a stylesheet the page imports. */
 const THEME = 'virtual:theme.css';
@@ -29,11 +30,22 @@ function downloadLinks(): Plugin {
 }
 
 /**
- * factwright.com: a static page, its download pages, its privacy policy and terms, and its "not
- * found" page, built on the app's design system.
+ * The browser extension's store buttons: each one links to its store's listing once it's
+ * published, and says it's coming soon until then (src/stores.ts).
+ */
+function storeButtons(): Plugin {
+  return {
+    name: 'factwright-store-buttons',
+    transformIndexHtml: (html) => fillStores(html),
+  };
+}
+
+/**
+ * factwright.com: a static page, its download pages, the browser extension's page, its privacy
+ * policy and terms, and its "not found" page, built on the app's design system.
  */
 export default defineConfig({
-  plugins: [theme(), downloadLinks()],
+  plugins: [theme(), downloadLinks(), storeButtons()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -45,6 +57,7 @@ export default defineConfig({
         download: 'download.html',
         downloadMac: 'download/mac.html',
         downloadWindows: 'download/windows.html',
+        extension: 'extension.html',
         privacy: 'privacy.html',
         terms: 'terms.html',
         notFound: '404.html',

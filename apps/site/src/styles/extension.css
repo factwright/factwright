@@ -1,0 +1,448 @@
+/*
+ * The browser extension's page: what Save to Factwright does, how it treats what it reads, and
+ * setting it up, with its store buttons and a drawing of its popup on a job's page.
+ */
+
+.ext-hero {
+  position: relative;
+  padding-block: clamp(40px, 6vw, 80px) clamp(72px, 10vw, 128px);
+  overflow-x: clip;
+  isolation: isolate;
+}
+
+/* Faint graph paper behind the headline, as on the home page. */
+.ext-hero::before {
+  position: absolute;
+  inset: calc(var(--header) * -1) 0 auto;
+  z-index: -1;
+  height: 760px;
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  content: "";
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 30% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 80% at 30% 0%, #000 30%, transparent 75%);
+}
+
+.ext-hero-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  gap: clamp(40px, 6vw, 88px);
+  align-items: center;
+}
+
+.ext-copy h1 {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 6.2vw, 76px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.ext-copy .lede {
+  max-width: 560px;
+}
+
+.ext-stores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+/*
+ * A store that hasn't approved the extension yet: where its button goes, with no link. Its words
+ * are long, so they wrap on a narrow screen rather than run off it.
+ */
+.button-soon {
+  height: auto;
+  min-height: 50px;
+  padding-block: 10px;
+  border: 1px dashed var(--fw-control-border);
+  background: transparent;
+  color: var(--fw-muted);
+  font-weight: 550;
+  white-space: normal;
+  text-align: center;
+  cursor: default;
+}
+
+.button-soon:active {
+  transform: none;
+}
+
+.ext-note {
+  margin-top: 16px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.ext-note a,
+.ext-more a,
+.ext-steps a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+/* The page's sections, a little closer together than the home page's. */
+.ext .section {
+  padding-block: clamp(72px, 9vw, 120px);
+}
+
+@media (max-width: 900px) {
+  .ext-hero-inner {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+
+  .ext-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .ext-stores {
+    justify-content: center;
+  }
+
+  .ext-shot {
+    width: min(100%, 520px);
+  }
+}
+
+/* The drawing: a browser on a job's page, with the popup open under the extension's button. */
+.ext-shot {
+  position: relative;
+}
+
+.ext-shot::before {
+  position: absolute;
+  inset: 6% 4% -6%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--glow), transparent);
+  content: "";
+  filter: blur(40px);
+}
+
+.ext-browser {
+  overflow: hidden;
+  border: 1px solid var(--fw-border);
+  border-radius: 14px;
+  background: var(--fw-bg);
+  box-shadow: var(--shadow-window);
+  color: var(--fw-text);
+  font-family: var(--fw-font-sans);
+  font-size: var(--fw-text-base);
+  line-height: 1.45;
+  text-align: left;
+  container: ext / inline-size;
+}
+
+.ext-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-bar);
+}
+
+.ext-bar .lights {
+  width: auto;
+}
+
+.ext-address {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  white-space: nowrap;
+}
+
+.ext-address .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.ext-address span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The extension's button in the toolbar, pressed: its popup is open. */
+.ext-action {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--fw-accent-soft);
+}
+
+/* The extension's icon: Factwright's mark on the app icon's blue square. */
+.ext-app {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: linear-gradient(#4260e4, #2741be);
+}
+
+.ext-app .logo {
+  width: 64%;
+  height: 64%;
+  color: #fff;
+}
+
+.ext-view {
+  position: relative;
+  min-height: 520px;
+}
+
+/* The job's page, beside the popup, or under it where there's no room beside it. */
+.ext-page {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: calc(100% - 352px);
+  padding: 26px 0 0 22px;
+}
+
+.ext-page-company {
+  color: var(--fw-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.ext-page-role {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.ext-page-meta {
+  color: var(--fw-muted);
+  font-size: 12.5px;
+}
+
+.ext-page-apply {
+  align-self: start;
+  margin: 10px 0 16px;
+  padding: 7px 13px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-text);
+  color: var(--fw-bg);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+/* The posting's lines, too small to read behind the popup. */
+.ext-page i {
+  display: block;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 4px;
+  background: var(--fw-sunken);
+}
+
+.ext-page i:nth-of-type(3n + 1) {
+  width: 92%;
+}
+
+.ext-page i:nth-of-type(3n + 2) {
+  width: 100%;
+}
+
+.ext-page i:nth-of-type(3n) {
+  width: 64%;
+  margin-bottom: 12px;
+}
+
+/* The popup, as the extension draws it, hanging from its button. */
+.ext-popup {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, 100% - 16px);
+  padding: 16px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-lift);
+}
+
+.ext-popup-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.ext-popup-title .ext-app {
+  width: 22px;
+  height: 22px;
+}
+
+.ext-label {
+  margin: 10px 0 4px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.ext-input {
+  overflow: hidden;
+  padding: 7px 11px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-surface);
+  font-size: var(--fw-text-md);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ext-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin-top: 12px;
+  font-size: var(--fw-text-sm);
+}
+
+.ext-facts span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ext-facts span:nth-child(odd) {
+  color: var(--fw-muted);
+}
+
+/* The closed preview of the posting, with the browser's own triangle. */
+.ext-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+}
+
+.ext-preview::before {
+  border-block: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  content: "";
+}
+
+.ext-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--fw-text-md);
+}
+
+.ext-box {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: var(--fw-accent);
+  color: var(--fw-accent-ink);
+}
+
+.ext-box .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+
+.ext-save {
+  align-self: start;
+  margin-top: 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--fw-accent);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-accent);
+  color: var(--fw-accent-ink);
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+}
+
+.ext-settings {
+  margin-top: 10px;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@container ext (max-width: 479px) {
+  .ext-page {
+    display: none;
+  }
+
+  .ext-popup {
+    left: 8px;
+    width: auto;
+  }
+}
+
+/* How you save: three ways, side by side. */
+.tasks.ext-ways {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 980px;
+  margin-inline: auto;
+}
+
+@media (max-width: 860px) {
+  .tasks.ext-ways {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+}
+
+/* Setting it up: the steps, then the store buttons again. */
+.ext-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ext-setup .section-head {
+  margin-bottom: clamp(36px, 5vw, 56px);
+}
+
+.get-steps.ext-steps {
+  margin-top: 0;
+}
+
+.ext-setup .ext-stores {
+  justify-content: center;
+  margin-top: 36px;
+}
+
+.ext-setup .ext-note {
+  text-align: center;
+}

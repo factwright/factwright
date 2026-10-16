@@ -4,14 +4,25 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
+import {
+  fillStores,
+  type Listing,
+  STORE_SITES,
+  STORES,
+  type Store,
+  storeSlot,
+} from '../src/stores.ts';
 
 /** The site's folder. Paths, since jsdom's URL isn't one Node's file reading accepts. */
 const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Opens one of the site's pages in this test's document, without running its script. */
-function open(page: string): Document {
+/**
+ * Opens one of the site's pages in this test's document, as the build makes it, without running
+ * its script. The build fills in the extension's store buttons, which `stores` can stand in for.
+ */
+function open(page: string, stores: Readonly<Record<Store, Listing>> = STORES): Document {
   const parsed = new DOMParser().parseFromString(
-    readFileSync(join(SITE, page), 'utf8'),
+    fillStores(readFileSync(join(SITE, page), 'utf8'), stores),
     'text/html',
   );
   document.replaceChild(
@@ -32,6 +43,17 @@ const DOWNLOAD_PAGES = ['/download', '/download/mac', '/download/windows'];
 
 /** The privacy policy and the terms, which every page's footer links to. */
 const LEGAL_PAGES = ['/privacy', '/terms'];
+
+/** The browser extension's page, which every page's footer links to. */
+const EXTENSION_PAGE = '/extension';
+
+/** What the privacy policy says about the browser extension, which the extension's page links to. */
+const EXTENSION_PRIVACY = '/privacy#extension';
+
+/** The extension's listings in the stores that have approved it, which its page links to. */
+const LISTINGS = Object.values(STORES)
+  .filter((listing) => listing.live)
+  .map((listing) => listing.url);
 
 /** Factwright's code on GitHub, which every page's footer links to, as can links into it. */
 const SOURCE = 'https://github.com/factwright/factwright';
@@ -101,6 +123,7 @@ describe.each([
   'download.html',
   'download/mac.html',
   'download/windows.html',
+  'extension.html',
   'privacy.html',
   'terms.html',
   '404.html',
@@ -124,7 +147,7 @@ describe.each([
     }
   });
 
-  it('links only to its own sections, the site’s pages, the downloads, its code, its maker and Anthropic’s terms', () => {
+  it('links only to its own sections, the site’s pages, the downloads, the extension’s stores, its code, its maker and Anthropic’s terms', () => {
     const doc = open(page);
     const legal = LEGAL_PAGES.includes(`/${page.replace('.html', '')}`);
     const allowed = [
@@ -133,6 +156,9 @@ describe.each([
       ...DOWNLOAD_PAGES,
       ...DOWNLOADS,
       ...LEGAL_PAGES,
+      EXTENSION_PAGE,
+      EXTENSION_PRIVACY,
+      ...LISTINGS,
       ...MAKER,
       ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL] : []),
     ];
@@ -143,12 +169,12 @@ describe.each([
     }
   });
 
-  it('links to the privacy policy, the terms and the code from its footer', () => {
+  it('links to the browser extension, the privacy policy, the terms and the code from its footer', () => {
     const footer = open(page).querySelector('footer');
     const hrefs = [...(footer?.querySelectorAll('a[href]') ?? [])].map((link) =>
       link.getAttribute('href'),
     );
-    expect(hrefs).toEqual(expect.arrayContaining([...LEGAL_PAGES, SOURCE]));
+    expect(hrefs).toEqual(expect.arrayContaining([EXTENSION_PAGE, ...LEGAL_PAGES, SOURCE]));
   });
 
   it('links to Support Factwright from its footer', () => {
@@ -166,6 +192,14 @@ describe.each([
     }
     for (const figure of doc.querySelectorAll('figure')) {
       expect(figure.querySelector('figcaption')?.textContent?.trim()).toBeTruthy();
+    }
+  });
+
+  it('draws only icons the page has', () => {
+    const doc = open(page);
+    for (const use of doc.querySelectorAll('use')) {
+      const href = use.getAttribute('href') ?? '';
+      expect(href.startsWith('#') && doc.getElementById(href.slice(1)), href).toBeTruthy();
     }
   });
 
@@ -327,6 +361,147 @@ describe('the download pages', () => {
   });
 });
 
+describe('the extension page', () => {
+  const CHROME = 'https://chromewebstore.google.com/detail/save/abcdefghijklmnopabcdefghijklmnop';
+  const FIREFOX = 'https://addons.mozilla.org/firefox/addon/save/';
+
+  /** Both stores' listings, each live or not. */
+  const stores = (chrome: boolean, firefox: boolean) => ({
+    chrome: { url: CHROME, live: chrome },
+    firefox: { url: FIREFOX, live: firefox },
+  });
+
+  /** Each store's button, as it shows. */
+  const buttons = (doc: Document, store: Store) => [
+    ...doc.querySelectorAll<HTMLElement>(`[data-store="${store}"]`),
+  ];
+
+  it('has a place for each store’s button, under its headline and after its steps', () => {
+    const source = readFileSync(join(SITE, 'extension.html'), 'utf8');
+    const doc = open('extension.html');
+    for (const store of ['chrome', 'firefox'] as const) {
+      expect(source.split(storeSlot(store)), store).toHaveLength(3);
+      expect(doc.querySelectorAll(`.ext-copy [data-store="${store}"]`), store).toHaveLength(1);
+      expect(doc.querySelectorAll(`.ext-setup [data-store="${store}"]`), store).toHaveLength(1);
+    }
+  });
+
+  it('has the build fill its store buttons in', () => {
+    const config = readFileSync(join(SITE, 'vite.config.ts'), 'utf8');
+    expect(config).toMatch(/plugins: \[[^\]]*\bstoreButtons\(\)/);
+  });
+
+  it('shows a store as coming soon, with no link, until that store approves it', () => {
+    const doc = open('extension.html', stores(false, false));
+    for (const [store, name] of [
+      ['chrome', 'the Chrome Web Store'],
+      ['firefox', 'Firefox Add-ons'],
+    ] as const) {
+      const shown = buttons(doc, store);
+      expect(shown).toHaveLength(2);
+      for (const button of shown) {
+        expect(button.tagName).toBe('SPAN');
+        expect(button.classList).toContain('button-soon');
+        expect(button.textContent?.trim()).toBe(`Coming soon to ${name}`);
+      }
+    }
+    expect(doc.querySelector('a[data-store]')).toBeNull();
+    // A listing still in review isn't on the page at all.
+    for (const url of [CHROME, FIREFOX]) expect(doc.documentElement.outerHTML).not.toContain(url);
+  });
+
+  it('links to each store once it’s live, the first as the main button', () => {
+    const both = open('extension.html', stores(true, true));
+    for (const [store, url, browser, kind] of [
+      ['chrome', CHROME, 'Chrome', 'button-primary'],
+      ['firefox', FIREFOX, 'Firefox', 'button-secondary'],
+    ] as const) {
+      expect(buttons(both, store), store).toHaveLength(2);
+      for (const button of buttons(both, store)) {
+        expect(button.tagName).toBe('A');
+        expect(button.getAttribute('href')).toBe(url);
+        expect(button.classList).toContain(kind);
+        expect(button.textContent?.trim()).toBe(`Get it for ${browser}`);
+      }
+    }
+    // With only Firefox's live, its button is the main one, and Chrome's is still coming.
+    const firefox = open('extension.html', stores(false, true));
+    expect(buttons(firefox, 'firefox').map((button) => button.className)).toEqual([
+      'button button-primary button-lg',
+      'button button-primary button-lg',
+    ]);
+    expect(buttons(firefox, 'chrome').map((button) => button.tagName)).toEqual(['SPAN', 'SPAN']);
+  });
+
+  it('keeps a store’s address whole, whatever it holds', () => {
+    // Quotes and ampersands are escaped, and "$&" is never read as a replacement pattern.
+    const odd = 'https://chromewebstore.google.com/detail/x?a=1&b="2"&c=$&d=$\'';
+    const listings = { chrome: { url: odd, live: true }, firefox: { url: FIREFOX, live: false } };
+    const links = buttons(open('extension.html', listings), 'chrome');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([odd, odd]);
+  });
+
+  it('keeps each store’s listing on that store’s own site', () => {
+    for (const [store, listing] of Object.entries(STORES) as [Store, Listing][]) {
+      expect(listing.url.startsWith(STORE_SITES[store]), store).toBe(true);
+    }
+  });
+
+  it('says it’s coming soon wherever the site mentions it, until a store has it', () => {
+    /** What each paragraph that mentions the extension says. */
+    const mentions = (doc: Document) =>
+      [...doc.querySelectorAll(`main a[href="${EXTENSION_PAGE}"], .ext-steps strong`)]
+        .map((part) => part.closest('p, li')?.textContent?.replace(/\s+/g, ' ') ?? '')
+        .filter((text) => text.includes('Save to Factwright') || text.includes('extension'));
+    for (const page of [
+      'index.html',
+      'download/mac.html',
+      'download/windows.html',
+      'extension.html',
+    ]) {
+      expect(readFileSync(join(SITE, page), 'utf8'), page).toContain('<span data-soon>');
+      // Each opening replaces the last, so each is read before the next.
+      const soon = open(page, stores(false, false));
+      expect(mentions(soon).length, page).toBeGreaterThan(0);
+      for (const text of mentions(soon)) expect(text, page).toMatch(/coming soon|once it’s in/);
+      // Either way, the words are plain text, with nothing left to mark them.
+      expect(soon.querySelector('[data-soon]'), page).toBeNull();
+      const live = open(page, stores(true, false));
+      for (const text of mentions(live)) expect(text, page).not.toMatch(/coming soon|once it’s in/);
+      expect(live.querySelector('[data-soon]'), page).toBeNull();
+    }
+  });
+
+  it('says it needs Factwright, with a link to what it is, and its download in the steps', () => {
+    const doc = open('extension.html');
+    const note = doc.querySelector('.ext-copy .ext-note');
+    expect(note?.textContent).toContain('Needs Factwright for Mac or Windows, with sync on');
+    // The download pages start the download at once, so only a link that says so goes there.
+    expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
+    expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
+  });
+
+  it('links to the part of the privacy policy about the extension', () => {
+    expect(open('extension.html').querySelector(`a[href="${EXTENSION_PRIVACY}"]`)).not.toBeNull();
+    expect(open('privacy.html').getElementById('extension')?.tagName).toBe('SECTION');
+  });
+
+  it('keeps its drawing of the extension out of search snippets', () => {
+    const drawings = [...open('extension.html').querySelectorAll('figure > :not(figcaption)')];
+    expect(drawings.length).toBeGreaterThan(0);
+    for (const drawing of drawings) {
+      expect(drawing.hasAttribute('data-nosnippet'), markup(drawing)).toBe(true);
+    }
+  });
+
+  it('is where the home page and the download pages point people to it', () => {
+    for (const page of ['index.html', 'download/mac.html', 'download/windows.html']) {
+      const links = open(page).querySelectorAll(`main a[href="${EXTENSION_PAGE}"]`);
+      expect(links.length, page).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
   it('says when it took effect', () => {
     const date = open(page).querySelector('.legal-date time')?.getAttribute('datetime') ?? '';
@@ -357,7 +532,7 @@ describe('the site’s build', () => {
     );
     expect(pages.length).toBeGreaterThan(6);
     for (const page of pages) expect(config, page).toContain(`'${page.replaceAll('\\', '/')}'`);
-    for (const path of ['/', '/download', '/privacy', '/terms']) {
+    for (const path of ['/', '/download', EXTENSION_PAGE, '/privacy', '/terms']) {
       expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
     }
   });

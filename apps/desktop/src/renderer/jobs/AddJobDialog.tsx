@@ -1,4 +1,4 @@
-import type { JobStatus, KindName } from '@factwright/core';
+import { EXTENSION_URL, type JobStatus, type KindName } from '@factwright/core';
 import {
   Button,
   Dialog,
@@ -167,6 +167,13 @@ export function AddJobDialog({
           </Field>
           <p className={`${styles.hint} ${styles.wide}`}>
             Only the company is needed. Pick Applied if you’ve already sent your application.
+          </p>
+          <p className={`${styles.hint} ${styles.wide}`}>
+            <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+              Save to Factwright
+            </a>
+            , our extension for Chrome and Firefox, saves jobs straight from your browser, with
+            their postings.
           </p>
           {problem && (
             <p className={`${styles.problem} ${styles.wide}`} role="alert">
