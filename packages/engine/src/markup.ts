@@ -1,6 +1,13 @@
-/** Text made safe for HTML. */
+/** Letters typed as one character, such as "ﬁ", as text copied out of some PDFs has them. */
+const JOINED = /[\uFB00-\uFB06]/g;
+
+/**
+ * Text made safe for HTML. Letters typed as one character are written out, "ﬁ" as "fi": the
+ * fonts a page carries don't have those characters, and applicant systems misread them.
+ */
 export const escapeHtml = (value: unknown) =>
   String(value ?? '')
+    .replace(JOINED, (joined) => joined.normalize('NFKC'))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

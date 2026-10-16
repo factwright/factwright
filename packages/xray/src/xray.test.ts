@@ -106,6 +106,52 @@ describe('the templates the app comes with', () => {
   });
 });
 
+describe('words with letters fonts draw as one, such as fi and fl', () => {
+  // Jordan Avery as a financial planner, printed as the app prints: in Classic, in Minimal and
+  // in a template of the user's own whose styles ask for joined letters, and a letter in that
+  // template's plain layout. Each has these words, in plain, bold and italic text and headings.
+  const words = [
+    'certified',
+    'first',
+    'profile',
+    'office',
+    'workflow',
+    'staff',
+    'efficient',
+    'affluent',
+  ];
+
+  for (const file of ['fi-classic.pdf', 'fi-minimal.pdf', 'fi-own.pdf', 'fi-letter.pdf']) {
+    it(`reads them in ${file} as the letters, never one character`, async () => {
+      const result = xray(await read(file));
+      expect(result.checks.find((check) => check.id === 'joined')?.status).toBe('pass');
+      const text = result.lines.map((line) => line.text).join('\n');
+      expect(text).not.toMatch(/[\uFB00-\uFB06]/);
+      for (const word of words) expect(text).toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+    });
+  }
+
+  for (const file of ['fi-classic.pdf', 'fi-minimal.pdf', 'fi-own.pdf']) {
+    it(`reads the resume in ${file} cleanly, with nothing flagged`, async () => {
+      expect(flagged(xray(await read(file)))).toEqual({});
+    });
+  }
+
+  it('knows headings with fi and fl in them, such as Profile and Affiliations', async () => {
+    const { sections } = xray(await read('fi-own.pdf'));
+    expect(sections.map((section) => [section.title, section.kind])).toEqual([
+      ['Profile', 'summary'],
+      ['Proficiencies', 'skills'],
+      ['Selected Work', 'projects'],
+      ['Professional Experience', 'experience'],
+      ['Education', 'education'],
+      ['Skills', 'skills'],
+      ['Certifications', 'certifications'],
+      ['Affiliations', 'affiliations'],
+    ]);
+  });
+});
+
 describe('files with problems', () => {
   it('notes a sidebar, but reads each column whole, with the name first', async () => {
     const result = xray(await read('sidebar.pdf'));

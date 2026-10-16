@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Fixed
+- PDFs of resumes and cover letters hold letters such as fi, fl, ff, ffi and ffl as the letters themselves, so applicant tracking systems read every word. Before, in a template set in Factwright Sans, Calibri's stand-in, as many of your own are, in headings set in Barlow, and in Classic's italics, a system could read "first" as "ﬁrst", with a character it doesn't know, and miss words such as certified and profile, or a heading such as Profile. They look the same on the page, and every line breaks where it did. A character for joined letters copied into a resume, as text from some PDFs has, prints as the letters too.
+
 ## 0.5.0 - 2026-10-16
 
 ### Added
