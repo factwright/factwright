@@ -145,15 +145,31 @@ describe('renderLetterHtml', () => {
     );
   });
 
-  it('sets a Word font with no stand-in it carries in a font of the same kind it does carry', () => {
+  it('falls back on a font of the template’s own, of the same kind, for a computer without its Word font', () => {
     const own: Template = {
       ...sidebar,
       fonts: ['caladea-regular.woff2', 'caladea-bold.woff2', 'selawik-regular.woff2'],
       word: { ...sidebar.word, head: 'Garamond', body: 'Calibri' },
     };
     const html = renderLetterHtml(sampleLetter(), own);
-    expect(html).toContain('.name{font-family:"Caladea","Garamond",serif;');
-    expect(html).toContain('body{font-family:"Selawik","Calibri",sans-serif;');
+    expect(html).toContain('.name{font-family:"Garamond","Caladea",serif;');
+    expect(html).toContain('body{font-family:"Calibri","Selawik",sans-serif;');
+  });
+
+  it('tells fonts with serifs from those without by their names', () => {
+    for (const [font, kind] of [
+      ['Constantia', 'serif'],
+      ['Book Antiqua', 'serif'],
+      ['Century Schoolbook', 'serif'],
+      ['Franklin Gothic Book', 'sans-serif'],
+      ['Microsoft Sans Serif', 'sans-serif'],
+      ['Century Gothic', 'sans-serif'],
+    ] as const) {
+      const own: Template = { ...sidebar, fonts: [], word: { ...sidebar.word, body: font } };
+      expect(renderLetterHtml(sampleLetter(), own)).toContain(
+        `body{font-family:"${font}",${kind};`,
+      );
+    }
   });
 
   it('signs with the letter’s own signature, and leaves out what it doesn’t have', () => {

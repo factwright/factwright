@@ -109,9 +109,8 @@ describe('the templates the app comes with', () => {
 describe('words with letters fonts draw as one, such as fi and fl', () => {
   // Jordan Avery as a financial planner, printed as the app prints: in Classic, in Minimal and
   // in a template of the user's own whose styles ask for joined letters, and letters in the plain
-  // layout of that template and of one whose Word files are in Garamond, which the app doesn't
-  // carry. The resumes have these words in plain, bold and italic text and headings, and the
-  // letters in their text.
+  // layout of that template and of one whose Word font the computer doesn't have. The resumes
+  // have these words in plain, bold and italic text and headings, and the letters in their text.
   const words = [
     'certified',
     'first',
@@ -127,7 +126,7 @@ describe('words with letters fonts draw as one, such as fi and fl', () => {
     'fi-minimal.pdf',
     'fi-own.pdf',
     'fi-letter.pdf',
-    'fi-letter-garamond.pdf',
+    'fi-letter-missing-font.pdf',
   ];
 
   for (const file of files) {
@@ -140,8 +139,9 @@ describe('words with letters fonts draw as one, such as fi and fl', () => {
     });
   }
 
-  // Each font that draws joined letters, with words it set in each file: a font whose joined
-  // shapes read as nothing, such as "Certied", would fail here even if the word is elsewhere.
+  // Words each font set in each file, for the fonts that draw joined letters: one whose joined
+  // shapes read as nothing, such as "Certied", fails here even if the word is elsewhere. A letter
+  // whose Word font the computer doesn't have prints in the template's own Caladea.
   const byFont: Readonly<Record<string, readonly [font: string, text: string][]>> = {
     'fi-classic.pdf': [
       ['Caladea-Italic', 'Certified Financial Planner'],
@@ -167,12 +167,12 @@ describe('words with letters fonts draw as one, such as fi and fl', () => {
       ],
       ['FactwrightSans-Regular', 'Certified Financial Planner'],
     ],
-    'fi-letter-garamond.pdf': [
+    'fi-letter-missing-font.pdf': [
       ['Caladea-Regular', 'a certified planner who can run an efficient office for affluent'],
     ],
   };
   for (const [file, expected] of Object.entries(byFont)) {
-    it(`reads ${file} the same in each font that draws joined letters`, async () => {
+    it(`reads each font’s words in ${file} as the letters`, async () => {
       const { lines } = await read(file);
       const inFont = (font: string) =>
         lines.map((line) =>

@@ -10,32 +10,37 @@ const STAND_INS: Readonly<Record<string, string>> = {
   bahnschrift: 'Barlow',
 };
 
-/** Fonts with serifs, to fall back on one when the font named isn't there. */
-const SERIF = /cambria|caladea|georgia|times|garamond|palatino|book|baskerville|caslon|serif/i;
-
 /**
- * The open fonts of each kind that can set a letter's text, by their regular face. A template
- * whose Word font has no stand-in it carries, such as Garamond, prints its letter in one of
- * these that it carries instead: a font on the computer looks different on each one, and some
- * write letters such as "fi" into the PDF as one character, which applicant systems misread.
+ * Fonts with serifs, by name, to fall back on one when the font named isn't there: not a "Sans
+ * Serif", and "Book" only in serif names such as Book Antiqua.
  */
-const OF_KIND: Readonly<Record<'serif' | 'sans-serif', readonly FontFile[]>> = {
-  serif: ['caladea-regular.woff2'],
-  'sans-serif': ['factwright-sans-regular.woff2', 'selawik-regular.woff2'],
+const SERIF =
+  /cambria|caladea|georgia|times|garamond|palatino|baskerville|caslon|constantia|goudy|bodoni|rockwell|book antiqua|bookman|century(?! gothic)|(?<!sans[\s-]?)serif/i;
+
+/** The open fonts that can set a letter's text, by their regular face, and their kind. */
+const TEXT_FONTS: Readonly<Partial<Record<FontFile, 'serif' | 'sans-serif'>>> = {
+  'caladea-regular.woff2': 'serif',
+  'factwright-sans-regular.woff2': 'sans-serif',
+  'selawik-regular.woff2': 'sans-serif',
 };
 
 /**
- * A font-family for one of a template's Word fonts: the open font it stands in for first, when
- * the template carries it, or else an open font of the same kind the template carries, so the
- * letter matches the resume's PDF, then the font itself.
+ * A font-family for one of a template's Word fonts. The open font it stands in for goes first,
+ * when the template carries it, so the letter matches the resume's PDF. Otherwise the font
+ * itself, then the template's own first font of the same kind, for a computer without it, such
+ * as Garamond on a Mac: the computer's own stand-in, such as Times, can write letters such as
+ * "fi" into the PDF as one character, which applicant systems misread.
  */
 function family(word: string, fonts: readonly FontFile[]): string {
-  const carried = new Set(fonts.map((file) => FONT_FACES[file].family));
   const stand = STAND_INS[word.toLowerCase()];
   const generic = SERIF.test(stand ?? word) ? 'serif' : 'sans-serif';
-  const kin = OF_KIND[generic].find((file) => fonts.includes(file));
-  const open = stand && carried.has(stand) ? stand : kin && FONT_FACES[kin].family;
-  return [...(open ? [`"${open}"`] : []), `"${word}"`, generic].join(',');
+  if (stand && fonts.some((file) => FONT_FACES[file].family === stand)) {
+    return [`"${stand}"`, `"${word}"`, generic].join(',');
+  }
+  const kin = fonts.find((file) => TEXT_FONTS[file] === generic);
+  const open = kin && FONT_FACES[kin].family;
+  const fallback = open && open.toLowerCase() !== word.toLowerCase() ? [`"${open}"`] : [];
+  return [`"${word}"`, ...fallback, generic].join(',');
 }
 
 /**

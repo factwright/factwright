@@ -358,22 +358,23 @@ const PDFS: [name: string, template: Template, resume: Resume][] = [
 ];
 
 /**
- * A template in Classic's look whose Word files are in Garamond, as one made from a Garamond
- * resume can be, with no letter of its own. The app carries no Garamond, so a letter prints in
- * the serif the template carries.
+ * A template in Classic's look with no letter of its own, whose Word files name a serif the
+ * computer doesn't have, as Garamond is missing on a Mac: one no computer has, so the file is
+ * the same wherever it's made. A letter in it prints in the template's own serif, where the
+ * computer's stand-in, such as Times, can join letters into one character.
  */
-const garamond: Template = {
+const missingFont: Template = {
   ...classic,
-  id: 'garamond',
-  name: 'garamond',
-  word: { ...classic.word, head: 'Garamond', body: 'Garamond' },
+  id: 'missing-font',
+  name: 'missing-font',
+  word: { ...classic.word, head: 'Missing Serif', body: 'Missing Serif' },
   letter: undefined,
 };
 
 /** Cover letters. A template with no letter of its own, such as own, prints one plainly. */
 const LETTERS: [name: string, template: Template, letter: CoverLetter][] = [
   ['fi-letter', own, plannerLetter()],
-  ['fi-letter-garamond', garamond, plannerLetter()],
+  ['fi-letter-missing-font', missingFont, plannerLetter()],
 ];
 
 /** Prints a page as the app does: Letter, with backgrounds, after its fonts load. */
