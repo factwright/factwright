@@ -36,7 +36,7 @@ console.log(result.summary.text);
 In a browser, set pdf.js's worker before reading a PDF, as the desktop app does.
 
 ## Its tests
-They read real files, in [`test/fixtures`](test/fixtures): a made-up resume printed in Classic and Minimal, as PDFs and Word files, the way the app makes them, and files with each problem it looks for. Classic and Minimal read cleanly, with nothing flagged, which shows the checks don't cry wolf. [`scripts/fixtures.ts`](scripts/fixtures.ts) makes them all, in Electron, which prints with the same Chromium as the app:
+They read real files, in [`test/fixtures`](test/fixtures): a made-up resume printed in Classic and Minimal, as PDFs and Word files, the way the app makes them, and files with each problem it looks for. Classic and Minimal read cleanly, with nothing flagged, which shows the checks don't cry wolf. So does a resume full of words with fi and fl, printed in Classic, Minimal and a template of a user's own. Fonts can draw those letters as one shape, but a parser has to read the letters, in each font, in those resumes and in letters in the plain layout. [`scripts/fixtures.ts`](scripts/fixtures.ts) makes them all, in Electron, which prints with the same Chromium as the app:
 
 ```sh
 pnpm --filter @factwright/xray fixtures

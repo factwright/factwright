@@ -13,8 +13,10 @@ Carlito, Caladea and Selawik match their Windows fonts' widths. Bahnschrift has 
 
 **Trimmed** means:
 - Kept: Latin letters for Western, Central and Eastern European languages, punctuation, currency signs, arrows and common math signs.
-- Removed: other scripts, and screen hinting, which PDFs never use.
+- Removed: other scripts, screen hinting, which PDFs never use, and the characters for letters joined into one, such as "ﬁ" (U+FB01).
 - Every kept character has the same width and kerning as in the original.
+
+Factwright Sans, Caladea's italic and Barlow still draw fi, fl and the like as one shape, as the originals do. With no character of its own, that shape goes into the PDF as the letters it was drawn for, so applicant tracking systems read "first", not "ﬁrst". Selawik never had those characters.
 
 A template names the files it carries in its `fonts`, so a user's own template can use any of them.
 
@@ -38,3 +40,5 @@ All four fonts are under the SIL Open Font License 1.1, which lets them be bundl
 python3 -m venv .venv && .venv/bin/pip install fonttools brotli
 .venv/bin/python -I build.py <that folder> packages/engine/fonts
 ```
+
+Then make the X-ray's test files again, with `pnpm --filter @factwright/xray fixtures`: its tests check that words with fi and fl read as letters in Classic, Minimal, a template of a user's own and plain letters. The desktop app's tests check that no font gives such letters a character of its own.

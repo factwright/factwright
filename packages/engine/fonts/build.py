@@ -12,11 +12,15 @@ src, out = Path(sys.argv[1]), Path(sys.argv[2])
 out.mkdir(parents=True, exist_ok=True)
 
 # Latin (Western, Central and Eastern European), punctuation, currency, arrows, common math.
+# Not the characters for joined letters, such as "ﬁ" (U+FB01). The fonts still draw fi, fl, ff,
+# ffi and ffl as one shape, at the same widths, but a shape with no character of its own goes
+# into the PDF as the letters it was drawn for, so applicant tracking systems read "first", not
+# "ﬁrst".
 UNICODES = (
     "U+0020-007E,U+00A0-017F,U+0192,U+0218-021B,U+0237,U+02BB-02BC,U+02C6-02C7,U+02C9,"
     "U+02D8-02DD,U+1E9E,U+2000-206F,U+2070-209F,U+20AC,U+20B9,U+2100-215F,U+2190-2199,"
     "U+2202,U+2206,U+220F,U+2211-2215,U+2219-221A,U+221E,U+222B,U+2248,U+2260,U+2264-2265,"
-    "U+25A0-25A1,U+25AA-25AB,U+25CA,U+25CB,U+25CF,U+FB00-FB06,U+FEFF,U+FFFD"
+    "U+25A0-25A1,U+25AA-25AB,U+25CA,U+25CB,U+25CF,U+FEFF,U+FFFD"
 )
 
 

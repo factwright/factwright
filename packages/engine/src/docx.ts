@@ -15,7 +15,7 @@ import {
   WidthType,
 } from 'docx';
 import type { CoverLetter } from './letter.ts';
-import { BOLD, PLACEHOLDER } from './markup.ts';
+import { BOLD, PLACEHOLDER, plainLetters } from './markup.ts';
 import type { Bullet, Contact, Resume } from './schema.ts';
 import { sectionTitles } from './template/render.ts';
 import type { Template, WordTheme } from './templates.ts';
@@ -35,9 +35,9 @@ const IS_PLACEHOLDER = new RegExp(`^${PLACEHOLDER}$`);
 // biome-ignore lint/suspicious/noControlCharactersInRegex: these are what it finds.
 const UNWRITABLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
 
-/** Text runs with **bold** and highlighted [[placeholders]]. */
+/** Text runs with **bold** and highlighted [[placeholders]], and its letters written out. */
 function runs(value: unknown, t: WordTheme, base: RunOptions = {}): TextRun[] {
-  return String(value ?? '')
+  return plainLetters(String(value ?? ''))
     .replace(UNWRITABLE, '')
     .split(MARKED)
     .filter(Boolean)
@@ -62,7 +62,7 @@ function heading(title: string, t: WordTheme): Paragraph {
     border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: t.accent, space: 2 } },
     children: [
       new TextRun({
-        text: title.toUpperCase(),
+        text: plainLetters(title).toUpperCase(),
         font: t.head,
         size: 23,
         bold: true,
@@ -125,7 +125,7 @@ function statsTable(stats: NonNullable<Resume['impact_stats']>, t: WordTheme): T
                   alignment: AlignmentType.CENTER,
                   children: [
                     new TextRun({
-                      text: s.value,
+                      text: plainLetters(s.value),
                       font: t.head,
                       size: 30,
                       bold: true,
@@ -166,7 +166,7 @@ function header(person: Person, t: WordTheme): Paragraph[] {
       alignment: align,
       children: [
         new TextRun({
-          text: t.nameCaps ? person.name.toUpperCase() : person.name,
+          text: plainLetters(t.nameCaps ? person.name.toUpperCase() : person.name),
           font: t.head,
           size: t.nameSize,
           bold: true,
@@ -183,7 +183,7 @@ function header(person: Person, t: WordTheme): Paragraph[] {
         spacing: { before: 40 },
         children: [
           new TextRun({
-            text: person.headline,
+            text: plainLetters(person.headline),
             font: t.body,
             size: 24,
             bold: true,
@@ -303,7 +303,7 @@ export function resumeDocument(r: Resume, template: Template): Document {
             spacing: { before: 80, after: 20 },
             children: [
               new TextRun({
-                text: g.heading.toUpperCase(),
+                text: plainLetters(g.heading).toUpperCase(),
                 font: t.body,
                 size: t.size - 1,
                 bold: true,

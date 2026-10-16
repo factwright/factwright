@@ -249,6 +249,8 @@ async function work(text) {
             {
               title: 'Platform Engineering Lead',
               company: 'Tidewater Analytics',
+              // In italics in Classic, whose italic font draws fl and fi as one shape.
+              company_note: 'Workflow tools for field teams',
               start: '03/2021',
               end: 'Present',
               bullet_groups: [
