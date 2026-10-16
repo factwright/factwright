@@ -5,11 +5,12 @@ export type Store = 'chrome' | 'firefox';
  * Save to Factwright's listing in each store, or null until it's published. Set each one here
  * once its listing is live: the build writes them into the pages (vite.config.ts), and a store
  * without one shows as coming soon.
- * - Chrome Web Store: https://chromewebstore.google.com/detail/<the item's ID>
+ * - Chrome Web Store: https://chromewebstore.google.com/detail/<its name>/<the item's ID>
  * - Firefox Add-ons: https://addons.mozilla.org/firefox/addon/<the add-on's slug>/
  */
 export const STORES: Readonly<Record<Store, string | null>> = {
-  chrome: null,
+  chrome:
+    'https://chromewebstore.google.com/detail/save-to-factwright/gjhjddlohoonikgdbfcfnljeffilblai',
   firefox: null,
 };
 
