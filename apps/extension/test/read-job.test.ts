@@ -269,7 +269,7 @@ describe('reading a job page', () => {
     expect(job.posting).toContain('The new posting.');
   });
 
-  it('leaves out job data whose title the page doesn’t show, and keeps one it shows its way', () => {
+  it('leaves out job data whose title the page doesn’t show word for word', () => {
     const read = (title: string, heading: string) =>
       readJobPage(
         withData({ ...JOB_DATA, title }, `<main><h1>${heading}</h1><p>Posting.</p></main>`),
@@ -279,7 +279,13 @@ describe('reading a job page', () => {
     const stale = read('Product Designer', 'Data Engineer');
     expect(stale.source).toBe('main');
     expect(stale.title).toBe('Data Engineer');
-    expect(read('Sr. Software Engineer', 'Senior Software Engineer').source).toBe('structured');
+    // Even another way of putting it, which the popup shows to check, from the page's own text.
+    expect(read('Sr. Software Engineer', 'Senior Software Engineer').source).toBe('main');
+    expect(read('Software Engineer', 'Software Engineer (Remote)').source).toBe('main');
+    // Its case and punctuation are its own.
+    expect(read('Software engineer – Payments', 'SOFTWARE ENGINEER, PAYMENTS').source).toBe(
+      'structured',
+    );
   });
 
   it('reads a title in the job data with entities, as the page shows it', () => {
@@ -293,6 +299,66 @@ describe('reading a job page', () => {
       company: 'Tidewater Analytics',
       source: 'structured',
     });
+  });
+
+  it('never takes another job’s data from a similar title, a link to it, or words in the text', () => {
+    const read = (data: unknown, body: string, url = 'https://jobs.example.com/jobs/2-pm') =>
+      readJobPage(withData(data, body), url, '');
+    // A similar job's link, beside this job's own heading.
+    const similar = '<main><h1>Product Manager</h1><a href="/jobs/1">Data Engineer</a></main>';
+    expect(read({ ...JOB_DATA, title: 'Data Engineer' }, similar).source).toBe('main');
+    // Its words inside other words, or across a sentence.
+    const words = '<main><h1>Senior Data Scientist</h1><p>Join our software engineers.</p></main>';
+    expect(read({ ...JOB_DATA, title: 'Software Engineer' }, words).source).toBe('main');
+    // A title with no words in it at all.
+    expect(read({ ...JOB_DATA, title: '🚀' }, '<main><h1>🚀</h1></main>').source).toBe('main');
+    // A job site's own title for a job much like it.
+    const workday = withData(
+      {
+        ...JOB_DATA,
+        title: 'Registered Nurse - ICU',
+        url: 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Austin/Registered-Nurse---ICU_R100',
+      },
+      `<h2 data-automation-id="jobPostingHeader">Registered Nurse - Emergency Department</h2>
+       <div data-automation-id="jobPostingDescription"><p>Care for patients.</p></div>`,
+    );
+    const nurse = readJobPage(
+      workday,
+      'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Austin/Registered-Nurse---Emergency_R200',
+      '',
+    );
+    expect(nurse).toMatchObject<Partial<PageJob>>({
+      title: 'Registered Nurse - Emergency Department',
+      source: 'page',
+      posting: 'Care for patients.',
+    });
+  });
+
+  it('takes the posting at this page’s address, though the page puts its title another way', () => {
+    const mine = {
+      ...JOB_DATA,
+      title: 'Sr. Product Mgr - Remote US',
+      url: 'https://jobs.example.com/jobs/7',
+    };
+    const other = { ...JOB_DATA, title: 'Data Engineer', url: undefined };
+    const doc = withData(
+      [other, mine],
+      '<main><div class="title">Senior Product Manager</div><aside><h3>Data Engineer</h3></aside></main>',
+    );
+    expect(readJobPage(doc, 'https://jobs.example.com/jobs/7?utm_source=x', '').title).toBe(
+      'Sr. Product Mgr - Remote US',
+    );
+  });
+
+  it('reads a description that mentions tags beside its own markup', () => {
+    const doc = withData({
+      ...JOB_DATA,
+      description:
+        '<p>Know when to use &lt;br&gt;, &lt;textarea&gt; and &lt;select&gt;.</p><p>About the team.</p>',
+    });
+    expect(readJobPage(doc, 'https://jobs.example.com/fe', '').posting).toBe(
+      'Know when to use <br>, <textarea> and <select>.\n\nAbout the team.',
+    );
   });
 
   it('reads a description encoded twice with only line breaks and bold', () => {

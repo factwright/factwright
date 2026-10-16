@@ -41,13 +41,20 @@ describe('Markdown', () => {
     expect(screen.queryByText('this', { selector: 'a' })).toBeNull();
   });
 
+  // Each budget is many times what the text takes now, and a small part of what it took before,
+  // so a slow computer passes and the old way can't.
   it('reads text full of unfinished links quickly', () => {
     const start = performance.now();
-    // Uncapped, this took seconds: each "[" read the rest of the text as a link's address.
-    render(<Markdown text={'[a](http://'.repeat(20_000)} />);
-    // And this took most of a minute, when each mark had every unfinished link read again.
-    render(<Markdown text={'**a**[a](mailto:'.repeat(6000)} />);
-    expect(performance.now() - start).toBeLessThan(1500);
+    // Uncapped, this took about 9 seconds: each "[" read the rest of the text as a link's address.
+    render(<Markdown text={'[a](http://'.repeat(40_000)} />);
+    expect(performance.now() - start).toBeLessThan(3000);
+  });
+
+  it('reads text full of marks between unfinished links quickly', () => {
+    const start = performance.now();
+    // This took about half a minute, when each mark had every unfinished link read again.
+    render(<Markdown text={'**a**[a](mailto:'.repeat(4000)} />);
+    expect(performance.now() - start).toBeLessThan(3000);
   });
 
   it('never turns text into markup', () => {
