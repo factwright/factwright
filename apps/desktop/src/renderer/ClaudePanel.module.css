@@ -111,6 +111,34 @@
   font-weight: 650;
 }
 
+/* Claude's questions, put aside in their dialog, waiting here for the user to come back to. */
+.asking {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 7px var(--fw-space-3) 7px var(--fw-space-4);
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-accent-soft);
+}
+
+.askingIcon {
+  flex: none;
+  color: var(--fw-accent-text);
+}
+
+.askingText {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.askingText strong {
+  font-weight: 650;
+}
+
 /* The note about Claude Code's trust question, above the terminal while it's asked. */
 .trust {
   padding: var(--fw-space-2) var(--fw-space-3) 0;

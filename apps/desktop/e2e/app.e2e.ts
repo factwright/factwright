@@ -515,8 +515,28 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
     .getByRole('button', { name: /^Tailored resume/ })
     .click();
   const panel = claudePanel();
-  // The stand-in asks two questions, the user says yes to one and no to the other, and it
-  // tries to save a fact the user never gave.
+  // The stand-in asks two questions in one round, which open in the app's dialog rather than the
+  // terminal. Put aside, the round waits in Claude's panel.
+  const asks = window.getByRole('dialog', { name: 'Claude has 2 questions' });
+  await expect(asks).toContainText('From your Claude, working on Tailored resume · Acme Robotics.');
+  // The user says yes to one, puts the round aside, and comes back to it as they left it.
+  const graphql = asks
+    .getByRole('group', { name: /Have you used GraphQL/ })
+    .getByRole('radio', { name: 'Yes, in production', exact: true });
+  await graphql.check();
+  await asks.getByRole('button', { name: 'Not now' }).click();
+  await expect(asks).toHaveCount(0);
+  await expect(panel.getByText(/waiting for your answer to 2 questions/)).toBeVisible();
+  await panel.getByRole('button', { name: 'Answer', exact: true }).click();
+  await expect(graphql).toBeChecked();
+  // They say no to the other, and the stand-in tries to save a fact the user never gave.
+  await asks
+    .getByRole('group', { name: /Have you run Kafka/ })
+    .getByRole('radio', { name: 'No', exact: true })
+    .check();
+  await asks.getByRole('button', { name: 'Send answers' }).click();
+  await expect(asks).toHaveCount(0);
+  await expect.poll(() => terminalText(window)).toContain("User answered Claude's questions");
   await expect(panel.getByText('1 new fact to verify')).toBeVisible();
   await expect(panel.getByRole('status').filter({ hasText: 'new fact to verify' })).toHaveText(
     '1 new fact to verify: “GraphQL for the driver app”, from your answers. Also noted 1 thing you don’t have.',

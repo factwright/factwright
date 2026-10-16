@@ -36,6 +36,7 @@ import type {
 } from './profile.ts';
 import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RevisionRequest, RevisionState } from './revision.ts';
+import type { QuestionRound, RoundReply } from './rounds.ts';
 import type { RunTask } from './runs.ts';
 import type {
   AccountResult,
@@ -257,6 +258,15 @@ export interface FactwrightApi {
    * first run. Returns a function that stops listening.
    */
   onClaudeTrust(listener: () => void): () => void;
+  /** The round of Claude's questions waiting on the user to answer in the window, or null. */
+  claudeQuestion(): Promise<QuestionRound | null>;
+  /**
+   * Listens for Claude's questions: the round waiting on the user, or null once none is. Returns
+   * a function that stops listening.
+   */
+  onClaudeQuestion(listener: (round: QuestionRound | null) => void): () => void;
+  /** Answers a round of Claude's questions, or sends it to the terminal to answer there. */
+  answerClaude(id: string, reply: RoundReply | 'terminal'): Promise<EditResult>;
   listJobs(): Promise<JobList>;
   /** The text of a job's documents, such as its posting and fit check. */
   jobDocs(jobId: string): Promise<JobDocs | null>;

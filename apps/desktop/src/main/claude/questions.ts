@@ -39,7 +39,7 @@ export const hookToolName = (tool: FilingTool) => `mcp__factwright__${tool}`;
  * The fields a question round only has once someone has answered it. Claude never sets them:
  * when the questions it sends carry one, something other than the user answered.
  */
-const ANSWER_FIELDS = ['answers', 'annotations', 'response', 'followUp'];
+export const ANSWER_FIELDS = ['answers', 'annotations', 'response', 'followUp'];
 
 /** As much as Claude Code itself lets a question, an answer or a note be, and a little more. */
 const MAX_QUESTION = 2_000;

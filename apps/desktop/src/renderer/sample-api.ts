@@ -3,6 +3,7 @@ import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
+import { isAnswered, type QuestionRound, type RoundReply } from '../shared/rounds.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
@@ -63,30 +64,35 @@ function sampleRun(dark: boolean) {
       `${color(`1;${main}`, '✻ Claude Code')}  ${color(secondary, '~/Factwright/workspace')}\r\n\r\n`,
       `\x1b[${bar};${secondary}m❯ \x1b[${main}mHelp me get ready for a recruiter call on Monday.\x1b[K\x1b[0m\r\n\r\n`,
     ],
-    question: [
+    /** What Claude says before its first question. */
+    intro: [
       `${color('32', '⏺')} ${color(main, 'Happy to. One question first, so the prep fits.')}\r\n\r\n`,
+    ],
+    /** The question as the terminal asks it, once the user sends it there. */
+    question: [
       ` ${color(`1;${main}`, 'Which role is the call about?')}\r\n\r\n`,
       ` ${color('34', '❯ 1. Senior Backend Engineer at Tidewater Analytics')}\r\n`,
       `   ${color(main, '2. Staff Engineer at Acme Robotics')}\r\n`,
       `   ${color(main, '3. Type something else')}\r\n`,
     ],
-    answered: [
+    /** The answers, as Claude Code notes them, and what Claude does next. */
+    answered: (answers: [string, string][], next: string) => [
       `\r\n${color(secondary, '⏺ User answered Claude’s questions:')}\r\n`,
-      `${color(secondary, '  ⎿  · Which role is the call about? → Tidewater Analytics')}\r\n\r\n`,
-      `${color('34', '✻')} ${color(secondary, 'Reading the posting and your facts…')}\r\n`,
+      ...answers.map(
+        ([question, answer], at) =>
+          `${color(secondary, `  ${at === 0 ? '⎿' : ' '}  · ${question} → ${answer}`)}\r\n`,
+      ),
+      `\r\n${color('34', '✻')} ${color(secondary, next)}\r\n`,
     ],
     /** Interview prep stopping to ask which round it's for, with ?run=asks. */
-    round: [
+    roundIntro: [
       `\r\n${color('32', '⏺')} ${color(main, 'Read the posting, your fit check, the resume you sent and your notes.')}\r\n\r\n`,
+    ],
+    round: [
       ` ${color(`1;${main}`, 'Which round is the interview?')}\r\n\r\n`,
       ` ${color('34', '❯ 1. Panel with the platform team')}\r\n`,
       `   ${color(main, '2. Hiring manager, one on one')}\r\n`,
       `   ${color(main, '3. Type something else')}\r\n`,
-    ],
-    roundAnswered: [
-      `\r\n${color(secondary, '⏺ User answered Claude’s questions:')}\r\n`,
-      `${color(secondary, '  ⎿  · Which round is the interview? → Panel with the platform team')}\r\n\r\n`,
-      `${color('34', '✻')} ${color(secondary, 'Checking company news and writing your prep sheet…')}\r\n`,
     ],
     finished: [
       `\r\n${color(main, '⏺ Your prep sheet is ready: likely questions, your best stories, and')}`,
@@ -114,6 +120,89 @@ function sampleRun(dark: boolean) {
   };
 }
 
+/** What Claude does once a round is answered. */
+const NEXT = {
+  opening: 'Reading the posting and your facts…',
+  round: 'Checking company news and writing your prep sheet…',
+} as const;
+
+/** The made-up run's first round: which role, and with ?ask=more, what to cover and how long. */
+function openingRound(more: boolean): QuestionRound {
+  const option = (label: string, description: string) => ({ label, description, preview: null });
+  const role = {
+    question: 'Which role is the call about?',
+    header: 'Role',
+    multiSelect: false,
+    options: [
+      option(
+        'Senior Backend Engineer at Tidewater Analytics',
+        'The recruiter screen on Monday, from your notes.',
+      ),
+      option('Staff Engineer at Acme Robotics', 'Applied last week. No call logged yet.'),
+    ],
+  };
+  if (!more) return { id: 'toolu_sample_opening', questions: [role] };
+  return {
+    id: 'toolu_sample_opening',
+    questions: [
+      role,
+      {
+        question: 'What should the prep sheet cover?',
+        header: 'Focus',
+        multiSelect: true,
+        options: [
+          option('Likely questions', 'With answers from your fact bank.'),
+          option('Your best stories', 'Two or three, with the numbers that back them.'),
+          option('Questions to ask them', 'About the team, the work and what comes next.'),
+          option('Pay and logistics', 'Your range, notice period and start date.'),
+        ],
+      },
+      {
+        question: 'How long is the call?',
+        header: 'Length',
+        multiSelect: false,
+        options: [
+          option('15 minutes', 'A quick check on fit and pay.'),
+          option('30 minutes', 'The usual recruiter screen.'),
+          option('45 minutes or more', 'Room for a technical question or two.'),
+        ],
+      },
+    ],
+  };
+}
+
+/** Interview prep's round, with ?run=asks: which round the interview is. */
+const PREP_ROUND: QuestionRound = {
+  id: 'toolu_sample_round',
+  questions: [
+    {
+      question: 'Which round is the interview?',
+      header: 'Round',
+      multiSelect: false,
+      options: [
+        {
+          label: 'Panel with the platform team',
+          description: 'Thursday at 2:00 PM, with four people.',
+          preview: null,
+        },
+        {
+          label: 'Hiring manager, one on one',
+          description: 'Booked for next week.',
+          preview: null,
+        },
+      ],
+    },
+  ],
+};
+
+/** Each question answered, with what the user picked and wrote, as Claude Code notes them. */
+const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
+  round.questions.flatMap(({ question }, at): [string, string][] => {
+    const answer = reply[at];
+    if (!answer || !isAnswered(answer)) return [];
+    return [[question, [...answer.picks, answer.other.trim()].filter(Boolean).join(', ')]];
+  });
+
 /**
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
  * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?plan picks the
@@ -121,8 +210,9 @@ function sampleRun(dark: boolean) {
  * or loading. ?profile picks how far the user's profile has come: new, started or done.
  * ?profiles picks how many profiles there are: two, three with an added one open (added), or two
  * after one stopped short of opening (stopped). Starting Claude plays a short made-up run, so
- * every state of the panel can be seen, and status changes stick until the page reloads. With
- * ?run=asks, interview prep stops to ask a question, as the README's screenshots show it.
+ * every state of the panel can be seen, and status changes stick until the page reloads. Claude's
+ * questions open in their dialog. With ?run=asks, interview prep stops to ask a question, as the
+ * README's screenshots show it, and ?ask=more makes the first run's round three questions.
  */
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
@@ -146,6 +236,18 @@ export function sampleApi(): FactwrightApi {
   let afterTrust: () => void = () => {};
   const trustListeners = new Set<() => void>();
   let run = sampleRun(false);
+  // The round of Claude's questions waiting in its dialog, and what answering it plays.
+  const questionListeners = new Set<(round: QuestionRound | null) => void>();
+  let asking: { round: QuestionRound; after: 'opening' | 'round' } | null = null;
+  const tellQuestion = (round: QuestionRound | null) => {
+    for (const listener of questionListeners) listener(round);
+  };
+  const askRound = (round: QuestionRound, after: 'opening' | 'round') => {
+    asking = { round, after };
+    signal('needs-answer');
+    tellQuestion(round);
+  };
+  const more = query.get('ask') === 'more';
   // ?filed has the made-up run file facts from the user's answers as it finishes, once.
   const facts = sampleFacts(query.get('profile'));
   const filedListeners = new Set<(filed: FiledFacts) => void>();
@@ -166,10 +268,8 @@ export function sampleApi(): FactwrightApi {
     print(run.task(task));
     if (asks && task.skill === 'interview-prep') {
       setTimeout(() => {
-        print(run.round);
-        waitingForAnswer = true;
-        afterAnswer = 'round';
-        signal('needs-answer');
+        print(run.roundIntro);
+        askRound(PREP_ROUND, 'round');
       }, 1200);
       return;
     }
@@ -202,10 +302,8 @@ export function sampleApi(): FactwrightApi {
           print(run.opening);
         }, 300);
         setTimeout(() => {
-          print(run.question);
-          waitingForAnswer = true;
-          afterAnswer = 'opening';
-          signal('needs-answer');
+          print(run.intro);
+          askRound(openingRound(more), 'opening');
         }, 1800);
       };
       if (trusted) {
@@ -224,7 +322,13 @@ export function sampleApi(): FactwrightApi {
       playTask(task);
       return { ok: true };
     },
-    stopClaude: () => signal('stopped'),
+    stopClaude: () => {
+      if (asking) {
+        asking = null;
+        tellQuestion(null);
+      }
+      signal('stopped');
+    },
     writeToClaude: (data) => {
       if (waitingForTrust && data.includes('\r')) {
         waitingForTrust = false;
@@ -234,7 +338,14 @@ export function sampleApi(): FactwrightApi {
       }
       if (!waitingForAnswer || !data.includes('\r')) return;
       waitingForAnswer = false;
-      print(afterAnswer === 'round' ? run.roundAnswered : run.answered);
+      print(
+        afterAnswer === 'round'
+          ? run.answered(
+              [['Which round is the interview?', 'Panel with the platform team']],
+              NEXT.round,
+            )
+          : run.answered([['Which role is the call about?', 'Tidewater Analytics']], NEXT.opening),
+      );
       signal('working');
       setTimeout(() => {
         print(run.finished);
@@ -253,6 +364,33 @@ export function sampleApi(): FactwrightApi {
     onClaudeTrust: (listener) => {
       trustListeners.add(listener);
       return () => trustListeners.delete(listener);
+    },
+    // Claude's questions, in their dialog: answered there, or sent to the terminal.
+    claudeQuestion: async () => asking?.round ?? null,
+    onClaudeQuestion: (listener) => {
+      questionListeners.add(listener);
+      return () => questionListeners.delete(listener);
+    },
+    answerClaude: async (id, reply) => {
+      const waiting = asking;
+      if (!waiting || waiting.round.id !== id) {
+        return { ok: false, message: 'Claude isn’t waiting for these answers anymore.' };
+      }
+      asking = null;
+      tellQuestion(null);
+      if (reply === 'terminal') {
+        print(waiting.after === 'round' ? run.round : run.question);
+        waitingForAnswer = true;
+        afterAnswer = waiting.after;
+        return { ok: true };
+      }
+      print(run.answered(noted(waiting.round, reply), NEXT[waiting.after]));
+      signal('working');
+      setTimeout(() => {
+        print(run.finished);
+        done();
+      }, 1600);
+      return { ok: true };
     },
     // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray,
     // and ?revised a revision sent before it was last built, for the before-and-after.

@@ -34,6 +34,8 @@ const SHOTS: Shot[] = [
     show: async (page) => {
       await page.getByRole('button', { name: /^Northwind Labs/ }).click();
       await page.getByRole('button', { name: /^Interview prep/ }).click();
+      // Claude's question opens in its dialog. The picture shows it in the terminal, behind it.
+      await page.getByRole('button', { name: 'Answer in the terminal' }).click();
       await page.getByText('Needs your answer').first().waitFor();
     },
   },

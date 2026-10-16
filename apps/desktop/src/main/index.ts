@@ -14,6 +14,7 @@ import { autoUpdater } from 'electron-updater';
 import { TemplatePreviews } from './about/previews.ts';
 import { AboutStore } from './about/store.ts';
 import { useClaudeFolder } from './claude/launch.ts';
+import { QuestionDesk } from './claude/rounds.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
@@ -301,6 +302,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       500,
     );
+    // Claude's questions, which the user answers in a dialog in the window rather than the terminal.
+    const questions = new QuestionDesk((round) => window.send('claude:question', round));
     const claude = new ClaudeSession({
       dataDir,
       pluginDir: pluginDir(),
@@ -316,6 +319,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         notifyIfAway(window, 'needs-answer');
       },
       onFiled: (filed) => window.send('facts:filed', filed),
+      ask: (round, signal) => questions.ask(round, signal),
     });
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.
@@ -376,6 +380,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       templates,
       previews,
       claude,
+      questions,
       setup,
       jobs,
       revisions: new Revisions({ workspace, jobs: () => jobs.list().jobs }),

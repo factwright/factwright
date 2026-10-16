@@ -45,6 +45,14 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
 
+**Claude's questions:** when Claude asks you something with Claude Code's question tool, Factwright asks it in a dialog of its own rather than the terminal ([`src/renderer/ClaudeQuestions.tsx`](src/renderer/ClaudeQuestions.tsx)), the way Claude Code's hooks allow:
+- **One screen:** the whole round at once, each question with its label, its options and what they mean, a box for your own words where no option fits, several picks where Claude allows them, and a note for Claude about any answer. A question you leave unanswered is skipped.
+- **Straight to Claude Code:** the question hook waits on the app ([`src/main/claude/rounds.ts`](src/main/claude/rounds.ts)), and Send answers it with your answers, so Claude Code runs its question tool with them and asks nothing in the terminal. The terminal notes your answers, as it always has.
+- **Not now** puts the round aside, still waiting, with Answer in the panel to come back to it. **Answer in the terminal** has Claude Code ask it there instead, as before.
+- **Waits as long as you're away:** the hook waits up to a day, then Claude Code asks in the terminal. Interrupting the run, or its ending, closes the dialog.
+- **The terminal asks the rest:** a round from a subagent, one that comes with answers already, and one the dialog can't show as Claude Code would, such as a question asking for a number.
+- **The same record:** Factwright's tools still file facts only from what Claude Code reports once the round has run, never from anything Claude writes. Only the app's own window can answer a round, and only one that's waiting.
+
 **Pictures:** a picture pasted into the panel, such as a screenshot, is checked like any picture you share, saved in the workspace with the run's job (`screenshots/<job>/pasted-…`, or `screenshots/` without one), and pasted as where it is. Claude Code attaches a pasted picture's path as the picture itself. Screenshots added with the application's questions or a question for Claude are kept in the same folder, named for what they came with, and `job_details` lists each one.
 
 The first run asks a question of its own: Claude Code wants to know whether to trust the workspace, and says it will be able to "execute files". When the app sees that question on screen:

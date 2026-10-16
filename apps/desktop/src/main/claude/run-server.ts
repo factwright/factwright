@@ -2,10 +2,12 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { FiledFacts } from '../../shared/facts.ts';
+import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
+import { type HeardRound, hookReply, roundFrom } from './rounds.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -23,9 +25,21 @@ export type HookListener = (event: unknown) => void;
 /** Hears which MCP methods a run calls, such as "tools/list", before they're answered. */
 export type ToolsListener = (method: string) => void;
 
+/**
+ * Asks the user a round of Claude's questions in the app: their answers, or null to have Claude
+ * Code ask in the terminal. The signal aborts once Claude Code stops waiting.
+ */
+export type QuestionAsker = (
+  round: QuestionRound,
+  signal: AbortSignal,
+) => Promise<RoundReply | null>;
+
 interface RunListeners {
   hooks: HookListener;
   tools: ToolsListener | undefined;
+  ask: QuestionAsker | undefined;
+  /** The rounds of questions held for the run, which it lets go once it stops listening. */
+  held: Set<AbortController>;
   /** What the run is for, what it's saved, and what the user answered, which its tool calls carry. */
   call: ToolCall;
 }
@@ -40,6 +54,8 @@ export interface ListenOptions {
   onFiled?: (filed: FiledFacts) => void;
   /** The revision the run was started for, which only its own tool calls can read. */
   revision?: BoundRevision;
+  /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
+  ask?: QuestionAsker;
 }
 
 /**
@@ -76,12 +92,17 @@ export class RunServer {
   /**
    * Takes a run's hooks, and maybe its tool calls, by its token, until the returned function is
    * called. Its tools know what it was started for, and the questions the user answered in it,
-   * which its hooks report.
+   * which its hooks report. A run that stops listening, as when it ends, lets go of the questions
+   * it was asking, so their dialog closes.
    */
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
-    const { tools, scope = 'hunt', onFiled, revision } = options;
-    this.listeners.set(token, { hooks, tools, call: newCall(scope, onFiled, revision) });
-    return () => this.listeners.delete(token);
+    const { tools, scope = 'hunt', onFiled, revision, ask } = options;
+    const held = new Set<AbortController>();
+    this.listeners.set(token, { hooks, tools, ask, held, call: newCall(scope, onFiled, revision) });
+    return () => {
+      this.listeners.delete(token);
+      for (const round of held) round.abort();
+    };
   }
 
   private handle(request: IncomingMessage, response: ServerResponse): void {
@@ -115,8 +136,10 @@ export class RunServer {
         } catch {
           // Nothing kept: a filing tool then finds no record, and saves nothing.
         }
+        const heard = listener.ask ? roundFrom(event) : null;
+        if (heard && listener.ask) void this.answerRound(heard, listener, response);
         // An empty answer lets Claude Code carry on as it would have.
-        response.writeHead(204).end();
+        else response.writeHead(204).end();
         listener.hooks(event);
         return;
       }
@@ -129,6 +152,40 @@ export class RunServer {
       }
       void this.answerTools(body, response, listener.call);
     });
+  }
+
+  /**
+   * Holds Claude Code's hook for a round of questions until the user answers it in the app's
+   * dialog, then answers the hook with their answers, so Claude Code asks nothing in the terminal.
+   * Without answers from the dialog, an empty answer has the terminal ask, as before. When Claude
+   * Code stops waiting first, as when the user interrupts the run, the hook's time runs out, or
+   * the run ends, the dialog lets the round go.
+   */
+  private async answerRound(
+    heard: HeardRound,
+    listener: RunListeners,
+    response: ServerResponse,
+  ): Promise<void> {
+    const stopped = new AbortController();
+    listener.held.add(stopped);
+    response.once('close', () => stopped.abort());
+    let reply: RoundReply | null = null;
+    try {
+      reply = (await listener.ask?.(heard.round, stopped.signal)) ?? null;
+    } catch {
+      // No answers: the terminal asks.
+    } finally {
+      listener.held.delete(stopped);
+    }
+    if (response.writableEnded || response.destroyed) return;
+    // A round let go, as when the run ends, takes no answers.
+    if (!reply || stopped.signal.aborted) {
+      response.writeHead(204).end();
+      return;
+    }
+    response
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify(hookReply(heard, reply)));
   }
 
   private async answerTools(body: string, response: ServerResponse, call: ToolCall): Promise<void> {

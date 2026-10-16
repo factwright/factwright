@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_TOKEN_VARIABLE, sessionSettings, TOOLS_SERVER, toolsConfig } from './settings.ts';
+import {
+  QUESTION_WAIT_SECONDS,
+  RUN_TOKEN_VARIABLE,
+  sessionSettings,
+  TOOLS_SERVER,
+  toolsConfig,
+} from './settings.ts';
 
 const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
 
@@ -238,19 +244,33 @@ describe('sessionSettings', () => {
   });
 
   it('sends every hook to the app, with the token read from the environment', () => {
-    for (const groups of Object.values(settings.hooks)) {
+    for (const [event, groups] of Object.entries(settings.hooks)) {
       for (const group of groups) {
+        const asks =
+          event === 'PreToolUse' && 'matcher' in group && group.matcher === 'AskUserQuestion';
         expect(group.hooks).toEqual([
           {
             type: 'http',
             url: 'http://127.0.0.1:4000/hook',
-            timeout: 5,
+            timeout: asks ? QUESTION_WAIT_SECONDS : 5,
             headers: { Authorization: `Bearer $${RUN_TOKEN_VARIABLE}` },
             allowedEnvVars: [RUN_TOKEN_VARIABLE],
           },
         ]);
       }
     }
+  });
+
+  it('waits a day for the user to answer Claude’s questions in the app, and no other hook waits', () => {
+    expect(QUESTION_WAIT_SECONDS).toBe(24 * 60 * 60);
+    const waits = Object.values(settings.hooks).flatMap((groups) =>
+      groups.flatMap((group) => group.hooks.filter((hook) => hook.timeout > 5)),
+    );
+    expect(waits).toHaveLength(1);
+    expect(settings.hooks.PreToolUse[0]).toMatchObject({
+      matcher: 'AskUserQuestion',
+      hooks: [{ timeout: QUESTION_WAIT_SECONDS }],
+    });
   });
 
   it('hears before a tool runs only about AskUserQuestion and the tools that file answers', () => {
