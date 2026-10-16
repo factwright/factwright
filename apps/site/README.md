@@ -12,7 +12,7 @@ It's built on the design system in [`@factwright/ui`](../../packages/ui): its co
 | `privacy.html`, `terms.html` | The privacy policy and the terms of service, at `/privacy` and `/terms`. Every page's footer links to both, and so does signing in to sync, in the app and the web view |
 | `404.html` | The page for an address that doesn't exist |
 | `src/main.ts` | The motion: the app drawing plays a run in Claude's panel, a claim gets confirmed, the score bars fill, and each resume line opens the fact behind it |
-| `src/stores.ts` | The extension's listing in each browser's store, which the build writes into its page's buttons. A store without one yet shows as coming soon, with no link |
+| `src/stores.ts` | The extension's listing in each browser's store, and whether the store has approved it yet, which the build writes into its page's buttons. A store that hasn't shows as coming soon, with no link. Until one has, the site's other mentions of the extension say it's coming soon too, from words in a `data-soon` span, which the build drops once a store is live |
 | `src/styles` | The site's layout and type, and the drawings of the app, in a few files that `index.css` imports in order |
 | `scripts/theme.ts` | The design system's theme as CSS, plus the colors Claude Code shows in Claude's panel |
 | `scripts/images.ts` | Draws the template previews, printed from the made-up resume the app's own template picker uses, and the cards link previews show, for the home page and the extension's page |

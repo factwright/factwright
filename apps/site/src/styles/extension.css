@@ -50,12 +50,20 @@
   margin-top: 32px;
 }
 
-/* A store whose listing isn't out yet: where its button goes, with no link. */
+/*
+ * A store that hasn't approved the extension yet: where its button goes, with no link. Its words
+ * are long, so they wrap on a narrow screen rather than run off it.
+ */
 .button-soon {
+  height: auto;
+  min-height: 50px;
+  padding-block: 10px;
   border: 1px dashed var(--fw-control-border);
   background: transparent;
   color: var(--fw-muted);
   font-weight: 550;
+  white-space: normal;
+  text-align: center;
   cursor: default;
 }
 

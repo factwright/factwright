@@ -93,8 +93,8 @@ function LinkPanel({ api }: { api: FactwrightApi }) {
 }
 
 /**
- * Sync once it's on: how it stands, the account's devices, adding one, saving jobs from the browser,
- * and turning it off here.
+ * Sync once it's on: how it stands, the account's devices, adding one, the browser extension's
+ * page, and turning it off here.
  */
 export function ManageSync({
   api,
@@ -185,13 +185,13 @@ export function ManageSync({
 
       <section className={styles.section} aria-labelledby="sync-extension">
         <h3 id="sync-extension" className={styles.heading}>
-          Save jobs from your browser
+          Saving jobs from your browser
         </h3>
         <p className={styles.hint}>
-          Save to Factwright, for Chrome and Firefox, saves the job you’re looking at to your job
-          hunt, with its posting, through sync.{' '}
+          Save to Factwright, an extension for Chrome and Firefox, saves the job you’re looking at
+          to your job hunt, with its posting, through sync.{' '}
           <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-            Get the extension
+            About the extension
           </a>
         </p>
       </section>

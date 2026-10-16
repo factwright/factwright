@@ -59,7 +59,11 @@
     </header>
 
     <main id="main" class="ext">
-      <!-- Each store's button is filled in by the build: a link once its listing is published, and "Coming soon" until then (src/stores.ts). -->
+      <!--
+        The build fills in each store's button: a link once that store has approved the extension,
+        and "Coming soon" until then. Words in a data-soon span show only until one has
+        (src/stores.ts).
+      -->
       <section class="ext-hero" aria-labelledby="ext-title">
         <div class="wrap ext-hero-inner">
           <div class="ext-copy">
@@ -238,7 +242,7 @@
           <div class="get-steps ext-steps reveal">
             <ol>
               <li><span><strong><a href="/download">Get Factwright</a></strong> for your Mac or Windows PC, and turn on sync from its sidebar.</span></li>
-              <li><span><strong>Add Save to Factwright</strong> to Chrome or Firefox. Its setup opens on its own.</span></li>
+              <li><span><strong>Add Save to Factwright</strong> to Chrome or Firefox<span data-soon>, once it’s in their stores</span>. Its setup opens on its own.</span></li>
               <li><span><strong>Sign in to sync,</strong> then approve linking it in Factwright on your computer, once both show the same emoji.</span></li>
             </ol>
             <p class="get-after">

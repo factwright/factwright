@@ -301,8 +301,8 @@ describe('SyncDialog', () => {
 
   it('points to the browser extension once sync is on, since it saves through sync', async () => {
     await openDialog(apiFor('on'));
-    const section = await screen.findByRole('region', { name: 'Save jobs from your browser' });
-    const link = within(section).getByRole('link', { name: 'Get the extension' });
+    const section = await screen.findByRole('region', { name: 'Saving jobs from your browser' });
+    const link = within(section).getByRole('link', { name: 'About the extension' });
     expect(link.getAttribute('href')).toBe('https://factwright.com/extension');
     // The window opens links in the browser, so it doesn't leave the app.
     expect(link.getAttribute('target')).toBe('_blank');

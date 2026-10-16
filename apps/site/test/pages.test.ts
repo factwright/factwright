@@ -4,7 +4,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
-import { fillStores, STORE_SITES, STORES, type Store, storeSlot } from '../src/stores.ts';
+import {
+  fillStores,
+  type Listing,
+  STORE_SITES,
+  STORES,
+  type Store,
+  storeSlot,
+} from '../src/stores.ts';
 
 /** The site's folder. Paths, since jsdom's URL isn't one Node's file reading accepts. */
 const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,7 +20,7 @@ const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
  * Opens one of the site's pages in this test's document, as the build makes it, without running
  * its script. The build fills in the extension's store buttons, which `stores` can stand in for.
  */
-function open(page: string, stores: Readonly<Record<Store, string | null>> = STORES): Document {
+function open(page: string, stores: Readonly<Record<Store, Listing>> = STORES): Document {
   const parsed = new DOMParser().parseFromString(
     fillStores(readFileSync(join(SITE, page), 'utf8'), stores),
     'text/html',
@@ -43,8 +50,10 @@ const EXTENSION_PAGE = '/extension';
 /** What the privacy policy says about the browser extension, which the extension's page links to. */
 const EXTENSION_PRIVACY = '/privacy#extension';
 
-/** The extension's listings in the stores, once they're published. */
-const LISTINGS = Object.values(STORES).filter((url) => url !== null);
+/** The extension's listings in the stores that have approved it, which its page links to. */
+const LISTINGS = Object.values(STORES)
+  .filter((listing) => listing.live)
+  .map((listing) => listing.url);
 
 /** Factwright's code on GitHub, which every page's footer links to, as can links into it. */
 const SOURCE = 'https://github.com/factwright/factwright';
@@ -353,8 +362,14 @@ describe('the download pages', () => {
 });
 
 describe('the extension page', () => {
-  const CHROME = 'https://chromewebstore.google.com/detail/abcdefghijklmnopabcdefghijklmnop';
-  const FIREFOX = 'https://addons.mozilla.org/firefox/addon/save-to-factwright/';
+  const CHROME = 'https://chromewebstore.google.com/detail/save/abcdefghijklmnopabcdefghijklmnop';
+  const FIREFOX = 'https://addons.mozilla.org/firefox/addon/save/';
+
+  /** Both stores' listings, each live or not. */
+  const stores = (chrome: boolean, firefox: boolean) => ({
+    chrome: { url: CHROME, live: chrome },
+    firefox: { url: FIREFOX, live: firefox },
+  });
 
   /** Each store's button, as it shows. */
   const buttons = (doc: Document, store: Store) => [
@@ -376,25 +391,27 @@ describe('the extension page', () => {
     expect(config).toMatch(/plugins: \[[^\]]*\bstoreButtons\(\)/);
   });
 
-  it('shows a store as coming soon, with no link, until its listing is published', () => {
-    const doc = open('extension.html', { chrome: null, firefox: null });
-    for (const [store, browser] of [
-      ['chrome', 'Chrome'],
-      ['firefox', 'Firefox'],
+  it('shows a store as coming soon, with no link, until that store approves it', () => {
+    const doc = open('extension.html', stores(false, false));
+    for (const [store, name] of [
+      ['chrome', 'the Chrome Web Store'],
+      ['firefox', 'Firefox Add-ons'],
     ] as const) {
       const shown = buttons(doc, store);
       expect(shown).toHaveLength(2);
       for (const button of shown) {
         expect(button.tagName).toBe('SPAN');
         expect(button.classList).toContain('button-soon');
-        expect(button.textContent?.trim()).toBe(`Coming soon to ${browser}`);
+        expect(button.textContent?.trim()).toBe(`Coming soon to ${name}`);
       }
     }
     expect(doc.querySelector('a[data-store]')).toBeNull();
+    // A listing still in review isn't on the page at all.
+    for (const url of [CHROME, FIREFOX]) expect(doc.documentElement.outerHTML).not.toContain(url);
   });
 
-  it('links to each store once its listing is published, the first as the main button', () => {
-    const both = open('extension.html', { chrome: CHROME, firefox: FIREFOX });
+  it('links to each store once it’s live, the first as the main button', () => {
+    const both = open('extension.html', stores(true, true));
     for (const [store, url, browser, kind] of [
       ['chrome', CHROME, 'Chrome', 'button-primary'],
       ['firefox', FIREFOX, 'Firefox', 'button-secondary'],
@@ -407,8 +424,8 @@ describe('the extension page', () => {
         expect(button.textContent?.trim()).toBe(`Get it for ${browser}`);
       }
     }
-    // With only Firefox's out, its button is the main one, and Chrome's is still coming.
-    const firefox = open('extension.html', { chrome: null, firefox: FIREFOX });
+    // With only Firefox's live, its button is the main one, and Chrome's is still coming.
+    const firefox = open('extension.html', stores(false, true));
     expect(buttons(firefox, 'firefox').map((button) => button.className)).toEqual([
       'button button-primary button-lg',
       'button button-primary button-lg',
@@ -419,13 +436,39 @@ describe('the extension page', () => {
   it('keeps a store’s address whole, whatever it holds', () => {
     // Quotes and ampersands are escaped, and "$&" is never read as a replacement pattern.
     const odd = 'https://chromewebstore.google.com/detail/x?a=1&b="2"&c=$&d=$\'';
-    const links = buttons(open('extension.html', { chrome: odd, firefox: null }), 'chrome');
+    const listings = { chrome: { url: odd, live: true }, firefox: { url: FIREFOX, live: false } };
+    const links = buttons(open('extension.html', listings), 'chrome');
     expect(links.map((link) => link.getAttribute('href'))).toEqual([odd, odd]);
   });
 
-  it('points each published store’s button at that store’s own site', () => {
-    for (const [store, url] of Object.entries(STORES) as [Store, string | null][]) {
-      if (url) expect(url.startsWith(STORE_SITES[store]), store).toBe(true);
+  it('keeps each store’s listing on that store’s own site', () => {
+    for (const [store, listing] of Object.entries(STORES) as [Store, Listing][]) {
+      expect(listing.url.startsWith(STORE_SITES[store]), store).toBe(true);
+    }
+  });
+
+  it('says it’s coming soon wherever the site mentions it, until a store has it', () => {
+    /** What each paragraph that mentions the extension says. */
+    const mentions = (doc: Document) =>
+      [...doc.querySelectorAll(`main a[href="${EXTENSION_PAGE}"], .ext-steps strong`)]
+        .map((part) => part.closest('p, li')?.textContent?.replace(/\s+/g, ' ') ?? '')
+        .filter((text) => text.includes('Save to Factwright') || text.includes('extension'));
+    for (const page of [
+      'index.html',
+      'download/mac.html',
+      'download/windows.html',
+      'extension.html',
+    ]) {
+      expect(readFileSync(join(SITE, page), 'utf8'), page).toContain('<span data-soon>');
+      // Each opening replaces the last, so each is read before the next.
+      const soon = open(page, stores(false, false));
+      expect(mentions(soon).length, page).toBeGreaterThan(0);
+      for (const text of mentions(soon)) expect(text, page).toMatch(/coming soon|once it’s in/);
+      // Either way, the words are plain text, with nothing left to mark them.
+      expect(soon.querySelector('[data-soon]'), page).toBeNull();
+      const live = open(page, stores(true, false));
+      for (const text of mentions(live)) expect(text, page).not.toMatch(/coming soon|once it’s in/);
+      expect(live.querySelector('[data-soon]'), page).toBeNull();
     }
   });
 
