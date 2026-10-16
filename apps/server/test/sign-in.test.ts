@@ -161,7 +161,7 @@ describe('signing the desktop app in', () => {
     expect(refused).toEqual([]);
   });
 
-  it('is only for the Factwright app', async () => {
+  it('is only for the Factwright app and its browser extension', async () => {
     const other = await post('/api/auth/device/code', { client_id: 'something-else' });
     expect(other.status).toBe(400);
   });
@@ -351,5 +351,53 @@ describe('device names', () => {
       'Chrome on Android',
     );
     expect(deviceName(null)).toBe('A browser');
+  });
+});
+
+const CHROME_ON_MAC =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+
+describe('signing the browser extension in', () => {
+  it('works like the app’s, under the extension’s own name, which the browser page sees too', async () => {
+    const extension = { 'user-agent': CHROME_ON_MAC };
+    const code = await post(
+      '/api/auth/device/code',
+      { client_id: 'factwright-extension' },
+      extension,
+    );
+    expect(code.status).toBe(200);
+    const sam = await server.signUp();
+    expect(await openCode(code.body.user_code, sam.token)).toMatchObject({
+      status: 'pending',
+      client_id: 'factwright-extension',
+    });
+    await post(
+      '/api/auth/device/approve',
+      { userCode: code.body.user_code },
+      { authorization: `Bearer ${sam.token}` },
+    );
+    const token = await post(
+      '/api/auth/device/token',
+      {
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: code.body.device_code,
+        client_id: 'factwright-extension',
+      },
+      extension,
+    );
+    expect(token.body.access_token).toEqual(expect.any(String));
+    const account = await server
+      .clientFor(String(token.body.access_token), CHROME_ON_MAC)
+      .account();
+    expect(account.devices.find((device) => device.current)?.name).toBe(
+      'Save to Factwright in Chrome on Mac',
+    );
+  });
+
+  it('keeps its name as it is, so its session stays named once it renews', () => {
+    expect(deviceName('Save to Factwright in Chrome on Mac')).toBe(
+      'Save to Factwright in Chrome on Mac',
+    );
+    expect(deviceName('Save to Factwright in Firefox')).toBe('Save to Factwright in Firefox');
   });
 });

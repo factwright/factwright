@@ -9,17 +9,16 @@ import {
   type CollectedJob,
   companyKey,
   type JobStatus,
+  jobIdFor,
   type KnownJob,
   type Note,
   questionKey,
   readStatus,
-  roleKey,
   SETTLED_STATUSES,
   type SentAnswer,
   STATUS_RANK,
   type StatusChange,
   type StoredRow,
-  slug,
   type TrackedRow,
   trackedCall,
   trackedChange,
@@ -517,7 +516,7 @@ export class Tracker {
       return { ok: false, message: 'Links start with https:// or http://.' };
     }
     const status = input.status ?? null;
-    const base = `${companyKey(company) || slug(company) || 'job'}--${roleKey(role) || 'general'}`;
+    const base = jobIdFor(company, role);
     const taken = this.db.prepare('SELECT 1 FROM jobs WHERE id = ?');
     let id = base;
     for (let n = 2; taken.get(id); n++) id = `${base}-${n}`;

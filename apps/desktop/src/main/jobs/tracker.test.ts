@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { CollectedJob } from '@factwright/core';
+import { type CollectedJob, newJobRows } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { trackerAsOf } from './testing.ts';
 import { type EditContext, Tracker } from './tracker.ts';
@@ -308,6 +308,37 @@ describe('addJob', () => {
     expect(tracker.addJob({ company: 'Acme', link: 'javascript:alert(1)' }, AT)).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe('a job another device adds through sync', () => {
+  const added = () =>
+    newJobRows({
+      id: 'northwind--staff-engineer',
+      company: 'Northwind',
+      role: 'Staff Engineer',
+      link: 'https://www.linkedin.com/jobs/view/4012345678/',
+      pay: '',
+      status: 'new',
+      today: TODAY,
+      now: NOW,
+      statusId: 'status-1',
+    });
+
+  it('is the row the app keeps, so taking it leaves nothing to send back', () => {
+    const rows = added();
+    tracker.applySyncRow('jobs', 'northwind--staff-engineer', rows.job);
+    tracker.applySyncRow('status_log', 'status-1', rows.status);
+    expect(tracker.syncRow('jobs', 'northwind--staff-engineer')).toEqual(rows.job);
+    expect(tracker.syncRow('status_log', 'status-1')).toEqual(rows.status);
+    expect(row('northwind--staff-engineer')).toMatchObject({ status: 'new', manual: true });
+    expect(history('northwind--staff-engineer')).toEqual([['new', TODAY]]);
+  });
+
+  it('has every column the tracker keeps, so a column added later can’t go missing', () => {
+    tracker.addJob({ company: 'Fernway', role: 'Project Manager' }, AT);
+    const kept = tracker.syncRow('jobs', 'fernway--project-manager') ?? {};
+    expect(Object.keys(added().job).sort()).toEqual(Object.keys(kept).sort());
   });
 });
 

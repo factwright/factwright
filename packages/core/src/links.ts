@@ -119,3 +119,22 @@ export function linksFrom(field: string | null | undefined, fallbackLabel?: stri
     return links;
   });
 }
+
+/** LinkedIn's sites: its own, its short links and its files. */
+const LINKEDIN = /(^|\.)(linkedin\.com|lnkd\.in|licdn\.com)$/;
+
+/**
+ * Whether a link is LinkedIn's. Factwright's own tools never read LinkedIn, whose terms forbid
+ * software reading it. The browser extension can save a LinkedIn job the user is looking at.
+ */
+export function isLinkedIn(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+      .replace(/^\[|\]$/g, '')
+      .toLowerCase()
+      .replace(/\.$/, '');
+    return LINKEDIN.test(host);
+  } catch {
+    return false;
+  }
+}

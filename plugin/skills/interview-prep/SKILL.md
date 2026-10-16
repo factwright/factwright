@@ -24,7 +24,7 @@ Before starting, read:
 - `about_you` for the logistics a recruiter asks about: their target pay (the job's kind's, when they want more than one kind of job), when they can start, work authorization and relocation.
 - If the job came from a job search, read its entry in `searches/*/jobs.json` (why, gaps, flags).
 - If `outreach/<YYYY-MM-DD>-<company>.md` exists, read it for context.
-- If nothing is saved and the link still works, save the posting first: read it with `read_posting` or `read_page`, then `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
+- If the folder has no posting but `job_details` names one saved from the user's browser, `save_posting` with the job's link copies it in. If nothing is saved and the link still works, save the posting first: read it with `read_posting` or `read_page`, then `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
 
 ## 2. Just talking?
 If the user only wants to talk the job through, stop here and chat from what you loaded. Don't write a file unless they ask for one.

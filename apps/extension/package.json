@@ -1,0 +1,28 @@
+{
+  "name": "@factwright/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Save to Factwright: save the job you're looking at, with its posting, to your job hunt.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "e2e": "node scripts/e2e.ts",
+    "icons": "node scripts/icons.ts",
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@factwright/core": "workspace:*",
+    "@factwright/server": "workspace:*",
+    "@factwright/sync": "workspace:*",
+    "@factwright/ui": "workspace:*",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "fflate": "catalog:",
+    "jsdom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

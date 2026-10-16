@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostOf, isJobLink, linksFrom, normalizeUrl } from './links.ts';
+import { hostOf, isJobLink, isLinkedIn, linksFrom, normalizeUrl } from './links.ts';
 
 /** How long something takes, in milliseconds. */
 function timed(work: () => unknown): number {
@@ -91,5 +91,30 @@ describe('links made to keep the app busy, or to pass for another site', () => {
       { url: 'https://acme.com/jobs/42', label: '· Jobs' },
       { url: 'https://acme.com', label: 'Site' },
     ]);
+  });
+});
+
+describe('isLinkedIn', () => {
+  it('knows LinkedIn’s sites, its short links and its files', () => {
+    for (const url of [
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      'https://linkedin.com/in/someone',
+      'https://ca.linkedin.com/jobs',
+      'https://lnkd.in/abc',
+      'https://media.licdn.com/x.png',
+      'https://WWW.LINKEDIN.COM./jobs',
+    ]) {
+      expect(isLinkedIn(url), url).toBe(true);
+    }
+  });
+
+  it('leaves every other site, and anything that isn’t a link', () => {
+    for (const url of [
+      'https://notlinkedin.com/',
+      'https://linkedin.com.evil.example/',
+      'not a link',
+    ]) {
+      expect(isLinkedIn(url), url).toBe(false);
+    }
   });
 });

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { askAnswer, askedFile, readJobExtras, shotsFolder } from './extras.ts';
+import {
+  askAnswer,
+  askedFile,
+  readJobExtras,
+  savedPostingFile,
+  savedPostingMarkdown,
+  shotsFolder,
+} from './extras.ts';
 import type { WorkspaceEntry, WorkspaceReader } from './records.ts';
 
 const MODIFIED = '2026-10-12T15:00:00.000Z';
@@ -102,6 +109,38 @@ describe('readJobExtras', () => {
   });
 
   it('reads nothing for a job with nothing added', () => {
-    expect(readJobExtras(memoryWorkspace({}), JOB)).toEqual({ asked: {}, shots: [] });
+    expect(readJobExtras(memoryWorkspace({}), JOB)).toEqual({ asked: {}, shots: [], posting: null });
+  });
+});
+
+describe('a posting saved from the browser', () => {
+  it('is read back with its link and date, without the lines on top', () => {
+    const markdown = savedPostingMarkdown({
+      url: 'https://www.linkedin.com/jobs/view/4012345678/',
+      site: 'linkedin.com',
+      savedOn: '2026-10-15',
+      text: 'About the job\n\nBuild payments at scale.',
+    });
+    expect(markdown).toContain('- **Source:** https://www.linkedin.com/jobs/view/4012345678/');
+    const { posting } = readJobExtras(memoryWorkspace({ [savedPostingFile(JOB)]: markdown }), JOB);
+    expect(posting).toEqual({
+      path: `saved/${JOB}/posting.md`,
+      source: 'https://www.linkedin.com/jobs/view/4012345678/',
+      saved: '2026-10-15',
+      text: 'About the job\n\nBuild payments at scale.',
+    });
+  });
+
+  it('is nothing when there isn’t one, or it’s empty', () => {
+    expect(readJobExtras(memoryWorkspace({}), JOB).posting).toBeNull();
+    const empty = savedPostingMarkdown({
+      url: 'https://a.example/1',
+      site: 'a.example',
+      savedOn: '2026-10-15',
+      text: ' ',
+    });
+    expect(
+      readJobExtras(memoryWorkspace({ [savedPostingFile(JOB)]: empty }), JOB).posting,
+    ).toBeNull();
   });
 });

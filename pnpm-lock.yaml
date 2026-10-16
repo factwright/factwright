@@ -351,6 +351,42 @@ importers:
         specifier: 'catalog:'
         version: 5.0.3(@types/node@24.19.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.1)(jiti@2.7.0))
 
+  apps/extension:
+    devDependencies:
+      '@factwright/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@factwright/server':
+        specifier: workspace:*
+        version: link:../server
+      '@factwright/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
+      '@factwright/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.63.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.1
+      fflate:
+        specifier: 'catalog:'
+        version: 0.8.3
+      jsdom:
+        specifier: 'catalog:'
+        version: 30.1.1(@noble/hashes@2.4.0)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 8.3.2(@types/node@24.19.1)(esbuild@0.28.1)(jiti@2.7.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.3(@types/node@24.19.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.1)(jiti@2.7.0))
+
   apps/server:
     dependencies:
       '@factwright/sync':

@@ -44,7 +44,7 @@ function panel(
     updateJob: vi.fn(async () => ({ ok: true as const })),
     undoStatusChange: vi.fn(async () => ({ ok: true as const })),
     jobDocs: vi.fn(async () => (job ? sampleDocs(job) : null)),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
     openFile: vi.fn(async () => ({ ok: true as const })),
     ...api,
   } as unknown as FactwrightApi;
@@ -86,7 +86,7 @@ describe('sorting a job before applying', () => {
     const api = {
       updateJob: vi.fn(async () => ({ ok: true as const })),
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
     } as unknown as FactwrightApi;
     const shown = (each: Job) => (
       <JobPanel
@@ -117,7 +117,7 @@ describe('sorting a job before applying', () => {
       updateJob: vi.fn(async () => ({ ok: true as const })),
       undoStatusChange: vi.fn(async () => ({ ok: true as const })),
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
     } as unknown as FactwrightApi;
     // A fit check is running on another job, so its button here can't take focus.
     const run: RunControls = { ...controls(), phase: 'working' };
@@ -361,6 +361,33 @@ describe('JobPanel', () => {
     expect(api.openFile).toHaveBeenCalledWith(job.files[0]?.path);
   });
 
+  it('shows a posting saved from the browser, until Claude saves one in the job’s folder', async () => {
+    const job = byCompany('Bluewave Staffing');
+    const saved = {
+      path: `saved/${job.id}/posting.md`,
+      source: 'https://www.linkedin.com/jobs/view/4012345678/',
+      saved: TODAY,
+      text: '## About the job\n\nPlace engineers with clients.',
+    };
+    panel(job, { jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved })) });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Open the posting saved from your browser' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Posting: Bluewave Staffing' });
+    expect(within(dialog).getByRole('heading', { name: 'About the job' })).toBeTruthy();
+    expect(screen.queryByText('No files yet.')).toBeNull();
+  });
+
+  it('shows the folder’s posting, not the browser’s, once Claude has saved it', async () => {
+    const job = byCompany('Northwind Labs');
+    const saved = { path: 'x', source: null, saved: null, text: 'From the browser.' };
+    panel(job, { jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved })) });
+    await screen.findByRole('button', { name: 'Open Posting' });
+    expect(
+      screen.queryByRole('button', { name: 'Open the posting saved from your browser' }),
+    ).toBeNull();
+  });
+
   it('closes with Escape or the close button', async () => {
     const { onClose } = panel(byCompany('Lumen Health'));
     await userEvent.click(screen.getByRole('button', { name: 'Close details' }));
@@ -423,7 +450,7 @@ describe('JobPanel', () => {
     const row = jobRows([job], TODAY)[0] ?? null;
     const api = {
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
     } as unknown as FactwrightApi;
     const shown = (expanded: boolean) => (
       <JobPanel

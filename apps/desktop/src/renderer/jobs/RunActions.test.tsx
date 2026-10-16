@@ -27,7 +27,7 @@ function apiStub() {
   return {
     platform: 'darwin',
     updateJob: vi.fn(async () => ({ ok: true }) as const),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [] })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
     readShot: vi.fn(async () => null),
     addShot: vi.fn(async (jobId: string) => ({
       ok: true as const,

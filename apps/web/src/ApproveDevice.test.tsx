@@ -101,3 +101,25 @@ describe('letting the desktop app sign in', () => {
     );
   });
 });
+
+describe('letting the browser extension sign in', () => {
+  it('names Save to Factwright, then lets it sign in', async () => {
+    fakeServer({
+      'GET /api/auth/device': () => ({ ...pending(), client_id: 'factwright-extension' }),
+      'POST /api/auth/device/approve': () => ({ success: true }),
+    });
+    const { container } = render(<ApproveDevice userCode="WDJBMJHT" />);
+    expect(
+      await screen.findByRole('heading', { name: 'Let Save to Factwright sign in?' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Check that Save to Factwright’s setup page shows this code:'),
+    ).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Save to Factwright is signed in.')).toBeTruthy();
+    expect(
+      screen.getByText('Go back to its setup page to link it with Factwright on your computer.'),
+    ).toBeTruthy();
+  });
+});

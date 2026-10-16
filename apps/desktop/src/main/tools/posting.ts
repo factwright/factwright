@@ -1,11 +1,15 @@
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  JOB_EXTRAS,
   localDate,
+  normalizeUrl,
   type Posting,
   postingRequests,
   postingSource,
   readPosting,
+  readSavedPosting,
+  type SavedPosting,
   WORKSPACE_PATHS,
 } from '@factwright/core';
 import { FetchRefused, fetchPublic } from './safe-fetch.ts';
@@ -170,10 +174,33 @@ export interface SavePostingDeps extends ReadDeps {
   workspace: string;
 }
 
+/** The posting the user saved from their browser for a link, if they saved one. */
+export async function savedFromBrowser(
+  workspace: string,
+  url: string,
+): Promise<SavedPosting | null> {
+  let folders: string[];
+  try {
+    folders = await readdir(join(workspace, JOB_EXTRAS.saved));
+  } catch {
+    return null;
+  }
+  const wanted = normalizeUrl(url);
+  for (const folder of folders.sort()) {
+    const path = `${JOB_EXTRAS.saved}/${folder}/posting.md`;
+    const text = await readFile(join(workspace, path), 'utf8').catch(() => null);
+    if (!text) continue;
+    const posting = readSavedPosting(path, text);
+    if (posting.text && posting.source && normalizeUrl(posting.source) === wanted) return posting;
+  }
+  return null;
+}
+
 /**
  * Saves a job posting word for word as posting.md in the job's folder, so it survives the link
- * going dead. It saves what read_page or read_posting read from the link in this run, or reads
- * a posting on Greenhouse, Lever, Ashby or Gem from its public feed. It never reaches another
+ * going dead. It saves the posting the user saved from their browser for the link, what read_page
+ * or read_posting read from the link in this run, or reads a posting on Greenhouse, Lever, Ashby
+ * or Gem from its public feed. It never reaches another
  * site, so it needs no OK from the user. A posting already saved there is kept, since it's the
  * one the user saw. Says, in words for Claude, what happened.
  */
@@ -198,7 +225,12 @@ export async function savePosting(
   const kept = `Kept the posting already saved in ${saved}.`;
   if (await exists(file)) return kept;
 
-  let posting = deps.cache.recall(parsed.href, (deps.now?.() ?? new Date()).getTime());
+  // The posting as the user saw it, saved from their browser, comes first, and needs no reading:
+  // a LinkedIn job's posting gets to its folder this way, as Factwright's tools never read LinkedIn.
+  const fromBrowser = await savedFromBrowser(deps.workspace, parsed.href);
+  let posting: Posting | null = fromBrowser
+    ? { text: fromBrowser.text, via: 'saved from the user’s browser' }
+    : deps.cache.recall(parsed.href, (deps.now?.() ?? new Date()).getTime());
   if (!posting) {
     if (!isFeedPosting(parsed.href)) {
       return `Nothing read from ${parsed.href} yet. Read it with read_page first, which asks the user, then save it.`;

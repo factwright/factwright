@@ -1,4 +1,4 @@
-import { type Feature, SyncClient } from '@factwright/sync';
+import { CLIENTS, type Feature, SyncClient } from '@factwright/sync';
 
 /** Who's signed in, as sign-in reports it. */
 export interface Session {
@@ -80,20 +80,28 @@ export async function signOut(): Promise<void> {
   await post('/api/auth/sign-out');
 }
 
-/** What the server says about a code the desktop app shows, once this account has opened it. */
+/**
+ * What the server says about a code the desktop app or the browser extension shows, once this
+ * account has opened it, and which of them asked.
+ */
 export type DeviceCode =
-  | { ok: true; status: 'pending' | 'approved' | 'denied' }
+  | { ok: true; status: 'pending' | 'approved' | 'denied'; asker: 'app' | 'extension' }
   | { ok: false; message: string };
 
 /** Opens a code the app shows, which ties it to this account until it's answered. */
 export async function openDeviceCode(userCode: string): Promise<DeviceCode> {
   const response = await fetch(`/api/auth/device?${new URLSearchParams({ user_code: userCode })}`);
-  const answer = (await response.json().catch(() => ({}))) as { status?: unknown; error?: unknown };
+  const answer = (await response.json().catch(() => ({}))) as {
+    status?: unknown;
+    error?: unknown;
+    client_id?: unknown;
+  };
   if (
     response.ok &&
     (answer.status === 'pending' || answer.status === 'approved' || answer.status === 'denied')
   ) {
-    return { ok: true, status: answer.status };
+    const asker = answer.client_id === CLIENTS.extension ? 'extension' : 'app';
+    return { ok: true, status: answer.status, asker };
   }
   return {
     ok: false,

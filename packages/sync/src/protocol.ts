@@ -61,6 +61,15 @@ export const isOneTimeKey = (value: unknown): value is string =>
 export const isSealedKey = (value: unknown): value is string =>
   typeof value === 'string' && SEALED.test(value);
 
+/**
+ * The apps that sign in with a device code, each under its own name, so the server knows which
+ * one a session is: the desktop app, or the browser extension, Save to Factwright.
+ */
+export const CLIENTS = {
+  desktop: 'factwright-desktop',
+  extension: 'factwright-extension',
+} as const;
+
 /** Where each part of the API lives on the server. */
 export const API = {
   keys: '/api/sync/keys',

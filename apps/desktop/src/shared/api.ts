@@ -7,6 +7,7 @@ import type {
   JobShot,
   JobStatus,
   PassReason,
+  SavedPosting,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
@@ -190,10 +191,14 @@ export type ShotFor = { kind: 'form' } | { kind: 'ask'; ask: string } | { kind: 
 /** A screenshot saved in the workspace, by its path there, or why it wasn't. */
 export type ShotResult = { ok: true; path: string } | { ok: false; message: string };
 
-/** Claude's answers to the user's questions about a job, by the question's ID, and its screenshots. */
+/**
+ * Claude's answers to the user's questions about a job, by the question's ID, its screenshots,
+ * and the posting the user saved from their browser.
+ */
 export interface JobExtras {
   asked: Record<string, string>;
   shots: JobShot[];
+  posting: SavedPosting | null;
 }
 
 /** A picture pasted into Claude's panel, saved where Claude can read it, by its full path. */

@@ -23,7 +23,7 @@ Before starting, read:
 - `past_answers`, with the job's id to leave it out: what the user actually sent on other applications, in their own words. Reuse the substance where a question comes up again ("why healthcare?"), never another company's specifics, and match how they sound. Claude's suggestions in other jobs' `answers.md` come second.
 - No folder yet? Make one, so the answers have a home:
   - `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
-  - `posting.md`: read the link with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name. For pasted text, save it as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
+  - `posting.md`: when `job_details` names a posting saved from the user's browser, `save_posting` with the job's link copies it in, with no reading, LinkedIn's included. Otherwise read the link with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name. For pasted text, save it as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
   - `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**` and `- **Links:**`, then `## Job description` with one line: "Saved word for word in posting.md."
 
 ## 2. Draft

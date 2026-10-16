@@ -36,8 +36,12 @@ export {
   JOB_EXTRAS,
   type JobShot,
   readJobExtras,
+  readSavedPosting,
+  type SavedPosting,
   SHOT_TYPES,
   type ShotKind,
+  savedPostingFile,
+  savedPostingMarkdown,
   shotsFolder,
 } from './extras.ts';
 export {
@@ -158,7 +162,7 @@ export {
   letterWordCount,
   readLetterText,
 } from './letter.ts';
-export { hostOf, isJobLink, type Link, linksFrom, normalizeUrl } from './links.ts';
+export { hostOf, isJobLink, isLinkedIn, type Link, linksFrom, normalizeUrl } from './links.ts';
 export {
   type ListItem,
   markdownItems,
@@ -166,6 +170,7 @@ export {
   markdownTable,
   type Section,
 } from './markdown.ts';
+export { JOB_LIMITS, jobIdFor, type NewJobRows, newJobRows } from './new-job.ts';
 export { type PayRange, parsePay } from './pay.ts';
 export {
   decodeEntities,
