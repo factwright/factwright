@@ -130,6 +130,32 @@ describe('Hacker News', () => {
     expect(quickSave(all)).toBeNull();
   });
 
+  it('takes the post from the page’s own selection, as a click reads it', () => {
+    document.documentElement.innerHTML =
+      fixture('hacker-news-thread.html').documentElement.innerHTML;
+    const select = (from: Node, to: Node) => {
+      const range = document.createRange();
+      range.setStart(from, 0);
+      range.setEnd(to, to.childNodes.length);
+      getSelection()?.removeAllRanges();
+      getSelection()?.addRange(range);
+    };
+    select(post(document, '41000002'), post(document, '41000002'));
+    expect(readJobPage(document, thread)).toMatchObject<Partial<PageJob>>({
+      url: 'https://news.ycombinator.com/item?id=41000002',
+      company: 'Fernway',
+      source: 'selection',
+    });
+    // Text across two posts is neither's.
+    select(post(document, '41000002'), post(document, '41000004'));
+    expect(readJobPage(document, thread)).toMatchObject<Partial<PageJob>>({
+      url: thread,
+      company: '',
+      source: 'selection',
+    });
+    getSelection()?.removeAllRanges();
+  });
+
   it('leaves a post’s title for the popup when its first line names no role', () => {
     const doc = fixture('hacker-news-thread.html');
     const job = readJobPage(doc, thread, '', '', post(doc, '41000005').firstChild);

@@ -41,8 +41,14 @@ export function readJobPage(
   selected: string = String(globalThis.getSelection?.() ?? ''),
   /** The address the page loaded at, before a single-page site moved it on to another job. */
   loadedAt: string = doc.defaultView?.performance?.getEntriesByType?.('navigation')[0]?.name ?? '',
-  /** Where the selected text starts, which on Hacker News is inside the post it's from. */
-  selectedFrom: Node | null = globalThis.getSelection?.()?.anchorNode ?? null,
+  /**
+   * What the selected text is all inside, which on Hacker News is the post it's from. Text that
+   * runs across two posts is inside neither.
+   */
+  // No braces here: the build takes this function out of its file by its braces.
+  selectedIn: Node | null = globalThis.getSelection?.()?.rangeCount
+    ? (globalThis.getSelection()?.getRangeAt(0).commonAncestorContainer ?? null)
+    : null,
 ): PageJob {
   /** The longest posting it keeps, in characters. A long one is around 20,000. */
   const MAX_POSTING = 100_000;
@@ -575,12 +581,11 @@ export function readJobPage(
   const linkedIn = /(^|\.)linkedin\.com$/.test(site);
   /**
    * On Hacker News, the post that's the job, as a "Who is hiring?" thread has them: the comment the
-   * selected text starts in, or the one a comment's own page shows.
+   * selected text is in, or the one a comment's own page shows.
    */
   const post = (() => {
     if (!/(^|\.)news\.ycombinator\.com$/.test(site)) return null;
-    const from =
-      selectedFrom?.nodeType === 1 ? (selectedFrom as Element) : selectedFrom?.parentElement;
+    const from = selectedIn?.nodeType === 1 ? (selectedIn as Element) : selectedIn?.parentElement;
     const rows = [from?.closest('tr.athing[id]'), doc.querySelector('.fatitem tr.athing[id]')];
     for (const row of rows) {
       const text = row?.querySelector('.commtext');
