@@ -44,11 +44,14 @@ export function fillStores(
   let page = html;
   for (const store of order) {
     const url = stores[store];
-    const icon = '<svg class="icon" aria-hidden="true"><use href="#i-puzzle" /></svg>';
+    // A puzzle piece, as both browsers mark extensions, drawn here so any page can show it.
+    const icon =
+      '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.75 7.5h5a2 2 0 1 1 4 0h3.5V11a2 2 0 1 1 0 4v3.5H4.75z" /></svg>';
     const button = url
       ? `<a class="button ${store === main ? 'button-primary' : 'button-secondary'} button-lg" href="${escapeAttribute(url)}" data-store="${store}">${icon}Get it for ${BROWSERS[store]}</a>`
       : `<span class="button button-lg button-soon" data-store="${store}">${icon}Coming soon to ${BROWSERS[store]}</span>`;
-    page = page.replaceAll(storeSlot(store), button);
+    // A function, so a "$" in an address is never read as a replacement pattern.
+    page = page.replaceAll(storeSlot(store), () => button);
   }
   return page;
 }

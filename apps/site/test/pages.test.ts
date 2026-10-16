@@ -186,6 +186,14 @@ describe.each([
     }
   });
 
+  it('draws only icons the page has', () => {
+    const doc = open(page);
+    for (const use of doc.querySelectorAll('use')) {
+      const href = use.getAttribute('href') ?? '';
+      expect(href.startsWith('#') && doc.getElementById(href.slice(1)), href).toBeTruthy();
+    }
+  });
+
   it('asks only for files the site publishes', () => {
     const doc = open(page);
     const paths = [
@@ -355,9 +363,17 @@ describe('the extension page', () => {
 
   it('has a place for each store’s button, under its headline and after its steps', () => {
     const source = readFileSync(join(SITE, 'extension.html'), 'utf8');
+    const doc = open('extension.html');
     for (const store of ['chrome', 'firefox'] as const) {
       expect(source.split(storeSlot(store)), store).toHaveLength(3);
+      expect(doc.querySelectorAll(`.ext-copy [data-store="${store}"]`), store).toHaveLength(1);
+      expect(doc.querySelectorAll(`.ext-setup [data-store="${store}"]`), store).toHaveLength(1);
     }
+  });
+
+  it('has the build fill its store buttons in', () => {
+    const config = readFileSync(join(SITE, 'vite.config.ts'), 'utf8');
+    expect(config).toMatch(/plugins: \[[^\]]*\bstoreButtons\(\)/);
   });
 
   it('shows a store as coming soon, with no link, until its listing is published', () => {
@@ -383,6 +399,7 @@ describe('the extension page', () => {
       ['chrome', CHROME, 'Chrome', 'button-primary'],
       ['firefox', FIREFOX, 'Firefox', 'button-secondary'],
     ] as const) {
+      expect(buttons(both, store), store).toHaveLength(2);
       for (const button of buttons(both, store)) {
         expect(button.tagName).toBe('A');
         expect(button.getAttribute('href')).toBe(url);
@@ -396,7 +413,14 @@ describe('the extension page', () => {
       'button button-primary button-lg',
       'button button-primary button-lg',
     ]);
-    expect(buttons(firefox, 'chrome').every((button) => button.tagName === 'SPAN')).toBe(true);
+    expect(buttons(firefox, 'chrome').map((button) => button.tagName)).toEqual(['SPAN', 'SPAN']);
+  });
+
+  it('keeps a store’s address whole, whatever it holds', () => {
+    // Quotes and ampersands are escaped, and "$&" is never read as a replacement pattern.
+    const odd = 'https://chromewebstore.google.com/detail/x?a=1&b="2"&c=$&d=$\'';
+    const links = buttons(open('extension.html', { chrome: odd, firefox: null }), 'chrome');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([odd, odd]);
   });
 
   it('points each published store’s button at that store’s own site', () => {
@@ -405,10 +429,13 @@ describe('the extension page', () => {
     }
   });
 
-  it('says it needs Factwright, with a link to download it', () => {
-    const note = open('extension.html').querySelector('.ext-copy .ext-note');
-    expect(note?.textContent).toContain('Needs Factwright on your computer, with sync on');
-    expect(note?.querySelector('a[href="/download"]')).not.toBeNull();
+  it('says it needs Factwright, with a link to what it is, and its download in the steps', () => {
+    const doc = open('extension.html');
+    const note = doc.querySelector('.ext-copy .ext-note');
+    expect(note?.textContent).toContain('Needs Factwright for Mac or Windows, with sync on');
+    // The download pages start the download at once, so only a link that says so goes there.
+    expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
+    expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
   });
 
   it('links to the part of the privacy policy about the extension', () => {
