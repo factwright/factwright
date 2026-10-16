@@ -12,6 +12,8 @@ import {
 const HISTORY_DAYS = 90;
 /** How long each daily backup is kept. */
 const BACKUP_DAYS = 14;
+/** The most keys R2 deletes in one call. */
+const R2_DELETE_KEYS = 1000;
 
 /** What the upkeep works on: one account's store and its files. */
 export interface Upkeep {
@@ -141,15 +143,38 @@ export async function restore(
 }
 
 /**
+ * Deletes from R2 the file contents in the trash, as many at a time as R2 takes. Each key stays
+ * in the trash until R2 has deleted it, so a cleanup that R2 fails finishes the next time. Each
+ * R2 key belongs to one upload, so this can't catch a file uploaded again.
+ */
+async function emptyTrash(sql: SqlStorage, files: R2Bucket): Promise<void> {
+  for (;;) {
+    // A key the store has again, as restoring a backup can bring back, stays in R2.
+    sql.exec('DELETE FROM trash WHERE key IN (SELECT key FROM files)');
+    const keys = sql
+      .exec<{ key: string }>('SELECT key FROM trash ORDER BY key LIMIT ?', R2_DELETE_KEYS)
+      .toArray()
+      .map((row) => row.key);
+    if (keys.length === 0) return;
+    await files.delete(keys);
+    sql.exec(
+      'DELETE FROM trash WHERE key IN (SELECT value FROM json_each(?))',
+      JSON.stringify(keys),
+    );
+  }
+}
+
+/**
  * The daily cleanup. Links and requests to link that ran out go. Earlier versions past the
  * history window go, but each record's current version stays. File contents no version points
  * to are marked, and removed a day later if that's still so: a device may be about to point to
- * them again.
+ * them again. The store forgets them at once, and they wait in the trash until R2 has deleted
+ * them too.
  */
 export async function cleanUp({ sql, storage, files, meta }: Upkeep, now: number) {
   const cutoff = new Date(now - HISTORY_DAYS * DAY_MS).toISOString();
   const used = 'id IN (SELECT file FROM versions WHERE file IS NOT NULL)';
-  const doomed = storage.transactionSync(() => {
+  storage.transactionSync(() => {
     sql.exec('DELETE FROM links WHERE expires <= ?', now);
     sql.exec('DELETE FROM requests WHERE expires <= ?', now);
     sql.exec('DELETE FROM requests_made WHERE at <= ?', now - DAY_MS);
@@ -169,6 +194,7 @@ export async function cleanUp({ sql, storage, files, meta }: Upkeep, now: number
         now - DAY_MS / 2,
       )
       .toArray();
+    for (const { key } of gone) sql.exec('INSERT OR IGNORE INTO trash (key) VALUES (?)', key);
     sql.exec(
       `UPDATE files SET doomed = ? WHERE doomed IS NULL AND at <= ? AND NOT ${used}`,
       now,
@@ -176,8 +202,6 @@ export async function cleanUp({ sql, storage, files, meta }: Upkeep, now: number
     );
     const freed = [...old, ...gone].reduce((total, row) => total + row.size, 0);
     meta.set('bytes', Math.max(0, meta.count('bytes') - freed));
-    return gone;
   });
-  // Each R2 key belongs to one upload, so removing these can't catch a file uploaded again.
-  if (doomed.length > 0) await files.delete(doomed.map((file) => file.key));
+  await emptyTrash(sql, files);
 }

@@ -1,6 +1,6 @@
 import type { PushChange } from '@factwright/sync';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { someId, startServer, type TestServer } from './server.ts';
+import { type Account, someId, startServer, type TestServer } from './server.ts';
 
 let server: TestServer;
 
@@ -110,6 +110,24 @@ describe('deleting an account for someone who asked', () => {
 });
 
 describe('the daily cleanup', () => {
+  /** An account's store, to run its cleanup as if at another time. */
+  const storeOf = async (account: Account) => {
+    const env = (await server.worker.getEnv()) as unknown as {
+      STORES: {
+        idFromName(name: string): unknown;
+        get(id: unknown): { cleanup(now?: number): Promise<void> };
+      };
+    };
+    return env.STORES.get(env.STORES.idFromName(account.id));
+  };
+
+  /**
+   * A key too long for R2, so a delete that names it fails, as one does when R2 is down. The
+   * harness hands back an error of its own for one the store throws, so the tests check what
+   * the failed cleanup left.
+   */
+  const refused = (account: Account) => `users/${account.id}/files/${'x'.repeat(1024)}`;
+
   it('drops old versions and unused files, but keeps every record’s current version', async () => {
     const sam = await server.signUp();
     const [record, oldFile, newFile] = [someId(), someId(), someId()];
@@ -121,13 +139,7 @@ describe('the daily cleanup', () => {
     const longAgo = new Date(Date.now() - 120 * 86_400_000).toISOString();
     await storage.exec('UPDATE versions SET at = ?', longAgo);
     await storage.exec('UPDATE files SET at = 0');
-    const env = (await server.worker.getEnv()) as unknown as {
-      STORES: {
-        idFromName(name: string): unknown;
-        get(id: unknown): { cleanup(now?: number): Promise<void> };
-      };
-    };
-    const store = env.STORES.get(env.STORES.idFromName(sam.id));
+    const store = await storeOf(sam);
 
     // The first run marks the file nothing points to now; a later run removes it.
     await store.cleanup();
@@ -145,16 +157,65 @@ describe('the daily cleanup', () => {
     await sam.client.putFile(file, new Uint8Array(10));
     const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
     await storage.exec('UPDATE files SET at = 0');
-    const env = (await server.worker.getEnv()) as unknown as {
-      STORES: {
-        idFromName(name: string): unknown;
-        get(id: unknown): { cleanup(now?: number): Promise<void> };
-      };
-    };
-    const store = env.STORES.get(env.STORES.idFromName(sam.id));
+    const store = await storeOf(sam);
     await store.cleanup();
     await sam.client.push([{ ...change(record, 0, 'v1'), file }]);
     await store.cleanup(Date.now() + 86_400_000);
     expect(await sam.client.getFile(file)).not.toBeNull();
+  });
+
+  it('finishes removing a file from R2 at the next cleanup, after R2 failed to', async () => {
+    const sam = await server.signUp();
+    const [record, kept, unused] = [someId(), someId(), someId()];
+    await sam.client.putFile(kept, new Uint8Array(20));
+    await sam.client.push([{ ...change(record, 0, 'v1'), file: kept }]);
+    await sam.client.putFile(unused, new Uint8Array(10));
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec('UPDATE files SET at = 0');
+    const inR2 = async () =>
+      (await server.env.FILES.list({ prefix: `users/${sam.id}/files/` })).objects.length;
+    const store = await storeOf(sam);
+    await store.cleanup();
+
+    // R2 fails the delete, after the store has forgotten the file and freed its space.
+    await storage.exec('INSERT INTO trash (key) VALUES (?)', refused(sam));
+    await expect(store.cleanup(Date.now() + 86_400_000)).rejects.toThrow();
+    expect(await sam.client.getFile(unused)).toBeNull();
+    expect((await sam.client.account()).usage).toMatchObject({ files: 1, bytes: 22 });
+    expect(await inR2()).toBe(2);
+    expect(await storage.exec('SELECT key FROM trash')).toHaveLength(2);
+
+    // Once R2 deletes again, the next cleanup finishes, and frees nothing twice.
+    await storage.exec('DELETE FROM trash WHERE key = ?', refused(sam));
+    await store.cleanup(Date.now() + 86_400_000);
+    expect(await inR2()).toBe(1);
+    expect(await storage.exec('SELECT key FROM trash')).toEqual([]);
+    expect((await sam.client.account()).usage).toMatchObject({ files: 1, bytes: 22 });
+    expect(await sam.client.getFile(kept)).not.toBeNull();
+  });
+
+  it('deletes from R2 a thousand keys at a time, the most R2 takes at once', async () => {
+    const sam = await server.signUp();
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec(
+      `WITH RECURSIVE n (i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000)
+       INSERT INTO trash (key) SELECT printf('users/%s/files/%04d', ?, i) FROM n`,
+      sam.id,
+    );
+    // Sorted after the thousand, it's alone in the second delete, so only that one fails.
+    await storage.exec('INSERT INTO trash (key) VALUES (?)', refused(sam));
+    await expect((await storeOf(sam)).cleanup()).rejects.toThrow();
+    expect(await storage.exec('SELECT key FROM trash')).toEqual([{ key: refused(sam) }]);
+  });
+
+  it('never deletes from R2 a file the store has again, as after a restore', async () => {
+    const sam = await server.signUp();
+    const file = someId();
+    await sam.client.putFile(file, new Uint8Array(10));
+    const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
+    await storage.exec('INSERT INTO trash (key) SELECT key FROM files');
+    await (await storeOf(sam)).cleanup();
+    expect(await sam.client.getFile(file)).not.toBeNull();
+    expect(await storage.exec('SELECT key FROM trash')).toEqual([]);
   });
 });

@@ -7,6 +7,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - factwright.com counts downloads, and the sync server counts how much sync is used, so Factwright's maker can see how it's doing. Each download is counted by computer, version and when, and nothing about who downloaded it is kept, not even an IP address. Once a day, the sync server counts its accounts and sign-ins, and keeps only those totals. `pnpm --filter @factwright/site stats` shows both, with a token that can read analytics and nothing else. The app itself still reports nothing, and the privacy policy says all this, from October 15.
 
+### Fixed
+- The sync server removes a file's locked contents once nothing needs them, even when its storage fails the first time it tries: the next cleanup finishes. Before, a failed try, or more than 1,000 files going at once, left them on the server until the account was deleted, past the 90 days the privacy policy keeps earlier versions.
+
 ## 0.4.0 - 2026-10-15
 
 ### Added
