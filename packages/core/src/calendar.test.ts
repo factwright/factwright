@@ -175,7 +175,8 @@ describe('callInvite', () => {
     const physical = ics.split('\r\n').filter(Boolean);
     expect(physical.length).toBeGreaterThan(linesOf(ics).length);
     for (const line of physical) expect(bytes(line)).toBeLessThanOrEqual(75);
-    expect(property(ics, 'DESCRIPTION')?.endsWith(`${notes.replace(/,/g, '\\,')}`)).toBe(true);
+    // The calendar format puts a backslash before each backslash, semicolon and comma.
+    expect(property(ics, 'DESCRIPTION')?.endsWith(notes.replace(/[\\;,]/g, '\\$&'))).toBe(true);
   });
 
   it('marks a canceled call as canceled', () => {
