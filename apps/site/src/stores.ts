@@ -11,7 +11,7 @@ export type Store = 'chrome' | 'firefox';
 export const STORES: Readonly<Record<Store, string | null>> = {
   chrome:
     'https://chromewebstore.google.com/detail/save-to-factwright/gjhjddlohoonikgdbfcfnljeffilblai',
-  firefox: null,
+  firefox: 'https://addons.mozilla.org/firefox/addon/save-to-factwright/',
 };
 
 /** Each store's own site, where its listing must be. */
