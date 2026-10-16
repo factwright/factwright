@@ -384,6 +384,44 @@ describe('reading a job page', () => {
     expect(readJobPage(hidden, now, '').source).toBe('main');
   });
 
+  it('never steps through a URL’s own query, which Firefox’s sandbox for extensions can’t', () => {
+    const proto = URLSearchParams.prototype as unknown as Record<string | symbol, unknown>;
+    const names = ['keys', 'values', 'entries', 'forEach', Symbol.iterator] as const;
+    const kept = names.map((name) => proto[name]);
+    const refuse = () => {
+      throw new TypeError('url.searchParams.keys() is not iterable');
+    };
+    for (const name of names) proto[name] = refuse;
+    try {
+      const job = readJobPage(
+        withData({ ...JOB_DATA, url: 'https://jobs.example.com/job?id=2' }),
+        'https://jobs.example.com/job?id=2&utm_source=x#apply',
+        '',
+      );
+      expect(job).toMatchObject<Partial<PageJob>>({
+        url: 'https://jobs.example.com/job?id=2',
+        source: 'structured',
+      });
+      expect(
+        readJobPage(page('<title>x</title>'), 'https://www.indeed.com/jobs?q=a&vjk=a1b2', '').url,
+      ).toBe('https://www.indeed.com/viewjob?jk=a1b2');
+    } finally {
+      names.forEach((name, at) => {
+        proto[name] = kept[at];
+      });
+    }
+  });
+
+  it('counts moving to another place on the page, as “#job-2”, as moving on', () => {
+    const doc = withData(
+      { ...JOB_DATA, title: 'Data Engineer' },
+      '<main><h2>Open roles</h2><h3>Data Engineer</h3><h3>Product Manager</h3></main>',
+    );
+    const careers = 'https://careers.acme.example/hash-careers';
+    expect(readJobPage(doc, `${careers}#job-2`, '', `${careers}#job-1`).source).toBe('main');
+    expect(readJobPage(doc, `${careers}#job-2`, '', careers).source).toBe('main');
+  });
+
   it('reads a description full of things that nearly are tags quickly', () => {
     const start = performance.now();
     const doc = withData({ ...JOB_DATA, description: '&lt;a'.repeat(100_000) });

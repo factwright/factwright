@@ -193,6 +193,38 @@ export function readJobPage(
   const oneLine = (text: unknown) =>
     typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
 
+  /** Text from an address, decoded, or as it is when it can't be. */
+  const decoded = (text: string) => {
+    try {
+      return decodeURIComponent(text.replace(/\+/g, ' '));
+    } catch {
+      return text;
+    }
+  };
+  /**
+   * An address's query, as its names and values, read from its text. Firefox's sandbox for an
+   * extension's code in a page can't step through a URL's own list of them.
+   */
+  const queryOf = (search: string): [string, string][] =>
+    search
+      .replace(/^\?/, '')
+      .split('&')
+      .filter(Boolean)
+      .map((pair) => {
+        const at = pair.indexOf('=');
+        return at < 0
+          ? [decoded(pair), '']
+          : [decoded(pair.slice(0, at)), decoded(pair.slice(at + 1))];
+      });
+  /** An address's query without its tracking, and the rest of it as it was. */
+  const untracked = (search: string) => {
+    const kept = search
+      .replace(/^\?/, '')
+      .split('&')
+      .filter((pair) => pair && !TRACKING_PARAM.test(decoded(pair.split('=', 1)[0] ?? '')));
+    return kept.length > 0 ? `?${kept.join('&')}` : '';
+  };
+
   /** Whether an element is hidden in a way its markup says. */
   const hidden = (element: Element) =>
     element.hasAttribute('hidden') ||
@@ -380,22 +412,21 @@ export function readJobPage(
       return href;
     }
     const host = url.hostname.replace(/^www\./, '');
+    const query = queryOf(url.search);
+    const param = (name: string) => query.find(([key]) => key === name)?.[1] ?? null;
     if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
       const id =
-        url.searchParams.get('currentJobId') ??
-        url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
+        param('currentJobId') ?? url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
       if (id && /^\d+$/.test(id)) return `https://www.linkedin.com/jobs/view/${id}/`;
     }
     if (
       /(^|\.)indeed\.com$/.test(host) &&
       /^\/(viewjob|jobs|q-|m\/|rc\/clk|cmp\/[^/]+\/jobs)/.test(url.pathname)
     ) {
-      const key = url.searchParams.get('vjk') ?? url.searchParams.get('jk');
+      const key = param('vjk') ?? param('jk');
       if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
     }
-    for (const key of [...url.searchParams.keys()]) {
-      if (TRACKING_PARAM.test(key)) url.searchParams.delete(key);
-    }
+    url.search = untracked(url.search);
     if (!/^#!?\//.test(url.hash)) url.hash = '';
     return url.toString();
   }
@@ -426,7 +457,7 @@ export function readJobPage(
       return {
         host: url.hostname.replace(/^www\./, '').toLowerCase(),
         segments: url.pathname.toLowerCase().split('/').filter(Boolean),
-        query: [...url.searchParams].filter(([key]) => !TRACKING_PARAM.test(key)),
+        query: queryOf(url.search).filter(([key]) => !TRACKING_PARAM.test(key)),
         route,
         /** A place on the page, such as "#job-2", which some pages of several jobs use. */
         anchor: route ? '' : url.hash.toLowerCase(),
@@ -457,7 +488,10 @@ export function readJobPage(
     return parts ? keyOf(parts) : '';
   };
   /** Whether the page has moved on from the address it loaded at, as a single-page site does. */
-  const moved = Boolean(loadedAt) && addressOf(loadedAt) !== addressOf(href);
+  const moved =
+    Boolean(loadedAt) &&
+    (addressOf(loadedAt) !== addressOf(href) ||
+      partsOf(loadedAt)?.anchor !== partsOf(href)?.anchor);
 
   const site = (() => {
     try {

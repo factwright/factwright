@@ -7,6 +7,15 @@ import type { JobToSave } from './save.ts';
 const TRACKING_PARAM =
   /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
 
+/** Text from an address, decoded, or as it is when it can't be. */
+const decoded = (text: string) => {
+  try {
+    return decodeURIComponent(text.replace(/\+/g, ' '));
+  } catch {
+    return text;
+  }
+};
+
 /** Indeed's pages that show one job, alone or beside a search. */
 const INDEED_JOB_PATH = /^\/(viewjob|jobs|q-|m\/|rc\/clk|cmp\/[^/]+\/jobs)/;
 
@@ -51,9 +60,12 @@ export function jobAddress(href: string): string {
     const key = url.searchParams.get('vjk') ?? url.searchParams.get('jk');
     if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
   }
-  for (const key of [...url.searchParams.keys()]) {
-    if (TRACKING_PARAM.test(key)) url.searchParams.delete(key);
-  }
+  // As readJobPage does, so the two agree to the character: the query's other parts as they were.
+  const kept = url.search
+    .replace(/^\?/, '')
+    .split('&')
+    .filter((pair) => pair && !TRACKING_PARAM.test(decoded(pair.split('=', 1)[0] ?? '')));
+  url.search = kept.length > 0 ? `?${kept.join('&')}` : '';
   if (!/^#!?\//.test(url.hash)) url.hash = '';
   return url.toString();
 }
