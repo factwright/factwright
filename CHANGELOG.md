@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.6.0 - 2026-10-16
+
 ### Added
 - Calls and interviews, step by step. Each job's calls have a section of their own, in the order they happen: what kind of call it is, when, for how long, by phone, video or in person with its link, number or address, who it's with and their roles, and what it's about. Everything can be changed later, a call can be canceled, and deleting one asks first. The next call booked is marked Next, an https meeting link opens with Join, and the form starts on the round after the last one, with the people you've met there to pick from.
 - Call prep. A button on each call coming up has your Claude write a prep sheet for that call, kept with it: what to land in the five minutes before, what the round is for and how it usually goes, who you're meeting from public pages (never LinkedIn's own), what happened in the earlier rounds, likely questions with answers from your fact bank, stories to have ready (on a panel, which story for whom), gaps and how to handle them, questions to ask each person, and pay and logistics. Each call keeps its own sheet, so the next round's prep builds on the last. Practice runs a mock interview for the call, playing the people on it.
