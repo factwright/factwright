@@ -1,7 +1,8 @@
 // Draws the site's pictures in a headless Chromium: a preview of each resume template, printed
-// from the made-up resume the app's own template picker uses, and the card that link previews
-// show. Run it again after changing a template or the card, on a Mac, so the card gets the
-// system font: `pnpm --filter @factwright/site images`.
+// from the made-up resume the app's own template picker uses, and the cards that link previews
+// show, for the home page and the browser extension's page. Run it again after changing a
+// template, a card or the extension page's drawing, on a Mac, so the cards get the system font:
+// `pnpm --filter @factwright/site images`.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -92,12 +93,10 @@ function siteStyles(): string {
   );
 }
 
-/** The card a link to the site shows in chats and feeds: the headline, and a confirmed fact. */
-function cardHtml(): string {
-  const siteCss = siteStyles();
-  return `<!doctype html><html data-theme="light"><head><meta charset="utf-8"><style>
-${siteThemeCss()}
-${siteCss}
+/** What every card shares: the site's look, the card's size and background, and the brand. */
+function cardStyles(): string {
+  return `${siteThemeCss()}
+${siteStyles()}
 html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
 .og {
   position: relative; display: grid; grid-template-columns: 1fr 448px; gap: 56px; align-items: center;
@@ -119,7 +118,17 @@ html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
   line-height: 1.02; letter-spacing: -0.045em;
 }
 .og h1 .soft { color: var(--fw-muted); }
-.og-sub { margin-top: 26px; color: var(--fw-muted); font-size: 27px; }
+.og-sub { margin-top: 26px; color: var(--fw-muted); font-size: 27px; }`;
+}
+
+/** Factwright's mark and name, as the cards show them. */
+const cardBrand = () =>
+  `<p class="brand"><svg class="logo" viewBox="${MARK_VIEWBOX}">${markSvg(MARK, 'currentColor')}</svg>Factwright</p>`;
+
+/** The card a link to the site shows in chats and feeds: the headline, and a confirmed fact. */
+function cardHtml(): string {
+  return `<!doctype html><html data-theme="light"><head><meta charset="utf-8"><style>
+${cardStyles()}
 .og-line {
   padding: 18px 22px; border: 1px solid color-mix(in srgb, var(--fw-accent) 35%, transparent);
   border-radius: 16px; background: var(--fw-accent-soft); font-size: 20px; line-height: 1.45;
@@ -135,7 +144,7 @@ html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
 </style></head><body>
 <div class="og">
   <div>
-    <p class="brand"><svg class="logo" viewBox="${MARK_VIEWBOX}">${markSvg(MARK, 'currentColor')}</svg>Factwright</p>
+    ${cardBrand()}
     <h1>Tailored to the job.<br><span class="soft">True to the facts.</span></h1>
     <p class="og-sub">Your job hunt, run by your own Claude.</p>
   </div>
@@ -154,17 +163,48 @@ html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
 </body></html>`;
 }
 
-async function socialCard(browser: Browser): Promise<void> {
+/** The extension page's drawing of its popup, and the icons it uses, as the page has them. */
+function extensionDrawing(): { sprite: string; drawing: string } {
+  const page = readFileSync(new URL('../extension.html', import.meta.url), 'utf8');
+  const sprite = /<svg class="sprite"[\s\S]*?<\/svg>/.exec(page)?.[0];
+  const drawing = /<div class="ext-browser"[\s\S]*?<\/div>(?=\s*<\/figure>)/.exec(page)?.[0];
+  if (!sprite || !drawing) throw new Error('extension.html has no drawing of the popup to draw.');
+  return { sprite, drawing };
+}
+
+/** The card a link to the extension's page shows: its name, and its popup on a job's page. */
+function extensionCardHtml(): string {
+  const { sprite, drawing } = extensionDrawing();
+  return `<!doctype html><html data-theme="light"><head><meta charset="utf-8"><style>
+${cardStyles()}
+.og-ext { grid-template-columns: 1fr 520px; gap: 48px; padding: 0 64px 0 72px; }
+.og-ext h1 { font-size: 76px; }
+</style></head><body>
+${sprite}
+<div class="og og-ext">
+  <div>
+    ${cardBrand()}
+    <h1>Save to Factwright</h1>
+    <p class="og-sub">Save the job you’re looking at, with its posting. For Chrome and Firefox.</p>
+  </div>
+  ${drawing}
+</div>
+</body></html>`;
+}
+
+/** Draws a card that link previews show, into the public folder. */
+async function drawCard(browser: Browser, html: string, file: string): Promise<void> {
   const page = await browser.newPage({ viewport: { width: 1200, height: 630 } });
-  await page.setContent(cardHtml());
-  writeFileSync(new URL('social.png', PUBLIC), await page.screenshot({ type: 'png' }));
-  console.log('social.png');
+  await page.setContent(html);
+  writeFileSync(new URL(file, PUBLIC), await page.screenshot({ type: 'png' }));
+  console.log(file);
 }
 
 const browser = await chromium.launch();
 try {
   await templatePreviews(browser);
-  await socialCard(browser);
+  await drawCard(browser, cardHtml(), 'social.png');
+  await drawCard(browser, extensionCardHtml(), 'social-extension.png');
 } finally {
   await browser.close();
 }

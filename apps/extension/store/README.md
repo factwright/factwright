@@ -66,5 +66,8 @@ Don't list other companies' names in it. The Chrome Web Store rejected the first
 
    Reviewers who want to try it need a Factwright account with sync on and the desktop app to link it, so a test account may be asked for: answer in the review's thread.
 
+## Once it's live
+Each store's listing address is in `STORES` in [apps/site/src/stores.ts](../../site/src/stores.ts), with `live: false` until the store approves it. Set the store's `live` to true, and once the site is deployed, factwright.com/extension links to its listing, where its button said coming soon. The first store to go live also takes "coming soon" off the site's other mentions of the extension.
+
 ## Each update
 Raise `version` in `apps/extension/package.json`, build, and upload the new zip to each store (with a new source zip for Firefox). Note what changed in the CHANGELOG.
