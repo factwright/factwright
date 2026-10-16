@@ -1,5 +1,5 @@
 import type { PlanLevels } from './levels.ts';
-import { MODEL_TASKS, type ModelTask } from './models.ts';
+import { levelsTask, MODEL_TASKS, type ModelTask } from './models.ts';
 import type { RunTask } from './runs.ts';
 
 /**
@@ -122,4 +122,7 @@ export const effortFor = (
   choices: EffortChoices,
   task?: RunTask | null,
   levels?: PlanLevels,
-): Effort => (task && choices.tasks[task.skill]) || effortWithout(choices, task?.skill, levels);
+): Effort => {
+  const levelled = task ? levelsTask(task) : undefined;
+  return (levelled && choices.tasks[levelled]) || effortWithout(choices, levelled, levels);
+};

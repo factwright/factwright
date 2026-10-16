@@ -5,6 +5,7 @@ import type { FactwrightApi } from '../shared/api.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
+import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
@@ -272,7 +273,9 @@ export function App({ api }: { api: FactwrightApi }) {
   const runLabel =
     task?.skill === 'ask'
       ? 'Your question'
-      : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+      : task?.skill === REVISE_SKILL
+        ? 'Resume revision'
+        : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'

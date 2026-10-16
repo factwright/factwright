@@ -66,6 +66,14 @@ describe('which model Claude runs on', () => {
     await saveModels(dataDir, choices);
     expect(await loadModels(dataDir)).toEqual(choices);
     expect(modelFor(choices, job('focused-resume'), pro)).toBe('sonnet');
+    // A revision is writing a resume, at a tailored resume's levels.
+    const revision = {
+      skill: 'revise-resume' as const,
+      jobId: 'acme--staff',
+      resume: 'Resume.pdf',
+      findings: ['term-go'],
+    };
+    expect(modelFor(choices, revision, pro)).toBe('sonnet');
     expect(modelFor(choices, { skill: 'job-search' }, pro)).toBe('haiku');
     expect(modelFor(choices, null, pro)).toBe('haiku');
     // Opus picked for everything stays Opus, even where the plan suggests Sonnet.

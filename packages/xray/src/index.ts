@@ -11,6 +11,16 @@ export { readDocx } from './docx.ts';
 export { type FactFile, type FactTerms, readFacts } from './facts.ts';
 export type { Fields, Job, School } from './fields.ts';
 export {
+  FINDING_ID,
+  FINDING_KINDS,
+  type Finding,
+  type FindingKind,
+  findingsOf,
+  type Outcome,
+  outcomesOf,
+  termIdOf,
+} from './findings.ts';
+export {
   type Backing,
   type BankRead,
   type KeyTerm,

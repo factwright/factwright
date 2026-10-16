@@ -94,15 +94,20 @@ function sampleRun(dark: boolean) {
     ],
     /** A Run button's command, typed into the run, and a short made-up result. */
     task: (task: RunTask) =>
-      'jobId' in task
+      'findings' in task
         ? [
-            `${color(main, `/factwright:${task.skill} job ${task.jobId}`)}\r\n\r\n`,
-            `${color('34', '✻')} ${color(secondary, 'Reading everything on file for the job…')}\r\n`,
+            `${color(main, `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${task.template ? ` template ${task.template}` : ''}`)}\r\n\r\n`,
+            `${color('34', '✻')} ${color(secondary, 'Reading what you picked in the ATS X-ray…')}\r\n`,
           ]
-        : [
-            `${color(main, `/factwright:${task.skill}`)}\r\n\r\n`,
-            `${color('34', '✻')} ${color(secondary, 'Reading the newest “Who is hiring?” thread…')}\r\n`,
-          ],
+        : 'jobId' in task
+          ? [
+              `${color(main, `/factwright:${task.skill} job ${task.jobId}`)}\r\n\r\n`,
+              `${color('34', '✻')} ${color(secondary, 'Reading everything on file for the job…')}\r\n`,
+            ]
+          : [
+              `${color(main, `/factwright:${task.skill}`)}\r\n\r\n`,
+              `${color('34', '✻')} ${color(secondary, 'Reading the newest “Who is hiring?” thread…')}\r\n`,
+            ],
     taskDone: (task: RunTask) => [
       `\r\n${color(main, `⏺ Done. ${'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under New.'}`)}\r\n\r\n${color(secondary, '❯')} `,
     ],
@@ -248,8 +253,9 @@ export function sampleApi(): FactwrightApi {
       trustListeners.add(listener);
       return () => trustListeners.delete(listener);
     },
-    // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray.
-    ...sampleTracker(query.get('jobs'), query.get('resume')),
+    // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray,
+    // and ?revised a revision sent before it was last built, for the before-and-after.
+    ...sampleTracker(query.get('jobs'), query.get('resume'), query.has('revised')),
     ...sampleSync(query.get('sync'), query.get('approve')),
     ...sampleProfile(query.get('profile')),
     ...facts.api,

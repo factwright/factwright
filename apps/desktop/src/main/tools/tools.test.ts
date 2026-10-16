@@ -94,6 +94,28 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+it('gives revision_findings only to the run started for the revision', async () => {
+  const findings = tool('revision_findings');
+  expect(await findings.run({}, newCall('hunt'))).toMatch(
+    /^This run wasn’t started with Send for revision/,
+  );
+  const call = newCall('revise', undefined, {
+    jobId: 'acme-robotics--staff-engineer',
+    resume: 'AlexRiveraResume10072026_Acme.pdf',
+    findings: [
+      { id: 'term-9f8e7d6c', kind: 'content', title: 'Add “Go”', about: '“Go” is missing.' },
+    ],
+    before: 'Reads cleanly · 4 of 5 key terms',
+    at: '2026-10-15T14:30:12.000Z',
+    folder: FOLDER,
+    previous: `applications/${FOLDER}/previous/2026-10-15-093012`,
+    files: [],
+  });
+  const text = await findings.run({}, call);
+  expect(text).toContain(`# Revising AlexRiveraResume10072026_Acme.pdf in applications/${FOLDER}/`);
+  expect(text).toContain('- `term-9f8e7d6c` “Go” is missing.');
+});
+
 it('marks the tools that stay on this computer, which Claude may call without asking', () => {
   const local = tools.filter(({ annotations }) => annotations?.openWorldHint === false);
   expect(local.map((each) => each.name).sort()).toEqual(

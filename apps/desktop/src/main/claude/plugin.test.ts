@@ -56,6 +56,7 @@ describe('the plugin’s skills', () => {
       'interview-prep',
       'job-search',
       'make-template',
+      'revise-resume',
       'salary-check',
       'unmask-job',
       'who-to-message',
@@ -112,6 +113,7 @@ describe('the plugin’s skills', () => {
   it('ask about what a job wants while writing for it, and save the answers under their task', () => {
     const writing: Readonly<Record<string, FactTask>> = {
       'focused-resume': 'resume',
+      'revise-resume': 'resume',
       'cover-letter': 'cover-letter',
       'answer-questions': 'answers',
       'interview-prep': 'interview-prep',
@@ -120,6 +122,16 @@ describe('the plugin’s skills', () => {
       const text = skills.find((skill) => skill.folder === folder)?.text ?? '';
       expect(text, folder).toContain(`task: "${task}"`);
       for (const tool of ['save_fact', 'save_gap']) expect(text, folder).toContain(`\`${tool}\``);
+    }
+  });
+
+  it('never tell Claude to save a fact in a file save_fact turns away', () => {
+    for (const { folder, text } of skills) {
+      for (const line of text.split('\n').filter((each) => each.includes('`save_fact`'))) {
+        for (const file of ['facts/skills.md', 'facts/gaps.md', 'facts/profile.md']) {
+          expect(line, folder).not.toContain(file);
+        }
+      }
     }
   });
 
