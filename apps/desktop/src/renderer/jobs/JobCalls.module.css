@@ -150,6 +150,27 @@
   font-size: var(--fw-text-sm);
 }
 
+/* That a reminder comes before the next call, with the switch that turns reminders off. */
+.reminder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+/* The words wrap, so the switch stays beside them. */
+.reminderText {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.reminder > svg,
+.reminder > button {
+  flex: none;
+}
+
 .outcome {
   display: flex;
   flex-wrap: wrap;
@@ -206,6 +227,40 @@
 
 .item > .form {
   margin-top: 0;
+}
+
+/* An invite dragged over the form to add a call, which fills it in once it's dropped. */
+.over {
+  border-style: dashed;
+  background: var(--fw-accent-soft);
+}
+
+/* Filling the form in from an invite: the button, and the hint that dropping one works too. */
+.invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 8px;
+}
+
+.inviteHint {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.picker {
+  display: none;
+}
+
+/* What an invite filled in, to check before adding the call. */
+.invited {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
 }
 
 .formTitle {

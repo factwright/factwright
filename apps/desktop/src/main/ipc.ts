@@ -48,6 +48,7 @@ import {
 } from './jobs/input.ts';
 import type { Revisions } from './jobs/revisions.ts';
 import type { JobsService } from './jobs/service.ts';
+import type { JobOpener } from './open-job.ts';
 import {
   JOB_ID,
   MAX_PREVIEW_BYTES,
@@ -60,6 +61,7 @@ import {
   saveableFileName,
 } from './policy.ts';
 import type { Profiles } from './profiles.ts';
+import type { CallReminders } from './reminders.ts';
 import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
 import type { UpdateWatcher } from './updates.ts';
@@ -118,6 +120,10 @@ export interface IpcDeps {
   updates: UpdateWatcher | null;
   /** The profiles on this computer: each person's own job hunt, one open at a time. */
   profiles: Profiles;
+  /** Reminders before calls, which the user can turn off. */
+  reminders: CallReminders;
+  /** Opens a job in the window, such as from a reminder's click. */
+  opener: JobOpener;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -153,6 +159,8 @@ export function registerIpc({
   dataDir,
   updates,
   profiles,
+  reminders,
+  opener,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -435,6 +443,18 @@ export function registerIpc({
       return { ok: false, message: 'That Word file is too big to read here. Open it instead.' };
     }
     return { ok: true, data: new Uint8Array(await readFile(file)) };
+  });
+
+  // Reminders an hour before each call, on this computer, until the user turns them off.
+  answer('reminders:get', () => reminders.isOn());
+  answer('reminders:set', (on) => {
+    if (typeof on !== 'boolean')
+      throw new Error('Refused a change to reminders that isn’t on or off.');
+    return reminders.turn(on);
+  });
+  // The window's page listens for jobs to open, and gets one waiting, if any.
+  ipcMain.on('jobs:listening', (event) => {
+    if (fromApp(event)) opener.listen(event.sender);
   });
 
   answer('clipboard:write', (text): EditResult => {

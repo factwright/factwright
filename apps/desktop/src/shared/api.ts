@@ -277,6 +277,15 @@ export interface FactwrightApi {
   deleteNote(noteId: string): Promise<EditResult>;
   /** Listens for any change to the jobs. Returns a function that stops listening. */
   onJobsChanged(listener: (list: JobList) => void): () => void;
+  /**
+   * Listens for the app asking the window to open a job, such as when the user clicks a call's
+   * reminder. Returns a function that stops listening.
+   */
+  onOpenJob(listener: (jobId: string) => void): () => void;
+  /** Whether Factwright reminds the user of each call an hour before it, on this computer. */
+  callReminders(): Promise<boolean>;
+  /** Turns reminders before calls on or off, on this computer. Answers with where they stand. */
+  setCallReminders(on: boolean): Promise<boolean>;
   /** Claude's answers to the user's questions about a job, and its screenshots. */
   jobExtras(jobId: string): Promise<JobExtras | null>;
   /**
