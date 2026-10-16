@@ -7,6 +7,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - factwright.com counts downloads, and the sync server counts how much sync is used, so Factwright's maker can see how it's doing. Each download is counted by computer, version and when, and nothing about who downloaded it is kept, not even an IP address. Once a day, the sync server counts its accounts and sign-ins, and keeps only those totals. `pnpm --filter @factwright/site stats` shows both, with a token that can read analytics and nothing else. The app itself still reports nothing, and the privacy policy says all this, from October 15.
 
+### Fixed
+- The sync server's daily backup no longer stops partway when another part of its daily job fails, such as clearing out sign-ins that ended. Before, such a failure could end the job with most accounts not yet backed up that day. A backup that fails for any account now marks the run as failed too, and each failure is written down as it happens.
+
 ## 0.4.0 - 2026-10-15
 
 ### Added

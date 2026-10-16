@@ -2,6 +2,7 @@ import { type Feature, utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
+import { runAll } from './daily-job.ts';
 import type { Env } from './env.ts';
 import { DELETED } from './store.ts';
 import { countSyncDaily } from './sync-totals.ts';
@@ -123,18 +124,28 @@ async function deleteForOperator(request: Request, env: Env): Promise<Response> 
   return new Response(null, { status: 204 });
 }
 
-/** Backs up every account's store, one at a time, as the day's snapshot. */
+/**
+ * Backs up every account's store, one at a time, as the day's snapshot. One that fails doesn't
+ * stop the rest. Once they're all done, the backup fails if any did, so the run is marked as
+ * failed. An account deleted partway has no store left to back up, so it isn't a failure.
+ */
 async function backUpAll(env: Env, when: Date): Promise<void> {
   const day = when.toISOString().slice(0, 10);
   const { results } = await env.DB.prepare('SELECT id FROM "user" ORDER BY id').all<{
     id: string;
   }>();
+  let failed = 0;
   for (const { id } of results) {
     try {
       await env.STORES.get(env.STORES.idFromName(id)).backup(id, day);
     } catch (error) {
-      console.error(`Couldn't back up an account's store: ${String(error)}`);
+      if (error instanceof Error && error.message === DELETED) continue;
+      failed += 1;
+      console.error(`Couldn't back up account ${id}'s store: ${String(error)}`);
     }
+  }
+  if (failed > 0) {
+    throw new Error(`${failed} of ${results.length} accounts' stores weren't backed up.`);
   }
 }
 
@@ -165,11 +176,11 @@ export default {
   async scheduled(controller, env, context): Promise<void> {
     const when = new Date(controller.scheduledTime);
     context.waitUntil(
-      Promise.all([
-        forgetOldSignIns(env.DB, when),
-        backUpAll(env, when),
-        countSyncDaily(env, when),
-      ]),
+      runAll({
+        'cleanup of old sign-ins': forgetOldSignIns(env.DB, when),
+        backup: backUpAll(env, when),
+        'count of sync totals': countSyncDaily(env, when),
+      }),
     );
   },
 } satisfies ExportedHandler<Env>;
