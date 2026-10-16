@@ -310,6 +310,11 @@ describe('reading a job page', () => {
     // Its words inside other words, or across a sentence.
     const words = '<main><h1>Senior Data Scientist</h1><p>Join our software engineers.</p></main>';
     expect(read({ ...JOB_DATA, title: 'Software Engineer' }, words).source).toBe('main');
+    // A heading in a list of other jobs further down this one's page.
+    const list =
+      '<main><h1>Product Manager</h1><h2>About the role</h2><h2>What you’ll do</h2><section><h3>Data Engineer</h3></section></main>';
+    expect(read({ ...JOB_DATA, title: 'Data Engineer' }, list).source).toBe('main');
+    expect(read({ ...JOB_DATA, title: 'Product Manager' }, list).source).toBe('structured');
     // A title with no words in it at all.
     expect(read({ ...JOB_DATA, title: '🚀' }, '<main><h1>🚀</h1></main>').source).toBe('main');
     // A job site's own title for a job much like it.

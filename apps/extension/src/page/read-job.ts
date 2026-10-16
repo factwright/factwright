@@ -453,11 +453,15 @@ export function readJobPage(
   /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
   const titleOf = (posting: Record<string, unknown>) =>
     posting.title ? oneLine(textOfMarkup(String(posting.title))) : '';
-  /** The page's headings, where a site it doesn't know shows a job's title. */
+  /**
+   * The page's first headings, where a site it doesn't know shows a job's title: not in its menus,
+   * sidebars or footer, and not further down, where a list of other jobs can be.
+   */
   const headings = Array.from(doc.querySelectorAll('h1, h2, h3'))
-    .slice(0, 50)
+    .filter((element) => !element.closest('nav, aside, footer'))
     .map((element) => oneLine(textOf(element)))
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 3);
   /** This page's address: the tab's, and the job's own, as LinkedIn and Indeed have it. */
   const pages = [partsOf(href), partsOf(jobUrl())].filter((parts) => parts !== null);
   /**
