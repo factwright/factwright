@@ -900,7 +900,12 @@ export function CallsSection({
   const [open, setOpen] = useState<{ title: string; kind: CallDocKind; text: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const latest = job.calls.findLast((call) => call.state !== 'canceled');
-  const now = clockNow();
+  // The time of day, kept current, so a call today turns to how it went once its time comes.
+  const [now, setNow] = useState(clockNow);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(clockNow()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
 
   const openDoc = async (call: Call, kind: CallDocKind) => {
     const extras = await api.jobExtras(job.id);
@@ -942,7 +947,7 @@ export function CallsSection({
               api={api}
               today={today}
               run={run}
-              next={progress.nextCall?.id === call.id}
+              next={progress.nextCall?.id === call.id && timing(call, today, now).ahead}
               last={latest?.id === call.id}
               status={progress.status}
               onOpen={openDoc}

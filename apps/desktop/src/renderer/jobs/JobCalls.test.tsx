@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { type Call, type Job, localDate, shortDate } from '@factwright/core';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -315,6 +315,24 @@ describe('before a call', () => {
     panel({ ...job, calls: job.calls.map((call) => ({ ...today(call), atTime: null })) });
     expect(screen.getByRole('button', { name: 'Call prep for the recruiter screen' })).toBeTruthy();
     expect(screen.getByLabelText('How it went')).toBeTruthy();
+  });
+});
+
+describe('a call today', () => {
+  it('turns to how it went when its time comes, while the panel stays open', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(`${TODAY}T10:29:30`));
+    const job = byCompany('Tidewater Analytics');
+    panel({
+      ...job,
+      calls: job.calls.map((call) => ({ ...call, onDate: TODAY, atTime: '10:30' })),
+    });
+    expect(screen.getByText('Next')).toBeTruthy();
+    expect(screen.queryByLabelText('How it went')).toBeNull();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getByLabelText('How it went')).toBeTruthy();
+    // Underway, it isn't the next call any more.
+    expect(screen.queryByText('Next')).toBeNull();
   });
 });
 
