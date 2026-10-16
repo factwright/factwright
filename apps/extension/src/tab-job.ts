@@ -21,10 +21,10 @@ const INDEED_JOB_PATH = /^\/(viewjob|jobs|q-|m\/|rc\/clk|cmp\/[^/]+\/jobs)/;
 
 /**
  * Job boards, which list many companies' jobs: a board's name is never the company's, and its
- * address names none.
+ * address names none. Hacker News's "Who is hiring?" threads are one.
  */
 const BOARD =
-  /(^|\.)(linkedin\.com|indeed\.com|glassdoor\.[a-z.]+|ziprecruiter\.[a-z.]+|monster\.[a-z.]+|wellfound\.com|angel\.co|dice\.com|simplyhired\.[a-z.]+|careerbuilder\.com|builtin\.com|builtin[a-z]+\.(com|org)|hired\.com|otta\.com|welcometothejungle\.com|themuse\.com|remoteok\.com|weworkremotely\.com|flexjobs\.com|joinhandshake\.com|idealist\.org)$/i;
+  /(^|\.)(linkedin\.com|indeed\.com|glassdoor\.[a-z.]+|ziprecruiter\.[a-z.]+|monster\.[a-z.]+|wellfound\.com|angel\.co|dice\.com|simplyhired\.[a-z.]+|careerbuilder\.com|builtin\.com|builtin[a-z]+\.(com|org)|hired\.com|otta\.com|welcometothejungle\.com|themuse\.com|remoteok\.com|weworkremotely\.com|flexjobs\.com|joinhandshake\.com|idealist\.org|news\.ycombinator\.com)$/i;
 
 /** Applicant systems whose addresses name the company after the site: "jobs.lever.co/acme/…". */
 const COMPANY_IN_PATH =

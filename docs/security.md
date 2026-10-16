@@ -249,7 +249,10 @@ If you lose every device and your recovery key, your data can't be recovered, by
 - **No debugging the user's data.** Chromium, which the app is built on, can let another program
   drive it through a debugging port. As in Chrome, an installed copy won't start that way on the
   user's own data folder, or any profile in it: only with a folder of its own, as the tests give
-  it, where there's no job hunt and no sync to reach.
+  it, where there's no job hunt. Nor does such a copy ask the keychain for sync's keys, on any
+  computer: on a Mac every copy of Factwright shares one Keychain item, which locks every
+  profile's sync keys. Sync can't turn on in it, and sync's keys in its folder, even ones copied
+  or linked from the user's own, stay locked and as they are.
 - **Updates are checked.** A copy from Factwright's own releases downloads updates only from
   downloads.factwright.com, over https. An update must match the checksum in the update feed. On a
   Mac, it must also pass Apple's check that it's signed by the same developer as the app. On
