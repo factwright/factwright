@@ -109,7 +109,11 @@ describe('readJobExtras', () => {
   });
 
   it('reads nothing for a job with nothing added', () => {
-    expect(readJobExtras(memoryWorkspace({}), JOB)).toEqual({ asked: {}, shots: [], posting: null });
+    expect(readJobExtras(memoryWorkspace({}), JOB)).toEqual({
+      asked: {},
+      shots: [],
+      posting: null,
+    });
   });
 });
 

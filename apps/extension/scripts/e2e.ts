@@ -2,9 +2,10 @@
 // to saving a job: signing in with a code, then linking both ways, with the emoji Factwright on a
 // computer checks, and with a link code. The computer's side runs here, with the same code the
 // desktop app uses. `pnpm --filter @factwright/extension e2e` (it needs Playwright's Chromium:
-// `pnpm --filter @factwright/site exec playwright install chromium`).
+// `pnpm --filter @factwright/site exec playwright install chromium`). With `-- --screenshots`, it
+// also draws the stores' screenshots, into store/screenshots, from what it shows along the way.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,9 +25,12 @@ import {
   recordId,
   rowName,
 } from '@factwright/sync';
-import { chromium, type Page } from '@playwright/test';
+import { LIGHT } from '@factwright/ui/tokens';
+import { type Browser, chromium, type Page } from '@playwright/test';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+/** Where the stores' screenshots go, when it's asked to draw them. */
+const SHOTS = process.argv.includes('--screenshots') ? join(ROOT, 'store', 'screenshots') : null;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function check(that: boolean, what: string): void {
@@ -49,6 +53,7 @@ async function browser(extension: string) {
     channel: 'chromium',
     headless: true,
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+    deviceScaleFactor: 2,
   });
   const worker =
     context.serviceWorkers()[0] ??
@@ -60,6 +65,80 @@ async function browser(extension: string) {
   await setup.goto(`chrome-extension://${id}/setup.html`);
   return { context, setup, errors };
 }
+
+/**
+ * A store's screenshot: what the extension showed, framed at the 1280 by 800 both stores take, with
+ * what it shows in words beside it.
+ */
+let framer: Browser | null = null;
+
+async function frame(
+  shot: Buffer,
+  width: number,
+  title: string,
+  words: string,
+  name: string,
+): Promise<void> {
+  if (!SHOTS) return;
+  mkdirSync(SHOTS, { recursive: true });
+  // Framed in a browser of its own at 1x, so the image is exactly 1280 by 800, with the extension's
+  // pages, taken at 2x, sharp in it.
+  framer ??= await chromium.launch({ channel: 'chromium', headless: true });
+  const page = await framer.newPage();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setContent(`<!doctype html><html><body style="margin:0;width:1280px;height:800px;
+    background:${LIGHT.sunken};color:${LIGHT.text};display:flex;align-items:center;justify-content:center;
+    gap:64px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif">
+    <div style="max-width:400px"><h1 style="font-size:42px;line-height:1.15;margin:0 0 18px">${title}</h1>
+    <p style="font-size:21px;line-height:1.45;margin:0;color:${LIGHT.muted}">${words}</p></div>
+    <img alt="" style="width:${width}px;border-radius:14px;border:1px solid ${LIGHT.border};
+    box-shadow:0 24px 60px rgba(20,20,40,.16)" src="data:image/png;base64,${shot.toString('base64')}">
+    </body></html>`);
+  await page.screenshot({ path: join(SHOTS, name) });
+  await page.close();
+}
+
+/**
+ * A page's content with a margin around it, as a picture, and the test account's address shown as
+ * a person's would be.
+ */
+async function capture(page: Page): Promise<Buffer> {
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll('p')) {
+      element.textContent = (element.textContent ?? '').replace(
+        /\b\w+@example\.com\b/,
+        'sam@example.com',
+      );
+    }
+  });
+  const box = await page.locator('main').boundingBox();
+  if (!box) throw new Error('The page shows nothing to picture.');
+  const margin = 24;
+  return page.screenshot({
+    clip: {
+      x: Math.max(0, box.x - margin),
+      y: Math.max(0, box.y - margin),
+      width: box.width + 2 * margin,
+      height: box.height + 2 * margin,
+    },
+  });
+}
+
+/** A posting as a job site publishes it, for the popup to show in the stores' screenshots. */
+const SAMPLE_JOB = {
+  url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
+  pageUrl: 'https://jobs.lever.co/harborpine/4f1c2b7e',
+  site: 'jobs.lever.co',
+  pageTitle: 'Harbor & Pine - Senior Product Manager, Data',
+  title: 'Senior Product Manager, Data',
+  company: 'Harbor & Pine',
+  location: 'Remote (US)',
+  pay: 'USD 165,000–190,000 a year',
+  employment: 'Full time',
+  posted: '2026-10-14',
+  posting: `About the role\n\n${'Lead the data platform’s roadmap with engineering and analytics. '.repeat(70)}`,
+  source: 'structured',
+};
 
 /** Signs the extension in: it shows a code, which the person allows in the browser. */
 async function signIn(setup: Page, origin: string, token: string): Promise<void> {
@@ -114,6 +193,13 @@ try {
     }
     if (step.state !== 'check') throw new Error(`The computer got to ${step.state}.`);
     await setup.getByRole('heading', { name: 'Check the emoji' }).waitFor({ timeout: 15_000 });
+    await frame(
+      await capture(setup),
+      620,
+      'Linked by Factwright on your computer',
+      'Set it up once: sign in to sync, then approve it in Factwright, once both show the same emoji.',
+      '3-link.png',
+    );
     const shown = (await setup.locator('p.small.muted').first().textContent()) ?? '';
     check(
       shown ===
@@ -126,6 +212,51 @@ try {
     await approval.approve(accountKey);
     await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 20_000 });
     check((await approval.step()).state === 'linked', 'links once both say the emoji match');
+    await frame(
+      await capture(setup),
+      620,
+      'Save it your way',
+      'From the toolbar, a keyboard shortcut or the right-click menu, from any job site. You choose whether it reads LinkedIn’s postings or saves their links alone.',
+      '4-settings.png',
+    );
+
+    // The popup, on a job's page: the tab it reads stands in here, since a test can't click the
+    // toolbar. The save it makes is real.
+    const popup = await context.newPage();
+    await popup.setViewportSize({ width: 360, height: 480 });
+    await popup.addInitScript((page) => {
+      const api = (
+        globalThis as unknown as {
+          chrome: { tabs: { query: unknown }; scripting: { executeScript: unknown } };
+        }
+      ).chrome;
+      api.tabs.query = async () => [{ id: 1, url: page.url, title: page.pageTitle }];
+      api.scripting.executeScript = async () => [{ result: page }];
+    }, SAMPLE_JOB);
+    await popup.goto(setup.url().replace('setup.html', 'popup.html'));
+    await popup.getByRole('button', { name: 'Save to Factwright' }).waitFor({ timeout: 10_000 });
+    check(
+      (await popup.locator('#company').inputValue()) === 'Harbor & Pine',
+      'the popup shows the job it read, to check',
+    );
+    await frame(
+      await popup.locator('body').screenshot(),
+      400,
+      'Check it, save it',
+      'On a job’s page, click Save to Factwright. It reads the job’s title, company, pay and posting.',
+      '1-save.png',
+    );
+    await popup.getByRole('button', { name: 'Save to Factwright' }).click();
+    await popup.getByText('Saved to your job hunt, as New.').waitFor({ timeout: 15_000 });
+    check(true, 'the popup saves it');
+    await frame(
+      await popup.locator('body').screenshot(),
+      400,
+      'Saved as New, with the posting as you saw it',
+      'It shows in Factwright on your computer once it syncs, locked with your job hunt’s own key on the way.',
+      '2-saved.png',
+    );
+    await popup.close();
 
     const job = {
       url: 'https://www.linkedin.com/jobs/view/4012345678/',
@@ -185,6 +316,8 @@ try {
   failed = true;
   console.error(error);
 } finally {
+  // Set while framing, which TypeScript can't follow from here.
+  await (framer as Browser | null)?.close();
   await server.close();
   // Built again for Factwright's own sync server, as the stores get it.
   build();

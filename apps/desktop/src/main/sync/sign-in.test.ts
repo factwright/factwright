@@ -1,6 +1,6 @@
 import { startServer, type TestServer } from '@factwright/server/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CLIENTS, DeviceSignIn } from '@factwright/sync';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 let server: TestServer;
 

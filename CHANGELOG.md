@@ -5,7 +5,12 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- Save to Factwright, a browser extension for Chrome and Firefox. On a job's page, click its button, check the title and company, and save it: the job lands in your job hunt as New, with its link and its posting as you saw it, through sync, from any computer, without Factwright open. Or press Alt+Shift+S, or right-click the page, to save it without opening anything. It reads the job data sites publish, the layouts of the big job sites, or text you selected, so it saves postings that need a sign-in to see, LinkedIn's included, unless you turn that off and save LinkedIn jobs by their link alone. Factwright's own tools still never read LinkedIn. Set it up once: sign in to sync, then approve linking it in Factwright on your computer, after checking both show the same emoji, or use a link code or your recovery key. What it saves is locked with your job hunt's key before it leaves the browser. It needs the sync server's next update.
+- A job saved from the browser shows its posting in the job's Files, and Claude uses it: `job_details` names it, and `save_posting` copies it into the job's folder, so a LinkedIn job's posting reaches Claude without its tools reading LinkedIn.
 - factwright.com counts downloads, and the sync server counts how much sync is used, so Factwright's maker can see how it's doing. Each download is counted by computer, version and when, and nothing about who downloaded it is kept, not even an IP address. Once a day, the sync server counts its accounts and sign-ins, and keeps only those totals. `pnpm --filter @factwright/site stats` shows both, with a token that can read analytics and nothing else. The app itself still reports nothing, and the privacy policy says all this, from October 15.
+
+### Changed
+- The approval page for signing in names Save to Factwright when it's the extension asking, and the account page lists the extension as "Save to Factwright in Chrome on Mac".
 
 ### Fixed
 - The sync server's daily backup no longer stops partway when another part of its daily job fails, such as clearing out sign-ins that ended. Before, such a failure could end the job with most accounts not yet backed up that day. A backup that fails for any account now marks the run as failed too, and each failure is written down as it happens.

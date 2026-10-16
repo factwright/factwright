@@ -88,7 +88,7 @@ function field(id: string, label: string, value: string, placeholder = '') {
   ];
 }
 
-const valueOf = (id: string) =>
+const inputValue = (id: string) =>
   (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
 
 function form(page: PageJob, unread: Unread, problem?: string): void {
@@ -97,9 +97,9 @@ function form(page: PageJob, unread: Unread, problem?: string): void {
     event.preventDefault();
     const job: JobToSave = {
       ...start,
-      company: valueOf('company'),
-      role: valueOf('role'),
-      pay: valueOf('pay'),
+      company: inputValue('company'),
+      role: inputValue('role'),
+      pay: inputValue('pay'),
     };
     if (!job.company) {
       form({ ...page, title: job.role, pay: job.pay }, unread, 'Add the company’s name.');
