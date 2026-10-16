@@ -528,7 +528,8 @@ export function sampleTracker(
     },
     saveFile: async (name, text) => {
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+      const type = name.endsWith('.ics') ? 'text/calendar' : 'text/csv';
+      link.href = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
       link.download = name;
       link.click();
       URL.revokeObjectURL(link.href);

@@ -1,4 +1,5 @@
 import { join, resolve, sep } from 'node:path';
+import { CALL_KINDS, callInviteName } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   contentSecurityPolicy,
@@ -127,8 +128,27 @@ describe('openableFile', () => {
 });
 
 describe('saveableFileName', () => {
-  it.each(['job-search-journey-2026-10-11.csv', 'Journey (October).txt'])('accepts %s', (name) => {
+  it.each([
+    'job-search-journey-2026-10-11.csv',
+    'Journey (October).txt',
+    'Panel interview - Northwind Labs - 2026-10-20.ics',
+  ])('accepts %s', (name) => {
     expect(saveableFileName(name)).toBe(name);
+  });
+
+  it('accepts the name of every call’s calendar file', () => {
+    for (const company of [
+      'Northwind Labs',
+      'Harbor & Pine',
+      '株式会社',
+      '../x: "y"?',
+      'A'.repeat(300),
+    ]) {
+      for (const kind of CALL_KINDS) {
+        const name = callInviteName(company, { kind, onDate: '2026-10-20' });
+        expect(saveableFileName(name)).toBe(name);
+      }
+    }
   });
 
   it.each([
@@ -138,6 +158,8 @@ describe('saveableFileName', () => {
     '.hidden.csv',
     'journey.exe',
     'journey.csv.command',
+    'invite.ics.app',
+    'invite.ical',
     `${'a'.repeat(100)}.csv`,
     42,
   ])('refuses %j', (name) => {

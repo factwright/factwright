@@ -291,6 +291,35 @@ test('adds a call with who it’s with, preps for it, and keeps the prep sheet w
   ).toBeVisible();
 });
 
+test('fills in a call from the company’s invite, read in the window', async () => {
+  const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });
+  await calls.getByRole('button', { name: 'Add a call' }).click();
+  const form = calls.getByRole('form', { name: 'Add a call' });
+  const invite = [
+    'BEGIN:VCALENDAR',
+    'BEGIN:VEVENT',
+    'DTSTART:20261105T093000',
+    'DURATION:PT45M',
+    'LOCATION:https://zoom.us/j/8812345678',
+    'ORGANIZER;CN=Priya Shah:mailto:priya@acme.example',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  await form.locator('input[type="file"]').setInputFiles({
+    name: 'invite.ics',
+    mimeType: 'text/calendar',
+    buffer: Buffer.from(invite),
+  });
+  await expect(form.getByRole('status')).toHaveText(
+    'Filled in the date, time, length, meeting link and 1 person from the invite. Check them before you add it.',
+  );
+  await expect(form.getByLabel('Time, if you know it')).toHaveValue('09:30');
+  await expect(form.getByLabel('Meeting link')).toHaveValue('https://zoom.us/j/8812345678');
+  await expect(form.getByLabel('Name of person 1')).toHaveValue('Priya Shah');
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await expect(form).toBeHidden();
+});
+
 test('keeps a picture pasted into Claude’s panel with the run’s job, for Claude to read', async () => {
   const { window } = opened;
   // A picture on the clipboard, pasted into the terminal, as the system hands it to the page.

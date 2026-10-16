@@ -72,12 +72,13 @@ export function isSafeExternalUrl(url: string): boolean {
 }
 
 /**
- * A name the window may suggest for a file it saves, such as "job-search-journey.csv": letters,
- * digits, spaces and ".-_()", ending in .csv or .txt, with no folders. Anything else is null.
+ * A name the window may suggest for a file it saves, such as "job-search-journey.csv" or a call's
+ * calendar file: letters, digits, spaces and ".-_()", ending in .csv, .txt or .ics, with no
+ * folders. Anything else is null.
  */
 export function saveableFileName(name: unknown): string | null {
   if (typeof name !== 'string' || name.length > 100) return null;
-  return /^[\w][\w .()-]*\.(csv|txt)$/i.test(name) ? name : null;
+  return /^[\w][\w .()-]*\.(csv|txt|ics)$/i.test(name) ? name : null;
 }
 
 /**

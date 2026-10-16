@@ -158,6 +158,7 @@ export function sampleApi(): FactwrightApi {
     for (const listener of filedListeners) listener(filed);
   };
   let permissions: ClaudePermissions = ASK_FIRST;
+  let reminding = query.get('reminders') !== 'off';
   let models: ModelChoices = DEFAULT_MODELS;
   let effort: EffortChoices = DEFAULT_EFFORT;
   const playTask = (task: RunTask) => {
@@ -287,6 +288,18 @@ export function sampleApi(): FactwrightApi {
     setClaudeEffort: async (chosen) => {
       effort = chosen;
       return chosen;
+    },
+    // Reminders before calls, on unless ?reminders=off, kept until the page reloads.
+    callReminders: async () => reminding,
+    setCallReminders: async (on) => {
+      reminding = on;
+      return on;
+    },
+    // ?open=<job ID> opens that job, as clicking a call's reminder does.
+    onOpenJob: (listener) => {
+      const jobId = query.get('open');
+      const timer = jobId ? setTimeout(() => listener(jobId), 500) : undefined;
+      return () => clearTimeout(timer);
     },
     // What Claude may do without asking, kept until the page reloads.
     claudePermissions: async () => permissions,

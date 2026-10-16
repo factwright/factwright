@@ -35,7 +35,7 @@ import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
 import { CoverLetterSection } from './CoverLetterSection.tsx';
 import { focusNext, PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
-import { CallsSection } from './JobCalls.tsx';
+import { CallsSection, type InviteMe } from './JobCalls.tsx';
 import { FilesSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
@@ -44,6 +44,7 @@ import { ArchiveFooter, HistorySection, NextStep, ProgressSection } from './JobT
 import { PanelSection } from './PanelSection.tsx';
 import { BUSY, RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
+import type { ReminderSwitch } from './useCallReminders.ts';
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: styles.info } as const;
 
@@ -127,6 +128,10 @@ export interface JobPanelProps {
   onAccepted?: (jobId: string) => void;
   /** The user's other jobs at the same company, for the history with it. */
   related?: readonly Job[];
+  /** The user, whom an invite dropped on the form to add a call names among its people. */
+  me?: InviteMe;
+  /** Reminders before calls, and the switch to turn them off. */
+  reminders?: ReminderSwitch | undefined;
 }
 
 /** Everything on file for the job picked in the list, in sections that open and close. */
@@ -142,6 +147,8 @@ export function JobPanel({
   navigation,
   onAccepted,
   related = [],
+  me,
+  reminders,
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
@@ -269,6 +276,8 @@ export function JobPanel({
       api={api}
       today={today}
       run={run}
+      me={me}
+      reminders={reminders}
     />,
     <PanelSection
       key="notes"

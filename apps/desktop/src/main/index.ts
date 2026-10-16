@@ -23,7 +23,8 @@ import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
-import { notifyIfAway, notifyOfRequests } from './notify.ts';
+import { notifyIfAway, notifyOfRequests, remindOfCall } from './notify.ts';
+import { JobOpener } from './open-job.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
   chooseProfile,
@@ -37,6 +38,7 @@ import {
   stoppedStart,
 } from './profiles.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
+import { CallReminders } from './reminders.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
@@ -199,6 +201,13 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         app.quit();
       },
     });
+    // A reminder an hour before each call, which opens the call's job when it's clicked.
+    const opener = new JobOpener();
+    const reminders = new CallReminders({
+      file: join(dataDir, 'call-reminders.json'),
+      jobs: () => jobs.list().jobs,
+      notify: (reminder) => remindOfCall(reminder, (jobId) => showJob(jobId)),
+    });
     const sync = new SyncAccount({
       dataDir,
       server: syncServer,
@@ -231,7 +240,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.
-      onApplied: () => toWindow('jobs:changed', jobs.read()),
+      onApplied: () => {
+        toWindow('jobs:changed', jobs.read());
+        reminders.check();
+      },
     });
     const jobs = new JobsService({
       workspace,
@@ -240,6 +252,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onChange: (list) => {
         toWindow('jobs:changed', list);
         sync.requestSync();
+        reminders.check();
       },
     });
     jobs.read();
@@ -259,6 +272,18 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     await server.start();
 
     let window = createMainWindow(startUrl);
+    // Brings the window back, or opens it again on a Mac, and opens a job in it.
+    const showJob = (jobId: string) => {
+      if (window.isDestroyed()) {
+        window = createMainWindow(startUrl);
+        stopWithWindow(window);
+      } else {
+        if (window.isMinimized()) window.restore();
+        window.show();
+        window.focus();
+      }
+      opener.open(jobId, window.webContents);
+    };
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.
     window.once('ready-to-show', () => profiles.started());
@@ -352,11 +377,22 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       dataDir,
       updates,
       profiles,
+      reminders,
+      opener,
     });
     void sync.start();
+    void reminders.start();
+    // A call's hour can begin while the computer sleeps, so waking looks again.
+    powerMonitor.on('resume', () => reminders.check());
+    powerMonitor.on('unlock-screen', () => reminders.check());
 
-    // A run belongs to its window, so closing the window or quitting stops it.
-    const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
+    // A run belongs to its window, so closing the window or quitting stops it. A page loading
+    // again can't hear a job to open until it says it's listening.
+    const stopWithWindow = (opened: BrowserWindow) => {
+      opened.on('closed', () => claude.stop());
+      const page = opened.webContents;
+      page.on('did-start-loading', () => opener.forget(page));
+    };
     stopWithWindow(window);
     // A request to link this computer is called off before the app goes, so it doesn't wait on
     // the other devices. Quitting waits for that once, for a moment at most.
@@ -371,6 +407,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       }
       profiles.started();
       updates?.stop();
+      reminders.stop();
       claude.stop();
       setup.stop();
       server.stop();

@@ -4,6 +4,7 @@ import {
   type KindName,
   LIVE_STATUSES,
   sameCompany,
+  viewOf,
 } from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -45,6 +46,7 @@ import {
   visibleRows,
   withKnownKind,
 } from './jobs/rows.ts';
+import { useCallReminders } from './jobs/useCallReminders.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useCallClock, useToday } from './jobs/useToday.ts';
 import { WithdrawDialog } from './jobs/WithdrawDialog.tsx';
@@ -91,7 +93,12 @@ export function App({ api }: { api: FactwrightApi }) {
   const update = useUpdates(api);
   const levels = useLevelChoices(api);
   const profiles = useProfiles(api);
+  const reminders = useCallReminders(api);
   const profile = about.profile;
+  // The user, by name and email, whom an invite for a call names among its people.
+  const myName = profile?.answers.you.name ?? '';
+  const myEmail = profile?.answers.you.email ?? '';
+  const me = useMemo(() => ({ name: myName, email: myEmail }), [myName, myEmail]);
   // The kinds of job the user wants, by id and name, when there's more than one. They change
   // only when a kind is added, renamed or removed, so the rows aren't made again as they type.
   const kindKey = JSON.stringify(
@@ -118,6 +125,10 @@ export function App({ api }: { api: FactwrightApi }) {
     setFilter(next);
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A job the app asked to open, such as from a call's reminder the user clicked, until the jobs
+  // are in to open it among.
+  const [opening, setOpening] = useState<string | null>(null);
+  useEffect(() => api.onOpenJob(setOpening), [api]);
   // Whether a picked job has the window to itself, kept for next time.
   const [expanded, setExpanded] = usePref('panel.expanded', false, isBoolean);
   const [dialog, setDialog] = useState<
@@ -205,6 +216,18 @@ export function App({ api }: { api: FactwrightApi }) {
     if (keptView() !== null) return;
     setFilter((current) => ({ ...current, view: startingView(rows) }));
   }, [jobs.state, rows]);
+
+  // A job to open shows on the jobs page, in the list in its own view as well as in the panel.
+  useEffect(() => {
+    if (!opening || jobs.state !== 'ready') return;
+    setOpening(null);
+    const row = rows.find((each) => each.job.id === opening);
+    if (!row) return;
+    setPicked('jobs');
+    setFilter((current) => filterForAdded(current, row.progress.status, row.kind?.id ?? null));
+    writePref(VIEW_PREF, viewOf(row.progress.status));
+    setSelectedId(row.job.id);
+  }, [opening, jobs.state, rows]);
 
   // ⌘K on a Mac, Ctrl K elsewhere, jumps to the search box.
   useEffect(() => {
@@ -467,6 +490,8 @@ export function App({ api }: { api: FactwrightApi }) {
                 {...(ready && { run: runControls })}
                 onAccepted={offerAccepted}
                 related={related}
+                me={me}
+                reminders={reminders ?? undefined}
               />
             )}
           </div>

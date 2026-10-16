@@ -15,14 +15,21 @@ import {
   type CallMode,
   type CallPerson,
   type CallState,
+  callInvite,
+  callInviteName,
   callLength,
   callLink,
   callPeople,
   callWhen,
   dayFrom,
+  type Invite,
+  type InviteOptions,
+  isClockTime,
   type Job,
   type JobProgress,
   type JobStatus,
+  MAX_INVITE_LENGTH,
+  readInvite,
   SETTLED_STATUSES,
   STATUS_RANK,
   shortDate,
@@ -40,9 +47,13 @@ import {
 } from '@factwright/ui';
 import {
   ArrowUpRight,
+  Bell,
+  BellOff,
   CalendarClock,
+  CalendarPlus,
   Copy,
   FileText,
+  FileUp,
   Mail,
   MessagesSquare,
   Pencil,
@@ -50,9 +61,10 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type DragEvent, type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
+import { REMINDER_LEAD } from '../../shared/reminders.ts';
 import { type RunTask, THANKS_SKILL, taskCall, taskJob } from '../../shared/runs.ts';
 import { keepsDrafts } from '../unsaved.ts';
 import styles from './JobCalls.module.css';
@@ -60,6 +72,7 @@ import panel from './JobPanel.module.css';
 import { Problem, useEdit } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
 import { BUSY, type RunControls } from './RunActions.tsx';
+import type { ReminderSwitch } from './useCallReminders.ts';
 
 /**
  * How a call went, typed but not saved yet, by the call, so moving away and back keeps it: the
@@ -185,6 +198,83 @@ const PLACE_LABELS: Readonly<Record<CallMode | '', { label: string; placeholder:
   onsite: { label: 'Address', placeholder: 'Where to go, and who to ask for' },
 };
 
+/** The user, by name and email, to leave out of who a dropped invite says the call is with. */
+export type InviteMe = InviteOptions['me'];
+
+/** Whether a file is a calendar invite, by its name or its type. */
+const isInviteFile = (file: File) => /\.ics$/i.test(file.name) || file.type === 'text/calendar';
+
+/**
+ * A calendar invite the user dropped or picked, read here in the window, with nothing sent
+ * anywhere, or why it couldn't be.
+ */
+async function inviteIn(file: File, me: InviteMe): Promise<Invite | string> {
+  if (!isInviteFile(file)) {
+    return 'That isn’t a calendar invite. Use the .ics file attached to the invite’s email.';
+  }
+  if (file.size > MAX_INVITE_LENGTH) return 'That file is too big to be an invite.';
+  let text: string;
+  try {
+    text = await file.text();
+  } catch {
+    return 'That file couldn’t be read. Try saving it again from the email.';
+  }
+  const limits = { place: LIMITS.place, person: LIMITS.person, people: LIMITS.people };
+  return (
+    readInvite(text, { me, limits }) ??
+    'Factwright couldn’t find a call in that invite. Fill it in yourself instead.'
+  );
+}
+
+/** What an invite filled in, in words: "the date, time, length, meeting link and 2 people". */
+function filledIn(invite: Invite): string {
+  const people = invite.people.length;
+  const parts = [
+    'the date',
+    invite.atTime && 'time',
+    invite.minutes && 'length',
+    invite.place && (invite.online ? 'meeting link' : 'place'),
+    people > 0 && (people === 1 ? '1 person' : `${people} people`),
+  ].filter((part): part is string => Boolean(part));
+  const list =
+    parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : 'the date';
+  const check = invite.zoneUnread
+    ? 'Its time zone wasn’t clear, so check the time.'
+    : 'Check them before you add it.';
+  return `Filled in ${list} from the invite. ${check}`;
+}
+
+/**
+ * The form's people, with an invite's added after them: each name once, with the part they
+ * played before when they're someone met already.
+ */
+function withPeople(
+  rows: readonly PersonRow[],
+  people: readonly CallPerson[],
+  known: readonly CallPerson[],
+): PersonRow[] {
+  const kept = rows.filter((row) => row.name.trim() || row.role.trim());
+  const named = new Set(kept.map((row) => row.name.trim().toLowerCase()));
+  const added = people
+    .filter((person) => !named.has(person.name.toLowerCase()))
+    .map((person) => {
+      const met = known.find((each) => each.name.toLowerCase() === person.name.toLowerCase());
+      return personRow({ name: person.name, role: met?.role ?? null });
+    });
+  const all = [...kept, ...added].slice(0, LIMITS.people);
+  return all.length > 0 ? all : [personRow()];
+}
+
+/** Minutes since midnight, from "HH:MM". */
+const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+/** Whether a booked call's reminder is still to come, an hour before it starts. */
+function reminderAhead(call: Call, today: string, now: string): boolean {
+  if (call.state !== 'scheduled' || !isClockTime(call.atTime)) return false;
+  if (call.onDate !== today) return call.onDate > today;
+  return minutesOf(call.atTime) - REMINDER_LEAD > minutesOf(now);
+}
+
 /**
  * The form to add a call, or change one: what kind, when and for how long, how it happens and
  * where, who it's with, and what it's about. Changing one can also cancel it.
@@ -196,6 +286,7 @@ function CallForm({
   today,
   call,
   startKind,
+  me,
   onDone,
 }: {
   job: Job;
@@ -206,6 +297,8 @@ function CallForm({
   call?: Call;
   /** The kind a new call starts as. */
   startKind?: CallKind;
+  /** The user, whom an invite dropped on the form names among its people. */
+  me?: InviteMe;
   onDone: () => void;
 }) {
   const [kind, setKind] = useState<CallKind>(call?.kind ?? startKind ?? 'screen');
@@ -225,15 +318,53 @@ function CallForm({
   const titleId = useId();
   const namesId = useId();
   const rolesId = useId();
+  const inviteHintId = useId();
   // The form takes the keyboard's focus as it opens, on its first field.
   const first = useRef<HTMLSelectElement>(null);
   useEffect(() => first.current?.focus(), []);
   const move = call ? null : moveFor(kind, status);
-  const lengths =
-    call?.minutes && !CALL_LENGTHS.includes(call.minutes)
-      ? [...CALL_LENGTHS, call.minutes].sort((a, b) => a - b)
-      : CALL_LENGTHS;
+  // A length the call has, or an invite gave, that isn't one of the usual ones, is offered too.
+  const odd = [call?.minutes, Number(minutes)].filter(
+    (each): each is number => Boolean(each) && !CALL_LENGTHS.includes(each as number),
+  );
+  const lengths = [...new Set([...CALL_LENGTHS, ...odd])].sort((a, b) => a - b);
   const known = peopleMet(job);
+  // What an invite filled in, or why it couldn't, and whether one is being dragged over the form.
+  const [invited, setInvited] = useState<string | null>(null);
+  const [inviteProblem, setInviteProblem] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+
+  /** Fills in what an invite says: its date, time and length, where, and who it's with. */
+  const fillFrom = async (files: readonly File[]) => {
+    const file = files.find(isInviteFile) ?? files[0];
+    if (!file) return;
+    const invite = await inviteIn(file, me);
+    const problem =
+      typeof invite === 'string'
+        ? invite
+        : invite.canceled
+          ? 'That invite calls the meeting off, so nothing was filled in.'
+          : null;
+    setInviteProblem(problem);
+    if (typeof invite === 'string' || problem) {
+      setInvited(null);
+      return;
+    }
+    setOnDate(invite.onDate);
+    if (invite.atTime) setAtTime(invite.atTime);
+    if (invite.minutes) setMinutes(String(invite.minutes));
+    if (invite.place) setPlace(invite.place);
+    if (invite.online && !mode) setMode('video');
+    if (invite.people.length > 0) setPeople((rows) => withPeople(rows, invite.people, known));
+    setInvited(filledIn(invite));
+  };
+  const onDragOver = (event: DragEvent) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setOver(true);
+  };
 
   const changePerson = (key: number, change: Partial<PersonRow>) =>
     setPeople((rows) => rows.map((row) => (row.key === key ? { ...row, ...change } : row)));
@@ -276,10 +407,59 @@ function CallForm({
 
   const placeText = PLACE_LABELS[mode];
   return (
-    <form className={styles.form} aria-labelledby={titleId} onSubmit={submit}>
+    <form
+      className={`${styles.form} ${over ? styles.over : ''}`}
+      aria-labelledby={titleId}
+      onSubmit={submit}
+      // An invite dropped on the form to add a call fills it in. The button does it from the
+      // keyboard.
+      {...(!call && {
+        onDragOver,
+        onDragLeave: () => setOver(false),
+        onDrop: (event: DragEvent) => {
+          event.preventDefault();
+          setOver(false);
+          void fillFrom([...event.dataTransfer.files]);
+        },
+      })}
+    >
       <p id={titleId} className={styles.formTitle}>
         {call ? `Change ${callName(call)}` : 'Add a call'}
       </p>
+      {!call && (
+        <div className={styles.invite}>
+          <Button
+            size="sm"
+            variant="quiet"
+            icon={<FileUp size={13} aria-hidden="true" />}
+            aria-describedby={inviteHintId}
+            onClick={() => picker.current?.click()}
+          >
+            Fill in from an invite
+          </Button>
+          <span id={inviteHintId} className={styles.inviteHint}>
+            or drop the invite’s .ics file here
+          </span>
+          <input
+            ref={picker}
+            type="file"
+            className={styles.picker}
+            tabIndex={-1}
+            aria-hidden="true"
+            accept=".ics,text/calendar"
+            onChange={(event) => {
+              void fillFrom([...(event.target.files ?? [])]);
+              // The same file can be picked again.
+              event.target.value = '';
+            }}
+          />
+        </div>
+      )}
+      {/* Kept on the page, out of sight until there's something to say, so it's read aloud. */}
+      <p className={invited ? styles.invited : styles.announce} role="status">
+        {invited ?? ''}
+      </p>
+      <Problem message={inviteProblem} />
       <div className={styles.grid}>
         <Field label="Kind" className={styles.wide}>
           {(control) => (
@@ -658,6 +838,7 @@ function CallCard({
   onAddNext,
   onDeleted,
   now,
+  reminders,
 }: {
   job: Job;
   call: Call;
@@ -675,9 +856,13 @@ function CallCard({
   onDeleted: () => void;
   /** The time of day now, as "HH:MM". */
   now: string;
+  /** Reminders before calls, which the next call says will come, with a switch to turn them off. */
+  reminders?: ReminderSwitch | undefined;
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Whether the call's calendar file was saved, to say what to do with it.
+  const [saved, setSaved] = useState(false);
   const { problem, run: save } = useEdit();
   const change = useRef<HTMLButtonElement>(null);
   const remove = useRef<HTMLButtonElement>(null);
@@ -705,6 +890,19 @@ function CallCard({
     else run.start(runTask(job.id, call.id, kind));
   };
   const link = callLink(call.place);
+  // A calendar file for the call, saved where the user picks, to open in their calendar.
+  const addToCalendar = async () => {
+    setSaved(false);
+    const file = callInvite(job, call, new Date());
+    const result = file
+      ? await api.saveFile(callInviteName(job.company, call), file)
+      : ({
+          ok: false,
+          message: 'This call’s date can’t go in a calendar. Change it first.',
+        } as const);
+    await save(Promise.resolve(result));
+    setSaved(result.ok && result.saved);
+  };
   const details = [
     callWhen(call, today),
     call.minutes && callLength(call.minutes),
@@ -847,10 +1045,48 @@ function CallCard({
               {running('practice') ? 'Practicing…' : 'Practice'}
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="quiet"
+            icon={<CalendarPlus size={13} aria-hidden="true" />}
+            aria-label={`Add to calendar: ${name}`}
+            onClick={addToCalendar}
+          >
+            Add to calendar
+          </Button>
           {prep && (
             <span className={styles.docDate}>Prep from {shortDate(prep.modified, today)}</span>
           )}
+          {/* Kept on the page, out of sight until the file's saved, so it's read aloud. */}
+          <span className={saved ? styles.docDate : styles.announce} role="status">
+            {saved ? 'Saved. Open the file to add the call to your calendar.' : ''}
+          </span>
         </div>
+      )}
+
+      {reminders && next && reminderAhead(call, today, now) && (
+        <p className={styles.reminder}>
+          {reminders.on ? (
+            <Bell size={13} aria-hidden="true" />
+          ) : (
+            <BellOff size={13} aria-hidden="true" />
+          )}
+          <span className={styles.reminderText}>
+            {reminders.on
+              ? 'Factwright reminds you an hour before, while it’s open.'
+              : 'Reminders before calls are off.'}
+          </span>
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-label={
+              reminders.on ? 'Turn off reminders before calls' : 'Turn on reminders before calls'
+            }
+            onClick={() => reminders.turn(!reminders.on)}
+          >
+            {reminders.on ? 'Turn off' : 'Turn on'}
+          </Button>
+        </p>
       )}
 
       {started && (
@@ -948,12 +1184,18 @@ export function CallsSection({
   api,
   today,
   run,
+  me,
+  reminders,
 }: {
   job: Job;
   progress: JobProgress;
   api: FactwrightApi;
   today: string;
   run?: RunControls | undefined;
+  /** The user, whom an invite dropped on the form to add a call names among its people. */
+  me?: InviteMe;
+  /** Reminders before calls, and the switch to turn them off. */
+  reminders?: ReminderSwitch | undefined;
 }) {
   // The kind of call the add form starts on, while it's open.
   const [adding, setAdding] = useState<CallKind | null>(null);
@@ -1030,6 +1272,7 @@ export function CallsSection({
               onAddNext={setAdding}
               onDeleted={() => setRefocus(true)}
               now={now}
+              reminders={reminders}
             />
           ))}
         </ol>
@@ -1042,6 +1285,7 @@ export function CallsSection({
           api={api}
           today={today}
           startKind={adding}
+          me={me}
           onDone={() => {
             setAdding(null);
             setRefocus(true);
