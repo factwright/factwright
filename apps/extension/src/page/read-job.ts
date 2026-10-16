@@ -39,6 +39,8 @@ export function readJobPage(
   doc: Document = document,
   href: string = location.href,
   selected: string = String(globalThis.getSelection?.() ?? ''),
+  /** The address the page loaded at, before a single-page site moved it on to another job. */
+  loadedAt: string = doc.defaultView?.performance?.getEntriesByType?.('navigation')[0]?.name ?? '',
 ): PageJob {
   /** The longest posting it keeps, in characters. A long one is around 20,000. */
   const MAX_POSTING = 100_000;
@@ -255,7 +257,7 @@ export function readJobPage(
     // Some sites encode the description's markup twice, so reading it once finds no elements, only
     // text with tags in it. One read once into elements, which may mention a tag, is done.
     const text = body.textContent ?? '';
-    return body.children.length === 0 && /<[a-z][^>]*>/i.test(text)
+    return body.children.length === 0 && /<[a-z][^<>]*>/i.test(text)
       ? textOf(parse(text))
       : textOf(body);
   }
@@ -414,26 +416,48 @@ export function readJobPage(
   };
   /** An address's parts, to compare: its site, its path's parts, its query and its route. */
   const partsOf = (address: unknown) => {
-    if (typeof address !== 'string') return null;
+    const named = Array.isArray(address)
+      ? address.find((each) => typeof each === 'string')
+      : address;
+    if (typeof named !== 'string') return null;
     try {
-      const url = new URL(address, href);
+      const url = new URL(named, href);
+      const route = /^#!?\/./.test(url.hash) ? url.hash.replace(/\/+$/, '').toLowerCase() : '';
       return {
         host: url.hostname.replace(/^www\./, '').toLowerCase(),
         segments: url.pathname.toLowerCase().split('/').filter(Boolean),
         query: [...url.searchParams].filter(([key]) => !TRACKING_PARAM.test(key)),
-        route: /^#!?\/./.test(url.hash) ? url.hash.replace(/\/+$/, '').toLowerCase() : '',
+        route,
+        /** A place on the page, such as "#job-2", which some pages of several jobs use. */
+        anchor: route ? '' : url.hash.toLowerCase(),
       };
     } catch {
       return null;
     }
   };
+  /**
+   * A posting's own address, which must name a page: a whole address, or one from the site's root.
+   * "", "#…" and "?…" are any page's.
+   */
+  const ownPartsOf = (posting: Record<string, unknown>) => {
+    const address = Array.isArray(posting.url)
+      ? posting.url.find((each) => typeof each === 'string')
+      : posting.url;
+    return typeof address === 'string' && /^\s*((https?:)?\/\/|\/)/i.test(address)
+      ? partsOf(address)
+      : null;
+  };
   /** An address, to compare whole: its site, path, query without tracking, and route. */
-  const addressOf = (address: unknown) => {
-    const parts = partsOf(address);
-    if (!parts) return '';
+  const keyOf = (parts: NonNullable<ReturnType<typeof partsOf>>) => {
     const query = parts.query.map(([key, value]) => `${key}=${value}`).sort();
     return `${parts.host}/${parts.segments.join('/')}?${query.join('&')}${parts.route}`;
   };
+  const addressOf = (address: unknown) => {
+    const parts = partsOf(address);
+    return parts ? keyOf(parts) : '';
+  };
+  /** Whether the page has moved on from the address it loaded at, as a single-page site does. */
+  const moved = Boolean(loadedAt) && addressOf(loadedAt) !== addressOf(href);
 
   const site = (() => {
     try {
@@ -458,7 +482,11 @@ export function readJobPage(
    * sidebars or footer, and not further down, where a list of other jobs can be.
    */
   const headings = Array.from(doc.querySelectorAll('h1, h2, h3'))
-    .filter((element) => !element.closest('nav, aside, footer'))
+    .filter(
+      (element) =>
+        !element.closest('nav, aside, footer, [hidden], [aria-hidden="true"]') &&
+        (element as Element & { checkVisibility?: () => boolean }).checkVisibility?.() !== false,
+    )
     .map((element) => oneLine(textOf(element)))
     .filter(Boolean)
     .slice(0, 3);
@@ -470,9 +498,9 @@ export function readJobPage(
    * this page at "/en/jobs/42-data-lead", but "/jobs/41" isn't.
    */
   const elsewhere = (posting: Record<string, unknown>) => {
-    const own = partsOf(posting.url);
+    const own = ownPartsOf(posting);
     const last = own?.segments.at(-1);
-    if (!own || !(own.query.length > 0 || own.route || last)) return false;
+    if (!own || !(own.query.length > 0 || own.route || own.anchor || last)) return false;
     const sameSite = pages.filter((page) => page.host === own.host);
     return (
       sameSite.length > 0 &&
@@ -482,6 +510,7 @@ export function readJobPage(
             page.query.some(([k, v]) => k === key && v === value),
           ) &&
           (!own.route || own.route === page.route) &&
+          (!own.anchor || own.anchor === page.anchor) &&
           (!last ||
             page.segments.some(
               (part) =>
@@ -491,15 +520,28 @@ export function readJobPage(
       )
     );
   };
-  /** Whether a posting's own address is this page's, query and route and all. */
-  const atThisPage = (posting: Record<string, unknown>) =>
-    Boolean(addressOf(posting.url)) &&
-    [href, jobUrl()].some((address) => addressOf(address) === addressOf(posting.url));
+  /**
+   * Whether a posting's own address is this page's, query, route and place on the page and all.
+   * One that names no job, as a single-page site's one address for all its jobs doesn't, counts
+   * only with its title shown too.
+   */
+  const atThisPage = (posting: Record<string, unknown>) => {
+    const own = ownPartsOf(posting);
+    if (!own) return false;
+    const at = pages.some(
+      (page) => keyOf(page) === keyOf(own) && (!own.anchor || own.anchor === page.anchor),
+    );
+    const namesJob =
+      own.query.length > 0 || own.route !== '' || /\d/.test(own.segments.at(-1) ?? '');
+    return at && (namesJob || showsTitle(posting));
+  };
   /**
    * Whether the page shows a posting's title, word for word: as the job site's own title, or on a
    * site it doesn't know, as one of its headings.
    */
   const showsTitle = (posting: Record<string, unknown>) => {
+    // A page that moved on from the address it loaded at may still hold the first job's data.
+    if (moved) return false;
     const title = titleOf(posting);
     return shownTitle
       ? sameTitle(title, shownTitle)

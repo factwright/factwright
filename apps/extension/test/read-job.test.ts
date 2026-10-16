@@ -339,6 +339,58 @@ describe('reading a job page', () => {
     });
   });
 
+  it('never takes an address that names no page, or no job, as this page’s', () => {
+    const page = 'https://careers.acme.example/jobs/2-product-manager';
+    const body = '<main><h1>Product Manager</h1></main>';
+    for (const url of ['', '#', '?', 'https://careers.acme.example/careers']) {
+      const doc = withData({ ...JOB_DATA, title: 'Data Engineer', url }, body);
+      expect(readJobPage(doc, page, '').source, url).toBe('main');
+    }
+    // A page of several jobs, each at its own place on it.
+    const anchored = withData(
+      { ...JOB_DATA, title: 'Data Engineer', url: 'https://careers.acme.example/careers#job-1' },
+      '<main><h1>Data Engineer</h1><h1>Product Manager</h1></main>',
+    );
+    expect(readJobPage(anchored, 'https://careers.acme.example/careers#job-2', '').source).toBe(
+      'main',
+    );
+    // An address in a list is read by its first.
+    const listed = withData(
+      { ...JOB_DATA, title: 'Data Engineer', url: ['https://careers.acme.example/jobs/1'] },
+      '<main><h1>Data Engineer</h1></main>',
+    );
+    expect(readJobPage(listed, page, '').source).toBe('main');
+  });
+
+  it('never takes job data by its title alone once a single-page site has moved on', () => {
+    const doc = withData(
+      { ...JOB_DATA, title: 'Data Engineer' },
+      '<main><h1>Product Manager</h1><h2>Similar jobs</h2><h3>Data Engineer</h3></main>',
+    );
+    const now = 'https://careers.acme.example/jobs/2-product-manager';
+    const before = 'https://careers.acme.example/jobs/1-data-engineer';
+    expect(readJobPage(doc, now, '', before).source).toBe('main');
+    // But the data whose own address is this page's, as such a site's would be.
+    const own = withData(
+      { ...JOB_DATA, title: 'Product Manager', url: now },
+      '<main><h1>Product Manager</h1></main>',
+    );
+    expect(readJobPage(own, now, '', before).source).toBe('structured');
+    // And a heading the page hides, such as the job it showed before, is no heading.
+    const hidden = withData(
+      { ...JOB_DATA, title: 'Data Engineer' },
+      '<main><div hidden><h1>Data Engineer</h1></div><h1>Product Manager</h1></main>',
+    );
+    expect(readJobPage(hidden, now, '').source).toBe('main');
+  });
+
+  it('reads a description full of things that nearly are tags quickly', () => {
+    const start = performance.now();
+    const doc = withData({ ...JOB_DATA, description: '&lt;a'.repeat(100_000) });
+    readJobPage(doc, 'https://jobs.example.com/x', '');
+    expect(performance.now() - start).toBeLessThan(3000);
+  });
+
   it('takes the posting at this page’s address, though the page puts its title another way', () => {
     const mine = {
       ...JOB_DATA,
