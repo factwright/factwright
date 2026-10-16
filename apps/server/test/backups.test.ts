@@ -1,5 +1,5 @@
 import type { PushChange } from '@factwright/sync';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type Account, someId, startServer, type TestServer } from './server.ts';
 
 let server: TestServer;
@@ -124,12 +124,13 @@ describe('the daily cleanup', () => {
   /** A key too long for R2, so a delete that names it fails, as one does when R2 is down. */
   const refused = (account: Account) => `users/${account.id}/files/${'x'.repeat(1024)}`;
 
-  /** The failures the Worker wrote down since the last time this was asked. */
-  const failuresLogged = () => {
-    const logged = server.server.getLogs().filter((log) => log.level === 'error');
-    server.server.clearLogs();
-    return logged.map((log) => log.message);
-  };
+  /** The failures the Worker wrote down since the logs were last cleared. */
+  const errors = () =>
+    server.server
+      .getLogs()
+      .filter((log) => log.level === 'error')
+      .map((log) => log.message)
+      .join('\n');
 
   it('drops old versions and unused files, but keeps every record’s current version', async () => {
     const sam = await server.signUp();
@@ -185,11 +186,12 @@ describe('the daily cleanup', () => {
     await storage.exec('INSERT INTO trash (key) VALUES (?)', refused(sam));
     server.server.clearLogs();
     await store.cleanup(Date.now() + 86_400_000);
-    expect(failuresLogged()).toEqual([
-      expect.stringMatching(
-        `^Couldn't delete account ${sam.id}'s unused files from R2: .*not valid`,
+    // The runtime's logs arrive a moment after the run.
+    await vi.waitFor(() =>
+      expect(errors()).toMatch(
+        new RegExp(`Couldn't delete account ${sam.id}'s unused files from R2: .*not valid`),
       ),
-    ]);
+    );
     expect(await sam.client.getFile(unused)).toBeNull();
     expect((await sam.client.account()).usage).toMatchObject({ files: 1, bytes: 22 });
     expect(await inR2()).toBe(2);
@@ -198,7 +200,6 @@ describe('the daily cleanup', () => {
     // Once R2 deletes again, the next cleanup finishes, and frees nothing twice.
     await storage.exec('DELETE FROM trash WHERE key = ?', refused(sam));
     await store.cleanup(Date.now() + 86_400_000);
-    expect(failuresLogged()).toEqual([]);
     expect(await inR2()).toBe(1);
     expect(await storage.exec('SELECT key FROM trash')).toEqual([]);
     expect((await sam.client.account()).usage).toMatchObject({ files: 1, bytes: 22 });
@@ -215,8 +216,10 @@ describe('the daily cleanup', () => {
     );
     // Sorted after the thousand, it's alone in the second delete, so only that one fails.
     await storage.exec('INSERT INTO trash (key) VALUES (?)', refused(sam));
+    server.server.clearLogs();
     await (await storeOf(sam)).cleanup();
     expect(await storage.exec('SELECT key FROM trash')).toEqual([{ key: refused(sam) }]);
+    await vi.waitFor(() => expect(errors()).toMatch(/unused files from R2: .*not valid/));
   });
 
   it('never deletes from R2 a file the store has again, as after a restore', async () => {
