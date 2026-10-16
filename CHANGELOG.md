@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.7.0 - 2026-10-16
+
 ### Added
 - Claude's questions in a dialog of their own. When your Claude asks you something while it works, such as whether you've used a skill a posting wants, the questions open in Factwright rather than in the terminal: all of a round at once, each option with what it means, a box for your own words when no option fits, several picks where Claude allows them, and a note for Claude about any answer. Your answers go straight to your Claude Code, which notes them in Claude's panel as before. Not now puts the questions aside, still waiting, with Answer in Claude's panel to come back to them, and Answer in the terminal has Claude Code ask them there instead. The dialog waits up to a day for you. A question Claude Code asks in a way of its own, such as for a number, still comes in the terminal, and facts are filed from your answers just as before.
 
