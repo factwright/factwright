@@ -14,8 +14,9 @@ It's built on the design system in [`@factwright/ui`](../../packages/ui): its co
 | `src/styles` | The site's layout and type, and the drawings of the app, in a few files that `index.css` imports in order |
 | `scripts/theme.ts` | The design system's theme as CSS, plus the colors Claude Code shows in Claude's panel |
 | `scripts/images.ts` | Draws the template previews, printed from the made-up resume the app's own template picker uses, and the card link previews show |
+| `scripts/stats.ts` | Prints how many people download Factwright and use sync, in counts only (see [Download counts and stats](#download-counts-and-stats)) |
 | `public` | The template previews, the link preview card, `robots.txt`, the sitemap, and headers for files the Worker doesn't serve. The icons are the web view's, from [`apps/web/public`](../web/public) |
-| `worker` | The Worker that serves the pages: it sends www.factwright.com and plain http to https://factwright.com, and adds the security headers. It fills the download pages in with the newest version, read from the update feeds on downloads.factwright.com |
+| `worker` | The Worker that serves the pages: it sends www.factwright.com and plain http to https://factwright.com, and adds the security headers. It fills the download pages in with the newest version, read from the update feeds on downloads.factwright.com, and counts each download on its way to the installer |
 
 ## Running it
 ```bash
@@ -40,8 +41,27 @@ The home page also tells search engines what Factwright is, in a block of JSON-L
 
 The drawings of the app show made-up jobs, so each one carries `data-nosnippet`, which asks Google and Bing to leave those companies out of the snippets they show. When you redraw one, keep it, and add any new made-up company or person to `MADE_UP` in `test/pages.test.ts`. The tests check that each drawing carries it, and that no made-up name sits outside a marked part of the page, not even in the title or a description.
 
+## Download counts and stats
+The download pages' links go to `/download/get/mac` and `/download/get/windows`. The Worker counts each download there, then sends the browser on to the newest installer on downloads.factwright.com. A count is the computer and the version, in Cloudflare's Workers Analytics Engine, which keeps each one for 3 months in the `factwright_downloads` dataset. Nothing about who downloaded is kept: no IP address, browser or ID. The privacy policy says so, so a change to what's counted needs a change to it too.
+
+Only a followed link counts, not a page's script, a prefetch or a request for the headers alone, and `robots.txt` and `rel="nofollow"` keep search engines off the links. Someone who clicks "Didn't start?" after their download began counts twice. Downloads from GitHub Releases, and updates, which the app gets from downloads.factwright.com itself, aren't counted. A local preview's counts never reach Cloudflare.
+
+`pnpm --filter @factwright/site stats` prints the downloads of the last 90 days, by computer, version and day, and from the sync server's accounts database, how many accounts there are and how many are new, and how many devices are signed in and used in the last week. Every query only counts: none asks for a name, an email or anything else about a person. The app itself reports nothing, so someone who never turns on sync shows up only as a download.
+
+It needs a Cloudflare API token with read permissions only. In the Cloudflare dashboard, under **My Profile → API Tokens → Create Token → Create Custom Token**, give it two permissions, **Account · Account Analytics · Read** and **Account · D1 · Read**, for the account factwright.com runs in, and nothing else. Keep it in your password manager, never in a file here. The command reads it from `FACTWRIGHT_STATS_TOKEN`, not `CLOUDFLARE_API_TOKEN`, so it never stands in for Wrangler's own sign-in, and the account's ID from `CLOUDFLARE_ACCOUNT_ID`: the long code after `dash.cloudflare.com/` in the dashboard's address. To paste the token without it showing or landing in your shell's history:
+
+```bash
+read -rs FACTWRIGHT_STATS_TOKEN && export FACTWRIGHT_STATS_TOKEN
+```
+
+With 1Password's command-line tool, `export FACTWRIGHT_STATS_TOKEN="$(op read 'op://<vault>/<item>/credential')"` does the same. Then:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=<the account's ID> pnpm --filter @factwright/site stats
+```
+
 ## Deploying
-It runs on Cloudflare's free plan, in the same account as factwright.com. Only the pages go through the Worker: built files and template previews skip it, so a busy day on the site barely touches the daily Worker requests the account's sync server shares.
+It runs on Cloudflare Workers, in the same account as factwright.com. Only the pages go through the Worker: built files and template previews skip it, so a busy day on the site barely touches the daily Worker requests the account's sync server shares.
 
 1. Sign in to that Cloudflare account, with only what a deploy needs: `pnpm --filter @factwright/site exec wrangler login --scopes account:read user:read workers:write workers_scripts:write workers_routes:write zone:read`.
 2. `pnpm --filter @factwright/site run deploy` builds the site and deploys the `factwright-site` Worker. It needs `run`, as `pnpm deploy` on its own is a different pnpm command. Its first deploy set up factwright.com and www.factwright.com on their own.

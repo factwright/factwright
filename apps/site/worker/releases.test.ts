@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { downloadLink } from './downloads.ts';
 import {
   DOWNLOADS,
   describeRelease,
@@ -101,26 +102,22 @@ describe('the newest release', () => {
 
 describe('a download page', () => {
   const page = [
-    `<a href="${installerUrl('mac', null)}" data-direct>Download for Mac</a>`,
+    `<a href="${downloadLink('mac')}" data-direct>Download for Mac</a>`,
     releaseLine('mac'),
-    `<a href="${installerUrl('windows', null)}">Download for Windows</a>`,
+    `<a href="${downloadLink('windows')}">Download for Windows</a>`,
     releaseLine('windows'),
   ].join('\n');
 
-  it('offers the release’s own installer, and says which version it is', () => {
+  it('says which version it offers, and leaves its links to the Worker', () => {
     const filled = fillDownloadPage(page, { mac: readFeed(MAC_FEED, 'mac') });
-    expect(filled).toContain(
-      '<a href="https://downloads.factwright.com/Factwright-0.1.0.dmg" data-direct>',
-    );
     expect(filled).toContain(
       '<p class="get-meta" data-release="mac">Version 0.1.0 · 231 MB · October 13, 2026</p>',
     );
+    expect(filled).toContain('<a href="/download/get/mac" data-direct>');
   });
 
-  it('keeps the newest installer, and no version, for a computer without a release', () => {
-    const filled = fillDownloadPage(page, { mac: null });
-    expect(filled).toBe(page);
-    expect(filled).toContain('href="https://downloads.factwright.com/Factwright-Setup.exe"');
+  it('says no version for a computer without a release', () => {
+    expect(fillDownloadPage(page, { mac: null })).toBe(page);
   });
 
   it('fills in both computers on the page that picks', () => {
@@ -128,7 +125,7 @@ describe('a download page', () => {
       mac: readFeed(MAC_FEED, 'mac'),
       windows: readFeed(WINDOWS_FEED, 'windows'),
     });
-    expect(filled).toContain('Factwright-Setup-0.1.0.exe');
+    expect(filled).toContain('data-release="mac">Version 0.1.0 · 231 MB · October 13, 2026');
     expect(filled).toContain('data-release="windows">Version 0.1.0 · 112 MB · October 13, 2026');
   });
 
@@ -136,6 +133,21 @@ describe('a download page', () => {
     expect(describeRelease({ version: '0.2.0', date: null, size: null })).toBe('Version 0.2.0');
     expect(describeRelease({ version: '0.2.0', date: null, size: 400_000 })).toBe(
       'Version 0.2.0 · 1 MB',
+    );
+  });
+});
+
+describe('an installer', () => {
+  it('is the release’s own file, or the newest, under the name that never changes', () => {
+    expect(installerUrl('mac', readFeed(MAC_FEED, 'mac'))).toBe(
+      'https://downloads.factwright.com/Factwright-0.1.0.dmg',
+    );
+    expect(installerUrl('windows', readFeed(WINDOWS_FEED, 'windows'))).toBe(
+      'https://downloads.factwright.com/Factwright-Setup-0.1.0.exe',
+    );
+    expect(installerUrl('mac', null)).toBe('https://downloads.factwright.com/Factwright.dmg');
+    expect(installerUrl('windows', null)).toBe(
+      'https://downloads.factwright.com/Factwright-Setup.exe',
     );
   });
 });

@@ -22,6 +22,9 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/*", "!/assets/*", "!/templates/*"]
   },
+  // Each download, by computer and version only, for the stats command (scripts/stats.ts).
+  // Analytics Engine makes the dataset on its first write, and keeps each count for 3 months.
+  "analytics_engine_datasets": [{ "binding": "DOWNLOADS", "dataset": "factwright_downloads" }],
   // Logs keep only what the Worker writes itself. Cloudflare's log of every request is off.
   "observability": {
     "enabled": true,

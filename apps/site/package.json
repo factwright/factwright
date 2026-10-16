@@ -11,6 +11,7 @@
     "serve": "vite build && wrangler dev --port 8788 --local-upstream localhost:8788",
     "deploy": "vite build && wrangler deploy",
     "images": "node scripts/images.ts",
+    "stats": "node scripts/stats.ts",
     "typecheck": "tsc && tsc -p worker",
     "test": "vitest run"
   },

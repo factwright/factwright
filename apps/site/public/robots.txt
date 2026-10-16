@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /download/get/
 
 Sitemap: https://factwright.com/sitemap.xml
