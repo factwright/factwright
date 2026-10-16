@@ -9,9 +9,37 @@ export interface MarkdownProps {
   className?: string;
 }
 
-interface Inline {
-  pattern: RegExp;
-  render: (match: RegExpExecArray, key: string) => ReactNode;
+/*
+ * What this shows comes from Claude, and through it from job pages, which come from anywhere. So
+ * it reads text a character at a time, in one pass, where patterns that backtrack could take
+ * minutes on text made for it.
+ */
+
+/** Whether the character at `at` is one /\s/ matches: a space, tab or line break, of any kind. */
+function isSpace(text: string, at: number): boolean {
+  const code = text.charCodeAt(at);
+  return (
+    (code >= 0x09 && code <= 0x0d) ||
+    code === 0x20 ||
+    code === 0xa0 ||
+    code === 0x1680 ||
+    (code >= 0x2000 && code <= 0x200a) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    code === 0x202f ||
+    code === 0x205f ||
+    code === 0x3000 ||
+    code === 0xfeff
+  );
+}
+
+const isDigit = (text: string, at: number) => text.charAt(at) >= '0' && text.charAt(at) <= '9';
+
+/** Where the spaces starting at `at` end. */
+function spacesEnd(text: string, at: number): number {
+  let end = at;
+  while (end < text.length && isSpace(text, end)) end++;
+  return end;
 }
 
 const link = (url: string, children: ReactNode, key: string) => (
@@ -20,64 +48,158 @@ const link = (url: string, children: ReactNode, key: string) => (
   </a>
 );
 
-/** Inline marks, tried in order at each spot: code, links, bare addresses, bold, italic. */
-const INLINE: readonly Inline[] = [
-  { pattern: /`([^`]+)`/, render: (match, key) => <code key={key}>{match[1]}</code> },
-  {
-    // A link's text and address are capped, so a page full of "[" or "](http://" can't slow
-    // matching to a crawl.
-    pattern: /\[([^\]]{1,500})\]\(((?:https?:\/\/|mailto:)[^\s)]{1,2048})\)/,
-    render: (match, key) => link(match[2] ?? '', inline(match[1] ?? '', key), key),
-  },
-  {
-    pattern: /(?<=^|[\s(])https?:\/\/[^\s<)]*[^\s<).,;:]/,
-    render: (match, key) => link(match[0], match[0], key),
-  },
-  {
-    pattern: /\*\*([^*]+)\*\*/,
-    render: (match, key) => <strong key={key}>{inline(match[1] ?? '', key)}</strong>,
-  },
-  {
-    pattern: /(?<=^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,;:!?]|$)/,
-    render: (match, key) => <em key={key}>{inline(match[1] ?? '', key)}</em>,
-  },
-];
+/** An inline mark found at a place: where it ends, and how it shows. */
+interface Mark {
+  end: number;
+  render: (key: string) => ReactNode;
+}
 
-/** Each inline mark's pattern, to search on from a place in the text. */
-const SEARCHES = INLINE.map(({ pattern }) => new RegExp(pattern.source, `${pattern.flags}g`));
+/** Whether a mark can start at `at`: at the start, or after a space or "(". */
+const startsWord = (text: string, at: number) =>
+  at === 0 || text[at - 1] === '(' || isSpace(text, at - 1);
+
+/** Whether a mark can end just before `at`: at the end, or before a space or one of ").,;:!?". */
+const endsWord = (text: string, at: number) =>
+  at >= text.length || isSpace(text, at) || ').,;:!?'.includes(text.charAt(at));
+
+/** How long the "https://", "http://" or, with `mail`, "mailto:" at `at` is, or 0. */
+function schemeLength(text: string, at: number, mail: boolean): number {
+  if (text.startsWith('https://', at)) return 8;
+  if (text.startsWith('http://', at)) return 7;
+  return mail && text.startsWith('mailto:', at) ? 7 : 0;
+}
 
 /**
- * Text with its inline marks, as React elements. Each pattern's next match is kept, and searched
- * for again only once the text before it has been read, so a long text full of marks, or of
- * things that nearly are, is read in a few passes, not once for every mark in it.
+ * Finds the next character `is` accepts, at or after `from`, or -1. Asked again from further on,
+ * it keeps its answer while that's still ahead, so asked from places that only move forward, it
+ * reads the text once.
+ */
+function seeker(text: string, is: (at: number) => boolean): (from: number) => number {
+  let searched = -1;
+  let found = -1;
+  return (from) => {
+    if (searched < 0 || from < searched || (found >= 0 && found < from)) {
+      searched = from;
+      found = -1;
+      for (let at = from; at < text.length; at++) {
+        if (is(at)) {
+          found = at;
+          break;
+        }
+      }
+    }
+    return found;
+  };
+}
+
+/** `Code`: one or more characters between backticks. */
+function codeAt(text: string, at: number): Mark | null {
+  if (at + 1 >= text.length || text[at + 1] === '`') return null;
+  const close = text.indexOf('`', at + 1);
+  if (close < 0) return null;
+  const code = text.slice(at + 1, close);
+  return { end: close + 1, render: (key) => <code key={key}>{code}</code> };
+}
+
+/**
+ * Links, "[text](address)", in one text. Many "[" can share the "]" after them, and many
+ * addresses the space or ")" that ends them, so each of those is looked for once, rather than
+ * once for every "[" before it.
+ */
+function linkReader(text: string): (at: number) => Mark | null {
+  const nextClose = seeker(text, (at) => text[at] === ']');
+  const nextStop = seeker(text, (at) => text[at] === ')' || isSpace(text, at));
+  return (at) => {
+    // 1 to 500 characters of text up to the first "]", then "(" and a web or email address with
+    // 1 to 2,048 characters after its scheme, up to a ")": the limits links had before.
+    const close = nextClose(at + 1);
+    if (close < at + 2 || close > at + 501 || text[close + 1] !== '(') return null;
+    const start = close + 2;
+    const scheme = schemeLength(text, start, true);
+    if (!scheme) return null;
+    const stop = nextStop(start + scheme);
+    if (stop <= start + scheme || stop > start + scheme + 2048 || text[stop] !== ')') return null;
+    const label = text.slice(at + 1, close);
+    const url = text.slice(start, stop);
+    return { end: stop + 1, render: (key) => link(url, inline(label, key), key) };
+  };
+}
+
+/** Whether the character at `at` ends a bare address: a space, "<" or ")". */
+const endsAddress = (text: string, at: number) =>
+  text[at] === '<' || text[at] === ')' || isSpace(text, at);
+
+/** Punctuation after a bare address, which ends its sentence rather than the address. */
+const AFTER_ADDRESS = '.,;:';
+
+/** A bare web address, starting a word and running to a space, "<" or ")". */
+function addressAt(text: string, at: number): Mark | null {
+  const scheme = startsWord(text, at) ? schemeLength(text, at, false) : 0;
+  if (!scheme) return null;
+  let end = at + scheme;
+  while (end < text.length && !endsAddress(text, end)) end++;
+  while (end > at + scheme && AFTER_ADDRESS.includes(text.charAt(end - 1))) end--;
+  if (end === at + scheme) return null;
+  const url = text.slice(at, end);
+  return { end, render: (key) => link(url, url, key) };
+}
+
+/** **Bold**: one or more characters, none of them "*", between pairs of them. */
+function boldAt(text: string, at: number): Mark | null {
+  if (text[at + 1] !== '*') return null;
+  const close = text.indexOf('*', at + 2);
+  if (close <= at + 2 || text[close + 1] !== '*') return null;
+  const inner = text.slice(at + 2, close);
+  return { end: close + 2, render: (key) => <strong key={key}>{inline(inner, key)}</strong> };
+}
+
+/** *Italic*: starting a word, with no space just inside its first "*", and ending one. */
+function italicAt(text: string, at: number): Mark | null {
+  if (at + 1 >= text.length || text[at + 1] === '*' || isSpace(text, at + 1)) return null;
+  if (!startsWord(text, at)) return null;
+  const close = text.indexOf('*', at + 2);
+  if (close < 0 || !endsWord(text, close + 1)) return null;
+  const inner = text.slice(at + 1, close);
+  return { end: close + 1, render: (key) => <em key={key}>{inline(inner, key)}</em> };
+}
+
+/**
+ * Text with its inline marks, as React elements: code, links, bare addresses, bold and italic.
+ * It reads the text from the left and takes the first mark that fits at each place. Each kind of
+ * mark reads ahead only to the first place it could end, and doesn't read that stretch again for
+ * a later mark, so each character is read a few times at most.
  */
 function inline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const next: (RegExpExecArray | null | undefined)[] = INLINE.map(() => undefined);
+  const linkAt = linkReader(text);
+  let plain = 0;
   let at = 0;
   while (at < text.length) {
-    let first = -1;
-    for (let rule = 0; rule < INLINE.length; rule++) {
-      let match = next[rule];
-      if (match === undefined || (match !== null && match.index < at)) {
-        const search = SEARCHES[rule] as RegExp;
-        search.lastIndex = at;
-        match = search.exec(text);
-        next[rule] = match;
-      }
-      if (match && (first < 0 || match.index < (next[first] as RegExpExecArray).index)) {
-        first = rule;
-      }
+    let mark: Mark | null = null;
+    switch (text[at]) {
+      case '`':
+        mark = codeAt(text, at);
+        break;
+      case '[':
+        mark = linkAt(at);
+        break;
+      case 'h':
+        mark = addressAt(text, at);
+        break;
+      case '*':
+        mark = boldAt(text, at) ?? italicAt(text, at);
+        break;
     }
-    const match = next[first];
-    if (!match) {
-      nodes.push(text.slice(at));
-      break;
+    if (!mark) {
+      at++;
+      continue;
     }
-    if (match.index > at) nodes.push(text.slice(at, match.index));
-    nodes.push((INLINE[first] as Inline).render(match, `${keyPrefix}.${nodes.length}`));
-    at = match.index + match[0].length;
+    if (at > plain) nodes.push(text.slice(plain, at));
+    nodes.push(mark.render(`${keyPrefix}.${nodes.length}`));
+    at = mark.end;
+    plain = at;
   }
+  if (plain < text.length) nodes.push(text.slice(plain));
   return nodes;
 }
 
@@ -91,22 +213,70 @@ function lines(list: readonly string[], key: string): ReactNode[] {
   ));
 }
 
-const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+/** A "# Heading" line's level and text: one to six "#", a space, then its text. */
+function headingOf(line: string): { level: number; text: string } | null {
+  let level = 0;
+  while (line[level] === '#') level++;
+  if (level < 1 || level > 6 || !isSpace(line, level)) return null;
+  return { level, text: line.slice(spacesEnd(line, level)) };
+}
 
-const cells = (line: string) =>
-  line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
+interface Item {
+  /** How many spaces come before its marker. */
+  indent: number;
+  ordered: boolean;
+  text: string;
+}
+
+/** A list item's line: "-", "*", "+", "1." or "1)", then a space, then its text. */
+function itemOf(line: string): Item | null {
+  const indent = spacesEnd(line, 0);
+  const ordered = isDigit(line, indent);
+  let at = indent + 1;
+  if (ordered) {
+    while (isDigit(line, at)) at++;
+    if (line[at] !== '.' && line[at] !== ')') return null;
+    at++;
+  } else if (line[indent] !== '-' && line[indent] !== '*' && line[indent] !== '+') {
+    return null;
+  }
+  if (!isSpace(line, at)) return null;
+  return { indent, ordered, text: line.slice(spacesEnd(line, at)) };
+}
+
+const cells = (line: string) => {
+  let row = line.trim();
+  if (row.startsWith('|')) row = row.slice(1);
+  if (row.endsWith('|')) row = row.slice(0, -1);
+  return row.split('|').map((cell) => cell.trim());
+};
+
+/** Whether a line is a table's row: a "|" after any spaces. */
+const isRow = (line: string) => line[spacesEnd(line, 0)] === '|';
+
+/** Whether a line is the rule under a table's header, such as "|---|---|" or ":--". */
+function isRule(line: string): boolean {
+  let at = spacesEnd(line, 0);
+  if (line[at] === '|') at = spacesEnd(line, at + 1);
+  if (line[at] === ':') at++;
+  return line[at] === '-' && line[at + 1] === '-';
+}
 
 const isTableStart = (all: readonly string[], i: number) =>
-  /^\s*\|/.test(all[i] ?? '') && /^\s*\|?\s*:?-{2,}/.test(all[i + 1] ?? '');
+  isRow(all[i] ?? '') && isRule(all[i + 1] ?? '');
+
+/** A quote's line without its ">" and a space after it. */
+const unquoted = (line: string) => line.slice(isSpace(line, 1) ? 2 : 1);
 
 const isBlockStart = (all: readonly string[], i: number) => {
   const line = all[i] ?? '';
-  return /^```|^#{1,6}\s|^>\s?/.test(line) || LIST_ITEM.test(line) || isTableStart(all, i);
+  return (
+    line.startsWith('```') ||
+    line.startsWith('>') ||
+    headingOf(line) !== null ||
+    itemOf(line) !== null ||
+    isTableStart(all, i)
+  );
 };
 
 interface ListNode {
@@ -146,11 +316,14 @@ function list(nodes: readonly ListNode[], key: string): ReactNode {
 function blocks(text: string, headingOffset: number): ReactNode[] {
   const all = text.replace(/\r\n?/g, '\n').split('\n');
   const out: ReactNode[] = [];
+  // How many empty cells short table rows can still be filled out with: 10,000, or one for each
+  // character of the text if that's more. A wide header over many short rows could make millions.
+  let fill = Math.max(10_000, text.length);
   let i = 0;
   while (i < all.length) {
     const line = all[i] ?? '';
     const key = `b${i}`;
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    const heading = headingOf(line);
     if (line.startsWith('```')) {
       const code: string[] = [];
       for (i++; i < all.length && !(all[i] ?? '').startsWith('```'); i++) code.push(all[i] ?? '');
@@ -161,15 +334,24 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
         </pre>,
       );
     } else if (heading) {
-      const level = Math.min(6, (heading[1]?.length ?? 1) + headingOffset);
+      const level = Math.min(6, heading.level + headingOffset);
       const Tag = `h${level}` as 'h3';
-      out.push(<Tag key={key}>{inline(heading[2] ?? '', key)}</Tag>);
+      out.push(<Tag key={key}>{inline(heading.text, key)}</Tag>);
       i++;
     } else if (isTableStart(all, i)) {
       const head = cells(line);
       const rows: string[][] = [];
-      for (i += 2; i < all.length && /^\s*\|/.test(all[i] ?? ''); i++)
-        rows.push(cells(all[i] ?? ''));
+      for (i += 2; i < all.length && isRow(all[i] ?? ''); i++) {
+        // A row has as many cells as the header: past that they're left out, and a short row is
+        // filled out with empty ones if there are still enough left for all it needs.
+        const row = cells(all[i] ?? '').slice(0, head.length);
+        const missing = head.length - row.length;
+        if (missing <= fill) {
+          fill -= missing;
+          while (row.length < head.length) row.push('');
+        }
+        rows.push(row);
+      }
       out.push(
         <div key={key} className={styles.table}>
           <table>
@@ -183,8 +365,8 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
             <tbody>
               {rows.map((row, r) => (
                 <tr key={`${key}.r${r}`}>
-                  {head.map((_, k) => (
-                    <td key={`${key}.r${r}.${k}`}>{inline(row[k] ?? '', `${key}.r${r}.${k}`)}</td>
+                  {row.map((cell, k) => (
+                    <td key={`${key}.r${r}.${k}`}>{inline(cell, `${key}.r${r}.${k}`)}</td>
                   ))}
                 </tr>
               ))}
@@ -192,16 +374,18 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
           </table>
         </div>,
       );
-    } else if (LIST_ITEM.test(line)) {
+    } else if (itemOf(line)) {
       const items: { depth: number; text: string; ordered: boolean }[] = [];
       while (i < all.length) {
         const current = all[i] ?? '';
-        const item = current.match(LIST_ITEM);
+        const item = itemOf(current);
         const last = items.at(-1);
+        const indent = spacesEnd(current, 0);
         if (item) {
-          const depth = Math.min(3, Math.floor((item[1]?.length ?? 0) / 2));
-          items.push({ depth, text: item[3] ?? '', ordered: /^\d/.test(item[2] ?? '') });
-        } else if (last && /^\s{2,}\S/.test(current)) {
+          const depth = Math.min(3, Math.floor(item.indent / 2));
+          items.push({ depth, text: item.text, ordered: item.ordered });
+        } else if (last && indent >= 2 && indent < current.length) {
+          // A line with text, indented under an item, continues it.
           last.text += ` ${current.trim()}`;
         } else {
           break;
@@ -209,17 +393,19 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
         i++;
       }
       out.push(list(nest(items), key));
-    } else if (/^>\s?/.test(line)) {
+    } else if (line.startsWith('>')) {
       const quote: string[] = [];
-      for (; i < all.length && /^>\s?/.test(all[i] ?? ''); i++) {
-        quote.push((all[i] ?? '').replace(/^>\s?/, ''));
+      for (; i < all.length && (all[i] ?? '').startsWith('>'); i++) {
+        quote.push(unquoted(all[i] ?? ''));
       }
       out.push(<blockquote key={key}>{lines(quote, key)}</blockquote>);
     } else if (!line.trim()) {
       i++;
     } else {
-      const paragraph: string[] = [];
-      for (; i < all.length && (all[i] ?? '').trim() && !isBlockStart(all, i); i++) {
+      // Every line that starts a block is read as that block above, so this one starts a
+      // paragraph. Taking it first, whatever it is, means the loop always moves on.
+      const paragraph = [line];
+      for (i++; i < all.length && (all[i] ?? '').trim() && !isBlockStart(all, i); i++) {
         paragraph.push(all[i] ?? '');
       }
       out.push(<p key={key}>{lines(paragraph, key)}</p>);

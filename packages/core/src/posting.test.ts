@@ -192,6 +192,16 @@ describe('a page made to keep the app busy', () => {
     expect(htmlToText('<li<li>Item one</li>')).toBe('- Item one');
   });
 
+  it('keeps the words after a list item or heading tag missing its ">"', () => {
+    // The tag runs to the next ">", as a browser reads it, and the words after that stay.
+    expect(htmlToText('<li</ul>Next paragraph<p>')).toBe('- Next paragraph');
+    expect(htmlToText('<ul><li class="x"<b>Remote</b></li></ul>')).toBe('- Remote');
+    expect(htmlToText('<h2<h3>Title</h3>')).toBe('### Title');
+    expect(htmlToText('<h2 class="t"<span>Senior engineer</span></h2><p>Build things</p>')).toBe(
+      '### Senior engineer\nBuild things',
+    );
+  });
+
   it('finds JSON-LD data however its script tag is written', () => {
     const data = '{"@type":"JobPosting","title":"Engineer","description":"Build things"}';
     expect(
