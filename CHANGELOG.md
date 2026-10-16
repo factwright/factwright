@@ -5,6 +5,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Fixed
+- Each account's daily cleanup on the sync server keeps to its schedule when a day's run fails: the next day's is planned and saved before each one runs, and a failure is written down. Before, a cleanup that failed several tries in a row, or never finished, stopped them until one of the account's devices synced a change, so an account no longer in use could keep earlier versions past the 90 days the privacy policy keeps them.
 - PDFs of resumes and cover letters hold letters such as fi, fl, ff, ffi and ffl as the letters themselves, so applicant tracking systems read every word. Before, in a template set in Factwright Sans, Calibri's stand-in, as many of your own are, in headings set in Barlow, and in Classic's italics, a system could read "first" as "ﬁrst", with a character it doesn't know, and miss words such as certified and profile, or a heading such as Profile. They look the same on the page, and every line breaks where it did. A character for joined letters copied into a resume, as text from some PDFs has, prints as the letters too.
 
 ## 0.5.0 - 2026-10-16
