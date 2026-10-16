@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { readJobPage } from '../src/page/read-job.ts';
-import { fromTabTitle, jobAddress, jobFromTab, toSave } from '../src/tab-job.ts';
+import { type PageJob, readJobPage } from '../src/page/read-job.ts';
+import {
+  companyFromAddress,
+  fromTabTitle,
+  isJobAddress,
+  jobAddress,
+  jobFromTab,
+  needsChecking,
+  toSave,
+} from '../src/tab-job.ts';
 
 const ADDRESSES = [
   'https://www.linkedin.com/jobs/search/?currentJobId=4012345678&keywords=engineer',
@@ -8,6 +16,12 @@ const ADDRESSES = [
   'https://www.indeed.com/jobs?q=analyst&vjk=a1b2c3d4e5',
   'https://uk.indeed.com/viewjob?jk=abc123&from=serp',
   'https://jobs.example.com/pm-data?utm_source=x&team=data#apply',
+  'https://www.linkedin.com/feed/?currentJobId=4012345678',
+  'https://www.indeed.com/career-advice?jk=abc123',
+  'https://www.indeed.com/m/basecamp/viewjob?viewtype=embedded&jk=abc123',
+  'https://www.indeed.com/cmp/Acme/jobs?jk=abc123',
+  'https://careers.example.com/?utm_source=x#/jobs/42',
+  'https://careers.example.com/#!/job/7',
   'not a link',
 ];
 
@@ -23,6 +37,58 @@ describe('a job’s own address', () => {
     expect(jobAddress(ADDRESSES[0] ?? '')).toBe('https://www.linkedin.com/jobs/view/4012345678/');
     expect(jobAddress(ADDRESSES[2] ?? '')).toBe('https://www.indeed.com/viewjob?jk=a1b2c3d4e5');
     expect(jobAddress(ADDRESSES[4] ?? '')).toBe('https://jobs.example.com/pm-data?team=data');
+  });
+});
+
+describe('whether an address is one job’s', () => {
+  it('is, on LinkedIn and Indeed, only for a job’s own page', () => {
+    expect(isJobAddress('https://www.linkedin.com/jobs/view/4012345678/')).toBe(true);
+    expect(isJobAddress('https://www.linkedin.com/jobs/search/?keywords=engineer')).toBe(false);
+    expect(isJobAddress('https://www.linkedin.com/feed/')).toBe(false);
+    expect(isJobAddress('https://www.indeed.com/viewjob?jk=a1b2c3d4e5')).toBe(true);
+    expect(isJobAddress('https://www.indeed.com/jobs?q=analyst')).toBe(false);
+  });
+
+  it('is, anywhere else, any page', () => {
+    expect(isJobAddress('https://careers.example.com/#/jobs/42')).toBe(true);
+    expect(isJobAddress('not a link')).toBe(false);
+  });
+});
+
+describe('a company from a job’s address', () => {
+  it('is the company’s own site’s name', () => {
+    expect(companyFromAddress('https://careers.lumen.example/jobs/7')).toBe('Lumen');
+    expect(companyFromAddress('https://www.fernway.com/careers/data-lead')).toBe('Fernway');
+    expect(companyFromAddress('https://acme.wd5.myworkdayjobs.com/en-US/External/job/1')).toBe(
+      'Acme',
+    );
+    expect(companyFromAddress('https://careers-acme.icims.com/jobs/1/job')).toBe('Acme');
+  });
+
+  it('is the company an applicant system’s address names', () => {
+    expect(companyFromAddress('https://jobs.lever.co/harbor-and-pine/4f1c2b7e')).toBe(
+      'Harbor and Pine',
+    );
+    expect(companyFromAddress('https://boards.greenhouse.io/fernway/jobs/123')).toBe('Fernway');
+    expect(companyFromAddress('https://job-boards.greenhouse.io/fernway/jobs/123')).toBe('Fernway');
+    expect(
+      companyFromAddress('https://boards.greenhouse.io/embed/job_app?for=fernway&token=123'),
+    ).toBe('Fernway');
+    expect(companyFromAddress('https://jobs.ashbyhq.com/northwind/9a8b')).toBe('Northwind');
+    expect(companyFromAddress('https://apply.workable.com/tidewater/j/ABC123/')).toBe('Tidewater');
+  });
+
+  it('is none on a job board', () => {
+    for (const url of [
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      'https://uk.indeed.com/viewjob?jk=abc',
+      'https://www.glassdoor.co.uk/job-listing/x',
+      'https://www.ziprecruiter.com/c/Acme/Job/1',
+      'https://wellfound.com/jobs/1',
+      'not a link',
+    ]) {
+      expect(companyFromAddress(url), url).toBe('');
+    }
   });
 });
 
@@ -46,9 +112,25 @@ describe('a tab’s title', () => {
     });
     expect(fromTabTitle('Careers')).toEqual({ role: 'Careers', company: '' });
   });
+
+  it('names nothing for a search, or a site’s own page', () => {
+    for (const title of [
+      '(3) Jobs | LinkedIn',
+      'Software Engineer Jobs, Employment in Austin, TX | Indeed.com',
+      '1,204 Data Analyst jobs in United States',
+      'Feed | LinkedIn',
+    ]) {
+      expect(fromTabTitle(title), title).toEqual({ role: '', company: '' });
+    }
+  });
 });
 
 describe('the job to save', () => {
+  it('takes no company from a job board’s page that names none', () => {
+    const job = jobFromTab('https://www.linkedin.com/jobs/view/4012345678/', 'Jobs | LinkedIn');
+    expect(toSave(job)).toMatchObject({ company: '', role: '' });
+  });
+
   it('takes the company from the site when the page names none', () => {
     const job = jobFromTab('https://careers.lumen.example/jobs/7', 'Clinical Data Lead');
     expect(toSave(job)).toEqual({
@@ -59,5 +141,32 @@ describe('the job to save', () => {
       pay: '',
       posting: '',
     });
+  });
+});
+
+describe('a save without the popup', () => {
+  const read = (overrides: Partial<PageJob>): PageJob => ({
+    ...jobFromTab('https://jobs.lever.co/harbor-and-pine/4f1c', 'Senior PM'),
+    title: 'Senior PM',
+    company: 'Harbor & Pine',
+    posting: 'Lead the roadmap.',
+    source: 'structured',
+    ...overrides,
+  });
+
+  it('saves what’s clearly one job', () => {
+    const page = read({});
+    expect(needsChecking(page, toSave(page))).toBeNull();
+    const selected = read({ source: 'selection', url: 'https://lumen.example/careers' });
+    expect(needsChecking(selected, toSave(selected))).toBeNull();
+  });
+
+  it('has anything else checked in the popup first', () => {
+    const main = read({ source: 'main', url: 'https://lumen.example/careers/7' });
+    expect(needsChecking(main, toSave(main))).toMatch(/posting/);
+    const search = read({ url: 'https://www.linkedin.com/jobs/search/?keywords=pm' });
+    expect(needsChecking(search, toSave(search))).toMatch(/one job/);
+    const nameless = read({ company: '', url: 'https://www.indeed.com/viewjob?jk=a1' });
+    expect(needsChecking(nameless, toSave(nameless))).toMatch(/company/);
   });
 });

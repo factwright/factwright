@@ -311,7 +311,7 @@ export async function jobDetails(
   add(
     'Posting saved from the user’s browser',
     posting &&
-      `${posting.path}${posting.saved ? ` (${posting.saved})` : ''}, as the user saw it. Read the posting there, LinkedIn's included: save_posting with the job's link copies it into the job's folder.`,
+      `${posting.path}${posting.saved ? ` (${posting.saved})` : ''}, as the user saw it. Read the posting there, LinkedIn's included: save_posting with the job's link and this job's id copies it into the job's folder.`,
   );
   if (job.apply) {
     const steps = readApplySteps(job.apply);

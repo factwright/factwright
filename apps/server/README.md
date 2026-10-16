@@ -4,7 +4,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 
 - **One private store per account:** a Durable Object with its own database, plus a folder of encrypted files in R2.
 - **Identity from the session:** the account always comes from the verified session, never from the request.
-- **Sign-in:** [Better Auth](https://www.better-auth.com), with GitHub or Google. The desktop app signs in with a device code you approve in your browser. Accounts and sessions live in D1. A session keeps the name of its device and no IP address, and GitHub's and Google's tokens aren't kept.
+- **Sign-in:** [Better Auth](https://www.better-auth.com), with GitHub or Google. The desktop app and the browser extension, Save to Factwright, each sign in with a device code you approve in your browser, under a client ID of their own. Accounts and sessions live in D1. A session keeps the name of its device and no IP address, and GitHub's and Google's tokens aren't kept.
 - **The web view too:** it serves [the web view](../web), so the phone, sign-in and the API share one address.
 
 | Part | What it does |

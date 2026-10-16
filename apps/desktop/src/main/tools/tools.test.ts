@@ -802,6 +802,36 @@ describe('save_posting', () => {
     );
   });
 
+  it('uses the job’s own posting from the browser, by its id, when two share a link', async () => {
+    const board = 'https://boards.example.com/#/jobs';
+    for (const [id, text] of [
+      ['acme--designer', 'The designer posting.'],
+      ['acme--writer', 'The writer posting.'],
+    ] as const) {
+      const saved = join(root, savedPostingFile(id));
+      mkdirSync(join(saved, '..'), { recursive: true });
+      writeFileSync(
+        saved,
+        savedPostingMarkdown({
+          url: board,
+          site: 'boards.example.com',
+          savedOn: '2026-10-10',
+          text,
+        }),
+      );
+    }
+    // Without the job, it won't guess between the two.
+    expect(await tool('save_posting').run({ url: board, folder: FOLDER })).toMatch(/^Nothing read/);
+    const answer = await tool('save_posting').run({
+      url: board,
+      folder: FOLDER,
+      job: 'acme--writer',
+    });
+    expect(answer).toContain('via saved from the user’s browser');
+    expect(posted()).toContain('The writer posting.');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('keeps a posting already saved, without fetching it again', async () => {
     const file = join(root, 'applications', FOLDER, 'posting.md');
     writeFileSync(file, '# Job posting\n\n- **Source:** pasted by the user\n');

@@ -109,6 +109,7 @@ export function FilesSection({
   // job's folder, which Claude's work makes.
   const [saved, setSaved] = useState<SavedPosting | null>(null);
 
+  // Read again whenever the job does, such as after a sync, which can bring the posting in.
   useEffect(() => {
     let live = true;
     void api.jobExtras(job.id).then((extras) => {
@@ -117,26 +118,26 @@ export function FilesSection({
     return () => {
       live = false;
     };
-  }, [api, job.id]);
+  }, [api, job]);
 
   // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes,
   // and a job saved from the browser may have only the posting the user saved there.
   const posting = useCallback(async () => {
     const loaded = await api.jobDocs(job.id);
-    return loaded?.posting ?? loaded?.job ?? saved?.text ?? null;
+    return loaded?.posting ?? saved?.text ?? loaded?.job ?? null;
   }, [api, job.id, saved]);
   /** A resume's PDF and Word file, which share a name, for the X-ray to switch between. */
   const sameResume = (file: JobFile) =>
     job.files.filter((each) => stem(each.name) === stem(file.name));
 
-  // Older folders keep the posting inside the job notes.
+  // Once Claude saves the posting in the job's folder, that one is shown instead.
+  const browserPosting = saved && !job.docKinds.includes('posting') ? saved : null;
+  // Older folders keep the posting inside the job notes, unless the browser saved it.
   const documents = DOCUMENTS.filter(({ kind }) => job.docKinds.includes(kind)).map((doc) =>
-    doc.kind === 'job' && !job.docKinds.includes('posting')
+    doc.kind === 'job' && !job.docKinds.includes('posting') && !browserPosting
       ? { ...doc, name: 'Posting', about: 'Saved with the job notes' }
       : doc,
   );
-  // Once Claude saves the posting in the job's folder, that one is shown instead.
-  const browserPosting = saved && !job.docKinds.includes('posting') ? saved : null;
 
   const openFile = async (path: string) => {
     const result = await api.openFile(path);

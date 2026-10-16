@@ -100,9 +100,9 @@ async function frame(
 
 /**
  * A page's content with a margin around it, as a picture, and the test account's address shown as
- * a person's would be.
+ * a person's would be. With `before`, only what's above that element, to fit a store's picture.
  */
-async function capture(page: Page): Promise<Buffer> {
+async function capture(page: Page, before?: string): Promise<Buffer> {
   await page.evaluate(() => {
     for (const element of document.querySelectorAll('p')) {
       element.textContent = (element.textContent ?? '').replace(
@@ -113,13 +113,14 @@ async function capture(page: Page): Promise<Buffer> {
   });
   const box = await page.locator('main').boundingBox();
   if (!box) throw new Error('The page shows nothing to picture.');
+  const end = before ? await page.locator(before).first().boundingBox() : null;
   const margin = 24;
   return page.screenshot({
     clip: {
       x: Math.max(0, box.x - margin),
       y: Math.max(0, box.y - margin),
       width: box.width + 2 * margin,
-      height: box.height + 2 * margin,
+      height: (end ? end.y - box.y : box.height + margin) + margin,
     },
   });
 }
@@ -213,7 +214,7 @@ try {
     await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 20_000 });
     check((await approval.step()).state === 'linked', 'links once both say the emoji match');
     await frame(
-      await capture(setup),
+      await capture(setup, 'h2:text-is("Account")'),
       620,
       'Save it your way',
       'From the toolbar, a keyboard shortcut or the right-click menu, from any job site. You choose whether it reads LinkedIn’s postings or saves their links alone.',
@@ -238,6 +239,11 @@ try {
     check(
       (await popup.locator('#company').inputValue()) === 'Harbor & Pine',
       'the popup shows the job it read, to check',
+    );
+    check(
+      (await popup.locator('#keep').isChecked()) &&
+        (await popup.locator('.posting').textContent())?.startsWith('About the role') === true,
+      'with the posting it saves, to look over, and a way to leave it out',
     );
     await frame(
       await popup.locator('body').screenshot(),
@@ -276,8 +282,13 @@ try {
           ).chrome.runtime.sendMessage({ type: 'save', job: sent }),
         job,
       );
-    const saved = (await save()) as { ok: boolean; id: string; already: boolean };
-    check(saved.ok && !saved.already, 'saves a job');
+    const saved = (await save()) as {
+      ok: boolean;
+      id: string;
+      already: boolean;
+      posting: string;
+    };
+    check(saved.ok && !saved.already && saved.posting === 'saved', 'saves a job');
     const { changes } = await sam.client.changes(0);
     const record = await recordId(keys, rowName('jobs', saved.id));
     const change = changes.find((each) => each.record === record);
@@ -292,7 +303,33 @@ try {
       changes.some((each) => each.record === posting),
       'with the posting as the person saw it',
     );
-    check(((await save()) as { already: boolean }).already, 'saves the same job only once');
+    const again = (await save()) as { already: boolean; posting: string };
+    check(again.already && again.posting === 'kept', 'saves the same job only once');
+
+    // A page it knows nothing of: its main text, shown to check, which a quick save never takes.
+    const unknown = await context.newPage();
+    await unknown.setViewportSize({ width: 360, height: 600 });
+    await unknown.addInitScript(
+      (page) => {
+        const api = (
+          globalThis as unknown as {
+            chrome: { tabs: { query: unknown }; scripting: { executeScript: unknown } };
+          }
+        ).chrome;
+        api.tabs.query = async () => [{ id: 2, url: page.url, title: page.pageTitle }];
+        api.scripting.executeScript = async () => [{ result: page }];
+      },
+      { ...SAMPLE_JOB, url: 'https://lumen.example/careers/7', source: 'main', company: '' },
+    );
+    await unknown.goto(setup.url().replace('setup.html', 'popup.html'));
+    await unknown.getByRole('button', { name: 'Save to Factwright' }).waitFor({ timeout: 10_000 });
+    check(
+      (await unknown.locator('details.preview').getAttribute('open')) !== null &&
+        (await unknown.getByText('read the page’s main text').count()) === 1 &&
+        (await unknown.locator('#company').inputValue()) === 'Lumen',
+      'shows a page’s main text open, to check it’s the posting',
+    );
+    await unknown.close();
     check(errors.length === 0, 'with nothing going wrong on its pages');
     await context.close();
   }

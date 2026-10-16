@@ -20,7 +20,7 @@ Before starting, read:
 ## 1. Read the job
 - Call `find_job` with what you have. The link alone is fine; call it again once you know the company and role. If the user has seen this job before, open the reply with that line (e.g. "Seen: Good 67 on Oct 6, applied Oct 8"), and reuse its folder.
 - If the job's folder already has `posting.md` (or `job.md` in older folders), read the posting from there, plus `unmask.md` and `notes.md` if they're there: an employer check may already have found the real employer behind a board listing. `job_details` lists everything else on file, such as the user's notes and calls, which can change the verdict.
-- If `job_details` names a posting saved from the user's browser, read it from there: it's the posting as they saw it, LinkedIn's included, which Factwright's tools never read. `save_posting` with the job's link copies it into the folder.
+- If `job_details` names a posting saved from the user's browser, read it from there: it's the posting as they saw it, LinkedIn's included, which Factwright's tools never read. `save_posting` with the job's link and its id copies it into the folder.
 - Otherwise read the link: `read_posting` for a posting on Greenhouse, Lever, Ashby or Gem, which never asks the user, and `read_page` for anywhere else. If it needs a sign-in or won't load, ask the user to paste the text.
 - Pull out: company, role, level, remote policy and location limits, pay, must-haves, nice-to-haves, stack, domain.
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.

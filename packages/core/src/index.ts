@@ -170,7 +170,7 @@ export {
   markdownTable,
   type Section,
 } from './markdown.ts';
-export { JOB_LIMITS, jobIdFor, type NewJobRows, newJobRows } from './new-job.ts';
+export { JOB_LIMITS, jobIdFor, type NewJobRows, newJobRows, shortCode } from './new-job.ts';
 export { type PayRange, parsePay } from './pay.ts';
 export {
   decodeEntities,

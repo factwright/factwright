@@ -1,10 +1,10 @@
 import { LIGHT } from '@factwright/ui/tokens';
-import { browserName, clientFor, forgetAccount, loadAccount } from './account.ts';
+import { browserName, canReachSync, clientFor, forgetAccount, loadAccount } from './account.ts';
 import { ext, type Tab } from './ext.ts';
 import { isSave } from './messages.ts';
 import { isWebPage, readTab } from './read-tab.ts';
 import { type JobToSave, type SaveResult, saveJob } from './save.ts';
-import { toSave } from './tab-job.ts';
+import { needsChecking, toSave } from './tab-job.ts';
 
 /**
  * The extension's background: it saves jobs, for the popup, the page's right-click menu and the
@@ -40,6 +40,13 @@ async function save(job: JobToSave): Promise<SaveResult> {
   if (!account?.keys) {
     return { ok: false, reason: 'signed-out', message: 'Set up Save to Factwright first.' };
   }
+  if (!(await canReachSync())) {
+    return {
+      ok: false,
+      reason: 'no-access',
+      message: 'The browser doesn’t let Save to Factwright reach Factwright’s sync.',
+    };
+  }
   const result = await saveJob(clientFor(account.token), account.keys, job, {
     device: `Save to Factwright in ${browserName()}`,
   });
@@ -57,10 +64,26 @@ async function mark(tab: Tab, ok: boolean, says: string): Promise<void> {
   setTimeout(() => {
     void ext.action.setBadgeText({ text: '', tabId });
     void ext.action.setTitle({ title: TITLE, tabId });
-  }, 5000);
+  }, 8000);
 }
 
-/** Saves the job on a tab without opening the popup, from the menu or the shortcut. */
+/** Opens the popup, to check a job before saving it, or, where the browser won't, says to. */
+async function checkFirst(tab: Tab, why: string): Promise<void> {
+  try {
+    if (ext.action.openPopup) {
+      await ext.action.openPopup();
+      return;
+    }
+  } catch {
+    // Firefox opens it only straight from a click.
+  }
+  await mark(tab, false, `${why} Click the Factwright button to check it, then save it.`);
+}
+
+/**
+ * Saves the job on a tab without opening the popup, from the menu or the shortcut. It saves only
+ * what's clearly one job, and opens the popup for anything to check first.
+ */
 async function saveTab(tab: Tab): Promise<void> {
   if (!isWebPage(tab.url)) {
     await mark(tab, false, 'Open a job’s page, then save it.');
@@ -71,18 +94,27 @@ async function saveTab(tab: Tab): Promise<void> {
     return;
   }
   const { page } = await readTab(tab);
-  const result = await save(toSave(page));
-  if (!result.ok && result.reason === 'signed-out') await openSetup();
-  const name = [page.title, page.company].filter(Boolean).join(' at ') || page.url;
-  await mark(
-    tab,
-    result.ok,
-    result.ok
-      ? result.already
-        ? `Already in your job hunt: ${name}`
-        : `Saved ${name}`
-      : result.message,
-  );
+  const job = toSave(page);
+  const check = needsChecking(page, job);
+  if (check) {
+    await checkFirst(tab, check);
+    return;
+  }
+  const result = await save(job);
+  if (!result.ok) {
+    if (result.reason === 'signed-out' || result.reason === 'no-access') await openSetup();
+    await mark(tab, false, result.message);
+    return;
+  }
+  const name = [job.role, job.company].filter(Boolean).join(' at ');
+  if (result.posting === 'failed') {
+    await mark(tab, false, `Saved ${name}, but not its posting. Save it again to add it.`);
+  } else if (result.already) {
+    const added = result.posting === 'saved' ? ' Its posting was added.' : '';
+    await mark(tab, true, `Already in your job hunt: ${name}.${added}`);
+  } else {
+    await mark(tab, true, `Saved ${name}${result.posting === 'none' ? ', by its link' : ''}.`);
+  }
 }
 
 ext.runtime.onInstalled.addListener(({ reason }) => {
@@ -108,7 +140,11 @@ ext.commands.onCommand.addListener((command, tab) => {
 
 // Only the extension's own pages can ask: it has no content scripts, and no site can message it.
 ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (sender.id !== ext.runtime.id || !isSave(message)) return undefined;
-  void save(message.job).then(sendResponse);
+  const ours =
+    sender.id === ext.runtime.id && (sender.url ?? '').startsWith(ext.runtime.getURL(''));
+  if (!ours || !isSave(message)) return undefined;
+  save(message.job).then(sendResponse, (error: unknown) =>
+    sendResponse({ ok: false, reason: 'failed', message: String(error) } satisfies SaveResult),
+  );
   return true;
 });

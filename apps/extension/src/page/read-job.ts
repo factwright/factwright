@@ -19,16 +19,21 @@ export interface PageJob {
   posted: string;
   /** The posting itself, as text. */
   posting: string;
-  /** Where the posting's text came from: what you selected, the job's own data, or the page. */
-  source: 'selection' | 'structured' | 'page';
+  /**
+   * Where the posting's text came from: what you selected, the job's own data, where the job site
+   * shows its posting, or, for a page it knows nothing of, the page's main text, which may well not
+   * be a posting at all.
+   */
+  source: 'selection' | 'structured' | 'page' | 'main';
 }
 
 /**
  * Reads the job on the page you're on: its address, its posting, and what it can tell of the title,
  * company, place and pay. The extension sends this one function into the page, only when you ask
- * it to save the job, so everything it needs is inside it. The page's job data, which job sites
- * publish for search engines, comes first, then what each big job site shows, then the page's main
- * text. Text you've selected stands in for the posting, for a page it can't read well.
+ * it to, so everything it needs is inside it. The page's job data, which job sites publish for
+ * search engines, comes first, then what each big job site shows, then the page's main text, except
+ * on LinkedIn, where only the job's own posting is read. Text you've selected stands in for the
+ * posting, for a page it can't read well. It reads the page as it is, and changes nothing in it.
  */
 export function readJobPage(
   doc: Document = document,
@@ -42,6 +47,9 @@ export function readJobPage(
   /** Query parameters that only track where a click came from (@factwright/core's links.ts). */
   const TRACKING_PARAM =
     /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
+  /** Job boards and applicant systems, which are never the company a job is with. */
+  const BOARDS =
+    /^(linkedin|indeed|glassdoor|ziprecruiter|monster|wellfound|angellist|dice|simplyhired|careerbuilder|built ?in|hired|otta|welcome to the jungle|greenhouse|lever|workday|ashby|smartrecruiters|jobvite|icims)(\.com)?$/i;
   /** Elements whose text is never part of a posting. */
   const SKIPPED = new Set([
     'SCRIPT',
@@ -56,6 +64,8 @@ export function readJobPage(
     'SELECT',
     'TEXTAREA',
   ]);
+  /** A page's own parts around its content, left out of its main text. */
+  const AROUND = new Set(['NAV', 'HEADER', 'FOOTER', 'ASIDE', 'FORM']);
   /** Elements that start a new line or paragraph. */
   const BLOCKS = new Set([
     'P',
@@ -187,8 +197,11 @@ export function readJobPage(
     element.getAttribute('aria-hidden') === 'true' ||
     /display\s*:\s*none|visibility\s*:\s*hidden/i.test(element.getAttribute('style') ?? '');
 
-  /** An element's text as lines and paragraphs, with list items as "- " lines. */
-  function textOf(root: Node): string {
+  /**
+   * An element's text as lines and paragraphs, with list items as "- " lines, leaving out the
+   * elements named in `skip`. It reads the page as it is: nothing in it is copied or changed.
+   */
+  function textOf(root: Node, skip: ReadonlySet<string> = new Set()): string {
     const parts: string[] = [];
     const visit = (node: Node) => {
       if (node.nodeType === 3) {
@@ -198,37 +211,49 @@ export function readJobPage(
       if (node.nodeType !== 1) return;
       const element = node as Element;
       const tag = element.tagName.toUpperCase();
-      if (SKIPPED.has(tag) || hidden(element)) return;
+      if (SKIPPED.has(tag) || skip.has(tag) || hidden(element)) return;
       if (tag === 'BR') {
         parts.push('\n');
         return;
       }
+      if (tag === 'LI') {
+        // An item's text, without the lines a paragraph in it starts and ends with, as many
+        // editors write them. An empty item is left out.
+        const start = parts.length;
+        for (const child of Array.from(element.childNodes)) visit(child);
+        const item = parts.splice(start).join('').trim();
+        if (item) parts.push(`\n- ${item}`);
+        return;
+      }
       const block = BLOCKS.has(tag);
       const heading = /^H[1-6]$/.test(tag);
-      if (tag === 'LI') parts.push('\n- ');
-      else if (heading) parts.push('\n\n');
+      if (heading) parts.push('\n\n');
       else if (block) parts.push('\n');
       for (const child of Array.from(element.childNodes)) visit(child);
-      // A list item ends where the next one starts, so items don't get a blank line between them.
       if (heading || tag === 'P' || tag === 'UL' || tag === 'OL') parts.push('\n\n');
       else if (block) parts.push('\n');
     };
     visit(root);
-    return parts
-      .join('')
-      .split('\n')
-      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-      .join('\n')
-      .replace(/\n- \n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return (
+      parts
+        .join('')
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        // One list item to a line, without a blank line between items.
+        .replace(/^(- .*)\n\n(?=- )/gm, '$1\n')
+        .trim()
+    );
   }
 
   /** Markup, such as a posting's description in the page's job data, as text. */
   function textOfMarkup(markup: string): string {
     // Parsed into a document of its own, which never runs scripts or loads anything.
-    const parsed = new DOMParser().parseFromString(markup, 'text/html');
-    return textOf(parsed.body);
+    const parse = (html: string) => textOf(new DOMParser().parseFromString(html, 'text/html').body);
+    const text = parse(markup);
+    // Some sites encode the description's markup twice, so the first reading still has its tags.
+    return /<\/?(p|br|li|ul|ol|div|strong|b|h\d)\b[^>]*>/i.test(text) ? parse(text) : text;
   }
 
   /** The first of the selectors that finds an element with text, and its text. */
@@ -255,10 +280,10 @@ export function readJobPage(
   /** Every job posting in the page's job data, wherever it sits in it. */
   function jobPostings(): Record<string, unknown>[] {
     const found: Record<string, unknown>[] = [];
-    const visit = (value: unknown) => {
-      if (!value || typeof value !== 'object') return;
+    const visit = (value: unknown, depth: number) => {
+      if (!value || typeof value !== 'object' || depth > 6) return;
       if (Array.isArray(value)) {
-        for (const each of value) visit(each);
+        for (const each of value) visit(each, depth + 1);
         return;
       }
       const node = value as Record<string, unknown>;
@@ -267,11 +292,13 @@ export function readJobPage(
       if (types.some((each) => typeof each === 'string' && /JobPosting$/i.test(each))) {
         found.push(node);
       }
-      if (node['@graph']) visit(node['@graph']);
+      for (const key of ['@graph', 'mainEntity', 'itemListElement', 'item']) {
+        if (node[key]) visit(node[key], depth + 1);
+      }
     };
     for (const script of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
       try {
-        visit(JSON.parse(script.textContent ?? ''));
+        visit(JSON.parse(script.textContent ?? ''), 0);
       } catch {
         // Job data that isn't JSON is left out.
       }
@@ -334,7 +361,11 @@ export function readJobPage(
       .map((each) => each.charAt(0).toUpperCase() + each.slice(1))
       .join(', ');
 
-  /** The job's own address, without tracking: on LinkedIn and Indeed, the job's own page. */
+  /**
+   * The job's own address, without tracking: on LinkedIn's and Indeed's job pages, including a
+   * search showing one, the job's own page. A page's route after "#/", as some careers sites keep
+   * each job's, stays.
+   */
   function jobUrl(): string {
     let url: URL;
     try {
@@ -343,22 +374,42 @@ export function readJobPage(
       return href;
     }
     const host = url.hostname.replace(/^www\./, '');
-    if (/(^|\.)linkedin\.com$/.test(host)) {
+    if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
       const id =
         url.searchParams.get('currentJobId') ??
-        url.pathname.match(/\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
+        url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
       if (id && /^\d+$/.test(id)) return `https://www.linkedin.com/jobs/view/${id}/`;
     }
-    if (/(^|\.)indeed\.com$/.test(host)) {
+    if (
+      /(^|\.)indeed\.com$/.test(host) &&
+      /^\/(viewjob|jobs|q-|m\/|rc\/clk|cmp\/[^/]+\/jobs)/.test(url.pathname)
+    ) {
       const key = url.searchParams.get('vjk') ?? url.searchParams.get('jk');
       if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
     }
     for (const key of [...url.searchParams.keys()]) {
       if (TRACKING_PARAM.test(key)) url.searchParams.delete(key);
     }
-    url.hash = '';
+    if (!/^#!?\//.test(url.hash)) url.hash = '';
     return url.toString();
   }
+
+  /** Text to compare, such as two titles: lowercase letters and digits only. */
+  const plain = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  /** Whether two titles name the same job: one holds the other. */
+  const sameTitle = (a: string, b: string) => {
+    const [x, y] = [plain(a), plain(b)];
+    return Boolean(x && y && (x.includes(y) || y.includes(x)));
+  };
+  /** An address without its query or route, to compare: "linkedin.com/jobs/view/42". */
+  const place = (address: unknown) => {
+    try {
+      const url = new URL(String(address), href);
+      return `${url.hostname.replace(/^www\./, '')}${url.pathname.replace(/\/+$/, '')}`;
+    } catch {
+      return '';
+    }
+  };
 
   const site = (() => {
     try {
@@ -368,47 +419,63 @@ export function readJobPage(
     }
   })();
   const known = SITES.find((each) => each.host.test(site));
-  const [data] = jobPostings();
+  const linkedIn = /(^|\.)linkedin\.com$/.test(site);
   const fromSite = (selectors: string[] | undefined) =>
     first(selectors ?? [], (element) => oneLine(textOf(element)));
+  const shownTitle = fromSite(known?.title);
 
-  const title =
+  // The page's own job data: the posting for this page when there are several, and none that the
+  // page no longer shows, as a single-page job site can leave an earlier job's behind.
+  const postings = jobPostings();
+  const here = place(href);
+  const matching =
+    postings.find((each) => each.url && place(each.url) === here) ??
+    postings.find((each) => shownTitle && sameTitle(oneLine(each.title), shownTitle)) ??
+    (postings.length === 1 ? postings[0] : undefined);
+  const data =
+    matching && !(shownTitle && !sameTitle(oneLine(matching.title), shownTitle))
+      ? matching
+      : undefined;
+
+  /** A site's name, unless it's a job board's or an applicant system's, which no job is with. */
+  const notBoard = (name: string) => (BOARDS.test(name.trim()) ? '' : name);
+  const title = (
     oneLine(data?.title ? textOfMarkup(String(data.title)) : '') ||
-    fromSite(known?.title) ||
+    shownTitle ||
     meta('og:title') ||
     first(['h1'], (element) => oneLine(textOf(element))) ||
-    oneLine(doc.title);
-  const company =
-    nameOf(data?.hiringOrganization) || fromSite(known?.company) || meta('og:site_name');
-  const place = (data && placeOf(data)) || fromSite(known?.location);
+    oneLine(doc.title)
+  ).replace(/\s*-\s*job post\s*$/i, '');
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
   const shown = first(known?.posting ?? [], (element) => textOf(element));
+  // The page's main text, without its navigation, headers, footers and forms. Never LinkedIn's,
+  // where anything but the job's own posting, such as messages, isn't the job's.
   const main = () => {
+    if (linkedIn) return '';
     const root =
       doc.querySelector('main, [role="main"], article') ??
       doc.querySelector('#content') ??
       doc.body;
-    if (!root) return '';
-    // The page's own navigation, headers and footers aren't the posting.
-    const copy = root.cloneNode(true) as Element;
-    for (const element of Array.from(copy.querySelectorAll('nav, header, footer, aside, form'))) {
-      element.remove();
-    }
-    return textOf(copy);
+    return root ? textOf(root, AROUND) : '';
   };
 
-  let posting = selection;
-  let source: PageJob['source'] = 'selection';
-  if (!posting) {
+  let posting = '';
+  let source: PageJob['source'] = 'page';
+  if (selection) {
+    posting = selection;
+    source = 'selection';
+  } else if (described && described.length >= shown.length * 0.6) {
     // The job data's description, unless what the site shows is clearly fuller.
-    posting = described.length >= shown.length * 0.6 && described ? described : shown;
-    source = posting === described && described ? 'structured' : 'page';
-  }
-  if (!posting) {
-    posting = main();
+    posting = described;
+    source = 'structured';
+  } else if (shown) {
+    posting = shown;
     source = 'page';
+  } else {
+    posting = main();
+    source = posting ? 'main' : 'page';
   }
 
   return {
@@ -417,8 +484,11 @@ export function readJobPage(
     site,
     pageTitle: oneLine(doc.title),
     title,
-    company,
-    location: place,
+    company:
+      nameOf(data?.hiringOrganization) ||
+      fromSite(known?.company) ||
+      notBoard(meta('og:site_name')),
+    location: (data && placeOf(data)) || fromSite(known?.location),
     pay: data ? payOf(data) : '',
     employment: data ? employmentOf(data.employmentType) : '',
     posted: oneLine(data?.datePosted).slice(0, 10),

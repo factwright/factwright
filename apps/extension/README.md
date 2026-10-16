@@ -6,14 +6,14 @@ It's a device on your sync account, as a linked browser is: it signs in with a c
 
 | Part | What it does |
 |---|---|
-| `src/page/read-job.ts` | Reads the job on a page: the job data sites publish for search engines first, then each big job site's own layout (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby, Glassdoor, ZipRecruiter, SmartRecruiters), then the page's main text. Text you selected stands in for the posting. The browser sends this one function into the page, so it holds everything it needs |
-| `src/tab-job.ts` | A job from a tab's address and title alone, for a page it doesn't read |
+| `src/page/read-job.ts` | Reads the job on a page: the job data sites publish for search engines first, then each big job site's own layout (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby, Glassdoor, ZipRecruiter, SmartRecruiters), then the page's main text, except on LinkedIn. Text you selected stands in for the posting. It reads the page as it is, without copying or changing it. The browser sends this one function into the page, so it holds everything it needs |
+| `src/tab-job.ts` | A job's own address, and a job from a tab's address and title alone, for a page it doesn't read. The company from an address when the page names none, never a job board's. What a save without the popup checks first |
 | `src/read-tab.ts` | Reads the tab you're on, as you've asked: the page, or its link alone |
-| `src/save.ts` | Saves a job through sync, as Add job in the app would: its row as New, its history's first line, and the posting in `saved/<job ID>/posting.md`. The same job, by its link, is saved once |
+| `src/save.ts` | Saves a job through sync, as Add job in the app would: its row as New, its history's first line, and the posting in `saved/<job ID>/posting.md`. The same job, by its link, is saved once, and saving it again adds a posting it doesn't have yet |
 | `src/account.ts` | The extension's own sign-in and the account's keys, in its IndexedDB, and its requests to sync, which never carry the browser's cookies |
-| `src/popup.ts` | The popup under the toolbar button: the job it read, to check and save |
+| `src/popup.ts` | The popup under the toolbar button: the job it read and its posting, to check and save |
 | `src/setup.ts` | The setup page: signing in, linking, the LinkedIn setting and the account |
-| `src/background.ts` | Saves for the popup, the right-click menu and the keyboard shortcut, and opens setup on install |
+| `src/background.ts` | Saves for the popup, the right-click menu and the keyboard shortcut, and opens setup on install. A save without the popup takes only what's clearly one job, and opens the popup for anything else |
 | `src/manifest.ts` | Each browser's manifest, asking for as little as it can |
 | `scripts/build.ts` | Builds both browsers' folders and zips, and checks the built page reader works on its own |
 | `scripts/e2e.ts` | Runs the built extension in Chromium against a local sync server, from setting up to saving |
@@ -21,12 +21,14 @@ It's a device on your sync account, as a linked browser is: it signs in with a c
 | `store/` | What the Chrome Web Store and Firefox Add-ons ask for: the listing, the permissions and the data, and screenshots |
 
 ## What it may do
-- **activeTab and scripting:** read the tab you're on, once, when you click its button, its menu item or its shortcut. Nothing else, and nothing as you browse.
+- **activeTab and scripting:** read the tab you're on, once, when you click its button, its menu item or its shortcut. Nothing else, and nothing as you browse. The popup sends nothing until you save.
 - **storage:** keep its settings.
 - **contextMenus:** its Save job to Factwright item in the page's right-click menu.
-- **app.factwright.com:** the one site it reaches, Factwright's sync. Firefox asks for it when you sign in.
+- **app.factwright.com:** the one site it reaches, Factwright's sync. Both browsers grant it at install, and let you take it away later: setup then asks for it back.
 
-It has no content scripts, nothing pages can load, and no way for a site to message it.
+It has no content scripts, nothing pages can load, and no way for a site to message it. It holds your job hunt's keys, which open all of it, as each linked device does: [docs/security.md](../../docs/security.md#the-browser-extension) says what that means.
+
+A build for another sync server (`VITE_FACTWRIGHT_SYNC_SERVER`) must name an `https://` address, or this computer's, and gets no zips, so only a build for Factwright's own sync can go to the stores.
 
 ## Trying it
 ```bash

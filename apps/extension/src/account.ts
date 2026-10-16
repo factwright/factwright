@@ -1,10 +1,13 @@
 import { type AccountKeys, CLIENTS, DeviceSignIn, SyncClient } from '@factwright/sync';
+import { ext } from './ext.ts';
+import { hostPattern } from './manifest.ts';
 import { SYNC_ORIGIN } from './server.ts';
 
 /**
- * What the extension keeps once it's set up: its own sign-in to sync, and the account's keys,
- * which only this browser's copy of the extension can use. They're Web Crypto keys that can't be
- * read back out: the extension can lock a job with them, but nothing can copy them.
+ * What the extension keeps once it's set up: its own sign-in to sync, and the account's keys. The
+ * keys open the whole job hunt, as each linked device's do, so they're kept as Web Crypto keys that
+ * can't be read back out: this browser's copy of the extension can use them, but nothing can copy
+ * them. It only ever uses them to lock what it saves, and to check a job it saved before.
  */
 export interface Account {
   /** The account's ID and email, as sync knows them. */
@@ -63,6 +66,20 @@ export async function forgetAccount(): Promise<void> {
   await run('readwrite', (store) => store.clear());
 }
 
+/** The extension's one site, as its permission names it. */
+const SYNC_SITE = { origins: [hostPattern(SYNC_ORIGIN)] };
+
+/**
+ * Whether the browser lets the extension reach Factwright's sync. Both browsers let you take that
+ * away after installing it, and without it nothing saves.
+ */
+export const canReachSync = (): Promise<boolean> =>
+  ext.permissions.contains(SYNC_SITE).catch(() => true);
+
+/** Asks the browser to let the extension reach Factwright's sync. Only a click can ask. */
+export const allowSync = (): Promise<boolean> =>
+  ext.permissions.request(SYNC_SITE).catch(() => false);
+
 /** A request to the sync server: with the extension's token, never the browser's cookies for it. */
 export const syncFetch: typeof fetch = (input, init) =>
   fetch(input, { ...init, credentials: 'omit' });
@@ -75,15 +92,18 @@ export const clientFor = (token: string) =>
 export const deviceSignIn = () =>
   new DeviceSignIn({ server: SYNC_ORIGIN, clientId: CLIENTS.extension, fetch: syncFetch });
 
+/** Ends the extension's session on the server, so its sign-in can't be used again. */
+export async function endSession(account: Account): Promise<void> {
+  await syncFetch(new URL('/api/auth/sign-out', SYNC_ORIGIN), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },
+    body: '{}',
+  }).catch(() => {});
+}
+
 /** Ends the extension's session on the server, then forgets it and the keys here. */
 export async function signOut(account: Account | null): Promise<void> {
-  if (account) {
-    await syncFetch(new URL('/api/auth/sign-out', SYNC_ORIGIN), {
-      method: 'POST',
-      headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },
-      body: '{}',
-    }).catch(() => {});
-  }
+  if (account) await endSession(account);
   await forgetAccount();
 }
 

@@ -1,10 +1,12 @@
 import {
+  JOB_LIMITS,
   jobIdFor,
   localDate,
   newJobRows,
   normalizeUrl,
   savedPostingFile,
   savedPostingMarkdown,
+  shortCode,
 } from '@factwright/core';
 import {
   type AccountKeys,
@@ -39,9 +41,19 @@ export interface JobToSave {
   posting: string;
 }
 
+/**
+ * What became of a saved job's posting: saved now, kept as an earlier save left it, none to save,
+ * or not saved, when the job got in but its posting didn't. Saving the job again adds it.
+ */
+export type PostingSaved = 'saved' | 'kept' | 'none' | 'failed';
+
 export type SaveResult =
-  | { ok: true; id: string; already: boolean }
-  | { ok: false; reason: 'signed-out' | 'offline' | 'full' | 'failed'; message: string };
+  | { ok: true; id: string; already: boolean; posting: PostingSaved }
+  | {
+      ok: false;
+      reason: 'signed-out' | 'offline' | 'full' | 'no-access' | 'failed';
+      message: string;
+    };
 
 /** How many jobs with the same company and role it tries IDs for: "-2" up to this. */
 const MAX_SAME = 50;
@@ -53,20 +65,35 @@ export interface SaveDeps {
   uuid?: () => string;
 }
 
-/** A row record, locked as the first version of a record. */
-async function newRow(
+/** Who made a change, and when. */
+interface Made {
+  device: string;
+  at: string;
+}
+
+/** A posting to keep with a job, and the day it's saved on. */
+interface Posting {
+  url: string;
+  site: string;
+  text: string;
+  today: string;
+}
+
+/** A change that makes a record the given row, as the version after `base`, 0 for a new record. */
+async function rowChange(
   keys: AccountKeys,
   table: string,
   id: string,
   row: RowRecord['row'],
-  made: { device: string; at: string },
+  made: Made,
+  base = 0,
 ): Promise<PushChange> {
   const record = await recordId(keys, rowName(table, id));
   const body: RowRecord = { kind: 'row', table, id, row, ...made };
   return {
     record,
-    base: 0,
-    data: await sealRecord(keys, record, 1, encodeRecord(body)),
+    base,
+    data: await sealRecord(keys, record, base + 1, encodeRecord(body)),
     file: null,
     deleted: false,
   };
@@ -121,8 +148,9 @@ function failed(error: unknown): SaveResult {
  * where Claude's work later copies it into the job's folder. Everything is locked with the
  * account's keys before it leaves the browser.
  *
- * The job's ID comes from its company and role. When that ID is taken, it's the same job if it has
- * the same link, and nothing more is saved; otherwise the next ID, "-2" on, is tried.
+ * The job's ID comes from its company and role, as the app makes it. A deleted job's ID is free
+ * again. When the ID is taken, it's the same job if it has the same link: nothing more is saved
+ * but its posting, if it has none yet. Otherwise the next ID, "-2" on, is tried.
  */
 export async function saveJob(
   client: SyncClient,
@@ -132,31 +160,45 @@ export async function saveJob(
 ): Promise<SaveResult> {
   const now = deps.now?.() ?? new Date();
   const today = localDate(now);
-  const at = now.toISOString();
-  const made = { device: deps.device.slice(0, 200), at };
+  const made: Made = { device: deps.device.slice(0, 200), at: now.toISOString() };
   const uuid = deps.uuid ?? (() => crypto.randomUUID());
-  const base = jobIdFor(job.company, job.role);
+  // Cut as the app's Add job dialog cuts them, so the ID and the link are the row's own.
+  const fields = {
+    company: job.company.trim().slice(0, JOB_LIMITS.company),
+    role: job.role.trim().slice(0, JOB_LIMITS.role),
+    link: job.url.trim().slice(0, JOB_LIMITS.link),
+    pay: job.pay.trim().slice(0, JOB_LIMITS.pay),
+  };
+  const posting: Posting = { url: fields.link, site: job.site, text: job.posting.trim(), today };
+  const base = jobIdFor(
+    fields.company,
+    fields.role,
+    fields.link ? shortCode(normalizeUrl(fields.link)) : undefined,
+  );
   try {
     for (let n = 1; n <= MAX_SAME; n++) {
       const id = n === 1 ? base : `${base}-${n}`;
       const rows = newJobRows({
         id,
-        company: job.company,
-        role: job.role,
-        link: job.url,
-        pay: job.pay,
+        ...fields,
         status: 'new',
         today,
-        now: at,
+        now: made.at,
         statusId: uuid(),
       });
       // The job's row goes first, alone, so a taken ID leaves nothing else behind.
-      const [result] = (await client.push([await newRow(keys, 'jobs', id, rows.job, made)]))
+      let [result] = (await client.push([await rowChange(keys, 'jobs', id, rows.job, made)]))
         .results;
+      if (result && !result.ok && result.reason === 'conflict' && result.current?.deleted) {
+        const version = result.current.version;
+        [result] = (
+          await client.push([await rowChange(keys, 'jobs', id, rows.job, made, version)])
+        ).results;
+      }
       if (!result) return { ok: false, reason: 'failed', message: 'Sync didn’t answer the save.' };
       if (result.ok) {
-        await saveRest(client, keys, job, id, rows.status, { today, made });
-        return { ok: true, id, already: false };
+        const saved = await saveRest(client, keys, id, rows.status, posting, made);
+        return { ok: true, id, already: false, posting: saved };
       }
       if (result.reason === 'full') return failed(new SyncError('full', 'full'));
       if (result.reason !== 'conflict') {
@@ -165,7 +207,16 @@ export async function saveJob(
       // The ID is taken: by this job, if it has the same link, or by another, so try the next.
       const existing = result.current && !result.current.deleted ? result.current : null;
       const found = existing && (await openJob(keys, existing));
-      if (found && hasLink(found.row, job.url)) return { ok: true, id, already: true };
+      if (found && hasLink(found.row, fields.link)) {
+        // Saved before, by the app or an earlier save that didn't finish: its posting, if it has
+        // none yet.
+        const kept = posting.text
+          ? await pushPosting(client, keys, id, posting, made, { replace: false }).catch(
+              () => 'failed' as const,
+            )
+          : 'none';
+        return { ok: true, id, already: true, posting: kept };
+      }
     }
     return { ok: false, reason: 'failed', message: 'Too many jobs with that company and title.' };
   } catch (error) {
@@ -173,47 +224,77 @@ export async function saveJob(
   }
 }
 
-/** The job's history and its saved posting, once its row is in. */
+/** The job's history and its posting, once its row is in, and what became of the posting. */
 async function saveRest(
   client: SyncClient,
   keys: AccountKeys,
-  job: JobToSave,
   id: string,
   status: Record<string, string | number | null>,
-  { today, made }: { today: string; made: { device: string; at: string } },
-): Promise<void> {
-  const changes = [await newRow(keys, 'status_log', String(status.id), status, made)];
-  const text = job.posting.trim();
-  if (text) {
-    const path = savedPostingFile(id);
-    const contents = utf8(
-      savedPostingMarkdown({ url: job.url, site: job.site, savedOn: today, text }),
-    );
-    const sealed = await sealFile(keys, contents);
-    if ((await client.missingFiles([sealed.id])).includes(sealed.id)) {
-      await client.putFile(sealed.id, sealed.data);
+  posting: Posting,
+  made: Made,
+): Promise<PostingSaved> {
+  try {
+    const history = await rowChange(keys, 'status_log', String(status.id), status, made);
+    if (!posting.text) {
+      await client.push([history]);
+      return 'none';
     }
-    const record = await recordId(keys, fileName(path));
-    const file = (version: number) => {
-      const body: FileRecord = {
-        kind: 'file',
-        path,
-        file: { id: sealed.id, size: contents.length, modified: made.at },
-        ...made,
-      };
-      return sealRecord(keys, record, version, encodeRecord(body));
-    };
-    changes.push({ record, base: 0, data: await file(1), file: sealed.id, deleted: false });
-    const { results } = await client.push(changes);
     // A posting left from an earlier job with this ID, since deleted: this one takes its place.
-    const clash = results.find((each) => each.record === record && !each.ok);
-    if (clash && !clash.ok && clash.reason === 'conflict' && clash.current) {
-      const version = clash.current.version;
-      await client.push([
-        { record, base: version, data: await file(version + 1), file: sealed.id, deleted: false },
-      ]);
-    }
-    return;
+    return await pushPosting(client, keys, id, posting, made, { replace: true, with: [history] });
+  } catch {
+    // The job is in: saving it again adds its posting.
+    return posting.text ? 'failed' : 'none';
   }
-  await client.push(changes);
+}
+
+/**
+ * Keeps a job's posting in its saved extras: `saved/<job ID>/posting.md`. One that's there already
+ * is kept, unless `replace` says it's left from an earlier job with this ID. One that was deleted
+ * is put back.
+ */
+async function pushPosting(
+  client: SyncClient,
+  keys: AccountKeys,
+  jobId: string,
+  posting: Posting,
+  made: Made,
+  options: { replace: boolean; with?: PushChange[] },
+): Promise<'saved' | 'kept' | 'failed'> {
+  const path = savedPostingFile(jobId);
+  const contents = utf8(
+    savedPostingMarkdown({
+      url: posting.url,
+      site: posting.site,
+      savedOn: posting.today,
+      text: posting.text,
+    }),
+  );
+  const sealed = await sealFile(keys, contents);
+  if ((await client.missingFiles([sealed.id])).includes(sealed.id)) {
+    await client.putFile(sealed.id, sealed.data);
+  }
+  const record = await recordId(keys, fileName(path));
+  const change = async (base: number): Promise<PushChange> => {
+    const body: FileRecord = {
+      kind: 'file',
+      path,
+      file: { id: sealed.id, size: contents.length, modified: made.at },
+      ...made,
+    };
+    return {
+      record,
+      base,
+      data: await sealRecord(keys, record, base + 1, encodeRecord(body)),
+      file: sealed.id,
+      deleted: false,
+    };
+  };
+  const { results } = await client.push([...(options.with ?? []), await change(0)]);
+  const result = results.find((each) => each.record === record);
+  if (!result) return 'failed';
+  if (result.ok) return 'saved';
+  if (result.reason !== 'conflict' || !result.current) return 'failed';
+  if (!options.replace && !result.current.deleted) return 'kept';
+  const [again] = (await client.push([await change(result.current.version)])).results;
+  return again?.ok ? 'saved' : 'failed';
 }

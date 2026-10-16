@@ -3,5 +3,6 @@
  * point it at another, such as one running locally or someone's own, with
  * VITE_FACTWRIGHT_SYNC_SERVER, as the desktop app's builds can.
  */
-export const SYNC_ORIGIN: string =
-  import.meta.env.VITE_FACTWRIGHT_SYNC_SERVER || 'https://app.factwright.com';
+export const SYNC_ORIGIN: string = new URL(
+  import.meta.env.VITE_FACTWRIGHT_SYNC_SERVER || 'https://app.factwright.com',
+).origin;

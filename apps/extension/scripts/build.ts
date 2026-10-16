@@ -22,8 +22,22 @@ const DIST = join(ROOT, 'dist');
 const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
   version: string;
 };
-/** The sync server it's built for: Factwright's, unless VITE_FACTWRIGHT_SYNC_SERVER names another. */
-const server = process.env.VITE_FACTWRIGHT_SYNC_SERVER || DEFAULT_SERVER;
+/**
+ * The sync server it's built for: Factwright's, unless VITE_FACTWRIGHT_SYNC_SERVER names another,
+ * such as one running locally. Anything but this computer must be reached over HTTPS: what the
+ * extension sends is locked, but its sign-in isn't.
+ */
+const server = (() => {
+  const named = process.env.VITE_FACTWRIGHT_SYNC_SERVER || DEFAULT_SERVER;
+  const url = new URL(named);
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
+    throw new Error(`The sync server must be an https:// address, or this computer's: ${named}`);
+  }
+  return url.origin;
+})();
+/** Only a build for Factwright's own sync goes to the stores, so only it gets zips. */
+const forStores = server === DEFAULT_SERVER;
 
 /** Every file under a folder, by its path inside it. */
 function filesIn(folder: string): Record<string, Uint8Array> {
@@ -98,6 +112,10 @@ for (const target of ['chrome', 'firefox'] as const satisfies readonly Target[])
     join(out, 'manifest.json'),
     `${JSON.stringify(manifest(target, version, server), null, 2)}\n`,
   );
+  if (!forStores) {
+    console.log(`dist/${target}, for ${server}: no zip, since it's not for the stores`);
+    continue;
+  }
   // The same bytes for the same files, whenever it's built: each file's time is fixed.
   const zipped = zipSync(
     Object.fromEntries(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JOB_LIMITS, jobIdFor, newJobRows } from './new-job.ts';
+import { JOB_LIMITS, jobIdFor, newJobRows, shortCode } from './new-job.ts';
 
 describe('a new job', () => {
   it('takes its ID from its company and role, as Add job does', () => {
@@ -8,6 +8,22 @@ describe('a new job', () => {
     );
     expect(jobIdFor('Acme', '')).toBe('acme--general');
     expect(jobIdFor('', '')).toBe('job--general');
+  });
+
+  it('keeps its ID short enough to name a folder on every computer', () => {
+    const id = jobIdFor('A'.repeat(300), `${'Very long title '.repeat(30)}`);
+    expect(id.length).toBeLessThanOrEqual(142);
+    expect(id).not.toMatch(/-(--|$)/);
+    expect(id.startsWith('a'.repeat(60))).toBe(true);
+  });
+
+  it('gives a company with no Latin letters an ID of its own, by a code it’s given', () => {
+    const code = shortCode('https://jobs.example.jp/123');
+    expect(code).toMatch(/^[0-9a-f]{8}$/);
+    expect(shortCode('https://jobs.example.jp/123')).toBe(code);
+    expect(shortCode('https://jobs.example.jp/124')).not.toBe(code);
+    expect(jobIdFor('株式会社', 'エンジニア', code)).toBe(`job-${code}--general`);
+    expect(jobIdFor('株式会社', 'エンジニア')).toBe('job--general');
   });
 
   it('starts with every column the app’s tracker keeps, and its history', () => {

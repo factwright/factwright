@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { type CollectedJob, newJobRows } from '@factwright/core';
+import { type CollectedJob, jobIdFor, newJobRows, normalizeUrl, shortCode } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { trackerAsOf } from './testing.ts';
 import { type EditContext, Tracker } from './tracker.ts';
@@ -301,6 +301,19 @@ describe('addJob', () => {
     expect(row('fernway--general')?.kind).toBe('project-manager');
     tracker.addJob({ company: 'Tidewater' }, AT);
     expect(row('tidewater--general')?.kind).toBeNull();
+  });
+
+  it('names a job whose company has no Latin letters by its link, as Save to Factwright does', () => {
+    const link = 'https://example.jp/jobs/1?utm_source=x';
+    const added = tracker.addJob({ company: '株式会社', role: 'エンジニア', link }, AT);
+    expect(added).toEqual({
+      ok: true,
+      jobId: jobIdFor('株式会社', 'エンジニア', shortCode(normalizeUrl(link))),
+    });
+    expect(tracker.addJob({ company: '株式会社' }, AT)).toEqual({
+      ok: true,
+      jobId: 'job--general',
+    });
   });
 
   it('needs a company, and a link that starts with http', () => {

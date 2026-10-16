@@ -42,6 +42,9 @@ export const nameOf = (record: SyncRecord) =>
   record.kind === 'file' ? fileName(record.path) : rowName(record.table, record.id);
 
 const MAX_PATH = 512;
+/** The longest name a folder or file can have, in UTF-8 bytes: Mac, Windows and Linux all stop at 255. */
+const MAX_NAME_BYTES = 255;
+const nameBytes = (part: string) => new TextEncoder().encode(part).length;
 const MAX_TEXT = 200_000;
 /** Names Windows keeps for devices, which no file there can have, with or without an extension. */
 const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
@@ -60,6 +63,7 @@ export function isSyncPath(path: string): boolean {
     .every(
       (part) =>
         part.length > 0 &&
+        nameBytes(part) <= MAX_NAME_BYTES &&
         part !== '.' &&
         part !== '..' &&
         !part.endsWith('.') &&

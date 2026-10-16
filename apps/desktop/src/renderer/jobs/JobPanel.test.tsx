@@ -388,6 +388,34 @@ describe('JobPanel', () => {
     ).toBeNull();
   });
 
+  it('reads the browser’s posting again when the job changes, as a sync can bring it in', async () => {
+    const job = byCompany('Bluewave Staffing');
+    const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
+    let posting: typeof saved | null = null;
+    const jobExtras = vi.fn(async () => ({ asked: {}, shots: [], posting }));
+    const { api, rerender } = panel(job, { jobExtras });
+    await vi.waitFor(() => expect(jobExtras).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      screen.queryByRole('button', { name: 'Open the posting saved from your browser' }),
+    ).toBeNull();
+    posting = saved;
+    const synced = jobRows([{ ...job }], TODAY)[0] ?? null;
+    rerender(<JobPanel row={synced} api={api} today={TODAY} onClose={vi.fn()} />);
+    expect(
+      await screen.findByRole('button', { name: 'Open the posting saved from your browser' }),
+    ).toBeTruthy();
+  });
+
+  it('keeps the job notes’ own name beside a posting saved from the browser', async () => {
+    const job: Job = { ...byCompany('Bluewave Staffing'), docKinds: ['job'] };
+    const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
+    panel(job, { jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved })) });
+    await screen.findByRole('button', { name: 'Open the posting saved from your browser' });
+    expect(screen.getByRole('button', { name: 'Open Job notes' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open Posting' })).toBeNull();
+  });
+
   it('closes with Escape or the close button', async () => {
     const { onClose } = panel(byCompany('Lumen Health'));
     await userEvent.click(screen.getByRole('button', { name: 'Close details' }));

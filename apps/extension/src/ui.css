@@ -48,7 +48,8 @@ label {
   margin: var(--fw-space-3) 0 var(--fw-space-1);
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   width: 100%;
   font: inherit;
   color: inherit;
@@ -59,6 +60,9 @@ input[type="text"] {
 }
 
 input[type="text"]:focus-visible,
+input[type="password"]:focus-visible,
+summary:focus-visible,
+.posting:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--fw-accent);
@@ -141,6 +145,27 @@ a {
 .facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+details.preview {
+  margin: var(--fw-space-3) 0 0;
+  font-size: var(--fw-text-sm);
+}
+
+details.preview summary {
+  cursor: pointer;
+  color: var(--fw-accent-text);
+}
+
+.posting {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: var(--fw-space-2);
+  padding: var(--fw-space-2) var(--fw-space-3);
+  background: var(--fw-sunken);
+  border-radius: var(--fw-radius-md);
 }
 
 .note {

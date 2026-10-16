@@ -55,7 +55,7 @@ export function savedPostingMarkdown(posting: {
 /** A saved posting's link, date and text, from its Markdown. */
 export function readSavedPosting(path: string, markdown: string): SavedPosting {
   const field = (name: string) =>
-    markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*\\s*(.+)$`, 'm'))?.[1]?.trim() ?? null;
+    markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*[ \\t]*(.+)$`, 'm'))?.[1]?.trim() ?? null;
   const rule = markdown.search(/^---\s*$/m);
   const text = (rule >= 0 ? markdown.slice(rule).replace(/^---\s*/, '') : markdown).trim();
   return {

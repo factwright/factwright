@@ -26,6 +26,3 @@ export async function changeSettings(changes: Partial<Settings>): Promise<Settin
   await ext.storage.local.set({ settings: next });
   return next;
 }
-
-/** Whether a site is LinkedIn. */
-export const isLinkedIn = (site: string) => /(^|\.)linkedin\.com$/i.test(site);

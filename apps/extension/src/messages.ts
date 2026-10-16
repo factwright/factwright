@@ -14,13 +14,21 @@ export function isSave(message: unknown): message is Message {
   );
 }
 
+const NO_ANSWER: SaveResult = {
+  ok: false,
+  reason: 'failed',
+  message: 'The extension didn’t answer. Try again.',
+};
+
 /** Asks the background to save a job, and waits for how it went. */
 export async function askToSave(
   send: (message: unknown) => Promise<unknown>,
   job: JobToSave,
 ): Promise<SaveResult> {
-  const answer = (await send({ type: 'save', job } satisfies Message)) as SaveResult | undefined;
-  return (
-    answer ?? { ok: false, reason: 'failed', message: 'The extension didn’t answer. Try again.' }
-  );
+  try {
+    const answer = (await send({ type: 'save', job } satisfies Message)) as SaveResult | undefined;
+    return answer ?? NO_ANSWER;
+  } catch {
+    return NO_ANSWER;
+  }
 }

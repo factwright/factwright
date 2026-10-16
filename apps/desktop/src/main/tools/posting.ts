@@ -174,11 +174,31 @@ export interface SavePostingDeps extends ReadDeps {
   workspace: string;
 }
 
-/** The posting the user saved from their browser for a link, if they saved one. */
+/** A job's ID as the extension and Add job make them: lowercase letters, digits and hyphens. */
+const JOB_ID = /^[a-z0-9-]{1,200}$/;
+
+/** A saved posting, by where it is in the workspace, or null when it isn't there. */
+async function readSaved(workspace: string, path: string): Promise<SavedPosting | null> {
+  const text = await readFile(join(workspace, path), 'utf8').catch(() => null);
+  const posting = text ? readSavedPosting(path, text) : null;
+  return posting?.text ? posting : null;
+}
+
+/**
+ * The posting the user saved from their browser for a job: the job's own, by its ID, when that's
+ * known. Otherwise the one saved for the link, but only when exactly one was, since two jobs can
+ * share a link, such as two jobs saved from one page that lists both.
+ */
 export async function savedFromBrowser(
   workspace: string,
   url: string,
+  jobId?: string,
 ): Promise<SavedPosting | null> {
+  if (jobId) {
+    return JOB_ID.test(jobId)
+      ? readSaved(workspace, `${JOB_EXTRAS.saved}/${jobId}/posting.md`)
+      : null;
+  }
   let folders: string[];
   try {
     folders = await readdir(join(workspace, JOB_EXTRAS.saved));
@@ -186,14 +206,12 @@ export async function savedFromBrowser(
     return null;
   }
   const wanted = normalizeUrl(url);
-  for (const folder of folders.sort()) {
-    const path = `${JOB_EXTRAS.saved}/${folder}/posting.md`;
-    const text = await readFile(join(workspace, path), 'utf8').catch(() => null);
-    if (!text) continue;
-    const posting = readSavedPosting(path, text);
-    if (posting.text && posting.source && normalizeUrl(posting.source) === wanted) return posting;
+  const found: SavedPosting[] = [];
+  for (const folder of folders) {
+    const posting = await readSaved(workspace, `${JOB_EXTRAS.saved}/${folder}/posting.md`);
+    if (posting?.source && normalizeUrl(posting.source) === wanted) found.push(posting);
   }
-  return null;
+  return found.length === 1 ? (found[0] ?? null) : null;
 }
 
 /**
@@ -208,6 +226,7 @@ export async function savePosting(
   url: string,
   folder: string,
   deps: SavePostingDeps,
+  jobId?: string,
 ): Promise<string> {
   const saved = `${WORKSPACE_PATHS.jobs}/${folder}/posting.md`;
   const ask = `Ask the user to paste the posting, then save it as ${saved} with a "- **Source:** pasted by the user" line on top.`;
@@ -227,7 +246,7 @@ export async function savePosting(
 
   // The posting as the user saw it, saved from their browser, comes first, and needs no reading:
   // a LinkedIn job's posting gets to its folder this way, as Factwright's tools never read LinkedIn.
-  const fromBrowser = await savedFromBrowser(deps.workspace, parsed.href);
+  const fromBrowser = await savedFromBrowser(deps.workspace, parsed.href, jobId);
   let posting: Posting | null = fromBrowser
     ? { text: fromBrowser.text, via: 'saved from the user’s browser' }
     : deps.cache.recall(parsed.href, (deps.now?.() ?? new Date()).getTime());
@@ -245,7 +264,8 @@ export async function savePosting(
     if (!posting)
       return `The applicant system has no posting at ${parsed.href}, so it may have closed. ${ask}`;
   }
-  if (posting.text.length < MIN_POSTING_LENGTH) {
+  // A posting the user saved, from text they could pick themselves, can be short.
+  if (!fromBrowser && posting.text.length < MIN_POSTING_LENGTH) {
     return `Got only ${posting.text.length} characters, so the page probably needs a browser or a sign-in. ${ask}`;
   }
   const body = [

@@ -6,10 +6,31 @@ import type { JobToSave } from './save.ts';
 const TRACKING_PARAM =
   /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
 
+/** Indeed's pages that show one job, alone or beside a search. */
+const INDEED_JOB_PATH = /^\/(viewjob|jobs|q-|m\/|rc\/clk|cmp\/[^/]+\/jobs)/;
+
 /**
- * A job's own address from the page's: on LinkedIn and Indeed, the job's own page, even from a
- * search that shows it, and anywhere else, the page's without tracking. readJobPage does the same
- * in the page; this is for a page the extension doesn't read.
+ * Job boards, which list many companies' jobs: a board's name is never the company's, and its
+ * address names none.
+ */
+const BOARD =
+  /(^|\.)(linkedin\.com|indeed\.com|glassdoor\.[a-z.]+|ziprecruiter\.[a-z.]+|monster\.[a-z.]+|wellfound\.com|angel\.co|dice\.com|simplyhired\.[a-z.]+|careerbuilder\.com|builtin\.com|builtin[a-z]+\.(com|org)|hired\.com|otta\.com|welcometothejungle\.com|themuse\.com|remoteok\.com|weworkremotely\.com|flexjobs\.com|joinhandshake\.com|idealist\.org)$/i;
+
+/** Applicant systems whose addresses name the company after the site: "jobs.lever.co/acme/…". */
+const COMPANY_IN_PATH =
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|smartrecruiters\.com|workable\.com|jobvite\.com|rippling\.com)$/i;
+
+/** The parts of an address that are about jobs, not the company: "careers", "jobs", "apply". */
+const GENERIC = /^(www|jobs?|careers?|apply|boards?|job-boards|ats|app|hire|embed|en|us)$/i;
+
+/** Words that stay lowercase inside a company's name. */
+const SMALL_WORDS = new Set(['and', 'of', 'the', 'for', 'at', 'in', 'on', 'by']);
+
+/**
+ * A job's own address from the page's: on LinkedIn's and Indeed's job pages, including a search
+ * showing one, the job's own page, and anywhere else, the page's without tracking. A page's route
+ * after "#/", as some careers sites keep each job's, stays. readJobPage does the same in the page;
+ * this is for a page the extension doesn't read.
  */
 export function jobAddress(href: string): string {
   let url: URL;
@@ -19,26 +40,49 @@ export function jobAddress(href: string): string {
     return href;
   }
   const host = url.hostname.replace(/^www\./, '');
-  if (/(^|\.)linkedin\.com$/.test(host)) {
+  if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
     const id =
       url.searchParams.get('currentJobId') ??
-      url.pathname.match(/\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
+      url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
     if (id && /^\d+$/.test(id)) return `https://www.linkedin.com/jobs/view/${id}/`;
   }
-  if (/(^|\.)indeed\.com$/.test(host)) {
+  if (/(^|\.)indeed\.com$/.test(host) && INDEED_JOB_PATH.test(url.pathname)) {
     const key = url.searchParams.get('vjk') ?? url.searchParams.get('jk');
     if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
   }
   for (const key of [...url.searchParams.keys()]) {
     if (TRACKING_PARAM.test(key)) url.searchParams.delete(key);
   }
-  url.hash = '';
+  if (!/^#!?\//.test(url.hash)) url.hash = '';
   return url.toString();
 }
 
 /**
+ * Whether an address is one job's own: on LinkedIn and Indeed, a job's page, not a search, a feed
+ * or a company's page. Anywhere else, it can't tell, so any address is.
+ */
+export function isJobAddress(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.replace(/^www\./, '');
+  if (/(^|\.)linkedin\.com$/.test(host)) return /^\/jobs\/view\/\d+\/?$/.test(parsed.pathname);
+  if (/(^|\.)indeed\.com$/.test(host)) {
+    return parsed.pathname === '/viewjob' && parsed.searchParams.has('jk');
+  }
+  return true;
+}
+
+/** A tab title that names a list of jobs, or a site's own page, rather than one job. */
+const NOT_ONE_JOB = /\bjobs\b|^(job search|search|home|feed|messaging|notifications)$/i;
+
+/**
  * A title and company from a tab's title, as job sites write them: "Staff Engineer | Northwind |
- * LinkedIn", "Staff Engineer at Northwind", or "Northwind hiring Staff Engineer in Austin".
+ * LinkedIn", "Staff Engineer at Northwind", or "Northwind hiring Staff Engineer in Austin". A title
+ * that names a search, such as "Engineer jobs in Austin", names neither.
  */
 export function fromTabTitle(title: string): { role: string; company: string } {
   const plain = title
@@ -49,12 +93,15 @@ export function fromTabTitle(title: string): { role: string; company: string } {
   if (hiring?.[1] && hiring[2]) return { company: hiring[1].trim(), role: hiring[2].trim() };
   // "Role | Company" first, since a title's own dashes, as in "Engineer - Platform", aren't a split.
   const bars = plain.split(/\s+\|\s+/).filter(Boolean);
-  if (bars.length >= 2) return { role: bars[0] ?? '', company: bars[1] ?? '' };
-  const at = plain.replace(/^job application for /i, '').match(/^(.+?) at (.+)$/i);
-  if (at?.[1] && at[2]) return { role: at[1].trim(), company: at[2].trim() };
-  const dashes = plain.split(/\s+[–—-]\s+/).filter(Boolean);
-  if (dashes.length >= 2) return { role: dashes[0] ?? '', company: dashes.at(-1) ?? '' };
-  return { role: plain, company: '' };
+  const found = (() => {
+    if (bars.length >= 2) return { role: bars[0] ?? '', company: bars[1] ?? '' };
+    const at = plain.replace(/^job application for /i, '').match(/^(.+?) at (.+)$/i);
+    if (at?.[1] && at[2]) return { role: at[1].trim(), company: at[2].trim() };
+    const dashes = plain.split(/\s+[–—-]\s+/).filter(Boolean);
+    if (dashes.length >= 2) return { role: dashes[0] ?? '', company: dashes.at(-1) ?? '' };
+    return { role: plain, company: '' };
+  })();
+  return NOT_ONE_JOB.test(found.role) ? { role: '', company: '' } : found;
 }
 
 /** A job from a tab's address and title alone, for a page the extension doesn't read. */
@@ -76,18 +123,72 @@ export function jobFromTab(href: string, title: string): PageJob {
   };
 }
 
-/** A company's name from a site's, for a page that doesn't name one: "acme.example" as "Acme". */
-function companyFromSite(site: string): string {
-  const name = site.replace(/^(jobs|careers|apply|boards|job-boards)\./, '').split('.')[0] ?? site;
-  return name ? name.charAt(0).toUpperCase() + name.slice(1) : site;
+/** A company's name from a word in an address: "harbor-and-pine" as "Harbor and Pine". */
+function nameFrom(part: string): string {
+  let text = part;
+  try {
+    text = decodeURIComponent(part);
+  } catch {
+    // Left as it is.
+  }
+  if (/^\d+$/.test(text)) return '';
+  return text
+    .split(/[-_.+\s]+/)
+    .filter(Boolean)
+    .map((word, at) =>
+      at > 0 && SMALL_WORDS.has(word.toLowerCase())
+        ? word.toLowerCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(' ')
+    .slice(0, 100);
 }
 
-/** The job to save from what was read, with the company from the site when the page names none. */
+/**
+ * A company's name from a job's address, for a page that doesn't name one: the company's own site,
+ * as "careers.lumen.example" is "Lumen", or the company an applicant system's address names, as
+ * "jobs.lever.co/harbor-and-pine/…" is "Harbor and Pine". A job board's address names none.
+ */
+export function companyFromAddress(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return '';
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (BOARD.test(host)) return '';
+  const labels = host.split('.');
+  if (COMPANY_IN_PATH.test(host)) {
+    const [first = ''] = labels;
+    const fromPath = parsed.pathname.split('/').find((part) => part && !GENERIC.test(part)) ?? '';
+    const name = !GENERIC.test(first) && labels.length > 2 ? first : fromPath;
+    return nameFrom(parsed.searchParams.get('for') ?? name);
+  }
+  const own = labels.find((label) => !GENERIC.test(label)) ?? '';
+  return nameFrom(own.replace(/^(careers|jobs)-/, ''));
+}
+
+/**
+ * What a save without the popup would need checked first, or null when it's clearly one job's: a
+ * page that isn't one job's own, a company it couldn't tell, or a posting taken from the page's
+ * main text, which may not be a posting at all. The popup shows each of these, to check.
+ */
+export function needsChecking(page: PageJob, job: JobToSave): string | null {
+  if (!isJobAddress(job.url)) return 'This isn’t one job’s page.';
+  if (!job.company) return 'It couldn’t tell the company.';
+  if (page.source === 'main' && job.posting) {
+    return 'It couldn’t tell the posting from the rest of the page.';
+  }
+  return null;
+}
+
+/** The job to save from what was read, with the company from its address when the page names none. */
 export function toSave(page: PageJob): JobToSave {
   return {
     url: page.url,
     site: page.site,
-    company: page.company.trim() || companyFromSite(page.site),
+    company: page.company.trim() || companyFromAddress(page.url),
     role: page.title.trim(),
     pay: page.pay,
     posting: page.posting,

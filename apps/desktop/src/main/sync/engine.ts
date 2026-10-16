@@ -116,6 +116,12 @@ function batches(changes: PushChange[]): PushChange[][] {
  * lost: a file keeps both copies, the other device's at its place and this one's beside it,
  * and a tracked row merges the two.
  */
+/**
+ * Errors that mean a change can never land on this computer, however often it's tried: a name too
+ * long for it, or a file where a folder must go.
+ */
+const NEVER_LANDS = new Set(['ENAMETOOLONG', 'ENOTDIR', 'EISDIR', 'EINVAL', 'EILSEQ']);
+
 export class SyncEngine {
   private readonly deps: EngineDeps;
 
@@ -154,6 +160,21 @@ export class SyncEngine {
     return (await recordId(keys, name)) === change.record ? { change, record, name } : null;
   }
 
+  /**
+   * Takes another device's change, or passes over one that can never land on this computer, such
+   * as a file where this one has a file in place of its folder, so one change can't stop sync for
+   * good. Anything else, such as a full disk, still stops this sync, to try again later.
+   */
+  private async takeOrPass(item: Incoming, report: SyncReport): Promise<boolean> {
+    try {
+      return await this.take(item, report);
+    } catch (error) {
+      if (!NEVER_LANDS.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
+      report.unreadable += 1;
+      return true;
+    }
+  }
+
   private async pull(report: SyncReport): Promise<void> {
     const { client, state } = this.deps;
     const waiting: Incoming[] = [];
@@ -166,12 +187,12 @@ export class SyncEngine {
         else report.unreadable += 1;
       }
       opened.sort((a, b) => APPLY_ORDER(a) - APPLY_ORDER(b));
-      for (const item of opened) if (!(await this.take(item, report))) waiting.push(item);
+      for (const item of opened) if (!(await this.takeOrPass(item, report))) waiting.push(item);
       state.setCursor(page.cursor);
       if (!page.more) break;
     }
     // A call or history whose job came in a later page gets another try, now its job is here.
-    for (const item of waiting) if (!(await this.take(item, report))) report.unreadable += 1;
+    for (const item of waiting) if (!(await this.takeOrPass(item, report))) report.unreadable += 1;
   }
 
   /**
