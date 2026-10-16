@@ -442,7 +442,8 @@ export async function jobDetails(
       'The user’s other jobs at this company, with their own calls and notes: job_details gives each in full.',
       ...others.map((other) => {
         const { status } = jobProgress(other, today);
-        const calls = other.calls.length > 0 ? `, ${other.calls.length} calls` : '';
+        const count = other.calls.length;
+        const calls = count > 0 ? `, ${count} call${count === 1 ? '' : 's'}` : '';
         return `- ${other.id}: ${other.role || 'no role named'} (${JOB_STATUS_LABELS[status]}${calls})`;
       }),
     );

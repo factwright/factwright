@@ -58,6 +58,7 @@ describe('the plugin’s skills', () => {
       'make-template',
       'revise-resume',
       'salary-check',
+      'thank-you',
       'unmask-job',
       'who-to-message',
     ]);

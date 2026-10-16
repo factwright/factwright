@@ -199,6 +199,92 @@ describe('find_job', () => {
   });
 });
 
+describe('a call’s prep sheet and thank-you notes', () => {
+  const id = 'acme-robotics--staff-engineer';
+  const callId = () => jobs.list().jobs.find((job) => job.id === id)?.calls[0]?.id ?? '';
+
+  beforeEach(() => {
+    jobs.addCall(id, {
+      kind: 'panel',
+      onDate: '2026-10-14',
+      atTime: '14:00',
+      minutes: 60,
+      mode: 'video',
+      place: 'https://meet.example.com/acme',
+      people: [
+        { name: 'Dana Lee', role: 'Hiring manager' },
+        { name: 'Sam Ortiz', role: null },
+      ],
+      notes: 'System design.\nBring the cost numbers.',
+    });
+  });
+
+  it('lists each call in job_details with its id, its details and how it went', async () => {
+    jobs.updateCall(callId(), { debrief: 'Dana asked about on-call.\nWent long.' });
+    const answer = await tool('job_details').run({ job: id });
+    expect(answer).toContain(
+      [
+        `    2026-10-14 14:00  Panel interview: scheduled · call ${callId()}`,
+        '      1 hour, on video, https://meet.example.com/acme',
+        '      With Dana Lee (Hiring manager) and Sam Ortiz',
+        '      About it: System design.',
+        '                Bring the cost numbers.',
+        '      How it went: Dana asked about on-call.',
+        '                   Went long.',
+      ].join('\n'),
+    );
+  });
+
+  it('saves a prep sheet with the call, which job_details then names', async () => {
+    const saved = await tool('save_call_prep').run({
+      job: id,
+      call: callId(),
+      prep: '# Prep: Acme Robotics, Staff Engineer\n\n## Five minutes before\n- Land the deploy story.',
+    });
+    expect(saved).toBe(
+      `Saved in calls/${id}/${callId()}/prep.md. The app shows it on the panel interview.`,
+    );
+    expect(readFileSync(join(root, 'calls', id, callId(), 'prep.md'), 'utf8')).toBe(
+      '# Prep: Acme Robotics, Staff Engineer\n\n## Five minutes before\n- Land the deploy story.\n',
+    );
+    jobs.read();
+    expect(jobs.list().jobs.find((job) => job.id === id)?.callDocs).toEqual([
+      expect.objectContaining({ callId: callId(), kind: 'prep' }),
+    ]);
+    expect(await tool('job_details').run({ job: id })).toMatch(
+      new RegExp(`      Prep sheet: calls/${id}/${callId()}/prep\\.md \\(\\d{4}-\\d{2}-\\d{2}\\)`),
+    );
+  });
+
+  it('saves thank-you notes with the call', async () => {
+    await tool('save_thank_you').run({
+      job: id,
+      call: callId(),
+      notes: '## Dana Lee\n\n**Subject:** Thank you\n\nHi Dana,',
+    });
+    expect(readFileSync(join(root, 'calls', id, callId(), 'thank-you.md'), 'utf8')).toBe(
+      '## Dana Lee\n\n**Subject:** Thank you\n\nHi Dana,\n',
+    );
+  });
+
+  it('refuses a call the job doesn’t have, a job that isn’t on file, and an empty sheet', async () => {
+    await expect(
+      tool('save_call_prep').run({ job: id, call: '../../facts', prep: 'Hm.' }),
+    ).rejects.toThrow(
+      `Acme Robotics has no call ../../facts. Its calls are ${callId()} (Panel interview, 2026-10-14).`,
+    );
+    await expect(
+      tool('save_call_prep').run({ job: 'nope', call: callId(), prep: 'Hm.' }),
+    ).rejects.toThrow('Nothing on file for nope.');
+    await expect(
+      tool('save_thank_you').run({ job: id, call: callId(), notes: '  ' }),
+    ).rejects.toThrow('Give the thank-you notes.');
+    await expect(tool('save_call_prep').run({ job: id, call: callId() })).rejects.toThrow(
+      'Give the prep as Markdown text.',
+    );
+  });
+});
+
 describe('job_details', () => {
   it('gives everything on file, including the user’s notes, calls and folder', async () => {
     const id = 'acme-robotics--staff-engineer';
@@ -234,8 +320,23 @@ describe('job_details', () => {
         '                Ask about on-call.',
       ].join('\n'),
     );
-    expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled');
+    expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled · call ');
     expect(answer).toContain('    2026-10-11  The user marked it Screen');
+    expect(answer).not.toContain('### Other jobs at');
+  });
+
+  it('names the user’s other jobs at the company, for their calls and notes', async () => {
+    const added = jobs.addJob({ company: 'Acme Robotics', role: 'Engineering Manager' });
+    const other = added.ok ? added.jobId : '';
+    jobs.addCall(other, { kind: 'screen', onDate: '2026-10-01' });
+    const answer = await tool('job_details').run({ job: 'acme-robotics--staff-engineer' });
+    expect(answer).toContain(
+      [
+        '### Other jobs at Acme Robotics',
+        'The user’s other jobs at this company, with their own calls and notes: job_details gives each in full.',
+        `- ${other}: Engineering Manager (Screen, 1 call)`,
+      ].join('\n'),
+    );
   });
 
   it('names a posting the user saved from their browser, for Claude to read', async () => {

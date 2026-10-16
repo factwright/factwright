@@ -248,10 +248,10 @@ describe('JobPanel', () => {
       'ATS X-ray of Resume - Northwind Labs.pdf',
       'ATS X-ray of Resume - Northwind Labs.docx',
     ]);
-    expect(screen.getByText('Recruiter was friendly. Team of six.')).toBeTruthy();
+    expect(screen.getByText('With Priya Shah (Recruiter)')).toBeTruthy();
     expect(screen.getByText('Marked Interview')).toBeTruthy();
     // A call still to come isn't history yet.
-    expect(screen.queryByText('Panel interview: scheduled')).toBeNull();
+    expect(screen.queryByText(/^Panel interview with/)).toBeNull();
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
   });
@@ -497,16 +497,13 @@ describe('JobPanel', () => {
       />
     );
     const { rerender } = render(shown(false));
-    await userEvent.click(screen.getByRole('button', { name: 'Log a call' }));
-    await userEvent.type(screen.getByRole('textbox', { name: 'Notes, if any' }), 'With the CTO');
+    const about = () => screen.getByRole('textbox', { name: 'What it’s about' }) as HTMLInputElement;
+    await userEvent.click(screen.getByRole('button', { name: 'Add a call' }));
+    await userEvent.type(about(), 'With the CTO');
     rerender(shown(true));
-    expect((screen.getByRole('textbox', { name: 'Notes, if any' }) as HTMLInputElement).value).toBe(
-      'With the CTO',
-    );
+    expect(about().value).toBe('With the CTO');
     rerender(shown(false));
-    expect((screen.getByRole('textbox', { name: 'Notes, if any' }) as HTMLInputElement).value).toBe(
-      'With the CTO',
-    );
+    expect(about().value).toBe('With the CTO');
   });
 
   it('keeps the keyboard’s focus on an arrow at the list’s end', async () => {
