@@ -74,10 +74,10 @@ function secured(response: Response): Response {
 
 /**
  * A download: counts it, then sends the browser on to the newest installer for the computer, or
- * the one under the name that never changes when the release can't be told. Only someone
- * following the link is counted, not a page's script, a prefetch or a check that only asks for the
- * headers. Browsers ask each time rather than keep the answer, so each download goes to the newest
- * installer, and counts.
+ * the one under the name that never changes when the release can't be told. Only a person's
+ * browser following the link is counted (downloads.ts), and a count that fails never stops the
+ * download. Browsers ask each time rather than keep the answer, so each download goes to the
+ * newest installer, and counts.
  */
 async function download(
   request: Request,
@@ -90,7 +90,11 @@ async function download(
   }
   const release = await releases(computer);
   if (request.method === 'GET' && isFollowedLink(request)) {
-    count(computer, release?.version ?? null);
+    try {
+      count(computer, release?.version ?? null);
+    } catch {
+      // The download matters more than the count.
+    }
   }
   return secured(
     new Response(null, {

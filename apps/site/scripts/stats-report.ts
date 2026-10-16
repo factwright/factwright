@@ -1,15 +1,22 @@
 /**
- * The numbers behind `pnpm --filter @factwright/site stats`: what it asks for, and how it shows
- * them. Every query only counts. None returns a name, an email or anything else about a person.
+ * The numbers behind `pnpm --filter @factwright/site stats`: what it asks Workers Analytics Engine
+ * for, and how it shows the answers. Both datasets hold counts only, never anything about a person:
+ * the site's Worker counts each download, and the sync server counts its totals once a day.
  */
 
-/** The Analytics Engine dataset the site's Worker counts downloads in (see wrangler.jsonc). */
+/** The dataset the site's Worker counts downloads in (wrangler.jsonc here). */
 export const DOWNLOADS_DATASET = 'factwright_downloads';
 
-/** How far back the download counts go. Analytics Engine keeps each count for 3 months. */
+/** The dataset the sync server keeps each day's totals in (apps/server/wrangler.jsonc). */
+export const SYNC_DATASET = 'factwright_sync';
+
+/** How far back the downloads go. Analytics Engine keeps everything for 3 months. */
 export const DOWNLOAD_DAYS = 90;
 
-/** Downloads per day, computer and version, over the last 90 days. */
+/** How far back the sync totals go: enough for a month of new accounts. */
+export const SYNC_DAYS = 31;
+
+/** Downloads per day, computer and version. Each count may stand for several, if it was sampled. */
 export const DOWNLOADS_SQL = [
   "SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS day,",
   'blob1 AS computer, blob2 AS version, SUM(_sample_interval) AS downloads',
@@ -20,71 +27,83 @@ export const DOWNLOADS_SQL = [
   'FORMAT JSON',
 ].join(' ');
 
-/** The sync service's accounts database (apps/server/wrangler.jsonc). */
-export const SYNC_DATABASE = 'factwright';
-
-/**
- * What the stats command asks the accounts database. Its dates are ISO text, so they compare as
- * text, as the server's own upkeep does. The `?` is a moment, also as ISO text.
- */
-export const SYNC_SQL = {
-  accounts: 'SELECT COUNT(*) AS n FROM "user"',
-  newAccounts:
-    'SELECT substr(createdAt, 1, 10) AS day, COUNT(*) AS n FROM "user" WHERE createdAt > ? GROUP BY day ORDER BY day DESC',
-  devices: 'SELECT COUNT(*) AS n FROM "session" WHERE expiresAt > ?',
-  activeDevices: 'SELECT COUNT(*) AS n FROM "session" WHERE expiresAt > ? AND updatedAt > ?',
-  devicesByWay:
-    'SELECT COALESCE(via, \'unknown\') AS via, COUNT(*) AS n FROM "session" WHERE expiresAt > ? GROUP BY via ORDER BY n DESC',
-} as const;
+/** Each day's sync totals, newest first: when they were counted, their day, and the totals. */
+export const SYNC_SQL = [
+  'SELECT timestamp, blob1 AS day, blob2 AS totals',
+  `FROM ${SYNC_DATASET}`,
+  `WHERE timestamp > NOW() - INTERVAL '${SYNC_DAYS}' DAY`,
+  'ORDER BY timestamp DESC',
+  'FORMAT JSON',
+].join(' ');
 
 /** One day's downloads of one version, for one computer. */
 export interface DownloadRow {
-  /** The day, as the dataset gives it, such as "2026-10-15 00:00:00". */
+  /** The UTC day, as Analytics Engine gives it, such as "2026-10-15 00:00:00". */
   day: string;
   computer: string;
   version: string;
   downloads: number;
 }
 
-/** What the accounts database says, in counts. */
-export interface SyncCounts {
+/** The sync server's totals for a day, as apps/server/src/sync-totals.ts counts them. */
+export interface SyncTotals {
   accounts: number;
-  /** New accounts on each day of the last two weeks that had any, newest first. */
-  newAccounts: { day: string; accounts: number }[];
-  /** Devices signed in to sync now: computers with the app, and browsers with the web view. */
-  devices: number;
-  /** Of those, the ones that checked in during the last week. */
-  activeDevices: number;
-  /** Devices signed in, by how they signed in: "device" for the app's code, "web" for a browser. */
-  byWay: { via: string; devices: number }[];
+  /** Accounts made on the day the totals are for. */
+  newAccounts: number;
+  usedThisWeek: number;
+  usedThisMonth: number;
+  appSignIns: number;
+  browserSignIns: number;
+}
+
+/** One day's sync totals. */
+export interface SyncDay {
+  /** When the server counted them, as Analytics Engine gives it, such as "2026-10-16 04:17:00". */
+  at: string;
+  /** The UTC day its new accounts were made on, such as "2026-10-15". */
+  day: string;
+  totals: SyncTotals;
 }
 
 /** What the command found, or why it couldn't. */
 export interface Stats {
   downloads: DownloadRow[] | { problem: string };
-  sync: SyncCounts | { problem: string };
+  sync: SyncDay[] | { problem: string };
 }
 
 const COMPUTERS: Readonly<Record<string, string>> = { mac: 'Mac', windows: 'Windows' };
-
-/** How sessions say they signed in, as the report names them (apps/server/src/auth-options.ts). */
-const WAYS: Readonly<Record<string, string>> = { device: 'In the app', web: 'In a browser' };
 
 /** A count with its thousands marked, such as 1,234. */
 const number = (n: number) => n.toLocaleString('en-US');
 
 /** How wide a line's label is, so the counts line up. */
-const LABEL_WIDTH = 34;
+const LABEL_WIDTH = 40;
 
 /** A line of the report: its label, indented a level per step, and its count lined up after. */
 const line = (label: string, n: number, level = 0) =>
   `${'  '.repeat(level)}${label}`.padEnd(LABEL_WIDTH) + number(n).padStart(8);
 
-/** A day as the report shows it, such as "Oct 15", from either form the sources give. */
-const shortDay = (day: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-    new Date(`${day.slice(0, 10)}T00:00:00Z`),
-  );
+/**
+ * A moment or a day, in UTC, from any form the sources give: "2026-10-15", "2026-10-15 04:17:00"
+ * or an ISO moment. Anything else shows as it came, so one odd value can't stop the report.
+ */
+function utc(value: string, options: Intl.DateTimeFormatOptions): string {
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00Z`
+    : /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(value)
+      ? `${value.replace(' ', 'T')}Z`
+      : value;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' }).format(date);
+}
+
+/** A day, such as "Oct 15". */
+const shortDay = (day: string) => utc(day.slice(0, 10), { month: 'short', day: 'numeric' });
+
+/** A moment, such as "Oct 16, 04:17 UTC", with the year too if asked. */
+const moment = (at: string, year?: 'numeric') =>
+  `${utc(at, { year, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} UTC`;
 
 /** Counts summed by one field of the rows. */
 function totals(rows: DownloadRow[], key: 'computer' | 'version' | 'day'): [string, number][] {
@@ -93,20 +112,27 @@ function totals(rows: DownloadRow[], key: 'computer' | 'version' | 'day'): [stri
   return [...sums];
 }
 
-/** Version numbers newest first, such as 0.10.0 before 0.9.0. "unknown" goes last. */
-function byVersion([a]: [string, number], [b]: [string, number]): number {
+/**
+ * Version numbers newest first, such as 0.10.0 before 0.9.0, and a release before the betas that
+ * led up to it. "unknown" goes last.
+ */
+export function byVersion([a]: [string, number], [b]: [string, number]): number {
   if (a === b) return 0;
   if (a === 'unknown') return 1;
   if (b === 'unknown') return -1;
-  const parts = (version: string) => version.split(/[.-]/).map((part) => Number(part) || 0);
-  const [x, y] = [parts(a), parts(b)];
+  const [coreA = '', preA = ''] = a.split(/-(.*)/);
+  const [coreB = '', preB = ''] = b.split(/-(.*)/);
+  const x = coreA.split('.').map(Number);
+  const y = coreB.split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
     if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0);
   }
-  return 0;
+  if (!preA) return -1;
+  if (!preB) return 1;
+  return preB.localeCompare(preA, 'en', { numeric: true });
 }
 
-/** How many days of downloads the report lists one by one, newest first. */
+/** How many days the report lists one by one, newest first. */
 const DAYS_LISTED = 14;
 
 /** The downloads part of the report. */
@@ -124,7 +150,7 @@ function downloadLines(rows: DownloadRow[]): string[] {
     ...totals(rows, 'version')
       .sort(byVersion)
       .map(([version, n]) => line(version === 'unknown' ? 'Unknown' : version, n, 2)),
-    `  By day, newest first (the last ${DAYS_LISTED} with any)`,
+    `  By UTC day, the last ${DAYS_LISTED} with any, newest first`,
     ...totals(rows, 'day')
       .sort(([a], [b]) => b.localeCompare(a))
       .slice(0, DAYS_LISTED)
@@ -132,33 +158,41 @@ function downloadLines(rows: DownloadRow[]): string[] {
   ];
 }
 
-/** The sync part of the report. */
-function syncLines(sync: SyncCounts, now: Date): string[] {
-  const lastWeek = sync.newAccounts
-    .filter((each) => now.getTime() - Date.parse(`${each.day}T00:00:00Z`) < 7 * 86_400_000)
-    .reduce((sum, each) => sum + each.accounts, 0);
+/** The sync part of the report, from the newest day's totals and the days before it. */
+function syncLines(days: SyncDay[]): string[] {
+  const [newest] = days;
+  if (!newest) {
+    return ['Sync: no totals yet. The sync server counts them once a day, at 04:17 UTC.'];
+  }
+  const latest = newest.totals;
+  /** New accounts on the newest day and the ones before it, over so many days. */
+  const newOver = (count: number) => {
+    const from = Date.parse(`${newest.day}T00:00:00Z`) - (count - 1) * 86_400_000;
+    return days
+      .filter((each) => Date.parse(`${each.day}T00:00:00Z`) >= from)
+      .reduce((sum, each) => sum + each.totals.newAccounts, 0);
+  };
   return [
-    line('Sync accounts', sync.accounts),
-    line('New in the last week', lastWeek, 1),
-    line('Devices signed in', sync.devices),
-    ...sync.byWay.map(({ via, devices }) => line(WAYS[via] ?? via, devices, 1)),
-    line('Used in the last week', sync.activeDevices, 1),
-    ...(sync.newAccounts.length > 0
-      ? [
-          '  New accounts by day, newest first',
-          ...sync.newAccounts.map(({ day, accounts }) => line(shortDay(day), accounts, 2)),
-        ]
-      : []),
+    `Sync, as the server counted it on ${moment(newest.at)}`,
+    line('Accounts', latest.accounts, 1),
+    line('New in the last 7 days', newOver(7), 2),
+    line('New in the last 30 days', newOver(30), 2),
+    line('Used in the last 7 days', latest.usedThisWeek, 2),
+    line('Used in the last 30 days', latest.usedThisMonth, 2),
+    '  Signed in now',
+    line('In the app (about one per computer)', latest.appSignIns, 2),
+    line('In a browser', latest.browserSignIns, 2),
+    `  New accounts by UTC day, the last ${DAYS_LISTED}, newest first`,
+    ...days
+      .slice(0, DAYS_LISTED)
+      .map((each) => line(shortDay(each.day), each.totals.newAccounts, 2)),
   ];
 }
 
 /** The report the stats command prints. */
 export function report(stats: Stats, now: Date): string {
-  const today = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' }).format(
-    now,
-  );
   return [
-    `Factwright stats, ${today}`,
+    `Factwright stats, ${moment(now.toISOString(), 'numeric')}`,
     '',
     ...('problem' in stats.downloads
       ? [`Downloads: couldn’t read them. ${stats.downloads.problem}`]
@@ -166,7 +200,7 @@ export function report(stats: Stats, now: Date): string {
     '',
     ...('problem' in stats.sync
       ? [`Sync: couldn’t read it. ${stats.sync.problem}`]
-      : syncLines(stats.sync, now)),
+      : syncLines(stats.sync)),
     '',
     'Counts only, never who. The app itself reports nothing, so someone who never turns on sync',
     'shows up only as a download.',

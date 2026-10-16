@@ -4,6 +4,7 @@ import { failure, handleApi, json } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
 import type { Env } from './env.ts';
 import { DELETED } from './store.ts';
+import { countSyncDaily } from './sync-totals.ts';
 
 export { UserStore } from './store.ts';
 
@@ -163,6 +164,12 @@ export default {
 
   async scheduled(controller, env, context): Promise<void> {
     const when = new Date(controller.scheduledTime);
-    context.waitUntil(Promise.all([forgetOldSignIns(env.DB, when), backUpAll(env, when)]));
+    context.waitUntil(
+      Promise.all([
+        forgetOldSignIns(env.DB, when),
+        backUpAll(env, when),
+        countSyncDaily(env, when),
+      ]),
+    );
   },
 } satisfies ExportedHandler<Env>;

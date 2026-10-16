@@ -105,7 +105,8 @@ describe.each([
   'terms.html',
   '404.html',
 ])('%s', (page) => {
-  it('passes an accessibility check', async () => {
+  // Checking the home page takes a few seconds on CI's slower machines.
+  it('passes an accessibility check', { timeout: 30_000 }, async () => {
     const doc = open(page);
     // jsdom can't lay out a page, so contrast is checked from the tokens in @factwright/ui.
     const results = await axe.run(doc, { rules: { 'color-contrast': { enabled: false } } });
@@ -295,8 +296,11 @@ describe('the download pages', () => {
         expect(link.getAttribute('rel'), page).toBe('nofollow');
       }
     }
-    const robots = readFileSync(join(SITE, 'public', 'robots.txt'), 'utf8');
-    expect(robots).toMatch(/^Disallow: \/download\/get\/$/m);
+    // Some crawlers take the first rule that matches, so the links' rule comes before Allow: /.
+    const rules = readFileSync(join(SITE, 'public', 'robots.txt'), 'utf8')
+      .split('\n')
+      .filter((rule) => /^(Allow|Disallow):/.test(rule));
+    expect(rules[0]).toBe('Disallow: /download/get/');
   });
 
   it('mark where the Worker says which version each offers', () => {

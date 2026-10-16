@@ -23,7 +23,7 @@ It's built on the design system in [`@factwright/ui`](../../packages/ui): its co
 pnpm --filter @factwright/site dev
 ```
 
-It opens at http://localhost:5173 and reloads as you change it. The download pages show the version only through the Worker, once a release is out. To see it the way Cloudflare serves it, with the Worker and its headers, run `pnpm --filter @factwright/site serve`: it builds the site and serves it at http://localhost:8788. `--local-upstream` keeps the local address; without it, Wrangler hands the Worker factwright.com, which it sends to https.
+It opens at http://localhost:5173 and reloads as you change it. The download pages show the version only through the Worker, once a release is out, and without it their download links do nothing. To see it the way Cloudflare serves it, with the Worker and its headers, run `pnpm --filter @factwright/site serve`: it builds the site and serves it at http://localhost:8788. `--local-upstream` keeps the local address; without it, Wrangler hands the Worker factwright.com, which it sends to https.
 
 After changing a resume template or the link preview card, draw the pictures again, on a Mac so the card gets the system font. It needs Playwright's Chromium, once: `pnpm --filter @factwright/site exec playwright install chromium`.
 
@@ -42,23 +42,21 @@ The home page also tells search engines what Factwright is, in a block of JSON-L
 The drawings of the app show made-up jobs, so each one carries `data-nosnippet`, which asks Google and Bing to leave those companies out of the snippets they show. When you redraw one, keep it, and add any new made-up company or person to `MADE_UP` in `test/pages.test.ts`. The tests check that each drawing carries it, and that no made-up name sits outside a marked part of the page, not even in the title or a description.
 
 ## Download counts and stats
-The download pages' links go to `/download/get/mac` and `/download/get/windows`. The Worker counts each download there, then sends the browser on to the newest installer on downloads.factwright.com. A count is the computer and the version, in Cloudflare's Workers Analytics Engine, which keeps each one for 3 months in the `factwright_downloads` dataset. Nothing about who downloaded is kept: no IP address, browser or ID. The privacy policy says so, so a change to what's counted needs a change to it too.
+The download pages' links go to `/download/get/mac` and `/download/get/windows`. The Worker counts each download there, then sends the browser on to the newest installer on downloads.factwright.com. A count is the computer and the version, in Cloudflare's Workers Analytics Engine, which notes when, as it does for every count, and keeps each one for 3 months in the `factwright_downloads` dataset. Nothing about who downloaded is kept: no IP address, browser or ID. The privacy policy says so, so a change to what's counted needs a change to it too.
 
-Only a followed link counts, not a page's script, a prefetch or a request for the headers alone, and `robots.txt` and `rel="nofollow"` keep search engines off the links. Someone who clicks "Didn't start?" after their download began counts twice. Downloads from GitHub Releases, and updates, which the app gets from downloads.factwright.com itself, aren't counted. A local preview's counts never reach Cloudflare.
+Only a person's browser following a link counts: a navigation of the whole tab, as every current browser marks one. A page's script, a frame, a prefetch, a download picking up where it left off, and anything that doesn't say how it asked, such as a link preview in a chat app, a download tool or a browser from before 2023, isn't counted. `robots.txt` and `rel="nofollow"` keep search engines off the links. The counts are a guide, not an exact tally: reloading a download page starts its download again, as does "Didn't start?" after a download began, and each counts, and anyone who wants to can add counts on purpose. Downloads from GitHub Releases, and updates, which the app gets from downloads.factwright.com itself, aren't counted. A local preview's counts never reach Cloudflare.
 
-`pnpm --filter @factwright/site stats` prints the downloads of the last 90 days, by computer, version and day, and from the sync server's accounts database, how many accounts there are and how many are new, and how many devices are signed in and used in the last week. Every query only counts: none asks for a name, an email or anything else about a person. The app itself reports nothing, so someone who never turns on sync shows up only as a download.
+The sync server keeps its own totals: once a day, its daily job counts its accounts, the ones made the day before, the ones used in the last week and month, and the sign-ins that haven't ended, in the app and in browsers, and keeps only those totals, in the `factwright_sync` dataset ([`apps/server/src/sync-totals.ts`](../server/src/sync-totals.ts)).
 
-It needs a Cloudflare API token with read permissions only. In the Cloudflare dashboard, under **My Profile → API Tokens → Create Token → Create Custom Token**, give it two permissions, **Account · Account Analytics · Read** and **Account · D1 · Read**, for the account factwright.com runs in, and nothing else. Keep it in your password manager, never in a file here. The command reads it from `FACTWRIGHT_STATS_TOKEN`, not `CLOUDFLARE_API_TOKEN`, so it never stands in for Wrangler's own sign-in, and the account's ID from `CLOUDFLARE_ACCOUNT_ID`: the long code after `dash.cloudflare.com/` in the dashboard's address. To paste the token without it showing or landing in your shell's history:
+`pnpm --filter @factwright/site stats` reads both datasets and prints the downloads of the last 90 days, by computer and version, with the last 14 UTC days that had any, and the newest sync totals, with the new accounts of the last 14 days. It reads counts only, so it can't show a name, an email or anything else about a person. The app itself reports nothing, so someone who never turns on sync shows up only as a download.
 
-```bash
-read -rs FACTWRIGHT_STATS_TOKEN && export FACTWRIGHT_STATS_TOKEN
-```
-
-With 1Password's command-line tool, `export FACTWRIGHT_STATS_TOKEN="$(op read 'op://<vault>/<item>/credential')"` does the same. Then:
+It needs a Cloudflare API token that can read analytics and nothing else. In the Cloudflare dashboard, under **My Profile → API Tokens → Create Token → Create Custom Token**, give it one permission, **Account · Account Analytics · Read**, for the account factwright.com runs in. It can't reach the accounts database, or change anything. Keep it in your password manager, never in a file here. The command reads it from `FACTWRIGHT_STATS_TOKEN`, not `CLOUDFLARE_API_TOKEN`, so it never stands in for Wrangler's own sign-in, and the account's ID from `CLOUDFLARE_ACCOUNT_ID`: the long code after `dash.cloudflare.com/` in the dashboard's address. To give the token to the one command, without it showing, landing in your shell's history, or staying for the commands after:
 
 ```bash
-CLOUDFLARE_ACCOUNT_ID=<the account's ID> pnpm --filter @factwright/site stats
+read -rs TOKEN && FACTWRIGHT_STATS_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=<the account's ID> pnpm --filter @factwright/site stats; unset TOKEN
 ```
+
+With 1Password's command-line tool, `FACTWRIGHT_STATS_TOKEN="$(op read 'op://<vault>/<item>/credential')"` in place of `read` does the same.
 
 ## Deploying
 It runs on Cloudflare Workers, in the same account as factwright.com. Only the pages go through the Worker: built files and template previews skip it, so a busy day on the site barely touches the daily Worker requests the account's sync server shares.

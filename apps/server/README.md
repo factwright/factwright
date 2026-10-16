@@ -9,13 +9,14 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 
 | Part | What it does |
 |---|---|
-| `src/index.ts` | Routes each request: sign-in, the API, the web view, the operator's restore and delete, and the daily backup |
+| `src/index.ts` | Routes each request: sign-in, the API, the web view, the operator's restore and delete, and the daily job: the backup, the cleanup and the totals |
 | `src/auth-options.ts`, `src/auth.ts` | Sign-in's settings, and device names for the account page |
 | `src/api.ts` | The sync API, for the signed-in account only |
 | `src/store.ts` | One account's store: records with their history, files, the locked account key, link codes and requests to link |
 | `src/store-tables.ts` | The store's tables |
 | `src/store-upkeep.ts` | Daily backups, restoring one, and the daily cleanup |
 | `src/accounts-upkeep.ts` | The daily cleanup of sign-in's own records: sessions that ended, sign-in steps that ran out, and the limits' counts by IP address |
+| `src/sync-totals.ts` | How much sync is used, in totals only: once a day, its accounts and sign-ins, kept in Workers Analytics Engine for the stats command in [`apps/site`](../site) |
 | `src/live.ts` | Tickets for listening to changes as they happen |
 | `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
 
@@ -65,7 +66,7 @@ pnpm --filter @factwright/server test
 ```
 
 ## Deploying
-It runs on Cloudflare's free plan. The first deploy creates the database, the file bucket and the `app.factwright.com` address on its own.
+It runs on Cloudflare's free plan. The first deploy creates the database, the file bucket and the `app.factwright.com` address on its own, and Analytics Engine makes the dataset for the daily totals on the first count.
 
 1. Sign in to the Cloudflare account that has factwright.com: `pnpm --filter @factwright/server exec wrangler login`.
 2. Deploy: `pnpm --filter @factwright/server run deploy`. It builds the web view first.

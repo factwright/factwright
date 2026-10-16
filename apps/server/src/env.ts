@@ -26,6 +26,8 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   /** Lets the operator restore an account's store from a backup. Unset, there's no way in. */
   ADMIN_TOKEN?: string;
+  /** How much sync is used, in totals only, counted once a day (sync-totals.ts). */
+  SYNC_TOTALS?: AnalyticsEngineDataset;
 }
 
 /** How much each account may store, in bytes. */

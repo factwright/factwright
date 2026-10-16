@@ -24,15 +24,6 @@ describe('a download’s count', () => {
   it('counts nothing without a dataset', () => {
     expect(() => countDownload(undefined, 'mac', '0.4.0')).not.toThrow();
   });
-
-  it('never stops a download when counting fails', () => {
-    const failing = {
-      writeDataPoint: () => {
-        throw new Error('Analytics Engine is down');
-      },
-    };
-    expect(() => countDownload(failing, 'mac', '0.4.0')).not.toThrow();
-  });
 });
 
 describe('the links that count', () => {
@@ -48,20 +39,25 @@ describe('the links that count', () => {
 describe('a followed link', () => {
   const asked = (headers: Record<string, string>) =>
     isFollowedLink(new Request('https://factwright.com/download/get/mac', { headers }));
+  const tab = { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
 
-  it('is a navigation, or a request that doesn’t say', () => {
-    expect(asked({ 'Sec-Fetch-Mode': 'navigate' })).toBe(true);
-    expect(asked({})).toBe(true);
+  it('is the whole tab going to the link, as every current browser marks it', () => {
+    expect(asked(tab)).toBe(true);
   });
 
-  it('isn’t a script’s request or a prefetch', () => {
-    expect(asked({ 'Sec-Fetch-Mode': 'cors' })).toBe(false);
-    expect(asked({ 'Sec-Fetch-Mode': 'no-cors' })).toBe(false);
-    expect(asked({ 'Sec-Fetch-Mode': 'navigate', 'Sec-Purpose': 'prefetch' })).toBe(false);
-    expect(asked({ 'Sec-Fetch-Mode': 'navigate', 'Sec-Purpose': 'prefetch;prerender' })).toBe(
-      false,
-    );
-    expect(asked({ Purpose: 'Prefetch' })).toBe(false);
-    expect(asked({ 'X-Moz': 'prefetch' })).toBe(false);
+  it('isn’t anything that doesn’t say how it asked, such as a link preview or a download tool', () => {
+    expect(asked({})).toBe(false);
+    expect(asked({ 'Sec-Fetch-Mode': 'navigate' })).toBe(false);
+  });
+
+  it('isn’t a script, a frame, a prefetch, or a download picking up where it left off', () => {
+    expect(asked({ 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' })).toBe(false);
+    expect(asked({ 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' })).toBe(false);
+    expect(asked({ ...tab, 'Sec-Fetch-Dest': 'iframe' })).toBe(false);
+    expect(asked({ ...tab, 'Sec-Purpose': 'prefetch' })).toBe(false);
+    expect(asked({ ...tab, 'Sec-Purpose': 'prefetch;prerender' })).toBe(false);
+    expect(asked({ ...tab, Purpose: 'Prefetch' })).toBe(false);
+    expect(asked({ ...tab, 'X-Moz': 'prefetch' })).toBe(false);
+    expect(asked({ ...tab, Range: 'bytes=1000-' })).toBe(false);
   });
 });

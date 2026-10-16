@@ -174,7 +174,7 @@ function counter() {
 const follow = (path: string, headers: Record<string, string> = {}, method = 'GET') =>
   new Request(`https://factwright.com${path}`, {
     method,
-    headers: { 'Sec-Fetch-Mode': 'navigate', ...headers },
+    headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', ...headers },
   });
 
 describe('a download', () => {
@@ -225,28 +225,41 @@ describe('a download', () => {
     expect(counted).toEqual([['mac', null]]);
   });
 
-  it('counts a browser or a download tool that doesn’t say how it asked', async () => {
+  it('doesn’t count a request that doesn’t say how it asked, such as a link preview', async () => {
     const { counted, count } = counter();
     const request = new Request('https://factwright.com/download/get/mac');
-    await respond(request, assets(), releases().newest, count);
-    expect(counted).toEqual([['mac', '0.1.0']]);
+    const response = await respond(request, assets(), releases().newest, count);
+    expect(response.status).toBe(302);
+    expect(counted).toEqual([]);
   });
 
-  it('doesn’t count a script’s request, a prefetch, or a check of the headers alone', async () => {
+  it('doesn’t count a script, a frame, a prefetch, a resumed download or a check of the headers', async () => {
     const { counted, count } = counter();
     for (const request of [
-      follow('/download/get/mac', { 'Sec-Fetch-Mode': 'cors' }),
-      follow('/download/get/mac', { 'Sec-Fetch-Mode': 'no-cors' }),
+      follow('/download/get/mac', { 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' }),
+      follow('/download/get/mac', { 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' }),
+      follow('/download/get/mac', { 'Sec-Fetch-Dest': 'iframe' }),
       follow('/download/get/mac', { 'Sec-Purpose': 'prefetch' }),
       follow('/download/get/mac', { 'Sec-Purpose': 'prefetch;prerender' }),
       follow('/download/get/mac', { Purpose: 'prefetch' }),
       follow('/download/get/mac', { 'X-Moz': 'prefetch' }),
+      follow('/download/get/mac', { Range: 'bytes=1000-' }),
       follow('/download/get/mac', {}, 'HEAD'),
     ]) {
       const response = await respond(request, assets(), releases().newest, count);
       expect(response.status).toBe(302);
     }
     expect(counted).toEqual([]);
+  });
+
+  it('still sends the browser on when counting fails', async () => {
+    const response = await respond(follow('/download/get/mac'), assets(), releases().newest, () => {
+      throw new Error('Analytics Engine is down');
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(
+      'https://downloads.factwright.com/Factwright-0.1.0.dmg',
+    );
   });
 
   it('turns away anything but a GET or a HEAD, uncounted', async () => {
@@ -267,7 +280,7 @@ describe('a download', () => {
     const { counted, count } = counter();
     const response = await respond(
       new Request('http://www.factwright.com/download/get/mac', {
-        headers: { 'Sec-Fetch-Mode': 'navigate' },
+        headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' },
       }),
       assets(),
       releases().newest,
@@ -286,6 +299,7 @@ describe('a download', () => {
       '/download/get/',
       '/download/get/linux',
       '/download/get/MAC',
+      '/download/get/mac/',
     ]) {
       const response = await respond(follow(path), assets(false), known.newest, count);
       expect(response.status, path).toBe(404);
