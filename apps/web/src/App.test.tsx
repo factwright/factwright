@@ -72,7 +72,8 @@ describe('the web view', () => {
     server(SESSION);
     render(<App />);
     expect(await screen.findByText('No jobs yet')).toBeTruthy();
-    expect(location.pathname).toBe('/');
+    // The address changes just after the list first shows, once the job hunt is open.
+    await waitFor(() => expect(location.pathname).toBe('/'));
   });
 
   it('says when Factwright can’t be reached, instead of waiting, with a way to try again', async () => {
