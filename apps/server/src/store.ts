@@ -643,11 +643,11 @@ export class UserStore extends DurableObject<Env> {
   }
 
   /**
-   * What the alarm does, kept apart from it so the tests can run it: nothing can call the alarm
-   * itself. A deleted account gets its last sweep, and nothing after it. A store no account has
-   * claimed gets nothing. Otherwise the next day's cleanup is planned before this one runs, so a
-   * cleanup that fails, or never finishes, can't end them. Deleting the account while this one
-   * waits on R2 plans its sweep in place of that.
+   * What the alarm does, kept apart from it so the tests can run it: they can't call the alarm
+   * over RPC. A deleted account gets its last sweep, and nothing after it. A store no account has
+   * claimed gets nothing. Otherwise the next day's cleanup is planned and saved before this one
+   * runs, so a cleanup that fails, or never finishes, can't end them. Deleting the account while
+   * this one runs plans its sweep in place of that.
    */
   async runAlarm(): Promise<void> {
     const deleted = this.meta.get('deleted');
@@ -655,6 +655,11 @@ export class UserStore extends DurableObject<Env> {
     const owner = this.meta.get('owner');
     if (owner === null) return;
     await this.ctx.storage.setAlarm(Date.now() + DAY_MS);
+    // Saved first: a failure that breaks the store, such as running out of space, loses every
+    // write since the last save.
+    await this.ctx.storage.sync();
+    // Deleted meanwhile, with nothing left to clean up.
+    if (this.isDeleted()) return;
     try {
       await this.cleanup();
     } catch (error) {

@@ -237,13 +237,13 @@ describe('the daily cleanup', () => {
     expect(await storage.exec('SELECT key FROM trash')).toEqual([]);
   });
 
-  it('is planned for the next day before it runs, so one that fails can’t end them', async () => {
+  it('is still planned for the next day after one fails, and the failure is written down', async () => {
     const sam = await server.signUp();
     // Signing in claims the store, which plans no cleanup until something's stored.
     await sam.client.account();
     const store = await storeOf(sam);
     expect(await store.nextAlarm()).toBeNull();
-    // Without one of its tables, the cleanup's transaction fails, as one can when storage does.
+    // Without one of its tables, the cleanup's transaction fails.
     const storage = await server.worker.getDurableObjectStorage('STORES', { name: sam.id });
     await storage.exec('DROP TABLE links');
     server.server.clearLogs();
