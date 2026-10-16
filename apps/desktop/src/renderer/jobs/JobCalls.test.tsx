@@ -45,10 +45,13 @@ function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunCon
   return { phase, task, start: vi.fn(), show: vi.fn() };
 }
 
-function panel(job: Job, { result = { ok: true }, run = controls() } = {} as {
-  result?: EditResult;
-  run?: RunControls;
-}) {
+function panel(
+  job: Job,
+  { result = { ok: true }, run = controls() } = {} as {
+    result?: EditResult;
+    run?: RunControls;
+  },
+) {
   const answer = vi.fn(async () => result);
   const api = {
     updateJob: answer,
@@ -221,9 +224,7 @@ describe('calls and interviews', () => {
     const { api } = panel(byCompany('Northwind Labs'));
     await userEvent.click(screen.getByRole('button', { name: 'Delete the recruiter screen' }));
     expect(
-      screen.getByText(
-        'Delete the recruiter screen, with how it went and Claude’s work for it?',
-      ),
+      screen.getByText('Delete the recruiter screen, with how it went and Claude’s work for it?'),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Keep it' }));
     expect(api.deleteCall).not.toHaveBeenCalled();
@@ -342,7 +343,9 @@ describe('after a call', () => {
     const run = controls();
     const { api } = panel(byCompany('Northwind Labs'), { run });
     await userEvent.click(
-      screen.getByRole('button', { name: 'Write the thank-you notes for the recruiter screen again' }),
+      screen.getByRole('button', {
+        name: 'Write the thank-you notes for the recruiter screen again',
+      }),
     );
     expect(run.start).toHaveBeenCalledWith({
       skill: 'thank-you',
@@ -352,19 +355,26 @@ describe('after a call', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Open the thank-you notes for the recruiter screen' }),
     );
-    const dialog = await screen.findByRole('dialog', { name: /^Thank-you notes: Recruiter screen/ });
+    const dialog = await screen.findByRole('dialog', {
+      name: /^Thank-you notes: Recruiter screen/,
+    });
     const note = within(dialog).getByRole('region', { name: 'Note to Priya Shah' });
     expect(within(note).getByText('Subject: Thank you: today’s call about the platform role'));
-    await userEvent.click(within(note).getByRole('button', { name: 'Copy the note to Priya Shah' }));
-    expect(api.copyText).toHaveBeenCalledWith(expect.stringMatching(/^Hi Priya,\n\nThank you/));
-    expect(within(note).getByRole('button', { name: 'Copy the note to Priya Shah' }).textContent).toBe(
-      'Copied',
+    await userEvent.click(
+      within(note).getByRole('button', { name: 'Copy the note to Priya Shah' }),
     );
+    expect(api.copyText).toHaveBeenCalledWith(expect.stringMatching(/^Hi Priya,\n\nThank you/));
+    expect(
+      within(note).getByRole('button', { name: 'Copy the note to Priya Shah' }).textContent,
+    ).toBe('Copied');
   });
 
   it('offers the next round once the latest call moved forward', async () => {
     const job = byCompany('Northwind Labs');
-    const screenOnly = { ...job, calls: job.calls.filter((call) => call.id === 'northwind-screen') };
+    const screenOnly = {
+      ...job,
+      calls: job.calls.filter((call) => call.id === 'northwind-screen'),
+    };
     panel(screenOnly);
     await userEvent.click(screen.getByRole('button', { name: 'Add the next round' }));
     const form = screen.getByRole('form', { name: 'Add a call' });

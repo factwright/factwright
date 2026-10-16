@@ -169,9 +169,11 @@ describe('parseRunTask', () => {
 
   it('takes prep for one of a job’s calls, practice for it, or thank-you notes after it', () => {
     const call = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
-    expect(parseRunTask({ skill: 'interview-prep', jobId: 'acme--staff', callId: call })).toEqual(
-      { skill: 'interview-prep', jobId: 'acme--staff', callId: call },
-    );
+    expect(parseRunTask({ skill: 'interview-prep', jobId: 'acme--staff', callId: call })).toEqual({
+      skill: 'interview-prep',
+      jobId: 'acme--staff',
+      callId: call,
+    });
     expect(
       parseRunTask({ skill: 'interview-prep', jobId: 'acme--staff', callId: call, practice: true }),
     ).toEqual({ skill: 'interview-prep', jobId: 'acme--staff', callId: call, practice: true });

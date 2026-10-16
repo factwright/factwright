@@ -497,7 +497,8 @@ describe('JobPanel', () => {
       />
     );
     const { rerender } = render(shown(false));
-    const about = () => screen.getByRole('textbox', { name: 'What it’s about' }) as HTMLInputElement;
+    const about = () =>
+      screen.getByRole('textbox', { name: 'What it’s about' }) as HTMLInputElement;
     await userEvent.click(screen.getByRole('button', { name: 'Add a call' }));
     await userEvent.type(about(), 'With the CTO');
     rerender(shown(true));

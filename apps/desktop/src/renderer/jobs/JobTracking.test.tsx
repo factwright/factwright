@@ -340,7 +340,9 @@ describe('history', () => {
     ).toBeTruthy();
     // A call still to come isn't history yet, and nor is anyone met only on it.
     expect(within(history).queryByText(/^Panel interview/)).toBeNull();
-    const people = within(history).getAllByRole('listitem').filter((item) => item.closest('ul'));
+    const people = within(history)
+      .getAllByRole('listitem')
+      .filter((item) => item.closest('ul'));
     expect(people.map((item) => item.textContent)).toEqual([
       expect.stringMatching(/^Priya ShahRecruiterRecruiter screen, /),
     ]);
