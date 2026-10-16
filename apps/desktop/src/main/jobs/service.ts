@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import {
   ASK_ID,
   askedFile,
+  CALL_ID,
   type CallDoc,
   type CollectedJob,
   collectJobs,
+  JOB_EXTRAS,
   type JobDocs,
   jobList,
   localDate,
@@ -153,8 +155,17 @@ export class JobsService {
     return this.saved(this.deps.tracker.updateCall(callId, changes, this.context()));
   }
 
-  deleteCall(callId: string): EditResult {
-    return this.saved(this.deps.tracker.deleteCall(callId));
+  /** Deletes a call, and puts Claude's prep sheet and thank-you notes for it in the trash. */
+  async deleteCall(callId: string): Promise<EditResult> {
+    const jobId = [...this.deps.tracker.calls()].find(([, calls]) =>
+      calls.some((call) => call.id === callId),
+    )?.[0];
+    const result = this.saved(this.deps.tracker.deleteCall(callId));
+    if (!result.ok || !jobId || !CALL_ID.test(callId)) return result;
+    const folder = join(this.deps.workspace, JOB_EXTRAS.calls, jobId, callId);
+    const inside = resolve(folder).startsWith(resolve(this.deps.workspace, JOB_EXTRAS.calls) + sep);
+    if (inside && existsSync(folder)) await this.deps.trash?.(folder).catch(() => {});
+    return result;
   }
 
   redateStatusChange(changeId: string, at: string): EditResult {

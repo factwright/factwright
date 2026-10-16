@@ -38,7 +38,7 @@ beforeEach(() => {
     now: () => new Date(2026, 9, 10, 9, 30),
     trash: async (file) => {
       trashed.push(file);
-      rmSync(file);
+      rmSync(file, { recursive: true });
     },
   });
 });
@@ -234,5 +234,22 @@ describe('screenshots and questions for Claude', () => {
     expect(existsSync(join(root, 'asked', id, `${other.askId}.md`))).toBe(true);
     expect(jobs.list().jobs[0]?.asks.map((ask) => ask.id)).toEqual([other.askId]);
     expect(await jobs.removeAsk(id, '../../etc')).toMatchObject({ ok: false });
+  });
+
+  it('puts a deleted call’s prep sheet and thank-you notes in the trash with it', async () => {
+    jobs.addCall(id, { kind: 'screen', onDate: '2026-10-14' });
+    jobs.addCall(id, { kind: 'panel', onDate: '2026-10-20' });
+    const [first, second] = jobs.list().jobs[0]?.calls ?? [];
+    if (!first || !second) throw new Error('No calls');
+    write(`calls/${id}/${first.id}/prep.md`, '# Prep');
+    write(`calls/${id}/${first.id}/thank-you.md`, '## Dana Lee');
+    write(`calls/${id}/${second.id}/prep.md`, '# Prep');
+    expect(await jobs.deleteCall(first.id)).toEqual({ ok: true });
+    expect(trashed.map((file) => file.slice(root.length + 1))).toEqual([`calls/${id}/${first.id}`]);
+    expect(existsSync(join(root, 'calls', id, second.id, 'prep.md'))).toBe(true);
+    expect(jobs.list().jobs[0]?.calls.map((call) => call.id)).toEqual([second.id]);
+    // A call that's gone already has nothing left to trash.
+    expect(await jobs.deleteCall('no-such-call')).toEqual({ ok: true });
+    expect(trashed).toHaveLength(1);
   });
 });

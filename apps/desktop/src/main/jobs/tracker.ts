@@ -605,8 +605,8 @@ export class Tracker {
   }
 
   /**
-   * Changes a call. Saying how a booked call went marks it done. Marking its outcome "rejected"
-   * closes the job, unless it's settled.
+   * Changes a call. Saying how a booked call went, by its outcome or in words once its day has
+   * come, marks it done. Marking its outcome "rejected" closes the job, unless it's settled.
    */
   updateCall(callId: string, changes: CallChanges, context: EditContext): EditResult {
     const call = this.db.prepare('SELECT * FROM calls WHERE id = ?').get(callId);
@@ -624,8 +624,11 @@ export class Tracker {
     if (changes.mode !== undefined) set('mode', changes.mode);
     if (changes.place !== undefined) set('place', changes.place);
     if (changes.people !== undefined) set('people', JSON.stringify(changes.people));
+    const said =
+      Boolean(changes.outcome) ||
+      (Boolean(changes.debrief) && required(call.on_date) <= context.today);
     if (changes.state !== undefined) set('state', changes.state);
-    else if (changes.outcome && call.state === 'scheduled') set('state', 'done');
+    else if (said && call.state === 'scheduled') set('state', 'done');
     if (changes.outcome !== undefined) set('outcome', changes.outcome);
     if (changes.notes !== undefined) set('notes', changes.notes);
     if (changes.debrief !== undefined) set('debrief', changes.debrief);

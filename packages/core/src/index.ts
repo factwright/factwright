@@ -143,7 +143,7 @@ export {
   journeySummary,
   journeys,
 } from './journey.ts';
-export { companyKey, roleKey, slug } from './keys.ts';
+export { companyKey, roleKey, sameCompany, slug } from './keys.ts';
 export {
   FIRST_KIND_NAME,
   KIND_ID,
@@ -199,8 +199,10 @@ export {
   CALL_MODE_LABELS,
   CALL_OUTCOME_LABELS,
   CALL_STATE_LABELS,
+  type CallLink,
   CLOSED_STATUSES,
   callLength,
+  callLink,
   callPeople,
   callWhen,
   clockTime,
@@ -217,6 +219,7 @@ export {
   jobStats,
   LIVE_STATUSES,
   looksHidden,
+  nextCallMoment,
   nextStep,
   STATUS_GROUPS,
   startingView,

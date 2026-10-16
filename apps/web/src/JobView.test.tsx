@@ -143,6 +143,26 @@ describe('a job on the phone', () => {
     expect(within(dialog).getByRole('heading', { name: 'Five minutes before' })).toBeTruthy();
   });
 
+  it('keeps a passcode after a call’s link to read, beside Join', async () => {
+    const { keys, vault } = await setUp();
+    const [screenCall] = ACME.calls;
+    if (!screenCall) throw new Error('No call');
+    const place = 'https://zoom.us/j/8812345678 passcode 4321';
+    render(
+      <JobView
+        job={{ ...ACME, calls: [{ ...screenCall, place }] }}
+        vault={vault}
+        keys={keys}
+        today={TODAY}
+      />,
+    );
+    const call = within(section('Calls and interviews'));
+    expect(call.getByRole('link', { name: 'Join the call' }).getAttribute('href')).toBe(
+      'https://zoom.us/j/8812345678',
+    );
+    expect(call.getByText(place)).toBeTruthy();
+  });
+
   it('never makes a link of a call’s place unless it’s https', async () => {
     const { keys, vault } = await setUp();
     const [screenCall] = ACME.calls;

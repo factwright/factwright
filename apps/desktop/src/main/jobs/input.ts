@@ -65,9 +65,16 @@ const minutes: Reader<number> = (value) =>
     ? value
     : BAD;
 
+/**
+ * How far past the window's limits a call's people and texts may run: two devices' changes to the
+ * same call keep both, so a call can come back from a sync longer than one device lets it get, and
+ * changing it then should still save.
+ */
+const MERGED = 4;
+
 /** The people on a call, trimmed. A row the user left without a name is left out. */
 const people: Reader<CallPerson[]> = (value) => {
-  if (!Array.isArray(value) || value.length > LIMITS.people) return BAD;
+  if (!Array.isArray(value) || value.length > LIMITS.people * MERGED) return BAD;
   const named: CallPerson[] = [];
   for (const item of value) {
     if (!isRecord(item)) return BAD;
@@ -148,7 +155,7 @@ export function parseNewCall(value: unknown): NewCall | null {
     mode: orNull(oneOf(CALL_MODES)),
     place: textUpTo(LIMITS.place),
     people,
-    notes: textUpTo(LIMITS.callNotes),
+    notes: textUpTo(LIMITS.callNotes * MERGED),
   });
   if (!fields?.kind || !fields.onDate) return null;
   return { ...fields, kind: fields.kind, onDate: fields.onDate };
@@ -165,8 +172,8 @@ export function parseCallChanges(value: unknown): CallChanges | null {
     people,
     state: oneOf(CALL_STATES),
     outcome: orNull(oneOf(CALL_OUTCOMES)),
-    notes: textUpTo(LIMITS.callNotes),
-    debrief: textUpTo(LIMITS.debrief),
+    notes: textUpTo(LIMITS.callNotes * MERGED),
+    debrief: textUpTo(LIMITS.debrief * MERGED),
   });
 }
 

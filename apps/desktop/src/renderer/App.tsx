@@ -1,4 +1,10 @@
-import { JOB_VIEWS, type JobView, type KindName, LIVE_STATUSES } from '@factwright/core';
+import {
+  JOB_VIEWS,
+  type JobView,
+  type KindName,
+  LIVE_STATUSES,
+  sameCompany,
+} from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
@@ -40,7 +46,7 @@ import {
   withKnownKind,
 } from './jobs/rows.ts';
 import { useJobs } from './jobs/useJobs.ts';
-import { useToday } from './jobs/useToday.ts';
+import { useCallClock, useToday } from './jobs/useToday.ts';
 import { WithdrawDialog } from './jobs/WithdrawDialog.tsx';
 import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
@@ -80,6 +86,8 @@ export function App({ api }: { api: FactwrightApi }) {
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
   const today = useToday();
+  const listed = useMemo(() => (jobs.state === 'ready' ? jobs.list.jobs : []), [jobs]);
+  const clock = useCallClock(listed, today);
   const update = useUpdates(api);
   const levels = useLevelChoices(api);
   const profiles = useProfiles(api);
@@ -93,8 +101,8 @@ export function App({ api }: { api: FactwrightApi }) {
   );
   const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
   const rows = useMemo(
-    () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds) : []),
-    [jobs, today, kinds],
+    () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds, clock) : []),
+    [jobs, today, kinds, clock],
   );
   // The view the user last picked, or, the first time, one chosen once the jobs load.
   const [chosen, setFilter] = useState<ListFilter>(() => ({
@@ -253,9 +261,7 @@ export function App({ api }: { api: FactwrightApi }) {
       selected
         ? rows
             .map((row) => row.job)
-            .filter(
-              (job) => job.companyKey === selected.job.companyKey && job.id !== selected.job.id,
-            )
+            .filter((job) => job.id !== selected.job.id && sameCompany(job, selected.job))
         : [],
     [rows, selected],
   );

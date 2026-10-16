@@ -365,7 +365,7 @@ export async function jobDetails(
         .filter((doc) => doc.callId === call.id)
         .map(
           (doc) =>
-            `${pad}${doc.kind === 'prep' ? 'Prep sheet' : 'Thank-you notes'}: ${doc.path} (${doc.modified.slice(0, 10)})`,
+            `${pad}${doc.kind === 'prep' ? 'Prep sheet' : 'Thank-you notes'}: ${doc.path} (${localDate(new Date(doc.modified))})`,
         ),
     ];
   };
@@ -439,12 +439,13 @@ export async function jobDetails(
     out.push(
       '',
       `### Other jobs at ${job.company}`,
-      'The user’s other jobs at this company, with their own calls and notes: job_details gives each in full.',
+      'The user’s other jobs at this company. job_details gives each in full: read the ones with calls or notes.',
       ...others.map((other) => {
         const { status } = jobProgress(other, today);
-        const count = other.calls.length;
-        const calls = count > 0 ? `, ${count} call${count === 1 ? '' : 's'}` : '';
-        return `- ${other.id}: ${other.role || 'no role named'} (${JOB_STATUS_LABELS[status]}${calls})`;
+        const count = (n: number, word: string) =>
+          n > 0 ? `, ${n} ${word}${n === 1 ? '' : 's'}` : '';
+        const notes = other.notes.length + (other.earlierNotes ? 1 : 0);
+        return `- ${other.id}: ${other.role || 'no role named'} (${JOB_STATUS_LABELS[status]}${count(other.calls.length, 'call')}${count(notes, 'note')})`;
       }),
     );
   }

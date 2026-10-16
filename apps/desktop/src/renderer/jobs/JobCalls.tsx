@@ -16,6 +16,7 @@ import {
   type CallPerson,
   type CallState,
   callLength,
+  callLink,
   callPeople,
   callWhen,
   dayFrom,
@@ -49,7 +50,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { type FormEvent, useEffect, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import { type RunTask, THANKS_SKILL, taskCall, taskJob } from '../../shared/runs.ts';
@@ -60,8 +61,11 @@ import { Problem, useEdit } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
 import { BUSY, type RunControls } from './RunActions.tsx';
 
-/** How a call went, typed but not saved yet, by the call, so moving away and back keeps it. */
-const debriefs = new Map<string, string>();
+/**
+ * How a call went, typed but not saved yet, by the call, so moving away and back keeps it: the
+ * job it's for, the words, and what the call said when typing started.
+ */
+const debriefs = new Map<string, { jobId: string; text: string; base: string }>();
 keepsDrafts(() => debriefs.size > 0);
 
 /** The round that usually comes after each kind of call, for the form to start on. */
@@ -119,17 +123,6 @@ function timing(call: Call, today: string, now: string): { ahead: boolean; start
   return { ahead: now < call.atTime, started: now >= call.atTime };
 }
 
-/** A meeting link the app can open, as only https links open from it, or null. */
-function meetingLink(place: string | null): URL | null {
-  if (!place) return null;
-  try {
-    const url = new URL(place.trim());
-    return url.protocol === 'https:' ? url : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Where the job's calls stand, in a few words, for the section's heading. */
 export function callsSummary(job: Job, progress: JobProgress, today: string): string {
   const next = progress.nextCall;
@@ -139,8 +132,9 @@ export function callsSummary(job: Job, progress: JobProgress, today: string): st
     return `${CALL_KIND_LABELS[next.kind]} ${when}${prepped ? ' · prep ready' : ''}`;
   }
   const held = job.calls.filter((call) => call.state !== 'canceled').length;
-  if (held === 0) return 'None yet';
-  return held === 1 ? '1 call' : `${held} calls`;
+  const canceled = job.calls.length - held;
+  if (held > 0) return held === 1 ? '1 call' : `${held} calls`;
+  return canceled > 0 ? `${canceled} canceled` : 'None yet';
 }
 
 /** The kind of call the form starts on: the round after the last one, or the first. */
@@ -231,6 +225,9 @@ function CallForm({
   const titleId = useId();
   const namesId = useId();
   const rolesId = useId();
+  // The form takes the keyboard's focus as it opens, on its first field.
+  const first = useRef<HTMLSelectElement>(null);
+  useEffect(() => first.current?.focus(), []);
   const move = call ? null : moveFor(kind, status);
   const lengths =
     call?.minutes && !CALL_LENGTHS.includes(call.minutes)
@@ -288,8 +285,8 @@ function CallForm({
           {(control) => (
             <Select
               {...control}
+              ref={first}
               value={kind}
-              data-autofocus
               onChange={(event) => setKind(event.target.value as CallKind)}
             >
               {CALL_KINDS.map((each) => (
@@ -430,7 +427,7 @@ function CallForm({
             {...control}
             rows={2}
             value={notes}
-            maxLength={LIMITS.callNotes}
+            maxLength={Math.max(LIMITS.callNotes, notes.length)}
             placeholder="What they said it covers, what to bring"
             onChange={(event) => setNotes(event.target.value)}
           />
@@ -473,24 +470,36 @@ function CallForm({
   );
 }
 
-/** How a call went, in the user's words, saved when the box loses focus. */
-function Debrief({ call, api }: { call: Call; api: FactwrightApi }) {
-  const [text, setText] = useState(debriefs.get(call.id) ?? call.debrief ?? '');
+/**
+ * How a call went, in the user's words, saved when the box loses focus. When another device
+ * changed it meanwhile, its words stay too, after these.
+ */
+function Debrief({ jobId, call, api }: { jobId: string; call: Call; api: FactwrightApi }) {
+  const saved = call.debrief ?? '';
+  const [text, setText] = useState(debriefs.get(call.id)?.text ?? saved);
   const { problem, run } = useEdit();
   const id = useId();
   // A change from elsewhere, such as a sync, shows unless something's being typed here.
   useEffect(() => {
-    if (!debriefs.has(call.id)) setText(call.debrief ?? '');
-  }, [call.id, call.debrief]);
+    if (!debriefs.has(call.id)) setText(saved);
+  }, [call.id, saved]);
   const type = (value: string) => {
     setText(value);
-    if (value.trim() !== (call.debrief ?? '')) debriefs.set(call.id, value);
+    const base = debriefs.get(call.id)?.base ?? saved;
+    if (value.trim() !== saved) debriefs.set(call.id, { jobId, text: value, base });
     else debriefs.delete(call.id);
   };
   const save = async () => {
-    if (!debriefs.has(call.id)) return;
-    if (await run(api.updateCall(call.id, { debrief: text.trim() || null }))) {
-      debriefs.delete(call.id);
+    const draft = debriefs.get(call.id);
+    if (!draft) return;
+    const words = draft.text.trim();
+    // Words another device saved since typing started, which these would otherwise replace.
+    const theirs = saved !== draft.base && saved && !words.includes(saved) ? saved : '';
+    const debrief = [words, theirs].filter(Boolean).join('\n\n') || null;
+    if (await run(api.updateCall(call.id, { debrief }))) {
+      // What was typed while it saved still waits to be saved.
+      if (debriefs.get(call.id)?.text === draft.text) debriefs.delete(call.id);
+      if (theirs) setText(debrief ?? '');
     }
   };
   return (
@@ -502,7 +511,7 @@ function Debrief({ call, api }: { call: Call; api: FactwrightApi }) {
         id={id}
         rows={3}
         value={text}
-        maxLength={LIMITS.debrief}
+        maxLength={Math.max(LIMITS.debrief, text.length)}
         placeholder="What they asked, what landed, what you’d say differently, and what’s next"
         onChange={(event) => type(event.target.value)}
         onBlur={save}
@@ -519,29 +528,43 @@ interface ThanksNote {
   body: string;
 }
 
-/** The thank-you notes, one for each person, or none when they aren't under headings. */
-export function thanksNotes(markdown: string): ThanksNote[] {
-  return markdown
-    .split(/^## +/m)
-    .slice(1)
+/** A subject line, as the skill writes it, or close to it. */
+const SUBJECT = /^(?:\*\*Subject:\*\*|\*\*Subject\*\*:|Subject:)[ \t]*(.+)$/m;
+
+/**
+ * The thank-you notes, one for each person, under a heading with their name, and anything said
+ * before the first, such as who to send them through. No headings, no notes.
+ */
+export function thanksNotes(markdown: string): { intro: string; notes: ThanksNote[] } {
+  const [before = '', ...parts] = markdown.split(/^## +/m);
+  const notes = parts
     .map((part) => {
       const [first = '', ...rest] = part.split(/\r?\n/);
       const text = rest.join('\n');
-      const subject = text.match(/^\*\*Subject:\*\*[ \t]*(.+)$/m)?.[1]?.trim() ?? null;
-      const body = text.replace(/^\*\*Subject:\*\*.*$/m, '').trim();
+      const subject = text.match(SUBJECT)?.[1]?.trim() ?? null;
+      const body = text.replace(SUBJECT, '').trim();
       return { name: first.trim(), subject, body };
     })
     .filter((note) => note.name && note.body);
+  return { intro: before.trim(), notes };
 }
 
-/** A note's words to paste into an email, without the Markdown's marks for bold and italics. */
-const plainNote = (body: string) => body.replace(/\*\*(.+?)\*\*/g, '$1').replace(/_(.+?)_/g, '$1');
+/**
+ * A note's words to paste into an email: a link as its words and address, and bold as plain
+ * words. Underscores stay, as in addresses and names.
+ */
+export const plainNote = (body: string) =>
+  body
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, words: string, url: string) =>
+      words === url ? url : `${words} (${url})`,
+    )
+    .replace(/\*\*(.+?)\*\*/g, '$1');
 
 /** The thank-you notes, each with buttons to copy its subject and its words. */
 function ThanksNotes({ markdown, api }: { markdown: string; api: FactwrightApi }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const notes = thanksNotes(markdown);
+  const { intro, notes } = thanksNotes(markdown);
   if (notes.length === 0) return <Markdown text={markdown} />;
   const copy = async (what: string, text: string) => {
     const result = await api.copyText(text);
@@ -552,8 +575,9 @@ function ThanksNotes({ markdown, api }: { markdown: string; api: FactwrightApi }
   return (
     <div className={styles.notes}>
       <p className={styles.hint}>Drafts for you to send, the same day if you can.</p>
-      {notes.map((note) => (
-        <section key={note.name} className={styles.note} aria-label={`Note to ${note.name}`}>
+      {intro && <Markdown text={intro} />}
+      {notes.map((note, i) => (
+        <section key={i} className={styles.note} aria-label={`Note to ${note.name}`}>
           <h3 className={styles.noteName}>{note.name}</h3>
           {note.subject && (
             <p className={styles.subject}>
@@ -562,10 +586,14 @@ function ThanksNotes({ markdown, api }: { markdown: string; api: FactwrightApi }
                 size="sm"
                 variant="quiet"
                 icon={<Copy size={13} aria-hidden="true" />}
-                aria-label={`Copy the subject for ${note.name}`}
-                onClick={() => copy(`subject ${note.name}`, note.subject ?? '')}
+                aria-label={
+                  copied === `subject ${i}`
+                    ? `Copied the subject for ${note.name}`
+                    : `Copy the subject for ${note.name}`
+                }
+                onClick={() => copy(`subject ${i}`, note.subject ?? '')}
               >
-                {copied === `subject ${note.name}` ? 'Copied' : 'Copy'}
+                {copied === `subject ${i}` ? 'Copied' : 'Copy'}
               </Button>
             </p>
           )}
@@ -573,10 +601,14 @@ function ThanksNotes({ markdown, api }: { markdown: string; api: FactwrightApi }
           <Button
             size="sm"
             icon={<Copy size={13} aria-hidden="true" />}
-            aria-label={`Copy the note to ${note.name}`}
-            onClick={() => copy(`note ${note.name}`, plainNote(note.body))}
+            aria-label={
+              copied === `note ${i}`
+                ? `Copied the note to ${note.name}`
+                : `Copy note to ${note.name}`
+            }
+            onClick={() => copy(`note ${i}`, plainNote(note.body))}
           >
-            {copied === `note ${note.name}` ? 'Copied' : 'Copy note'}
+            {copied === `note ${i}` ? 'Copied' : 'Copy note'}
           </Button>
         </section>
       ))}
@@ -624,6 +656,7 @@ function CallCard({
   status,
   onOpen,
   onAddNext,
+  onDeleted,
   now,
 }: {
   job: Job;
@@ -638,12 +671,23 @@ function CallCard({
   status: JobStatus;
   onOpen: (call: Call, kind: CallDocKind) => void;
   onAddNext: (kind: CallKind) => void;
+  /** Called once the call is deleted, so the keyboard's focus has somewhere to go. */
+  onDeleted: () => void;
   /** The time of day now, as "HH:MM". */
   now: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { problem, run: save } = useEdit();
+  const change = useRef<HTMLButtonElement>(null);
+  const remove = useRef<HTMLButtonElement>(null);
+  // Where the keyboard's focus goes back to once the form or the question about deleting closes.
+  const back = useRef<'change' | 'delete' | null>(null);
+  useEffect(() => {
+    if (editing || deleting || !back.current) return;
+    (back.current === 'change' ? change : remove).current?.focus();
+    back.current = null;
+  }, [editing, deleting]);
   const name = callName(call);
   const label = CALL_KIND_LABELS[call.kind];
   const docs = job.callDocs.filter((doc) => doc.callId === call.id);
@@ -660,7 +704,7 @@ function CallCard({
     if (running(kind)) run.show();
     else run.start(runTask(job.id, call.id, kind));
   };
-  const link = meetingLink(call.place);
+  const link = callLink(call.place);
   const details = [
     callWhen(call, today),
     call.minutes && callLength(call.minutes),
@@ -676,7 +720,10 @@ function CallCard({
           api={api}
           today={today}
           call={call}
-          onDone={() => setEditing(false)}
+          onDone={() => {
+            back.current = 'change';
+            setEditing(false);
+          }}
         />
       </li>
     );
@@ -696,6 +743,7 @@ function CallCard({
           <span className={styles.when}>{details.join(' · ')}</span>
         </div>
         <IconButton
+          ref={change}
           label={`Change ${name}`}
           variant="quiet"
           size="sm"
@@ -703,6 +751,7 @@ function CallCard({
           onClick={() => setEditing(true)}
         />
         <IconButton
+          ref={remove}
           label={`Delete ${name}`}
           variant="quiet"
           size="sm"
@@ -710,18 +759,14 @@ function CallCard({
           onClick={() => setDeleting(true)}
         />
       </div>
-      {call.place &&
-        (link ? (
-          <a className={styles.place} href={link.href} target="_blank" rel="noreferrer">
-            <span className={styles.link}>
-              Join at {link.host}
-              {link.pathname.length > 1 && <span className={styles.path}>{link.pathname}</span>}
-            </span>
-            <ArrowUpRight size={13} aria-hidden="true" />
-          </a>
-        ) : (
-          <p className={styles.placeText}>{call.place}</p>
-        ))}
+      {link && (
+        <a className={styles.place} href={link.href} target="_blank" rel="noreferrer">
+          <span className={styles.link}>Join at {link.shown}</span>
+          <ArrowUpRight size={13} aria-hidden="true" />
+        </a>
+      )}
+      {/* What else the place says, such as a passcode after the link, stays to read. */}
+      {call.place && !link?.alone && <p className={styles.placeText}>{call.place}</p>}
       {call.people.length > 0 && <p className={styles.with}>With {callPeople(call.people)}</p>}
       {call.notes && <p className={styles.about}>{call.notes}</p>}
 
@@ -731,10 +776,27 @@ function CallCard({
             Delete {name}
             {call.debrief || docs.length > 0 ? ', with how it went and Claude’s work for it' : ''}?
           </span>
-          <Button size="sm" onClick={() => setDeleting(false)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              back.current = 'delete';
+              setDeleting(false);
+            }}
+          >
             Keep it
           </Button>
-          <Button size="sm" variant="primary" onClick={() => void save(api.deleteCall(call.id))}>
+          <Button
+            size="sm"
+            variant="primary"
+            // The user just asked to delete it, so the choice to make takes the focus.
+            autoFocus
+            onClick={async () => {
+              if (await save(api.deleteCall(call.id))) {
+                debriefs.delete(call.id);
+                onDeleted();
+              }
+            }}
+          >
             Delete
           </Button>
         </div>
@@ -786,9 +848,7 @@ function CallCard({
             </Button>
           )}
           {prep && (
-            <span className={styles.docDate}>
-              Prep from {shortDate(prep.modified.slice(0, 10), today)}
-            </span>
+            <span className={styles.docDate}>Prep from {shortDate(prep.modified, today)}</span>
           )}
         </div>
       )}
@@ -819,7 +879,7 @@ function CallCard({
               <span className={styles.docDate}>Booked for {dayFrom(call.onDate, today)}</span>
             )}
           </div>
-          <Debrief key={call.id} call={call} api={api} />
+          <Debrief key={call.id} jobId={job.id} call={call} api={api} />
           <div className={styles.actions}>
             {thanks && (
               <Button
@@ -841,7 +901,7 @@ function CallCard({
                   running('thanks')
                     ? `Writing thank-you notes for ${name}: show Claude`
                     : thanks
-                      ? `Write the thank-you notes for ${name} again`
+                      ? `Write again: the thank-you notes for ${name}`
                       : `Write thank-you notes for ${name}`
                 }
                 onClick={() => start('thanks')}
@@ -897,6 +957,22 @@ export function CallsSection({
 }) {
   // The kind of call the add form starts on, while it's open.
   const [adding, setAdding] = useState<CallKind | null>(null);
+  // Once the form closes, or a call goes, the keyboard's focus goes back to Add a call.
+  const add = useRef<HTMLButtonElement>(null);
+  const [refocus, setRefocus] = useState(false);
+  useEffect(() => {
+    if (!refocus || adding !== null) return;
+    add.current?.focus();
+    setRefocus(false);
+  }, [refocus, adding]);
+  // How a call went, typed for one of this job's calls that's gone since, as after a sync.
+  useEffect(() => {
+    for (const [callId, draft] of debriefs) {
+      if (draft.jobId === job.id && !job.calls.some((call) => call.id === callId)) {
+        debriefs.delete(callId);
+      }
+    }
+  }, [job.id, job.calls]);
   const [open, setOpen] = useState<{ title: string; kind: CallDocKind; text: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const latest = job.calls.findLast((call) => call.state !== 'canceled');
@@ -925,7 +1001,7 @@ export function CallsSection({
       summary={callsSummary(job, progress, today)}
       actions={
         adding === null && (
-          <Button size="sm" onClick={() => setAdding(nextKind(job, progress.status))}>
+          <Button ref={add} size="sm" onClick={() => setAdding(nextKind(job, progress.status))}>
             Add a call
           </Button>
         )
@@ -952,6 +1028,7 @@ export function CallsSection({
               status={progress.status}
               onOpen={openDoc}
               onAddNext={setAdding}
+              onDeleted={() => setRefocus(true)}
               now={now}
             />
           ))}
@@ -965,7 +1042,10 @@ export function CallsSection({
           api={api}
           today={today}
           startKind={adding}
-          onDone={() => setAdding(null)}
+          onDone={() => {
+            setAdding(null);
+            setRefocus(true);
+          }}
         />
       )}
       {problem && (

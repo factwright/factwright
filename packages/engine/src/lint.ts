@@ -180,6 +180,14 @@ export function lintLetter(
 }
 
 /**
+ * Checks a message the user sends, such as a thank-you note, against their confidential terms,
+ * and for placeholders left in. Returns each problem in plain words.
+ */
+export function lintMessage(text: string, confidential: readonly string[] = []): string[] {
+  return textProblems(text, 'notes', [], confidential);
+}
+
+/**
  * Reads the user's confidential terms: one pattern per line, with blank lines and lines starting
  * with "#" skipped.
  */

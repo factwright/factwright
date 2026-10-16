@@ -20,6 +20,7 @@ Input: `job <id> call <call id>` from the app. When the user asks in the chat in
 - `job_details` with the job's id: the call (when, who with and their roles, what it was about, how it went in the user's words, and its prep sheet), the earlier calls, and everything on file.
 - The call's prep sheet, when it has one: what the user planned to land, and the questions they meant to ask.
 - The posting, and `guide/preferences.md` for the user's outreach nudges, which win over these defaults.
+- `facts/`, for the proof points. A claim tagged `unconfirmed` is unverified: offer it first, as the standing rules say, before a note leans on it.
 - `past_answers`, to sound like the user.
 
 ## 2. Ask (when the notes are thin)
@@ -34,6 +35,6 @@ For each person the user met, in the order of the call:
 - When the user has no address for someone, say to send it through the recruiter, or as a message they send themselves.
 
 ## 4. Save and reply
-Call `save_thank_you` with the job's id, the call's id and the notes as Markdown: a `## <Name>` heading for each person, then `**Subject:** <subject>`, then the note. The app shows them on the call.
+Call `save_thank_you` with the job's id, the call's id and the notes as Markdown: a `## <Name>` heading for each person, then `**Subject:** <subject>`, then the note. Anything for all of them, such as sending them through the recruiter, goes before the first heading. The app shows them on the call. It refuses notes with one of the user's confidential terms in them: take it out and save again.
 
-Reply in 6 lines or fewer: who the notes are for, the first note in full, and "Send them today if you can."
+Reply in a few lines: who the notes are for and that they're saved with the call, then the first note in full, and "Send them today if you can."

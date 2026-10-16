@@ -10,6 +10,7 @@ import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import { TemplateLibrary } from '../resume/templates.ts';
+import { saveCallDoc } from './calls.ts';
 import {
   FACT_TOOLS,
   factwrightTools,
@@ -267,6 +268,35 @@ describe('a call’s prep sheet and thank-you notes', () => {
     );
   });
 
+  it('refuses thank-you notes with one of the user’s confidential terms in them', async () => {
+    mkdirSync(join(root, 'guide'), { recursive: true });
+    writeFileSync(
+      join(root, 'guide', 'confidential-terms.txt'),
+      '# Never in anything sent\nProject Falcon\n',
+    );
+    await expect(
+      tool('save_thank_you').run({
+        job: id,
+        call: callId(),
+        notes: '## Dana Lee\n\nHi Dana, like Project Falcon, it shipped early.',
+      }),
+    ).rejects.toThrow(
+      'Not saved: A confidential term matching "Project Falcon" is in the notes. Take it out, then save them again.',
+    );
+    // A prep sheet is the user's own notes, so it may name anything.
+    await expect(
+      tool('save_call_prep').run({ job: id, call: callId(), prep: 'Project Falcon came up.' }),
+    ).resolves.toMatch(/^Saved in /);
+  });
+
+  it('saves nothing for a job whose ID would lead out of the calls folder', async () => {
+    const job = jobs.list().jobs.find((each) => each.id === id);
+    if (!job) throw new Error('No job');
+    await expect(
+      saveCallDoc({ ...job, id: '../..' }, callId(), 'prep', 'A sheet', root),
+    ).rejects.toThrow("Not saved: ../.. can't name a folder in the workspace.");
+  });
+
   it('refuses a call the job doesn’t have, a job that isn’t on file, and an empty sheet', async () => {
     await expect(
       tool('save_call_prep').run({ job: id, call: '../../facts', prep: 'Hm.' }),
@@ -329,12 +359,18 @@ describe('job_details', () => {
     const added = jobs.addJob({ company: 'Acme Robotics', role: 'Engineering Manager' });
     const other = added.ok ? added.jobId : '';
     jobs.addCall(other, { kind: 'screen', onDate: '2026-10-01' });
+    jobs.addNote(other, { text: 'Met Dana at the meetup.' });
+    // Companies whose names have no Latin letters share no key, and aren't one company.
+    const first = jobs.addJob({ company: '株式会社メルカリ', role: 'Engineer' });
+    jobs.addJob({ company: 'Яндекс', role: 'Engineer' });
+    const firstId = first.ok ? first.jobId : '';
+    expect(await tool('job_details').run({ job: firstId })).not.toContain('### Other jobs at');
     const answer = await tool('job_details').run({ job: 'acme-robotics--staff-engineer' });
     expect(answer).toContain(
       [
         '### Other jobs at Acme Robotics',
-        'The user’s other jobs at this company, with their own calls and notes: job_details gives each in full.',
-        `- ${other}: Engineering Manager (Screen, 1 call)`,
+        'The user’s other jobs at this company. job_details gives each in full: read the ones with calls or notes.',
+        `- ${other}: Engineering Manager (Screen, 1 call, 1 note)`,
       ].join('\n'),
     );
   });

@@ -210,14 +210,17 @@ export function registerIpc({
   });
 
   /**
-   * A task the window asked for, if it's a job search, names a skill and a job the app knows, or
-   * a resume to copy that the app kept.
+   * A task the window asked for, if it's a job search, names a skill and a job the app knows, with
+   * one of its calls when it's for one, or a resume to copy that the app kept.
    */
   const knownTask = (value: unknown) => {
     const task = parseRunTask(value);
     if (task && 'source' in task) return templates.hasSource(task.source) ? task : null;
     if (!task || !('jobId' in task)) return task;
-    return jobs.list().jobs.some((job) => job.id === task.jobId) ? task : null;
+    const job = jobs.list().jobs.find((each) => each.id === task.jobId);
+    if (!job) return null;
+    if ('callId' in task) return job.calls.some((call) => call.id === task.callId) ? task : null;
+    return task;
   };
 
   answer('claude:start', (size, task) => {

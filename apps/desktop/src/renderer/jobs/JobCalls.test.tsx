@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
-import { thanksNotes } from './JobCalls.tsx';
+import { plainNote, thanksNotes } from './JobCalls.tsx';
 import { JobPanel } from './JobPanel.tsx';
 import type { RunControls } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
@@ -116,6 +116,46 @@ describe('calls and interviews', () => {
     );
     expect(screen.getByRole('button', { name: /^Calls and interviews/ }).textContent).toContain(
       'prep ready',
+    );
+  });
+
+  it('keeps a passcode after a meeting link to read, beside Join', () => {
+    const job = byCompany('Northwind Labs');
+    const place = 'https://zoom.us/j/8812345678 passcode 4321';
+    const calls = job.calls.map((call) =>
+      call.id === 'northwind-panel' ? { ...call, place } : call,
+    );
+    panel({ ...job, calls });
+    const next = callCard('Panel interview');
+    const join = within(next).getByRole('link', { name: /^Join at zoom\.us\/j\/8812345678/ });
+    expect(join.getAttribute('href')).toBe('https://zoom.us/j/8812345678');
+    expect(within(next).getByText(place)).toBeTruthy();
+  });
+
+  it('says how many were canceled when every call was', () => {
+    const job = byCompany('Tidewater Analytics');
+    panel({ ...job, calls: job.calls.map((call) => ({ ...call, state: 'canceled' as const })) });
+    expect(screen.getByRole('button', { name: /^Calls and interviews/ }).textContent).toContain(
+      '1 canceled',
+    );
+  });
+
+  it('gives the keyboard’s focus back where it was once a form or a question closes', async () => {
+    panel(byCompany('Northwind Labs'));
+    await userEvent.click(screen.getByRole('button', { name: 'Add a call' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Kind'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a call' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change the panel interview' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Change the panel interview' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Delete the panel interview' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Delete the panel interview' }),
     );
   });
 
@@ -357,12 +397,49 @@ describe('after a call', () => {
     });
   });
 
+  it('keeps how it went from another computer, saved while this one was typing', async () => {
+    const job = byCompany('Northwind Labs');
+    const without = job.calls.map((call) =>
+      call.id === 'northwind-screen' ? { ...call, debrief: null } : call,
+    );
+    const answer = vi.fn(async () => ({ ok: true }));
+    const api = {
+      updateCall: answer,
+      jobDocs: vi.fn(async () => null),
+      jobExtras: vi.fn(async () => null),
+    } as unknown as FactwrightApi;
+    const shown = (calls: Call[]) => (
+      <JobPanel
+        row={jobRows([{ ...job, calls }], TODAY)[0] ?? null}
+        api={api}
+        today={TODAY}
+        onClose={() => {}}
+      />
+    );
+    const { rerender } = render(shown(without));
+    await userEvent.type(screen.getByLabelText('How it went'), 'Asked about on-call.');
+    // Meanwhile a sync brings the Mac's words in.
+    rerender(
+      shown(
+        without.map((call) =>
+          call.id === 'northwind-screen'
+            ? { ...call, debrief: 'Priya liked the deploy story.' }
+            : call,
+        ),
+      ),
+    );
+    await userEvent.tab();
+    expect(answer).toHaveBeenCalledWith('northwind-screen', {
+      debrief: 'Asked about on-call.\n\nPriya liked the deploy story.',
+    });
+  });
+
   it('writes thank-you notes, and shows them with each one to copy', async () => {
     const run = controls();
     const { api } = panel(byCompany('Northwind Labs'), { run });
     await userEvent.click(
       screen.getByRole('button', {
-        name: 'Write the thank-you notes for the recruiter screen again',
+        name: 'Write again: the thank-you notes for the recruiter screen',
       }),
     );
     expect(run.start).toHaveBeenCalledWith({
@@ -378,12 +455,10 @@ describe('after a call', () => {
     });
     const note = within(dialog).getByRole('region', { name: 'Note to Priya Shah' });
     expect(within(note).getByText('Subject: Thank you: today’s call about the platform role'));
-    await userEvent.click(
-      within(note).getByRole('button', { name: 'Copy the note to Priya Shah' }),
-    );
+    await userEvent.click(within(note).getByRole('button', { name: 'Copy note to Priya Shah' }));
     expect(api.copyText).toHaveBeenCalledWith(expect.stringMatching(/^Hi Priya,\n\nThank you/));
     expect(
-      within(note).getByRole('button', { name: 'Copy the note to Priya Shah' }).textContent,
+      within(note).getByRole('button', { name: 'Copied the note to Priya Shah' }).textContent,
     ).toBe('Copied');
   });
 
@@ -405,16 +480,33 @@ describe('after a call', () => {
 });
 
 describe('thanksNotes', () => {
-  it('reads one note for each person, with its subject, and none without headings', () => {
+  it('reads one note for each person, with its subject, and what’s said before them', () => {
     expect(
       thanksNotes(
-        '## Dana Lee\n\n**Subject:** Thanks, Dana\n\nHi Dana,\n\nThank you.\n\n## Sam Ortiz\n\nHi Sam.',
+        'Send Sam’s through the recruiter.\n\n## Dana Lee\n\n**Subject:** Thanks, Dana\n\nHi Dana,\n\nThank you.\n\n## Sam Ortiz\n\n**Subject**: Thanks, Sam\n\nHi Sam.\n\n## Sam Ortiz\n\nAgain.',
       ),
-    ).toEqual([
-      { name: 'Dana Lee', subject: 'Thanks, Dana', body: 'Hi Dana,\n\nThank you.' },
-      { name: 'Sam Ortiz', subject: null, body: 'Hi Sam.' },
-    ]);
-    expect(thanksNotes('Hi Dana, thanks!')).toEqual([]);
+    ).toEqual({
+      intro: 'Send Sam’s through the recruiter.',
+      notes: [
+        { name: 'Dana Lee', subject: 'Thanks, Dana', body: 'Hi Dana,\n\nThank you.' },
+        { name: 'Sam Ortiz', subject: 'Thanks, Sam', body: 'Hi Sam.' },
+        { name: 'Sam Ortiz', subject: null, body: 'Again.' },
+      ],
+    });
+    expect(thanksNotes('Hi Dana, thanks!')).toEqual({ intro: 'Hi Dana, thanks!', notes: [] });
+  });
+});
+
+describe('plainNote', () => {
+  it('copies a note as plain words, keeping underscores and spelling out links', () => {
+    expect(
+      plainNote(
+        'See [my rate limiter](https://github.com/dana_lee/rate_limiter), or https://github.com/dana_lee. It reads **user_id**.',
+      ),
+    ).toBe(
+      'See my rate limiter (https://github.com/dana_lee/rate_limiter), or https://github.com/dana_lee. It reads user_id.',
+    );
+    expect(plainNote('[https://a.example/x](https://a.example/x)')).toBe('https://a.example/x');
   });
 });
 

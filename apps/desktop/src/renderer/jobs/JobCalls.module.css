@@ -117,11 +117,6 @@
   white-space: nowrap;
 }
 
-.path {
-  color: var(--fw-muted);
-  font-weight: 400;
-}
-
 .placeText {
   margin: 4px 0 0;
   font-size: 13px;

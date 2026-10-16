@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job } from './jobs.ts';
 import {
+  callLink,
   callWhen,
   clockTime,
   dayFrom,
@@ -10,6 +11,7 @@ import {
   JOB_VIEWS,
   jobProgress,
   jobStats,
+  nextCallMoment,
   nextStep,
   STATUS_GROUPS,
   startingView,
@@ -97,6 +99,50 @@ const pdf: JobFile = {
   size: 1000,
   modified: '2026-10-04T10:00:00.000Z',
 };
+
+describe('callLink', () => {
+  it('finds the https link in a call’s place, keeping what else it says to read', () => {
+    expect(callLink('https://meet.example.com/acme')).toEqual({
+      href: 'https://meet.example.com/acme',
+      shown: 'meet.example.com/acme',
+      alone: true,
+    });
+    expect(callLink('https://zoom.us/j/8812345678 passcode 4321')).toEqual({
+      href: 'https://zoom.us/j/8812345678',
+      shown: 'zoom.us/j/8812345678',
+      alone: false,
+    });
+    expect(callLink('Join (https://zoom.us/j/88?pwd=x1).')).toMatchObject({
+      href: 'https://zoom.us/j/88?pwd=x1',
+      shown: 'zoom.us/j/88',
+      alone: false,
+    });
+    expect(callLink('https://meet.example.com')).toMatchObject({ shown: 'meet.example.com' });
+    // However much punctuation follows it, quickly.
+    expect(callLink(`https://meet.example.com/x${'!'.repeat(50_000)}a`)?.shown).toMatch(
+      /^meet\.example\.com\/x!+a$/,
+    );
+    expect(callLink(`See https://meet.example.com/x${'!'.repeat(50_000)}`)?.href).toBe(
+      'https://meet.example.com/x',
+    );
+  });
+
+  it('opens nothing but https, and nothing with a name and password in it', () => {
+    for (const place of [
+      null,
+      '',
+      '1 Main St, Chicago',
+      '+1 312 555 0100',
+      'http://meet.example.com/acme',
+      'javascript:alert(1)',
+      'https://zoom.us@evil.example/j/1',
+      // Built in two parts, so a secret scanner doesn't take a made-up example for a real one.
+      ['https://user', 'secret@meet.example.com/x'].join(':'),
+    ]) {
+      expect(callLink(place)).toBeNull();
+    }
+  });
+});
 
 describe('times and days', () => {
   it.each([
@@ -234,6 +280,40 @@ describe('attention', () => {
       text: 'Recruiter screen Tuesday at 10:30 AM',
     });
     expect(attention({ calls: [call({ onDate: '2026-10-20' })] })).toBeNull();
+  });
+
+  it('with the time of day, lets a call today go once it starts, and asks how it went once it’s over', () => {
+    const today = call({ id: 'today', kind: 'panel', onDate: TODAY, atTime: '09:00', minutes: 90 });
+    const later = call({ id: 'later', kind: 'final', onDate: '2026-10-20', atTime: '14:00' });
+    const at = (clock: string) => jobProgress(job({ calls: [today, later] }), TODAY, clock);
+    expect(at('08:30')).toMatchObject({
+      nextCall: { id: 'today' },
+      attention: { level: 'action', text: 'Prep for the panel interview today at 9:00 AM' },
+    });
+    // Underway, it's no longer the next call, and it's too soon to ask how it went.
+    expect(at('09:30')).toMatchObject({ nextCall: { id: 'later' }, attention: null });
+    // Over, after its hour and a half.
+    expect(at('10:30').attention).toEqual({
+      level: 'action',
+      text: 'How did the panel interview go?',
+    });
+    // Without the time of day, a call today is next all day, as before.
+    expect(jobProgress(job({ calls: [today, later] }), TODAY).nextCall?.id).toBe('today');
+  });
+
+  it('says when the time of day next matters to the calls today', () => {
+    const calls = [
+      call({ id: 'a', onDate: TODAY, atTime: '09:00', minutes: 30 }),
+      call({ id: 'b', onDate: TODAY, atTime: '13:00' }),
+      call({ id: 'c', onDate: TODAY }),
+      call({ id: 'd', onDate: '2026-10-11', atTime: '08:00' }),
+      call({ id: 'e', onDate: TODAY, atTime: '23:30', state: 'canceled' }),
+    ];
+    expect(nextCallMoment(calls, TODAY, '08:00')).toBe('09:00');
+    expect(nextCallMoment(calls, TODAY, '09:00')).toBe('09:30');
+    expect(nextCallMoment(calls, TODAY, '09:30')).toBe('13:00');
+    expect(nextCallMoment(calls, TODAY, '13:30')).toBe('14:00');
+    expect(nextCallMoment(calls, TODAY, '14:00')).toBeNull();
   });
 
   it('asks the user to prep for a call two days out that has no prep sheet yet', () => {

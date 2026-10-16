@@ -312,8 +312,11 @@ export function sampleTracker(
         (job) => {
           const before = job.calls.find((call) => call.id === callId);
           // Saying how a booked call went marks it done, as the tracker does.
+          const said =
+            Boolean(changes.outcome) ||
+            (Boolean(changes.debrief) && (before?.onDate ?? '') <= localDate());
           const done =
-            changes.state === undefined && changes.outcome && before?.state === 'scheduled'
+            changes.state === undefined && said && before?.state === 'scheduled'
               ? { state: 'done' as const }
               : {};
           const updated = {

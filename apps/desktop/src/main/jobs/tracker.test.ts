@@ -429,6 +429,20 @@ describe('calls', () => {
     });
   });
 
+  it('marks a call done once the user writes how it went, from its day on', () => {
+    tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-14' }, AT);
+    const id = tracker.calls().get('acme--staff')?.[0]?.id ?? '';
+    // Before its day, words about it are notes ahead of it.
+    tracker.updateCall(id, { debrief: 'They’ll ask about on-call.' }, AT);
+    expect(tracker.calls().get('acme--staff')?.[0]?.state).toBe('scheduled');
+    const later: EditContext = { today: '2026-10-14', now: '2026-10-14T18:00:00.000Z' };
+    tracker.updateCall(id, { debrief: 'Went well.' }, later);
+    expect(tracker.calls().get('acme--staff')?.[0]).toMatchObject({
+      state: 'done',
+      debrief: 'Went well.',
+    });
+  });
+
   it('marks a booked call done once the user says how it went', () => {
     tracker.addCall('acme--staff', { kind: 'screen', onDate: '2026-10-13' }, AT);
     const id = tracker.calls().get('acme--staff')?.[0]?.id ?? '';

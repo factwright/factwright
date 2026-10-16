@@ -1,4 +1,4 @@
-import { type CallDocKind, FACT_TAGS, localDate } from '@factwright/core';
+import { type CallDocKind, FACT_TAGS, localDate, sameCompany } from '@factwright/core';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import type { FactBankFiles } from '../about/facts.ts';
 import type { AboutStore } from '../about/store.ts';
@@ -220,7 +220,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
               deps.workspace,
               today(),
               kinds(),
-              jobs.filter((other) => other.companyKey === job.companyKey && other.id !== job.id),
+              jobs.filter((other) => other.id !== job.id && sameCompany(other, job)),
             ),
           ),
         );

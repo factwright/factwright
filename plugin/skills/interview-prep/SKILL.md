@@ -18,10 +18,10 @@ Before starting, read:
 - all of `facts/`. If there's no fact bank yet, say so in one line, suggest `/factwright:add-facts`, and prep from the posting alone, without answer outlines.
 
 ## 1. Load everything on file
-- Call `job_details` with the job's id, or its company and role. It gives the status, dates, the user's notes, history, everything on file with what each file holds, and each call with its id: when, how long, by phone, video or in person, who it's with and their roles, what it's about, how it went in the user's words, and its prep sheet if it has one.
+- Call `job_details` with the job's id, or its company and role. It gives the status, dates, the user's notes, history, everything on file with what each file holds, and each call with its id: when, how long, by phone, video or in person, who it's with and their roles, what it's about, how it went in the user's words, and where its prep sheet is, if it has one.
 - **The call to prep for:** the one the app named, or else the next one booked. Its kind (recruiter screen, hiring manager, technical, take-home, panel, final, offer), when it is, how long, who it's with and what it's about set the focus. A call further off than three weeks, or one already done, is still the one to prep for when the app named it: say so in one line.
 - **Earlier calls:** read how each went, in the user's notes under it, and its prep sheet. Build on them: follow up on what came up, tell the same story the same way, answer a concern they raised, and keep any promise the user made, such as sending a work sample. A person the user already met hears a new story, not the same one again.
-- **Other jobs at the company:** when `job_details` lists any, call it for each, and read their calls and notes too. Someone may have met these people before.
+- **Other jobs at the company:** when `job_details` lists any with calls or notes, call it for each of those, and read them too. The user may have met these people before.
 - Read the job's folder in `applications/`:
   - `posting.md`: the posting as saved, word for word, so it's there even if the link is dead. Older folders keep it inside `job.md`.
   - `job.md` (company notes, requirements), `fit-check.md`, `unmask.md`, `notes.md` (evidence map, tailoring choices, pay), `answers.md`
@@ -41,7 +41,7 @@ If the user only wants to talk the job through, stop here and chat from what you
 ## 3. Ask (when it would change the prep)
 When the posting or the call's focus leans on something the facts don't show, and the user plausibly has it, ask up to 4 questions in one AskUserQuestion round, as the standing rules say: "They'll likely probe Kubernetes. Your facts show Docker and ECS. Have you run Kubernetes?" A good story needs its numbers too, so ask for one a likely question leans on. Save each yes with `save_fact` and each no with `save_gap`, giving each question word for word as you asked it, with `job` (the job's id) and `task: "interview-prep"`, and use the answers in the prep. Skip this step when the facts cover what they'll ask.
 
-## 4. Refresh the company and the people (5 searches at most)
+## 4. Refresh the company and the people (3 searches for the company, 1 for each person)
 - News from the last ~3 months: funding, launches, leadership changes, layoffs, acquisitions.
 - How this company interviews, when it says: its own careers or "how we hire" pages, its engineering blog. Public pages only.
 - Each person on the call: their public role and background, from search results and public pages only. Never sign in anywhere, and never read a LinkedIn page: a search result's snippet is all you take from LinkedIn, marked "per search, verify". Work info only: title, team, how long they've been there, public posts and talks. Their names can go in the prep sheet, since it's the user's own notes.

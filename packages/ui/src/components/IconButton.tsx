@@ -1,8 +1,8 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { cx } from '../cx.ts';
 import styles from './Button.module.css';
 
-export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+export interface IconButtonProps extends Omit<ComponentPropsWithRef<'button'>, 'children'> {
   /** What the button does. It's read aloud and shown as a tooltip. */
   label: string;
   icon: ReactNode;

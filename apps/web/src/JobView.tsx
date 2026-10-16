@@ -5,6 +5,7 @@ import {
   CALL_MODE_LABELS,
   CALL_OUTCOME_LABELS,
   callLength,
+  callLink,
   callPeople,
   callWhen,
   fileSize,
@@ -50,17 +51,6 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
   { kind: 'unmask', name: 'Employer check', about: 'Who’s really hiring' },
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
-
-/** A call's meeting link, when it's one a phone can open safely: https, and nothing else. */
-function meetingLink(place: string | null): string | null {
-  if (!place) return null;
-  try {
-    const url = new URL(place.trim());
-    return url.protocol === 'https:' ? url.href : null;
-  } catch {
-    return null;
-  }
-}
 
 const TYPES = {
   pdf: 'application/pdf',
@@ -260,7 +250,7 @@ export function JobView({
           </h2>
           <ul className={styles.items}>
             {job.calls.map((call) => {
-              const link = meetingLink(call.place);
+              const link = callLink(call.place);
               const docs = callTexts[call.id] ?? {};
               const name = CALL_KIND_LABELS[call.kind];
               const details = [
@@ -274,20 +264,21 @@ export function JobView({
               return (
                 <li key={call.id} className={styles.call}>
                   <strong>{name}</strong> {details.join(' · ')}
-                  {call.place &&
-                    (link ? (
-                      <a
-                        className={styles.join}
-                        href={link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Join the call
-                        <ExternalLink size={13} aria-hidden="true" />
-                      </a>
-                    ) : (
-                      <span className={styles.itemNote}>{call.place}</span>
-                    ))}
+                  {link && (
+                    <a
+                      className={styles.join}
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Join the call
+                      <ExternalLink size={13} aria-hidden="true" />
+                    </a>
+                  )}
+                  {/* What else the place says, such as a passcode after the link, stays to read. */}
+                  {call.place && !link?.alone && (
+                    <span className={styles.itemNote}>{call.place}</span>
+                  )}
                   {call.people.length > 0 && (
                     <span className={styles.itemNote}>With {callPeople(call.people)}</span>
                   )}
