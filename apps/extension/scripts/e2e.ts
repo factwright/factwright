@@ -334,7 +334,8 @@ try {
     await context.close();
   }
 
-  // Linked with a link code, as Factwright's Sync settings shows one.
+  // Linked with a link code, as Factwright's Sync settings shows one, once its sign-in is too old
+  // to ask Factwright on the computer.
   {
     const { sam, accountKey } = await account(server);
     const code = newLinkCode();
@@ -342,6 +343,16 @@ try {
     await sam.client.saveLink(link.id, link.data);
     const { context, setup } = await browser(extension);
     await signIn(setup, origin, sam.token);
+    await server.env.DB.prepare(
+      'UPDATE "session" SET createdAt = ? WHERE userId = ? AND token != ?',
+    )
+      .bind(new Date(Date.now() - 2 * 3_600_000).toISOString(), sam.id, sam.token)
+      .run();
+    await setup.reload();
+    await setup
+      .getByRole('heading', { name: 'Sign in again to link it' })
+      .waitFor({ timeout: 15_000 });
+    check(true, 'offers a new sign-in, or a code, once its sign-in is too old to ask');
     await setup.locator('summary').click();
     await setup.fill('#code', code.text);
     await setup.getByRole('button', { name: 'Link with the code' }).click();
