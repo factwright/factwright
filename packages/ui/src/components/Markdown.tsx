@@ -317,7 +317,7 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
   const all = text.replace(/\r\n?/g, '\n').split('\n');
   const out: ReactNode[] = [];
   // How many empty cells short table rows can still be filled out with: 10,000, or one for each
-  // character of the text. A wide header over many short rows could make millions of them.
+  // character of the text if that's more. A wide header over many short rows could make millions.
   let fill = Math.max(10_000, text.length);
   let i = 0;
   while (i < all.length) {
@@ -343,7 +343,7 @@ function blocks(text: string, headingOffset: number): ReactNode[] {
       const rows: string[][] = [];
       for (i += 2; i < all.length && isRow(all[i] ?? ''); i++) {
         // A row has as many cells as the header: past that they're left out, and a short row is
-        // filled out with empty ones while there are any left to fill with.
+        // filled out with empty ones if there are still enough left for all it needs.
         const row = cells(all[i] ?? '').slice(0, head.length);
         const missing = head.length - row.length;
         if (missing <= fill) {

@@ -190,9 +190,10 @@ describe('a write-up made to keep the app busy', () => {
 
   it('reads 100,000 spaces in a score line in well under 100 ms', () => {
     // Before #69, 4,000 of them took 14 seconds, and the time grew with their number cubed.
-    expect(
-      timed(() => parseFitReport(`## Score\n- work 1/2${' '.repeat(100_000)}z\n  more\u2028x`)),
-    ).toBeLessThan(100);
+    const text = `## Score\n- work 1/2${' '.repeat(100_000)}z\n  more\u2028x`;
+    // The fastest of three, so a busy test machine's pauses don't count.
+    const read = () => timed(() => parseFitReport(text));
+    expect(Math.min(read(), read(), read())).toBeLessThan(100);
   });
 
   it('reads them as before', () => {

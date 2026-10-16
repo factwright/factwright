@@ -90,7 +90,8 @@ describe('Markdown', () => {
       '',
     ]);
     // 1,000 cells across, over 1,000 rows of "|", made a million cells. Rows are now filled out
-    // with no more than 10,000 empty cells, or one for each character, so the rest stay short.
+    // with at most 10,000 empty cells, or one for each character if that's more, so most of
+    // these stay short.
     const wide = render(<Markdown text={`|${'a|'.repeat(1000)}\n|--|\n${'|\n'.repeat(1000)}`} />);
     expect(wide.container.querySelectorAll('td')).toHaveLength(10 * 1000 + 990);
   });

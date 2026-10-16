@@ -5,7 +5,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Fixed
-- Documents shown in the app and on your phone, such as fit checks, answers and saved postings, can no longer freeze the window, however long or odd they are: each is now read once, a character at a time. Before, a heading with a Unicode line separator (U+2028) in it kept the window busy until it ran out of memory. A line of 100,000 spaces under a table's first line took 11 seconds, and so did a list item with as many spaces and a line separator. A table thousands of columns wide over thousands of short rows took seconds too, filling the rows out with millions of empty cells: short rows are now filled out with at most 10,000 empty cells, or one for each character of the document. A heading or list item with a line separator in it now shows as one, and everything else shows as before.
+- Documents shown in the app and on your phone, such as fit checks, answers and saved postings, can no longer freeze the window, however long or odd they are: each is now read once, a character at a time. Before, a heading with a Unicode line separator (U+2028) in it kept the window busy until it ran out of memory. A line of 100,000 spaces under a table's first line took 11 seconds, and a list item with as many spaces and a line separator took seconds too. So did a table thousands of columns wide over thousands of short rows, filling the rows out with millions of empty cells: short rows are now filled out with at most 10,000 empty cells, or one for each character of the document if that's more. A heading or list item with a line separator in it now shows as one, and everything else shows as before.
 
 ## 0.5.0 - 2026-10-16
 
