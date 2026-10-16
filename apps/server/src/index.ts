@@ -2,6 +2,7 @@ import { type Feature, utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
+import { runAll } from './daily-job.ts';
 import type { Env } from './env.ts';
 import { DELETED } from './store.ts';
 import { countSyncDaily } from './sync-totals.ts';
@@ -165,11 +166,11 @@ export default {
   async scheduled(controller, env, context): Promise<void> {
     const when = new Date(controller.scheduledTime);
     context.waitUntil(
-      Promise.all([
-        forgetOldSignIns(env.DB, when),
-        backUpAll(env, when),
-        countSyncDaily(env, when),
-      ]),
+      runAll({
+        'cleanup of old sign-ins': forgetOldSignIns(env.DB, when),
+        backup: backUpAll(env, when),
+        'count of sync totals': countSyncDaily(env, when),
+      }),
     );
   },
 } satisfies ExportedHandler<Env>;
