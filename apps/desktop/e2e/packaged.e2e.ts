@@ -36,6 +36,15 @@ test.skip(
   `No built app at ${executable}: run pnpm dist:mac or dist:win.`,
 );
 
+/**
+ * Sync's secrets, made up, as a copy that syncs keeps them in its data folder. A copy another
+ * program drives, as these tests do, must leave them locked and as they are.
+ */
+const PLANTED = JSON.stringify({
+  session: Buffer.from('made-up session').toString('base64'),
+  accountKey: Buffer.from('made-up account key').toString('base64'),
+});
+
 let dataDir: string;
 let app: ChildProcess;
 let browser: Browser;
@@ -57,6 +66,8 @@ function freePort(): Promise<number> {
 test.beforeAll(async () => {
   if (!built) throw new Error(`No built app at ${executable}.`);
   dataDir = newDataFolder();
+  mkdirSync(join(dataDir, 'sync'));
+  writeFileSync(join(dataDir, 'sync', 'secrets.json'), PLANTED);
   const port = await freePort();
   const printed: string[] = [];
   app = spawn(executable, [`--user-data-dir=${dataDir}`, `--remote-debugging-port=${port}`], {
@@ -127,15 +138,18 @@ test('reaches Claude Code with its own plugin, and the setup check passes', asyn
     .toBe('passed');
 });
 
-// Factwright's own releases, which release.yml builds with FACTWRIGHT_SYNC_SERVER, can turn sync
-// on. A copy built without it, such as from a fork or on this computer, can't.
-test('can turn sync on only if built with a sync server', async () => {
+// Factwright's own releases, which release.yml builds with FACTWRIGHT_SYNC_SERVER, can sync. A
+// copy built without it, such as from a fork or on this computer, can't. Nor can a copy another
+// program drives, as these tests do: it never asks the keychain for sync's keys, as on a Mac every
+// copy shares one Keychain item, and the keys in its data folder stay locked and as they are.
+test('syncs only if built with a sync server, and never while driven', async () => {
   const sync = window.getByRole('region', { name: 'Sync' });
   if (process.env.FACTWRIGHT_SYNC_SERVER) {
-    await expect(sync.getByRole('button', { name: 'Turn on…' })).toBeVisible();
+    await expect(sync.getByText('Can’t turn on here')).toBeVisible();
   } else {
     await expect(sync.getByText('Not in this copy')).toBeVisible();
   }
+  expect(readFileSync(join(dataDir, 'sync', 'secrets.json'), 'utf8')).toBe(PLANTED);
 });
 
 // Likewise only a copy built with FACTWRIGHT_DOWNLOADS_URL looks for updates, there.

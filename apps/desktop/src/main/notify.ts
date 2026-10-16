@@ -1,6 +1,7 @@
-import { app, type BrowserWindow, Notification } from 'electron';
+import { app, Notification } from 'electron';
 import type { RunSignal } from '../shared/api.ts';
 import type { RequestView } from '../shared/sync.ts';
+import type { MainWindow, WindowLike } from './main-window.ts';
 import type { CallReminder } from './reminders.ts';
 
 const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
@@ -38,15 +39,20 @@ export function notifyOfRequests(
   notification.show();
 }
 
-/** Tells the user when Claude needs them or finishes, if they're looking somewhere else. */
-export function notifyIfAway(window: BrowserWindow, signal: RunSignal): void {
+/**
+ * Tells the user when Claude needs them or finishes, if they're looking somewhere else. With the
+ * window closed there's no run to tell of, as closing it stopped the run. Clicking brings back
+ * whichever window is open by then, or opens a new one, since the window the run was in may
+ * have closed meanwhile.
+ */
+export function notifyIfAway(
+  window: Pick<MainWindow<WindowLike>, 'current' | 'focused' | 'show'>,
+  signal: RunSignal,
+): void {
   const message = MESSAGES[signal];
-  if (!message || window.isDestroyed() || window.isFocused()) return;
+  if (!message || !window.current() || window.focused()) return;
   const notification = new Notification({ ...message, silent: signal !== 'needs-answer' });
-  notification.on('click', () => {
-    if (window.isMinimized()) window.restore();
-    window.focus();
-  });
+  notification.on('click', () => window.show());
   notification.show();
   if (signal === 'needs-answer') app.dock?.bounce('informational');
 }
