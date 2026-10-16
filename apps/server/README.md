@@ -16,6 +16,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `src/store-tables.ts` | The store's tables |
 | `src/store-upkeep.ts` | Daily backups, restoring one, and the daily cleanup |
 | `src/accounts-upkeep.ts` | The daily cleanup of sign-in's own records: sessions that ended, sign-in steps that ran out, and the limits' counts by IP address |
+| `src/daily-job.ts` | Runs the daily job's parts side by side, and waits for all of them, so one that fails can't cut another, such as the backup, short |
 | `src/sync-totals.ts` | How much sync is used, in totals only: once a day, its accounts and sign-ins, kept in Workers Analytics Engine for the stats command in [`apps/site`](../site) |
 | `src/live.ts` | Tickets for listening to changes as they happen |
 | `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
