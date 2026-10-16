@@ -1,6 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+// pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { FactwrightApi } from '../src/shared/api.ts';
 import type { RunTask } from '../src/shared/runs.ts';
 import { type Opened, openApp, terminalText } from './app.ts';
@@ -145,6 +147,25 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   await panel.getByRole('button', { name: 'Stop' }).click();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
+});
+
+test('prints the revised resume with letters such as fi as the letters, for applicant systems', async () => {
+  // The app printed it, with the Chromium it ships. Classic sets the company's note in italics,
+  // whose font draws fl and fi as one shape: the PDF has to hold the letters themselves.
+  const loading = getDocument({
+    data: new Uint8Array(readFileSync(join(workspace(), ACME_FOLDER, ACME_RESUME))),
+    disableFontFace: true,
+    verbosity: 0,
+  });
+  try {
+    const page = await (await loading.promise).getPage(1);
+    const { items } = await page.getTextContent({ disableNormalization: true });
+    const text = items.map((item) => ('str' in item ? item.str : '')).join('');
+    expect(text).toContain('Workflow tools for field teams');
+    expect(text).not.toMatch(/[\uFB00-\uFB06]/);
+  } finally {
+    await loading.destroy();
+  }
 });
 
 test('X-rays the rebuilt resume, with what the revision fixed', async () => {

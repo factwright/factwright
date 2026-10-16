@@ -1,17 +1,22 @@
 // Makes the files the X-ray's tests read: a made-up resume printed in Classic and Minimal, as
-// PDFs and Word files, the way the app makes them, and files with each problem the X-ray looks
-// for. Run it in Electron, which prints with the same Chromium as the app:
-// `pnpm --filter @factwright/xray fixtures`. Run it again after a change to the templates or
-// the engine, and check the tests still pass.
+// PDFs and Word files, the way the app makes them, files with each problem the X-ray looks for,
+// and words with fi and fl, in the app's templates and one of a user's own, which must read as
+// letters. Run it in Electron, which prints with the same Chromium as the app:
+// `pnpm --filter @factwright/xray fixtures`. Run it again after a change to the templates, the
+// engine or its fonts, or Electron, and check the tests still pass.
 import { readFileSync, writeFileSync } from 'node:fs';
 import {
   builtInTemplate,
+  type CoverLetter,
   docxFile,
   FONT_FILES,
   type FontUrls,
+  previewLetter,
   previewResume,
   type Resume,
+  readTemplate,
   renderHtml,
+  renderLetterHtml,
   type Template,
 } from '@factwright/engine';
 import {
@@ -98,6 +103,164 @@ const footer = restyled(
   `${classic.body}<div class="foot">{{name}} · {{headline}}</div>`,
 );
 
+/**
+ * A template of the user's own, read from its file as the app reads one, in fonts many people's
+ * use: its text in Factwright Sans, Calibri's stand-in, its headings in Barlow, and its name and
+ * headline in Caladea. Its styles ask for letters joined into one, which the fonts draw as one
+ * shape but write into the PDF as letters. It has no letter of its own, so a letter prints plainly.
+ */
+function ownTemplate(): Template {
+  const read = readTemplate(
+    {
+      factwright: 'resume-template',
+      version: 1,
+      name: 'Own',
+      look: 'Sans-serif text under a serif name, with condensed headings.',
+      fonts: [
+        'factwright-sans-regular.woff2',
+        'factwright-sans-bold.woff2',
+        'factwright-sans-italic.woff2',
+        'caladea-bold.woff2',
+        'caladea-italic.woff2',
+        'barlow-bold.woff2',
+      ],
+      titles: {
+        summary: 'Profile',
+        competencies: 'Proficiencies',
+        experience: 'Professional Experience',
+        education: 'Education',
+        skills: 'Skills',
+      },
+      word: { ...classic.word, head: 'Cambria', body: 'Calibri' },
+      css: `${classic.css}
+        body{font-family:"Factwright Sans",Calibri,sans-serif}
+        .name,.headline{font-family:Caladea,Cambria,serif}
+        h2{font-family:Barlow,"Factwright Sans",sans-serif;text-transform:none;letter-spacing:0}
+        body{font-variant-ligatures:common-ligatures discretionary-ligatures;font-feature-settings:"liga" 1,"dlig" 1}`,
+      body: classic.body.replace(
+        '<div class="sum">',
+        `<div class="sum" style="font-feature-settings:'liga' 1 !important">`,
+      ),
+      parts: classic.parts,
+    },
+    'own',
+  );
+  if (!read.ok) throw new Error(read.problems.join('\n'));
+  return read.template;
+}
+
+/**
+ * Jordan Avery as a financial planner, in words with fi, fl, ff, ffi and ffl, which fonts can
+ * draw as one shape: certified, first, profile, office, workflow, staff, efficient and affluent.
+ * They're in every style a template sets: plain, bold and italic text, headings and small print.
+ */
+function plannerResume(): Resume {
+  const resume = previewResume();
+  return {
+    ...resume,
+    headline: 'Certified Financial Planner',
+    tagline: 'Affluent families · Efficient offices · First-time investors',
+    summary:
+      'Certified planner who fills the first meeting with **efficient** questions, and builds the office workflow that staff and affluent clients rely on.',
+    impact_stats: [
+      { value: '~20%', label: 'Less staff time on filing' },
+      { value: '4', label: 'Offices on one workflow' },
+      { value: '$2.4M', label: 'New assets in the first year' },
+      { value: '12', label: 'Staff certified' },
+    ],
+    competencies: [
+      'Financial planning',
+      'Profile reviews',
+      'Staff coaching',
+      'Workflow design',
+      'Office efficiency',
+      'Affluent families',
+    ],
+    systems_heading: 'Selected Work',
+    systems: [
+      {
+        name: 'First-meeting workflow',
+        text: 'A profile form and checklist that fit the first meeting into an hour, with no files lost.',
+      },
+      {
+        name: 'Office efficiency review',
+        text: 'Found a fifth of staff time going to filing, and gave it back with one shared workflow.',
+      },
+    ],
+    experience: [
+      {
+        title: 'Senior Financial Planner',
+        company: 'Northwind Advisors',
+        company_note: 'Family office for affluent clients',
+        location: 'Denver, CO',
+        start: '04/2021',
+        end: 'Present',
+        bullet_groups: [
+          {
+            heading: 'Staffing',
+            bullets: [
+              {
+                lead: 'Workflow',
+                text: 'Rebuilt the office workflow for 12 staff, cutting the time to a first offer by **a fifth**.',
+              },
+              { text: 'Certified three planners, and filed every client profile within a week.' },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'Financial Planner',
+        company: 'Bramble Wealth',
+        company_note: 'Office of first-time investors',
+        location: 'Remote',
+        start: '06/2018',
+        end: '03/2021',
+        bullet_groups: [
+          {
+            bullets: [
+              {
+                text: 'Brought efficient, flat-fee planning to first-time investors in three cities.',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    projects: [],
+    education: [
+      {
+        degree: 'B.S., Finance',
+        school: 'University of Colorado Boulder',
+        location: 'Boulder, CO',
+        end: '2016',
+        note: 'Certificate in financial planning',
+      },
+    ],
+    skills: [
+      { category: 'Planning', items: ['Cash flow', 'Retirement', 'Estate efficiency'] },
+      { category: 'Tools', items: ['Microsoft Office', 'eMoney', 'Profile scoring'] },
+    ],
+    extra_sections: [
+      { heading: 'Certifications', items: ['Certified Financial Planner (CFP), 2019'] },
+      { heading: 'Affiliations', items: ['Financial Planning Association, Denver chapter'] },
+    ],
+  };
+}
+
+/** Jordan Avery's cover letter as a financial planner, in the same words. */
+function plannerLetter(): CoverLetter {
+  return {
+    ...previewLetter(),
+    headline: 'Certified Financial Planner',
+    recipient: ['Priya Shah', 'Director of Planning', 'Fernway Wealth'],
+    paragraphs: [
+      'Fernway’s posting asks for a certified planner who can run an efficient office for affluent families. That is the work I have done for the last three years at Northwind Advisors, where the first-meeting workflow I built fits a new client’s first meeting into an hour, with no files lost.',
+      'Two parts of that work fit what your team is taking on. First, I keep every client profile current: our staff file each one within a week. Second, I find where time goes: an office efficiency review showed a fifth of staff time going to filing, and one shared workflow gave it back.',
+      'I would welcome half an hour to walk through the workflow, and what I would offer Fernway’s affluent clients first.',
+    ],
+  };
+}
+
 /** The made-up resume, long enough for two pages. */
 function longResume(): Resume {
   const resume = previewResume();
@@ -178,6 +341,8 @@ function engineerResume(): Resume {
   };
 }
 
+const own = ownTemplate();
+
 const PDFS: [name: string, template: Template, resume: Resume][] = [
   ['classic', classic, previewResume()],
   ['engineer', classic, engineerResume()],
@@ -187,6 +352,29 @@ const PDFS: [name: string, template: Template, resume: Resume][] = [
   ['icons', icons, previewResume()],
   ['dates-last', datesLast, previewResume()],
   ['footer', footer, longResume()],
+  ['fi-classic', classic, plannerResume()],
+  ['fi-minimal', minimal, plannerResume()],
+  ['fi-own', own, plannerResume()],
+];
+
+/**
+ * A template in Classic's look with no letter of its own, whose Word files name a serif the
+ * computer doesn't have, as Garamond is missing on a Mac: one no computer has, so the file is
+ * the same wherever it's made. A letter in it prints in the template's own serif, where the
+ * computer's stand-in, such as Times, can join letters into one character.
+ */
+const missingFont: Template = {
+  ...classic,
+  id: 'missing-font',
+  name: 'missing-font',
+  word: { ...classic.word, head: 'Missing Serif', body: 'Missing Serif' },
+  letter: undefined,
+};
+
+/** Cover letters. A template with no letter of its own, such as own, prints one plainly. */
+const LETTERS: [name: string, template: Template, letter: CoverLetter][] = [
+  ['fi-letter', own, plannerLetter()],
+  ['fi-letter-missing-font', missingFont, plannerLetter()],
 ];
 
 /** Prints a page as the app does: Letter, with backgrounds, after its fonts load. */
@@ -363,6 +551,13 @@ app.whenReady().then(async () => {
     writeFileSync(
       new URL(`${name}.pdf`, OUT),
       await print(window, renderHtml(resume, template, fonts)),
+    );
+    console.log(`Printed ${name}.pdf`);
+  }
+  for (const [name, template, letter] of LETTERS) {
+    writeFileSync(
+      new URL(`${name}.pdf`, OUT),
+      await print(window, renderLetterHtml(letter, template, fonts)),
     );
     console.log(`Printed ${name}.pdf`);
   }

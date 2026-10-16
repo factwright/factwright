@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FONT_FILES } from './fonts.ts';
-import { renderHtml } from './html.ts';
-import { sampleResume } from './sample.ts';
+import { renderHtml, renderLetterHtml } from './html.ts';
+import { sampleLetter, sampleResume } from './sample.ts';
 import type { Resume } from './schema.ts';
 import { builtInTemplate, TEMPLATES, type Template } from './templates.ts';
 
@@ -90,6 +90,21 @@ describe('renderHtml', () => {
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(html).toContain('<mark class="ph">[team size]</mark>');
+  });
+
+  it('writes out letters typed as one character, such as “ﬁ”, which applicant systems misread', () => {
+    const summary = 'The ﬁrst **ofﬁce** workﬂow for the staﬀ, eﬃcient and aﬄuent, ﬅill ﬆeady.';
+    const pages = [
+      renderHtml({ ...sampleResume(), headline: 'Certiﬁed Planner', summary }, classic),
+      renderLetterHtml({ ...sampleLetter(), paragraphs: [summary] }, minimal),
+    ];
+    for (const html of pages) {
+      expect(html).toContain(
+        'The first <strong>office</strong> workflow for the staff, efficient and affluent, still steady.',
+      );
+      expect(html).not.toMatch(/[\uFB00-\uFB06]/);
+    }
+    expect(pages[0]).toContain('Certified Planner');
   });
 
   it('loads nothing from anywhere else, carrying its fonts in the page', () => {
