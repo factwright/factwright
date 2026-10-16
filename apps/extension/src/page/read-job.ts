@@ -41,6 +41,14 @@ export function readJobPage(
   selected: string = String(globalThis.getSelection?.() ?? ''),
   /** The address the page loaded at, before a single-page site moved it on to another job. */
   loadedAt: string = doc.defaultView?.performance?.getEntriesByType?.('navigation')[0]?.name ?? '',
+  /**
+   * What the selected text is all inside, which on Hacker News is the post it's from. Text that
+   * runs across two posts is inside neither.
+   */
+  // No braces here: the build takes this function out of its file by its braces.
+  selectedIn: Node | null = globalThis.getSelection?.()?.rangeCount
+    ? (globalThis.getSelection()?.getRangeAt(0).commonAncestorContainer ?? null)
+    : null,
 ): PageJob {
   /** The longest posting it keeps, in characters. A long one is around 20,000. */
   const MAX_POSTING = 100_000;
@@ -52,6 +60,11 @@ export function readJobPage(
   /** Job boards and applicant systems, which are never the company a job is with. */
   const BOARDS =
     /^(linkedin|indeed|glassdoor|ziprecruiter|monster|wellfound|angellist|dice|simplyhired|careerbuilder|built ?in|hired|otta|welcome to the jungle|greenhouse|lever|workday|ashby|smartrecruiters|jobvite|icims)(\.com)?$/i;
+  /** Words that name a role, as in a job post's first line: "Acme | Senior Engineer | Remote". */
+  const ROLE =
+    /\b(engineer|developer|dev|swe|designer|manager|pm|scientist|lead|head|director|analyst|architect|researcher|intern|internship|specialist|consultant|administrator|programmer|devops|sre|cto|vp|officer|recruiter|writer|marketer|technician|operator|representative|associate|coordinator|executive|accountant|counsel|attorney|hacker|generalist|founding|roles|positions|openings)s?\b/i;
+  /** The code Workday's job data puts before a company's legal name: "2100 ", "ADUS-", "US: ". */
+  const ENTITY_CODE = /^(\d+\s+|[A-Z]{2,}\d+\s+|[A-Z\d]{2,8}\s*[-:]\s*|[A-Z][a-z]+:\s+)/;
   /** Elements whose text is never part of a posting. */
   const SKIPPED = new Set([
     'SCRIPT',
@@ -100,6 +113,8 @@ export function readJobPage(
     posting: string[];
     title: string[];
     company: string[];
+    /** The company in the tab's title, for a site that shows its name nowhere else as text. */
+    companyInTitle?: RegExp;
     location: string[];
   }[] = [
     {
@@ -133,16 +148,34 @@ export function readJobPage(
     },
     {
       host: /(^|\.)indeed\.com$/,
-      posting: ['#jobDescriptionText', '.jobsearch-JobComponent-description'],
-      title: ['[data-testid="jobsearch-JobInfoHeader-title"]', '.jobsearch-JobInfoHeader-title'],
-      company: ['[data-testid="inlineHeader-companyName"]', '[data-company-name]'],
-      location: ['[data-testid="inlineHeader-companyLocation"]', '[data-testid="job-location"]'],
+      posting: [
+        '[data-testid="vj-job-description-heading"] + div',
+        '#jobDescriptionText',
+        '.jobsearch-JobComponent-description',
+      ],
+      title: [
+        '[data-testid="vj-job-title"]',
+        '[data-testid="jobsearch-JobInfoHeader-title"]',
+        '.jobsearch-JobInfoHeader-title',
+      ],
+      company: [
+        '[data-testid="company-info-metadata"] [dir="ltr"]',
+        '[data-testid="inlineHeader-companyName"]',
+        '[data-company-name]',
+      ],
+      location: [
+        '[data-testid="company-info-metadata"] > div > div + [dir="ltr"]',
+        '[data-testid="inlineHeader-companyLocation"]',
+        '[data-testid="job-location"]',
+      ],
     },
     {
       host: /(^|\.)greenhouse\.io$/,
       posting: ['.job__description', '#content', '.job-post'],
       title: ['.job__title h1', '.app-title', 'h1.section-header'],
       company: ['.company-name'],
+      // Its newer boards name the company in the tab's title, "Job Application for … at Acme".
+      companyInTitle: /^Job Application for .+ at (.+)$/i,
       location: ['.job__location', '.location'],
     },
     {
@@ -182,7 +215,12 @@ export function readJobPage(
     },
     {
       host: /(^|\.)smartrecruiters\.com$/,
-      posting: ['.job-sections', '[itemprop="description"]'],
+      // The posting, without the map, the buttons and the links after it.
+      posting: [
+        '.job-sections [itemprop="description"]',
+        '.job-sections',
+        '[itemprop="description"]',
+      ],
       title: ['.job-title'],
       company: [],
       location: ['.job-detail'],
@@ -352,6 +390,40 @@ export function readJobPage(
     return '';
   };
 
+  /**
+   * Who a posting's job data says is hiring. Workday's names the legal entity, with its code, as
+   * "2100 NVIDIA USA" or "ADUS-Adobe Inc.": there, it's the site's own name, as the entity writes
+   * it ("NVIDIA" at nvidia.wd5.myworkdayjobs.com) but with a capital, or else the entity without
+   * its code.
+   */
+  function hiringOf(posting: Record<string, unknown>): string {
+    const name = nameOf(posting.hiringOrganization);
+    if (!/(^|\.)myworkdayjobs\.com$/.test(site)) return name;
+    const tenant = site.split('.', 1)[0] ?? '';
+    const own = name.split(/[^\p{L}\p{N}]+/u).find((word) => word.toLowerCase() === tenant);
+    return own ? own.charAt(0).toUpperCase() + own.slice(1) : name.replace(ENTITY_CODE, '');
+  }
+
+  /**
+   * A job post's company and title, from its first line, as Hacker News's "Who is hiring?" posts
+   * write it: "Acme (YC W24) | Senior Engineer | Remote (US)", or with dashes between. The company
+   * comes first, without what's in brackets after it, and the title is the first part after it
+   * that names a role. A first line that isn't parts like these names neither.
+   */
+  function headerOf(text: string): { company: string; title: string } {
+    const line = text.split('\n', 1)[0] ?? '';
+    const parts = (line.includes('|') ? line.split('|') : line.split(/\s[–—-]\s/))
+      .map(oneLine)
+      .filter(Boolean);
+    if (parts.length < 2) return { company: '', title: '' };
+    const link = (part: string) => /^(https?:\/\/|www\.)/i.test(part);
+    const [start = '', ...rest] = parts;
+    return {
+      company: start.length <= 100 && !link(start) ? start.replace(/\s*\([^()]*\)$/, '') : '',
+      title: rest.find((part) => ROLE.test(part) && !link(part)) ?? '',
+    };
+  }
+
   /** Where a posting's job is, from its job data. */
   function placeOf(posting: Record<string, unknown>): string {
     const places = (
@@ -401,10 +473,11 @@ export function readJobPage(
 
   /**
    * The job's own address, without tracking: on LinkedIn's and Indeed's job pages, including a
-   * search showing one, the job's own page. A page's route after "#/", as some careers sites keep
-   * each job's, stays.
+   * search showing one, the job's own page, and on Hacker News, the post's. A page's route after
+   * "#/", as some careers sites keep each job's, stays.
    */
   function jobUrl(): string {
+    if (post) return `https://news.ycombinator.com/item?id=${post.id}`;
     let url: URL;
     try {
       url = new URL(href);
@@ -506,6 +579,20 @@ export function readJobPage(
   })();
   const known = SITES.find((each) => each.host.test(site));
   const linkedIn = /(^|\.)linkedin\.com$/.test(site);
+  /**
+   * On Hacker News, the post that's the job, as a "Who is hiring?" thread has them: the comment the
+   * selected text is in, or the one a comment's own page shows.
+   */
+  const post = (() => {
+    if (!/(^|\.)news\.ycombinator\.com$/.test(site)) return null;
+    const from = selectedIn?.nodeType === 1 ? (selectedIn as Element) : selectedIn?.parentElement;
+    const rows = [from?.closest('tr.athing[id]'), doc.querySelector('.fatitem tr.athing[id]')];
+    for (const row of rows) {
+      const text = row?.querySelector('.commtext');
+      if (row && text && /^\d+$/.test(row.id)) return { id: row.id, text };
+    }
+    return null;
+  })();
   const fromSite = (selectors: string[] | undefined) =>
     first(selectors ?? [], (element) => oneLine(textOf(element)));
   /** Indeed's title ends with words only screen readers hear. */
@@ -598,17 +685,30 @@ export function readJobPage(
 
   /** A site's name, unless it's a job board's or an applicant system's, which no job is with. */
   const notBoard = (name: string) => (BOARDS.test(name.trim()) ? '' : name);
-  const title = (
-    (data ? titleOf(data) : '') ||
-    shownTitle ||
-    meta('og:title') ||
-    first(['h1'], (element) => oneLine(textOf(element))) ||
-    oneLine(doc.title)
-  ).replace(JOB_POST, '');
+  // A Hacker News post's text, and the company and title its first line names, which are all a
+  // post has: never the tab's title, which is only the post's first words.
+  const postText = post ? textOf(post.text) : '';
+  const header = post ? headerOf(postText) : null;
+  const title = header
+    ? header.title
+    : (
+        (data ? titleOf(data) : '') ||
+        shownTitle ||
+        meta('og:title') ||
+        first(['h1'], (element) => oneLine(textOf(element))) ||
+        oneLine(doc.title)
+      ).replace(JOB_POST, '');
+  const company = header
+    ? header.company
+    : (data && hiringOf(data)) ||
+      fromSite(known?.company) ||
+      // A tab's title is short: one that isn't is read only as far as any title goes.
+      oneLine(known?.companyInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
+      notBoard(meta('og:site_name'));
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
-  const onSite = first(known?.posting ?? [], (element) => textOf(element));
+  const onSite = post ? postText : first(known?.posting ?? [], (element) => textOf(element));
   // The page's main text, without its navigation, headers, footers and forms. Never LinkedIn's,
   // where anything but the job's own posting, such as messages, isn't the job's.
   const main = () => {
@@ -643,10 +743,7 @@ export function readJobPage(
     site,
     pageTitle: oneLine(doc.title),
     title,
-    company:
-      nameOf(data?.hiringOrganization) ||
-      fromSite(known?.company) ||
-      notBoard(meta('og:site_name')),
+    company,
     location: (data && placeOf(data)) || fromSite(known?.location),
     pay: data ? payOf(data) : '',
     employment: data ? employmentOf(data.employmentType) : '',

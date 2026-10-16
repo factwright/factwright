@@ -87,6 +87,7 @@ describe('a company from a job’s address', () => {
       'https://www.glassdoor.co.uk/job-listing/x',
       'https://www.ziprecruiter.com/c/Acme/Job/1',
       'https://wellfound.com/jobs/1',
+      'https://news.ycombinator.com/item?id=41000002',
       'not a link',
     ]) {
       expect(companyFromAddress(url), url).toBe('');
