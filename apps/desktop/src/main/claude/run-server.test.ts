@@ -273,6 +273,27 @@ describe('RunServer', () => {
       await vi.waitFor(() => expect(stopped).toHaveBeenCalled());
     });
 
+    it('lets the dialog go once the run stops listening, as when it ends', async () => {
+      await server.start();
+      const stopped = vi.fn();
+      const ask = vi.fn(
+        (_round: QuestionRound, signal: AbortSignal) =>
+          new Promise<RoundReply | null>((resolve) => {
+            signal.addEventListener('abort', () => {
+              stopped();
+              resolve(yes);
+            });
+          }),
+      );
+      const stopListening = server.listen(TOKEN, () => {}, { ask });
+      const held = post(server.hookUrl, asked);
+      await vi.waitFor(() => expect(ask).toHaveBeenCalled());
+      stopListening();
+      expect(stopped).toHaveBeenCalled();
+      // Nothing the dialog said after the run let go reaches Claude Code.
+      expect((await held).status).toBe(204);
+    });
+
     it('leaves to the terminal a subagent’s questions, and those of a run with no dialog', async () => {
       await server.start();
       const { ask } = dialog();

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -161,6 +161,34 @@ describe('ClaudeQuestions', () => {
       { picks: [], other: 'Only reading it', note: '' },
       { picks: [], other: '', note: '' },
     ]);
+  });
+
+  it('sends on Enter only once every question has an answer', async () => {
+    const { api } = open();
+    const graphql = question('Have you used it');
+    const box = within(graphql).getByRole('textbox', { name: 'Something else, in your words' });
+    await userEvent.type(box, 'Only reading it{Enter}');
+    expect(api.answerClaude).not.toHaveBeenCalled();
+    await userEvent.click(within(question(TOOLS)).getByRole('checkbox', { name: 'Kafka' }));
+    await userEvent.type(box, '{Enter}');
+    expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [
+      { picks: [], other: 'Only reading it', note: '' },
+      { picks: ['Kafka'], other: '', note: '' },
+    ]);
+  });
+
+  it('takes the focus to the user’s own words when they click it, not when keys move through the options', async () => {
+    open();
+    const graphql = question('Have you used it');
+    const own = within(graphql).getByRole('radio', { name: 'Something else' });
+    const box = within(graphql).getByRole('textbox', { name: 'Something else, in your words' });
+    // A click from the keyboard, as arrow keys make moving through the options.
+    fireEvent.click(own, { detail: 0 });
+    expect(own).toHaveProperty('checked', true);
+    expect(document.activeElement).not.toBe(box);
+    await userEvent.click(within(graphql).getByRole('radio', { name: 'No' }));
+    await userEvent.click(own);
+    expect(document.activeElement).toBe(box);
   });
 
   it('says a question left unanswered is skipped, and sends the rest', async () => {

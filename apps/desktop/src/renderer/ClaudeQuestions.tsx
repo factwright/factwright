@@ -1,5 +1,5 @@
 import { Button, Dialog, DialogActions, Input, MarkdownLine, Pill, TextArea } from '@factwright/ui';
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
   isAnswered,
@@ -87,6 +87,13 @@ export function ClaudeQuestions({
     event.preventDefault();
     if (answered > 0 && !sending) void reply(close, answers);
   };
+  // Enter in a box or on an option sends the round only once every question has an answer, so it
+  // never sends half of one by accident. Send still sends what's answered.
+  const holdEnter = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement && unanswered > 0) {
+      event.preventDefault();
+    }
+  };
 
   return (
     <Dialog
@@ -98,7 +105,7 @@ export function ClaudeQuestions({
       onClose={onClose}
     >
       {(close) => (
-        <form onSubmit={(event) => send(event, close)}>
+        <form onSubmit={(event) => send(event, close)} onKeyDown={holdEnter}>
           <div className={styles.questions}>
             {round.questions.map((question, at) => (
               <QuestionField
@@ -173,11 +180,8 @@ function QuestionField({
         .filter((each) => (each === label ? !on : choice.picks.includes(each))),
     });
   };
-  const chooseOther = (on: boolean) => {
+  const chooseOther = (on: boolean) =>
     onChange(multiSelect ? { otherOn: on } : { otherOn: on, picks: on ? [] : choice.picks });
-    // Choosing their own answer is for typing it.
-    if (on) otherBox.current?.focus();
-  };
   return (
     <fieldset className={styles.question}>
       <legend className={styles.legend}>
@@ -242,6 +246,11 @@ function QuestionField({
               aria-label="Something else"
               checked={choice.otherOn}
               onChange={() => chooseOther(!(multiSelect && choice.otherOn))}
+              // Clicking their own answer is for typing it. Arrow keys move on through the
+              // options instead, as they do in any group of them.
+              onClick={(event) => {
+                if (event.detail > 0 && event.currentTarget.checked) otherBox.current?.focus();
+              }}
             />
             <Input
               ref={otherBox}

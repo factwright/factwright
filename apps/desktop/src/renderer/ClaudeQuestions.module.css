@@ -13,6 +13,13 @@
   border: 0;
 }
 
+/* Whatever takes the focus scrolls clear of the buttons pinned along the bottom. */
+.question input,
+.question textarea,
+.question button {
+  scroll-margin-bottom: 112px;
+}
+
 /* The question's label above its words, and the words as the heading of its options. */
 .legend {
   display: flex;
