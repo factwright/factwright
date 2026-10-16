@@ -381,7 +381,7 @@ function CallForm({
               aria-label={`Role of person ${i + 1}`}
               value={row.role}
               maxLength={LIMITS.person}
-              placeholder="Role, such as Recruiter"
+              placeholder="Their role"
               list={rolesId}
               onChange={(event) => changePerson(row.key, { role: event.target.value })}
             />

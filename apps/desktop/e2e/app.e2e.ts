@@ -252,6 +252,45 @@ test('answers a question about the job, and keeps the answer with it', async () 
   expect(await terminalText(window)).toMatch(/\/factwright:ask job \S+ question 20\d\d-/);
 });
 
+test('adds a call with who it’s with, preps for it, and keeps the prep sheet with the call', async () => {
+  const { window } = opened;
+  const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });
+  await calls.getByRole('button', { name: 'Add a call' }).click();
+  const form = calls.getByRole('form', { name: 'Add a call' });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const day = [tomorrow.getFullYear(), tomorrow.getMonth() + 1, tomorrow.getDate()]
+    .map((part) => String(part).padStart(2, '0'))
+    .join('-');
+  await form.getByLabel('Date').fill(day);
+  await form.getByLabel('How', { exact: true }).selectOption('video');
+  await form.getByLabel('Meeting link').fill('https://meet.example.com/acme');
+  await form.getByLabel('Name of person 1').fill('Dana Lee');
+  await form.getByLabel('Role of person 1').fill('Hiring manager');
+  await form.getByRole('button', { name: 'Add call' }).click();
+  await expect(calls.getByText('With Dana Lee (Hiring manager)')).toBeVisible();
+  // Adding a recruiter screen moves the job on.
+  await expect(window.getByRole('combobox', { name: 'Status for Acme Robotics' })).toHaveValue(
+    'screen',
+  );
+
+  await calls.getByRole('button', { name: 'Call prep for the recruiter screen' }).click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The app types only the job's and the call's IDs; who it's with reaches Claude through its tools.
+  const typed = await terminalText(window);
+  expect(typed).toMatch(new RegExp(`/factwright:interview-prep job ${ACME_ID} call [0-9a-f-]{36}`));
+  expect(typed).not.toContain('Dana Lee');
+  await calls.getByRole('button', { name: 'Open the prep sheet for the recruiter screen' }).click();
+  const sheet = window.getByRole('dialog', { name: /^Prep sheet: Recruiter screen/ });
+  await expect(
+    sheet.getByText('With Dana Lee (Hiring manager), from the stand-in Claude.'),
+  ).toBeVisible();
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(
+    calls.getByRole('button', { name: 'Prep again for the recruiter screen' }),
+  ).toBeVisible();
+});
+
 test('keeps a picture pasted into Claude’s panel with the run’s job, for Claude to read', async () => {
   const { window } = opened;
   // A picture on the clipboard, pasted into the terminal, as the system hands it to the page.
@@ -490,11 +529,17 @@ test('keeps everything tracked after a restart', async () => {
   await expect(window.getByRole('button', { name: /^Northwind Labs/ })).toBeVisible();
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
   await expect(window.getByRole('combobox', { name: 'Status for Acme Robotics' })).toHaveValue(
-    'applied',
+    'screen',
   );
   await expect(jobPanel().getByRole('list', { name: 'Your notes' })).toContainText(
     'Recruiter: Sam',
   );
+  // The call keeps who it's with, and Claude's prep sheet for it.
+  const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });
+  await expect(calls.getByText('With Dana Lee (Hiring manager)')).toBeVisible();
+  await expect(
+    calls.getByRole('button', { name: 'Open the prep sheet for the recruiter screen' }),
+  ).toBeVisible();
   await jobPanel().getByText('Why Acme?', { exact: true }).click();
   await expect(jobPanel().getByRole('textbox', { name: /What you sent/ })).toHaveValue(
     'Deploys, mostly.',
