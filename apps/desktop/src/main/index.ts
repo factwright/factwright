@@ -262,7 +262,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       // Changes from other devices: read the workspace again, and show the new list.
       onApplied: () => {
         window.send('jobs:changed', jobs.read());
-        reminders.check();
+        reminders.check({ synced: true });
       },
     });
     const jobs = new JobsService({

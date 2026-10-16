@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { type Call, type Job, localDate, shortDate } from '@factwright/core';
+import { addDays, type Call, type Job, localDate, shortDate } from '@factwright/core';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -522,6 +522,28 @@ describe('adding a call to a calendar', () => {
     ).toBeTruthy();
   });
 
+  it('stops saying the file was saved once the call changes', async () => {
+    const job = byCompany('Northwind Labs');
+    const { api, rerender } = panel(job);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add to calendar: the panel interview' }),
+    );
+    expect(await screen.findByText(/^Saved\./)).toBeTruthy();
+    const moved = job.calls.map((call) =>
+      call.id === 'northwind-panel' ? { ...call, atTime: '15:00' } : call,
+    );
+    rerender(
+      <JobPanel
+        row={jobRows([{ ...job, calls: moved }], TODAY)[0] ?? null}
+        api={api}
+        today={TODAY}
+        onClose={() => {}}
+        run={controls()}
+      />,
+    );
+    expect(screen.queryByText(/^Saved\./)).toBeNull();
+  });
+
   it('says nothing when saving is canceled, and why when it can’t be saved', async () => {
     panel(byCompany('Northwind Labs'), { saved: { ok: true, saved: false } });
     const add = { name: 'Add to calendar: the panel interview' };
@@ -724,6 +746,24 @@ describe('a reminder before the next call', () => {
     expect(within(callCard('Panel interview')).getByText('Reminders before calls are off.'));
     await userEvent.click(screen.getByRole('button', { name: 'Turn on reminders before calls' }));
     expect(turn).toHaveBeenLastCalledWith(true);
+  });
+
+  it('says nothing for an archived job’s call, or once a call past midnight had its reminder', () => {
+    const reminders = { on: true, turn: vi.fn() };
+    const job = byCompany('Northwind Labs');
+    panel({ ...job, archived: true }, { reminders });
+    expect(screen.queryByText(/reminds you/)).toBeNull();
+    cleanup();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(`${TODAY}T23:40:00`));
+    const late = job.calls.map((call) =>
+      call.id === 'northwind-panel'
+        ? { ...call, onDate: addDays(TODAY, 1), atTime: '00:30' }
+        : call,
+    );
+    panel({ ...job, calls: late }, { reminders });
+    expect(screen.getByText('Next')).toBeTruthy();
+    expect(screen.queryByText(/reminds you/)).toBeNull();
   });
 
   it('says nothing once the reminder’s time has come, or for a call with no time', () => {

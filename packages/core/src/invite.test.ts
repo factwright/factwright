@@ -193,6 +193,74 @@ describe('readInvite', () => {
     expect(readInvite(sydney, CHICAGO)).toMatchObject({ onDate: '2027-01-14', atTime: '16:00' });
   });
 
+  it('reads an Outlook zone with no daylight time, such as India’s or Arizona’s', () => {
+    const invite = (id: string, offset: string, time: string) =>
+      ics(
+        'BEGIN:VCALENDAR',
+        'BEGIN:VTIMEZONE',
+        `TZID:${id}`,
+        'BEGIN:STANDARD',
+        'DTSTART:16010101T000000',
+        `TZOFFSETFROM:${offset}`,
+        `TZOFFSETTO:${offset}`,
+        'END:STANDARD',
+        'BEGIN:DAYLIGHT',
+        'DTSTART:16010101T000000',
+        `TZOFFSETFROM:${offset}`,
+        `TZOFFSETTO:${offset}`,
+        'END:DAYLIGHT',
+        'END:VTIMEZONE',
+        'BEGIN:VEVENT',
+        `DTSTART;TZID=${id}:20261020T${time}`,
+        'END:VEVENT',
+        'END:VCALENDAR',
+      );
+    expect(readInvite(invite('India Standard Time', '+0530', '213000'), CHICAGO)).toMatchObject({
+      onDate: '2026-10-20',
+      atTime: '11:00',
+      zoneUnread: false,
+    });
+    expect(
+      readInvite(invite('US Mountain Standard Time', '-0700', '100000'), CHICAGO),
+    ).toMatchObject({ atTime: '12:00', zoneUnread: false });
+  });
+
+  it('keeps an address or a number over a link, as Google adds a Meet link to every event', () => {
+    const read = (...lines: string[]) => readInvite(event('DTSTART:20261020T140000', ...lines));
+    expect(
+      read(
+        'LOCATION:Northwind Labs\\, 500 Market St',
+        'X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij',
+      ),
+    ).toMatchObject({ place: 'Northwind Labs, 500 Market St', online: false });
+    // A scheduling page or a map is no meeting's link.
+    expect(
+      read('LOCATION:+1 555-010-0199', 'URL:https://calendly.com/events/abc123'),
+    ).toMatchObject({ place: '+1 555-010-0199', online: false });
+    expect(read('LOCATION:500 Market St https://maps.app.goo.gl/xyz')).toMatchObject({
+      place: '500 Market St',
+      online: false,
+    });
+    expect(read('LOCATION:https://www.google.com/maps/place/x')).toMatchObject({
+      place: null,
+      online: false,
+    });
+    // A room with a link to join from keeps both, for the call card's Join.
+    expect(read('LOCATION:Room 4B https://zoom.us/j/123 passcode 4321')).toMatchObject({
+      place: 'Room 4B https://zoom.us/j/123 passcode 4321',
+      online: false,
+    });
+    // A location that only names the service gives way to its link, and a link alone, on a
+    // site of the company's own, is the meeting's.
+    expect(
+      read('LOCATION:Zoom (link below)', 'DESCRIPTION:Join https://zoom.us/j/555'),
+    ).toMatchObject({ place: 'https://zoom.us/j/555', online: true });
+    expect(read('LOCATION:https://interviews.northwind.example/room/7')).toMatchObject({
+      place: 'https://interviews.northwind.example/room/7',
+      online: true,
+    });
+  });
+
   it('reads a Zoom invite, and nothing from the alarm inside it', () => {
     expect(readInvite(ZOOM, CHICAGO)).toEqual({
       onDate: '2026-10-20',

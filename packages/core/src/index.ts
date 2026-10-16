@@ -29,7 +29,7 @@ export {
   boardSystem,
   readBoard,
 } from './boards.ts';
-export { callInvite, callInviteName, callTitle, isClockTime } from './calendar.ts';
+export { callInvite, callInviteName, callStart, callTitle, isClockTime } from './calendar.ts';
 export { addDays, daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 export {
   askAnswer,

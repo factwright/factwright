@@ -19,9 +19,9 @@ export interface Invite {
   atTime: string | null;
   /** How long it's booked for, in minutes, up to a day, when it says. */
   minutes: number | null;
-  /** The meeting's https link, or else where it is: an address, or a number to call. */
+  /** Where it is, an address or a number to call, or else the meeting's https link. */
   place: string | null;
-  /** Whether the place is a meeting's link, so the call is a video call. */
+  /** Whether the place is a video call's link, so the call is a video call. */
   online: boolean;
   /** Who it's with, by name: not the user, a room, or anyone who said no. */
   people: CallPerson[];
@@ -326,7 +326,9 @@ function ruleDay(rule: Map<string, string>, year: number, month: number): number
 function onsetIn(observance: Observance, year: number): number | null {
   const { start, rule } = observance;
   if (year < start.y) return null;
-  if (!rule) return year === start.y ? utcOf(start) : null;
+  // A part with no rule is in force from its start on, as Outlook writes a zone with no daylight
+  // time, such as India's: one start in 1601, and no change since.
+  if (!rule) return utcOf(start);
   if ((rule.get('FREQ') ?? '').toUpperCase() !== 'YEARLY') return null;
   const month = Number(rule.get('BYMONTH') ?? start.m);
   if (!Number.isInteger(month) || month < 1 || month > 12) return null;
@@ -517,28 +519,67 @@ function linksIn(text: string): string[] {
   return links;
 }
 
+/** Whether a link is a map's, the way to a place rather than a meeting. */
+function isMapLink(href: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(href);
+    const host = hostname.toLowerCase().replace(/^www\./, '');
+    const maps = pathname.startsWith('/maps');
+    return (
+      ['maps.app.goo.gl', 'maps.apple.com', 'waze.com', 'openstreetmap.org'].some(
+        (site) => host === site || host.endsWith(`.${site}`),
+      ) ||
+      host.startsWith('maps.google.') ||
+      (maps && (host.startsWith('google.') || host === 'goo.gl' || host === 'bing.com'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
- * The meeting's link: a video call site's link from anywhere in the event, its description
- * last, and otherwise any https link given as its conference, its URL or its location. Never a
- * link longer than the place can hold, or anything but https.
+ * The meeting's link, when the invite gives a video call's: the one it names as its conference,
+ * or else one on a site that hosts video calls, from its link, location or description, or else
+ * a location that's a link alone, and not a map's. Another link, such as a scheduling page or a
+ * map, isn't a meeting's. Never a link longer than the place can hold, or anything but https.
  */
 function meetingLink(event: Map<string, Line[]>, max: number): string | null {
   const text = (name: string) => (event.get(name) ?? []).map((line) => unescaped(line.value));
-  const given = [
+  const fits = (href: string) => href.length <= max;
+  const named = [
     ...text('CONFERENCE'),
     ...text('X-GOOGLE-CONFERENCE'),
     ...text('X-MICROSOFT-SKYPETEAMSMEETINGURL'),
-    ...text('URL'),
-    ...text('LOCATION'),
-  ].flatMap(linksIn);
-  const described = text('DESCRIPTION').flatMap(linksIn);
-  const fits = (href: string) => href.length <= max;
-  return (
-    [...given, ...described].find((href) => fits(href) && onMeetingHost(href)) ??
-    given.find(fits) ??
-    null
-  );
+  ]
+    .flatMap(linksIn)
+    .find(fits);
+  if (named) return named;
+  const hosted = [...text('URL'), ...text('LOCATION'), ...text('DESCRIPTION')]
+    .flatMap(linksIn)
+    .find((href) => fits(href) && onMeetingHost(href));
+  if (hosted) return hosted;
+  const location = callLink(text('LOCATION')[0]?.trim() ?? null);
+  return location?.alone && fits(location.href) && !isMapLink(location.href) ? location.href : null;
 }
+
+/**
+ * Words that name how a video call happens, which a location can give in place of an address,
+ * such as "Microsoft Teams Meeting" or "Zoom (link below)".
+ */
+const CALL_WORDS = new Set(
+  'microsoft teams meeting meetings zoom google meet hangouts webex skype gotomeeting goto bluejeans whereby chime jitsi video call conference online virtual remote web room link links below above see details description invite tbd join the in on at via by and or a'.split(
+    ' ',
+  ),
+);
+
+/** Whether a place says where the call happens, rather than only naming a video call's service. */
+const saysWhere = (place: string) =>
+  place
+    .split(/\s+/)
+    .filter((token) => !token.includes('://'))
+    .some((token) =>
+      (token.match(/[\p{L}\p{N}]+/gu) ?? []).some((word) => !CALL_WORDS.has(word.toLowerCase())),
+    );
 
 /** A number to call, as a tel: link gives it: digits and the marks a phone takes, and an extension. */
 const PHONE = /^[+\d\s().,#*pPwW-]+(?:;ext=\d+)?$/;
@@ -547,15 +588,18 @@ const PHONE = /^[+\d\s().,#*pPwW-]+(?:;ext=\d+)?$/;
 const SCHEMES = /^\W*(?:javascript|vbscript|data|file|blob|mailto|tel|sms|callto):/i;
 
 /**
- * Whether a word of a place is a link. A place keeps none: an https link it could hold is the
- * meeting's already, and one of any other kind, or one with a name and password in it, has no
- * place in the call.
+ * Whether a word of a place is a link it leaves out: any but a video call's https link, which
+ * can share the place with an address, as for a call with a room and a link to join from.
  */
-const isLink = (word: string) => word.includes('://') || SCHEMES.test(word);
+function isOtherLink(word: string): boolean {
+  if (!word.includes('://') && !SCHEMES.test(word)) return false;
+  const link = callLink(word);
+  return !link || !onMeetingHost(link.href);
+}
 
 /**
- * Where the event is, from its location, when it isn't a meeting's link: an address on one line,
- * or a number to call, without any link it holds.
+ * Where the event is, from its location: an address on one line, or a number to call, keeping no
+ * link but a video call's.
  */
 function placeOf(event: Map<string, Line[]>, max: number): string | null {
   const location = event.get('LOCATION')?.[0];
@@ -570,7 +614,7 @@ function placeOf(event: Map<string, Line[]>, max: number): string | null {
   const words = text
     .replace(/\s+/g, (run) => (run.includes('\n') ? ', ' : ' '))
     .split(' ')
-    .filter((word) => !isLink(word));
+    .filter((word) => !isOtherLink(word));
   const place = words.join(' ').replace(/^[\s,;]+|[\s,;]+$/g, '');
   return fitted(place, max) || null;
 }
@@ -639,13 +683,18 @@ export function readInvite(text: string, options: InviteOptions = {}): Invite | 
     if (minutes !== null && (minutes < 1 || minutes > 24 * 60)) minutes = null;
   }
   const link = meetingLink(event, limits.place);
+  const where = placeOf(event, limits.place);
+  // An address or a number to call says where the call happens, even beside a meeting's link, as
+  // Google adds a Meet link to every event, an onsite one too. A location that only names the
+  // video call's service, such as "Microsoft Teams Meeting", gives way to its link.
+  const place = where && (saysWhere(where) || !link) ? where : link;
   const status = event.get('STATUS')?.[0]?.value.trim().toUpperCase();
   return {
     onDate: `${shown.y}-${pad(shown.m)}-${pad(shown.d)}`,
     atTime: start.allDay ? null : `${pad(shown.hh)}:${pad(shown.mm)}`,
     minutes,
-    place: link ?? placeOf(event, limits.place),
-    online: link !== null,
+    place,
+    online: link !== null && place === link,
     people: peopleOf(event, options.me, limits),
     zoneUnread: begins.unread,
     canceled: method === 'CANCEL' || status === 'CANCELLED',

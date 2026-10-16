@@ -1,10 +1,10 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Call, CallDoc, Job } from '@factwright/core';
+import { type Call, type CallDoc, callStart, type Job } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { settled } from './claude/save.ts';
-import { type CallReminder, CallReminders, callStart, reminderFor } from './reminders.ts';
+import { type CallReminder, CallReminders, reminderFor } from './reminders.ts';
 
 let dataDir: string;
 let file: string;
@@ -193,6 +193,30 @@ describe('reminders before calls', () => {
     watcher.check();
     vi.advanceTimersByTime(new Date(2026, 9, 21, 9, 0).getTime() - Date.now());
     expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives a call added in its last hour no reminder after a restart either', async () => {
+    const first = reminders([job({ calls: [] })]);
+    await first.watcher.start();
+    at(13, 30);
+    first.list.jobs = [job()];
+    first.watcher.check();
+    first.watcher.stop();
+    at(13, 35);
+    const second = reminders();
+    await second.watcher.start();
+    expect(first.notify).not.toHaveBeenCalled();
+    expect(second.notify).not.toHaveBeenCalled();
+  });
+
+  it('reminds of a call that comes by sync in its last hour, as it was made before', async () => {
+    const { watcher, notify, list } = reminders([job({ calls: [] })]);
+    await watcher.start();
+    // Asleep until 1:25, when another computer's call for 2:00 comes by sync.
+    vi.setSystemTime(new Date(2026, 9, 20, 13, 25));
+    list.jobs = [job()];
+    watcher.check({ synced: true });
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it('catches up once the computer wakes in a call’s last hour', async () => {

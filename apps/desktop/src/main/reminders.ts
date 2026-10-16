@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import {
   type Call,
+  callStart,
   callTitle,
   clockTime,
-  isClockTime,
   isIsoDate,
   type Job,
   localDate,
@@ -24,14 +24,6 @@ export interface CallReminder {
   callId: string;
   title: string;
   body: string;
-}
-
-/** When a call starts, by this computer's clock, or null for one with no time that reads. */
-export function callStart(call: Pick<Call, 'onDate' | 'atTime'>): Date | null {
-  if (!isIsoDate(call.onDate) || !isClockTime(call.atTime)) return null;
-  const [year, month, day] = call.onDate.split('-').map(Number);
-  const [hours, minutes] = call.atTime.split(':').map(Number);
-  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0);
 }
 
 /** The most of a company's name a reminder shows, so the time still shows after it. */
@@ -89,7 +81,8 @@ export interface RemindersDeps {
  * Reminds the user of each booked call that has a time, an hour before it, once, as a calendar
  * would. While the app is closed nothing comes, so a call whose hour began meanwhile, such as
  * while the computer slept, gets its reminder as soon as the app looks again, until the call
- * starts. A call added or moved inside its last hour gets none: the user has just seen it. The
+ * starts. So does one that comes by sync, made on another device before. A call added or moved
+ * here inside its last hour gets none, as the user has just seen it, even after a restart. The
  * user can turn reminders off, on this computer.
  */
 export class CallReminders {
@@ -165,9 +158,10 @@ export class CallReminders {
 
   /**
    * Shows the reminders that are due, and waits for the next. Called as the app starts, as the
-   * jobs change, and as the computer wakes.
+   * jobs change, as changes come by sync, and as the computer wakes. Calls that come by sync
+   * were made on another device, before, so they count as seen early, as at the start.
    */
-  check(): void {
+  check({ synced = false }: { synced?: boolean } = {}): void {
     if (!this.started || this.stopped) return;
     clearTimeout(this.timer);
     this.timer = undefined;
@@ -178,7 +172,8 @@ export class CallReminders {
       const key = keyOf(call);
       present.add(key);
       // The calls there as the app starts count as seen early, so their reminders come.
-      if (!this.seen.has(key)) this.seen.set(key, this.looked ? now : Number.NEGATIVE_INFINITY);
+      const early = !this.looked || synced;
+      if (!this.seen.has(key)) this.seen.set(key, early ? Number.NEGATIVE_INFINITY : now);
     }
     this.looked = true;
     for (const key of this.seen.keys()) if (!present.has(key)) this.seen.delete(key);
@@ -191,13 +186,15 @@ export class CallReminders {
       const key = keyOf(call);
       const at = start - lead;
       const early = (this.seen.get(key) ?? now) <= at;
-      if (this.reminded.has(key) || !early || start <= now) continue;
+      if (this.reminded.has(key) || start <= now) continue;
       if (at > now) {
         next = Math.min(next, at);
         continue;
       }
       this.reminded.add(key);
       changed = true;
+      // One seen first in its last hour gets none, which the file keeps for after a restart.
+      if (!early) continue;
       try {
         this.deps.notify(reminderFor(job, call));
       } catch {

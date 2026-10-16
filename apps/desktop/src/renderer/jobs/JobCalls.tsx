@@ -20,11 +20,11 @@ import {
   callLength,
   callLink,
   callPeople,
+  callStart,
   callWhen,
   dayFrom,
   type Invite,
   type InviteOptions,
-  isClockTime,
   type Job,
   type JobProgress,
   type JobStatus,
@@ -265,15 +265,32 @@ function withPeople(
   return all.length > 0 ? all : [personRow()];
 }
 
-/** Minutes since midnight, from "HH:MM". */
-const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
-
-/** Whether a booked call's reminder is still to come, an hour before it starts. */
-function reminderAhead(call: Call, today: string, now: string): boolean {
-  if (call.state !== 'scheduled' || !isClockTime(call.atTime)) return false;
-  if (call.onDate !== today) return call.onDate > today;
-  return minutesOf(call.atTime) - REMINDER_LEAD > minutesOf(now);
+/**
+ * Whether a booked call's reminder is still to come, an hour before it starts, as it comes to a
+ * job that isn't archived.
+ */
+function reminderAhead(job: Job, call: Call, today: string, now: string): boolean {
+  if (job.archived || call.state !== 'scheduled') return false;
+  const start = callStart(call);
+  const clock = callStart({ onDate: today, atTime: now });
+  return Boolean(start && clock && start.getTime() - REMINDER_LEAD * 60_000 > clock.getTime());
 }
+
+/** What a call's calendar file says about it, to tell when the call has changed since. */
+const fileFacts = (job: Job, call: Call) =>
+  JSON.stringify([
+    job.company,
+    job.role,
+    call.kind,
+    call.onDate,
+    call.atTime,
+    call.minutes,
+    call.mode,
+    call.place,
+    call.people,
+    call.notes,
+    call.state,
+  ]);
 
 /**
  * The form to add a call, or change one: what kind, when and for how long, how it happens and
@@ -861,8 +878,9 @@ function CallCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // Whether the call's calendar file was saved, to say what to do with it.
-  const [saved, setSaved] = useState(false);
+  // The call as its calendar file was saved, to say what to do with it until the call changes.
+  const [savedAs, setSavedAs] = useState<string | null>(null);
+  const saved = savedAs === fileFacts(job, call);
   const { problem, run: save } = useEdit();
   const change = useRef<HTMLButtonElement>(null);
   const remove = useRef<HTMLButtonElement>(null);
@@ -892,7 +910,8 @@ function CallCard({
   const link = callLink(call.place);
   // A calendar file for the call, saved where the user picks, to open in their calendar.
   const addToCalendar = async () => {
-    setSaved(false);
+    setSavedAs(null);
+    const facts = fileFacts(job, call);
     const file = callInvite(job, call, new Date());
     const result = file
       ? await api.saveFile(callInviteName(job.company, call), file)
@@ -901,7 +920,7 @@ function CallCard({
           message: 'This call’s date can’t go in a calendar. Change it first.',
         } as const);
     await save(Promise.resolve(result));
-    setSaved(result.ok && result.saved);
+    if (result.ok && result.saved) setSavedAs(facts);
   };
   const details = [
     callWhen(call, today),
@@ -1064,7 +1083,7 @@ function CallCard({
         </div>
       )}
 
-      {reminders && next && reminderAhead(call, today, now) && (
+      {reminders && next && reminderAhead(job, call, today, now) && (
         <p className={styles.reminder}>
           {reminders.on ? (
             <Bell size={13} aria-hidden="true" />

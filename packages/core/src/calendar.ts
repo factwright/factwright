@@ -16,6 +16,14 @@ const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const isClockTime = (value: unknown): value is string =>
   typeof value === 'string' && CLOCK.test(value);
 
+/** When a call starts, by this computer's clock, or null for one with no time that reads. */
+export function callStart(call: Pick<Call, 'onDate' | 'atTime'>): Date | null {
+  if (!isIsoDate(call.onDate) || !isClockTime(call.atTime)) return null;
+  const [year = 0, month = 1, day = 1] = call.onDate.split('-').map(Number);
+  const [hours = 0, minutes = 0] = call.atTime.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes);
+}
+
 /** The longest a call can run in a calendar: a whole day. */
 const MAX_MINUTES = 24 * 60;
 
