@@ -299,6 +299,16 @@ describe('SyncDialog', () => {
     expect(await screen.findByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
   });
 
+  it('points to the browser extension once sync is on, since it saves through sync', async () => {
+    await openDialog(apiFor('on'));
+    const section = await screen.findByRole('region', { name: 'Save jobs from your browser' });
+    const link = within(section).getByRole('link', { name: 'Get the extension' });
+    expect(link.getAttribute('href')).toBe('https://factwright.com/extension');
+    // The window opens links in the browser, so it doesn't leave the app.
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noreferrer');
+  });
+
   it('says a copy built without a sync server can’t sync, with nothing to sign in to', async () => {
     const onClose = vi.fn();
     const api = apiFor('no-server');

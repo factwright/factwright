@@ -1,4 +1,4 @@
-import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
+import { EXTENSION_URL, PRIVACY_URL, TERMS_URL } from '@factwright/core';
 import type { AccountInfo } from '@factwright/sync';
 import { Button, DialogActions } from '@factwright/ui';
 import { Smartphone } from 'lucide-react';
@@ -92,7 +92,10 @@ function LinkPanel({ api }: { api: FactwrightApi }) {
   );
 }
 
-/** Sync once it's on: how it stands, the account's devices, adding one, and turning it off here. */
+/**
+ * Sync once it's on: how it stands, the account's devices, adding one, saving jobs from the browser,
+ * and turning it off here.
+ */
 export function ManageSync({
   api,
   status,
@@ -178,6 +181,19 @@ export function ManageSync({
           Add a phone or computer
         </h3>
         <LinkPanel api={api} />
+      </section>
+
+      <section className={styles.section} aria-labelledby="sync-extension">
+        <h3 id="sync-extension" className={styles.heading}>
+          Save jobs from your browser
+        </h3>
+        <p className={styles.hint}>
+          Save to Factwright, for Chrome and Firefox, saves the job you’re looking at to your job
+          hunt, with its posting, through sync.{' '}
+          <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+            Get the extension
+          </a>
+        </p>
       </section>
 
       {problem && (

@@ -64,5 +64,8 @@ Before the first upload, the sync server and factwright.com must be deployed wit
 
    Reviewers who want to try it need a Factwright account with sync on and the desktop app to link it, so a test account may be asked for: answer in the review's thread.
 
+## Once it's live
+Put each store's listing address in `STORES` in [apps/site/src/stores.ts](../../site/src/stores.ts). Once the site is deployed, factwright.com/extension links to it, where its button said coming soon.
+
 ## Each update
 Raise `version` in `apps/extension/package.json`, build, and upload the new zip to each store (with a new source zip for Firefox). Note what changed in the CHANGELOG.

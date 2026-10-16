@@ -220,6 +220,15 @@ describe('AddJobDialog', () => {
     ]);
   });
 
+  it('points to the browser extension, for a job found in the browser', () => {
+    render(<AddJobDialog api={{} as FactwrightApi} onAdded={() => {}} onClose={() => {}} />);
+    const link = screen.getByRole('link', { name: 'Save to Factwright' });
+    expect(link.getAttribute('href')).toBe('https://factwright.com/extension');
+    // The window opens links in the browser, so it doesn't leave the app.
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noreferrer');
+  });
+
   it('says why a job couldn’t be added, and stays open', async () => {
     const addJob = vi.fn(async () => ({
       ok: false as const,

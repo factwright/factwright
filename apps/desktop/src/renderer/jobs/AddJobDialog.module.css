@@ -21,3 +21,8 @@
 .problem {
   color: var(--fw-bad);
 }
+
+.link {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+}

@@ -225,6 +225,7 @@ export {
   type WorkspaceEntry,
   type WorkspaceReader,
 } from './records.ts';
+export { EXTENSION_URL } from './site.ts';
 export {
   byJob,
   callOrder,
