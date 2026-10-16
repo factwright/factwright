@@ -3,7 +3,6 @@ import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   app,
-  BrowserWindow,
   autoUpdater as macInstaller,
   nativeTheme,
   powerMonitor,
@@ -23,6 +22,7 @@ import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
+import { MainWindow } from './main-window.ts';
 import { notifyIfAway, notifyOfRequests } from './notify.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
@@ -41,6 +41,7 @@ import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
+import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
 import { UpdateWatcher } from './updates.ts';
 import { createMainWindow, DEV_ICON } from './window.ts';
@@ -89,17 +90,23 @@ function realFolder(folder: string): string {
 }
 
 /**
- * Whether the app was asked to let another program drive it, through Chromium's debugging port,
- * while using the user's own data: their own data folder, or a profile in it. Like Chrome, an
- * installed copy then won't start: with a folder of its own, as the tests give it, it's an empty
- * app, with no job hunt and no sync to reach. Each folder is checked as it really is, through
- * any links.
+ * Whether an installed copy was asked to let another program drive it, through Chromium's
+ * debugging port, as its own tests do. A copy being developed runs whatever code it's given.
  */
-function debuggingTheUsersData(folders: string[]): boolean {
-  const debugging = ['remote-debugging-port', 'remote-debugging-pipe'].some((name) =>
+const driven =
+  app.isPackaged &&
+  ['remote-debugging-port', 'remote-debugging-pipe'].some((name) =>
     app.commandLine.hasSwitch(name),
   );
-  if (!app.isPackaged || !debugging) return false;
+
+/**
+ * Whether the app is driven by another program while using the user's own data: their own data
+ * folder, or a profile in it. Like Chrome, an installed copy then won't start: with a folder of
+ * its own, as the tests give it, it's an empty app, with no job hunt and no sync to reach. Each
+ * folder is checked as it really is, through any links.
+ */
+function debuggingTheUsersData(folders: string[]): boolean {
+  if (!driven) return false;
   const usersOwn = realFolder(join(app.getPath('appData'), app.getName()));
   return folders
     .map(realFolder)
@@ -171,10 +178,17 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
     denyPermissions(session.defaultSession);
 
-    // Sends to the window, unless it's closed, as when a run ends while the app quits.
-    const toWindow = (channel: string, ...values: unknown[]) => {
-      if (!window.isDestroyed()) window.webContents.send(channel, ...values);
-    };
+    // The app's window, whichever one is open: everything reaches it through this. A run belongs
+    // to its window, so closing it stops the run. On Windows and Linux, closing it quits the app
+    // too, even with the hidden window resumes print in still open, which would otherwise keep
+    // the app running unseen.
+    const window = new MainWindow({
+      open: () => createMainWindow(startUrl),
+      closed: () => {
+        claude.stop();
+        if (process.platform !== 'darwin') app.quit();
+      },
+    });
 
     // The open profile's folder, which holds its job hunt, its sync and its settings.
     const dataDir = app.getPath('userData');
@@ -203,42 +217,34 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       dataDir,
       server: syncServer,
       version: app.getVersion(),
-      keychain: safeStorage,
+      // Every copy of Factwright on this computer shares one keychain item, which locks every
+      // profile's sync keys. So a driven copy gets no keychain, wherever its data folder is: sync
+      // can't turn on in it, and keys in its folder, even ones copied or linked from the user's
+      // own, stay locked and as they are.
+      keychain: driven ? NO_KEYCHAIN : safeStorage,
       tracker,
       workspace,
       openUrl: (url) => shell.openExternal(url),
       onStatus: (status) => {
-        toWindow('sync:status', status);
+        window.send('sync:status', status);
         // Which account this profile syncs with, so no other profile here signs in to it.
         if (status.state === 'off') profiles.noteSync(null);
         else if ('email' in status && status.email) profiles.noteSync(status.email);
       },
       onApprovals: (view) => {
-        toWindow('sync:approvals', view);
-        notifyOfRequests(view.requests, {
-          focused: () => !window.isDestroyed() && window.isFocused(),
-          show: () => {
-            // On a Mac the window may be closed, with the app still running.
-            if (window.isDestroyed()) {
-              window = createMainWindow(startUrl);
-              stopWithWindow(window);
-              return;
-            }
-            if (window.isMinimized()) window.restore();
-            window.focus();
-          },
-        });
+        window.send('sync:approvals', view);
+        notifyOfRequests(view.requests, window);
       },
       otherProfiles: () => profiles.otherSyncAccounts(),
       // Changes from other devices: read the workspace again, and show the new list.
-      onApplied: () => toWindow('jobs:changed', jobs.read()),
+      onApplied: () => window.send('jobs:changed', jobs.read()),
     });
     const jobs = new JobsService({
       workspace,
       tracker,
       trash: (path) => shell.trashItem(path),
       onChange: (list) => {
-        toWindow('jobs:changed', list);
+        window.send('jobs:changed', list);
         sync.requestSync();
       },
     });
@@ -258,10 +264,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     });
     await server.start();
 
-    let window = createMainWindow(startUrl);
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.
-    window.once('ready-to-show', () => profiles.started());
+    window.open().once('ready-to-show', () => profiles.started());
     app.on('browser-window-focus', () => profiles.started());
     jobs.watch();
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
@@ -269,7 +274,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const stopWatchingProfile = watchWorkspace(
       workspace,
       () => {
-        toWindow('about:changed', about.profile());
+        window.send('about:changed', about.profile());
       },
       500,
     );
@@ -278,16 +283,16 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       pluginDir: pluginDir(),
       server,
       dark: () => nativeTheme.shouldUseDarkColors,
-      onOutput: (data) => toWindow('claude:output', data),
+      onOutput: (data) => window.send('claude:output', data),
       onSignal: (signal) => {
-        toWindow('claude:signal', signal);
+        window.send('claude:signal', signal);
         notifyIfAway(window, signal);
       },
       onTrust: () => {
-        toWindow('claude:trust');
+        window.send('claude:trust');
         notifyIfAway(window, 'needs-answer');
       },
-      onFiled: (filed) => toWindow('facts:filed', filed),
+      onFiled: (filed) => window.send('facts:filed', filed),
     });
     // Claude Code updates itself, so each new version gets a check, hidden, that uses no plan.
     const setup = new SetupChecker({
@@ -306,7 +311,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           server,
           signal,
         }),
-      onChange: (check) => toWindow('setup:checked', check),
+      onChange: (check) => window.send('setup:checked', check),
       busy: () => claude.busy(),
       // The end-to-end tests set a shorter wait, to see the check finish.
       ...(process.env.FACTWRIGHT_SETUP_WAIT_MS && {
@@ -325,7 +330,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
             updater: autoUpdater,
             macInstaller: process.platform === 'darwin' ? macInstaller : null,
             busy: () => claude.busy(),
-            onStatus: (status) => toWindow('updates:changed', status),
+            onStatus: (status) => window.send('updates:changed', status),
             // Updates are the app's, not a profile's, so their log is in the app's own folder.
             log: (message) => logUpdate(home, message),
           })
@@ -355,9 +360,6 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     });
     void sync.start();
 
-    // A run belongs to its window, so closing the window or quitting stops it.
-    const stopWithWindow = (opened: BrowserWindow) => opened.on('closed', () => claude.stop());
-    stopWithWindow(window);
     // A request to link this computer is called off before the app goes, so it doesn't wait on
     // the other devices. Quitting waits for that once, for a moment at most.
     let calledOff = false;
@@ -381,15 +383,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     });
     app.on('quit', () => tracker.close());
 
-    app.on('second-instance', () => {
-      if (window.isMinimized()) window.restore();
-      window.focus();
-    });
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length > 0) return;
-      window = createMainWindow(startUrl);
-      stopWithWindow(window);
-    });
+    // Opening the app again brings its window forward. On a Mac, where the app keeps running with
+    // its window closed, that opens it again, and so does clicking the Dock: the hidden window
+    // resumes print in doesn't count as one that's open.
+    app.on('second-instance', () => window.show());
+    app.on('activate', () => window.open());
   });
 
   app.on('window-all-closed', () => {

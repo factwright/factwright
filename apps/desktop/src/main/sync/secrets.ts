@@ -8,6 +8,23 @@ export interface Keychain {
   decryptString(locked: Buffer): string;
 }
 
+/** What sync says when there's no keychain to lock its secrets with. */
+export const NO_KEYCHAIN_MESSAGE = 'This computer’s keychain isn’t available.';
+
+/**
+ * No keychain at all, for a copy of the app that mustn't reach the system's: sync can't turn on,
+ * and secrets kept in its data folder stay locked.
+ */
+export const NO_KEYCHAIN: Keychain = {
+  isEncryptionAvailable: () => false,
+  encryptString: () => {
+    throw new Error(NO_KEYCHAIN_MESSAGE);
+  },
+  decryptString: () => {
+    throw new Error(NO_KEYCHAIN_MESSAGE);
+  },
+};
+
 /** What sync keeps secret on this computer. */
 export type SecretName = 'session' | 'accountKey';
 
@@ -60,7 +77,7 @@ export class Secrets {
   }
 
   set(name: SecretName, value: string): void {
-    if (!this.available()) throw new Error('This computer’s keychain isn’t available.');
+    if (!this.available()) throw new Error(NO_KEYCHAIN_MESSAGE);
     const locked = this.keychain.encryptString(value).toString('base64');
     this.write({ ...this.read(), [name]: locked });
   }

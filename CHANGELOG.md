@@ -4,6 +4,10 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Fixed
+- On a Mac, Factwright's window comes back after you close it, from the Dock or by opening the app again, even once the app has made a resume, a cover letter or a template's preview, where before nothing happened, and from one of its notifications, where before that showed an error. On Windows, closing the window quits Factwright even once it has made one of those: before, it kept running unseen, and opening it again showed an error.
+- An installed copy of Factwright started with a debugging port, as its tests are, never uses the keychain, which every copy on a computer shares. Sync can't turn on in it, and sync's keys in its data folder, even ones copied or linked from your own, stay locked and as they are. Before, it used the keychain like any other copy.
+
 ## 0.5.0 - 2026-10-16
 
 ### Added

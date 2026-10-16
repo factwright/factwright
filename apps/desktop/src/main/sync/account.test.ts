@@ -1,10 +1,12 @@
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { SyncStatus } from '../../shared/sync.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import { SyncAccount } from './account.ts';
-import { Secrets } from './secrets.ts';
+import { NO_KEYCHAIN, NO_KEYCHAIN_MESSAGE, Secrets } from './secrets.ts';
 
 // Each test signs in and syncs for real, against the server running locally.
 vi.setConfig({ testTimeout: 30_000 });
@@ -318,6 +320,85 @@ describe('a copy built without a sync server', () => {
     expect(readFileSync(secrets, 'utf8')).toBe(kept);
     expect(['keyId', 'account'].map((key) => syncMeta(mac.dataDir, key))).toEqual(known);
     // The copy with the server picks sync up where it left off.
+    const again = computer('Sam’s Mac', mac.dataDir);
+    await again.sync.start();
+    expect(again.sync.status()).toMatchObject({ state: 'on', email: person.email });
+  });
+});
+
+// An installed copy that another program drives through Chromium's debugging port, as tests do,
+// gets no keychain, since every copy on a computer shares one.
+describe('a copy without the keychain', () => {
+  const refused = { ok: false, message: NO_KEYCHAIN_MESSAGE };
+
+  /** The app with no keychain, on a data folder of its own, noting what it asks the server. */
+  function withoutKeychain(dataDir: string) {
+    folders.push(dataDir);
+    const asked: string[] = [];
+    const openUrl = vi.fn();
+    const sync = new SyncAccount({
+      dataDir,
+      server: server.url.toString(),
+      version: '0.0.0',
+      keychain: NO_KEYCHAIN,
+      tracker: new Tracker(join(dataDir, 'tracker.db')),
+      workspace: join(dataDir, 'workspace'),
+      openUrl,
+      onStatus: () => {},
+      onApplied: vi.fn(),
+      computerName: async () => 'Sam’s Mac',
+      sleep: async () => {},
+      fetch: async (input, init) => {
+        asked.push(String(input));
+        return fetch(input, init);
+      },
+    });
+    opened.push(sync);
+    return { sync, asked, openUrl };
+  }
+
+  it('can’t turn on, and never asks the server', async () => {
+    const { sync, asked, openUrl } = withoutKeychain(
+      mkdtempSync(join(tmpdir(), 'factwright-account-')),
+    );
+    await sync.start();
+    expect(sync.status()).toEqual({ state: 'off' });
+    expect(await sync.signInWithBrowser()).toEqual(refused);
+    expect(sync.status()).toEqual({ state: 'unavailable' });
+    expect(asked).toEqual([]);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  // Such as a copy started for a test on a folder that has the user's sync folder in it.
+  it('leaves keys copied or linked into its folder locked, and as they are', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpFirst(mac);
+    await mac.synced();
+    await mac.sync.stop();
+    const secrets = join(mac.dataDir, 'sync', 'secrets.json');
+    const kept = readFileSync(secrets, 'utf8');
+    const put = [
+      (into: string) => copyFileSync(secrets, into),
+      (into: string) => symlinkSync(secrets, into),
+    ];
+    for (const putIn of put) {
+      const dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-'));
+      mkdirSync(join(dataDir, 'sync'));
+      putIn(join(dataDir, 'sync', 'secrets.json'));
+      const { sync, asked, openUrl } = withoutKeychain(dataDir);
+      await sync.start();
+      expect(sync.status()).toEqual({ state: 'unavailable' });
+      expect(await sync.signInWithBrowser()).toEqual(refused);
+      expect(await sync.useDifferentAccount()).toEqual(refused);
+      expect(await sync.signOut()).toEqual(refused);
+      expect(sync.status()).toEqual({ state: 'unavailable' });
+      await sync.stop();
+      expect(asked).toEqual([]);
+      expect(openUrl).not.toHaveBeenCalled();
+      expect(readFileSync(join(dataDir, 'sync', 'secrets.json'), 'utf8')).toBe(kept);
+    }
+    expect(readFileSync(secrets, 'utf8')).toBe(kept);
+    // The computer whose keys they are carries on syncing with them.
     const again = computer('Sam’s Mac', mac.dataDir);
     await again.sync.start();
     expect(again.sync.status()).toMatchObject({ state: 'on', email: person.email });
