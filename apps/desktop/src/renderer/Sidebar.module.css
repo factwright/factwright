@@ -37,8 +37,8 @@
   gap: 2px;
 }
 
-/* Opens Steve's Buy Me a Coffee page in the user's browser: always there, never in the way. */
-.support {
+/* Opens a page on the web in the user's browser: always there, never in the way. */
+.link {
   display: flex;
   align-items: center;
   gap: var(--fw-space-2);
@@ -51,14 +51,18 @@
   text-decoration: none;
 }
 
-.support svg {
+.link svg {
   flex: none;
-  color: var(--fw-tone-purple-fg);
 }
 
-.support:hover {
+.link:hover {
   background: var(--fw-hover);
   color: var(--fw-text);
+}
+
+/* Steve's Buy Me a Coffee page, behind a heart that fills in on hover. */
+.support svg {
+  color: var(--fw-tone-purple-fg);
 }
 
 .support:hover svg {

@@ -285,8 +285,30 @@ img {
   gap: 8px;
 }
 
-.header-cta {
+.header-cta,
+.header-ext-short {
   display: none;
+}
+
+/* In a narrower header, the browser extension's button says just "Extension", to fit beside the page's links. */
+@media (max-width: 1100px) {
+  .header-ext-long {
+    display: none;
+  }
+
+  .header-ext-short {
+    display: inline;
+  }
+}
+
+/*
+ * Narrower still, the page's links need the room, so the extension is left to the page's own
+ * links to it. It's for a computer's browser, which is rarely this narrow.
+ */
+@media (max-width: 1023px) {
+  .header-ext {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {

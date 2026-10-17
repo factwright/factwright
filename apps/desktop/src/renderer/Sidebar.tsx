@@ -1,5 +1,6 @@
+import { EXTENSION_URL } from '@factwright/core';
 import { NavItem } from '@factwright/ui';
-import { BookCheck, Briefcase, Heart, UserRound } from 'lucide-react';
+import { BookCheck, Briefcase, Heart, Puzzle, UserRound } from 'lucide-react';
 import type { SetupCheck } from '../shared/api.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import type { AskingView, RequestView, SyncStatus } from '../shared/sync.ts';
@@ -21,8 +22,8 @@ const COFFEE_URL = 'https://buymeacoffee.com/stevehillyer';
 
 /**
  * The sidebar: the open profile when there's more than one, the app's places, then an update when
- * there's one, sync, the user's Claude and the levels it runs at, a way to support Factwright, and
- * Factwright's version, so an update shows it landed.
+ * there's one, sync, the user's Claude and the levels it runs at, the browser extension, a way to
+ * support Factwright, and Factwright's version, so an update shows it landed.
  */
 export function Sidebar({
   profiles,
@@ -151,7 +152,19 @@ export function Sidebar({
           )}
         </div>
         <div className={styles.footer}>
-          <a className={styles.support} href={COFFEE_URL} target="_blank" rel="noreferrer">
+          {/* The extension saves through sync, which a copy built without a sync server can't do. */}
+          {sync !== 'checking' && sync.state !== 'no-server' && (
+            <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+              <Puzzle size={14} aria-hidden="true" />
+              Browser extension
+            </a>
+          )}
+          <a
+            className={`${styles.link} ${styles.support}`}
+            href={COFFEE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
             <Heart size={14} aria-hidden="true" />
             Support Factwright
           </a>
