@@ -36,8 +36,12 @@ const UNREAD: Record<Exclude<Unread, null>, string> = {
 /** The most of the posting the popup shows, to check it's the posting. */
 const PREVIEW = 1500;
 
-const openSetup = () => {
-  void ext.tabs.create({ url: ext.runtime.getURL('setup.html') });
+/** Opens the setup page, or brings it forward if it's open, as the background does. */
+const openSetup = async () => {
+  const url = ext.runtime.getURL('setup.html');
+  const [open] = await ext.tabs.query({ url });
+  if (open?.id !== undefined) await ext.tabs.update(open.id, { active: true });
+  else await ext.tabs.create({ url });
   window.close();
 };
 
@@ -60,7 +64,11 @@ function notSetUp(): void {
       {},
       'Save jobs to your Factwright job hunt from any page you’re on, with the posting as you see it.',
     ),
-    h('div', { class: 'actions' }, button('Set up', openSetup, true)),
+    h(
+      'div',
+      { class: 'actions' },
+      button('Set up', () => void openSetup(), true),
+    ),
   );
 }
 
@@ -72,7 +80,11 @@ function message(text: string, ...more: Child[]): void {
 function noAccess(server: string): void {
   message(
     `The browser doesn’t let Save to Factwright reach ${serverName(server)}, so it can’t save jobs.`,
-    h('div', { class: 'actions' }, button('Allow it in setup', openSetup, true)),
+    h(
+      'div',
+      { class: 'actions' },
+      button('Allow it in setup', () => void openSetup(), true),
+    ),
   );
 }
 
@@ -279,7 +291,11 @@ function done(
   if (result.reason === 'signed-out') {
     message(
       'Save to Factwright isn’t signed in anymore.',
-      h('div', { class: 'actions' }, button('Set it up again', openSetup, true)),
+      h(
+        'div',
+        { class: 'actions' },
+        button('Set it up again', () => void openSetup(), true),
+      ),
     );
     return;
   }

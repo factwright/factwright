@@ -291,13 +291,17 @@ try {
     await setup.getByText('doesn’t answer as a Factwright sync server').waitFor();
     check(typo.requests() === 1, 'checks your own server is a Factwright sync server first');
     await shoot(setup, '3-not-sync');
+    // Every tab that opens, to show none does. A tab at an address that goes nowhere soon shows
+    // an error page instead, so it's counted as it opens, not checked by its address after.
+    const opened: string[] = [];
+    const onTab = (tab: Page) => opened.push(tab.url());
+    context.on('page', onTab);
     await setup.locator('#server').fill(moved.url.origin);
     await setup.getByRole('button', { name: 'Sign in to sync' }).click();
     await setup.getByText('sends its sign-in to another address, sync.example.com').waitFor();
-    check(
-      context.pages().every((page) => new URL(page.url()).hostname !== 'sync.example.com'),
-      'never opens a sign-in page at another address than your server’s',
-    );
+    await pause(1000);
+    context.off('page', onTab);
+    check(opened.length === 0, 'never opens a sign-in page at another address than your server’s');
     await signIn(setup, origin, sam.token, true);
     const devices = (await sam.client.account()).devices.map((device) => device.name);
     check(devices.includes('Save to Factwright in Chrome on Mac'), 'signs in under its own name');

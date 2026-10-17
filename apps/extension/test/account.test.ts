@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { allowSync, canReachSync, reachOnly, readAccount } from '../src/account.ts';
+import { allowSync, canReachSync, giveBack, reachOnly, readAccount } from '../src/account.ts';
 import { hostPattern } from '../src/manifest.ts';
 import { DEFAULT_SERVER } from '../src/server.ts';
 
@@ -127,5 +127,42 @@ describe('reaching only the server it’s signed in to', () => {
   it('carries on when the browser can’t say what it has', async () => {
     browser.answers.fails = true;
     await expect(reachOnly(null)).resolves.toBeUndefined();
+  });
+
+  it('never gives back a wildcard you allowed yourself, which Firefox reaches your server through', async () => {
+    const wildcards = ['https://*/*', 'https://*.workers.dev/*', '<all_urls>'];
+    for (const site of [...wildcards, ...STRAYS]) browser.granted.add(site);
+    await reachOnly(OWN);
+    expect([...browser.granted].sort()).toEqual([BUILT_FOR, ...wildcards].sort());
+  });
+});
+
+describe('giving back a server where signing in failed', () => {
+  it('gives back that server’s site alone', async () => {
+    browser.granted.add(OWN_SITE);
+    browser.granted.add('https://other-sync.example.org/*');
+    await giveBack(OWN, null);
+    expect([...browser.granted].sort()).toEqual(
+      [BUILT_FOR, 'https://other-sync.example.org/*'].sort(),
+    );
+  });
+
+  it('keeps it while the extension is signed in there, as when signing in again failed', async () => {
+    browser.granted.add(OWN_SITE);
+    await giveBack(OWN, OWN);
+    await giveBack(OWN, 'https://factwright-sync.sam.workers.dev');
+    expect(browser.granted.has(OWN_SITE)).toBe(true);
+    expect(browser.calls).toEqual([]);
+  });
+
+  it('keeps the one it’s built for, which its manifest asks for', async () => {
+    await giveBack(DEFAULT_SERVER, null);
+    expect(browser.granted.has(BUILT_FOR)).toBe(true);
+    expect(browser.calls).toEqual([]);
+  });
+
+  it('carries on when the browser won’t give it back', async () => {
+    browser.answers.fails = true;
+    await expect(giveBack(OWN, null)).resolves.toBeUndefined();
   });
 });

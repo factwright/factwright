@@ -107,11 +107,27 @@ export const allowSync = (server: string): Promise<boolean> =>
   ext.permissions.request(siteOf(server)).catch(() => false);
 
 /**
+ * One server's site, as setup asks for it: never a wildcard, such as all https sites, which only
+ * you can allow, in the browser's own settings. Firefox then lets the extension reach your server
+ * through it, without a site of its own, so it's never given back.
+ */
+const ONE_SITE = /^https?:\/\/[^/*]+\/\*$/;
+
+/** Gives back a site, if the browser will. */
+async function giveBackSite(site: string): Promise<void> {
+  try {
+    await ext.permissions.remove({ origins: [site] });
+  } catch {
+    // Not one it can give back, such as one the browser grants on its own.
+  }
+}
+
+/**
  * Gives back the browser's permission for each server of your own the extension isn't signed in
- * to: one it asked for while setting up, where the sign-in didn't finish, or one it used before
- * signing out. It keeps the server its sign-in is for, if it has one, and the one it was built
- * for, which its manifest asks for. Each is given back on its own, so one the browser won't give
- * back stops none of the others.
+ * to, once its account changes: one it signed out of, or one a sign-in elsewhere asked for. It
+ * keeps the server its sign-in is for, if it has one, and the one it was built for, which its
+ * manifest asks for. Each is given back on its own, so one the browser won't give back stops none
+ * of the others.
  */
 export async function reachOnly(server: string | null): Promise<void> {
   const keep = new Set([DEFAULT_SERVER, ...(server ? [server] : [])].map(hostPattern));
@@ -122,16 +138,18 @@ export async function reachOnly(server: string | null): Promise<void> {
     return;
   }
   await Promise.all(
-    granted
-      .filter((origin) => !keep.has(origin))
-      .map(async (origin) => {
-        try {
-          await ext.permissions.remove({ origins: [origin] });
-        } catch {
-          // Not one it can give back, such as one the browser grants on its own.
-        }
-      }),
+    granted.filter((site) => ONE_SITE.test(site) && !keep.has(site)).map(giveBackSite),
   );
+}
+
+/**
+ * Gives back the browser's permission for a server setup asked for, once signing in there failed
+ * or was canceled, unless the extension is signed in there already (`signedInTo`), or was built
+ * for it. A sign-in in another setup tab keeps what it asked for.
+ */
+export async function giveBack(server: string, signedInTo: string | null): Promise<void> {
+  const keep = [DEFAULT_SERVER, ...(signedInTo ? [signedInTo] : [])].map(hostPattern);
+  if (!keep.includes(hostPattern(server))) await giveBackSite(hostPattern(server));
 }
 
 /** A request to the sync server: with the extension's token, never the browser's cookies for it. */

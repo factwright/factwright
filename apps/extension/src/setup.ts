@@ -24,8 +24,8 @@ import {
   deviceSignIn,
   endSession,
   forgetAccount,
+  giveBack,
   loadAccount,
-  reachOnly,
   saveAccount,
   signOut,
   syncFetch,
@@ -144,11 +144,9 @@ interface Choice {
 
 /**
  * Setup's first page, with the sync you chose last time, or with the choice that went wrong and
- * what went wrong with it. A server of your own it asked the browser for, where signing in didn't
- * finish, is given back.
+ * what went wrong with it.
  */
 function signedOut(note?: string, choice?: Choice): void {
-  void loadAccount().then((account) => reachOnly(account?.server ?? null));
   void settings().then(({ server }) =>
     choose(choice ?? { own: isOwn(server), address: isOwn(server) ? server : '' }, note),
   );
@@ -277,6 +275,11 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     signedOut(`Save to Factwright needs to reach ${named(server)}, to save jobs.`, choice);
     return;
   }
+  /** Signing in there failed or was canceled: the browser's permission for it goes back. */
+  const failed = async (note?: string) => {
+    await giveBack(server, (await loadAccount())?.server ?? null);
+    signedOut(note, choice);
+  };
   if (isOwn(server)) {
     show(
       app,
@@ -285,11 +288,10 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     );
     const check = await checkServer(server, syncFetch);
     if (check !== 'ok') {
-      signedOut(
+      await failed(
         check === 'unreachable'
           ? `${hostOf(server)} didn’t answer. Check its address and the connection, then try again.`
           : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
-        choice,
       );
       return;
     }
@@ -300,18 +302,17 @@ async function signIn(server: string, choice: Choice): Promise<void> {
   try {
     pending = await flow.start();
   } catch (error) {
-    signedOut(reasonOf(error, server));
+    await failed(reasonOf(error, server));
     return;
   }
   // Only the server's own sign-in page, never an address it could name elsewhere.
   const at = URL.canParse(pending.url) ? new URL(pending.url) : null;
   if (at?.origin !== server) {
     flow.cancel();
-    signedOut(
+    await failed(
       at
         ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so Save to Factwright didn’t open it. Type the address Factwright on your computer uses.`
         : `${hostOf(server)} didn’t give a sign-in page Save to Factwright can open. Check its address: it’s the one Factwright on your computer uses.`,
-      choice,
     );
     return;
   }
@@ -334,7 +335,7 @@ async function signIn(server: string, choice: Choice): Promise<void> {
   page();
   const result = await flow.finish();
   if (!result.ok) {
-    signedOut(result.reason === 'canceled' ? undefined : result.message);
+    await failed(result.reason === 'canceled' ? undefined : result.message);
     return;
   }
   try {
@@ -349,7 +350,7 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     await saveAccount(account);
     void link(account);
   } catch (error) {
-    signedOut(reasonOf(error, server));
+    await failed(reasonOf(error, server));
   }
 }
 
