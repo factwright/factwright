@@ -1,4 +1,4 @@
-import type { AccountInfo } from '@factwright/sync';
+import type { AccountInfo, Legal } from '@factwright/sync';
 
 /** What sync is doing right now: syncing, done, unable to reach the server, or stuck. */
 export type SyncActivity = 'syncing' | 'idle' | 'offline' | 'problem';
@@ -13,29 +13,38 @@ export type SyncActivity = 'syncing' | 'idle' | 'offline' | 'problem';
  */
 export type SetUpAgain = 'remade' | 'changed' | 'taken';
 
+/** The sync server a sign-in is with, when it's one of your own. Factwright's own goes unnamed. */
+export interface OnServer {
+  /**
+   * The server of your own, by its address, such as "https://factwright-sync.sam.workers.dev".
+   * Missing for Factwright's own sync.
+   */
+  ownServer?: string;
+}
+
 /** Where sync stands on this computer, as the sidebar and the sync dialog show it. */
 export type SyncStatus =
   | { state: 'off' }
   /** The system's keychain can't keep secrets, so sync can't turn on here. */
   | { state: 'unavailable' }
   /**
-   * This copy was built without a sync server, as copies built from Factwright's code anywhere but
-   * its own releases are, so it can't sync.
+   * Sync here is with Factwright's own server, which this copy doesn't have, such as a copy built
+   * from Factwright's code on the data folder of one from factwright.com. It's left as it is.
    */
   | { state: 'no-server' }
   /** Waiting for the user to approve signing in, in their browser. */
-  | { state: 'signing-in'; code: string; url: string }
+  | ({ state: 'signing-in'; code: string; url: string } & OnServer)
   /**
    * Signed in, but this computer doesn't have the account key yet. The first device makes it,
    * with a recovery key; any other gets it from a device that's set up, or the recovery key.
    */
-  | {
+  | ({
       state: 'setting-up';
       email: string;
       firstDevice: boolean;
       again?: SetUpAgain;
-    }
-  | {
+    } & OnServer)
+  | ({
       state: 'on';
       email: string;
       activity: SyncActivity;
@@ -45,9 +54,26 @@ export type SyncStatus =
       message: string | null;
       /** How many files stay on this computer, too big or with a name others can't hold. */
       skipped: number;
-    }
-  /** The session ended, such as when this computer was signed out from another device. */
-  | { state: 'signed-out'; email: string };
+    } & OnServer)
+  /**
+   * The session ended, such as when this computer was signed out from another device. With a
+   * server of your own, it stays the one to sign in to again, until sync is turned off here.
+   */
+  | ({ state: 'signed-out'; email: string } & OnServer);
+
+/** What the window shows of a sync server's sign-in options. */
+export interface ServerTerms {
+  /** The terms of service and privacy policy signing in agrees to, when the server has them. */
+  legal: Legal | null;
+  /** Whether sync there is a subscription, so the window shows its price. */
+  subscription: boolean;
+}
+
+/** The page that helps with a server of your own that won't do: setting one up, or updating it. */
+export type ServerHelp = 'set-up' | 'update';
+
+/** What connecting a server of your own says, once signing in to it ends or it won't do. */
+export type ConnectResult = { ok: true } | { ok: false; message: string; help?: ServerHelp };
 
 /** A code for adding a phone or computer: a QR code's address, and the code to type. */
 export interface LinkCode {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { ApprovalsView, SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, ServerTerms, SyncStatus } from '../../shared/sync.ts';
 
 /** Where sync stands, kept up to date. "checking" until the app first says. */
 export function useSync(api: FactwrightApi): SyncStatus | 'checking' {
@@ -49,6 +49,30 @@ export function useApprovals(api: FactwrightApi): ApprovalsView {
     };
   }, [api]);
   return view;
+}
+
+/**
+ * The terms and price of the server sync is with, or of Factwright's own while it's off, as the
+ * server's sign-in options say. Null until they're known, and when the server has none. `server`
+ * names the server, so another one's are never shown: a server of your own's address, or nothing
+ * for Factwright's.
+ */
+export function useServerTerms(api: FactwrightApi, server: string | null): ServerTerms | null {
+  const [known, setKnown] = useState<{ server: string | null; terms: ServerTerms | null }>({
+    server: null,
+    terms: null,
+  });
+  useEffect(() => {
+    let live = true;
+    api.syncServerTerms().then(
+      (terms) => live && setKnown({ server, terms }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, server]);
+  return known.server === server ? known.terms : null;
 }
 
 /** "just now", "5 minutes ago", "3 hours ago" or "on Oct 12", for when something happened. */

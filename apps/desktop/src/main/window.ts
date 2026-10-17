@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { DARK, LIGHT } from '@factwright/ui/tokens';
 import { app, BrowserWindow, nativeTheme } from 'electron';
-import { VERSION_ARGUMENT } from '../shared/api.ts';
+import { SYNC_ARGUMENT, VERSION_ARGUMENT } from '../shared/api.ts';
 
 /** The height of the window's top bar, which the title bar buttons sit in. */
 const TOP_BAR_HEIGHT = 52;
@@ -12,8 +12,11 @@ const TOP_BAR_HEIGHT = 52;
  */
 export const DEV_ICON = fileURLToPath(new URL('../../build/icon.png', import.meta.url));
 
-/** Opens the app's window, locked down, in the colors of the system's light or dark setting. */
-export function createMainWindow(url: string): BrowserWindow {
+/**
+ * Opens the app's window, locked down, in the colors of the system's light or dark setting. It's
+ * told whether this copy has Factwright's own sync, to offer it.
+ */
+export function createMainWindow(url: string, factwrightSync: boolean): BrowserWindow {
   const mac = process.platform === 'darwin';
   const window = new BrowserWindow({
     width: 1280,
@@ -33,8 +36,12 @@ export function createMainWindow(url: string): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      // The window shows the app's version, which only the main process knows.
-      additionalArguments: [`${VERSION_ARGUMENT}${app.getVersion()}`],
+      // The window shows the app's version, which only the main process knows, and offers
+      // Factwright's own sync only in a copy that has it.
+      additionalArguments: [
+        `${VERSION_ARGUMENT}${app.getVersion()}`,
+        ...(factwrightSync ? [SYNC_ARGUMENT] : []),
+      ],
     },
   });
 

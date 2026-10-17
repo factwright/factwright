@@ -8,6 +8,7 @@ import {
   type Feature,
   isLinkRequest,
   type KeyRecord,
+  knownFeatures,
   type LinkRequest,
   type PushChange,
   type PushResponse,
@@ -235,8 +236,7 @@ export class SyncClient {
    */
   async features(): Promise<Feature[]> {
     const answer = await this.json<{ features?: unknown } | null>('/api/sign-in-options');
-    const features = answer?.features;
-    return Array.isArray(features) ? features.filter((each) => each === 'approve') : [];
+    return knownFeatures(answer?.features);
   }
 
   /** On a new device: asks to link, with a hash of its one-time key. */

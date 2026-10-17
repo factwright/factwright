@@ -585,7 +585,7 @@ export function sampleApi(): FactwrightApi {
     // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray,
     // and ?revised a revision sent before it was last built, for the before-and-after.
     ...sampleTracker(query.get('jobs'), query.get('resume'), query.has('revised')),
-    ...sampleSync(query.get('sync'), query.get('approve')),
+    ...sampleSync(query.get('sync'), query.get('approve'), query.get('server')),
     ...sampleProfile(query.get('profile')),
     ...facts.api,
     onFactsFiled: (listener) => {

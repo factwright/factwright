@@ -79,15 +79,15 @@ It runs on Cloudflare's free plan. The first deploy creates the database, the fi
 7. An `ADMIN_TOKEN` secret, to restore an account's store from a backup, or delete an account for someone who asked. Without it, neither works.
 
 ### Running your own
-Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one.
+Only Factwright's own releases sync through app.factwright.com. Any copy of the app, one from factwright.com or one built anywhere else, can sync through a server of your own instead.
 
 **Ready to deploy.** Within hours of each release, [github.com/factwright/sync-server](https://github.com/factwright/sync-server) has its server, with Cloudflare's Deploy button and the steps around it: a free workers.dev address, a GitHub OAuth app, and three secrets. Its own workflow makes it from that release's source with `pnpm --filter @factwright/server copy`, which you can run too, into `dist/sync-server` ([`scripts/sync-server-copy.ts`](scripts/sync-server-copy.ts)).
 
 **Or from here.** In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL` and `PRIVACY_URL` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it. Then follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
 
 **Then, either way:**
-- Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://factwright-sync.yourname.workers.dev pnpm --filter @factwright/desktop build`. The build reads it, so set it there, then make the installers as usual.
-- With no `TERMS_URL` and `PRIVACY_URL`, the web view names no terms or privacy policy. A copy of the app built this way still links to factwright.com's ([`packages/core/src/legal.ts`](../../packages/core/src/legal.ts)), which cover Neatifai's services, not yours.
+- In Factwright, choose **Turn on…** under Sync, then **Connect your server…**, and type your server's address, such as `https://factwright-sync.yourname.workers.dev`. The app checks it answers as a sync server, then signs in to it through your browser ([apps/desktop](../desktop#sync)).
+- With no `TERMS_URL` and `PRIVACY_URL`, neither the web view nor the app names any terms or privacy policy for your server. Factwright's cover Neatifai's services, not yours.
 
 ### Restoring an account
 Each store is backed up to R2 every day, and kept for 14 days. To put one back as it was on a day, with `ADMIN_TOKEN` set:

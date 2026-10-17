@@ -60,6 +60,7 @@ import { ManageProfilesDialog } from './profiles/ManageProfilesDialog.tsx';
 import { useProfiles } from './profiles/useProfiles.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
+import { extensionWorks } from './sync/servers.ts';
 import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
@@ -382,6 +383,7 @@ export function App({ api }: { api: FactwrightApi }) {
           terminal={api.platform === 'win32' ? 'PowerShell' : 'Terminal'}
           setup={setup}
           sync={sync}
+          factwrightSync={api.factwrightSync}
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
@@ -421,7 +423,7 @@ export function App({ api }: { api: FactwrightApi }) {
                   about.update({ skipped: true });
                   setPicked('jobs');
                 }}
-                // A copy built without a sync server doesn't offer it.
+                // Sync with Factwright's own server, set up by a copy that has it, isn't this one's.
                 onOpenSync={
                   sync !== 'checking' && sync.state === 'no-server' ? null : () => setDialog('sync')
                 }
@@ -537,6 +539,7 @@ export function App({ api }: { api: FactwrightApi }) {
           kinds={kinds}
           // A job added while one kind shows is that kind's, to begin with.
           kind={filter.kind}
+          extension={extensionWorks(sync, api.factwrightSync)}
           onAdded={(jobId, status, kind) => {
             // Show the new job in the list as well as the panel.
             changeFilter(filterForAdded(filter, status, kind));

@@ -62,9 +62,10 @@ const devUrl = develop('FACTWRIGHT_DEV_URL');
 const startUrl = devUrl ?? `${APP_ORIGIN}/index.html`;
 
 /**
- * The sync server: Factwright's own, built into its releases, or none in a copy built anywhere
- * else, such as from a fork, so that copy never syncs through Factwright's. Development and tests
- * point it at one, such as one running locally.
+ * Factwright's own sync server, built into its releases, or none in a copy built anywhere else,
+ * such as from a fork, so that copy never syncs through Factwright's. Development and tests point
+ * it at one, such as one running locally. A server of your own is never set here: it's typed in
+ * the sync dialog, and kept with sync's sign-in in the profile's folder (sync/account.ts).
  */
 const syncServer = develop('FACTWRIGHT_SERVER_URL') || __SYNC_SERVER__ || null;
 
@@ -192,7 +193,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     // ready for the next print: closing it there could leave a print it was doing unfinished.
     const window = new MainWindow({
       open: () => {
-        const opened = createMainWindow(startUrl);
+        const opened = createMainWindow(startUrl, syncServer !== null);
         // A page loading again can't hear a job to open until it says it's listening.
         const page = opened.webContents;
         page.on('did-start-loading', () => opener.forget(page));
@@ -253,9 +254,12 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       openUrl: (url) => shell.openExternal(url),
       onStatus: (status) => {
         window.send('sync:status', status);
-        // Which account this profile syncs with, so no other profile here signs in to it.
+        // Which account this profile syncs with, and on which server, so no other profile here
+        // signs in to it.
         if (status.state === 'off') profiles.noteSync(null);
-        else if ('email' in status && status.email) profiles.noteSync(status.email);
+        else if ('email' in status && status.email) {
+          profiles.noteSync({ email: status.email, server: status.ownServer ?? null });
+        }
       },
       onApprovals: (view) => {
         window.send('sync:approvals', view);

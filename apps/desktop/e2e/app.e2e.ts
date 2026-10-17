@@ -41,19 +41,25 @@ async function closeRun() {
 
 // The tests' build is made without FACTWRIGHT_SYNC_SERVER, as a fork's is, unless the shell that
 // runs them has one, as Factwright's own releases are built with. The browser extension saves
-// through sync, so only a copy with sync links to it.
-test('says sync isn’t in a copy built without a sync server', async () => {
-  const sync = opened.window.getByRole('region', { name: 'Sync' });
-  const extension = opened.window.getByRole('link', { name: 'Browser extension' });
+// through Factwright's sync, so only a copy with it links to it.
+test('offers only a server of your own in a copy built without Factwright’s sync', async () => {
+  const { window } = opened;
+  const sync = window.getByRole('region', { name: 'Sync' });
+  const extension = window.getByRole('link', { name: 'Browser extension' });
+  await sync.getByRole('button', { name: 'Turn on…' }).click();
+  const own = window.getByRole('region', { name: 'Your own server' });
+  await expect(own.getByRole('button', { name: 'Connect your server…' })).toBeVisible();
+  const factwright = window.getByRole('region', { name: 'Factwright’s sync' });
   if (process.env.FACTWRIGHT_SYNC_SERVER) {
-    await expect(sync.getByRole('button', { name: 'Turn on…' })).toBeVisible();
+    await expect(factwright).toBeVisible();
     // Not clicked: it would open factwright.com in the browser of whoever runs the tests.
     await expect(extension).toHaveAttribute('href', 'https://factwright.com/extension');
   } else {
-    await expect(sync.getByText('Not in this copy')).toBeVisible();
-    await expect(sync.getByRole('button')).toHaveCount(0);
+    await expect(factwright).toHaveCount(0);
     await expect(extension).toHaveCount(0);
   }
+  await window.getByRole('button', { name: 'Not now' }).click();
+  await expect(window.getByRole('dialog')).toHaveCount(0);
 });
 
 test('shows the jobs on file, your Claude ready, a way to support Factwright, and its version', async () => {

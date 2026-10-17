@@ -1,12 +1,15 @@
 import { type AccountInfo, readLinkCode, readRecoveryKey } from '@factwright/sync';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { ApprovalsView, RequestView, SyncStatus } from '../../shared/sync.ts';
+import type { ApprovalsView, RequestView, ServerTerms, SyncStatus } from '../../shared/sync.ts';
 
 type SyncApi = Pick<
   FactwrightApi,
+  | 'factwrightSync'
   | 'syncStatus'
   | 'onSyncStatus'
   | 'signInToSync'
+  | 'connectSyncServer'
+  | 'syncServerTerms'
   | 'cancelSyncSignIn'
   | 'makeRecoveryKey'
   | 'turnOnSync'
@@ -32,6 +35,16 @@ type SyncApi = Pick<
 >;
 
 const EMAIL = 'sam.rivera@example.com';
+
+/** A server of Sam's own, at a free workers.dev address. */
+const OWN_SERVER = 'https://factwright-sync.sam.workers.dev';
+
+/** Factwright's own server's terms, and a server of your own's, which has none. */
+const FACTWRIGHT_TERMS: ServerTerms = {
+  legal: { terms: 'https://factwright.com/terms', privacy: 'https://factwright.com/privacy' },
+  subscription: false,
+};
+const OWN_TERMS: ServerTerms = { legal: null, subscription: false };
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
 const ON: Extract<SyncStatus, { state: 'on' }> = {
@@ -43,16 +56,18 @@ const ON: Extract<SyncStatus, { state: 'on' }> = {
   skipped: 0,
 };
 
+const SIGNING_IN: Extract<SyncStatus, { state: 'signing-in' }> = {
+  state: 'signing-in',
+  code: 'WDJB-MJHT',
+  url: 'https://app.factwright.com/device?user_code=WDJBMJHT',
+};
+
 /** Where sync starts for ?sync=, to see each state. Off, unless asked. */
 const STARTS: Readonly<Record<string, SyncStatus>> = {
   off: { state: 'off' },
   unavailable: { state: 'unavailable' },
   'no-server': { state: 'no-server' },
-  'signing-in': {
-    state: 'signing-in',
-    code: 'WDJB-MJHT',
-    url: 'https://app.factwright.com/device?user_code=WDJBMJHT',
-  },
+  'signing-in': SIGNING_IN,
   first: { state: 'setting-up', email: EMAIL, firstDevice: true },
   link: { state: 'setting-up', email: EMAIL, firstDevice: false },
   remade: { state: 'setting-up', email: EMAIL, firstDevice: true, again: 'remade' },
@@ -123,17 +138,59 @@ const ANOTHER: RequestView = {
 
 const APPROVER = 'Factwright on Sam’s MacBook Pro';
 
+/** Whether a status is with a server of your own, as the app names it. */
+const ownServerOf = (status: SyncStatus) => ('ownServer' in status ? status.ownServer : undefined);
+
+/** A status with a server of your own, for the steps that name one. */
+function onOwn(status: SyncStatus, own: string): SyncStatus {
+  return status.state === 'off' || status.state === 'unavailable' || status.state === 'no-server'
+    ? status
+    : { ...status, ownServer: own };
+}
+
+/** What a server of your own's address in the preview says, as the app would check it. */
+function readSample(typed: string): { server: string } | { message: string; help?: 'update' } {
+  const text = typed.trim();
+  if (!text) return { message: 'Type your server’s address.' };
+  let url: URL;
+  try {
+    url = new URL(text.includes('://') ? text : `https://${text}`);
+  } catch {
+    return {
+      message: 'That isn’t an address. It looks like https://factwright-sync.yourname.workers.dev.',
+    };
+  }
+  if (url.protocol !== 'https:')
+    return { message: 'Use your server’s address that starts with https://.' };
+  // Any address starting "old." is a server from before approving devices.
+  if (url.hostname.startsWith('old.')) {
+    return {
+      message: 'Your server needs an update for this version of Factwright.',
+      help: 'update',
+    };
+  }
+  return { server: url.origin };
+}
+
 /**
  * Sync for the screens preview, made up. ?sync= picks where it starts. Turning it on plays
  * through signing in (?sync=link for a second computer), and the rest answers as the app would.
  * ?approve= picks how linking by approval starts: "request" for another device asking to link
  * once sync is on, "two" for two at once, "check" to start at the emoji (asking or approving, by
  * ?sync=), "quiet" for asking with no device ever offering, "stale" for a computer that signed in
- * too long ago to ask, or "old" for a server that can't approve devices yet.
+ * too long ago to ask, or "old" for a server that can't approve devices yet. ?server= picks the
+ * server: "own" for sync with a server of your own, "own-only" for a copy without Factwright's
+ * sync, or "priced" for Factwright's once it says sync there is a subscription.
  */
-export function sampleSync(start: string | null, approve: string | null = null): SyncApi {
+export function sampleSync(
+  start: string | null,
+  approve: string | null = null,
+  server: string | null = null,
+): SyncApi {
   const listeners = new Set<(status: SyncStatus) => void>();
-  let status = STARTS[start ?? 'off'] ?? { state: 'off' };
+  const begun = STARTS[start ?? 'off'] ?? { state: 'off' };
+  let status = server === 'own' ? onOwn(begun, OWN_SERVER) : begun;
+  const factwrightTerms = { ...FACTWRIGHT_TERMS, subscription: server === 'priced' };
   let devices = ACCOUNT.devices;
   const set = (next: SyncStatus) => {
     status = next;
@@ -155,44 +212,81 @@ export function sampleSync(start: string | null, approve: string | null = null):
     for (const viewer of viewers) viewer(approvals);
   };
   const offered = { step: 'check', approver: APPROVER, check: CHECK, confirmed: false } as const;
+  /** Signs in through the made-up browser, to Factwright's own or a server of your own. */
+  const signIn = (
+    own: string | undefined,
+  ): Promise<{ ok: true } | { ok: false; message: string }> =>
+    new Promise((resolve) => {
+      set(
+        own ? onOwn({ ...SIGNING_IN, url: `${own}/device?user_code=WDJBMJHT` }, own) : SIGNING_IN,
+      );
+      setTimeout(() => {
+        if (status.state !== 'signing-in')
+          return resolve({ ok: false, message: 'Signing in was canceled.' });
+        const next: SyncStatus = {
+          state: 'setting-up',
+          email: EMAIL,
+          firstDevice: start !== 'link',
+        };
+        set(own ? onOwn(next, own) : next);
+        resolve({ ok: true });
+      }, 2500);
+    });
+  // Counts tries at connecting, as the app does, so going back calls one off.
+  let attempts = 0;
+  /** Where the made-up sync goes on, keeping the server it's with. */
+  const keep = (next: SyncStatus) => {
+    const own = ownServerOf(status);
+    set(own ? onOwn(next, own) : next);
+  };
   return {
+    factwrightSync: server !== 'own-only',
     syncStatus: async () => status,
     onSyncStatus: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    signInToSync: () =>
-      new Promise((resolve) => {
-        const signingIn = STARTS['signing-in'];
-        if (signingIn) set(signingIn);
-        setTimeout(() => {
-          if (status.state !== 'signing-in')
-            return resolve({ ok: false, message: 'Signing in was canceled.' });
-          set({ state: 'setting-up', email: EMAIL, firstDevice: start !== 'link' });
-          resolve({ ok: true });
-        }, 2500);
-      }),
-    cancelSyncSignIn: () => set({ state: 'off' }),
+    signInToSync: () => {
+      attempts++;
+      return signIn(ownServerOf(status));
+    },
+    connectSyncServer: async (address) => {
+      const read = readSample(address);
+      if ('message' in read) return { ok: false, ...read };
+      // Checking the server takes a moment.
+      const attempt = ++attempts;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      if (attempt !== attempts) return { ok: false, message: 'Signing in was canceled.' };
+      return signIn(read.server);
+    },
+    syncServerTerms: async () => {
+      if (ownServerOf(status)) return OWN_TERMS;
+      return server === 'own-only' ? null : factwrightTerms;
+    },
+    cancelSyncSignIn: () => {
+      attempts++;
+      set({ state: 'off' });
+    },
     makeRecoveryKey: async () => ({
       ok: true,
       recoveryKey: '7KQ2-M9XD-4RTB-HP0E-WN3C-8YVA-G5KS-21FJ',
     }),
     turnOnSync: async () => {
-      set(ON);
+      keep(ON);
       return { ok: true };
     },
     linkWithCode: async (code) => {
       if (!readLinkCode(code)) {
         return { ok: false, message: 'That isn’t a link code. It’s 32 letters and numbers.' };
       }
-      set(ON);
+      keep(ON);
       return { ok: true };
     },
     useRecoveryKey: async (key) => {
       if (!readRecoveryKey(key)) {
         return { ok: false, message: 'That isn’t a recovery key. It’s 32 letters and numbers.' };
       }
-      set(ON);
+      keep(ON);
       return { ok: true };
     },
     makeLinkCode: async () => ({
@@ -208,7 +302,7 @@ export function sampleSync(start: string | null, approve: string | null = null):
     syncNow: () => {
       if (status.state !== 'on') return;
       set({ ...status, activity: 'syncing' });
-      setTimeout(() => set({ ...ON, lastSynced: new Date().toISOString() }), 1200);
+      setTimeout(() => keep({ ...ON, lastSynced: new Date().toISOString() }), 1200);
     },
     syncAccount: async () => ({ ok: true, account: { ...ACCOUNT, devices } }),
     removeSyncDevice: async (id) => {
@@ -219,8 +313,10 @@ export function sampleSync(start: string | null, approve: string | null = null):
       set({ state: 'off' });
       return { ok: true };
     },
+    // A server of your own stays the one to sign in to again.
     useDifferentSyncAccount: async () => {
-      set({ state: 'off' });
+      const own = ownServerOf(status);
+      set(own ? onOwn({ state: 'signed-out', email: EMAIL }, own) : { state: 'off' });
       return { ok: true };
     },
     openAccountPage: async () => {},
@@ -262,7 +358,7 @@ export function sampleSync(start: string | null, approve: string | null = null):
       show({ asking: { ...approvals.asking, confirmed: true } });
       setTimeout(() => {
         show({ asking: null });
-        set(ON);
+        keep(ON);
       }, 2500);
     },
     approveLinkRequest: async (id) => {

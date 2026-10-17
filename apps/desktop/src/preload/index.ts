@@ -1,5 +1,5 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from 'electron';
-import { type FactwrightApi, VERSION_ARGUMENT } from '../shared/api.ts';
+import { type FactwrightApi, SYNC_ARGUMENT, VERSION_ARGUMENT } from '../shared/api.ts';
 
 // The window's only way to reach the main process. Each call maps to one checked handler.
 const api: FactwrightApi = {
@@ -7,6 +7,7 @@ const api: FactwrightApi = {
   version:
     process.argv.find((arg) => arg.startsWith(VERSION_ARGUMENT))?.slice(VERSION_ARGUMENT.length) ??
     '',
+  factwrightSync: process.argv.includes(SYNC_ARGUMENT),
   claudeStatus: () => ipcRenderer.invoke('claude:status'),
   setupCheck: () => ipcRenderer.invoke('setup:latest'),
   checkSetup: () => ipcRenderer.invoke('setup:check'),
@@ -73,6 +74,8 @@ const api: FactwrightApi = {
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   onSyncStatus: (listener) => subscribe('sync:status', listener),
   signInToSync: () => ipcRenderer.invoke('sync:sign-in'),
+  connectSyncServer: (address) => ipcRenderer.invoke('sync:connect', address),
+  syncServerTerms: () => ipcRenderer.invoke('sync:server-terms'),
   cancelSyncSignIn: () => ipcRenderer.send('sync:cancel-sign-in'),
   makeRecoveryKey: () => ipcRenderer.invoke('sync:recovery-key'),
   turnOnSync: () => ipcRenderer.invoke('sync:turn-on'),

@@ -25,13 +25,18 @@ export const NO_KEYCHAIN: Keychain = {
   },
 };
 
-/** What sync keeps secret on this computer. */
-export type SecretName = 'session' | 'accountKey';
+/**
+ * What sync keeps secret on this computer: the sign-in and the account key. Factwright's own
+ * server's are `session`, its session token, and `accountKey`, as before there were others. A
+ * server of your own's are kept apart, as `ownSession`, with that server's address locked in with
+ * its token, and `ownAccountKey` (see account.ts).
+ */
+export type SecretName = 'session' | 'accountKey' | 'ownSession' | 'ownAccountKey';
 
 /**
- * Sync's secrets on this computer: the session token and the account key. Each is locked with
- * the system's keychain (the Keychain on a Mac, data protection on Windows) before it's written
- * to a file in the app's data folder, so the file alone opens nothing.
+ * Sync's secrets on this computer: the sign-in and the account key. Each is locked with the
+ * system's keychain (the Keychain on a Mac, data protection on Windows) before it's written to a
+ * file in the app's data folder, so the file alone opens nothing.
  */
 export class Secrets {
   private readonly file: string;
@@ -45,6 +50,11 @@ export class Secrets {
   /** Whether sync has kept anything here, without asking the keychain. */
   exists(): boolean {
     return existsSync(this.file);
+  }
+
+  /** Whether a secret is kept, without asking the keychain. */
+  has(name: SecretName): boolean {
+    return typeof this.read()[name] === 'string';
   }
 
   /** Whether the keychain can lock secrets here. Without it, sync stays off. */

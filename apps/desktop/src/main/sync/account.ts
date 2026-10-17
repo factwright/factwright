@@ -25,8 +25,10 @@ import type { EditResult } from '../../shared/api.ts';
 import type {
   AccountResult,
   ApprovalsView,
+  ConnectResult,
   LinkCodeResult,
   RecoveryKeyResult,
+  ServerTerms,
   SyncStatus,
 } from '../../shared/sync.ts';
 import type { Tracker } from '../jobs/tracker.ts';
@@ -36,14 +38,22 @@ import { SyncEngine } from './engine.ts';
 import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
 import { SyncRunner } from './runner.ts';
 import { type Keychain, NO_KEYCHAIN_MESSAGE, Secrets } from './secrets.ts';
+import {
+  askSignInOptions,
+  checkServer,
+  readServerAddress,
+  type SyncServer,
+  termsOf,
+} from './server.ts';
 import { SyncState } from './state.ts';
 
 export interface SyncAccountDeps {
   /** The app's data folder. Sync keeps its notes and secrets in a folder there. */
   dataDir: string;
   /**
-   * The sync server, such as "https://app.factwright.com", or null in a copy built without one, as
-   * copies built anywhere but Factwright's own releases are.
+   * Factwright's own sync server, built into this copy, such as "https://app.factwright.com", or
+   * null in a copy built without it, as copies built anywhere but Factwright's own releases are.
+   * Either can sync with a server of your own instead, connected in the sync dialog.
    */
   server: string | null;
   /** The app's version, which it tells the server. */
@@ -57,10 +67,11 @@ export interface SyncAccountDeps {
   /** Whenever linking by approval changes: this computer asking, or other devices' requests. */
   onApprovals?: (view: ApprovalsView) => void;
   /**
-   * The sync accounts other profiles on this computer use, by email, with each one's name.
-   * Signing in to one of them is turned away, so two people's job hunts never mix.
+   * The sync accounts other profiles on this computer use, by email and server (a server of your
+   * own's address, or null for Factwright's), with each one's name. Signing in to one of them is
+   * turned away, so two people's job hunts never mix.
    */
-  otherProfiles?: () => { name: string; email: string }[];
+  otherProfiles?: () => { name: string; email: string; server: string | null }[];
   /** After changes from other devices land, so the window shows them. */
   onApplied: () => void;
   computerName?: () => Promise<string>;
@@ -77,11 +88,20 @@ const failed = (message: string) => ({ ok: false as const, message });
 /** What a step says when another sign-in, or closing the app, overtook it: it does nothing more. */
 const OVERTAKEN = failed('Signing in was canceled.');
 
-/** What signing in says in a copy built without a sync server. */
-const NO_SERVER = 'This copy of Factwright has no sync server.';
+/** What signing in to Factwright's sync says in a copy built without it. */
+const NO_SERVER = 'This copy of Factwright doesn’t have Factwright’s sync.';
+
+/** What connecting a server of your own says while sync is set up with another. */
+const SWITCH_FIRST = 'Turn off sync on this computer first, then connect your server.';
 
 /** Notes a sign-in that hasn't been checked against the account's key on the server yet. */
 const UNCHECKED = 'unchecked';
+
+/**
+ * Notes the server of your own that what sync knows of the account's history came from. Missing
+ * for Factwright's own, as it was before there were others.
+ */
+const SERVER = 'server';
 
 /** How often, at most, a round of sync also looks for other devices' requests to link. */
 const REQUESTS_EVERY_MS = 60_000;
@@ -89,6 +109,33 @@ const REQUESTS_EVERY_MS = 60_000;
 /** How many times, and how far apart, linking with an approved key is tried while offline. */
 const KEY_TRIES = 12;
 const KEY_RETRY_MS = 5000;
+
+/** A sign-in kept here: the server it's with, and its token until it ends. */
+interface Kept {
+  server: SyncServer;
+  token: string | null;
+}
+
+/**
+ * A sign-in to a server of your own, as kept: the server's address, locked in with its token, so
+ * the token only ever goes there. Once it ends, the address stays, to sign in to again.
+ */
+function readOwnSession(text: string | null): Kept | null {
+  if (text === null) return null;
+  let kept: { server?: unknown; token?: unknown };
+  try {
+    kept = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof kept?.server !== 'string') return null;
+  const address = readServerAddress(kept.server);
+  if (!address.ok || address.server !== kept.server) return null;
+  return {
+    server: { url: address.server, own: true },
+    token: typeof kept.token === 'string' && kept.token ? kept.token : null,
+  };
+}
 
 /** What to tell the user when a request to the server fails. */
 function reason(error: unknown): string {
@@ -125,6 +172,20 @@ export class SyncAccount {
   private readonly approvals: Approvals;
   /** When a round of sync last looked for requests to link. */
   private requestsLooked = 0;
+  /**
+   * The server sync is with here: the one whose sign-in or account key this computer keeps. Null
+   * once sync is turned off here, and before it's ever on.
+   */
+  private kept: SyncServer | null = null;
+  /** The server a sign-in that's waiting for the browser is with. */
+  private signingInTo: SyncServer | null = null;
+  /** Each server's terms and price, as its sign-in options say, asked once while the app runs. */
+  private readonly terms = new Map<string, Promise<ServerTerms | null>>();
+  /**
+   * Counts sign-ins started and called off, so connecting a server whose check took a while does
+   * nothing more once another sign-in, or going back, overtook it.
+   */
+  private attempts = 0;
 
   constructor(deps: SyncAccountDeps) {
     this.deps = deps;
@@ -155,21 +216,115 @@ export class SyncAccount {
 
   private set(status: SyncStatus): void {
     if (this.closed) return;
-    this.current = status;
-    this.deps.onStatus(status);
+    this.current = this.named(status);
+    this.deps.onStatus(this.current);
+  }
+
+  /**
+   * A status as the window shows it, naming the server of your own it's with, if it's one: the
+   * one a sign-in is waiting on, or else the one kept here.
+   */
+  private named(status: SyncStatus): SyncStatus {
+    if (status.state === 'off' || status.state === 'unavailable' || status.state === 'no-server') {
+      return status;
+    }
+    const { ownServer: _, ...rest } = status;
+    const server = status.state === 'signing-in' ? this.signingInTo : this.kept;
+    return server?.own ? { ...rest, ownServer: server.url } : rest;
   }
 
   private email(): string {
     return this.state.meta('email') ?? '';
   }
 
+  /** Factwright's own sync server, when this copy has it. */
+  private factwright(): SyncServer | null {
+    return this.deps.server ? { url: new URL(this.deps.server).origin, own: false } : null;
+  }
+
   /**
-   * The sync server, for the steps past signing in. Only a copy built with a server gets that far,
-   * as signing in, picking sync up and signing out all stop without one.
+   * The sync server, for the steps past signing in. Only a sign-in that's kept gets that far, so
+   * there's always one.
    */
   private server(): string {
-    if (!this.deps.server) throw new Error(NO_SERVER);
-    return this.deps.server;
+    if (!this.kept) throw new Error('Sign in first.');
+    return this.kept.url;
+  }
+
+  /**
+   * The sign-in kept here, or null when there's none, or it can't be read. What's kept for
+   * Factwright's own server is kept as it was before there were others, and a server of your own's
+   * apart from it. If both are kept, Factwright's is the newer: only a version from before then,
+   * which knows nothing of the other, writes it while the other is kept.
+   */
+  private keptSignIn(): Kept | null {
+    if (this.keptForFactwright()) {
+      const factwright = this.factwright();
+      return factwright && { server: factwright, token: this.secrets.get('session') };
+    }
+    return readOwnSession(this.secrets.get('ownSession'));
+  }
+
+  /**
+   * Whether what's kept here is for Factwright's own server, told without asking the keychain:
+   * its sign-in, or its account key.
+   */
+  private keptForFactwright(): boolean {
+    return this.secrets.has('session') || this.secrets.has('accountKey');
+  }
+
+  /** The secret a server's account key is kept as. */
+  private keyFor(server: SyncServer): 'accountKey' | 'ownAccountKey' {
+    return server.own ? 'ownAccountKey' : 'accountKey';
+  }
+
+  /** Whether what's kept here is for Factwright's own server, in a copy without it. */
+  private keptForAnotherCopy(): boolean {
+    return !this.deps.server && this.keptForFactwright();
+  }
+
+  /**
+   * Keeps a new sign-in, in place of whatever was kept for another server: one to Factwright's
+   * own server as its token alone, as before there were others, and one to a server of your own
+   * with its address.
+   */
+  private keepSession(server: SyncServer, token: string): void {
+    if (server.own) {
+      this.secrets.delete('session');
+      this.secrets.delete('accountKey');
+      this.secrets.set('ownSession', JSON.stringify({ server: server.url, token }));
+    } else {
+      this.secrets.delete('ownSession');
+      this.secrets.delete('ownAccountKey');
+      this.secrets.set('session', token);
+    }
+    this.kept = server;
+  }
+
+  /** Ends the sign-in kept here. A server of your own's address stays, to sign in to again. */
+  private endSession(): void {
+    if (this.kept?.own) this.secrets.set('ownSession', JSON.stringify({ server: this.kept.url }));
+    else this.secrets.delete('session');
+  }
+
+  /** The kept sign-in's token, while it lasts. */
+  private token(): string | null {
+    return this.kept?.own
+      ? (readOwnSession(this.secrets.get('ownSession'))?.token ?? null)
+      : this.secrets.get('session');
+  }
+
+  /**
+   * Ties what sync knows of the account's history to the server it's with. Notes from another
+   * server, such as ones a version from before there were others left, start over, and an account
+   * key kept with them is checked against this server's account before anything syncs.
+   */
+  private tieState(server: SyncServer): void {
+    const own = server.own ? server.url : null;
+    if (this.state.meta(SERVER) === own) return;
+    this.state.clear();
+    if (own) this.state.setMeta(SERVER, own);
+    this.state.setMeta(UNCHECKED, '1');
   }
 
   /** Takes up a sign-in, or none. Linking by approval follows it. */
@@ -178,9 +333,9 @@ export class SyncAccount {
     this.approvals.use(client);
   }
 
-  private clientFor(token: string): SyncClient {
+  private clientFor(server: SyncServer, token: string): SyncClient {
     return new SyncClient({
-      server: this.server(),
+      server: server.url,
       token: () => token,
       headers: { 'user-agent': userAgent(this.deps.version, this.device) },
       ...(this.deps.fetch && { fetch: this.deps.fetch }),
@@ -189,28 +344,43 @@ export class SyncAccount {
 
   /** Picks up where sync left off when the app last closed. */
   async start(): Promise<void> {
-    if (!this.deps.server) {
-      this.set({ state: 'no-server' });
-      return;
-    }
     this.device = await (this.deps.computerName ?? computerName)();
     // With sync never turned on here, the keychain isn't asked anything.
     if (!this.secrets.exists()) {
       this.set({ state: 'off' });
       return;
     }
+    // Sync with Factwright's own server, in a copy without it, such as one built from the code on
+    // the data folder of one from factwright.com, stays as that copy left it, unasked.
+    if (this.keptForAnotherCopy()) {
+      this.set({ state: 'no-server' });
+      return;
+    }
     if (!this.secrets.available()) {
       this.set({ state: 'unavailable' });
       return;
     }
-    const token = this.secrets.get('session');
-    if (!token) {
+    const kept = this.keptSignIn();
+    if (!kept) {
       this.set({ state: 'off' });
       return;
     }
-    const client = this.clientFor(token);
+    this.kept = kept.server;
+    // What's kept for a server of your own alongside Factwright's is the older, so it goes.
+    if (!kept.server.own && (this.secrets.has('ownSession') || this.secrets.has('ownAccountKey'))) {
+      this.secrets.delete('ownSession');
+      this.secrets.delete('ownAccountKey');
+    }
+    this.tieState(kept.server);
+    const { token } = kept;
+    if (!token) {
+      // A server of your own stays the one to sign in to again, until sync is turned off here.
+      this.set(kept.server.own ? { state: 'signed-out', email: this.email() } : { state: 'off' });
+      return;
+    }
+    const client = this.clientFor(kept.server, token);
     this.useClient(client);
-    const saved = this.secrets.get('accountKey');
+    const saved = this.secrets.get(this.keyFor(kept.server));
     const accountKey = saved ? fromBase64Url(saved) : null;
     if (accountKey) {
       // Signed in again, or stopped by a check, and not yet checked against the account, such as
@@ -249,13 +419,42 @@ export class SyncAccount {
     return this.closed || this.client !== client;
   }
 
-  /** Signs in through the browser: shows a code, opens the page, and waits for the user. */
+  /**
+   * Signs in through the browser: to the server sync is with here, to sign in again, or else to
+   * Factwright's own.
+   */
   async signInWithBrowser(): Promise<EditResult> {
-    const server = this.deps.server;
-    if (!server) {
-      this.set({ state: 'no-server' });
-      return failed(NO_SERVER);
+    const server = this.kept ?? this.factwright();
+    if (!server) return failed(NO_SERVER);
+    this.attempts++;
+    return this.signInTo(server);
+  }
+
+  /**
+   * Connects a server of your own, by the address typed in the sync dialog: checks it, then signs
+   * in to it as signInWithBrowser does. Only while sync is off here: switching servers means
+   * turning it off on this computer first. Factwright's own address is Factwright's sync.
+   */
+  async connect(typed: string): Promise<ConnectResult> {
+    const address = readServerAddress(typed);
+    if (!address.ok) return failed(address.message);
+    if (this.current.state !== 'off') return failed(SWITCH_FIRST);
+    if (this.factwright()?.url === address.server) return this.signInWithBrowser();
+    if (!this.secrets.available()) {
+      this.set({ state: 'unavailable' });
+      return failed(NO_KEYCHAIN_MESSAGE);
     }
+    const attempt = ++this.attempts;
+    const checked = await checkServer(address.server, this.deps.fetch ?? fetch);
+    // Going back, or another sign-in, while it was checked calls it off.
+    if (this.closed || attempt !== this.attempts || this.current.state !== 'off') return OVERTAKEN;
+    if (!checked.ok) return checked;
+    this.terms.set(address.server, Promise.resolve(termsOf(checked.options)));
+    return this.signInTo({ url: address.server, own: true });
+  }
+
+  /** Signs in to a server through the browser: shows a code, opens the page, and waits for the user. */
+  private async signInTo(server: SyncServer): Promise<EditResult> {
     if (!this.secrets.available()) {
       this.set({ state: 'unavailable' });
       return failed(NO_KEYCHAIN_MESSAGE);
@@ -264,7 +463,7 @@ export class SyncAccount {
     const before: SyncStatus =
       this.current.state === 'signing-in' ? { state: 'off' } : this.current;
     const flow = new DeviceSignIn({
-      server,
+      server: server.url,
       clientId: CLIENTS.desktop,
       userAgent: userAgent(this.deps.version, this.device),
       ...(this.deps.fetch && { fetch: this.deps.fetch }),
@@ -273,28 +472,33 @@ export class SyncAccount {
     this.signIn = flow;
     // Another sign-in, or closing the app, took over: that says how things stand.
     const overtaken = () => this.closed || this.signIn !== flow;
+    // A sign-in this one took over from is over too, so its code isn't left showing.
+    const stop = (message: string) => {
+      this.signIn = null;
+      if (this.current.state === 'signing-in') this.set(before);
+      return failed(message);
+    };
     let pending: Awaited<ReturnType<DeviceSignIn['start']>>;
     try {
       pending = await flow.start();
     } catch (error) {
       if (overtaken()) return OVERTAKEN;
-      this.signIn = null;
-      return failed(reason(error));
+      return stop(reason(error));
     }
     if (overtaken()) return OVERTAKEN;
     // Only the sync server's own pages open: never another site, or a file on this computer.
-    if (new URL(pending.url).origin !== new URL(server).origin) {
+    if (new URL(pending.url).origin !== server.url) {
       flow.cancel();
-      this.signIn = null;
-      return failed('The sync server sent a sign-in page somewhere else. Try again later.');
+      return stop('The sync server sent a sign-in page somewhere else. Try again later.');
     }
+    this.signingInTo = server;
     this.set({ state: 'signing-in', code: pending.code, url: pending.url });
     await this.deps.openUrl(pending.url);
     if (overtaken()) return OVERTAKEN;
     const result = await flow.finish();
     if (overtaken()) {
       // A sign-in that's dropped is ended, so it isn't left signed in on the server.
-      if (result.ok) void this.signOutOnServer(result.token);
+      if (result.ok) void this.signOutOnServer(server, result.token);
       return result.ok ? OVERTAKEN : failed(result.message);
     }
     if (!result.ok) {
@@ -303,23 +507,26 @@ export class SyncAccount {
       return failed(result.message);
     }
     // Before anything is kept: an account another profile here uses stays that profile's.
-    const taken = await this.usedByAnotherProfile(result.token);
+    const taken = await this.usedByAnotherProfile(server, result.token);
     if (overtaken()) {
-      void this.signOutOnServer(result.token);
+      void this.signOutOnServer(server, result.token);
       return OVERTAKEN;
     }
     this.signIn = null;
     if (taken || flow.canceled) {
       this.set(before);
-      await this.signOutOnServer(result.token);
+      await this.signOutOnServer(server, result.token);
       return failed(taken ?? 'Signing in was canceled.');
     }
-    const saved = this.secrets.get('accountKey');
+    // What's kept for another server goes first: its account key and its notes are no use here.
+    if (this.kept && this.kept.url !== server.url) await this.forgetAll();
+    this.tieState(server);
+    const saved = this.secrets.get(this.keyFor(server));
     const accountKey = saved ? fromBase64Url(saved) : null;
     // Noted before the new sign-in is kept, so it's never kept unchecked.
     if (accountKey) this.state.setMeta(UNCHECKED, '1');
-    this.secrets.set('session', result.token);
-    this.useClient(this.clientFor(result.token));
+    this.keepSession(server, result.token);
+    this.useClient(this.clientFor(server, result.token));
     if (!accountKey) {
       await this.checkSetup();
       return { ok: true };
@@ -333,12 +540,13 @@ export class SyncAccount {
    * code without asking who's there, so this is where two job hunts would otherwise mix. When
    * the account can't be asked, it isn't kept either.
    */
-  private async usedByAnotherProfile(token: string): Promise<string | null> {
-    const others = this.deps.otherProfiles?.() ?? [];
+  private async usedByAnotherProfile(server: SyncServer, token: string): Promise<string | null> {
+    const own = server.own ? server.url : null;
+    const others = (this.deps.otherProfiles?.() ?? []).filter((each) => each.server === own);
     if (others.length === 0) return null;
     let email: string;
     try {
-      email = (await this.clientFor(token).account()).user.email;
+      email = (await this.clientFor(server, token).account()).user.email;
     } catch (error) {
       return reason(error);
     }
@@ -370,7 +578,7 @@ export class SyncAccount {
     } catch (error) {
       if (this.overtaken(client)) return OVERTAKEN;
       if (error instanceof SyncError && error.kind === 'signed-out') {
-        this.secrets.delete('session');
+        this.endSession();
         this.useClient(null);
       }
       this.set({ state: 'signed-out', email: this.email() });
@@ -406,15 +614,17 @@ export class SyncAccount {
     return { ok: true };
   }
 
-  /** Forgets what sync knew of the account's history, keeping who's signed in. */
+  /** Forgets what sync knew of the account's history, keeping who's signed in, and where. */
   private startOver(): void {
     const email = this.email();
     const account = this.state.meta('account');
     const unchecked = this.state.meta(UNCHECKED);
+    const server = this.state.meta(SERVER);
     this.state.clear();
     this.state.setMeta('email', email);
     if (account !== null) this.state.setMeta('account', account);
     if (unchecked !== null) this.state.setMeta(UNCHECKED, unchecked);
+    if (server !== null) this.state.setMeta(SERVER, server);
   }
 
   /**
@@ -422,29 +632,38 @@ export class SyncAccount {
    * account key this computer has, and what sync knows, stay for the right account.
    */
   async useDifferentAccount(): Promise<EditResult> {
-    // A copy with no server never signed in. What sync keeps here is a copy with one's, such as
-    // one installed that shares this data folder, so it stays as it is.
-    if (!this.deps.server) return failed(NO_SERVER);
+    // A copy without Factwright's sync leaves what that sync kept here as it is: that's a copy
+    // with it's, such as one installed that shares this data folder.
+    if (this.keptForAnotherCopy()) return failed(NO_SERVER);
     // Nor does a copy without the keychain change secrets it can't open.
     if (!this.secrets.available()) return failed(NO_KEYCHAIN_MESSAGE);
-    const token = this.secrets.get('session');
+    const server = this.kept;
+    const token = this.token();
     // First, so a step still waiting on the server for this sign-in does nothing more.
     this.useClient(null);
     this.pending = null;
     await this.runner?.stop();
     this.runner = null;
-    this.secrets.delete('session');
-    if (token) await this.signOutOnServer(token);
-    this.set(
-      this.secrets.get('accountKey')
-        ? { state: 'signed-out', email: this.email() }
-        : { state: 'off' },
-    );
+    this.endSession();
+    if (server && token) await this.signOutOnServer(server, token);
+    // A server of your own stays the one to sign in to again, as does Factwright's while this
+    // computer has its account key. With neither, nothing here is for a server any more.
+    if (server && (server.own || this.secrets.get(this.keyFor(server)))) {
+      this.set({ state: 'signed-out', email: this.email() });
+    } else {
+      this.kept = null;
+      this.secrets.clear();
+      this.set({ state: 'off' });
+    }
     return { ok: true };
   }
 
-  /** Stops waiting for the browser. Sync goes back to where it stood. */
+  /**
+   * Stops waiting for the browser, or for a server of your own's check. Sync goes back to where
+   * it stood.
+   */
   cancelSignIn(): void {
+    this.attempts++;
     this.signIn?.cancel();
   }
 
@@ -552,7 +771,7 @@ export class SyncAccount {
     void this.runner?.stop();
     this.runner = null;
     this.useClient(null);
-    this.secrets.delete('session');
+    this.endSession();
     this.set({ state: 'signed-out', email: this.email() });
   }
 
@@ -576,7 +795,7 @@ export class SyncAccount {
     if (this.state.meta('keyId') !== keys.id) this.startOver();
     this.state.setMeta('keyId', keys.id);
     this.state.setMeta(UNCHECKED, '0');
-    this.secrets.set('accountKey', toBase64Url(accountKey));
+    if (this.kept) this.secrets.set(this.keyFor(this.kept), toBase64Url(accountKey));
     this.accountKey = accountKey;
     this.keys = keys;
     await this.runner?.stop();
@@ -639,7 +858,7 @@ export class SyncAccount {
         if (this.closed || this.runner !== runner) return;
         this.runner = null;
         this.approvals.use(null);
-        this.secrets.delete('session');
+        this.endSession();
         this.set({ state: 'signed-out', email: this.email() });
       },
     });
@@ -795,44 +1014,73 @@ export class SyncAccount {
 
   /** Opens the account's page on the web, to download everything or delete the account. */
   async openAccountPage(): Promise<void> {
-    if (this.deps.server) await this.deps.openUrl(new URL('/account', this.deps.server).toString());
+    if (this.kept) await this.deps.openUrl(new URL('/account', this.kept.url).toString());
   }
 
   /**
-   * Turns sync off on this computer: signs it out, and forgets the session and the account
-   * key. The job hunt here stays as it is, and so does the account's data on other devices.
+   * The terms and price of the server the window shows: the one a sign-in is waiting on, or the
+   * one sync is with here, or Factwright's for turning sync on, as its sign-in options say. Null
+   * when there's no server, or it didn't answer.
+   */
+  serverTerms(): Promise<ServerTerms | null> {
+    const waiting = this.current.state === 'signing-in' ? this.signingInTo : null;
+    const server = waiting ?? this.kept ?? this.factwright();
+    if (!server) return Promise.resolve(null);
+    let asked = this.terms.get(server.url);
+    if (!asked) {
+      asked = askSignInOptions(server.url, this.deps.fetch ?? fetch).then((options) => {
+        if (options && options !== 'unreachable') return termsOf(options);
+        // Asked again next time.
+        this.terms.delete(server.url);
+        return null;
+      });
+      this.terms.set(server.url, asked);
+    }
+    return asked;
+  }
+
+  /**
+   * Turns sync off on this computer: signs it out, and forgets the session, the account key and
+   * the server. The job hunt here stays as it is, and so does the account's data on other devices.
    */
   async signOut(): Promise<EditResult> {
-    // As with signing in to a different account, a copy with no server leaves sync's keys alone,
-    // and so does one without the keychain.
-    if (!this.deps.server) return failed(NO_SERVER);
+    // As with signing in to a different account, a copy without Factwright's sync leaves what
+    // that sync kept alone, and so does one without the keychain.
+    if (this.keptForAnotherCopy()) return failed(NO_SERVER);
     if (!this.secrets.available()) return failed(NO_KEYCHAIN_MESSAGE);
-    const token = this.secrets.get('session');
+    const server = this.kept;
+    const token = this.token();
     await this.forget();
-    if (token) await this.signOutOnServer(token);
+    if (server && token) await this.signOutOnServer(server, token);
     return { ok: true };
   }
 
-  /** Ends a session on the server, as far as it can be reached. */
-  private async signOutOnServer(token: string): Promise<void> {
-    if (!this.deps.server) return;
-    await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', this.deps.server), {
+  /** Ends a session on the server it's for, as far as it can be reached. */
+  private async signOutOnServer(server: SyncServer, token: string): Promise<void> {
+    await (this.deps.fetch ?? fetch)(new URL('/api/auth/sign-out', server.url), {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: '{}',
     }).catch(() => {});
   }
 
+  /** Forgets everything sync kept here, and says it's off. */
   private async forget(): Promise<void> {
+    await this.forgetAll();
+    this.set({ state: 'off' });
+  }
+
+  /** Forgets everything sync kept here: the sign-in, the server, the keys and what it knew. */
+  private async forgetAll(): Promise<void> {
     await this.runner?.stop();
     this.runner = null;
     this.useClient(null);
     this.keys = null;
     this.accountKey = null;
     this.pending = null;
+    this.kept = null;
     this.secrets.clear();
     this.state.clear();
-    this.set({ state: 'off' });
   }
 
   /**

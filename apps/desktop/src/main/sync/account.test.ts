@@ -38,6 +38,8 @@ const keychain = {
 };
 
 let person: Account;
+/** The same person, on a server of their own, for the tests that start one. */
+let ownPerson: Account;
 const folders: string[] = [];
 const opened: SyncAccount[] = [];
 
@@ -50,12 +52,14 @@ afterEach(async () => {
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
 
-/** The person, in their browser, approving the code a computer shows. */
+/** The person, in their browser, approving the code a computer shows, on the server it's for. */
 async function approve(url: string) {
-  const userCode = new URL(url).searchParams.get('user_code') ?? '';
-  const headers = { authorization: `Bearer ${person.token}`, 'content-type': 'application/json' };
-  await fetch(new URL(`/api/auth/device?user_code=${userCode}`, server.url), { headers });
-  await fetch(new URL('/api/auth/device/approve', server.url), {
+  const { origin, searchParams } = new URL(url);
+  const userCode = searchParams.get('user_code') ?? '';
+  const signedIn = origin === server.url.origin ? person : ownPerson;
+  const headers = { authorization: `Bearer ${signedIn.token}`, 'content-type': 'application/json' };
+  await fetch(new URL(`/api/auth/device?user_code=${userCode}`, origin), { headers });
+  await fetch(new URL('/api/auth/device/approve', origin), {
     method: 'POST',
     headers,
     body: JSON.stringify({ userCode }),
@@ -67,7 +71,8 @@ function computer(
   name: string,
   dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-')),
   fetchWith?: typeof fetch,
-  otherProfiles?: () => { name: string; email: string }[],
+  otherProfiles?: () => { name: string; email: string; server: string | null }[],
+  factwright: string | null = server.url.toString(),
 ) {
   folders.push(dataDir);
   const workspace = join(dataDir, 'workspace');
@@ -77,7 +82,7 @@ function computer(
   const applied = vi.fn();
   const sync = new SyncAccount({
     dataDir,
-    server: server.url.toString(),
+    server: factwright,
     version: '0.0.0',
     keychain,
     tracker,
@@ -257,10 +262,10 @@ async function remadeUnderMacAndPc() {
   return { mac, pc, keyId };
 }
 
-describe('a copy built without a sync server', () => {
-  const refused = { ok: false, message: 'This copy of Factwright has no sync server.' };
+describe('a copy built without Factwright’s sync', () => {
+  const refused = { ok: false, message: 'This copy of Factwright doesn’t have Factwright’s sync.' };
 
-  /** The app, built with no sync server, on a data folder. */
+  /** The app, built without Factwright's sync, on a data folder. */
   function withoutServer(dataDir: string) {
     const openUrl = vi.fn();
     const sync = new SyncAccount({
@@ -279,20 +284,21 @@ describe('a copy built without a sync server', () => {
     return { sync, openUrl };
   }
 
-  it('says sync isn’t in it, and never signs in', async () => {
+  it('is off, offering only a server of your own, and never signs in to Factwright’s', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-'));
     folders.push(dataDir);
     const { sync, openUrl } = withoutServer(dataDir);
     await sync.start();
-    expect(sync.status()).toEqual({ state: 'no-server' });
+    expect(sync.status()).toEqual({ state: 'off' });
     expect(await sync.signInWithBrowser()).toEqual(refused);
-    expect(sync.status()).toEqual({ state: 'no-server' });
+    expect(sync.status()).toEqual({ state: 'off' });
+    expect(await sync.serverTerms()).toBeNull();
     await sync.openAccountPage();
     expect(openUrl).not.toHaveBeenCalled();
   });
 
   // Such as one run from the code on the data folder of a copy installed from factwright.com.
-  it('leaves sync as a copy with a server set it up, without asking the keychain', async () => {
+  it('leaves sync as a copy with Factwright’s set it up, without asking the keychain', async () => {
     const mac = computer('Sam’s Mac');
     await setUpFirst(mac);
     await mac.synced();
@@ -306,12 +312,18 @@ describe('a copy built without a sync server', () => {
       vi.spyOn(keychain, 'decryptString'),
     ];
     try {
-      const { sync } = withoutServer(mac.dataDir);
+      const { sync, openUrl } = withoutServer(mac.dataDir);
       await sync.start();
       expect(sync.status()).toEqual({ state: 'no-server' });
       expect(await sync.signOut()).toEqual(refused);
       expect(await sync.useDifferentAccount()).toEqual(refused);
+      expect(await sync.signInWithBrowser()).toEqual(refused);
+      expect(await sync.connect('https://factwright-sync.sam.workers.dev')).toEqual({
+        ok: false,
+        message: 'Turn off sync on this computer first, then connect your server.',
+      });
       expect(sync.status()).toEqual({ state: 'no-server' });
+      expect(openUrl).not.toHaveBeenCalled();
       await sync.stop();
       for (const spy of asked) expect(spy).not.toHaveBeenCalled();
     } finally {
@@ -402,6 +414,32 @@ describe('a copy without the keychain', () => {
     const again = computer('Sam’s Mac', mac.dataDir);
     await again.sync.start();
     expect(again.sync.status()).toMatchObject({ state: 'on', email: person.email });
+  });
+
+  it('leaves a sign-in to a server of your own locked, and as it is', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'factwright-account-'));
+    mkdirSync(join(dataDir, 'sync'));
+    const planted = JSON.stringify({
+      ownSession: keychain
+        .encryptString(
+          JSON.stringify({ server: 'https://factwright-sync.sam.workers.dev', token: 'x' }),
+        )
+        .toString('base64'),
+      ownAccountKey: keychain.encryptString('made-up key').toString('base64'),
+    });
+    writeFileSync(join(dataDir, 'sync', 'secrets.json'), planted);
+    const { sync, asked, openUrl } = withoutKeychain(dataDir);
+    await sync.start();
+    expect(sync.status()).toEqual({ state: 'unavailable' });
+    expect(await sync.connect('https://factwright-sync.alex.workers.dev')).toEqual({
+      ok: false,
+      message: 'Turn off sync on this computer first, then connect your server.',
+    });
+    expect(await sync.signOut()).toEqual(refused);
+    await sync.stop();
+    expect(asked).toEqual([]);
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(readFileSync(join(dataDir, 'sync', 'secrets.json'), 'utf8')).toBe(planted);
   });
 });
 
@@ -527,7 +565,7 @@ describe('a computer with sync on', () => {
     await setUpFirst(mac);
     // Someone else's profile on the same Mac, in a browser still signed in as Sam.
     const other = computer('Sam’s Mac', undefined, undefined, () => [
-      { name: 'Sam Rivera', email: person.email.toUpperCase() },
+      { name: 'Sam Rivera', email: person.email.toUpperCase(), server: null },
     ]);
     await other.sync.start();
     expect(await other.sync.signInWithBrowser()).toEqual({
@@ -559,7 +597,7 @@ describe('a computer with sync on', () => {
         }
         return fetch(input, init);
       },
-      () => [{ name: 'Alex', email: 'alex@example.com' }],
+      () => [{ name: 'Alex', email: 'alex@example.com', server: null }],
     );
     await other.sync.start();
     const signingIn = other.sync.signInWithBrowser();
@@ -581,7 +619,7 @@ describe('a computer with sync on', () => {
     await setUpFirst(computer('Sam’s Mac'));
     person = await server.signUp('Alex Kim');
     const other = computer('Sam’s Mac', undefined, undefined, () => [
-      { name: 'Sam Rivera', email: sam.email },
+      { name: 'Sam Rivera', email: sam.email, server: null },
     ]);
     await other.sync.start();
     expect(await other.sync.signInWithBrowser()).toEqual({ ok: true });
@@ -1071,5 +1109,421 @@ describe('a computer with sync on', () => {
     expect(mac.sync.status()).toEqual({ state: 'off' });
     expect(mac.read('facts/skills.md')).toBe('Stays');
     expect(existsSync(join(mac.dataDir, 'sync', 'secrets.json'))).toBe(false);
+  });
+});
+
+describe('a server of your own', () => {
+  let own: TestServer;
+  let address: string;
+
+  beforeAll(async () => {
+    // As a server of your own runs: with GitHub sign-in, and without Factwright's terms and
+    // privacy policy.
+    own = await startServer({
+      TERMS_URL: '',
+      PRIVACY_URL: '',
+      GITHUB_CLIENT_ID: 'test-client',
+      GITHUB_CLIENT_SECRET: 'test-secret',
+    });
+    address = own.url.origin;
+  });
+
+  afterAll(() => own?.close());
+
+  beforeEach(async () => {
+    ownPerson = await own.signUp('Sam Rivera');
+  });
+
+  /** A fetch that notes the server each request goes to. */
+  function noting() {
+    const asked: string[] = [];
+    const fetchWith: typeof fetch = async (input, init) => {
+      asked.push(new URL(String(input)).origin);
+      return fetch(input, init);
+    };
+    return { asked, fetchWith };
+  }
+
+  /** Connects a computer to the server of your own, and turns sync on there as its first device. */
+  async function setUpOwn(mac: ReturnType<typeof computer>) {
+    await mac.sync.start();
+    expect(await mac.sync.connect(address)).toEqual({ ok: true });
+    await recoveryKey(mac.sync);
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    await mac.synced();
+  }
+
+  /** What sync keeps secret on a computer, opened with the stand-in keychain. */
+  const secretsOf = (dataDir: string) =>
+    new Secrets(join(dataDir, 'sync', 'secrets.json'), keychain);
+
+  it('connects, names it at every step, and keeps the sign-in with its address', async () => {
+    const mac = computer('Sam’s Mac');
+    await mac.sync.start();
+    expect(await mac.sync.serverTerms()).toEqual({
+      legal: { terms: 'https://factwright.com/terms', privacy: 'https://factwright.com/privacy' },
+      subscription: false,
+    });
+    expect(await mac.sync.connect(`  ${address}/  `)).toEqual({ ok: true });
+    expect(mac.statuses).toContainEqual(
+      expect.objectContaining({ state: 'signing-in', ownServer: address }),
+    );
+    expect(mac.sync.status()).toEqual({
+      state: 'setting-up',
+      email: ownPerson.email,
+      firstDevice: true,
+      ownServer: address,
+    });
+    await recoveryKey(mac.sync);
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    await mac.synced();
+    expect(mac.sync.status()).toMatchObject({ state: 'on', ownServer: address });
+    // It has no terms of its own, so none show.
+    expect(await mac.sync.serverTerms()).toEqual({ legal: null, subscription: false });
+    const secrets = secretsOf(mac.dataDir);
+    expect(secrets.get('session')).toBeNull();
+    expect(JSON.parse(secrets.get('ownSession') ?? '')).toEqual({
+      server: address,
+      token: expect.any(String),
+    });
+    // Its account key is kept apart from Factwright's too, which a version from before reads.
+    expect(secrets.get('ownAccountKey')).toEqual(expect.any(String));
+    expect(secrets.has('accountKey')).toBe(false);
+    expect(syncMeta(mac.dataDir, 'server')).toBe(address);
+
+    // Opened again, it carries on with the same server.
+    await mac.sync.stop();
+    const again = computer('Sam’s Mac', mac.dataDir);
+    await again.sync.start();
+    expect(again.sync.status()).toMatchObject({ state: 'on', ownServer: address });
+  });
+
+  it('sends everything only to that server: syncing, links, and the account page', async () => {
+    const { asked, fetchWith } = noting();
+    const mac = computer('Sam’s Mac', undefined, fetchWith);
+    await setUpOwn(mac);
+    const link = await mac.sync.makeLinkCode();
+    if (!link.ok) throw new Error(link.message);
+    expect(new URL(link.link.url).origin).toBe(address);
+    await mac.sync.stop();
+    // Opened again, in a copy built with Factwright's own sync, it still goes there alone.
+    const openUrl = vi.fn();
+    const again = new SyncAccount({
+      dataDir: mac.dataDir,
+      server: server.url.toString(),
+      version: '0.0.0',
+      keychain,
+      tracker: mac.tracker,
+      workspace: mac.workspace,
+      openUrl,
+      onStatus: () => {},
+      onApplied: vi.fn(),
+      computerName: async () => 'Sam’s Mac',
+      fetch: fetchWith,
+    });
+    opened.push(again);
+    await again.start();
+    await again.openAccountPage();
+    expect(openUrl).toHaveBeenCalledWith(`${address}/account`);
+    await again.stop();
+    expect(asked.length).toBeGreaterThan(0);
+    expect(new Set(asked)).toEqual(new Set([address]));
+  });
+
+  it('syncs a second computer through it, linked with a code', async () => {
+    const mac = computer('Sam’s Mac');
+    mac.write('facts/skills.md', 'From the Mac');
+    await setUpOwn(mac);
+    const link = await mac.sync.makeLinkCode();
+    if (!link.ok) throw new Error(link.message);
+    const pc = computer('Sam’s PC');
+    await pc.sync.start();
+    expect(await pc.sync.connect(address)).toEqual({ ok: true });
+    expect(pc.sync.status()).toMatchObject({ state: 'setting-up', firstDevice: false });
+    expect(await pc.sync.linkWithCode(link.link.code)).toEqual({ ok: true });
+    await pc.synced();
+    expect(pc.read('facts/skills.md')).toBe('From the Mac');
+  });
+
+  it('won’t connect another server until sync is turned off here, then forgets this one', async () => {
+    const { asked, fetchWith } = noting();
+    const mac = computer('Sam’s Mac', undefined, fetchWith);
+    await setUpOwn(mac);
+    const refused = {
+      ok: false,
+      message: 'Turn off sync on this computer first, then connect your server.',
+    };
+    expect(await mac.sync.connect('https://factwright-sync.alex.workers.dev')).toEqual(refused);
+    expect(await mac.sync.signOut()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({ state: 'off' });
+    expect(existsSync(join(mac.dataDir, 'sync', 'secrets.json'))).toBe(false);
+    expect(syncMeta(mac.dataDir, 'server')).toBeNull();
+    // Its sign-in ended on that server too.
+    const left = await ownPerson.client.account();
+    expect(left.devices.map((device) => device.name)).not.toContain('Factwright on Sam’s Mac');
+
+    // Now Factwright's own sync, kept as its sign-in always was, with nothing sent to the other.
+    asked.length = 0;
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: true,
+    });
+    expect(new Set(asked)).toEqual(new Set([server.url.origin]));
+    const secrets = secretsOf(mac.dataDir);
+    expect(secrets.has('ownSession')).toBe(false);
+    expect(secrets.get('session')).toEqual(expect.any(String));
+  });
+
+  it('signs in to it again once its sign-in ends, even after a restart', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpOwn(mac);
+    const listed = await mac.sync.account();
+    if (!listed.ok) throw new Error(listed.message);
+    const here = listed.account.devices.find((device) => device.current);
+    await ownPerson.client.removeDevice(here?.id ?? '');
+    mac.sync.requestSync();
+    const signedOut = { state: 'signed-out', email: ownPerson.email, ownServer: address };
+    await vi.waitFor(() => expect(mac.sync.status()).toEqual(signedOut), { timeout: 10_000 });
+    // The token's gone, and the address stays.
+    expect(JSON.parse(secretsOf(mac.dataDir).get('ownSession') ?? '')).toEqual({
+      server: address,
+    });
+    await mac.sync.stop();
+    const again = computer('Sam’s Mac', mac.dataDir);
+    await again.sync.start();
+    expect(again.sync.status()).toEqual(signedOut);
+    expect(await again.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(again.sync.status()).toMatchObject({ state: 'on', ownServer: address });
+  });
+
+  it('signs in to it again after the wrong account, before anything is set up', async () => {
+    const { asked, fetchWith } = noting();
+    const mac = computer('Sam’s Mac', undefined, fetchWith);
+    await mac.sync.start();
+    expect(await mac.sync.connect(address)).toEqual({ ok: true });
+    // As when the link step's Sign in again ends the old sign-in, then starts a new one.
+    expect(await mac.sync.useDifferentAccount()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'signed-out',
+      email: ownPerson.email,
+      ownServer: address,
+    });
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toMatchObject({ state: 'setting-up', ownServer: address });
+    expect(new Set(asked)).toEqual(new Set([address]));
+    // Turning sync off is what frees it for another server.
+    expect(await mac.sync.signOut()).toEqual({ ok: true });
+    expect(existsSync(join(mac.dataDir, 'sync', 'secrets.json'))).toBe(false);
+  });
+
+  it('syncs a copy without Factwright’s sync', async () => {
+    const mac = computer('Sam’s Mac', undefined, undefined, undefined, null);
+    await setUpOwn(mac);
+    expect(mac.sync.status()).toMatchObject({ state: 'on', ownServer: address });
+    await mac.sync.stop();
+    const again = computer('Sam’s Mac', mac.dataDir, undefined, undefined, null);
+    await again.sync.start();
+    expect(again.sync.status()).toMatchObject({ state: 'on', ownServer: address });
+  });
+
+  it('goes by Factwright’s own sign-in when a version from before kept one beside it', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpOwn(mac);
+    await mac.sync.stop();
+    // A version from before servers of your own signed in to Factwright's, beside it.
+    secretsOf(mac.dataDir).set(
+      'session',
+      (await server.newSession(person.id, undefined, 'device')).token,
+    );
+    const { asked, fetchWith } = noting();
+    const again = computer('Sam’s Mac', mac.dataDir, fetchWith);
+    await again.sync.start();
+    // That account has no key yet, so this computer sets it up as its first device, with nothing
+    // of the other server's: its sign-in, its account key and its notes are gone.
+    expect(again.sync.status()).toEqual({
+      state: 'setting-up',
+      email: person.email,
+      firstDevice: true,
+    });
+    expect(new Set(asked)).toEqual(new Set([server.url.origin]));
+    const secrets = secretsOf(mac.dataDir);
+    expect(secrets.has('ownSession') || secrets.has('ownAccountKey')).toBe(false);
+    expect(syncMeta(mac.dataDir, 'server')).toBeNull();
+  });
+
+  it('keeps an account key a version from before left as Factwright’s, never its own', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpOwn(mac);
+    await mac.sync.stop();
+    // A version from before linked to Factwright's beside it, and was signed out there since.
+    const file = join(mac.dataDir, 'sync', 'secrets.json');
+    secretsOf(mac.dataDir).set('accountKey', 'A-key-for-Factwrights-account');
+    const kept = readFileSync(file, 'utf8');
+    // A copy without Factwright's sync leaves all of it, and never asks the keychain.
+    const asked = [
+      vi.spyOn(keychain, 'isEncryptionAvailable'),
+      vi.spyOn(keychain, 'decryptString'),
+    ];
+    try {
+      const without = computer('Sam’s Mac', mac.dataDir, undefined, undefined, null);
+      await without.sync.start();
+      expect(without.sync.status()).toEqual({ state: 'no-server' });
+      await without.sync.stop();
+      for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of asked) spy.mockRestore();
+    }
+    expect(readFileSync(file, 'utf8')).toBe(kept);
+    // A copy with it takes it as Factwright's, and drops what's older, for your own server.
+    const again = computer('Sam’s Mac', mac.dataDir);
+    await again.sync.start();
+    expect(again.sync.status()).toEqual({ state: 'off' });
+    const secrets = secretsOf(mac.dataDir);
+    expect(secrets.get('accountKey')).toBe('A-key-for-Factwrights-account');
+    expect(secrets.has('ownSession') || secrets.has('ownAccountKey')).toBe(false);
+  });
+
+  it('checks an account another profile syncs with by its server too', async () => {
+    const elsewhere = () => [{ name: 'Alex Kim', email: ownPerson.email, server: null }];
+    const mac = computer('Sam’s Mac', undefined, undefined, elsewhere);
+    await mac.sync.start();
+    // The same email on Factwright's own server is another account.
+    expect(await mac.sync.connect(address)).toEqual({ ok: true });
+
+    const same = () => [{ name: 'Alex Kim', email: ownPerson.email, server: address }];
+    const pc = computer('Sam’s Mac', undefined, undefined, same);
+    await pc.sync.start();
+    expect(await pc.sync.connect(address)).toEqual({
+      ok: false,
+      message:
+        'The profile “Alex Kim” on this computer syncs with that account, and each profile needs its own. If your browser signed in as someone else, sign out of Factwright there first.',
+    });
+    expect(pc.sync.status()).toEqual({ state: 'off' });
+  });
+
+  describe('checking it first', () => {
+    const fake = 'https://factwright-sync.example.workers.dev';
+
+    /** A computer whose requests to the made-up server get this answer. */
+    const answering = (answer: () => Response | Promise<Response>) =>
+      computer('Sam’s Mac', undefined, async (input, init) =>
+        new URL(String(input)).origin === fake ? answer() : fetch(input, init),
+      );
+
+    it('says what’s wrong with an address, before asking anything', async () => {
+      const { asked, fetchWith } = noting();
+      const mac = computer('Sam’s Mac', undefined, fetchWith);
+      await mac.sync.start();
+      for (const [typed, message] of [
+        ['', 'Type your server’s address.'],
+        [
+          'http://factwright-sync.sam.workers.dev',
+          'Use your server’s address that starts with https://.',
+        ],
+        [
+          `${fake}/api`,
+          'Type the address alone, with nothing after it, like https://factwright-sync.yourname.workers.dev.',
+        ],
+      ]) {
+        expect(await mac.sync.connect(typed as string)).toEqual({ ok: false, message });
+      }
+      expect(asked).toEqual([]);
+      expect(mac.sync.status()).toEqual({ state: 'off' });
+    });
+
+    it('signs in only to a Factwright sync server that has what this version needs', async () => {
+      const options = (body: unknown) => () => Response.json(body);
+      for (const [answer, result] of [
+        [
+          () => new Response('Not found', { status: 404 }),
+          {
+            ok: false,
+            message:
+              'That address doesn’t answer as a Factwright sync server. Check it’s your server’s.',
+          },
+        ],
+        [
+          options({ hello: 'world' }),
+          {
+            ok: false,
+            message:
+              'That address doesn’t answer as a Factwright sync server. Check it’s your server’s.',
+          },
+        ],
+        [
+          () => Promise.reject(new TypeError('fetch failed')),
+          {
+            ok: false,
+            message:
+              'Can’t reach that server. Check its address and your connection, then try again.',
+          },
+        ],
+        [
+          options({ providers: ['github'] }),
+          {
+            ok: false,
+            message: 'Your server needs an update for this version of Factwright.',
+            help: 'update',
+          },
+        ],
+        [
+          options({ providers: [], features: ['approve'] }),
+          {
+            ok: false,
+            message:
+              'Your server has no way to sign in yet. Set up its GitHub sign-in, then try again.',
+            help: 'set-up',
+          },
+        ],
+      ] as const) {
+        const mac = answering(answer);
+        await mac.sync.start();
+        expect(await mac.sync.connect(fake)).toEqual(result);
+        expect(mac.sync.status()).toEqual({ state: 'off' });
+        expect(mac.statuses.map((status) => status.state)).not.toContain('signing-in');
+      }
+    });
+
+    it('does nothing more once going back or another sign-in overtakes the check', async () => {
+      for (const overtake of ['cancel', 'sign in'] as const) {
+        const checking = gate();
+        const mac = answering(async () => {
+          checking.waiting = true;
+          await checking.opened;
+          return Response.json({ providers: ['github'], features: ['approve'] });
+        });
+        await mac.sync.start();
+        const connecting = mac.sync.connect(fake);
+        await vi.waitFor(() => expect(checking.waiting).toBe(true));
+        if (overtake === 'cancel') {
+          mac.sync.cancelSignIn();
+        } else {
+          // Back, then Factwright's sign-in, all while the check waits.
+          expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+        }
+        checking.open();
+        expect(await connecting).toEqual({ ok: false, message: 'Signing in was canceled.' });
+        // No sign-in to the made-up server started, whatever came after.
+        expect(mac.statuses.filter((status) => 'ownServer' in status)).toEqual([]);
+        expect(mac.sync.status()).toEqual(
+          overtake === 'cancel'
+            ? { state: 'off' }
+            : { state: 'setting-up', email: person.email, firstDevice: true },
+        );
+      }
+    });
+
+    it('takes Factwright’s own address as Factwright’s sync', async () => {
+      const mac = computer('Sam’s Mac');
+      await mac.sync.start();
+      expect(await mac.sync.connect(server.url.origin)).toEqual({ ok: true });
+      expect(mac.sync.status()).toEqual({
+        state: 'setting-up',
+        email: person.email,
+        firstDevice: true,
+      });
+    });
   });
 });

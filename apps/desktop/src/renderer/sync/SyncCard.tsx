@@ -55,7 +55,7 @@ function describe(
       return {
         tone: 'off',
         line: 'Not in this copy',
-        help: 'This copy of Factwright was built without a sync server.',
+        help: 'This computer syncs through Factwright’s sync, which this copy doesn’t have.',
       };
     case 'signing-in':
       return {
