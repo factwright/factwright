@@ -6,3 +6,6 @@ BETTER_AUTH_SECRET=
 # A GitHub OAuth app whose callback is http://localhost:8787/api/auth/callback/github
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+# Optional, as on a server of your own: only these GitHub accounts may sign in, by user name,
+# separated by commas. Unset, anyone can.
+# ALLOWED_GITHUB_USERS=

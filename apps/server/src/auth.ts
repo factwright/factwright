@@ -1,6 +1,11 @@
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
-import { authOptions, type Provider, type SignedInVia } from './auth-options.ts';
+import {
+  allowedGitHubUsers,
+  authOptions,
+  type Provider,
+  type SignedInVia,
+} from './auth-options.ts';
 import { appUrl, type Env } from './env.ts';
 
 const provider = (id?: string, secret?: string): Provider | undefined =>
@@ -28,6 +33,7 @@ export function createAuth(env: Env, address: string) {
       database: env.DB,
       github: provider(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET),
       google: provider(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
+      allowedGitHubUsers: allowedGitHubUsers(env.ALLOWED_GITHUB_USERS),
       // The Worker lets only a browser's session ask to delete the account. Checked again here,
       // for any other way sign-in might come to delete it.
       beforeDeleteUser: async (accountId, request) => {

@@ -17,12 +17,18 @@ export const NAME = 'factwright-sync';
 export const REPOSITORY = 'https://github.com/factwright/sync-server';
 export const DEPLOY_BUTTON = `https://deploy.workers.cloudflare.com/?url=${REPOSITORY}`;
 
-/** The secrets the server needs, which the Deploy to Cloudflare button asks for. */
+/**
+ * The secrets the server needs, which the Deploy to Cloudflare button asks for. Secrets, not
+ * settings in wrangler.jsonc, so an update deployed later keeps them, the list of who may sign in
+ * included.
+ */
 export const SECRETS = {
   BETTER_AUTH_SECRET:
     'Signs sign-ins. Any long random text, such as what `openssl rand -base64 32` prints.',
   GITHUB_CLIENT_ID: 'Your GitHub OAuth app’s client ID, for signing in with GitHub.',
   GITHUB_CLIENT_SECRET: 'Your GitHub OAuth app’s client secret.',
+  ALLOWED_GITHUB_USERS:
+    'Your GitHub user name, such as `octocat`: only the accounts named here can sign in. To let in someone else, add their user name after a comma. Left empty, anyone with GitHub can.',
 } as const;
 
 /** Factwright's settings that only its own server has: its address and its legal pages. */
@@ -143,9 +149,9 @@ Open your server’s address to sign in. To sync Factwright through it, follow [
 npm install
 npx wrangler login
 npx wrangler deploy   # the first time, to make the database and the file storage
-npx wrangler secret put BETTER_AUTH_SECRET
-npx wrangler secret put GITHUB_CLIENT_ID
-npx wrangler secret put GITHUB_CLIENT_SECRET
+${Object.keys(SECRETS)
+  .map((key) => `npx wrangler secret put ${key}`)
+  .join('\n')}
 npm run deploy        # sets up the database's tables, then deploys
 \`\`\`
 
