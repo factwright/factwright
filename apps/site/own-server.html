@@ -337,10 +337,10 @@
                 <p>
                   Only the GitHub accounts you list in <code>ALLOWED_GITHUB_USERS</code>: yours, and
                   anyone else’s you add after a comma. Anyone else is turned away with a note that
-                  the server is private. To change the list, open your server in Cloudflare, under
-                  Workers &amp; Pages, then Settings, then Variables and Secrets. Taking someone off
-                  stops them signing in again, though their devices stay signed in until they sign
-                  out.
+                  the server is private. To change the list, open Workers &amp; Pages in
+                  Cloudflare, then factwright-sync, then Settings. Edit it under Variables and
+                  Secrets, and click Deploy. Taking someone off stops them signing in again, though
+                  their devices stay signed in until they sign out.
                 </p>
                 <p>
                   If you leave it empty, anyone with a GitHub account and your server’s address can
@@ -387,7 +387,9 @@
                 <p>
                   Check that your GitHub app’s Authorization callback URL is exactly the one in
                   <a href="#github">step 2</a>, with your subdomain in it, and that its Client ID and
-                  secret are the ones you gave Cloudflare.
+                  secret are the ones you gave Cloudflare. If it says the server is private, check
+                  that <code>ALLOWED_GITHUB_USERS</code> has your GitHub user name, spelled as it is
+                  on GitHub.
                 </p>
               </details>
             </div>
