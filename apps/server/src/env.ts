@@ -30,6 +30,12 @@ export interface Env {
   /** Sign in with GitHub, once its OAuth app's ID and secret are set. */
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  /**
+   * The only GitHub accounts that may sign in, by user name, separated by commas, such as
+   * "octocat, hubot". A server of your own sets it, as a secret, so updating it never resets the
+   * list. Unset, as on Factwright's own server, anyone can sign in (see auth-options.ts).
+   */
+  ALLOWED_GITHUB_USERS?: string;
   /** Sign in with Google, once its OAuth client's ID and secret are set. */
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;

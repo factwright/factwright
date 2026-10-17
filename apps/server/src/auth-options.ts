@@ -58,6 +58,50 @@ const byExtension = (context: { path?: string; body?: unknown } | null | undefin
  */
 export type SignedInVia = 'web' | 'device';
 
+/**
+ * What sign-in's page tells someone a server of your own turned away. It names where the owner
+ * sets who may sign in, never who's on the list.
+ */
+export const NOT_LISTED =
+  'This Factwright server is private: only the GitHub accounts its owner lists can sign in. If it’s yours, add your GitHub user name to ALLOWED_GITHUB_USERS in its settings on Cloudflare.';
+
+/** A GitHub user name, alone, after an @, or at the end of a link to its profile. */
+const GITHUB_USER = /^(?:(?:https?:\/\/)?(?:www\.)?github\.com\/|@)?([a-z\d-]{1,39})\/?$/i;
+
+/**
+ * The GitHub accounts a server lets sign in, from its ALLOWED_GITHUB_USERS setting, by user name
+ * in lowercase, as GitHub matches them. Unset or blank, there's no list, and anyone can sign in.
+ * Anything in it that isn't a user name is left out, so a list with no names lets no one in,
+ * rather than everyone.
+ */
+export function allowedGitHubUsers(setting: string | undefined): ReadonlySet<string> | undefined {
+  if (!setting?.trim()) return undefined;
+  return new Set(
+    setting.split(/[\s,]+/).flatMap((each) => {
+      const name = GITHUB_USER.exec(each)?.[1];
+      return name ? [name.toLowerCase()] : [];
+    }),
+  );
+}
+
+/** What sign-in says about who's signing in, as it checks them: how, and GitHub's own profile. */
+interface SigningIn {
+  source: { oauth?: { providerId: string; profile?: Record<string, unknown> | undefined } };
+}
+
+/**
+ * Lets in only the GitHub accounts on a list, by the user name GitHub gives each time: for a new
+ * account, for signing in again and for adding GitHub to an account. Any other account, and any
+ * other way to sign in, is turned away, before anything is kept.
+ */
+export function onlyListed(listed: ReadonlySet<string>) {
+  return ({ source }: SigningIn) => {
+    const login = source.oauth?.providerId === 'github' ? source.oauth.profile?.login : undefined;
+    if (typeof login === 'string' && listed.has(login.toLowerCase())) return;
+    return { error: 'not_listed', errorDescription: NOT_LISTED };
+  };
+}
+
 /** What sign-in needs, apart from where it runs. */
 export interface AuthSettings {
   /** Where the app is served, such as "https://app.factwright.com". */
@@ -66,6 +110,11 @@ export interface AuthSettings {
   database: BetterAuthOptions['database'];
   github?: Provider | undefined;
   google?: Provider | undefined;
+  /**
+   * The only GitHub accounts that may sign in, by user name in lowercase, on a server of your own
+   * that lists them. Without a list, as on Factwright's own server, anyone can.
+   */
+  allowedGitHubUsers?: ReadonlySet<string> | undefined;
   /** Deletes everything an account has, before the account itself goes. */
   beforeDeleteUser: (accountId: string, request?: Request) => Promise<void>;
   /** Sign-ins each IP address may start in a minute. */
@@ -141,6 +190,9 @@ export function authOptions(settings: AuthSettings) {
       },
     },
     user: {
+      ...(settings.allowedGitHubUsers && {
+        validateUserInfo: onlyListed(settings.allowedGitHubUsers),
+      }),
       deleteUser: {
         enabled: true,
         beforeDelete: async (user: { id: string }, request?: Request) =>

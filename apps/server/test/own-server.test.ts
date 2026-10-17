@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { NOT_LISTED } from '../src/auth-options.ts';
 import { sessionCookie, someId, startServer, type TestServer } from './server.ts';
 
 /**
- * A server of your own: no APP_URL, as at a free workers.dev address, and none of the terms or
- * privacy policy of Factwright's own server.
+ * A server of your own: no APP_URL, as at a free workers.dev address, none of the terms or
+ * privacy policy of Factwright's own server, and a list of the GitHub accounts that may sign in.
  */
 let server: TestServer;
 
@@ -14,6 +15,7 @@ beforeAll(async () => {
     PRIVACY_URL: '',
     GITHUB_CLIENT_ID: 'github-app-id',
     GITHUB_CLIENT_SECRET: 'shh',
+    ALLOWED_GITHUB_USERS: 'octocat',
   });
 });
 
@@ -44,6 +46,14 @@ describe('a server of your own', () => {
     expect(url.searchParams.get('redirect_uri')).toBe(
       `${server.url.origin}/api/auth/callback/github`,
     );
+  });
+
+  it('tells someone it turns away why, on sign-in’s own page', async () => {
+    // Where sign-in sends someone its list doesn't name, once GitHub says who they are.
+    const turnedAway = new URLSearchParams({ error: 'not_listed', error_description: NOT_LISTED });
+    const page = await fetch(new URL(`/api/auth/error?${turnedAway}`, server.url));
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('This Factwright server is private');
   });
 
   it('won’t send people anywhere but itself afterward', async () => {

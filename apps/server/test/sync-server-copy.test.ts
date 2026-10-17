@@ -8,6 +8,7 @@ import {
   DEPLOY_BUTTON,
   devVarsExample,
   NAME,
+  SECRETS,
 } from '../scripts/sync-server-copy.ts';
 
 /** Factwright's own settings, as wrangler.jsonc has them. */
@@ -69,7 +70,17 @@ describe('the sync server, ready to deploy', () => {
       'BETTER_AUTH_SECRET=',
       'GITHUB_CLIENT_ID=',
       'GITHUB_CLIENT_SECRET=',
+      'ALLOWED_GITHUB_USERS=',
     ]);
+  });
+
+  it('asks whose GitHub accounts may sign in, so a new server is its owner’s alone', () => {
+    expect(SECRETS.ALLOWED_GITHUB_USERS).toContain('Your GitHub user name');
+    const readme = copyReadme('0.9.0', 'a'.repeat(40));
+    expect(readme).toContain(`\`ALLOWED_GITHUB_USERS\`: ${SECRETS.ALLOWED_GITHUB_USERS}`);
+    for (const key of Object.keys(SECRETS)) {
+      expect(readme).toContain(`npx wrangler secret put ${key}\n`);
+    }
   });
 
   it('says which version it is, where its source is, and how to deploy it', () => {

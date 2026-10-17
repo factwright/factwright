@@ -392,7 +392,12 @@ describe('the guide’s steps', () => {
   it('ask for every secret sync-server’s copy needs, by name', () => {
     const block = /export const SECRETS = \{([\s\S]*?)\} as const;/.exec(COPY_SCRIPT)?.[1] ?? '';
     const secrets = [...block.matchAll(/^\s+([A-Z_]+):/gm)].map((match) => match[1]);
-    expect(secrets).toEqual(['BETTER_AUTH_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']);
+    expect(secrets).toEqual([
+      'BETTER_AUTH_SECRET',
+      'GITHUB_CLIENT_ID',
+      'GITHUB_CLIENT_SECRET',
+      'ALLOWED_GITHUB_USERS',
+    ]);
     openGuide();
     const asked = [...document.querySelectorAll('#deploy .own-field dt code')].map(
       (code) => code.textContent,
@@ -418,5 +423,17 @@ describe('the guide’s steps', () => {
     expect(text('callback-url')).toBe(`${serverAddress(PLACEHOLDER)}/api/auth/callback/github`);
     const routes = readFileSync(join(SITE, '..', 'server', 'src', 'auth-options.ts'), 'utf8');
     expect(routes).toContain("basePath: '/api/auth',");
+  });
+
+  it('say only the GitHub accounts you list can sign in, by the setting the server reads', () => {
+    openGuide();
+    const answer = [...document.querySelectorAll('#questions details')].find(
+      (question) => question.querySelector('summary')?.textContent === 'Who can sign in to it?',
+    );
+    expect(answer?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Only the GitHub accounts you list in ALLOWED_GITHUB_USERS',
+    );
+    const signIn = readFileSync(join(SITE, '..', 'server', 'src', 'auth.ts'), 'utf8');
+    expect(signIn).toContain('allowedGitHubUsers(env.ALLOWED_GITHUB_USERS)');
   });
 });

@@ -252,6 +252,10 @@
                   <dt><code>GITHUB_CLIENT_SECRET</code></dt>
                   <dd><span class="own-plain">The client secret you generated</span></dd>
                 </div>
+                <div class="own-field">
+                  <dt><code>ALLOWED_GITHUB_USERS</code></dt>
+                  <dd><span class="own-plain">Your GitHub user name, so only you can sign in</span></dd>
+                </div>
               </dl>
               <p class="own-help" data-needs-script hidden>
                 This page makes the secret in your browser, and never sends or keeps it. It keeps
@@ -316,7 +320,8 @@
                   files go in R2, which is
                   <a href="https://developers.cloudflare.com/r2/pricing/">free up to 10 GB of storage a month</a>.
                   Past that, Cloudflare charges the payment method it asked for when it turned R2
-                  on.
+                  on. List only your own GitHub account when you deploy, and no one else’s files
+                  add to it.
                 </p>
               </details>
               <details>
@@ -330,10 +335,19 @@
               <details>
                 <summary>Who can sign in to it?</summary>
                 <p>
-                  Anyone with a GitHub account and your server’s address can make an account on it,
-                  as anyone can on Factwright’s own. Each account is private, with its own keys, so
-                  no one can see anyone else’s job hunt. But each one’s files count toward your
-                  Cloudflare account’s free allowance, and R2 storage past it is charged to you.
+                  Only the GitHub accounts you list in <code>ALLOWED_GITHUB_USERS</code>: yours, and
+                  anyone else’s you add after a comma. Anyone else is turned away with a note that
+                  the server is private. To change the list, open Workers &amp; Pages in
+                  Cloudflare, then factwright-sync, then Settings. Edit it under Variables and
+                  Secrets, and click Deploy. Taking someone off stops them signing in again, though
+                  their devices stay signed in until they sign out.
+                </p>
+                <p>
+                  If you leave it empty, anyone with a GitHub account and your server’s address can
+                  make an account on it, as anyone can on Factwright’s own. Each account is private,
+                  with its own keys, so no one can see anyone else’s job hunt. But each one’s files
+                  count toward your Cloudflare account’s free allowance, and R2 storage past it is
+                  charged to you.
                 </p>
               </details>
               <details>
@@ -373,7 +387,9 @@
                 <p>
                   Check that your GitHub app’s Authorization callback URL is exactly the one in
                   <a href="#github">step 2</a>, with your subdomain in it, and that its Client ID and
-                  secret are the ones you gave Cloudflare.
+                  secret are the ones you gave Cloudflare. If it says the server is private, check
+                  that <code>ALLOWED_GITHUB_USERS</code> has your GitHub user name, spelled as it is
+                  on GitHub.
                 </p>
               </details>
             </div>
