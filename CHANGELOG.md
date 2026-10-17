@@ -4,6 +4,10 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- The sidebar links to the browser extension, Save to Factwright, beside Support Factwright, so it's always a click away. A copy built without a sync server leaves it out, since the extension saves through sync.
+- factwright.com's header has a Browser extension button beside GitHub, on screens wide enough for it to sit beside the page's links.
+
 ### Changed
 - factwright.com/extension links to Save to Factwright in the Chrome Web Store, now that Chrome has approved it, and the site's other mentions of the extension no longer say it's coming soon. Firefox's button says it's coming soon to Firefox Add-ons until that store approves it too.
 

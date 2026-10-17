@@ -500,6 +500,12 @@ describe('the extension page', () => {
       expect(links.length, page).toBeGreaterThan(0);
     }
   });
+
+  it('is a click away in the home page’s header', () => {
+    const link = open('index.html').querySelector(`.site-header a[href="${EXTENSION_PAGE}"]`);
+    expect(link?.querySelector('.header-ext-long')?.textContent).toBe('Browser extension');
+    expect(link?.querySelector('.header-ext-short')?.textContent).toBe('Extension');
+  });
 });
 
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {

@@ -40,14 +40,19 @@ async function closeRun() {
 }
 
 // The tests' build is made without FACTWRIGHT_SYNC_SERVER, as a fork's is, unless the shell that
-// runs them has one, as Factwright's own releases are built with.
+// runs them has one, as Factwright's own releases are built with. The browser extension saves
+// through sync, so only a copy with sync links to it.
 test('says sync isn’t in a copy built without a sync server', async () => {
   const sync = opened.window.getByRole('region', { name: 'Sync' });
+  const extension = opened.window.getByRole('link', { name: 'Browser extension' });
   if (process.env.FACTWRIGHT_SYNC_SERVER) {
     await expect(sync.getByRole('button', { name: 'Turn on…' })).toBeVisible();
+    // Not clicked: it would open factwright.com in the browser of whoever runs the tests.
+    await expect(extension).toHaveAttribute('href', 'https://factwright.com/extension');
   } else {
     await expect(sync.getByText('Not in this copy')).toBeVisible();
     await expect(sync.getByRole('button')).toHaveCount(0);
+    await expect(extension).toHaveCount(0);
   }
 });
 
