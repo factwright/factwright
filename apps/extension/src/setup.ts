@@ -24,8 +24,8 @@ import {
   deviceSignIn,
   endSession,
   forgetAccount,
-  letGo,
   loadAccount,
+  reachOnly,
   saveAccount,
   signOut,
   syncFetch,
@@ -144,9 +144,11 @@ interface Choice {
 
 /**
  * Setup's first page, with the sync you chose last time, or with the choice that went wrong and
- * what went wrong with it.
+ * what went wrong with it. A server of your own it asked the browser for, where signing in didn't
+ * finish, is given back.
  */
 function signedOut(note?: string, choice?: Choice): void {
+  void loadAccount().then((account) => reachOnly(account?.server ?? null));
   void settings().then(({ server }) =>
     choose(choice ?? { own: isOwn(server), address: isOwn(server) ? server : '' }, note),
   );
@@ -242,7 +244,8 @@ function choose(choice: Choice, note?: string): void {
     ),
     h(
       'form',
-      { on: { submit: go } },
+      // Its own checks, not the browser's, which would turn away an address without https://.
+      { novalidate: true, on: { submit: go } },
       h(
         'fieldset',
         { class: 'choices' },
@@ -281,12 +284,10 @@ async function signIn(server: string, choice: Choice): Promise<void> {
       h('p', { class: 'muted', role: 'status' }, `Checking ${hostOf(server)}…`),
     );
     const check = await checkServer(server, syncFetch);
-    // It answered as something else, so it was never the server: the permission goes back.
-    if (check === 'not-sync') await letGo(server);
     if (check !== 'ok') {
       signedOut(
         check === 'unreachable'
-          ? `Couldn’t reach ${hostOf(server)}. Check its address and the connection.`
+          ? `${hostOf(server)} didn’t answer. Check its address and the connection, then try again.`
           : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
         choice,
       );
@@ -302,10 +303,19 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     signedOut(reasonOf(error, server));
     return;
   }
-  const page = () => {
-    // Only the server's own sign-in page, never an address it could name elsewhere.
-    if (new URL(pending.url).origin === server) void ext.tabs.create({ url: pending.url });
-  };
+  // Only the server's own sign-in page, never an address it could name elsewhere.
+  const at = URL.canParse(pending.url) ? new URL(pending.url) : null;
+  if (at?.origin !== server) {
+    flow.cancel();
+    signedOut(
+      at
+        ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so Save to Factwright didn’t open it. Type the address Factwright on your computer uses.`
+        : `${hostOf(server)} didn’t give a sign-in page Save to Factwright can open. Check its address: it’s the one Factwright on your computer uses.`,
+      choice,
+    );
+    return;
+  }
+  const page = () => void ext.tabs.create({ url: pending.url });
   show(
     app,
     heading('Sign in to sync'),
@@ -436,6 +446,17 @@ function otherWays(account: Account, client: SyncClient, onDone: () => void): HT
  * signing in: sign in again, or link with a link code or the recovery key, which still work.
  */
 function signInAgain(account: Account, others: HTMLElement): void {
+  const again = button(
+    'Sign in again',
+    () => {
+      // The new sign-in asks the browser on this click, once. The old one is ended on the server.
+      again.disabled = true;
+      const own = isOwn(account.server);
+      void signIn(account.server, { own, address: own ? account.server : '' });
+      void endSession(account);
+    },
+    true,
+  );
   show(
     app,
     heading('Sign in again to link it'),
@@ -444,18 +465,7 @@ function signInAgain(account: Account, others: HTMLElement): void {
       {},
       'It’s been a while since Save to Factwright signed in, so sign in again to ask Factwright on your computer to link it. Or link it with a link code or your recovery key.',
     ),
-    actions(
-      button(
-        'Sign in again',
-        () => {
-          // The new sign-in asks the browser on this click. The old one is ended on the server.
-          const own = isOwn(account.server);
-          void signIn(account.server, { own, address: own ? account.server : '' });
-          void endSession(account);
-        },
-        true,
-      ),
-    ),
+    actions(again),
     others,
   );
 }

@@ -1,33 +1,56 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { allowSync, canReachSync, letGo, readAccount } from '../src/account.ts';
+import { allowSync, canReachSync, reachOnly, readAccount } from '../src/account.ts';
+import { hostPattern } from '../src/manifest.ts';
 import { DEFAULT_SERVER } from '../src/server.ts';
 
-/** The browser's permissions, as the extension asks for them: what it's asked, and what it says. */
-const permissions = vi.hoisted(() => {
-  const calls: { call: 'contains' | 'request' | 'remove'; origins: string[] }[] = [];
-  const answers = { contains: true, request: true, fails: false };
-  const answer =
-    (call: 'contains' | 'request' | 'remove', value: boolean) =>
-    async ({ origins }: { origins: string[] }) => {
-      calls.push({ call, origins });
-      if (answers.fails) throw new Error('Only permissions specified in the manifest may be asked');
-      return value;
-    };
+/**
+ * The browser's permissions, as the extension asks for them: the sites it may reach, what it's
+ * asked, and how it answers.
+ */
+const browser = vi.hoisted(() => {
+  const granted = new Set<string>();
+  const calls: { call: string; origins: string[] }[] = [];
+  const answers = { allow: true, fails: false, wontGiveBack: new Set<string>() };
+  const fail = () => {
+    throw new Error('Only permissions specified in the manifest may be requested.');
+  };
   (globalThis as { chrome?: unknown }).chrome = {
     permissions: {
-      contains: (asked: { origins: string[] }) => answer('contains', answers.contains)(asked),
-      request: (asked: { origins: string[] }) => answer('request', answers.request)(asked),
-      remove: (asked: { origins: string[] }) => answer('remove', true)(asked),
+      contains: async ({ origins }: { origins: string[] }) => {
+        calls.push({ call: 'contains', origins });
+        if (answers.fails) fail();
+        return origins.every((origin) => granted.has(origin));
+      },
+      request: async ({ origins }: { origins: string[] }) => {
+        calls.push({ call: 'request', origins });
+        if (answers.fails) fail();
+        if (answers.allow) for (const origin of origins) granted.add(origin);
+        return answers.allow;
+      },
+      remove: async ({ origins }: { origins: string[] }) => {
+        calls.push({ call: 'remove', origins });
+        if (answers.fails || origins.some((origin) => answers.wontGiveBack.has(origin))) fail();
+        for (const origin of origins) granted.delete(origin);
+        return true;
+      },
+      getAll: async () => {
+        if (answers.fails) fail();
+        return { origins: [...granted], permissions: ['activeTab', 'storage'] };
+      },
     },
   };
-  return { calls, answers };
+  return { granted, calls, answers };
 });
 
 const OWN = 'https://factwright-sync.sam.workers.dev:8443';
+const OWN_SITE = 'https://factwright-sync.sam.workers.dev/*';
+const BUILT_FOR = hostPattern(DEFAULT_SERVER);
 
 beforeEach(() => {
-  permissions.calls.length = 0;
-  Object.assign(permissions.answers, { contains: true, request: true, fails: false });
+  browser.granted.clear();
+  browser.granted.add(BUILT_FOR);
+  browser.calls.length = 0;
+  Object.assign(browser.answers, { allow: true, fails: false, wontGiveBack: new Set() });
 });
 
 describe('the account it keeps', () => {
@@ -50,40 +73,59 @@ describe('the account it keeps', () => {
 describe('the browser’s permission to reach a sync server', () => {
   it('asks for a server of your own’s site alone, on any of its ports', async () => {
     expect(await allowSync(OWN)).toBe(true);
-    expect(permissions.calls).toEqual([
-      { call: 'request', origins: ['https://factwright-sync.sam.workers.dev/*'] },
-    ]);
+    expect(browser.calls).toEqual([{ call: 'request', origins: [OWN_SITE] }]);
   });
 
   it('says when you turned it down, or the browser wouldn’t ask', async () => {
-    permissions.answers.request = false;
+    browser.answers.allow = false;
     expect(await allowSync(OWN)).toBe(false);
-    permissions.answers.fails = true;
+    browser.answers.fails = true;
     expect(await allowSync(OWN)).toBe(false);
   });
 
   it('checks the site of the server it’s signed in to', async () => {
-    permissions.answers.contains = false;
     expect(await canReachSync(OWN)).toBe(false);
-    expect(permissions.calls).toEqual([
-      { call: 'contains', origins: ['https://factwright-sync.sam.workers.dev/*'] },
-    ]);
+    browser.granted.add(OWN_SITE);
+    expect(await canReachSync(OWN)).toBe(true);
+    expect(browser.calls.map((each) => each.origins)).toEqual([[OWN_SITE], [OWN_SITE]]);
+  });
+});
+
+describe('reaching only the server it’s signed in to', () => {
+  const STRAYS = ['https://sync.exmaple.com/*', 'https://old-sync.example.org/*'];
+
+  it('gives back every other server of your own, and keeps its own and the one it’s built for', async () => {
+    for (const site of [OWN_SITE, ...STRAYS]) browser.granted.add(site);
+    await reachOnly(OWN);
+    expect([...browser.granted].sort()).toEqual([BUILT_FOR, OWN_SITE].sort());
+    expect(browser.calls.filter((each) => each.call === 'remove')).toEqual(
+      STRAYS.map((site) => ({ call: 'remove', origins: [site] })),
+    );
   });
 
-  it('gives back a server of your own once it’s done with it', async () => {
-    await letGo(OWN);
-    expect(permissions.calls).toEqual([
-      { call: 'remove', origins: ['https://factwright-sync.sam.workers.dev/*'] },
-    ]);
+  it('signed out, keeps only the one it’s built for, which its manifest asks for', async () => {
+    for (const site of [OWN_SITE, ...STRAYS]) browser.granted.add(site);
+    await reachOnly(null);
+    expect([...browser.granted]).toEqual([BUILT_FOR]);
+    expect(browser.calls.some((each) => each.origins.includes(BUILT_FOR))).toBe(false);
   });
 
-  it('never gives back the server it was built for, which its manifest asks for', async () => {
-    await letGo(DEFAULT_SERVER);
-    expect(permissions.calls).toEqual([]);
+  it('keeps a server of your own on the same site as the one it’s built for', async () => {
+    await reachOnly(`${DEFAULT_SERVER.replace(/:\d+$/, '')}:8443`);
+    await reachOnly(null);
+    expect([...browser.granted]).toEqual([BUILT_FOR]);
+    expect(browser.calls).toEqual([]);
   });
 
-  it('carries on when the browser won’t give it back', async () => {
-    permissions.answers.fails = true;
-    await expect(letGo(OWN)).resolves.toBeUndefined();
+  it('gives back the rest when the browser won’t give one back', async () => {
+    for (const site of STRAYS) browser.granted.add(site);
+    browser.answers.wontGiveBack.add(STRAYS[0] as string);
+    await expect(reachOnly(null)).resolves.toBeUndefined();
+    expect([...browser.granted].sort()).toEqual([BUILT_FOR, STRAYS[0]].sort());
+  });
+
+  it('carries on when the browser can’t say what it has', async () => {
+    browser.answers.fails = true;
+    await expect(reachOnly(null)).resolves.toBeUndefined();
   });
 });

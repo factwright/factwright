@@ -73,13 +73,19 @@ export async function loadAccount(): Promise<Account | null> {
   }
 }
 
+/** Keeps the account, and lets the extension reach its server alone (see reachOnly). */
 export async function saveAccount(account: Account): Promise<void> {
   await run('readwrite', (store) => store.put(account, KEY));
+  await reachOnly(account.server);
 }
 
-/** Forgets the sign-in and the keys, as signing out does, or the server saying it's signed out. */
+/**
+ * Forgets the sign-in and the keys, as signing out does, or the server saying it's signed out, and
+ * gives back the browser's permission for a server of your own.
+ */
 export async function forgetAccount(): Promise<void> {
   await run('readwrite', (store) => store.clear());
+  await reachOnly(null);
 }
 
 /** A sync server's site, as the browser's permission names it. */
@@ -101,12 +107,31 @@ export const allowSync = (server: string): Promise<boolean> =>
   ext.permissions.request(siteOf(server)).catch(() => false);
 
 /**
- * Gives back the extension's permission to reach a server of your own, once it's done with it. The
- * server it was built for is in its manifest, so that one stays.
+ * Gives back the browser's permission for each server of your own the extension isn't signed in
+ * to: one it asked for while setting up, where the sign-in didn't finish, or one it used before
+ * signing out. It keeps the server its sign-in is for, if it has one, and the one it was built
+ * for, which its manifest asks for. Each is given back on its own, so one the browser won't give
+ * back stops none of the others.
  */
-export async function letGo(server: string): Promise<void> {
-  if (hostPattern(server) === hostPattern(DEFAULT_SERVER)) return;
-  await ext.permissions.remove(siteOf(server)).catch(() => false);
+export async function reachOnly(server: string | null): Promise<void> {
+  const keep = new Set([DEFAULT_SERVER, ...(server ? [server] : [])].map(hostPattern));
+  let granted: string[] = [];
+  try {
+    granted = (await ext.permissions.getAll()).origins ?? [];
+  } catch {
+    return;
+  }
+  await Promise.all(
+    granted
+      .filter((origin) => !keep.has(origin))
+      .map(async (origin) => {
+        try {
+          await ext.permissions.remove({ origins: [origin] });
+        } catch {
+          // Not one it can give back, such as one the browser grants on its own.
+        }
+      }),
+  );
 }
 
 /** A request to the sync server: with the extension's token, never the browser's cookies for it. */
@@ -121,23 +146,26 @@ export const clientFor = (server: string, token: string) =>
 export const deviceSignIn = (server: string) =>
   new DeviceSignIn({ server, clientId: CLIENTS.extension, fetch: syncFetch });
 
+/** How long signing out waits for the server, before forgetting the sign-in here anyway. */
+const SIGN_OUT_MS = 10_000;
+
 /** Ends the extension's session on the server, so its sign-in can't be used again. */
 export async function endSession(account: Account): Promise<void> {
   await syncFetch(new URL('/api/auth/sign-out', account.server), {
     method: 'POST',
     headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },
     body: '{}',
+    signal: AbortSignal.timeout(SIGN_OUT_MS),
   }).catch(() => {});
 }
 
 /**
- * Ends the extension's session on the server, then forgets it and the keys here, and gives back
+ * Ends the extension's session on the server, then forgets it and the keys here, which gives back
  * the permission to reach a server of your own.
  */
 export async function signOut(account: Account | null): Promise<void> {
   if (account) await endSession(account);
   await forgetAccount();
-  if (account) await letGo(account.server);
 }
 
 /** The browser the extension is in, for the name its saves carry, such as "Chrome". */

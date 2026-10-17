@@ -30,18 +30,20 @@ describe('a server of your own’s address', () => {
     expect(read('factwright-sync.sam.workers.dev')).toBe(OWN);
   });
 
+  const HTTPS = 'Your server’s address must start with https://.';
+
   it('takes nothing but https in the stores’ build, this computer included', () => {
-    expect(read('http://factwright-sync.sam.workers.dev')).toMatch(/https:\/\//);
-    expect(read('http://localhost:8787')).toMatch(/https:\/\//);
-    expect(read('http://127.0.0.1:8787')).toMatch(/https:\/\//);
-    expect(read('ftp://sync.example.com')).toMatch(/https:\/\//);
+    expect(read('http://factwright-sync.sam.workers.dev')).toBe(HTTPS);
+    expect(read('http://localhost:8787')).toBe(HTTPS);
+    expect(read('http://127.0.0.1:8787')).toBe(HTTPS);
+    expect(read('ftp://sync.example.com')).toBe(HTTPS);
   });
 
   it('takes this computer over http in a build for testing, and nowhere else', () => {
     expect(read('http://localhost:8787', true)).toBe('http://localhost:8787');
     expect(read('http://127.0.0.1:8787', true)).toBe('http://127.0.0.1:8787');
-    expect(read('http://sync.example.com', true)).toMatch(/https:\/\//);
-    expect(read('http://localhost.example.com', true)).toMatch(/https:\/\//);
+    expect(read('http://sync.example.com', true)).toBe(HTTPS);
+    expect(read('http://localhost.example.com', true)).toBe(HTTPS);
   });
 
   it('takes the address alone: no path, query or fragment', () => {
@@ -93,25 +95,37 @@ describe('checking a server', () => {
     });
   });
 
-  it('tells anything else from a server that didn’t answer', async () => {
+  it('tells a server that answers as something else', async () => {
     expect(await checkServer(OWN, answering(404, '<h1>Not found</h1>', 'text/html'))).toBe(
       'not-sync',
     );
+    expect(await checkServer(OWN, answering(403, 'Forbidden', 'text/plain'))).toBe('not-sync');
     expect(await checkServer(OWN, answering(200, '<!doctype html><p>Hi', 'text/html'))).toBe(
       'not-sync',
     );
     expect(await checkServer(OWN, answering(200, '{"ok":true}'))).toBe('not-sync');
     expect(await checkServer(OWN, answering(200, 'null'))).toBe('not-sync');
-    expect(await checkServer(OWN, answering(500, '{"providers":[]}'))).toBe('not-sync');
     // A redirect, as the browser shows one it didn't follow.
     expect(await checkServer(OWN, async () => Response.redirect(`${OWN}/elsewhere`, 302))).toBe(
       'not-sync',
     );
+  });
+
+  it('tells a server that didn’t answer, or not for now, so trying again may work', async () => {
     expect(
       await checkServer(OWN, async () => {
         throw new TypeError('Failed to fetch');
       }),
     ).toBe('unreachable');
+    // Busy or failing for now, as while it's deployed.
+    for (const status of [429, 500, 502, 503]) {
+      expect(await checkServer(OWN, answering(status, '{"providers":[]}'))).toBe('unreachable');
+    }
+    // Its answer stopped partway, as when it took too long.
+    const cut = new ReadableStream({
+      start: (controller) => controller.error(new DOMException('Timed out', 'TimeoutError')),
+    });
+    expect(await checkServer(OWN, async () => new Response(cut))).toBe('unreachable');
   });
 
   it('reads sign-in options as a Factwright sync server’s only with a list of ways to sign in', () => {

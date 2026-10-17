@@ -43,7 +43,7 @@ export function readServer(typed: string, local: boolean = !FOR_STORES): ServerA
   }
   const here = url.protocol === 'http:' && local && THIS_COMPUTER.includes(url.hostname);
   if (url.protocol !== 'https:' && !here) {
-    return { ok: false, problem: 'Use your server’s address that starts with https://.' };
+    return { ok: false, problem: 'Your server’s address must start with https://.' };
   }
   if (url.username || url.password) {
     return { ok: false, problem: 'Leave out the user name and password: type the address alone.' };
@@ -75,29 +75,39 @@ export function isSyncServer(answer: unknown): boolean {
 /** How long a server has to answer, when setup checks it. */
 const CHECK_MS = 15_000;
 
-/** What checking a server found: it's a Factwright sync server, it didn't answer, or it isn't one. */
+/**
+ * What checking a server found: it's a Factwright sync server; it didn't answer, or not for now;
+ * or it answered as something else.
+ */
 export type ServerCheck = 'ok' | 'unreachable' | 'not-sync';
 
 /**
  * Checks that a server of your own answers as a Factwright sync server, before setup signs in to
- * it. The answer must be its own: a redirect anywhere doesn't count.
+ * it. The answer must be its own: a redirect anywhere doesn't count. A server that's busy or
+ * failing for now, as one can be while it's deployed, didn't answer, so trying again may work.
  */
 export async function checkServer(
   server: string,
   fetcher: typeof fetch = fetch,
 ): Promise<ServerCheck> {
-  let response: Response;
+  let text: string;
   try {
-    response = await fetcher(new URL('/api/sign-in-options', server), {
+    const response = await fetcher(new URL('/api/sign-in-options', server), {
       credentials: 'omit',
       redirect: 'manual',
       signal: AbortSignal.timeout(CHECK_MS),
     });
+    if (response.status === 429 || response.status >= 500) return 'unreachable';
+    if (!response.ok) return 'not-sync';
+    text = await response.text();
   } catch {
     return 'unreachable';
   }
-  if (!response.ok) return 'not-sync';
-  return isSyncServer(await response.json().catch(() => null)) ? 'ok' : 'not-sync';
+  try {
+    return isSyncServer(JSON.parse(text)) ? 'ok' : 'not-sync';
+  } catch {
+    return 'not-sync';
+  }
 }
 
 /** Whether a server is one of your own, not the one the extension was built for. */
