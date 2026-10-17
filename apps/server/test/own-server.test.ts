@@ -89,23 +89,28 @@ describe('a server of your own', () => {
 
   it('sells nothing: sync is free, with no checkout, no portal and no Stripe webhook', async () => {
     const sam = await server.signUp();
-    const asSam = (path: string) =>
-      fetch(new URL(path, server.url), {
-        method: 'POST',
-        headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ period: 'month' }),
-      });
-    expect((await asSam('/api/sync/live/ticket')).status).toBe(200);
-    expect((await asSam('/api/billing/checkout')).status).toBe(404);
-    expect((await asSam('/api/billing/portal')).status).toBe(404);
-    const webhook = await fetch(new URL('/api/billing/stripe', server.url), {
+    const auth = { authorization: `Bearer ${sam.token}` };
+    await expect(sam.client.saveKeys('k'.repeat(22), 'locked-account-key')).resolves.toBe('saved');
+    expect((await post('/api/billing/checkout', { period: 'month' }, auth)).status).toBe(404);
+    expect((await post('/api/billing/portal', {}, auth)).status).toBe(404);
+    expect((await post('/api/billing/stripe', {})).status).toBe(404);
+    expect(await sam.client.account()).not.toHaveProperty('access');
+  });
+
+  it('won’t delete an account that may still be paying, while it can’t reach Stripe', async () => {
+    const sam = await server.signUp();
+    await server.env.DB.prepare(
+      `INSERT INTO "syncAccess" (account, customer, subscription, status, updatedAt)
+       VALUES (?, 'cus_left', 'sub_left', 'active', ?)`,
+    )
+      .bind(sam.id, new Date().toISOString())
+      .run();
+    const deleted = await fetch(new URL('/api/admin/delete', server.url), {
       method: 'POST',
-      body: '{}',
+      headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ account: sam.id }),
     });
-    expect(webhook.status).toBe(404);
-    const account = await fetch(new URL('/api/account', server.url), {
-      headers: { authorization: `Bearer ${sam.token}` },
-    });
-    expect(await account.json()).not.toHaveProperty('access');
+    expect(deleted.status).toBe(500);
+    expect((await sam.client.account()).user.id).toBe(sam.id);
   });
 });

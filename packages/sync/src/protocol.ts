@@ -186,8 +186,8 @@ export interface AccountInfo {
 }
 
 /**
- * How an account has sync on a server that sells it. Reading what's synced never needs it, only
- * sending changes, adding devices and listening for changes.
+ * How an account has sync on a server that sells it. Reading what's synced never needs it: only
+ * sending changes and files, and adding devices.
  */
 export interface SyncAccess {
   /** Whether sync works for the account now. */
@@ -196,14 +196,20 @@ export interface SyncAccess {
   gift: 'early' | 'free' | null;
   /** The account's subscription, once it has had one. */
   subscription: {
-    /** As Stripe says it: "active", "past_due" while a payment is retried, "canceled" and so on. */
-    status: string;
-    /** When the time paid for ends, as an ISO time: when it renews, or ends if it's canceling. */
+    state: SubscriptionState;
+    /** When the time paid for ends, as an ISO time: when it renews, or ends if it's "ending". */
     renewsAt: string | null;
-    /** Whether it ends then, rather than renewing. */
-    canceling: boolean;
   } | null;
 }
+
+/**
+ * Where a subscription is, in the few states the apps show. Sync works in the first three.
+ * - "active": paid up, and it renews.
+ * - "ending": paid up to renewsAt, and canceled from then.
+ * - "retrying": a renewal's payment failed, and Stripe is trying it again.
+ * - "ended": canceled, or its payments failed for good.
+ */
+export type SubscriptionState = 'active' | 'ending' | 'retrying' | 'ended';
 
 /**
  * A new device asking to link, waiting for a device that's set up to approve it. Everything in

@@ -103,16 +103,20 @@ export async function startServer(vars: Record<string, string> = {}) {
   }
 
   /**
-   * Makes an account with one signed-in session: with a made-up email, verified, unless given
-   * one, as GitHub or Google would say it.
+   * Makes an account with one signed-in session, now: with a made-up email, verified, unless
+   * given one, as GitHub or Google would say it.
    */
   async function signUp(
     name = 'Sam Rivera',
-    { email, verified = true }: { email?: string; verified?: boolean } = {},
+    {
+      email,
+      verified = true,
+      since = new Date(),
+    }: { email?: string; verified?: boolean; since?: Date } = {},
   ): Promise<Account> {
     const id = randomBytes(16).toString('hex');
     const address = email ?? `${id}@example.com`;
-    const now = new Date().toISOString();
+    const now = since.toISOString();
     await env.DB.prepare(
       `INSERT INTO "user" (id, name, email, emailVerified, image, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, NULL, ?, ?)`,

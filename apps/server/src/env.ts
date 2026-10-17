@@ -42,14 +42,20 @@ export interface Env {
   /** Lets the operator restore an account's store from a backup. Unset, there's no way in. */
   ADMIN_TOKEN?: string;
   /**
-   * Selling sync, on Factwright's own server only (billing.ts): Stripe's restricted key, the
-   * webhook's signing secret, and the two prices. Unless all four are set, sync costs nothing and
-   * nobody is asked to pay, as on a server of your own.
+   * Selling sync, on Factwright's own server only (billing.ts). Stripe's restricted key and the
+   * webhook's signing secret connect Stripe, so subscriptions are kept up to date and canceled with
+   * their accounts. The two prices then start selling. Until all four are set, sync costs nothing
+   * and nobody is asked to pay, as on a server of your own.
    */
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PRICE_MONTHLY?: string;
   STRIPE_PRICE_YEARLY?: string;
+  /**
+   * When sync started being sold, as an ISO time, such as "2026-11-02T15:00:00Z". Accounts made
+   * before it keep sync for good. Unset, none do.
+   */
+  EARLY_BEFORE?: string;
   /** Where Stripe's API is. Only the tests set it, to a stand-in. */
   STRIPE_API_URL?: string;
   /** How much sync is used, in totals only, counted once a day (sync-totals.ts). */

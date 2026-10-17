@@ -1,11 +1,17 @@
 import { randomBytes } from 'node:crypto';
-import type { SyncAccess } from '@factwright/sync';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Account, startServer, type TestServer } from './server.ts';
-import { type FakeStripe, signed, startStripe, subscription } from './stripe.ts';
+import {
+  type FakeStripe,
+  type FakeSubscription,
+  signed,
+  startStripe,
+  subscription,
+} from './stripe.ts';
 
-/** Factwright's own server, selling sync through a stand-in for Stripe. */
+/** Factwright's own server, selling sync through a stand-in for Stripe, since the start of 2026. */
 const WEBHOOK_SECRET = 'whsec_test_only_0123456789';
+const SELLING_SINCE = '2026-01-01T00:00:00.000Z';
 const ADMIN = { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' };
 
 let stripe: FakeStripe;
@@ -19,6 +25,7 @@ beforeAll(async () => {
     STRIPE_PRICE_MONTHLY: 'price_month',
     STRIPE_PRICE_YEARLY: 'price_year',
     STRIPE_API_URL: stripe.url,
+    EARLY_BEFORE: SELLING_SINCE,
   });
 });
 
@@ -27,8 +34,8 @@ afterAll(async () => {
   await stripe?.close();
 });
 
-/** A request as the desktop app sends it, with its session. */
-function asApp(account: Account, method: string, path: string, body?: object) {
+/** A request with a session's token, as the desktop app sends it, or the web view after sign-in. */
+function as(account: { token: string }, method: string, path: string, body?: object) {
   return fetch(new URL(path, server.url), {
     method,
     headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },
@@ -38,13 +45,12 @@ function asApp(account: Account, method: string, path: string, body?: object) {
 
 /** The first thing turning sync on sends, which needs sync: the locked account key. */
 const saveKeys = (account: Account) =>
-  asApp(account, 'PUT', '/api/sync/keys', {
+  as(account, 'PUT', '/api/sync/keys', {
     keyId: randomBytes(16).toString('base64url'),
     recovery: 'locked-account-key',
   });
 
-const accessFor = async (account: Account) =>
-  ((await (await asApp(account, 'GET', '/api/account')).json()) as { access: SyncAccess }).access;
+const accessOf = async (account: Account) => (await account.client.account()).access;
 
 /** Stripe telling the server about something, signed as Stripe signs it, unless told otherwise. */
 function fromStripe(event: object, { secret = WEBHOOK_SECRET, secondsAgo = 0 } = {}) {
@@ -56,76 +62,118 @@ function fromStripe(event: object, { secret = WEBHOOK_SECRET, secondsAgo = 0 } =
   });
 }
 
+const checkoutDone = (paid: FakeSubscription) =>
+  fromStripe({
+    type: 'checkout.session.completed',
+    data: { object: { mode: 'subscription', subscription: paid.id } },
+  });
+
+const changed = (paid: FakeSubscription, type = 'customer.subscription.updated') =>
+  fromStripe({ type, data: { object: { id: paid.id } } });
+
 /** An account paying for sync, as Stripe says once its checkout is done. */
-async function paying(more: Parameters<typeof subscription>[1] = {}) {
+async function paying(more: Partial<FakeSubscription> = {}) {
   const sam = await server.signUp();
   const paid = subscription(sam.id, more);
+  stripe.customer(paid.customer);
   stripe.subscriptions.set(paid.id, paid);
-  const done = await fromStripe({
-    type: 'checkout.session.completed',
-    data: {
-      object: { mode: 'subscription', subscription: paid.id, client_reference_id: sam.id },
-    },
-  });
-  expect(done.status).toBe(200);
+  expect((await checkoutDone(paid)).status).toBe(200);
   return { sam, paid };
 }
 
 const operator = (path: string, body: object) =>
   fetch(new URL(path, server.url), { method: 'POST', headers: ADMIN, body: JSON.stringify(body) });
 
+/** What the server keeps about an account's sync. */
+const rowOf = (account: Account) =>
+  server.env.DB.prepare('SELECT * FROM "syncAccess" WHERE account = ?')
+    .bind(account.id)
+    .first<{ customer: string | null; status: string | null; checkedAt: string | null }>();
+
 describe('a server that sells sync', () => {
   it('tells the apps sync here is a subscription', async () => {
-    const response = await fetch(new URL('/api/sign-in-options', server.url));
-    expect(((await response.json()) as { features: string[] }).features).toEqual([
-      'approve',
-      'subscription',
-    ]);
+    expect(await server.clientFor(null).features()).toEqual(['approve', 'subscription']);
   });
 
-  it('lets an account without sync read, sign a device out and pay, but send nothing', async () => {
+  it('lets an account without sync read, listen, call things off and pay, but send nothing', async () => {
     const sam = await server.signUp();
     const phone = await server.newSession(sam.id, 'Mozilla/5.0 (iPhone)');
     const refused = await saveKeys(sam);
     expect(refused.status).toBe(402);
     expect(await refused.json()).toMatchObject({ error: 'subscription-needed' });
-    expect((await asApp(sam, 'POST', '/api/sync/live/ticket')).status).toBe(402);
-    expect((await asApp(sam, 'GET', '/api/sync/changes?since=0')).status).toBe(200);
-    expect((await asApp(sam, 'DELETE', `/api/account/devices/${phone.sessionId}`)).status).toBe(
-      204,
-    );
-    expect(await accessFor(sam)).toEqual({ allowed: false, gift: null, subscription: null });
+    expect((await as(sam, 'POST', '/api/sync/links', { id: 'x' })).status).toBe(402);
+    for (const [method, path] of [
+      ['GET', '/api/sync/changes?since=0'],
+      ['POST', '/api/sync/live/ticket'],
+      ['DELETE', `/api/sync/links/${randomBytes(16).toString('base64url')}`],
+      ['POST', `/api/sync/requests/${randomBytes(16).toString('base64url')}/deny`],
+    ] as const) {
+      expect((await as(sam, method, path)).status, path).not.toBe(402);
+    }
+    expect((await as(sam, 'DELETE', `/api/account/devices/${phone.sessionId}`)).status).toBe(204);
+    expect(await accessOf(sam)).toEqual({ allowed: false, gift: null, subscription: null });
   });
 
-  it('starts Stripe’s checkout for a month or a year, naming the account', async () => {
+  it('keeps billing to a browser’s own sign-in, never a device code’s', async () => {
     const sam = await server.signUp();
-    const started = await asApp(sam, 'POST', '/api/billing/checkout', { period: 'year' });
+    const desktop = await server.newSession(sam.id, 'Factwright/0.0.0 (Mac)', 'device');
+    expect((await as(desktop, 'POST', '/api/billing/checkout', { period: 'month' })).status).toBe(
+      403,
+    );
+    expect((await as(desktop, 'POST', '/api/billing/portal')).status).toBe(403);
+  });
+
+  it('starts Stripe’s checkout with the account’s own customer, made once', async () => {
+    const sam = await server.signUp();
+    const started = await as(sam, 'POST', '/api/billing/checkout', { period: 'year' });
     expect(await started.json()).toEqual({ url: 'https://checkout.stripe.com/c/pay/cs_test_1' });
-    const asked = stripe.requests.at(-1);
-    expect(asked?.authorization).toBe('Bearer rk_test_only');
-    expect(Object.fromEntries(asked?.form ?? [])).toEqual({
+    const [made, opened] = stripe.requests.slice(-2);
+    expect(made).toMatchObject({ path: '/v1/customers', idempotencyKey: `customer-${sam.id}` });
+    expect(made?.form.get('metadata[account]')).toBe(sam.id);
+    const form = Object.fromEntries(opened?.form ?? []);
+    expect(opened?.authorization).toBe('Bearer rk_test_only');
+    expect(form).toMatchObject({
       mode: 'subscription',
+      customer: (await rowOf(sam))?.customer,
       'line_items[0][price]': 'price_year',
       'line_items[0][quantity]': '1',
       client_reference_id: sam.id,
       'subscription_data[metadata][account]': sam.id,
       success_url: `${server.url.origin}/subscribe/done`,
       cancel_url: `${server.url.origin}/subscribe`,
-      customer_email: sam.email,
     });
-    const week = await asApp(sam, 'POST', '/api/billing/checkout', { period: 'week' });
-    expect(week.status).toBe(400);
+    // It closes after about half an hour, so a tab left open can't pay later.
+    const closes = Number(form.expires_at) - Date.now() / 1000;
+    expect(closes).toBeGreaterThan(30 * 60);
+    expect(closes).toBeLessThan(40 * 60);
+
+    const again = await as(sam, 'POST', '/api/billing/checkout', { period: 'year' });
+    expect(again.status).toBe(429);
+    const other = await server.signUp();
+    expect((await as(other, 'POST', '/api/billing/checkout', { period: 'week' })).status).toBe(400);
+  });
+
+  it('makes a new customer when Stripe has deleted the account’s old one', async () => {
+    const sam = await server.signUp();
+    await as(sam, 'POST', '/api/billing/checkout', { period: 'month' });
+    const old = (await rowOf(sam))?.customer;
+    stripe.forget(String(old));
+    await server.env.DB.prepare('UPDATE "syncAccess" SET checkoutAt = NULL WHERE account = ?')
+      .bind(sam.id)
+      .run();
+    const started = await as(sam, 'POST', '/api/billing/checkout', { period: 'month' });
+    expect(started.status).toBe(200);
+    expect((await rowOf(sam))?.customer).not.toBe(old);
   });
 
   it('follows a subscription on Stripe’s word, and only Stripe’s', async () => {
     const sam = await server.signUp();
     const paid = subscription(sam.id);
+    stripe.customer(paid.customer);
     stripe.subscriptions.set(paid.id, paid);
     const event = {
       type: 'checkout.session.completed',
-      data: {
-        object: { mode: 'subscription', subscription: paid.id, client_reference_id: sam.id },
-      },
+      data: { object: { mode: 'subscription', subscription: paid.id } },
     };
     expect((await fromStripe(event, { secret: 'whsec_someone_else' })).status).toBe(400);
     expect((await fromStripe(event, { secondsAgo: 600 })).status).toBe(400);
@@ -134,135 +182,207 @@ describe('a server that sells sync', () => {
       body: JSON.stringify(event),
     });
     expect(unsigned.status).toBe(400);
+    const huge = await fetch(new URL('/api/billing/stripe', server.url), {
+      method: 'POST',
+      body: 'x'.repeat(600 * 1024),
+    });
+    expect(huge.status).toBe(413);
     expect((await saveKeys(sam)).status).toBe(402);
 
     expect((await fromStripe(event)).status).toBe(200);
     expect((await saveKeys(sam)).status).toBe(204);
     const renews = new Date((paid.items.data[0]?.current_period_end ?? 0) * 1000).toISOString();
-    expect(await accessFor(sam)).toEqual({
+    expect(await accessOf(sam)).toEqual({
       allowed: true,
       gift: null,
-      subscription: { status: 'active', renewsAt: renews, canceling: false },
+      subscription: { state: 'active', renewsAt: renews },
     });
   });
 
-  it('keeps syncing while a payment is retried, and stops once the subscription ends', async () => {
+  it('shows a subscription retrying, ending and ended, and stops sync once it’s ended', async () => {
     const { sam, paid } = await paying();
-    const changed = (type: string) =>
-      fromStripe({ type, data: { object: { id: paid.id, metadata: { account: sam.id } } } });
-
     paid.status = 'past_due';
-    await changed('customer.subscription.updated');
-    expect((await asApp(sam, 'POST', '/api/sync/live/ticket')).status).toBe(200);
+    await changed(paid);
+    expect((await accessOf(sam))?.subscription?.state).toBe('retrying');
+    expect((await saveKeys(sam)).status).toBe(204);
 
-    paid.cancel_at_period_end = true;
+    // A cancel in the customer portal, as newer Stripe accounts record it: an end date alone.
     paid.status = 'active';
-    await changed('customer.subscription.updated');
-    expect((await accessFor(sam)).subscription).toMatchObject({ canceling: true });
+    paid.cancel_at = Math.floor(Date.now() / 1000) + 3 * 86_400;
+    await changed(paid);
+    expect((await accessOf(sam))?.subscription).toEqual({
+      state: 'ending',
+      renewsAt: new Date(paid.cancel_at * 1000).toISOString(),
+    });
 
     paid.status = 'canceled';
-    await changed('customer.subscription.deleted');
-    expect((await asApp(sam, 'POST', '/api/sync/live/ticket')).status).toBe(402);
-    expect((await accessFor(sam)).allowed).toBe(false);
+    await changed(paid, 'customer.subscription.deleted');
+    expect(await accessOf(sam)).toMatchObject({ allowed: false, subscription: { state: 'ended' } });
+    expect((await as(sam, 'POST', '/api/sync/links', { id: 'x' })).status).toBe(402);
   });
 
-  it('won’t let late word about an old subscription stop a new one', async () => {
-    const { sam } = await paying({ id: 'sub_new' });
-    const old = subscription(sam.id, { id: 'sub_old', status: 'canceled' });
-    stripe.subscriptions.set(old.id, old);
-    await fromStripe({
-      type: 'customer.subscription.deleted',
-      data: { object: { id: old.id, metadata: { account: sam.id } } },
-    });
-    expect(await accessFor(sam)).toMatchObject({
-      allowed: true,
-      subscription: { status: 'active' },
-    });
+  it('cancels a second subscription for an account that has one, to be refunded', async () => {
+    const { sam, paid } = await paying();
+    const second = subscription(sam.id, { id: `${paid.id}_2`, customer: paid.customer });
+    stripe.subscriptions.set(second.id, second);
+    await checkoutDone(second);
+    expect(second.status).toBe('canceled');
+    expect(paid.status).toBe('active');
+    expect((await accessOf(sam))?.subscription?.state).toBe('active');
+  });
+
+  it('cancels a subscription whose account isn’t here', async () => {
+    const gone = subscription(randomBytes(16).toString('hex'));
+    stripe.customer(gone.customer);
+    stripe.subscriptions.set(gone.id, gone);
+    expect((await checkoutDone(gone)).status).toBe(200);
+    expect(gone.status).toBe('canceled');
+  });
+
+  it('never lets an older read of a subscription win over a newer one', async () => {
+    const { sam, paid } = await paying();
+    await server.env.DB.prepare('UPDATE "syncAccess" SET checkedAt = ? WHERE account = ?')
+      .bind(new Date(Date.now() + 60_000).toISOString(), sam.id)
+      .run();
+    paid.status = 'canceled';
+    await changed(paid, 'customer.subscription.deleted');
+    expect((await rowOf(sam))?.status).toBe('active');
   });
 
   it('opens Stripe’s customer portal for an account that’s paid', async () => {
     const { sam, paid } = await paying();
-    const opened = await asApp(sam, 'POST', '/api/billing/portal');
+    const opened = await as(sam, 'POST', '/api/billing/portal');
     expect(await opened.json()).toEqual({ url: 'https://billing.stripe.com/p/session/test_1' });
     expect(Object.fromEntries(stripe.requests.at(-1)?.form ?? [])).toEqual({
       customer: paid.customer,
       return_url: `${server.url.origin}/account`,
     });
+    stripe.forget(paid.customer);
+    expect((await as(sam, 'POST', '/api/billing/portal')).status).toBe(404);
     const never = await server.signUp();
-    expect((await asApp(never, 'POST', '/api/billing/portal')).status).toBe(404);
+    expect((await as(never, 'POST', '/api/billing/portal')).status).toBe(404);
   });
 
   it('won’t start a checkout for an account that has sync', async () => {
     const { sam } = await paying();
-    const again = await asApp(sam, 'POST', '/api/billing/checkout', { period: 'month' });
-    expect(again.status).toBe(409);
+    expect((await as(sam, 'POST', '/api/billing/checkout', { period: 'month' })).status).toBe(409);
   });
 
-  it('gives free sync to someone who asked, by email, and takes it back', async () => {
+  it('gives free sync by email to a verified account now, or to the next one with that email', async () => {
     const sam = await server.signUp();
     expect(await (await operator('/api/admin/free-sync', { email: sam.email })).json()).toEqual({
       free: true,
-      account: true,
+      to: 'account',
+      wasPaying: false,
     });
     expect((await saveKeys(sam)).status).toBe(204);
-    expect((await accessFor(sam)).gift).toBe('free');
+    expect((await accessOf(sam))?.gift).toBe('free');
 
-    await operator('/api/admin/free-sync', { email: sam.email, off: true });
-    expect(await accessFor(sam)).toMatchObject({ allowed: false, gift: null });
-  });
+    // Someone who signed up with another person's unverified email doesn't get their gift.
+    const unverified = `${randomBytes(6).toString('hex')}@example.com`;
+    const mallory = await server.signUp('Mallory', { email: unverified, verified: false });
+    expect(await (await operator('/api/admin/free-sync', { email: unverified })).json()).toEqual({
+      free: true,
+      to: 'email',
+      wasPaying: false,
+    });
+    expect((await saveKeys(mallory)).status).toBe(402);
 
-  it('gives free sync to an email before it has an account, once it signs up verified', async () => {
-    const email = `${randomBytes(6).toString('hex')}@example.com`;
-    const given = await operator('/api/admin/free-sync', { email: email.toUpperCase() });
-    expect(await given.json()).toEqual({ free: true, account: false });
-    const unverified = await server.signUp('Ana', { email, verified: false });
-    expect((await saveKeys(unverified)).status).toBe(402);
-
-    const other = `${randomBytes(6).toString('hex')}@example.com`;
-    await operator('/api/admin/free-sync', { email: other });
-    const dana = await server.signUp('Dana', { email: other });
+    const later = `${randomBytes(6).toString('hex')}@example.com`;
+    await operator('/api/admin/free-sync', { email: ` ${later.toUpperCase()} ` });
+    const dana = await server.signUp('Dana', { email: later });
     expect((await saveKeys(dana)).status).toBe(204);
-    expect((await accessFor(dana)).gift).toBe('free');
+    expect((await accessOf(dana))?.gift).toBe('free');
+    const waiting = await server.env.DB.prepare('SELECT * FROM "freeSyncEmail" WHERE email = ?')
+      .bind(later)
+      .first();
+    expect(waiting).toBeNull();
   });
 
-  it('gives every account there is now sync for good, for the people who had it first', async () => {
+  it('takes free sync back, from an account and from an email still waiting', async () => {
     const sam = await server.signUp();
-    const marked = await operator('/api/admin/early', {});
-    expect(((await marked.json()) as { accounts: number }).accounts).toBeGreaterThan(0);
-    expect((await accessFor(sam)).gift).toBe('early');
+    await operator('/api/admin/free-sync', { email: sam.email });
+    await operator('/api/admin/free-sync', { email: sam.email, off: true });
+    expect(await accessOf(sam)).toMatchObject({ allowed: false, gift: null });
+
+    const later = `${randomBytes(6).toString('hex')}@example.com`;
+    await operator('/api/admin/free-sync', { email: later });
+    await operator('/api/admin/free-sync', { email: later, off: true });
+    const dana = await server.signUp('Dana', { email: later });
+    expect((await saveKeys(dana)).status).toBe(402);
+  });
+
+  it('ends a paying account’s subscription with its time paid for, once it’s given free sync', async () => {
+    const { sam, paid } = await paying();
+    const given = await operator('/api/admin/free-sync', { email: sam.email });
+    expect(await given.json()).toEqual({ free: true, to: 'account', wasPaying: true });
+    expect(stripe.requests.at(-1)).toMatchObject({
+      method: 'POST',
+      path: `/v1/subscriptions/${paid.id}`,
+    });
+    expect(paid.cancel_at_period_end).toBe(true);
+    expect(await accessOf(sam)).toMatchObject({ gift: 'free', subscription: { state: 'ending' } });
+  });
+
+  it('keeps sync for good for accounts made before it was sold', async () => {
+    const before = new Date(Date.parse(SELLING_SINCE) - 86_400_000);
+    const sam = await server.signUp('Sam', { since: before });
+    expect(await accessOf(sam)).toMatchObject({ allowed: true, gift: 'early' });
     await operator('/api/admin/free-sync', { email: sam.email, off: true });
     expect((await saveKeys(sam)).status).toBe(204);
-    const later = await server.signUp();
-    expect((await accessFor(later)).gift).toBeNull();
   });
 
   it('lets only the operator give sync away', async () => {
     const sam = await server.signUp();
-    for (const path of ['/api/admin/free-sync', '/api/admin/early']) {
-      const tried = await fetch(new URL(path, server.url), {
-        method: 'POST',
-        headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ email: sam.email }),
-      });
-      expect(tried.status).toBe(404);
-    }
-    expect((await accessFor(sam)).allowed).toBe(false);
+    const tried = await as(sam, 'POST', '/api/admin/free-sync', { email: sam.email });
+    expect(tried.status).toBe(404);
+    expect((await accessOf(sam))?.allowed).toBe(false);
   });
 
-  it('cancels a subscription before its account is deleted, or doesn’t delete it', async () => {
+  it('puts the account’s billing in its export', async () => {
+    const { sam, paid } = await paying();
+    const exported = (await (await as(sam, 'GET', '/api/account/export')).json()) as {
+      billing: object;
+    };
+    expect(exported.billing).toMatchObject({
+      customer: paid.customer,
+      subscription: paid.id,
+      status: 'active',
+      canceling: false,
+    });
+  });
+
+  it('checks once a day on subscriptions Stripe hasn’t sent word about', async () => {
+    const { sam, paid } = await paying();
+    await server.env.DB.prepare('UPDATE "syncAccess" SET renewsAt = ? WHERE account = ?')
+      .bind(new Date(Date.now() - 3 * 86_400_000).toISOString(), sam.id)
+      .run();
+    paid.status = 'canceled';
+    server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date() });
+    await expect.poll(async () => (await rowOf(sam))?.status).toBe('canceled');
+  });
+
+  it('deletes the account’s Stripe customer before the account, or doesn’t delete it', async () => {
     const { sam, paid } = await paying();
     stripe.fail(500);
-    const failed = await operator('/api/admin/delete', { account: sam.id });
+    const failed = await as(sam, 'POST', '/api/auth/delete-user', {});
     stripe.fail(null);
     expect(failed.status).toBe(500);
-    expect((await asApp(sam, 'GET', '/api/account')).status).toBe(200);
+    expect((await sam.client.account()).user.id).toBe(sam.id);
 
-    const deleted = await operator('/api/admin/delete', { account: sam.id });
-    expect(deleted.status).toBe(204);
+    const deleted = await as(sam, 'POST', '/api/auth/delete-user', {});
+    expect(deleted.status).toBe(200);
     expect(stripe.requests.at(-1)).toMatchObject({
       method: 'DELETE',
-      path: `/v1/subscriptions/${paid.id}`,
+      path: `/v1/customers/${paid.customer}`,
     });
+    expect(paid.status).toBe('canceled');
+    await expect(sam.client.account()).rejects.toMatchObject({ kind: 'signed-out' });
+  });
+
+  it('cancels its subscriptions when the operator deletes an account', async () => {
+    const { sam, paid } = await paying();
+    expect((await operator('/api/admin/delete', { account: sam.id })).status).toBe(204);
     expect(paid.status).toBe('canceled');
   });
 });
