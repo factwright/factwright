@@ -41,8 +41,9 @@ function storeButtons(): Plugin {
 }
 
 /**
- * factwright.com: a static page, its download pages, the browser extension's page, its privacy
- * policy and terms, and its "not found" page, built on the app's design system.
+ * factwright.com: a static page, its download pages, the browser extension's page, the guide to
+ * running your own sync server, its privacy policy and terms, and its "not found" page, built on
+ * the app's design system.
  */
 export default defineConfig({
   plugins: [theme(), downloadLinks(), storeButtons()],
@@ -58,6 +59,7 @@ export default defineConfig({
         downloadMac: 'download/mac.html',
         downloadWindows: 'download/windows.html',
         extension: 'extension.html',
+        ownServer: 'own-server.html',
         privacy: 'privacy.html',
         terms: 'terms.html',
         notFound: '404.html',
