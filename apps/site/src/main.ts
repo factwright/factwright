@@ -1,11 +1,13 @@
 import 'virtual:theme.css';
 import './styles/index.css';
 import { downloadPage, offerDownloads, platform, startDownload } from './downloads.ts';
+import { ownServerGuide, thisBrowser } from './own-server.ts';
 
 /**
  * The page reads fine without this script. It adds the motion: the app drawing plays a run, the
  * fact bank answers the line you pick, and each part eases in as it scrolls into view. On the
- * download pages, it starts the download, and the page that picks goes on to this computer's.
+ * download pages, it starts the download, and the page that picks goes on to this computer's. On
+ * the guide to running your own sync server, it fills in your addresses and copies them.
  */
 
 const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -305,3 +307,6 @@ for (const root of document.querySelectorAll<HTMLElement>('[data-demo]')) heroRu
 for (const root of document.querySelectorAll<HTMLElement>('[data-confirm]')) confirmClaim(root);
 for (const root of document.querySelectorAll<HTMLElement>('.fit')) fillScores(root);
 for (const root of document.querySelectorAll<HTMLElement>('[data-trace]')) traceFacts(root);
+for (const root of document.querySelectorAll<HTMLElement>('[data-own-server]')) {
+  ownServerGuide(root, thisBrowser(computer === 'mac'));
+}

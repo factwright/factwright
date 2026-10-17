@@ -50,6 +50,28 @@ const EXTENSION_PAGE = '/extension';
 /** What the privacy policy says about the browser extension, which the extension's page links to. */
 const EXTENSION_PRIVACY = '/privacy#extension';
 
+/** The guide to running your own sync server, which every page's footer links to. */
+const OWN_SERVER_PAGE = '/own-server';
+
+/** The privacy policy's footer gets its link to the guide with its next change, on another branch. */
+const NO_OWN_SERVER_LINK_YET = new Set(['privacy.html']);
+
+/**
+ * Where the guide sends people to do each step: Cloudflare's and GitHub's sign-up pages and the
+ * pages in their dashboards, the Deploy button for sync-server's ready-to-deploy copy, and what R2
+ * costs. Only the guide links to them.
+ */
+const OWN_SERVER_STEPS = [
+  'https://dash.cloudflare.com/sign-up',
+  'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
+  'https://dash.cloudflare.com/?to=/:account/r2/overview',
+  'https://developers.cloudflare.com/r2/pricing/',
+  'https://github.com/signup',
+  'https://github.com/settings/applications/new',
+  'https://deploy.workers.cloudflare.com/?url=https://github.com/factwright/sync-server',
+  'https://github.com/factwright/sync-server',
+];
+
 /** The extension's listings in the stores that have approved it, which its page links to. */
 const LISTINGS = Object.values(STORES)
   .filter((listing) => listing.live)
@@ -124,6 +146,7 @@ describe.each([
   'download/mac.html',
   'download/windows.html',
   'extension.html',
+  'own-server.html',
   'privacy.html',
   'terms.html',
   '404.html',
@@ -147,7 +170,7 @@ describe.each([
     }
   });
 
-  it('links only to its own sections, the site’s pages, the downloads, the extension’s stores, its code, its maker and Anthropic’s terms', () => {
+  it('links only to its own sections, the site’s pages, the downloads, the extension’s stores, its code, its maker, Anthropic’s terms and the own-server guide’s steps', () => {
     const doc = open(page);
     const legal = LEGAL_PAGES.includes(`/${page.replace('.html', '')}`);
     const allowed = [
@@ -158,9 +181,11 @@ describe.each([
       ...LEGAL_PAGES,
       EXTENSION_PAGE,
       EXTENSION_PRIVACY,
+      OWN_SERVER_PAGE,
       ...LISTINGS,
       ...MAKER,
       ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL] : []),
+      ...(page === 'own-server.html' ? OWN_SERVER_STEPS : []),
     ];
     for (const link of doc.querySelectorAll('a[href]')) {
       const href = link.getAttribute('href') ?? '';
@@ -175,6 +200,30 @@ describe.each([
       link.getAttribute('href'),
     );
     expect(hrefs).toEqual(expect.arrayContaining([EXTENSION_PAGE, ...LEGAL_PAGES, SOURCE]));
+  });
+
+  it.skipIf(NO_OWN_SERVER_LINK_YET.has(page))(
+    'links to the guide to running your own sync server from its footer',
+    () => {
+      const footer = open(page).querySelector('footer');
+      const link = footer?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`);
+      expect(link?.textContent).toBe('Your own sync server');
+    },
+  );
+
+  it('has no inline script, style or event handler, which its security policy would block', () => {
+    const doc = open(page);
+    // A block of JSON-LD is data, not a script, so the policy doesn't apply to it.
+    expect(
+      doc.querySelectorAll('script:not([src]):not([type="application/ld+json"])'),
+    ).toHaveLength(0);
+    expect(doc.querySelectorAll('style, [style]')).toHaveLength(0);
+    for (const element of doc.querySelectorAll('*')) {
+      const handlers = [...element.attributes].filter((attribute) => /^on/i.test(attribute.name));
+      expect(handlers, markup(element)).toEqual([]);
+    }
+    // Nothing on the site is sent anywhere, and the policy allows no form to.
+    expect(doc.querySelectorAll('form')).toHaveLength(0);
   });
 
   it('links to Support Factwright from its footer', () => {
@@ -508,6 +557,86 @@ describe('the extension page', () => {
   });
 });
 
+describe('the own-server guide', () => {
+  it('says up front what Cloudflare may ask for, that updates aren’t automatic, and when connecting comes', () => {
+    const before = open('own-server.html')
+      .getElementById('before')
+      ?.textContent?.replace(/\s+/g, ' ');
+    expect(before).toContain(
+      'Cloudflare may ask for a payment method before it turns on R2, its file storage, even on the free plan.',
+    );
+    expect(before).toContain('Updates to your server aren’t automatic yet.');
+    expect(before).toContain('Connecting comes with Factwright’s next release');
+  });
+
+  it('says it all again in the steps it’s about', () => {
+    const doc = open('own-server.html');
+    const order = [...doc.querySelectorAll('#before, .own-step')].map((part) => part.id);
+    expect(order).toEqual(['before', 'address', 'github', 'deploy', 'connect']);
+    const text = (id: string) => doc.getElementById(id)?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(text('address')).toContain('Cloudflare may ask for a payment method');
+    expect(text('connect')).toContain('Connect your server… comes with Factwright’s next release.');
+    expect(text('updates')).toContain('Updates to your own server aren’t automatic yet');
+  });
+
+  it('names each step by its number, for screen readers, which skip the drawn one', () => {
+    const steps = [...open('own-server.html').querySelectorAll('.own-step h2')];
+    expect(steps.map((heading) => heading.textContent?.replace(/^\d/, ''))).toEqual([
+      'Step 1: Your Cloudflare account',
+      'Step 2: A GitHub sign-in app',
+      'Step 3: Deploy',
+      'Step 4: Connect Factwright',
+    ]);
+  });
+
+  it('lists its steps and sections beside it, in order', () => {
+    const doc = open('own-server.html');
+    const listed = [...doc.querySelectorAll('.own-toc a')].map((link) =>
+      link.getAttribute('href')?.slice(1),
+    );
+    const parts = [...doc.querySelectorAll('.own-text > section, .own-step')].map(
+      (part) => part.id,
+    );
+    expect(listed).toEqual(parts);
+  });
+
+  it('says when a link opens in a new tab, and keeps the new tab from reaching back', () => {
+    const doc = open('own-server.html');
+    const away = [...doc.querySelectorAll<HTMLAnchorElement>('a[target="_blank"]')];
+    expect(away.length).toBeGreaterThan(3);
+    for (const link of away) {
+      expect(link.getAttribute('rel'), markup(link)).toBe('noopener');
+      expect(link.querySelector('.visually-hidden')?.textContent, markup(link)).toBe(
+        ' (opens in a new tab)',
+      );
+    }
+  });
+
+  it('gives every Copy button a value to copy, and says which one', () => {
+    const doc = open('own-server.html');
+    const buttons = [...doc.querySelectorAll<HTMLButtonElement>('button[data-copy]')];
+    expect(buttons.length).toBeGreaterThan(5);
+    for (const button of buttons) {
+      expect(button.type).toBe('button');
+      expect(doc.getElementById(button.dataset.copy ?? '')?.tagName, markup(button)).toBe('CODE');
+      expect(button.querySelector('.visually-hidden')?.textContent?.trim()).toBeTruthy();
+    }
+  });
+
+  it('keeps each value on one line of markup, so copying it adds no spaces', () => {
+    for (const value of open('own-server.html').querySelectorAll('code[id]')) {
+      expect(value.textContent, markup(value)).not.toMatch(/\s{2}|\n/);
+    }
+  });
+
+  it('is where the home page points people, where it talks about sync and in its questions', () => {
+    const doc = open('index.html');
+    expect(doc.querySelector(`.where a[href="${OWN_SERVER_PAGE}"]`)).not.toBeNull();
+    const question = doc.querySelector(`.faq a[href="${OWN_SERVER_PAGE}"]`)?.closest('details');
+    expect(question?.querySelector('summary')?.textContent).toBe('Can I run my own sync server?');
+  });
+});
+
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
   it('says when it took effect', () => {
     const date = open(page).querySelector('.legal-date time')?.getAttribute('datetime') ?? '';
@@ -538,7 +667,7 @@ describe('the site’s build', () => {
     );
     expect(pages.length).toBeGreaterThan(6);
     for (const page of pages) expect(config, page).toContain(`'${page.replaceAll('\\', '/')}'`);
-    for (const path of ['/', '/download', EXTENSION_PAGE, '/privacy', '/terms']) {
+    for (const path of ['/', '/download', EXTENSION_PAGE, OWN_SERVER_PAGE, '/privacy', '/terms']) {
       expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
     }
   });

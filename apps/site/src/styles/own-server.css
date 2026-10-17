@@ -1,0 +1,559 @@
+/*
+ * The guide to running your own sync server: what's good to know first, the steps as numbered
+ * cards, each value to copy in a row of its own, and the field that fills in the addresses, with
+ * the guide's parts listed beside it on wide screens.
+ */
+
+/* Parts that wait for the page's script, or stand in for it, hide whatever their own display. */
+.own [hidden] {
+  display: none;
+}
+
+.own-hero {
+  position: relative;
+  padding-block: clamp(40px, 6vw, 72px) clamp(24px, 4vw, 40px);
+  overflow-x: clip;
+  isolation: isolate;
+}
+
+/* Faint graph paper behind the headline, as on the home page. */
+.own-hero::before {
+  position: absolute;
+  inset: calc(var(--header) * -1) 0 auto;
+  z-index: -1;
+  height: 620px;
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  content: "";
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 30% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 80% at 30% 0%, #000 30%, transparent 75%);
+}
+
+.own-hero-copy {
+  max-width: 780px;
+}
+
+.own-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(38px, 5.8vw, 66px);
+  font-weight: 700;
+  line-height: 1.03;
+  letter-spacing: -0.042em;
+  text-wrap: balance;
+}
+
+.own-hero .lede {
+  max-width: 660px;
+}
+
+.own-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.own-needs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 15px 7px 11px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-surface);
+  box-shadow: 0 1px 2px rgb(27 27 25 / 0.04);
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.own-needs .icon {
+  width: 17px;
+  height: 17px;
+  color: var(--fw-ok);
+}
+
+.own-needs a {
+  color: var(--fw-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+/* The guide, with its parts listed beside it, as the privacy policy and terms do. */
+.own-body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 760px);
+  gap: clamp(40px, 6vw, 88px);
+  padding-block: clamp(16px, 3vw, 32px) clamp(72px, 10vw, 128px);
+}
+
+.own-toc {
+  position: sticky;
+  top: calc(var(--header) + 28px);
+  align-self: start;
+  font-size: 14px;
+}
+
+.own-toc-title {
+  margin-bottom: 10px;
+  color: var(--fw-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.own-toc ol {
+  display: grid;
+  gap: 1px;
+}
+
+.own-toc a {
+  display: block;
+  margin-left: -10px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  color: var(--fw-muted);
+  text-decoration: none;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.own-toc a:hover {
+  background: var(--fw-hover);
+  color: var(--fw-text);
+}
+
+.own-text {
+  display: grid;
+  gap: 24px;
+  font-size: 16.5px;
+}
+
+.own-text p {
+  text-wrap: pretty;
+}
+
+.own-text a:not(.button) {
+  color: var(--fw-accent-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.own-text b {
+  font-weight: 650;
+}
+
+/* Words to type or click, set in the app's monospace, as in a terminal. */
+.own-step p code,
+.own-faq p code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+/* A link that opens in a new tab, marked as one. */
+.own-out {
+  width: 0.9em;
+  height: 0.9em;
+  margin-left: 2px;
+  vertical-align: -0.08em;
+}
+
+/* What's good to know before starting: the card, the updates and the next release. */
+.own-before {
+  padding: 22px 24px 24px;
+  border: 1px solid color-mix(in srgb, var(--fw-need) 26%, var(--fw-border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--fw-need-soft) 55%, var(--fw-surface));
+}
+
+.own-before h2 {
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+.own-before ul {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.own-before li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+
+.own-before-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--fw-need) 22%, var(--fw-border));
+  border-radius: 10px;
+  background: var(--fw-surface);
+  color: var(--fw-need);
+}
+
+.own-before-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* The steps, as numbered cards. */
+.own-steps {
+  display: grid;
+  gap: 20px;
+}
+
+.own-step {
+  padding: clamp(22px, 3.4vw, 32px);
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.own-step h2 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 2.6vw, 27px);
+  font-weight: 680;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.own-step-number {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-family: var(--fw-font-sans);
+  font-size: 15.5px;
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+.own-step > * + * {
+  margin-top: 16px;
+}
+
+.own-step > h2 + * {
+  margin-top: 18px;
+}
+
+/* The subdomain's field, which fills in every address on the page. */
+.own-subdomain {
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--fw-accent) 24%, var(--fw-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--fw-accent-soft) 50%, var(--fw-surface));
+}
+
+.own-subdomain label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.own-input {
+  display: flex;
+  max-width: 460px;
+  overflow: hidden;
+  border: 1px solid var(--fw-control-border);
+  border-radius: 10px;
+  background: var(--fw-surface);
+}
+
+.own-input:focus-within {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 2px;
+}
+
+.own-input:has(input[aria-invalid="true"]) {
+  border-color: var(--fw-bad);
+}
+
+/* No width of its own, so it fits beside .workers.dev on the narrowest phone. */
+.own-input input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 46px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--fw-text);
+  font-family: var(--fw-font-mono);
+  /* 16px, so a phone doesn't zoom in on it. */
+  font-size: 16px;
+  outline: none;
+}
+
+.own-input input::placeholder {
+  color: var(--fw-muted);
+  opacity: 1;
+}
+
+.own-input-end {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-left: 1px solid var(--fw-border);
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-family: var(--fw-font-mono);
+  font-size: 15px;
+}
+
+.own-help {
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.own-subdomain .own-help,
+.own-problem {
+  margin-top: 8px;
+}
+
+.own-problem {
+  color: var(--fw-bad);
+  font-size: 14.5px;
+  font-weight: 550;
+}
+
+/* Each value to copy: what it's called, the value, and its Copy button. */
+.own-fields {
+  border: 1px solid var(--fw-border);
+  border-radius: 12px;
+  background: var(--fw-bg);
+}
+
+/* What it's called above it, as the form it goes in has it, so the value has the row's width. */
+.own-field {
+  display: grid;
+  gap: 7px;
+  padding: 12px 14px 14px;
+}
+
+.own-field + .own-field {
+  border-top: 1px solid var(--fw-border);
+}
+
+.own-field dt {
+  color: var(--fw-muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.own-field dt code {
+  color: var(--fw-text);
+  font-family: var(--fw-font-mono);
+  font-size: 13px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.own-field dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  margin: 0;
+}
+
+/*
+ * One click selects the whole value, to copy it without its button too. An address breaks at its
+ * dots and slashes first (<wbr>), and anywhere only if it has to.
+ */
+.own-value {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--fw-sunken);
+  color: var(--fw-text);
+  font-family: var(--fw-font-mono);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+/* Where the subdomain goes: "yourname" until it's typed, then the subdomain itself. */
+.own-sub {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-style: italic;
+}
+
+.own-sub.is-filled {
+  font-style: normal;
+  font-weight: 650;
+}
+
+.own-plain {
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.own-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: 8px;
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.own-copy:hover {
+  border-color: var(--fw-control-border);
+  background: var(--fw-hover);
+}
+
+.own-copy .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.own-copied-icon,
+.own-copy.is-copied .own-copy-icon {
+  display: none;
+}
+
+.own-copy.is-copied {
+  border-color: color-mix(in srgb, var(--fw-ok) 45%, var(--fw-border));
+  color: var(--fw-ok);
+}
+
+.own-copy.is-copied .own-copied-icon {
+  display: block;
+}
+
+.own-make {
+  flex: none;
+}
+
+.own-deploy .icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* What's still to come, under the last step. */
+.own-soon {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.own-soon .icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--fw-accent-text);
+}
+
+/* Updates, questions and help, after the steps. */
+.own-section {
+  padding-top: 16px;
+}
+
+.own-section h2 {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 2.8vw, 30px);
+  font-weight: 680;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.own-section > p {
+  margin-top: 12px;
+}
+
+.own-faq {
+  margin-top: 16px;
+}
+
+.own-faq summary {
+  padding-block: 18px;
+  font-size: 17px;
+}
+
+.own-faq details p {
+  font-size: 16px;
+}
+
+.own-help-section .button {
+  margin-top: 18px;
+}
+
+@media (max-width: 900px) {
+  .own-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .own-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .own-step {
+    padding: 20px 16px 22px;
+    border-radius: 16px;
+  }
+
+  .own-step h2 {
+    gap: 12px;
+  }
+
+  .own-before {
+    padding: 18px 16px 20px;
+  }
+
+  .own-subdomain {
+    padding: 14px;
+  }
+
+  .own-field {
+    padding: 12px;
+  }
+}

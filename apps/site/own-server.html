@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Run your own sync server · Factwright</title>
+    <meta
+      name="description"
+      content="Run Factwright’s open-source sync server in your own free Cloudflare account. It takes about 15 minutes, with no code to write, and your job hunt stays end-to-end encrypted."
+    />
+    <link rel="canonical" href="https://factwright.com/own-server" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-logo" viewBox="19 20 80 80"><path d="M31 43.5V48.5M31 71.5V76.5" fill="none" stroke="currentColor" stroke-width="6" /><circle cx="31" cy="32" r="8" fill="none" stroke="currentColor" stroke-width="7" /><circle cx="31" cy="60" r="8" fill="none" stroke="currentColor" stroke-width="7" /><circle cx="31" cy="88" r="11.5" fill="currentColor" /><rect x="49" y="23.5" width="49" height="17" rx="8.5" fill="currentColor" /><rect x="49" y="51.5" width="31" height="17" rx="8.5" fill="currentColor" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5" /><path d="M15.5 8.5V6.5a2.5 2.5 0 0 0-2.5-2.5H6.5A2.5 2.5 0 0 0 4 6.5V13a2.5 2.5 0 0 0 2.5 2.5h2" /></symbol>
+      <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7.5 16.5l9-9M9 7.5h7.5V15" /></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.25a4.25 4.25 0 0 0 .5-8.47A6 6 0 0 0 6.2 9.6 4.5 4.5 0 0 0 7 18.5z" /></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="16.5" r="3.5" /><path d="M10 14l9.5-9.5M16.5 7.5l2.5 2.5M14 10l2 2" /></symbol>
+      <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2.5" /><path d="M3 10h18M7 14.5h4" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3l2.2 2.2" /><path d="M19.5 4.5v4.4h-4.4" /></symbol>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M10 4.5l1.7 4.6 4.6 1.7-4.6 1.7L10 17.1l-1.7-4.6-4.6-1.7 4.6-1.7z" /><path d="M18 3.5v4M16 5.5h4M18 15.5v4M16 17.5h4" /></symbol>
+      <symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" stroke="none" d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A8 8 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></symbol>
+    </svg>
+
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Factwright, home">
+          <svg class="logo" aria-hidden="true"><use href="#i-logo" /></svg>
+          <span>Factwright</span>
+        </a>
+      </div>
+    </header>
+
+    <!--
+      The guide to running your own sync server. With its script (src/own-server.ts), the
+      subdomain typed in step 1 fills in every address, each value gets a Copy button, and step 3
+      can make the server's secret. None of it leaves the page. Without the script, the parts marked
+      data-needs-script stay hidden, those marked data-without-script show, and the page reads as
+      plain steps, with "yourname" in each address.
+    -->
+    <main id="main" class="own" data-own-server>
+      <section class="own-hero" aria-labelledby="own-title">
+        <div class="wrap">
+          <div class="own-hero-copy">
+            <p class="eyebrow">Your own sync server</p>
+            <h1 id="own-title">Run your own sync server</h1>
+            <p class="lede">
+              Factwright’s sync server is open source, so you can run your own copy in a free
+              Cloudflare account. Factwright and your phone sync through it, end-to-end encrypted,
+              just as they do through ours. It takes about 15 minutes, and there’s no code to write.
+            </p>
+            <ul class="own-needs" aria-label="What you need">
+              <li>
+                <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                <span>A free <a href="https://dash.cloudflare.com/sign-up">Cloudflare account</a></span>
+              </li>
+              <li>
+                <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                <span>A <a href="https://github.com/signup">GitHub account</a>, to sign in with</span>
+              </li>
+              <li>
+                <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                <span><a href="/">Factwright</a> on your Mac or Windows PC</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap own-body">
+        <nav class="own-toc" aria-label="Steps and sections">
+          <p class="own-toc-title" aria-hidden="true">On this page</p>
+          <ol>
+            <li><a href="#before">Good to know first</a></li>
+            <li><a href="#address">1. Your Cloudflare account</a></li>
+            <li><a href="#github">2. A GitHub sign-in app</a></li>
+            <li><a href="#deploy">3. Deploy</a></li>
+            <li><a href="#connect">4. Connect Factwright</a></li>
+            <li><a href="#updates">Updates</a></li>
+            <li><a href="#questions">Questions</a></li>
+            <li><a href="#help">Help</a></li>
+          </ol>
+        </nav>
+
+        <div class="own-text">
+          <section class="own-before" id="before" aria-labelledby="before-title">
+            <h2 id="before-title">Good to know first</h2>
+            <ul>
+              <li>
+                <span class="own-before-icon"><svg class="icon" aria-hidden="true"><use href="#i-card" /></svg></span>
+                <span>
+                  <b>Cloudflare may ask for a payment method</b> before it turns on R2, its file
+                  storage, even on the free plan. R2 is
+                  <a href="https://developers.cloudflare.com/r2/pricing/">free up to 10 GB of storage a month</a>.
+                </span>
+              </li>
+              <li>
+                <span class="own-before-icon"><svg class="icon" aria-hidden="true"><use href="#i-refresh" /></svg></span>
+                <span>
+                  <b>Updates to your server aren’t automatic yet.</b> It keeps the version you
+                  deploy. <a href="#updates">More about updates</a>
+                </span>
+              </li>
+              <li>
+                <span class="own-before-icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg></span>
+                <span>
+                  <b>Connecting comes with Factwright’s next release,</b> which adds Connect your
+                  server… under Sync, for the last step here.
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <ol class="own-steps">
+            <li class="own-step" id="address">
+              <h2><span class="own-step-number" aria-hidden="true">1</span><span class="visually-hidden">Step 1: </span>Your Cloudflare account</h2>
+              <p>
+                In Cloudflare, open
+                <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noopener">Workers &amp; Pages<svg class="icon own-out" aria-hidden="true"><use href="#i-arrow-up-right" /></svg><span class="visually-hidden"> (opens in a new tab)</span></a>.
+                Your subdomain is next to <b>Your subdomain</b>: it’s the part before .workers.dev.
+                If Cloudflare asks you to choose one first, any name will do.
+              </p>
+
+              <div class="own-subdomain" data-needs-script hidden>
+                <label for="subdomain">Your workers.dev subdomain</label>
+                <div class="own-input">
+                  <input
+                    id="subdomain"
+                    type="text"
+                    inputmode="url"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    placeholder="yourname"
+                    aria-describedby="subdomain-help"
+                    data-subdomain-field
+                  />
+                  <span class="own-input-end" aria-hidden="true">.workers.dev</span>
+                </div>
+                <p class="own-help" id="subdomain-help">
+                  Type it, or paste a whole address, and this page fills it in below. It stays on
+                  this page.
+                </p>
+                <p class="own-problem" id="subdomain-problem" data-subdomain-problem hidden>
+                  That doesn’t look like a subdomain. It’s only letters, numbers and dashes, such as
+                  jane-doe.
+                </p>
+              </div>
+
+              <dl class="own-fields">
+                <div class="own-field">
+                  <dt>Your server’s address</dt>
+                  <dd>
+                    <code class="own-value" id="server-address">https://<wbr />factwright-sync.<wbr /><span class="own-sub" data-subdomain>yourname</span>.<wbr />workers.dev</code>
+                    <button class="own-copy" type="button" data-copy="server-address" data-needs-script hidden><svg class="icon own-copy-icon" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon own-copied-icon" aria-hidden="true"><use href="#i-check" /></svg><span data-copy-label>Copy</span><span class="visually-hidden"> your server’s address</span></button>
+                  </dd>
+                </div>
+              </dl>
+              <p class="own-help" data-without-script>
+                Put your subdomain in place of <i>yourname</i>, here and in the steps below.
+              </p>
+
+              <p>
+                Then turn on R2, where your server keeps your locked files: open
+                <a href="https://dash.cloudflare.com/?to=/:account/r2/overview" target="_blank" rel="noopener">R2<svg class="icon own-out" aria-hidden="true"><use href="#i-arrow-up-right" /></svg><span class="visually-hidden"> (opens in a new tab)</span></a>
+                and follow Cloudflare’s steps to add it. That’s where Cloudflare may ask for a payment
+                method.
+              </p>
+            </li>
+
+            <li class="own-step" id="github">
+              <h2><span class="own-step-number" aria-hidden="true">2</span><span class="visually-hidden">Step 2: </span>A GitHub sign-in app</h2>
+              <p>
+                Your server signs you in with GitHub, through a sign-in app of your own. Open
+                GitHub’s page for a
+                <a href="https://github.com/settings/applications/new" target="_blank" rel="noopener">new OAuth app<svg class="icon own-out" aria-hidden="true"><use href="#i-arrow-up-right" /></svg><span class="visually-hidden"> (opens in a new tab)</span></a>,
+                and fill it in:
+              </p>
+              <dl class="own-fields">
+                <div class="own-field">
+                  <dt>Application name</dt>
+                  <dd>
+                    <code class="own-value" id="app-name">Factwright sync</code>
+                    <button class="own-copy" type="button" data-copy="app-name" data-needs-script hidden><svg class="icon own-copy-icon" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon own-copied-icon" aria-hidden="true"><use href="#i-check" /></svg><span data-copy-label>Copy</span><span class="visually-hidden"> the application name</span></button>
+                  </dd>
+                </div>
+                <div class="own-field">
+                  <dt>Homepage URL</dt>
+                  <dd>
+                    <code class="own-value" id="homepage-url">https://<wbr />factwright-sync.<wbr /><span class="own-sub" data-subdomain>yourname</span>.<wbr />workers.dev</code>
+                    <button class="own-copy" type="button" data-copy="homepage-url" data-needs-script hidden><svg class="icon own-copy-icon" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon own-copied-icon" aria-hidden="true"><use href="#i-check" /></svg><span data-copy-label>Copy</span><span class="visually-hidden"> the homepage URL</span></button>
+                  </dd>
+                </div>
+                <div class="own-field">
+                  <dt>Authorization callback URL</dt>
+                  <dd>
+                    <code class="own-value" id="callback-url">https://<wbr />factwright-sync.<wbr /><span class="own-sub" data-subdomain>yourname</span>.<wbr />workers.dev/<wbr />api/<wbr />auth/<wbr />callback/<wbr />github</code>
+                    <button class="own-copy" type="button" data-copy="callback-url" data-needs-script hidden><svg class="icon own-copy-icon" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon own-copied-icon" aria-hidden="true"><use href="#i-check" /></svg><span data-copy-label>Copy</span><span class="visually-hidden"> the authorization callback URL</span></button>
+                  </dd>
+                </div>
+              </dl>
+              <p>
+                Leave the rest as it is, and click <b>Register application</b>. On your new app’s
+                page, click <b>Generate a new client secret</b>. GitHub shows the secret only once,
+                so keep that page open for the next step.
+              </p>
+            </li>
+
+            <li class="own-step" id="deploy">
+              <h2><span class="own-step-number" aria-hidden="true">3</span><span class="visually-hidden">Step 3: </span>Deploy</h2>
+              <p>
+                Click Deploy to Cloudflare, and sign in to Cloudflare and GitHub if it asks. It
+                copies the server into a new repository in your GitHub account, makes its database
+                and file storage, and deploys it.
+              </p>
+              <p class="own-deploy">
+                <a class="button button-primary button-lg" href="https://deploy.workers.cloudflare.com/?url=https://github.com/factwright/sync-server" target="_blank" rel="noopener">
+                  <svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg>
+                  Deploy to Cloudflare<span class="visually-hidden"> (opens in a new tab)</span>
+                </a>
+              </p>
+              <p>
+                <b>Keep the names it fills in.</b> Your address and your GitHub app use the
+                server’s name, <code>factwright-sync</code>. When it asks for the server’s secrets,
+                paste in:
+              </p>
+              <dl class="own-fields">
+                <div class="own-field">
+                  <dt><code>BETTER_AUTH_SECRET</code></dt>
+                  <dd>
+                    <span class="own-plain" data-without-script>Any random text of 32 characters or more, such as a password manager makes</span>
+                    <button class="button button-secondary button-sm own-make" type="button" data-make-secret data-needs-script hidden><svg class="icon" aria-hidden="true"><use href="#i-key" /></svg><span data-make-label>Make one</span></button>
+                    <code class="own-value own-secret" id="secret" data-secret hidden></code>
+                    <button class="own-copy" type="button" data-copy="secret" hidden><svg class="icon own-copy-icon" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon own-copied-icon" aria-hidden="true"><use href="#i-check" /></svg><span data-copy-label>Copy</span><span class="visually-hidden"> the secret</span></button>
+                  </dd>
+                </div>
+                <div class="own-field">
+                  <dt><code>GITHUB_CLIENT_ID</code></dt>
+                  <dd><span class="own-plain">The Client ID on your GitHub app’s page</span></dd>
+                </div>
+                <div class="own-field">
+                  <dt><code>GITHUB_CLIENT_SECRET</code></dt>
+                  <dd><span class="own-plain">The client secret you generated</span></dd>
+                </div>
+              </dl>
+              <p class="own-help" data-needs-script hidden>
+                This page makes the secret in your browser, and never sends or keeps it. It keeps
+                your server’s sign-ins safe, and you won’t need it again.
+              </p>
+              <p>
+                Then click <b>Create and deploy</b>. Once it’s done, open your server’s
+                address<span data-needs-script hidden>, <a class="own-link" href="#address" data-server-link target="_blank" rel="noopener"><span data-server-link-text></span><svg class="icon own-out" aria-hidden="true"><use href="#i-arrow-up-right" /></svg><span class="visually-hidden"> (opens in a new tab)</span></a>,</span>
+                to check it: it shows “Your job hunt, anywhere”, with Continue with GitHub.
+              </p>
+            </li>
+
+            <li class="own-step" id="connect">
+              <h2><span class="own-step-number" aria-hidden="true">4</span><span class="visually-hidden">Step 4: </span>Connect Factwright</h2>
+              <p>
+                In Factwright, click <b>Turn on…</b> under Sync, then <b>Connect your server…</b>,
+                and paste your server’s address:
+              </p>
+              <dl class="own-fields">
+                <div class="own-field">
+                  <dt>Your server’s address</dt>
+                  <dd>
+                    <code class="own-value" id="connect-address">https://<wbr />factwright-sync.<wbr /><span class="own-sub" data-subdomain>yourname</span>.<wbr />workers.dev</code>
+                    <button class="own-copy" type="button" data-copy="connect-address" data-needs-script hidden><svg class="icon own-copy-icon" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon own-copied-icon" aria-hidden="true"><use href="#i-check" /></svg><span data-copy-label>Copy</span><span class="visually-hidden"> your server’s address</span></button>
+                  </dd>
+                </div>
+              </dl>
+              <p>
+                Sign in with GitHub, and Factwright walks you through the rest, as it does for its
+                own sync. To add your phone or another computer,
+                choose <b>Link a phone or computer</b> in Factwright’s Sync settings, as usual: your
+                phone opens your job hunt from your own server.
+              </p>
+              <p class="own-soon">
+                <svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg>
+                <span>
+                  Connect your server… comes with Factwright’s next release. Save to Factwright, the
+                  browser extension, gets the same choice in an update of its own.
+                </span>
+              </p>
+            </li>
+          </ol>
+
+          <section class="own-section" id="updates" aria-labelledby="updates-title">
+            <h2 id="updates-title">Keeping it up to date</h2>
+            <p>
+              Updates to your own server aren’t automatic yet: it keeps running the version you
+              deployed. Within hours of each Factwright release, its server is in
+              <a href="https://github.com/factwright/sync-server">factwright/sync-server</a>, and a
+              way for your copy to update itself from there is on the way. Until then, if you’d
+              like a hand updating, <a href="#help">ask on GitHub</a>.
+            </p>
+          </section>
+
+          <section class="own-section" id="questions" aria-labelledby="questions-title">
+            <h2 id="questions-title">Questions</h2>
+            <div class="faq own-faq">
+              <details>
+                <summary>What does it cost?</summary>
+                <p>
+                  Nothing. It runs on Cloudflare’s free plan, and R2 is
+                  <a href="https://developers.cloudflare.com/r2/pricing/">free up to 10 GB of storage a month</a>.
+                  Cloudflare may still ask for a payment method before it turns R2 on.
+                </p>
+              </details>
+              <details>
+                <summary>Who can see my job hunt?</summary>
+                <p>
+                  Only you. Factwright locks it on your computer before it leaves, with a key only
+                  you hold, so your server keeps it only in a form it can’t read, just as ours does.
+                  The server is yours alone: it reports nothing to us, and we can’t reach it.
+                </p>
+              </details>
+              <details>
+                <summary>Who can sign in to it?</summary>
+                <p>
+                  Anyone with a GitHub account and your server’s address, as with Factwright’s own
+                  server. Each account is private, with its own keys, so no one can see anyone
+                  else’s job hunt, but each one uses your Cloudflare account’s free allowance.
+                </p>
+              </details>
+              <details>
+                <summary>Is it the same server Factwright runs?</summary>
+                <p>
+                  Yes. Each release’s copy is built from Factwright’s own code,
+                  <a href="https://github.com/factwright/factwright/tree/main/apps/server">apps/server</a>,
+                  with nothing changed. It leaves out only what Factwright’s own server has: its
+                  address, its legal pages and its usage totals.
+                </p>
+              </details>
+              <details>
+                <summary>Can I use a domain of my own?</summary>
+                <p>
+                  Yes. The server’s README says how, under
+                  <a href="https://github.com/factwright/factwright/tree/main/apps/server#running-your-own">Running your own</a>.
+                </p>
+              </details>
+              <details>
+                <summary>Would you rather use a terminal?</summary>
+                <p>
+                  The README in <a href="https://github.com/factwright/sync-server">factwright/sync-server</a>
+                  has the steps for deploying with Wrangler, Cloudflare’s command-line tool.
+                </p>
+              </details>
+              <details>
+                <summary>My server says signing in isn’t set up</summary>
+                <p>
+                  It’s missing your GitHub app’s Client ID or secret. In Cloudflare, open Workers
+                  &amp; Pages, then factwright-sync, then Settings. Under Variables and Secrets, add
+                  <code>GITHUB_CLIENT_ID</code> and <code>GITHUB_CLIENT_SECRET</code> as secrets, and
+                  click Deploy.
+                </p>
+              </details>
+              <details>
+                <summary>GitHub won’t sign me in</summary>
+                <p>
+                  Check that your GitHub app’s Authorization callback URL is exactly the one in
+                  <a href="#github">step 2</a>, with your subdomain in it, and that its Client ID and
+                  secret are the ones you gave Cloudflare.
+                </p>
+              </details>
+            </div>
+          </section>
+
+          <section class="own-section own-help-section" id="help" aria-labelledby="help-title">
+            <h2 id="help-title">Need help?</h2>
+            <p>
+              Ask on GitHub: open an issue in Factwright’s repository, and say it’s about your own
+              server. Leave your secrets out of it.
+            </p>
+            <a class="button button-secondary button-sm" href="https://github.com/factwright/factwright/issues/new/choose">
+              <svg class="icon" aria-hidden="true"><use href="#i-github" /></svg>
+              Open an issue
+            </a>
+          </section>
+
+          <p class="visually-hidden" aria-live="polite" data-own-status></p>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <nav class="footer-links" aria-label="Extension, policies, code and support">
+          <a href="/extension">Browser extension</a>
+          <a href="/own-server" aria-current="page">Your own sync server</a>
+          <a href="/privacy">Privacy policy</a>
+          <a href="/terms">Terms of service</a>
+          <a href="https://github.com/factwright/factwright">Source code</a>
+          <a href="/#support">Support Factwright</a>
+        </nav>
+        <p class="footer-legal">
+          © 2026 Neatifai LLC. Factwright isn’t affiliated with Anthropic. It uses your own Claude
+          account, and its runs count against your plan. Claude and Claude Code are trademarks of
+          Anthropic, PBC.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
