@@ -181,6 +181,11 @@ export class SyncAccount {
   private signingInTo: SyncServer | null = null;
   /** Each server's terms and price, as its sign-in options say, asked once while the app runs. */
   private readonly terms = new Map<string, Promise<ServerTerms | null>>();
+  /**
+   * Counts sign-ins started and called off, so connecting a server whose check took a while does
+   * nothing more once another sign-in, or going back, overtook it.
+   */
+  private attempts = 0;
 
   constructor(deps: SyncAccountDeps) {
     this.deps = deps;
@@ -247,10 +252,10 @@ export class SyncAccount {
   }
 
   /**
-   * The sign-in kept here, or null when there's none, or it can't be read. A sign-in to
-   * Factwright's own server is kept as it was before there were others. If both are kept, that's
-   * the newer one: only a version from before then, which knows nothing of the other, writes it
-   * while the other is kept.
+   * The sign-in kept here, or null when there's none, or it can't be read. What's kept for
+   * Factwright's own server is kept as it was before there were others, and a server of your own's
+   * apart from it. If both are kept, Factwright's is the newer: only a version from before then,
+   * which knows nothing of the other, writes it while the other is kept.
    */
   private keptSignIn(): Kept | null {
     if (this.keptForFactwright()) {
@@ -262,13 +267,15 @@ export class SyncAccount {
 
   /**
    * Whether what's kept here is for Factwright's own server, told without asking the keychain:
-   * its sign-in, or an account key with no sign-in to a server of your own.
+   * its sign-in, or its account key.
    */
   private keptForFactwright(): boolean {
-    return (
-      this.secrets.has('session') ||
-      (this.secrets.has('accountKey') && !this.secrets.has('ownSession'))
-    );
+    return this.secrets.has('session') || this.secrets.has('accountKey');
+  }
+
+  /** The secret a server's account key is kept as. */
+  private keyFor(server: SyncServer): 'accountKey' | 'ownAccountKey' {
+    return server.own ? 'ownAccountKey' : 'accountKey';
   }
 
   /** Whether what's kept here is for Factwright's own server, in a copy without it. */
@@ -277,15 +284,18 @@ export class SyncAccount {
   }
 
   /**
-   * Keeps a new sign-in, in place of any other: one to Factwright's own server as its token alone,
-   * as before there were others, and one to a server of your own with its address.
+   * Keeps a new sign-in, in place of whatever was kept for another server: one to Factwright's
+   * own server as its token alone, as before there were others, and one to a server of your own
+   * with its address.
    */
   private keepSession(server: SyncServer, token: string): void {
     if (server.own) {
       this.secrets.delete('session');
+      this.secrets.delete('accountKey');
       this.secrets.set('ownSession', JSON.stringify({ server: server.url, token }));
     } else {
       this.secrets.delete('ownSession');
+      this.secrets.delete('ownAccountKey');
       this.secrets.set('session', token);
     }
     this.kept = server;
@@ -356,8 +366,11 @@ export class SyncAccount {
       return;
     }
     this.kept = kept.server;
-    // A sign-in to a server of your own kept alongside Factwright's is the older one, so it goes.
-    if (!kept.server.own && this.secrets.has('ownSession')) this.secrets.delete('ownSession');
+    // What's kept for a server of your own alongside Factwright's is the older, so it goes.
+    if (!kept.server.own && (this.secrets.has('ownSession') || this.secrets.has('ownAccountKey'))) {
+      this.secrets.delete('ownSession');
+      this.secrets.delete('ownAccountKey');
+    }
     this.tieState(kept.server);
     const { token } = kept;
     if (!token) {
@@ -367,7 +380,7 @@ export class SyncAccount {
     }
     const client = this.clientFor(kept.server, token);
     this.useClient(client);
-    const saved = this.secrets.get('accountKey');
+    const saved = this.secrets.get(this.keyFor(kept.server));
     const accountKey = saved ? fromBase64Url(saved) : null;
     if (accountKey) {
       // Signed in again, or stopped by a check, and not yet checked against the account, such as
@@ -413,6 +426,7 @@ export class SyncAccount {
   async signInWithBrowser(): Promise<EditResult> {
     const server = this.kept ?? this.factwright();
     if (!server) return failed(NO_SERVER);
+    this.attempts++;
     return this.signInTo(server);
   }
 
@@ -424,16 +438,16 @@ export class SyncAccount {
   async connect(typed: string): Promise<ConnectResult> {
     const address = readServerAddress(typed);
     if (!address.ok) return failed(address.message);
-    if (this.current.state !== 'off' && this.current.state !== 'signing-in') {
-      return failed(SWITCH_FIRST);
-    }
+    if (this.current.state !== 'off') return failed(SWITCH_FIRST);
     if (this.factwright()?.url === address.server) return this.signInWithBrowser();
     if (!this.secrets.available()) {
       this.set({ state: 'unavailable' });
       return failed(NO_KEYCHAIN_MESSAGE);
     }
+    const attempt = ++this.attempts;
     const checked = await checkServer(address.server, this.deps.fetch ?? fetch);
-    if (this.closed) return OVERTAKEN;
+    // Going back, or another sign-in, while it was checked calls it off.
+    if (this.closed || attempt !== this.attempts || this.current.state !== 'off') return OVERTAKEN;
     if (!checked.ok) return checked;
     this.terms.set(address.server, Promise.resolve(termsOf(checked.options)));
     return this.signInTo({ url: address.server, own: true });
@@ -458,20 +472,24 @@ export class SyncAccount {
     this.signIn = flow;
     // Another sign-in, or closing the app, took over: that says how things stand.
     const overtaken = () => this.closed || this.signIn !== flow;
+    // A sign-in this one took over from is over too, so its code isn't left showing.
+    const stop = (message: string) => {
+      this.signIn = null;
+      if (this.current.state === 'signing-in') this.set(before);
+      return failed(message);
+    };
     let pending: Awaited<ReturnType<DeviceSignIn['start']>>;
     try {
       pending = await flow.start();
     } catch (error) {
       if (overtaken()) return OVERTAKEN;
-      this.signIn = null;
-      return failed(reason(error));
+      return stop(reason(error));
     }
     if (overtaken()) return OVERTAKEN;
     // Only the sync server's own pages open: never another site, or a file on this computer.
     if (new URL(pending.url).origin !== server.url) {
       flow.cancel();
-      this.signIn = null;
-      return failed('The sync server sent a sign-in page somewhere else. Try again later.');
+      return stop('The sync server sent a sign-in page somewhere else. Try again later.');
     }
     this.signingInTo = server;
     this.set({ state: 'signing-in', code: pending.code, url: pending.url });
@@ -503,7 +521,7 @@ export class SyncAccount {
     // What's kept for another server goes first: its account key and its notes are no use here.
     if (this.kept && this.kept.url !== server.url) await this.forgetAll();
     this.tieState(server);
-    const saved = this.secrets.get('accountKey');
+    const saved = this.secrets.get(this.keyFor(server));
     const accountKey = saved ? fromBase64Url(saved) : null;
     // Noted before the new sign-in is kept, so it's never kept unchecked.
     if (accountKey) this.state.setMeta(UNCHECKED, '1');
@@ -628,10 +646,11 @@ export class SyncAccount {
     this.runner = null;
     this.endSession();
     if (server && token) await this.signOutOnServer(server, token);
-    if (this.secrets.get('accountKey')) {
+    // A server of your own stays the one to sign in to again, as does Factwright's while this
+    // computer has its account key. With neither, nothing here is for a server any more.
+    if (server && (server.own || this.secrets.get(this.keyFor(server)))) {
       this.set({ state: 'signed-out', email: this.email() });
     } else {
-      // With no account key, nothing here is for that server any more, so sync is just off.
       this.kept = null;
       this.secrets.clear();
       this.set({ state: 'off' });
@@ -639,8 +658,12 @@ export class SyncAccount {
     return { ok: true };
   }
 
-  /** Stops waiting for the browser. Sync goes back to where it stood. */
+  /**
+   * Stops waiting for the browser, or for a server of your own's check. Sync goes back to where
+   * it stood.
+   */
   cancelSignIn(): void {
+    this.attempts++;
     this.signIn?.cancel();
   }
 
@@ -772,7 +795,7 @@ export class SyncAccount {
     if (this.state.meta('keyId') !== keys.id) this.startOver();
     this.state.setMeta('keyId', keys.id);
     this.state.setMeta(UNCHECKED, '0');
-    this.secrets.set('accountKey', toBase64Url(accountKey));
+    if (this.kept) this.secrets.set(this.keyFor(this.kept), toBase64Url(accountKey));
     this.accountKey = accountKey;
     this.keys = keys;
     await this.runner?.stop();

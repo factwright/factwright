@@ -221,6 +221,9 @@ export function SignInStep({
         problem={problem}
         onConnect={connect}
         onBack={() => {
+          // Going back while the server is checked calls it off.
+          if (checking) api.cancelSyncSignIn();
+          setChecking(false);
           setProblem(null);
           setBack(true);
           onConnecting(false);

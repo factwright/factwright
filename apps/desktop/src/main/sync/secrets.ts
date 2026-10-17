@@ -26,11 +26,12 @@ export const NO_KEYCHAIN: Keychain = {
 };
 
 /**
- * What sync keeps secret on this computer: the account key, and the sign-in. A sign-in to
- * Factwright's own server is its session token, as `session`. One to a server of your own is kept
- * as `ownSession` instead, with that server's address locked in with its token (see account.ts).
+ * What sync keeps secret on this computer: the sign-in and the account key. Factwright's own
+ * server's are `session`, its session token, and `accountKey`, as before there were others. A
+ * server of your own's are kept apart, as `ownSession`, with that server's address locked in with
+ * its token, and `ownAccountKey` (see account.ts).
  */
-export type SecretName = 'session' | 'ownSession' | 'accountKey';
+export type SecretName = 'session' | 'accountKey' | 'ownSession' | 'ownAccountKey';
 
 /**
  * Sync's secrets on this computer: the sign-in and the account key. Each is locked with the

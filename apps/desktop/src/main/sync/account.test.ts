@@ -425,7 +425,7 @@ describe('a copy without the keychain', () => {
           JSON.stringify({ server: 'https://factwright-sync.sam.workers.dev', token: 'x' }),
         )
         .toString('base64'),
-      accountKey: keychain.encryptString('made-up key').toString('base64'),
+      ownAccountKey: keychain.encryptString('made-up key').toString('base64'),
     });
     writeFileSync(join(dataDir, 'sync', 'secrets.json'), planted);
     const { sync, asked, openUrl } = withoutKeychain(dataDir);
@@ -1186,6 +1186,9 @@ describe('a server of your own', () => {
       server: address,
       token: expect.any(String),
     });
+    // Its account key is kept apart from Factwright's too, which a version from before reads.
+    expect(secrets.get('ownAccountKey')).toEqual(expect.any(String));
+    expect(secrets.has('accountKey')).toBe(false);
     expect(syncMeta(mac.dataDir, 'server')).toBe(address);
 
     // Opened again, it carries on with the same server.
@@ -1295,16 +1298,24 @@ describe('a server of your own', () => {
     expect(again.sync.status()).toMatchObject({ state: 'on', ownServer: address });
   });
 
-  it('turns off when the wrong account signs in there before anything is set up', async () => {
-    const mac = computer('Sam’s Mac');
+  it('signs in to it again after the wrong account, before anything is set up', async () => {
+    const { asked, fetchWith } = noting();
+    const mac = computer('Sam’s Mac', undefined, fetchWith);
     await mac.sync.start();
     expect(await mac.sync.connect(address)).toEqual({ ok: true });
+    // As when the link step's Sign in again ends the old sign-in, then starts a new one.
     expect(await mac.sync.useDifferentAccount()).toEqual({ ok: true });
-    expect(mac.sync.status()).toEqual({ state: 'off' });
-    expect(existsSync(join(mac.dataDir, 'sync', 'secrets.json'))).toBe(false);
-    // So the first screen offers both again, and Factwright's own is Factwright's.
+    expect(mac.sync.status()).toEqual({
+      state: 'signed-out',
+      email: ownPerson.email,
+      ownServer: address,
+    });
     expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
-    expect(mac.sync.status()).not.toHaveProperty('ownServer');
+    expect(mac.sync.status()).toMatchObject({ state: 'setting-up', ownServer: address });
+    expect(new Set(asked)).toEqual(new Set([address]));
+    // Turning sync off is what frees it for another server.
+    expect(await mac.sync.signOut()).toEqual({ ok: true });
+    expect(existsSync(join(mac.dataDir, 'sync', 'secrets.json'))).toBe(false);
   });
 
   it('syncs a copy without Factwright’s sync', async () => {
@@ -1329,16 +1340,49 @@ describe('a server of your own', () => {
     const { asked, fetchWith } = noting();
     const again = computer('Sam’s Mac', mac.dataDir, fetchWith);
     await again.sync.start();
-    // That account has no key, so this computer makes one, and nothing went to the other server.
+    // That account has no key yet, so this computer sets it up as its first device, with nothing
+    // of the other server's: its sign-in, its account key and its notes are gone.
     expect(again.sync.status()).toEqual({
       state: 'setting-up',
       email: person.email,
       firstDevice: true,
-      again: 'remade',
     });
     expect(new Set(asked)).toEqual(new Set([server.url.origin]));
-    expect(secretsOf(mac.dataDir).has('ownSession')).toBe(false);
+    const secrets = secretsOf(mac.dataDir);
+    expect(secrets.has('ownSession') || secrets.has('ownAccountKey')).toBe(false);
     expect(syncMeta(mac.dataDir, 'server')).toBeNull();
+  });
+
+  it('keeps an account key a version from before left as Factwright’s, never its own', async () => {
+    const mac = computer('Sam’s Mac');
+    await setUpOwn(mac);
+    await mac.sync.stop();
+    // A version from before linked to Factwright's beside it, and was signed out there since.
+    const file = join(mac.dataDir, 'sync', 'secrets.json');
+    secretsOf(mac.dataDir).set('accountKey', 'A-key-for-Factwrights-account');
+    const kept = readFileSync(file, 'utf8');
+    // A copy without Factwright's sync leaves all of it, and never asks the keychain.
+    const asked = [
+      vi.spyOn(keychain, 'isEncryptionAvailable'),
+      vi.spyOn(keychain, 'decryptString'),
+    ];
+    try {
+      const without = computer('Sam’s Mac', mac.dataDir, undefined, undefined, null);
+      await without.sync.start();
+      expect(without.sync.status()).toEqual({ state: 'no-server' });
+      await without.sync.stop();
+      for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of asked) spy.mockRestore();
+    }
+    expect(readFileSync(file, 'utf8')).toBe(kept);
+    // A copy with it takes it as Factwright's, and drops what's older, for your own server.
+    const again = computer('Sam’s Mac', mac.dataDir);
+    await again.sync.start();
+    expect(again.sync.status()).toEqual({ state: 'off' });
+    const secrets = secretsOf(mac.dataDir);
+    expect(secrets.get('accountKey')).toBe('A-key-for-Factwrights-account');
+    expect(secrets.has('ownSession') || secrets.has('ownAccountKey')).toBe(false);
   });
 
   it('checks an account another profile syncs with by its server too', async () => {
@@ -1439,6 +1483,35 @@ describe('a server of your own', () => {
         expect(await mac.sync.connect(fake)).toEqual(result);
         expect(mac.sync.status()).toEqual({ state: 'off' });
         expect(mac.statuses.map((status) => status.state)).not.toContain('signing-in');
+      }
+    });
+
+    it('does nothing more once going back or another sign-in overtakes the check', async () => {
+      for (const overtake of ['cancel', 'sign in'] as const) {
+        const checking = gate();
+        const mac = answering(async () => {
+          checking.waiting = true;
+          await checking.opened;
+          return Response.json({ providers: ['github'], features: ['approve'] });
+        });
+        await mac.sync.start();
+        const connecting = mac.sync.connect(fake);
+        await vi.waitFor(() => expect(checking.waiting).toBe(true));
+        if (overtake === 'cancel') {
+          mac.sync.cancelSignIn();
+        } else {
+          // Back, then Factwright's sign-in, all while the check waits.
+          expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+        }
+        checking.open();
+        expect(await connecting).toEqual({ ok: false, message: 'Signing in was canceled.' });
+        // No sign-in to the made-up server started, whatever came after.
+        expect(mac.statuses.filter((status) => 'ownServer' in status)).toEqual([]);
+        expect(mac.sync.status()).toEqual(
+          overtake === 'cancel'
+            ? { state: 'off' }
+            : { state: 'setting-up', email: person.email, firstDevice: true },
+        );
       }
     });
 

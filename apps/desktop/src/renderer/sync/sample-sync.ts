@@ -303,8 +303,10 @@ export function sampleSync(
       set({ state: 'off' });
       return { ok: true };
     },
+    // A server of your own stays the one to sign in to again.
     useDifferentSyncAccount: async () => {
-      set({ state: 'off' });
+      const own = ownServerOf(status);
+      set(own ? onOwn({ state: 'signed-out', email: EMAIL }, own) : { state: 'off' });
       return { ok: true };
     },
     openAccountPage: async () => {},

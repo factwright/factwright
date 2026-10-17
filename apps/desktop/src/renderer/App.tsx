@@ -60,6 +60,7 @@ import { ManageProfilesDialog } from './profiles/ManageProfilesDialog.tsx';
 import { useProfiles } from './profiles/useProfiles.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
+import { extensionWorks } from './sync/servers.ts';
 import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
@@ -538,6 +539,7 @@ export function App({ api }: { api: FactwrightApi }) {
           kinds={kinds}
           // A job added while one kind shows is that kind's, to begin with.
           kind={filter.kind}
+          extension={extensionWorks(sync, api.factwrightSync)}
           onAdded={(jobId, status, kind) => {
             // Show the new job in the list as well as the panel.
             changeFilter(filterForAdded(filter, status, kind));
