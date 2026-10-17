@@ -37,7 +37,7 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST /api/sync/live/ticket`, `GET /api/sync/live` | Listening for changes, over a WebSocket |
 | `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, and how much you store |
 | `GET /api/account/export` | Everything the server keeps for your account, still locked |
-| `GET /api/sign-in-options` | The ways to sign in this server has set up, and what more it can do, such as approving devices. Anyone can ask |
+| `GET /api/sign-in-options` | The ways to sign in this server has set up, what more it can do, such as approving devices, and the terms and privacy policy signing in agrees to, when it has them (`TERMS_URL` and `PRIVACY_URL`). Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
 | `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
 
@@ -79,10 +79,10 @@ It runs on Cloudflare's free plan. The first deploy creates the database, the fi
 
 ### Running your own
 Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one. To run your own:
-1. In `wrangler.jsonc`, change the `routes` pattern and `APP_URL` to an address on a domain in your own Cloudflare account. They must match: the app opens sign-in pages only from its server's own address.
+1. In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL` and `PRIVACY_URL` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it.
 2. Follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
-3. Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://sync.example.com pnpm --filter @factwright/desktop build`. The build reads it, so set it there, then make the installers as usual.
-4. The app and the web view link to factwright.com's terms and privacy policy ([`packages/core/src/legal.ts`](../../packages/core/src/legal.ts)), which cover Neatifai's services, not yours: point them at your own.
+3. Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://factwright.yourname.workers.dev pnpm --filter @factwright/desktop build`. The build reads it, so set it there, then make the installers as usual.
+4. With `TERMS_URL` and `PRIVACY_URL` gone, the web view names no terms or privacy policy. A copy of the app built this way still links to factwright.com's ([`packages/core/src/legal.ts`](../../packages/core/src/legal.ts)), which cover Neatifai's services, not yours.
 
 ### Restoring an account
 Each store is backed up to R2 every day, and kept for 14 days. To put one back as it was on a day, with `ADMIN_TOKEN` set:

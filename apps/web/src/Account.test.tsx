@@ -6,7 +6,7 @@ import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import { Account } from './Account.tsx';
 import { forgetKeys } from './keys.ts';
-import { fakeServer, vaultOf } from './testing.ts';
+import { fakeServer, LEGAL, vaultOf } from './testing.ts';
 
 // The test browser has no IndexedDB, and what's kept there is the page's own business.
 vi.mock('./keys.ts', () => ({ forgetKeys: vi.fn(async () => {}) }));
@@ -39,7 +39,7 @@ const INFO: AccountInfo = {
 
 /** The page before the job hunt has loaded, which is all most of it needs. */
 const page = () => (
-  <Account email="sam@example.com" vault={null} keys={null} providers={['github']} />
+  <Account email="sam@example.com" vault={null} keys={null} providers={['github']} legal={LEGAL} />
 );
 
 describe('the account page', () => {
@@ -56,6 +56,22 @@ describe('the account page', () => {
       'https://factwright.com/terms',
     );
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('names no terms on a server of your own, which has none', async () => {
+    fakeServer({ 'GET /api/account': () => INFO });
+    render(
+      <Account
+        email="sam@example.com"
+        vault={null}
+        keys={null}
+        providers={['github']}
+        legal={null}
+      />,
+    );
+    expect(await screen.findByText('3.4 MB of 1 GB used, across 42 files.')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'terms of service' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'privacy policy' })).toBeNull();
   });
 
   it('signs another device out', async () => {
@@ -100,7 +116,15 @@ describe('the account page', () => {
       return 'blob:copy';
     });
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    render(<Account email="sam@example.com" vault={vault} keys={keys} providers={['github']} />);
+    render(
+      <Account
+        email="sam@example.com"
+        vault={vault}
+        keys={keys}
+        providers={['github']}
+        legal={LEGAL}
+      />,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Download a copy' }));
 
     expect((await screen.findByRole('alert')).textContent).toBe(

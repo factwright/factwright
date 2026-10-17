@@ -1,4 +1,4 @@
-import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
+import type { Legal } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { useState } from 'react';
 import styles from './page.module.css';
@@ -7,11 +7,14 @@ import { PROVIDER_NAMES, type Provider, signIn } from './server.ts';
 /** Signing in, with GitHub or Google, then back to where the person was going. */
 export function SignIn({
   providers,
+  legal,
   title = 'Your job hunt, anywhere',
   lead = 'Sign in to see the job hunt Factwright syncs from your computer. It opens here, in this browser, and stays locked everywhere else.',
   returnTo,
 }: {
   providers: Provider[];
+  /** The terms and privacy policy signing in agrees to, when the server has them. */
+  legal: Legal | null;
   title?: string;
   lead?: string;
   returnTo: string;
@@ -59,17 +62,19 @@ export function SignIn({
       <p className={styles.hint}>
         Signing in proves who you are. Your job hunt stays locked with a key only your devices hold.
       </p>
-      <p className={styles.hint}>
-        By continuing, you agree to Factwright’s{' '}
-        <a href={TERMS_URL} target="_blank" rel="noreferrer">
-          terms of service
-        </a>
-        . Its{' '}
-        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
-          privacy policy
-        </a>{' '}
-        says what sync keeps.
-      </p>
+      {legal && (
+        <p className={styles.hint}>
+          By continuing, you agree to Factwright’s{' '}
+          <a href={legal.terms} target="_blank" rel="noreferrer">
+            terms of service
+          </a>
+          . Its{' '}
+          <a href={legal.privacy} target="_blank" rel="noreferrer">
+            privacy policy
+          </a>{' '}
+          says what sync keeps.
+        </p>
+      )}
     </section>
   );
 }

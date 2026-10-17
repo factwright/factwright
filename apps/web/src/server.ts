@@ -1,4 +1,4 @@
-import { CLIENTS, type Feature, SyncClient } from '@factwright/sync';
+import { CLIENTS, type Feature, isLegal, type Legal, SyncClient } from '@factwright/sync';
 
 /** Who's signed in, as sign-in reports it. */
 export interface Session {
@@ -36,23 +36,33 @@ export async function getSession(): Promise<Session | null | undefined> {
   return answer?.user ? answer : null;
 }
 
-/** What the server offers: the ways to sign in it has set up, and what more it can do. */
+/**
+ * What the server offers: the ways to sign in it has set up, what more it can do, and the terms
+ * and privacy policy signing in agrees to, which a server of your own doesn't have.
+ */
 export interface ServerOptions {
   providers: Provider[];
   features: Feature[];
+  legal: Legal | null;
 }
 
-/** The ways to sign in that the server has set up, and what more it can do. */
+/** What the server offers. One that can't say offers nothing. */
 export async function signInOptions(): Promise<ServerOptions> {
   const response = await fetch('/api/sign-in-options').catch(() => null);
-  if (!response?.ok) return { providers: [], features: [] };
-  const { providers = [], features = [] } = (await response.json().catch(() => ({}))) as {
+  if (!response?.ok) return { providers: [], features: [], legal: null };
+  const {
+    providers = [],
+    features = [],
+    legal,
+  } = (await response.json().catch(() => ({}))) as {
     providers?: Provider[];
     features?: unknown;
+    legal?: unknown;
   };
   return {
     providers,
     features: Array.isArray(features) ? features.filter((each) => each === 'approve') : [],
+    legal: isLegal(legal) ? legal : null,
   };
 }
 

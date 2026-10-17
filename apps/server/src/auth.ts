@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { authOptions, type Provider, type SignedInVia } from './auth-options.ts';
-import type { Env } from './env.ts';
+import { appUrl, type Env } from './env.ts';
 
 const provider = (id?: string, secret?: string): Provider | undefined =>
   id && secret ? { clientId: id, clientSecret: secret } : undefined;
@@ -19,10 +19,11 @@ export async function deleteEverything(env: Env, accountId: string): Promise<voi
   await env.STORES.get(env.STORES.idFromName(accountId)).wipe(accountId);
 }
 
-export function createAuth(env: Env) {
+/** Sign-in for the app served at an address. */
+export function createAuth(env: Env, address: string) {
   return betterAuth(
     authOptions({
-      appUrl: env.APP_URL,
+      appUrl: address,
       secret: env.BETTER_AUTH_SECRET,
       database: env.DB,
       github: provider(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET),
@@ -47,17 +48,26 @@ export function createAuth(env: Env) {
 
 export type Auth = ReturnType<typeof createAuth>;
 
-let made: { env: Env; auth: Auth } | undefined;
+let made: { env: Env; byAddress: Map<string, Auth> } | undefined;
 
-/** Sign-in for this Worker, made once and kept while the Worker runs. */
-export function authFor(env: Env): Auth {
-  if (made?.env !== env) made = { env, auth: createAuth(env) };
-  return made.auth;
+/**
+ * Sign-in for this Worker, at the address a request came to, made once for each address and kept
+ * while the Worker runs. With APP_URL set, there's only ever the one.
+ */
+export function authFor(env: Env, request: Request): Auth {
+  if (made?.env !== env) made = { env, byAddress: new Map() };
+  const address = appUrl(env, request);
+  let auth = made.byAddress.get(address);
+  if (!auth) {
+    auth = createAuth(env, address);
+    made.byAddress.set(address, auth);
+  }
+  return auth;
 }
 
 /** How the request's session signed in, read fresh from the database, or null without one. */
 export async function signedInVia(env: Env, request: Request): Promise<SignedInVia | null> {
-  const signedIn = await authFor(env).api.getSession({
+  const signedIn = await authFor(env, request).api.getSession({
     headers: request.headers,
     query: { disableCookieCache: true },
   });

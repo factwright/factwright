@@ -3,11 +3,13 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { describe, expect, it, vi } from 'vitest';
 import { SignIn } from './SignIn.tsx';
-import { fakeServer } from './testing.ts';
+import { fakeServer, LEGAL } from './testing.ts';
 
 describe('signing in', () => {
   it('offers each way the server has set up', async () => {
-    const { container } = render(<SignIn providers={['github', 'google']} returnTo="/" />);
+    const { container } = render(
+      <SignIn providers={['github', 'google']} legal={LEGAL} returnTo="/" />,
+    );
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Continue with GitHub',
       'Continue with Google',
@@ -16,7 +18,7 @@ describe('signing in', () => {
   });
 
   it('says signing in agrees to the terms and privacy policy, with a link to each', () => {
-    render(<SignIn providers={['github']} returnTo="/" />);
+    render(<SignIn providers={['github']} legal={LEGAL} returnTo="/" />);
     expect(screen.getByRole('link', { name: 'terms of service' }).getAttribute('href')).toBe(
       'https://factwright.com/terms',
     );
@@ -25,12 +27,24 @@ describe('signing in', () => {
     );
   });
 
+  it('names no terms on a server of your own, which has none', () => {
+    render(<SignIn providers={['github']} legal={null} returnTo="/" />);
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByText(/terms of service/)).toBeNull();
+  });
+
   it('signs in, to come back to where the person was going', async () => {
     // GitHub's address stands in as this page's own, so the test browser stays put.
     const requests = fakeServer({
       'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
     });
-    render(<SignIn providers={['github', 'google']} returnTo="/device?user_code=WDJBMJHT" />);
+    render(
+      <SignIn
+        providers={['github', 'google']}
+        legal={LEGAL}
+        returnTo="/device?user_code=WDJBMJHT"
+      />,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
 
     expect(requests[0]?.body).toEqual({
@@ -49,7 +63,7 @@ describe('signing in', () => {
       'POST /api/auth/sign-in/social': () =>
         Response.json({ message: 'Too many requests. Please try again later.' }, { status: 429 }),
     });
-    render(<SignIn providers={['github']} returnTo="/" />);
+    render(<SignIn providers={['github']} legal={LEGAL} returnTo="/" />);
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
     expect((await screen.findByRole('alert')).textContent).toBe(
       'That’s a lot of tries in a row. Wait a minute, then try again.',
@@ -65,7 +79,7 @@ describe('signing in', () => {
         throw new TypeError('Failed to fetch');
       }),
     );
-    render(<SignIn providers={['github']} returnTo="/" />);
+    render(<SignIn providers={['github']} legal={LEGAL} returnTo="/" />);
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Can’t reach Factwright right now. Check your connection.',
@@ -73,7 +87,7 @@ describe('signing in', () => {
   });
 
   it('says when this server has no way to sign in yet', () => {
-    render(<SignIn providers={[]} returnTo="/" />);
+    render(<SignIn providers={[]} legal={LEGAL} returnTo="/" />);
     expect(screen.getByRole('alert').textContent).toBe(
       'Signing in isn’t set up on this server yet.',
     );

@@ -1,4 +1,4 @@
-import { type Feature, utf8 } from '@factwright/sync';
+import { type Feature, isLegal, utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
@@ -47,12 +47,13 @@ async function signIn(request: Request, env: Env, pathname: string): Promise<Res
       return failure(403, 'refused', 'Approve a code from a browser signed in to Factwright.');
     }
   }
-  return authFor(env).handler(request);
+  return authFor(env, request).handler(request);
 }
 
 /**
- * The ways to sign in this server has set up, for the web view's buttons, and what it can do
- * beyond the basics, so devices offer only that. Older servers list no features.
+ * The ways to sign in this server has set up, for the web view's buttons; what it can do beyond
+ * the basics, so devices offer only that; and the terms and privacy policy signing in agrees to,
+ * when it has them. Older servers list no features, and a server of your own no legal pages.
  */
 function signInOptions(env: Env): Response {
   const providers = [
@@ -60,7 +61,8 @@ function signInOptions(env: Env): Response {
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
   ];
   const features: Feature[] = ['approve'];
-  return json({ providers, features });
+  const legal = { terms: env.TERMS_URL, privacy: env.PRIVACY_URL };
+  return json({ providers, features, ...(isLegal(legal) && { legal }) });
 }
 
 /** Whether a request carries the operator's token. Without one set, nothing does. */
@@ -161,7 +163,9 @@ export default {
       if (pathname === ADMIN_RESTORE) return await restore(request, env);
       if (pathname === ADMIN_DELETE) return await deleteForOperator(request, env);
       if (pathname === SIGN_IN_OPTIONS) return signInOptions(env);
-      if (pathname.startsWith('/api/')) return await handleApi(request, env, authFor(env));
+      if (pathname.startsWith('/api/')) {
+        return await handleApi(request, env, authFor(env, request));
+      }
     } catch (error) {
       // Cloudflare's log of every request is off, so a failure is written down here: what was
       // asked, never its query, which can carry a sign-in code.

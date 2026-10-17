@@ -10,8 +10,17 @@ export interface Env {
   STORES: DurableObjectNamespace<UserStore>;
   /** The web view's files, once it's built. */
   ASSETS?: Fetcher;
-  /** Where the app is served, such as "https://app.factwright.com". */
-  APP_URL: string;
+  /**
+   * Where the app is served, such as "https://app.factwright.com". Unset, as on a server of your
+   * own, it's the address each request came to (see appUrl).
+   */
+  APP_URL?: string;
+  /**
+   * The terms of service and privacy policy signing in agrees to. Only Factwright's own server
+   * sets them. A server of your own links to none, unless you set yours.
+   */
+  TERMS_URL?: string;
+  PRIVACY_URL?: string;
   /** How much each account may store, in megabytes. */
   STORAGE_LIMIT_MB?: string;
   /** Sign-ins each IP address may start in a minute. Ten unless set. */
@@ -28,6 +37,15 @@ export interface Env {
   ADMIN_TOKEN?: string;
   /** How much sync is used, in totals only, counted once a day (sync-totals.ts). */
   SYNC_TOTALS?: AnalyticsEngineDataset;
+}
+
+/**
+ * Where the app is served, as an origin: APP_URL, or else the address the request came to, such
+ * as a server of your own at a free workers.dev address. Cloudflare only hands a Worker requests
+ * for its own addresses, so that's always one of them.
+ */
+export function appUrl(env: Pick<Env, 'APP_URL'>, request: Request): string {
+  return new URL(env.APP_URL || request.url).origin;
 }
 
 /** How much each account may store, in bytes. */
