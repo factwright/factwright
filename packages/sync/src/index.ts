@@ -66,6 +66,7 @@ export {
   type Legal,
   LIMITS,
   type LinkRequest,
+  type Period,
   type PushChange,
   type PushResponse,
   type PushResult,

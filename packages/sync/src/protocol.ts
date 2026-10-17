@@ -84,7 +84,12 @@ export const API = {
   account: '/api/account',
   devices: '/api/account/devices',
   export: '/api/account/export',
+  checkout: '/api/billing/checkout',
+  portal: '/api/billing/portal',
 } as const;
+
+/** How long a subscription to sync pays for at a time, where sync is sold. */
+export type Period = 'month' | 'year';
 
 /** The account key, locked with the recovery key, as the server keeps it. */
 export interface KeyRecord {
@@ -308,7 +313,7 @@ export interface Legal {
 }
 
 /** An address a page can link to safely: https, with nothing that could run a script. */
-function isHttps(value: unknown): value is string {
+export function isHttps(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 2000) return false;
   try {
     return new URL(value).protocol === 'https:';

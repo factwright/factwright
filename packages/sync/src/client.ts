@@ -6,10 +6,12 @@ import {
   type ChangesPage,
   type ErrorBody,
   type Feature,
+  isHttps,
   isLinkRequest,
   type KeyRecord,
   knownFeatures,
   type LinkRequest,
+  type Period,
   type PushChange,
   type PushResponse,
   type VersionInfo,
@@ -26,6 +28,11 @@ export type SyncErrorKind =
   | 'too-big'
   /** Too many requests: wait, then try again. */
   | 'slow-down'
+  /**
+   * Sync on this server is a subscription, and the account doesn't have one now: it can read all
+   * it has, but sends nothing, and adds no devices, until it subscribes. Trying again won't help.
+   */
+  | 'subscription-needed'
   | 'not-found'
   | 'conflict'
   /** The server didn't take the request as sent. */
@@ -60,6 +67,7 @@ export class SyncError extends Error {
 const KIND_BY_STATUS: Record<number, SyncErrorKind> = {
   400: 'refused',
   401: 'signed-out',
+  402: 'subscription-needed',
   403: 'refused',
   404: 'not-found',
   409: 'conflict',
@@ -321,6 +329,31 @@ export class SyncClient {
   /** Signs a device out of the account. */
   async removeDevice(id: string): Promise<void> {
     await this.request(`${API.devices}/${id}`, { method: 'DELETE' });
+  }
+
+  /**
+   * On a server that sells sync: the address of Stripe's checkout, to pay for a month or a year of
+   * it. Only a browser's own sign-in can start one, never a device code's.
+   */
+  checkout(period: Period): Promise<string> {
+    return this.payingPage(API.checkout, { period });
+  }
+
+  /**
+   * The address of Stripe's customer portal, for an account that's paid: its card, its plan,
+   * canceling and receipts. A browser's own sign-in only, as with checkout.
+   */
+  portal(): Promise<string> {
+    return this.payingPage(API.portal, {});
+  }
+
+  /** Where paying sends the browser next, which is only ever an https page. */
+  private async payingPage(path: string, json: object): Promise<string> {
+    const url = (await this.json<{ url?: unknown } | null>(path, { method: 'POST', json }))?.url;
+    if (!isHttps(url)) {
+      throw new SyncError('server', 'The sync server’s answer about paying didn’t make sense.');
+    }
+    return url;
   }
 
   /** A short-lived ticket to listen for changes as they happen. */

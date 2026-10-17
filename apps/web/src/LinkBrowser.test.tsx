@@ -76,6 +76,45 @@ describe('linking a phone', () => {
     expect(onLinked).not.toHaveBeenCalled();
   });
 
+  it('says sync is paused when a code can’t link, where sync is sold, and lets them try again', async () => {
+    const code = newLinkCode();
+    let answered = 0;
+    // The server turns down taking the link: the account's subscription ended.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        answered += 1;
+        return Response.json(
+          {
+            error: 'subscription-needed',
+            message: 'Sync on Factwright’s server needs a subscription.',
+          },
+          { status: 402 },
+        );
+      }),
+    );
+    render(<LinkBrowser account="sam" email="sam@example.com" code={null} onLinked={vi.fn()} />);
+    await userEvent.type(screen.getByLabelText('Code from your computer'), code.text);
+    await userEvent.click(screen.getByRole('button', { name: 'Link' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Your subscription ended, so sync is paused, and this browser can’t link until you subscribe again.',
+    );
+    // The form isn't left waiting: it can be sent again.
+    expect(screen.getByRole('button', { name: 'Link' })).toHaveProperty('disabled', false);
+    expect(answered).toBe(1);
+  });
+
+  it('says sync is paused before anyone tries, once the page knows', async () => {
+    fakeServer({});
+    const { container } = render(
+      <LinkBrowser account="sam" email="sam@example.com" code={null} paused onLinked={vi.fn()} />,
+    );
+    expect(screen.getByRole('heading', { name: 'Sync is paused' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Subscribe again' })).toBeTruthy();
+    expect(screen.queryByLabelText('Code from your computer')).toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
   it('won’t keep a key that belongs to another account', async () => {
     const { accountKey } = await anAccount();
     const other = await anAccount();

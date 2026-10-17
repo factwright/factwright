@@ -199,6 +199,13 @@ describe('opening the job hunt in the browser', () => {
     expect(vault.rows.status_log).toHaveLength(2);
     expect(vault.rows.calls).toHaveLength(1);
     expect(vault.rows.notes).toHaveLength(2);
+    // When the server last took a change, for saying how up to date it is once sync is paused.
+    const { changes } = await sam.client.changes(0);
+    expect(vault.updatedAt).toBe(changes.at(-1)?.at);
+  });
+
+  it('says it has no changes yet, before the server took any', async () => {
+    expect((await openVault(sam.client, keys)).updatedAt).toBeNull();
   });
 
   it('names each job’s page by a code its company and role can’t be read from', async () => {

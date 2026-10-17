@@ -1,4 +1,11 @@
-import { type AccountInfo, accountKeys, newAccountKey, sealFile, utf8 } from '@factwright/sync';
+import {
+  type AccountInfo,
+  accountKeys,
+  newAccountKey,
+  type SyncAccess,
+  sealFile,
+  utf8,
+} from '@factwright/sync';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -6,6 +13,7 @@ import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import { Account } from './Account.tsx';
 import { forgetKeys } from './keys.ts';
+import { browser, dayOf } from './Subscription.tsx';
 import { fakeServer, LEGAL, vaultOf } from './testing.ts';
 
 // The test browser has no IndexedDB, and what's kept there is the page's own business.
@@ -202,5 +210,134 @@ describe('the account page', () => {
     expect(screen.getByRole('alert').textContent).toBe(
       'Signing in was canceled. Try again whenever you’re ready.',
     );
+  });
+});
+
+describe('the account page’s subscription, where sync is sold', () => {
+  const RENEWS = '2026-11-17T12:00:00.000Z';
+  const subscribed = (state: 'active' | 'ending' | 'retrying' | 'ended'): SyncAccess => ({
+    allowed: state !== 'ended',
+    gift: null,
+    subscription: { state, renewsAt: RENEWS },
+  });
+
+  it.each([
+    [subscribed('active'), `Subscribed. Renews ${dayOf(RENEWS)}.`, 'Manage subscription'],
+    [
+      subscribed('ending'),
+      `Canceled. Sync keeps going until ${dayOf(RENEWS)}, then pauses.`,
+      'Manage subscription',
+    ],
+    [
+      subscribed('retrying'),
+      'Your card didn’t go through. Update it to keep sync going.',
+      'Update your card',
+    ],
+    [
+      { allowed: true, gift: 'free', subscription: null },
+      'Free sync, from Steve. Good luck with the search!',
+      null,
+    ],
+    [
+      { allowed: true, gift: 'early', subscription: null },
+      'Free sync, for good. Thanks for being one of the first.',
+      null,
+    ],
+  ] as [SyncAccess, string, string | null][])(
+    'says how the account has sync, and manages a subscription at Stripe (%#)',
+    async (access, line, button) => {
+      const requests = fakeServer({
+        'GET /api/account': () => ({ ...INFO, access }),
+        'POST /api/billing/portal': () => ({ url: 'https://billing.stripe.com/p/session/test_1' }),
+      });
+      const went = vi.spyOn(browser, 'go').mockImplementation(() => {});
+      const { container } = render(page());
+      expect(await screen.findByRole('heading', { name: 'Your subscription' })).toBeTruthy();
+      expect(screen.getByText(line)).toBeTruthy();
+      expect((await axe.run(container)).violations).toEqual([]);
+      if (!button) {
+        expect(screen.queryByRole('button', { name: 'Manage subscription' })).toBeNull();
+        return;
+      }
+      await userEvent.click(screen.getByRole('button', { name: button }));
+      await waitFor(() =>
+        expect(went).toHaveBeenCalledWith('https://billing.stripe.com/p/session/test_1'),
+      );
+      expect(requests.at(-1)).toMatchObject({ method: 'POST', path: '/api/billing/portal' });
+    },
+  );
+
+  it('offers subscribing to an account without sync, or again once it ended', async () => {
+    for (const [access, line, button] of [
+      [{ allowed: false, gift: null, subscription: null }, 'No subscription yet.', 'Subscribe'],
+      [
+        subscribed('ended'),
+        'Your subscription ended, so sync is paused. The job hunt on your computers is safe.',
+        'Subscribe again',
+      ],
+    ] as const) {
+      history.replaceState(null, '', '/account');
+      fakeServer({ 'GET /api/account': () => ({ ...INFO, access }) });
+      const { unmount } = render(page());
+      expect(await screen.findByText(line)).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: button }));
+      expect(location.pathname).toBe('/subscribe');
+      unmount();
+    }
+  });
+
+  it('says a free gift ends a subscription that was still running', async () => {
+    fakeServer({
+      'GET /api/account': () => ({
+        ...INFO,
+        access: {
+          allowed: true,
+          gift: 'free',
+          subscription: { state: 'ending', renewsAt: RENEWS },
+        },
+      }),
+    });
+    render(page());
+    expect(
+      await screen.findByText(`Your subscription ends ${dayOf(RENEWS)}, and won’t renew.`),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Manage subscription' })).toBeTruthy();
+  });
+
+  it('says why Stripe’s page couldn’t open', async () => {
+    fakeServer({
+      'GET /api/account': () => ({ ...INFO, access: subscribed('active') }),
+      'POST /api/billing/portal': () =>
+        Response.json(
+          { error: 'not-found', message: 'This account has no subscription to manage.' },
+          { status: 404 },
+        ),
+    });
+    const went = vi.spyOn(browser, 'go').mockImplementation(() => {});
+    render(page());
+    await userEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'There’s no subscription to manage on this account.',
+    );
+    expect(went).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Manage subscription' })).toHaveProperty(
+      'disabled',
+      false,
+    );
+  });
+
+  it('has no subscription to show on a server that doesn’t sell sync', async () => {
+    fakeServer({ 'GET /api/account': () => INFO });
+    render(page());
+    expect(await screen.findByText('3.4 MB of 1 GB used, across 42 files.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your subscription' })).toBeNull();
+  });
+
+  it('says deleting the account ends its subscription too', async () => {
+    fakeServer({ 'GET /api/account': () => ({ ...INFO, access: subscribed('active') }) });
+    render(page());
+    await screen.findByRole('heading', { name: 'Your subscription' });
+    await userEvent.click(screen.getByRole('button', { name: 'Delete my account…' }));
+    expect(screen.getByText(/Your subscription ends with it, straight away\./)).toBeTruthy();
   });
 });

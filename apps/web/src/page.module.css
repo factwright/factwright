@@ -156,3 +156,20 @@
 .linkButton:hover {
   text-decoration: underline;
 }
+
+/* A note at the top of a page, such as sync being paused. */
+.note {
+  margin-bottom: var(--fw-space-4);
+}
+
+.noteText {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.noteActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+}

@@ -1,5 +1,5 @@
 import { localDate } from '@factwright/core';
-import type { AccountKeys, Legal } from '@factwright/sync';
+import type { AccountKeys, Legal, SyncAccess } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
@@ -12,6 +12,8 @@ import page from './page.module.css';
 import { navigate, replace, usePath } from './route.ts';
 import { PageLink, Shell } from './Shell.tsx';
 import { SignIn } from './SignIn.tsx';
+import { Subscribe, Subscribed } from './Subscribe.tsx';
+import { SyncNote } from './Subscription.tsx';
 import {
   client,
   getSession,
@@ -68,6 +70,10 @@ export function App() {
   const [loadedAt, setLoadedAt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // How the account has sync, on a server that sells it, for the notes that say it's paused or a
+  // payment didn't go through.
+  const [access, setAccess] = useState<SyncAccess | null>(null);
+  const [accessLooked, setAccessLooked] = useState(false);
   // A sign-in that didn't work comes back to the page that started it, with why in the address.
   // That's taken out of the address at once, and handed to the first page to open, and no other,
   // which says it until the person tries again.
@@ -113,6 +119,22 @@ export function App() {
   }, []);
 
   const keys = state.stage === 'signed-in' ? state.keys : null;
+  const selling = state.stage === 'signed-in' && state.features.includes('subscription');
+
+  const loadAccess = useCallback(async () => {
+    if (!selling) return;
+    try {
+      setAccess((await client.account()).access ?? null);
+    } catch {
+      // The notes wait for the next look.
+    } finally {
+      setAccessLooked(true);
+    }
+  }, [selling]);
+
+  useEffect(() => {
+    void loadAccess();
+  }, [loadAccess]);
 
   // Signed out from elsewhere while the page was open, such as from a computer after this phone
   // was lost: the job hunt it shows and the keys it keeps go at once, not at the next reload.
@@ -163,12 +185,14 @@ export function App() {
   // Coming back to the page brings the job hunt up to date.
   useEffect(() => {
     const update = () => {
-      if (document.visibilityState === 'visible' && Date.now() - loadedAt > STALE_MS)
+      if (document.visibilityState === 'visible' && Date.now() - loadedAt > STALE_MS) {
         void refresh();
+        void loadAccess();
+      }
     };
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);
-  }, [refresh, loadedAt]);
+  }, [refresh, loadAccess, loadedAt]);
 
   if (state.stage === 'loading') {
     return (
@@ -198,6 +222,25 @@ export function App() {
 
   if (state.stage === 'signed-out') {
     const { providers, legal } = state;
+    if (path === '/subscribe' || path === '/subscribe/done') {
+      const done = path === '/subscribe/done';
+      return (
+        <Shell>
+          <SignIn
+            providers={providers}
+            legal={legal}
+            title={done ? 'Thanks for subscribing' : 'Subscribe to sync'}
+            lead={
+              done
+                ? 'Go back to Factwright: it’s finishing setting up sync. To see your subscription here, sign in.'
+                : 'Sign in with the account you use in Factwright, to subscribe to sync.'
+            }
+            returnTo={location.pathname + location.search}
+            signInProblem={signInProblem}
+          />
+        </Shell>
+      );
+    }
     if (path === '/device') {
       return (
         <Shell>
@@ -249,6 +292,22 @@ export function App() {
     );
   }
 
+  if (path === '/subscribe') {
+    return (
+      <Shell nav={nav}>
+        <Subscribe account={session.user.id} email={session.user.email} onSignedOut={forgetHere} />
+      </Shell>
+    );
+  }
+
+  if (path === '/subscribe/done') {
+    return (
+      <Shell nav={nav}>
+        <Subscribed onSignedOut={forgetHere} />
+      </Shell>
+    );
+  }
+
   if (path === '/account') {
     return (
       <Shell nav={nav}>
@@ -266,6 +325,14 @@ export function App() {
   }
 
   if (!keys || path === '/link') {
+    // Where sync is sold, linking waits for a first look at the account, which may not sync.
+    if (selling && !accessLooked) {
+      return (
+        <Shell nav={nav}>
+          <p className={page.hint}>Opening…</p>
+        </Shell>
+      );
+    }
     return (
       <Shell nav={nav}>
         <LinkBrowser
@@ -273,6 +340,7 @@ export function App() {
           email={session.user.email}
           // A browser that's linked already, back here from a QR code, doesn't ask again.
           canApprove={features.includes('approve') && !keys}
+          paused={access !== null && !access.allowed}
           code={linkCode}
           onSignedOut={forgetHere}
           onLinked={(linked) => {
@@ -293,6 +361,9 @@ export function App() {
         <p className={page.problem} role="alert">
           {problem}
         </p>
+      )}
+      {vault && !job && (
+        <SyncNote access={access} updatedAt={vault.updatedAt} onSignedOut={forgetHere} />
       )}
       {!vault ? (
         <p className={page.hint}>{problem ? '' : 'Unlocking your job hunt…'}</p>

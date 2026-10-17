@@ -1,4 +1,12 @@
-import { CLIENTS, type Feature, isLegal, type Legal, SyncClient } from '@factwright/sync';
+import {
+  CLIENTS,
+  type Feature,
+  isLegal,
+  knownFeatures,
+  type Legal,
+  SyncClient,
+  SyncError,
+} from '@factwright/sync';
 
 /** Who's signed in, as sign-in reports it. */
 export interface Session {
@@ -61,7 +69,7 @@ export async function signInOptions(): Promise<ServerOptions> {
   };
   return {
     providers,
-    features: Array.isArray(features) ? features.filter((each) => each === 'approve') : [],
+    features: knownFeatures(features),
     legal: isLegal(legal) ? legal : null,
   };
 }
@@ -93,6 +101,27 @@ export async function signIn(provider: Provider, returnTo: string): Promise<stri
 
 export async function signOut(): Promise<void> {
   await post('/api/auth/sign-out');
+}
+
+/**
+ * Why Stripe's checkout, or its page for managing a subscription (the portal), couldn't open, in
+ * plain words.
+ */
+export function payingProblem(error: unknown, page: 'checkout' | 'portal'): string {
+  if (error instanceof SyncError) {
+    if (error.kind === 'offline') return 'Can’t reach Factwright right now. Check your connection.';
+    if (error.kind === 'slow-down') {
+      return 'A checkout just started. Wait a few seconds, then try again.';
+    }
+    if (error.kind === 'not-found') {
+      return page === 'checkout'
+        ? 'Sync here doesn’t need a subscription.'
+        : 'There’s no subscription to manage on this account.';
+    }
+  }
+  return page === 'checkout'
+    ? 'Stripe’s checkout couldn’t open. Try again in a moment.'
+    : 'Stripe’s page for your subscription couldn’t open. Try again in a moment.';
 }
 
 /**

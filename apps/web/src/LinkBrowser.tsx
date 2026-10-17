@@ -18,6 +18,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { saveKeys } from './keys.ts';
 import styles from './page.module.css';
+import { navigate } from './route.ts';
 import { client, signOut } from './server.ts';
 
 type Result = { ok: true; keys: AccountKeys } | { ok: false; message: string };
@@ -88,7 +89,11 @@ function CodeForm({
   const send = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    setProblem(await submit(text));
+    try {
+      setProblem(await submit(text));
+    } catch (error) {
+      setProblem(reasonOf(error));
+    }
     setBusy(false);
   };
   return (
@@ -168,6 +173,9 @@ const ENDED: Record<Exclude<AskStep['state'], 'waiting' | 'check'>, string> = {
     'Something changed the request on its way between your devices, so nothing was linked. Ask again.',
 };
 const MISMATCH = 'Nothing was linked. If you didn’t start this, you can ignore it.';
+/** Why nothing links while the account can't sync, on a server that sells it. */
+const PAUSED =
+  'Your subscription ended, so sync is paused, and this browser can’t link until you subscribe again.';
 const BROKEN = 'That didn’t work, so nothing was linked. Ask again.';
 
 type Asking =
@@ -180,9 +188,11 @@ type Asking =
 const reasonOf = (error: unknown) =>
   error instanceof SyncError && error.kind === 'offline'
     ? 'Can’t reach Factwright right now. Check your connection.'
-    : error instanceof Error
-      ? error.message
-      : String(error);
+    : error instanceof SyncError && error.kind === 'subscription-needed'
+      ? PAUSED
+      : error instanceof Error
+        ? error.message
+        : String(error);
 
 /** Keeps an approved key, waiting out a dropped connection: it was picked up once, for good. */
 async function keepApproved(account: string, accountKey: Bytes): Promise<Result> {
@@ -428,6 +438,7 @@ export function LinkBrowser({
   account,
   email,
   canApprove = false,
+  paused = false,
   code,
   onLinked,
   onSignedOut = () => {},
@@ -437,6 +448,11 @@ export function LinkBrowser({
   email: string;
   /** Whether to ask a device that's set up to approve this browser, as the server can. */
   canApprove?: boolean;
+  /**
+   * Whether sync is paused, on a server that sells it, as the account's subscription ended: no
+   * browser links until it subscribes again.
+   */
+  paused?: boolean;
   /** A link code from the QR code's address, to use straight away. */
   code: string | null;
   onLinked: (keys: AccountKeys) => void;
@@ -458,11 +474,36 @@ export function LinkBrowser({
   useEffect(() => {
     if (!code || started.current) return;
     started.current = true;
-    void linkWithCode(account, code).then((result) => {
-      setProblem(finish(result));
-      setLinking(false);
-    });
+    void linkWithCode(account, code).then(
+      (result) => {
+        setProblem(finish(result));
+        setLinking(false);
+      },
+      (error: unknown) => {
+        setProblem(reasonOf(error));
+        setLinking(false);
+      },
+    );
   });
+
+  if (paused && !linking) {
+    return (
+      <section className={styles.card} aria-labelledby="link-title">
+        <h1 id="link-title" className={styles.title}>
+          Sync is paused
+        </h1>
+        <p className={styles.lead}>
+          Your subscription ended, so this browser can’t link to your job hunt until you subscribe
+          again. The job hunt on your computers is safe.
+        </p>
+        <div className={styles.actions}>
+          <Button variant="primary" onClick={() => navigate('/subscribe')}>
+            Subscribe again
+          </Button>
+        </div>
+      </section>
+    );
+  }
 
   if (linking) {
     return (
