@@ -73,8 +73,14 @@ export function copySettings(own: Settings): Settings {
   };
 }
 
-/** The copy's package.json: Wrangler, to deploy it, and what the Deploy button asks for. */
-export function copyPackage(version: string, wrangler: string): Settings {
+/**
+ * The copy's package.json: Wrangler, to deploy it, and what the Deploy button asks for. Its
+ * scripts name the accounts database by its binding in the copy's settings, not by its name: the
+ * Deploy button lets you rename the database, and changes wrangler.jsonc to match, but not these.
+ */
+export function copyPackage(version: string, wrangler: string, settings: Settings): Settings {
+  const [database] = settings.d1_databases as { binding: string }[];
+  if (!database) throw new Error('The sync server’s settings have no database to set up.');
   return {
     name: NAME,
     version,
@@ -83,8 +89,8 @@ export function copyPackage(version: string, wrangler: string): Settings {
     license: 'AGPL-3.0-only',
     scripts: {
       // The accounts database's tables first, so a new version never runs without them.
-      deploy: `wrangler d1 migrations apply ${NAME} --remote && wrangler deploy`,
-      dev: `wrangler d1 migrations apply ${NAME} --local && wrangler dev`,
+      deploy: `wrangler d1 migrations apply ${database.binding} --remote && wrangler deploy`,
+      dev: `wrangler d1 migrations apply ${database.binding} --local && wrangler dev`,
     },
     devDependencies: { wrangler },
     cloudflare: {
@@ -126,7 +132,7 @@ You need a free Cloudflare account and a GitHub account.
    - Authorization callback URL: \`${address}/api/auth/callback/github\`
 
    Then generate a client secret.
-3. **Deploy.** Click Deploy to Cloudflare above, and keep the name \`${NAME}\`. It makes the database and the file storage. When it asks for:
+3. **Deploy.** Click Deploy to Cloudflare above, and keep the server’s name, \`${NAME}\`: your address and your GitHub app use it. It makes the database and the file storage, which can have any names. When it asks for:
 ${Object.entries(SECRETS)
   .map(([key, description]) => `   - \`${key}\`: ${description}`)
   .join('\n')}
@@ -183,8 +189,9 @@ function make(): void {
   cpSync(new URL('migrations/', server), new URL('migrations/', out), { recursive: true });
   cpSync(new URL('../../LICENSE', server), new URL('LICENSE', out));
   const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
-  writeFileSync(new URL('wrangler.jsonc', out), json(copySettings(rawConfig as Settings)));
-  writeFileSync(new URL('package.json', out), json(copyPackage(version, wrangler)));
+  const settings = copySettings(rawConfig as Settings);
+  writeFileSync(new URL('wrangler.jsonc', out), json(settings));
+  writeFileSync(new URL('package.json', out), json(copyPackage(version, wrangler, settings)));
   writeFileSync(new URL('.dev.vars.example', out), devVarsExample());
   writeFileSync(new URL('.gitignore', out), 'node_modules/\n.wrangler/\n.dev.vars\n');
   writeFileSync(new URL('README.md', out), copyReadme(version, commit));
