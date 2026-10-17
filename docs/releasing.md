@@ -59,6 +59,20 @@ repository's Releases page.
   Factwright's, as one without them, or with either wrong, would leave everyone who installs it
   unable to sync, and stuck on it for good. Each built app's tests then check it can turn sync on,
   and that its update settings name the download site, only if it was built with them.
+- **The sync server, for people who run their own.** Within six hours of a version's release
+  on GitHub, [github.com/factwright/sync-server](https://github.com/factwright/sync-server) has its
+  sync server, ready to deploy with Cloudflare's Deploy button.
+  - sync-server's own Publish workflow builds it from that version's source with
+    `pnpm --filter @factwright/server copy`: the Worker as Wrangler bundled it, the web view, the
+    migrations, and settings for a workers.dev address with none of Factwright's own. It commits it
+    with the version as a tag.
+  - It needs no keys, as the source is public and it writes only to its own repository.
+  - GitHub pauses its schedule after 60 days with no activity there. Running it by hand from its
+    Actions tab starts it again.
+  - Here, [`sync-server.yml`](../.github/workflows/sync-server.yml) checks that each change to the
+    server still makes a copy that Wrangler takes.
+  - Factwright's own server isn't deployed by any of this. That's still
+    `pnpm --filter @factwright/server run deploy`, by hand.
 - **Updates.** An installed copy looks at those feeds 30 seconds after it starts, then every ten
   minutes, and straight away when the user comes back to it or the computer wakes, at most once a
   minute ([`apps/desktop/src/main/updates.ts`](../apps/desktop/src/main/updates.ts)). So a new
