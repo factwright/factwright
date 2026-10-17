@@ -295,7 +295,7 @@ try {
     await setup.getByRole('button', { name: 'Sign in to sync' }).click();
     await setup.getByText('sends its sign-in to another address, sync.example.com').waitFor();
     check(
-      context.pages().every((page) => !page.url().includes('sync.example.com')),
+      context.pages().every((page) => new URL(page.url()).hostname !== 'sync.example.com'),
       'never opens a sign-in page at another address than your server’s',
     );
     await signIn(setup, origin, sam.token, true);
