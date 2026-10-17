@@ -196,12 +196,28 @@ describe('signing in on the web', () => {
     );
   });
 
-  it('won’t send people anywhere but the app afterward', async () => {
+  it('won’t send people anywhere but the app afterward, or when it doesn’t work', async () => {
     const started = await post('/api/auth/sign-in/social', {
       provider: 'github',
       callbackURL: 'https://elsewhere.example/steal',
     });
     expect(started.status).toBe(403);
+    const failing = await post('/api/auth/sign-in/social', {
+      provider: 'github',
+      callbackURL: '/',
+      errorCallbackURL: 'https://elsewhere.example/steal',
+    });
+    expect(failing.status).toBe(403);
+  });
+
+  it('lets the web view name its own page to come back to, should it not work', async () => {
+    const started = await post('/api/auth/sign-in/social', {
+      provider: 'github',
+      callbackURL: '/device?user_code=WDJBMJHT',
+      errorCallbackURL: '/device?user_code=WDJBMJHT',
+    });
+    expect(started.status).toBe(200);
+    expect(new URL(String(started.body.url)).origin).toBe('https://github.com');
   });
 
   it('tells the web view which ways it has to sign in, what more it can do, and its terms', async () => {

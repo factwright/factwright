@@ -179,6 +179,28 @@ describe('the account page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
     expect(await screen.findByText('To delete your account, sign in again first.')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
-    expect(requests.at(-1)?.body).toEqual({ provider: 'github', callbackURL: '/account' });
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/account',
+      errorCallbackURL: '/account',
+    });
+  });
+
+  it('says why that sign-in didn’t work, back on the page', async () => {
+    fakeServer({ 'GET /api/account': () => INFO });
+    render(
+      <Account
+        email="sam@example.com"
+        vault={null}
+        keys={null}
+        providers={['github']}
+        legal={LEGAL}
+        signInProblem="Signing in was canceled. Try again whenever you’re ready."
+      />,
+    );
+    expect(await screen.findByText('Factwright on Sam’s MacBook Pro')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Signing in was canceled. Try again whenever you’re ready.',
+    );
   });
 });

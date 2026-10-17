@@ -48,12 +48,14 @@ describe('a server of your own', () => {
     );
   });
 
-  it('tells someone it turns away why, on sign-in’s own page', async () => {
-    // Where sign-in sends someone its list doesn't name, once GitHub says who they are.
+  it('sends someone it turns away back to the web view at its own address, which says why', async () => {
+    // Sign-in's own error page, where sign-in sent someone its list doesn't name before.
     const turnedAway = new URLSearchParams({ error: 'not_listed', error_description: NOT_LISTED });
-    const page = await fetch(new URL(`/api/auth/error?${turnedAway}`, server.url));
-    expect(page.status).toBe(200);
-    expect(await page.text()).toContain('This Factwright server is private');
+    const page = await fetch(new URL(`/api/auth/error?${turnedAway}`, server.url), {
+      redirect: 'manual',
+    });
+    expect(page.status).toBe(302);
+    expect(page.headers.get('location')).toBe(`${server.url.origin}/?${turnedAway}`);
   });
 
   it('won’t send people anywhere but itself afterward', async () => {

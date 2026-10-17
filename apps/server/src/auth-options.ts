@@ -59,8 +59,9 @@ const byExtension = (context: { path?: string; body?: unknown } | null | undefin
 export type SignedInVia = 'web' | 'device';
 
 /**
- * What sign-in's page tells someone a server of your own turned away. It names where the owner
- * sets who may sign in, never who's on the list.
+ * What sign-in says about someone a server of your own turned away, in the address it sends them
+ * back to. The web view says the same, in its own words. It names where the owner sets who may
+ * sign in, never who's on the list.
  */
 export const NOT_LISTED =
   'This Factwright server is private: only the GitHub accounts its owner lists can sign in. If it’s yours, add your GitHub user name to ALLOWED_GITHUB_USERS in its settings on Cloudflare.';
@@ -216,6 +217,12 @@ export function authOptions(settings: AuthSettings) {
         '/device/token': { window: 60, max: 150 },
       },
     },
+    // A sign-in that doesn't work, such as when someone cancels at GitHub, or a server of your
+    // own turns them away, goes back to the web view, with why in the address, for it to say in
+    // its own words. One the web view started comes back to the page it was on, which it names
+    // as it starts. The rest, such as one that ran out, come back to the first page, as does
+    // anyone who opens sign-in's own error page.
+    onAPIError: { errorURL: `${settings.appUrl}/` },
     advanced: {
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
       useSecureCookies: settings.appUrl.startsWith('https://'),

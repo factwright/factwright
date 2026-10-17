@@ -45,13 +45,20 @@ const spaced = (code: string) =>
 export function ApproveDevice({
   userCode,
   providers = [],
+  signInProblem = null,
 }: {
   userCode: string;
   providers?: Provider[];
+  /**
+   * Why signing in again here didn't work, just now. It's said with the code, still waiting, until
+   * the person answers it.
+   */
+  signInProblem?: string | null;
 }) {
   const [step, setStep] = useState<Step>('opening');
   const [asker, setAsker] = useState<'app' | 'extension'>('app');
   const [busy, setBusy] = useState(false);
+  const [signInSaid, setSignInSaid] = useState(signInProblem);
   const words = WORDS[asker];
 
   useEffect(() => {
@@ -73,6 +80,7 @@ export function ApproveDevice({
 
   const answer = async (allow: boolean) => {
     setBusy(true);
+    setSignInSaid(null);
     const result = await answerDeviceCode(userCode, allow);
     setBusy(false);
     if (result === 'answered') setStep(allow ? 'allowed' : 'declined');
@@ -109,6 +117,11 @@ export function ApproveDevice({
               Allow
             </Button>
           </div>
+          {signInSaid && (
+            <p className={styles.problem} role="alert">
+              {signInSaid}
+            </p>
+          )}
         </>
       )}
       {step === 'allowed' && (

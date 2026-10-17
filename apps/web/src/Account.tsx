@@ -62,6 +62,7 @@ export function Account({
   providers,
   legal,
   onSignedOut = () => {},
+  signInProblem = null,
 }: {
   email: string;
   vault: Vault | null;
@@ -71,9 +72,11 @@ export function Account({
   legal: Legal | null;
   /** The server said this browser isn't signed in any more. */
   onSignedOut?: () => void;
+  /** Why signing in again here, to delete the account, didn't work, just now. */
+  signInProblem?: string | null;
 }) {
   const [info, setInfo] = useState<AccountInfo | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState(signInProblem);
   const [downloading, setDownloading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [freshSignIn, setFreshSignIn] = useState(false);
