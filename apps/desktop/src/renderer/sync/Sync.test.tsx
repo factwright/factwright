@@ -444,6 +444,20 @@ describe('choosing a server', () => {
     ).toBe(OWN);
   });
 
+  it('calls off a server’s check on going back', async () => {
+    const user = userEvent.setup();
+    const api = apiFor('off');
+    const cancel = vi.spyOn(api, 'cancelSyncSignIn');
+    await openDialog(api);
+    await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
+    await user.type(screen.getByRole('textbox', { name: 'Your server’s address' }), OWN);
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(screen.getByRole('button', { name: 'Checking…' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(screen.getByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
+  });
+
   it('signs in again to a server of your own, or turns sync off here to choose another', async () => {
     const user = userEvent.setup();
     const api = apiFor('signed-out', 'old', 'own');

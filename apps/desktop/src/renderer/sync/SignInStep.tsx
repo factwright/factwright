@@ -1,5 +1,5 @@
 import { Button, DialogActions } from '@factwright/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { ConnectResult, ServerHelp, ServerTerms, SyncStatus } from '../../shared/sync.ts';
 import { ChooseStep } from './ChooseStep.tsx';
@@ -74,6 +74,8 @@ export function SignInStep({
   // Coming back from connecting a server, focus goes back to the button that opened it.
   const [back, setBack] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
+  // Which try at connecting a server is the latest: one called off says nothing when it ends.
+  const connects = useRef(0);
   const own = ownServerOf(status);
   const terms = useServerTerms(api, own);
 
@@ -94,9 +96,11 @@ export function SignInStep({
   };
 
   const connect = async () => {
+    const mine = ++connects.current;
     setProblem(null);
     setChecking(true);
     const result = await api.connectSyncServer(address);
+    if (mine !== connects.current) return;
     setChecking(false);
     settle(result);
   };
@@ -223,6 +227,7 @@ export function SignInStep({
         onBack={() => {
           // Going back while the server is checked calls it off.
           if (checking) api.cancelSyncSignIn();
+          connects.current++;
           setChecking(false);
           setProblem(null);
           setBack(true);

@@ -232,6 +232,8 @@ export function sampleSync(
         resolve({ ok: true });
       }, 2500);
     });
+  // Counts tries at connecting, as the app does, so going back calls one off.
+  let attempts = 0;
   /** Where the made-up sync goes on, keeping the server it's with. */
   const keep = (next: SyncStatus) => {
     const own = ownServerOf(status);
@@ -244,19 +246,27 @@ export function sampleSync(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    signInToSync: () => signIn(ownServerOf(status)),
+    signInToSync: () => {
+      attempts++;
+      return signIn(ownServerOf(status));
+    },
     connectSyncServer: async (address) => {
       const read = readSample(address);
       if ('message' in read) return { ok: false, ...read };
       // Checking the server takes a moment.
+      const attempt = ++attempts;
       await new Promise((resolve) => setTimeout(resolve, 600));
+      if (attempt !== attempts) return { ok: false, message: 'Signing in was canceled.' };
       return signIn(read.server);
     },
     syncServerTerms: async () => {
       if (ownServerOf(status)) return OWN_TERMS;
       return server === 'own-only' ? null : factwrightTerms;
     },
-    cancelSyncSignIn: () => set({ state: 'off' }),
+    cancelSyncSignIn: () => {
+      attempts++;
+      set({ state: 'off' });
+    },
     makeRecoveryKey: async () => ({
       ok: true,
       recoveryKey: '7KQ2-M9XD-4RTB-HP0E-WN3C-8YVA-G5KS-21FJ',
