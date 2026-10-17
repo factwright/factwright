@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- factwright.com/extension links to Save to Factwright in the Chrome Web Store, now that Chrome has approved it, and the site's other mentions of the extension no longer say it's coming soon. Firefox's button says it's coming soon to Firefox Add-ons until that store approves it too.
+
 ## 0.8.0 - 2026-10-16
 
 ### Added

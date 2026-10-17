@@ -19,7 +19,7 @@ export interface Listing {
 export const STORES: Readonly<Record<Store, Listing>> = {
   chrome: {
     url: 'https://chromewebstore.google.com/detail/save-to-factwright/gjhjddlohoonikgdbfcfnljeffilblai',
-    live: false,
+    live: true,
   },
   firefox: {
     url: 'https://addons.mozilla.org/firefox/addon/save-to-factwright/',
