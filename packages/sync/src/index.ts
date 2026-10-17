@@ -69,6 +69,7 @@ export {
   type PushChange,
   type PushResponse,
   type PushResult,
+  type SyncAccess,
   type VersionInfo,
 } from './protocol.ts';
 export {

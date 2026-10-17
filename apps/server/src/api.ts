@@ -16,6 +16,7 @@ import {
 } from '@factwright/sync';
 import type { Auth } from './auth.ts';
 import { deviceName } from './auth-options.ts';
+import { accessOf, openPortal, sellsSync, startCheckout } from './billing.ts';
 import { appUrl, type Env } from './env.ts';
 import { checkTicket, makeTicket } from './live.ts';
 import { type Asker, DELETED, SLOW_DOWN, type UserStore } from './store.ts';
@@ -103,7 +104,7 @@ interface Caller {
   env: Env;
   auth: Auth;
   account: string;
-  user: { id: string; email: string; name: string; createdAt: Date };
+  user: { id: string; email: string; emailVerified: boolean; name: string; createdAt: Date };
   session: { id: string; userAgent?: string | null | undefined; createdAt: Date | string };
   store: DurableObjectStub<UserStore>;
 }
@@ -387,7 +388,7 @@ async function devicesOf({ env, account, session }: Caller): Promise<Device[]> {
 }
 
 const getAccount: Handler = async (caller) => {
-  const { user, store, account } = caller;
+  const { user, store, account, env } = caller;
   const devices = await devicesOf(caller);
   const info: AccountInfo = {
     user: {
@@ -398,8 +399,31 @@ const getAccount: Handler = async (caller) => {
     },
     devices,
     usage: await store.usage(account),
+    ...(sellsSync(env) && { access: await accessOf(env, user) }),
   };
   return json(info);
+};
+
+/** Starts paying for a month or a year of sync, on a server that sells it: Stripe's checkout. */
+const postCheckout: Handler = async ({ request, env, user }) => {
+  if (!sellsSync(env)) return NOT_FOUND();
+  const { period } = await readJson(request, SMALL_BODY);
+  if (period !== 'month' && period !== 'year') {
+    throw new Refused('Pay for a month or a year at a time.');
+  }
+  if ((await accessOf(env, user)).allowed) {
+    return failure(409, 'has-sync', 'This account has sync already.');
+  }
+  return json({ url: await startCheckout(env, user, period, appUrl(env, request)) });
+};
+
+/** Stripe's customer portal, for an account that's paid: its card, its plan, canceling. */
+const postPortal: Handler = async ({ request, env, account }) => {
+  if (!sellsSync(env)) return NOT_FOUND();
+  const url = await openPortal(env, account, appUrl(env, request));
+  return url
+    ? json({ url })
+    : failure(404, 'not-found', 'This account has no subscription to manage.');
 };
 
 const deleteDevice: Handler = async ({ env, account }, [id]) => {
@@ -451,7 +475,15 @@ const ROUTES: [method: string, pattern: RegExp, handler: Handler][] = [
   ['GET', /^\/api\/account$/, getAccount],
   ['DELETE', /^\/api\/account\/devices\/([^/]+)$/, deleteDevice],
   ['GET', /^\/api\/account\/export$/, getExport],
+  ['POST', /^\/api\/billing\/checkout$/, postCheckout],
+  ['POST', /^\/api\/billing\/portal$/, postPortal],
 ];
+
+/**
+ * What an account can do on a server that sells sync even when it can't sync: read everything
+ * it has, as any GET can, sign a device out, and pay. Sending anything else needs sync.
+ */
+const OPEN_WITHOUT_SYNC: ReadonlySet<Handler> = new Set([deleteDevice, postCheckout, postPortal]);
 
 /** A device listening for changes, with a ticket it got from its session. */
 async function listen(request: Request, env: Env, url: URL): Promise<Response> {
@@ -497,6 +529,14 @@ export async function handleApi(request: Request, env: Env, auth: Auth): Promise
   const signedIn = await auth.api.getSession({ headers: request.headers });
   if (!signedIn) return failure(401, 'signed-out', 'Sign in again.');
   const [, pattern, handler] = route;
+  if (
+    request.method !== 'GET' &&
+    !OPEN_WITHOUT_SYNC.has(handler) &&
+    sellsSync(env) &&
+    !(await accessOf(env, signedIn.user)).allowed
+  ) {
+    return failure(402, 'subscription-needed', 'Sync on Factwright’s server needs a subscription.');
+  }
   const params = (pattern.exec(url.pathname) ?? []).slice(1).map(decodeURIComponent);
   const account = signedIn.user.id;
   const caller: Caller = {

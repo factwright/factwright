@@ -181,6 +181,28 @@ export interface AccountInfo {
     records: number;
     files: number;
   };
+  /** How the account has sync, on a server that sells it. Other servers leave it out. */
+  access?: SyncAccess;
+}
+
+/**
+ * How an account has sync on a server that sells it. Reading what's synced never needs it, only
+ * sending changes, adding devices and listening for changes.
+ */
+export interface SyncAccess {
+  /** Whether sync works for the account now. */
+  allowed: boolean;
+  /** Sync at no cost: "early" for accounts from before sync was sold, "free" for anyone who asked. */
+  gift: 'early' | 'free' | null;
+  /** The account's subscription, once it has had one. */
+  subscription: {
+    /** As Stripe says it: "active", "past_due" while a payment is retried, "canceled" and so on. */
+    status: string;
+    /** When the time paid for ends, as an ISO time: when it renews, or ends if it's canceling. */
+    renewsAt: string | null;
+    /** Whether it ends then, rather than renewing. */
+    canceling: boolean;
+  } | null;
 }
 
 /**

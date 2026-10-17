@@ -2,6 +2,7 @@ import { type Feature, isLegal, utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
+import { fromStripe, giveFreeSync, markEarly, sellsSync } from './billing.ts';
 import { runAll } from './daily-job.ts';
 import type { Env } from './env.ts';
 import { DELETED } from './store.ts';
@@ -11,6 +12,9 @@ export { UserStore } from './store.ts';
 
 const ADMIN_RESTORE = '/api/admin/restore';
 const ADMIN_DELETE = '/api/admin/delete';
+const ADMIN_FREE_SYNC = '/api/admin/free-sync';
+const ADMIN_EARLY = '/api/admin/early';
+const STRIPE_WEBHOOK = '/api/billing/stripe';
 const SIGN_IN_OPTIONS = '/api/sign-in-options';
 const DELETE_ACCOUNT = '/api/auth/delete-user';
 const APPROVE_DEVICE = '/api/auth/device/approve';
@@ -52,15 +56,16 @@ async function signIn(request: Request, env: Env, pathname: string): Promise<Res
 
 /**
  * The ways to sign in this server has set up, for the web view's buttons; what it can do beyond
- * the basics, so devices offer only that; and the terms and privacy policy signing in agrees to,
- * when it has them. Older servers list no features, and a server of your own no legal pages.
+ * the basics, so devices offer only that, such as whether sync here is a subscription; and the
+ * terms and privacy policy signing in agrees to, when it has them. Older servers list no
+ * features, and a server of your own no legal pages.
  */
 function signInOptions(env: Env): Response {
   const providers = [
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? ['github'] : []),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
   ];
-  const features: Feature[] = ['approve'];
+  const features: Feature[] = ['approve', ...(sellsSync(env) ? (['subscription'] as const) : [])];
   const legal = { terms: env.TERMS_URL, privacy: env.PRIVACY_URL };
   return json({ providers, features, ...(isLegal(legal) && { legal }) });
 }
@@ -127,6 +132,46 @@ async function deleteForOperator(request: Request, env: Env): Promise<Response> 
 }
 
 /**
+ * Gives free sync to someone who asked, by their email, or takes it back with "off": true. It
+ * works before they have an account, which then gets it when they sign up. Only the operator can.
+ */
+async function freeSyncForOperator(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST' || !(await isOperator(request, env))) {
+    return failure(404, 'not-found', 'There’s nothing here.');
+  }
+  const { email, off } = await bodyOf(request);
+  if (!(typeof email === 'string' && email.includes('@') && email.length <= 320)) {
+    return failure(400, 'refused', 'Name the email.');
+  }
+  const { account } = await giveFreeSync(env, email, off !== true);
+  console.info(`The operator ${off === true ? 'took back' : 'gave'} free sync for an email.`);
+  return json({ free: off !== true, account });
+}
+
+/**
+ * Gives every account there is now sync for good, once, as sync starts being sold: those people
+ * had it before. Only the operator can.
+ */
+async function earlyForOperator(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST' || !(await isOperator(request, env))) {
+    return failure(404, 'not-found', 'There’s nothing here.');
+  }
+  const accounts = await markEarly(env);
+  console.info(`The operator gave ${accounts} early accounts sync for good.`);
+  return json({ accounts });
+}
+
+/** Stripe's word on a checkout or a subscription, on a server that sells sync (billing.ts). */
+async function stripeWebhook(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST' || !sellsSync(env)) {
+    return failure(404, 'not-found', 'There’s nothing here.');
+  }
+  return (await fromStripe(env, request)) === 'done'
+    ? json({ received: true })
+    : failure(400, 'refused', 'That isn’t signed by Stripe.');
+}
+
+/**
  * Backs up every account's store, one at a time, as the day's snapshot. One that fails doesn't
  * stop the rest. Once they're all done, the backup fails if any did, so the run is marked as
  * failed. An account deleted partway has no store left to back up, so it isn't a failure.
@@ -162,6 +207,9 @@ export default {
       if (pathname.startsWith('/api/auth/')) return await signIn(request, env, pathname);
       if (pathname === ADMIN_RESTORE) return await restore(request, env);
       if (pathname === ADMIN_DELETE) return await deleteForOperator(request, env);
+      if (pathname === ADMIN_FREE_SYNC) return await freeSyncForOperator(request, env);
+      if (pathname === ADMIN_EARLY) return await earlyForOperator(request, env);
+      if (pathname === STRIPE_WEBHOOK) return await stripeWebhook(request, env);
       if (pathname === SIGN_IN_OPTIONS) return signInOptions(env);
       if (pathname.startsWith('/api/')) {
         return await handleApi(request, env, authFor(env, request));

@@ -19,7 +19,8 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `src/daily-job.ts` | Runs the daily job's parts side by side, and waits for all of them, so one that fails can't cut another, such as the backup, short |
 | `src/sync-totals.ts` | How much sync is used, in totals only: once a day, its accounts and sign-ins, kept in Workers Analytics Engine for the stats command in [`apps/site`](../site) |
 | `src/live.ts` | Tickets for listening to changes as they happen |
-| `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
+| `src/billing.ts` | Selling sync, on Factwright's own server only: who may sync, Stripe's checkout and customer portal, and Stripe's webhook |
+| `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`), and who has sync where it's sold (`0003_sync_access.sql`) |
 | `scripts/sync-server-copy.ts` | The server ready to deploy, as [github.com/factwright/sync-server](https://github.com/factwright/sync-server) holds it for people who run their own (`pnpm copy`) |
 
 ## The API
@@ -36,8 +37,10 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST`, `GET /api/sync/requests`, `GET`, `DELETE /api/sync/requests/:id` | Requests to link, for approving a new device from one that's set up: asking, the account's waiting requests, one request, and calling it off. Each runs out after 10 minutes |
 | `POST /api/sync/requests/:id/approver`, `/key`, `/approve`, `/deny`, `/take` | The steps of approving one: a device offers to approve it, the new device shows its key, the approving device leaves the sealed account key or turns it down, and the new device picks it up, once |
 | `POST /api/sync/live/ticket`, `GET /api/sync/live` | Listening for changes, over a WebSocket |
-| `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, and how much you store |
+| `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, how much you store and, where sync is sold, how you have it |
 | `GET /api/account/export` | Everything the server keeps for your account, still locked |
+| `POST /api/billing/checkout`, `POST /api/billing/portal` | Paying for sync, where it's sold: Stripe's checkout for a month or a year, and its customer portal (see [Selling sync](#selling-sync)) |
+| `POST /api/billing/stripe` | Stripe's webhook, signed with its secret. It needs no session |
 | `GET /api/sign-in-options` | The ways to sign in this server has set up, what more it can do, such as approving devices, and the terms and privacy policy signing in agrees to, when it has them (`TERMS_URL` and `PRIVACY_URL`). Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
 | `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
@@ -49,6 +52,53 @@ Better Auth's routes that list sessions (with their tokens), sign other sessions
 - Bursts of 600 requests per account, refilling at 10 a second.
 - Requests to link: one per device at a time, five waiting per account, ten an hour from each device, and only within 30 minutes of signing in.
 - Sign-in requests are limited per IP address, more tightly for signing in. The counts are deleted each day.
+
+## Selling sync
+Only Factwright's own server sells sync ([`src/billing.ts`](src/billing.ts)). It's on once all four of `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY` and `STRIPE_PRICE_YEARLY` are set, as secrets. Until then, and always on a server of your own, sync is free, nobody is asked to pay, `/api/sign-in-options` doesn't list `subscription`, and the billing routes answer 404.
+
+- **Who may sync:** an account with a gift, or with a subscription that's active, trialing, or past due while Stripe retries a payment. The gift is "early" for accounts from before sync was sold, and "free" for anyone who asked.
+  - **Everyone else** gets 402 `subscription-needed` for anything that sends: changes, files, keys, link codes, requests to link and live tickets.
+  - **Still open to them:** reading everything, signing a device out, and paying.
+- **Paying:**
+  - `POST /api/billing/checkout`, with `{"period": "month"}` or `"year"`, starts Stripe Checkout for the signed-in account. It comes back to `/subscribe/done`, or `/subscribe` if they leave.
+  - `POST /api/billing/portal` opens Stripe's customer portal, which comes back to `/account`.
+- **Stripe's word:** the webhook at `/api/billing/stripe` takes `checkout.session.completed` and `customer.subscription.created`, `.updated`, `.deleted`, `.paused` and `.resumed`.
+  - Each must be signed with `STRIPE_WEBHOOK_SECRET` in the last five minutes.
+  - Each time, the server reads the subscription back from Stripe, so events that come late, twice or out of order can't leave it wrong.
+  - A subscription that isn't syncing never replaces a different one that is.
+- **What's kept:**
+  - The `syncAccess` table: each account's gift, its Stripe customer and subscription IDs, the subscription's status, when the time paid for ends, and whether it's canceling. Never card details.
+  - The `freeSyncEmail` table: emails given free sync before they had an account.
+- **Deleting an account** cancels its subscription with Stripe first. If Stripe can't, the deletion stops, and trying again finishes it.
+
+### Giving sync away
+With `ADMIN_TOKEN` set:
+
+```bash
+# Free sync for someone who asked, by email, even before they have an account. "off": true takes it back.
+curl -X POST https://app.factwright.com/api/admin/free-sync \
+  -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
+  -d '{"email":"<their email>"}'
+
+# Once, as sync starts being sold: every account there is now keeps sync for good.
+curl -X POST https://app.factwright.com/api/admin/early -H "authorization: Bearer $ADMIN_TOKEN"
+```
+
+An account made after its email was given free sync gets it only if GitHub or Google says that email is verified. Taking free sync back never takes an early account's.
+
+### Turning it on
+1. **In Stripe:** in Factwright's own Stripe account, set up:
+   - the product, with its monthly and yearly prices
+   - the customer portal
+   - a webhook endpoint at `https://app.factwright.com/api/billing/stripe`, for the events above
+2. **Deploy:** apply the migrations, then deploy. Sync stays free.
+3. **Early accounts:** mark them with `/api/admin/early`.
+4. **The four settings:** set each one with `wrangler secret put`.
+   - `STRIPE_SECRET_KEY`: a restricted key that can write Checkout Sessions, customer portal sessions and Subscriptions
+   - `STRIPE_WEBHOOK_SECRET`: the endpoint's signing secret
+   - `STRIPE_PRICE_MONTHLY` and `STRIPE_PRICE_YEARLY`: the two price IDs
+
+   Selling starts with the last of the four.
 
 ## Running it locally
 ```bash

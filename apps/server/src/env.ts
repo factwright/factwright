@@ -41,6 +41,17 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   /** Lets the operator restore an account's store from a backup. Unset, there's no way in. */
   ADMIN_TOKEN?: string;
+  /**
+   * Selling sync, on Factwright's own server only (billing.ts): Stripe's restricted key, the
+   * webhook's signing secret, and the two prices. Unless all four are set, sync costs nothing and
+   * nobody is asked to pay, as on a server of your own.
+   */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_MONTHLY?: string;
+  STRIPE_PRICE_YEARLY?: string;
+  /** Where Stripe's API is. Only the tests set it, to a stand-in. */
+  STRIPE_API_URL?: string;
   /** How much sync is used, in totals only, counted once a day (sync-totals.ts). */
   SYNC_TOTALS?: AnalyticsEngineDataset;
 }

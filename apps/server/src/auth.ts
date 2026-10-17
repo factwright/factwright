@@ -6,17 +6,20 @@ import {
   type Provider,
   type SignedInVia,
 } from './auth-options.ts';
+import { cancelSubscription } from './billing.ts';
 import { appUrl, type Env } from './env.ts';
 
 const provider = (id?: string, secret?: string): Provider | undefined =>
   id && secret ? { clientId: id, clientSecret: secret } : undefined;
 
 /**
- * Deletes what an account has, apart from the account itself: every session and device code
- * first, so nothing can sync while the store is wiped, then the store, its files and backups.
- * Safe to run again after it failed partway.
+ * Deletes what an account has, apart from the account itself. Its subscription, if it pays for
+ * sync, is canceled first, so nobody pays for an account that's gone. Then every session and
+ * device code goes, so nothing can sync while the store is wiped, then the store, its files and
+ * backups. Safe to run again after it failed partway.
  */
 export async function deleteEverything(env: Env, accountId: string): Promise<void> {
+  await cancelSubscription(env, accountId);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM "session" WHERE userId = ?').bind(accountId),
     env.DB.prepare('DELETE FROM "deviceCode" WHERE userId = ?').bind(accountId),

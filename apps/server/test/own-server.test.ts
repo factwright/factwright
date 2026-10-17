@@ -86,4 +86,26 @@ describe('a server of your own', () => {
     // There's no such link, but the request got that far.
     expect((await take(server.url.origin)).status).toBe(404);
   });
+
+  it('sells nothing: sync is free, with no checkout, no portal and no Stripe webhook', async () => {
+    const sam = await server.signUp();
+    const asSam = (path: string) =>
+      fetch(new URL(path, server.url), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ period: 'month' }),
+      });
+    expect((await asSam('/api/sync/live/ticket')).status).toBe(200);
+    expect((await asSam('/api/billing/checkout')).status).toBe(404);
+    expect((await asSam('/api/billing/portal')).status).toBe(404);
+    const webhook = await fetch(new URL('/api/billing/stripe', server.url), {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(webhook.status).toBe(404);
+    const account = await fetch(new URL('/api/account', server.url), {
+      headers: { authorization: `Bearer ${sam.token}` },
+    });
+    expect(await account.json()).not.toHaveProperty('access');
+  });
 });

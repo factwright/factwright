@@ -206,6 +206,13 @@ Anyone can run Factwright's sync server in their own free Cloudflare account, fr
 - **Its own terms.** The app shows the terms of service and privacy policy each server names for itself: Factwright's for Factwright's sync, and none for a server of your own unless you set them. Factwright's don't cover a server Factwright doesn't run. To show them, the first screen of turning sync on asks Factwright's server what it offers, as its sign-in page does, which tells it no more than any visit: your IP address.
 - **Save to Factwright** syncs through Factwright's own server only, for now, so the app links to it only with Factwright's sync.
 
+### Paying for sync
+Factwright's own server sells sync, once it's set up to, through Stripe. A server of your own sells nothing.
+- **Stripe takes the payment.** The server sends you to Stripe's own checkout and customer portal, and never sees your card. It keeps only Stripe's IDs for you as a customer and for your subscription, the subscription's status, when the time paid for ends, and whether it's canceling. A gift of sync is kept the same way: "early" for accounts from before sync was sold, or "free" for anyone who asked.
+- **Only Stripe's word counts.** Stripe's webhook must be signed with the endpoint's secret in the last five minutes, and even then the server reads the subscription back from Stripe rather than trusting what the event says. So a forged or replayed event can't give anyone sync.
+- **Paying never touches your keys.** Everything is locked the same way whether you pay or not. An account that stops paying can still read and download all it has: only sending changes, linking devices and listening for changes need sync.
+- **Deleting your account** cancels your subscription with Stripe before anything else goes. If Stripe can't, the account stays until trying again works, so nobody pays for an account that's gone. Stripe keeps its own record of payments, under its privacy policy.
+
 ### What the server sees
 - Your account: the email and name your sign-in shares, and which GitHub or Google account it is.
 - Each session: the device's name (for the app, your computer's name), and when it signed in and was last used.
