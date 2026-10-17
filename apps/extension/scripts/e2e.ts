@@ -1,11 +1,16 @@
-// Runs Save to Factwright in Chromium, built for a local copy of the sync server, from setting it up
-// to saving a job: signing in with a code, then linking both ways, with the emoji Factwright on a
-// computer checks, and with a link code. The computer's side runs here, with the same code the
-// desktop app uses. `pnpm --filter @factwright/extension e2e` (it needs Playwright's Chromium:
-// `pnpm --filter @factwright/site exec playwright install chromium`). With `-- --screenshots`, it
-// also draws the stores' screenshots, into store/screenshots, from what it shows along the way.
+// Runs Save to Factwright in Chromium, from setting it up to saving a job, against two local copies
+// of the sync server: the one it's built for, standing in for Factwright's sync, and a server of
+// your own, chosen in setup. It signs in with a code, then links both ways, with the emoji
+// Factwright on a computer checks, and with a link code. The computer's side runs here, with the
+// same code the desktop app uses. `pnpm --filter @factwright/extension e2e` (it needs Playwright's
+// Chromium: `pnpm --filter @factwright/site exec playwright install chromium`). With
+// `-- --screenshots`, it also draws the stores' screenshots, into store/screenshots, from what it
+// shows along the way, and with `-- --shots <folder>`, saves each setup page it checks there, in
+// light and dark.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +36,10 @@ import { type Browser, chromium, type Page } from '@playwright/test';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** Where the stores' screenshots go, when it's asked to draw them. */
 const SHOTS = process.argv.includes('--screenshots') ? join(ROOT, 'store', 'screenshots') : null;
+/** Where the setup pages it checks go, in light and dark, when it's asked for them. */
+const PAGES = process.argv.includes('--shots')
+  ? process.argv[process.argv.indexOf('--shots') + 1]
+  : null;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function check(that: boolean, what: string): void {
@@ -116,6 +125,8 @@ async function capture(page: Page, before?: string): Promise<Buffer> {
   const end = before ? await page.locator(before).first().boundingBox() : null;
   const margin = 24;
   return page.screenshot({
+    // Below the window too, for a page longer than it.
+    fullPage: true,
     clip: {
       x: Math.max(0, box.x - margin),
       y: Math.max(0, box.y - margin),
@@ -123,6 +134,17 @@ async function capture(page: Page, before?: string): Promise<Buffer> {
       height: (end ? end.y - box.y : box.height + margin) + margin,
     },
   });
+}
+
+/** A setup page, in light and dark, to check by eye, when it's asked for them. */
+async function shoot(page: Page, name: string): Promise<void> {
+  if (!PAGES) return;
+  mkdirSync(PAGES, { recursive: true });
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    writeFileSync(join(PAGES, `${name}-${colorScheme}.png`), await capture(page));
+  }
+  await page.emulateMedia({ colorScheme: null });
 }
 
 /** A posting as a job site publishes it, for the popup to show in the stores' screenshots. */
@@ -141,10 +163,18 @@ const SAMPLE_JOB = {
   source: 'structured',
 };
 
-/** Signs the extension in: it shows a code, which the person allows in the browser. */
-async function signIn(setup: Page, origin: string, token: string): Promise<void> {
+/**
+ * Signs the extension in to a server, Factwright's or one of your own, chosen in setup: it shows
+ * a code, which the person allows in the browser.
+ */
+async function signIn(setup: Page, origin: string, token: string, own = false): Promise<void> {
+  if (own) {
+    await setup.getByRole('radio', { name: 'Your own server' }).check();
+    await setup.locator('#server').fill(origin);
+  }
   await setup.getByRole('button', { name: 'Sign in to sync' }).click();
   const userCode = ((await setup.locator('.code').textContent()) ?? '').replace('-', '');
+  if (own) await shoot(setup, '4-code');
   const auth = { authorization: `Bearer ${token}` };
   await fetch(`${origin}/api/auth/device?user_code=${userCode}`, { headers: auth });
   await fetch(`${origin}/api/auth/device/approve`, {
@@ -157,29 +187,73 @@ async function signIn(setup: Page, origin: string, token: string): Promise<void>
     .waitFor({ timeout: 30_000 });
 }
 
+/** The server it's built for, standing in for Factwright's sync, and a server of your own. */
+const factwright = await startServer();
 const server = await startServer();
 const origin = server.url.origin;
+/** A site on this computer that isn't a sync server, as an address typed wrong could be. */
+const elsewhere = createServer((_, response) => {
+  response.writeHead(404, { 'content-type': 'text/html' });
+  response.end('<!doctype html><h1>Not found</h1>');
+});
+await new Promise<void>((resolve) => elsewhere.listen(0, '127.0.0.1', resolve));
+const elsewhereOrigin = `http://127.0.0.1:${(elsewhere.address() as AddressInfo).port}`;
 const build = (env: Record<string, string> = {}) =>
   execFileSync('node', ['scripts/build.ts'], {
     cwd: ROOT,
     env: { ...process.env, ...env },
     stdio: 'ignore',
   });
+/** How many sign-ins a server has had, and codes it has given out to sign in with. */
+const signIns = async (on: TestServer) =>
+  (
+    await on.env.DB.prepare(
+      'SELECT (SELECT COUNT(*) FROM "session") + (SELECT COUNT(*) FROM "deviceCode") AS n',
+    )
+      .bind()
+      .first<{ n: number }>()
+  )?.n ?? 0;
 let failed = false;
 try {
-  build({ VITE_FACTWRIGHT_SYNC_SERVER: origin });
+  build({ VITE_FACTWRIGHT_SYNC_SERVER: factwright.url.origin });
   const extension = join(ROOT, 'dist', 'chrome');
 
-  // Linked the main way: Factwright on the computer approves it, after both show the same emoji.
+  // Linked the main way, through a server of your own: Factwright on the computer approves it,
+  // after both show the same emoji.
   {
     const { sam, accountKey, keys } = await account(server);
     const computer = (
       await server.newSession(sam.id, 'Factwright/0.4.0 (Sam%E2%80%99s%20Mac)', 'device')
     ).client;
     const { context, setup, errors } = await browser(extension);
-    await signIn(setup, origin, sam.token);
+    await setup.getByRole('button', { name: 'Sign in to sync' }).waitFor();
+    check(
+      (await setup.getByRole('radio', { name: 'Factwright’s sync' }).isChecked()) &&
+        !(await setup.locator('#server').isVisible()),
+      'setup offers Factwright’s sync first',
+    );
+    await shoot(setup, '1-choose');
+    await setup.getByRole('radio', { name: 'Your own server' }).check();
+    await setup.locator('#server').fill('https://factwright-sync.sam.workers.dev');
+    await shoot(setup, '2-own-server');
+    await setup.locator('#server').fill('http://sync.example.com');
+    await setup.getByRole('button', { name: 'Sign in to sync' }).click();
+    check(
+      (await setup.getByRole('alert').textContent())?.includes('https://') === true,
+      'takes only an https address for your own server',
+    );
+    await setup.locator('#server').fill(elsewhereOrigin);
+    await setup.getByRole('button', { name: 'Sign in to sync' }).click();
+    await setup.getByText('doesn’t answer as a Factwright sync server').waitFor();
+    check(true, 'checks your own server answers as a Factwright sync server before signing in');
+    await shoot(setup, '3-not-sync');
+    await signIn(setup, origin, sam.token, true);
     const devices = (await sam.client.account()).devices.map((device) => device.name);
     check(devices.includes('Save to Factwright in Chrome on Mac'), 'signs in under its own name');
+    check(
+      (await signIns(factwright)) === 0,
+      'signs in through your own server, and never reaches the one it’s built for',
+    );
     let [request] = await computer.linkRequests();
     for (let i = 0; i < 20 && !request; i++) {
       await pause(500);
@@ -213,6 +287,12 @@ try {
     await approval.approve(accountKey);
     await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 20_000 });
     check((await approval.step()).state === 'linked', 'links once both say the emoji match');
+    check(
+      (await setup.getByText(`Saves through your own sync server, ${server.url.host}.`).count()) ===
+        1,
+      'says which server it saves through',
+    );
+    await shoot(setup, '5-set');
     await frame(
       await capture(setup, 'h2:text-is("Account")'),
       620,
@@ -330,20 +410,47 @@ try {
       'shows a page’s main text open, to check it’s the posting',
     );
     await unknown.close();
+    check((await signIns(factwright)) === 0, 'and saves through your own server alone');
+
+    // With the browser's permission for your own server taken away, setup asks for it back.
+    const taken = await context.newPage();
+    await taken.addInitScript(() => {
+      (
+        globalThis as unknown as { chrome: { permissions: { contains: unknown } } }
+      ).chrome.permissions.contains = async () => false;
+    });
+    await taken.goto(setup.url());
+    await taken.getByRole('heading', { name: 'Let it reach your sync server' }).waitFor();
+    check(
+      (await taken.getByText(`through ${server.url.host}, your own sync server`).count()) === 1,
+      'asks for your own server back when the browser has taken it away',
+    );
+    await shoot(taken, '6-allow');
+    await taken.close();
+
+    // Signed out, setup offers your own server again, with its address.
+    await setup.reload();
+    await setup.getByRole('button', { name: 'Sign out of Save to Factwright' }).click();
+    await setup.getByRole('button', { name: 'Sign in to sync' }).waitFor();
+    check(
+      (await setup.getByRole('radio', { name: 'Your own server' }).isChecked()) &&
+        (await setup.locator('#server').inputValue()) === origin,
+      'signed out, setup remembers your own server',
+    );
     check(errors.length === 0, 'with nothing going wrong on its pages');
     await context.close();
   }
 
-  // Linked with a link code, as Factwright's Sync settings shows one, once its sign-in is too old
-  // to ask Factwright on the computer.
+  // Linked through Factwright's sync, the server it's built for, with a link code, as Factwright's
+  // Sync settings shows one, once its sign-in is too old to ask Factwright on the computer.
   {
-    const { sam, accountKey } = await account(server);
+    const { sam, accountKey } = await account(factwright);
     const code = newLinkCode();
     const link = await lockForLink(accountKey, code.bytes);
     await sam.client.saveLink(link.id, link.data);
     const { context, setup } = await browser(extension);
-    await signIn(setup, origin, sam.token);
-    await server.env.DB.prepare(
+    await signIn(setup, factwright.url.origin, sam.token);
+    await factwright.env.DB.prepare(
       'UPDATE "session" SET createdAt = ? WHERE userId = ? AND token != ?',
     )
       .bind(new Date(Date.now() - 2 * 3_600_000).toISOString(), sam.id, sam.token)
@@ -357,7 +464,10 @@ try {
     await setup.fill('#code', code.text);
     await setup.getByRole('button', { name: 'Link with the code' }).click();
     await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 15_000 });
-    check(true, 'links with a link code too');
+    check(
+      (await setup.getByText('Saves through Factwright’s sync').count()) === 1,
+      'links with a link code too, through Factwright’s sync',
+    );
     await context.close();
   }
 } catch (error) {
@@ -367,6 +477,8 @@ try {
   // Set while framing, which TypeScript can't follow from here.
   await (framer as Browser | null)?.close();
   await server.close();
+  await factwright.close();
+  elsewhere.close();
   // Built again for Factwright's own sync server, as the stores get it.
   build();
 }

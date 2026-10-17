@@ -24,6 +24,7 @@ import {
   deviceSignIn,
   endSession,
   forgetAccount,
+  letGo,
   loadAccount,
   saveAccount,
   signOut,
@@ -31,7 +32,15 @@ import {
 } from './account.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
-import { SYNC_ORIGIN } from './server.ts';
+import {
+  checkServer,
+  DEFAULT_SERVER,
+  EXAMPLE,
+  hostOf,
+  isOwn,
+  readServer,
+  serverName,
+} from './server.ts';
 import { changeSettings, settings } from './settings.ts';
 
 /**
@@ -50,9 +59,6 @@ const OFFLINE_TRIES = 12;
 /** How long before saying what to do if Factwright on the computer shows nothing. */
 const SLOW_MS = 30_000;
 
-/** Factwright's sync, the one site the extension reaches, as the person would know it. */
-const SYNC_HOST = new URL(SYNC_ORIGIN).host;
-
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const button = (text: string, click: () => void, primary = false) =>
@@ -62,10 +68,16 @@ const actions = (...buttons: Child[]) => h('div', { class: 'actions' }, ...butto
 
 const problem = (text: string) => h('p', { class: 'bad', role: 'alert' }, text);
 
-/** What to say when a request to sync fails. */
-function reasonOf(error: unknown): string {
+/** A sync server by its address and what it is, such as "app.factwright.com, Factwright's sync". */
+const named = (server: string) =>
+  `${hostOf(server)}, ${isOwn(server) ? 'your own sync server' : 'Factwright’s sync'}`;
+
+/** What to say when a request to a sync server fails. */
+function reasonOf(error: unknown, server: string): string {
   if (error instanceof SyncError) {
-    if (error.kind === 'offline') return 'Couldn’t reach Factwright’s sync. Check the connection.';
+    if (error.kind === 'offline') {
+      return `Couldn’t reach ${serverName(server)}. Check the connection.`;
+    }
     if (error.kind === 'slow-down') return 'Too many tries at once. Wait a minute, then try again.';
     return error.message;
   }
@@ -96,29 +108,130 @@ async function whileOffline<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** When the browser has taken away the extension's one site: asks for it back, then carries on. */
-function askForAccess(next: () => void): void {
+/**
+ * When the browser has taken away the extension's one site, the sync server it's signed in to:
+ * asks for it back, then carries on. Or it signs out, to set it up with another.
+ */
+function askForAccess(account: Account, next: () => void): void {
+  const { server } = account;
   show(
     app,
-    heading('Let it reach Factwright’s sync'),
+    heading(isOwn(server) ? 'Let it reach your sync server' : 'Let it reach Factwright’s sync'),
     h(
       'p',
       {},
-      `Save to Factwright saves jobs through ${SYNC_HOST}, Factwright’s sync, the one site it reaches. The browser has that turned off for it, so it can’t save jobs.`,
+      `Save to Factwright saves jobs through ${named(server)}, the one site it reaches. The browser has that turned off for it, so it can’t save jobs.`,
     ),
     actions(
       button(
         'Allow it',
-        () => void allowSync().then((ok) => (ok ? next() : askForAccess(next))),
+        () => void allowSync(server).then((ok) => (ok ? next() : askForAccess(account, next))),
         true,
       ),
+      button('Sign out', () => void signOut(account).then(() => signedOut())),
     ),
   );
 }
 
 // --- Signing in ---------------------------------------------------------------------------
 
-function signedOut(note?: string): void {
+/** The sync setup signs in to, as it's picked on the page: Factwright's, or your own server. */
+interface Choice {
+  own: boolean;
+  /** Your own server's address, as you typed it. */
+  address: string;
+}
+
+/**
+ * Setup's first page, with the sync you chose last time, or with the choice that went wrong and
+ * what went wrong with it.
+ */
+function signedOut(note?: string, choice?: Choice): void {
+  void settings().then(({ server }) =>
+    choose(choice ?? { own: isOwn(server), address: isOwn(server) ? server : '' }, note),
+  );
+}
+
+/** One choice of sync, a card to click anywhere on: named by its title, described by its words. */
+function option(id: string, title: string, about: string, checked: boolean) {
+  const input = h('input', {
+    type: 'radio',
+    name: 'sync',
+    id,
+    checked,
+    'aria-labelledby': `${id}-title`,
+    'aria-describedby': `${id}-about`,
+  });
+  const label = h(
+    'label',
+    { class: 'pick' },
+    input,
+    h(
+      'span',
+      { class: 'words' },
+      h('span', { id: `${id}-title`, class: 'title' }, title),
+      h('span', { id: `${id}-about`, class: 'about' }, about),
+    ),
+  );
+  return { input, label };
+}
+
+function choose(choice: Choice, note?: string): void {
+  const factwrights = option(
+    'factwright',
+    'Factwright’s sync',
+    hostOf(DEFAULT_SERVER),
+    !choice.own,
+  );
+  const own = option(
+    'own',
+    'Your own server',
+    'A sync server you run, at the address Factwright on your computer uses.',
+    choice.own,
+  );
+  const address = h('input', {
+    id: 'server',
+    type: 'url',
+    value: choice.address,
+    placeholder: EXAMPLE,
+    autocomplete: 'url',
+    autocapitalize: 'off',
+    spellcheck: 'false',
+  });
+  const ownFields = h(
+    'div',
+    { class: 'address', hidden: !choice.own },
+    h('label', { for: 'server' }, 'Your server’s address'),
+    address,
+    h(
+      'p',
+      { class: 'small muted' },
+      'Use only a server you run or trust: it holds your locked job hunt. The browser asks once to let Save to Factwright reach it.',
+    ),
+  );
+  const picked = () => {
+    ownFields.hidden = !own.input.checked;
+    if (own.input.checked) address.focus();
+  };
+  factwrights.input.addEventListener('change', picked);
+  own.input.addEventListener('change', picked);
+  const submit = h('button', { type: 'submit', class: 'primary' }, 'Sign in to sync');
+  const go = (event: Event) => {
+    event.preventDefault();
+    // Read and asked for on the click itself, as browsers want (see allowSync).
+    const read = own.input.checked
+      ? readServer(address.value)
+      : ({ ok: true, server: DEFAULT_SERVER } as const);
+    if (!read.ok) {
+      choose({ own: true, address: address.value }, read.problem);
+      document.getElementById('server')?.focus();
+      return;
+    }
+    // While the browser asks, what went wrong before is gone, and the button waits.
+    app.querySelector('[role="alert"]')?.remove();
+    submit.disabled = true;
+    void signIn(read.server, { own: own.input.checked, address: address.value });
+  };
   show(
     app,
     heading('Set up Save to Factwright'),
@@ -128,38 +241,79 @@ function signedOut(note?: string): void {
       'Save to Factwright saves the job you’re looking at, with its posting as you see it, to your Factwright job hunt. It’s locked on this computer with your job hunt’s own key before it’s sent, so only your devices can read it.',
     ),
     h(
-      'ol',
-      { class: 'steps' },
-      h('li', {}, 'Sign in to sync, with the account Factwright on your computer uses.'),
-      h('li', {}, 'Approve linking it, in Factwright on your computer.'),
+      'form',
+      { on: { submit: go } },
+      h(
+        'fieldset',
+        { class: 'choices' },
+        h('legend', {}, 'Which sync does Factwright on your computer use?'),
+        h('div', { class: 'choice' }, factwrights.label),
+        h('div', { class: 'choice' }, own.label, ownFields),
+      ),
+      h(
+        'ol',
+        { class: 'steps' },
+        h('li', {}, 'Sign in to sync, with the account Factwright on your computer uses.'),
+        h('li', {}, 'Approve linking it, in Factwright on your computer.'),
+      ),
+      note && problem(note),
+      actions(submit),
     ),
-    note && problem(note),
-    actions(button('Sign in to sync', () => void signIn(), true)),
   );
 }
 
-async function signIn(): Promise<void> {
-  // Asked on the click, as browsers want: Firefox asks for the extension's one site the first time.
-  if (!(await allowSync())) {
-    signedOut(`Save to Factwright needs to reach ${SYNC_HOST}, Factwright’s sync, to save jobs.`);
+/**
+ * Signs in to a sync server, from a click: asks the browser to let the extension reach it, checks
+ * that a server of your own answers as a Factwright sync server, then signs in with a code. The
+ * server is kept as your choice, and with the sign-in.
+ */
+async function signIn(server: string, choice: Choice): Promise<void> {
+  // Asked on the click, as browsers want: Firefox asks for Factwright's sync the first time, and
+  // both browsers ask for a server of your own, its address alone.
+  if (!(await allowSync(server))) {
+    signedOut(`Save to Factwright needs to reach ${named(server)}, to save jobs.`, choice);
     return;
   }
-  const flow = deviceSignIn();
+  if (isOwn(server)) {
+    show(
+      app,
+      heading('Set up Save to Factwright'),
+      h('p', { class: 'muted', role: 'status' }, `Checking ${hostOf(server)}…`),
+    );
+    const check = await checkServer(server, syncFetch);
+    // It answered as something else, so it was never the server: the permission goes back.
+    if (check === 'not-sync') await letGo(server);
+    if (check !== 'ok') {
+      signedOut(
+        check === 'unreachable'
+          ? `Couldn’t reach ${hostOf(server)}. Check its address and the connection.`
+          : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
+        choice,
+      );
+      return;
+    }
+  }
+  await changeSettings({ server });
+  const flow = deviceSignIn(server);
   let pending: Awaited<ReturnType<typeof flow.start>>;
   try {
     pending = await flow.start();
   } catch (error) {
-    signedOut(reasonOf(error));
+    signedOut(reasonOf(error, server));
     return;
   }
   const page = () => {
-    // Only Factwright's own sync site, never an address the server could name elsewhere.
-    if (new URL(pending.url).origin === SYNC_ORIGIN) void ext.tabs.create({ url: pending.url });
+    // Only the server's own sign-in page, never an address it could name elsewhere.
+    if (new URL(pending.url).origin === server) void ext.tabs.create({ url: pending.url });
   };
   show(
     app,
     heading('Sign in to sync'),
-    h('p', {}, 'In the tab that opened, sign in, then check it shows this code:'),
+    h(
+      'p',
+      {},
+      `In the tab that opened, at ${hostOf(server)}, sign in, then check it shows this code:`,
+    ),
     h('p', { class: 'code' }, pending.code),
     h('p', { class: 'muted' }, 'Waiting for you to allow it…'),
     actions(
@@ -174,8 +328,9 @@ async function signIn(): Promise<void> {
     return;
   }
   try {
-    const info = await clientFor(result.token).account();
+    const info = await clientFor(server, result.token).account();
     const account: Account = {
+      server,
       user: info.user.id,
       email: info.user.email,
       token: result.token,
@@ -184,7 +339,7 @@ async function signIn(): Promise<void> {
     await saveAccount(account);
     void link(account);
   } catch (error) {
-    signedOut(reasonOf(error));
+    signedOut(reasonOf(error, server));
   }
 }
 
@@ -227,7 +382,7 @@ function otherWays(account: Account, client: SyncClient, onDone: () => void): HT
   };
   const failed = async (error: unknown) => {
     if (await signInEnded(error)) onDone();
-    else tell(reasonOf(error));
+    else tell(reasonOf(error, account.server));
   };
   const withCode = async () => {
     const code = readLinkCode(codeField.value);
@@ -294,7 +449,8 @@ function signInAgain(account: Account, others: HTMLElement): void {
         'Sign in again',
         () => {
           // The new sign-in asks the browser on this click. The old one is ended on the server.
-          void signIn();
+          const own = isOwn(account.server);
+          void signIn(account.server, { own, address: own ? account.server : '' });
           void endSession(account);
         },
         true,
@@ -309,7 +465,7 @@ function signInAgain(account: Account, others: HTMLElement): void {
  * emoji, and says so on each. Only then is the account's key handed over, sealed for this browser.
  */
 async function link(account: Account): Promise<void> {
-  const client = clientFor(account.token);
+  const client = clientFor(account.server, account.token);
   let stopped = false;
   /** The request to link, once it's made, which stopping calls off. */
   let asked: LinkAsk | null = null;
@@ -331,7 +487,7 @@ async function link(account: Account): Promise<void> {
   };
   const failed = async (error: unknown) => {
     if (await signInEnded(error)) stop();
-    else ended(reasonOf(error));
+    else ended(reasonOf(error, account.server));
   };
 
   let saved: Awaited<ReturnType<SyncClient['keys']>>;
@@ -350,7 +506,15 @@ async function link(account: Account): Promise<void> {
         {},
         'Sync isn’t on for this account yet. Turn it on in Factwright on your computer, then come back here.',
       ),
-      actions(button('Check again', () => void link(account), true)),
+      h(
+        'p',
+        { class: 'small muted' },
+        `This is ${account.email}, on ${serverName(account.server)}. If Factwright on your computer syncs with another account or server, sign out and set it up with that one.`,
+      ),
+      actions(
+        button('Check again', () => void link(account), true),
+        button('Sign out', () => void signOut(account).then(() => signedOut())),
+      ),
     );
     return;
   }
@@ -366,7 +530,7 @@ async function link(account: Account): Promise<void> {
   }
   // Calls the request off if the tab closes before it's done.
   const callOff = () =>
-    void syncFetch(new URL(`${API.requests}/${ask.id}`, SYNC_ORIGIN), {
+    void syncFetch(new URL(`${API.requests}/${ask.id}`, account.server), {
       method: 'DELETE',
       keepalive: true,
       headers: { authorization: `Bearer ${account.token}` },
@@ -538,6 +702,13 @@ async function linked(account: Account): Promise<void> {
     ),
     h('h2', {}, 'Account'),
     h('p', {}, account.email),
+    h(
+      'p',
+      { class: 'small muted' },
+      isOwn(account.server)
+        ? `Saves through your own sync server, ${hostOf(account.server)}. To use another, sign out, then set it up again.`
+        : `Saves through Factwright’s sync, ${hostOf(account.server)}.`,
+    ),
     actions(
       button('Sign out of Save to Factwright', () => {
         void signOut(account).then(() => signedOut());
@@ -552,8 +723,8 @@ async function start(): Promise<void> {
     signedOut();
     return;
   }
-  if (!(await canReachSync())) {
-    askForAccess(() => void start());
+  if (!(await canReachSync(account.server))) {
+    askForAccess(account, () => void start());
     return;
   }
   if (!account.keys) void link(account);

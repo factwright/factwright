@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { zipSync } from 'fflate';
 import { JSDOM } from 'jsdom';
 import { build } from 'vite';
-import { DEFAULT_SERVER, manifest, type Target } from '../src/manifest.ts';
+import { FACTWRIGHT_SYNC, manifest, type Target } from '../src/manifest.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST = join(ROOT, 'dist');
@@ -23,12 +23,13 @@ const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   version: string;
 };
 /**
- * The sync server it's built for: Factwright's, unless VITE_FACTWRIGHT_SYNC_SERVER names another,
- * such as one running locally. Anything but this computer must be reached over HTTPS: what the
- * extension sends is locked, but its sign-in isn't.
+ * The sync server it's built for, which setup offers first: Factwright's, unless
+ * VITE_FACTWRIGHT_SYNC_SERVER names another, such as one running locally. Anything but this
+ * computer must be reached over HTTPS: what the extension sends is locked, but its sign-in isn't.
+ * You can still choose a server of your own in setup, in any build.
  */
 const server = (() => {
-  const named = process.env.VITE_FACTWRIGHT_SYNC_SERVER || DEFAULT_SERVER;
+  const named = process.env.VITE_FACTWRIGHT_SYNC_SERVER || FACTWRIGHT_SYNC;
   const url = new URL(named);
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
@@ -37,7 +38,7 @@ const server = (() => {
   return url.origin;
 })();
 /** Only a build for Factwright's own sync goes to the stores, so only it gets zips. */
-const forStores = server === DEFAULT_SERVER;
+const forStores = server === FACTWRIGHT_SYNC;
 
 /** Every file under a folder, by its path inside it. */
 function filesIn(folder: string): Record<string, Uint8Array> {

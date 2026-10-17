@@ -8,6 +8,7 @@ import { askToSave } from './messages.ts';
 import type { PageJob } from './page/read-job.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
 import type { JobToSave, SaveResult } from './save.ts';
+import { DEFAULT_SERVER, serverName } from './server.ts';
 import { isJobAddress, toSave } from './tab-job.ts';
 
 /**
@@ -67,10 +68,10 @@ function message(text: string, ...more: Child[]): void {
   show(app, heading(), h('p', {}, text), ...more, settingsLink());
 }
 
-/** What to say when the browser has taken away the extension's one site. */
-function noAccess(): void {
+/** What to say when the browser has taken away the extension's one site, its sync server. */
+function noAccess(server: string): void {
   message(
-    'The browser doesn’t let Save to Factwright reach Factwright’s sync, so it can’t save jobs.',
+    `The browser doesn’t let Save to Factwright reach ${serverName(server)}, so it can’t save jobs.`,
     h('div', { class: 'actions' }, button('Allow it in setup', openSetup, true)),
   );
 }
@@ -283,7 +284,7 @@ function done(
     return;
   }
   if (result.reason === 'no-access') {
-    noAccess();
+    void loadAccount().then((account) => noAccess(account?.server ?? DEFAULT_SERVER));
     return;
   }
   form(page, unread, result.message, keepPosting);
@@ -295,8 +296,8 @@ async function start(): Promise<void> {
     notSetUp();
     return;
   }
-  if (!(await canReachSync())) {
-    noAccess();
+  if (!(await canReachSync(account.server))) {
+    noAccess(account.server);
     return;
   }
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });

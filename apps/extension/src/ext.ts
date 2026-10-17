@@ -80,6 +80,7 @@ export interface Ext {
   permissions: {
     contains(permissions: { origins: string[] }): Promise<boolean>;
     request(permissions: { origins: string[] }): Promise<boolean>;
+    remove(permissions: { origins: string[] }): Promise<boolean>;
   };
 }
 
