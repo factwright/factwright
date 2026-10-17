@@ -1,3 +1,5 @@
+import type { Computer } from './downloads.ts';
+
 /**
  * The guide to running your own sync server, own-server.html. The subdomain typed in step 1 fills
  * in every address on the page, each value gets a button that copies it, and Make one makes the
@@ -79,17 +81,20 @@ export interface GuideBrowser {
   /** Puts text on the clipboard, or rejects when the browser won't. Missing when it can't at all. */
   copy?: ((text: string) => Promise<void>) | undefined;
   random?: Random;
-  /** The keys that copy what's selected, for when copying by button fails, such as "⌘C". */
-  copyKeys?: string;
+  /**
+   * The keys that copy what's selected, for when copying by button fails, such as "⌘C". Null
+   * where they can't be told, such as on a phone, which copies from the selection's own menu.
+   */
+  copyKeys?: string | null;
 }
 
-/** What the browser this page is in can do. */
-export function thisBrowser(isMac: boolean): GuideBrowser {
+/** What the browser this page is in can do, on the computer the page is on, if it can be told. */
+export function thisBrowser(computer: Computer | null): GuideBrowser {
   const clipboard =
     typeof navigator.clipboard?.writeText === 'function' ? navigator.clipboard : null;
   return {
     copy: clipboard ? (text) => clipboard.writeText(text) : undefined,
-    copyKeys: isMac ? '⌘C' : 'Ctrl+C',
+    copyKeys: computer === 'mac' ? '⌘C' : computer === 'windows' ? 'Ctrl+C' : null,
   };
 }
 
@@ -102,7 +107,7 @@ const TYPE_FIRST = 'Type your subdomain here first, and this page fills it in ev
  * and makes a secret when asked.
  */
 export function ownServerGuide(root: HTMLElement, browser: GuideBrowser = {}): void {
-  const { copy, random, copyKeys = 'Ctrl+C' } = browser;
+  const { copy, random, copyKeys = null } = browser;
   const find = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector);
   const field = find<HTMLInputElement>('[data-subdomain-field]');
   const problem = find('[data-subdomain-problem]');
@@ -166,6 +171,8 @@ export function ownServerGuide(root: HTMLElement, browser: GuideBrowser = {}): v
     const typed = readSubdomain(field.value);
     fill(typed);
     showProblem(typed.state === 'bad' ? badText : null);
+    // The person has moved on from the field, so screen readers hear the problem from here.
+    if (typed.state === 'bad') say(badText);
     // A whole address pasted in shows as the subdomain read from it.
     if (typed.state === 'ok') field.value = typed.subdomain;
   });
@@ -186,7 +193,7 @@ export function ownServerGuide(root: HTMLElement, browser: GuideBrowser = {}): v
       if (!value || !copy) return;
       // An address isn't worth copying with "yourname" in it.
       if (value.querySelector('[data-subdomain]') && !subdomain) {
-        showProblem(TYPE_FIRST);
+        showProblem(readSubdomain(field.value).state === 'bad' ? badText : TYPE_FIRST);
         field.focus();
         return;
       }
@@ -200,8 +207,12 @@ export function ownServerGuide(root: HTMLElement, browser: GuideBrowser = {}): v
       } catch {
         // Where the browser won't copy, the value is selected, to copy with the keyboard.
         root.ownerDocument.getSelection()?.selectAllChildren(value);
-        label(button, `Press ${copyKeys}`, false);
-        say(`Selected ${name}. Press ${copyKeys} to copy it.`);
+        label(button, copyKeys ? `Press ${copyKeys}` : 'Selected', false);
+        say(
+          copyKeys
+            ? `Selected ${name}. Press ${copyKeys} to copy it.`
+            : `Selected ${name}, to copy.`,
+        );
         shown *= 2;
       }
       timers.set(

@@ -308,5 +308,5 @@ for (const root of document.querySelectorAll<HTMLElement>('[data-confirm]')) con
 for (const root of document.querySelectorAll<HTMLElement>('.fit')) fillScores(root);
 for (const root of document.querySelectorAll<HTMLElement>('[data-trace]')) traceFacts(root);
 for (const root of document.querySelectorAll<HTMLElement>('[data-own-server]')) {
-  ownServerGuide(root, thisBrowser(computer === 'mac'));
+  ownServerGuide(root, thisBrowser(computer));
 }

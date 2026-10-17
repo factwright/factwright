@@ -312,9 +312,11 @@
               <details>
                 <summary>What does it cost?</summary>
                 <p>
-                  Nothing. It runs on Cloudflare’s free plan, and R2 is
+                  Nothing within Cloudflare’s free plan, and a job hunt is small. Your server’s
+                  files go in R2, which is
                   <a href="https://developers.cloudflare.com/r2/pricing/">free up to 10 GB of storage a month</a>.
-                  Cloudflare may still ask for a payment method before it turns R2 on.
+                  Past that, Cloudflare charges the payment method it asked for when it turned R2
+                  on.
                 </p>
               </details>
               <details>
@@ -328,9 +330,10 @@
               <details>
                 <summary>Who can sign in to it?</summary>
                 <p>
-                  Anyone with a GitHub account and your server’s address, as with Factwright’s own
-                  server. Each account is private, with its own keys, so no one can see anyone
-                  else’s job hunt, but each one uses your Cloudflare account’s free allowance.
+                  Anyone with a GitHub account and your server’s address can make an account on it,
+                  as anyone can on Factwright’s own. Each account is private, with its own keys, so
+                  no one can see anyone else’s job hunt. But each one’s files count toward your
+                  Cloudflare account’s free allowance, and R2 storage past it is charged to you.
                 </p>
               </details>
               <details>
@@ -338,7 +341,7 @@
                 <p>
                   Yes. Each release’s copy is built from Factwright’s own code,
                   <a href="https://github.com/factwright/factwright/tree/main/apps/server">apps/server</a>,
-                  with nothing changed. It leaves out only what Factwright’s own server has: its
+                  with nothing changed. It leaves out what only Factwright’s own server needs: its
                   address, its legal pages and its usage totals.
                 </p>
               </details>

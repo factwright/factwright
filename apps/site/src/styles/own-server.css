@@ -126,6 +126,8 @@
 
 .own-text {
   display: grid;
+  /* Never wider than the page, whatever an address or a long subdomain in it would like. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
   font-size: 16.5px;
 }
@@ -152,6 +154,11 @@
   background: var(--fw-sunken);
   font-family: var(--fw-font-mono);
   font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+/* The server's own address, as a link, breaks wherever it has to on a narrow screen. */
+.own-link {
   overflow-wrap: anywhere;
 }
 
@@ -551,6 +558,16 @@
 
   .own-subdomain {
     padding: 14px;
+  }
+
+  /* So the field keeps room for a subdomain beside it on the narrowest phones. */
+  .own-input input {
+    padding: 0 10px;
+  }
+
+  .own-input-end {
+    padding: 0 9px;
+    font-size: 14px;
   }
 
   .own-field {

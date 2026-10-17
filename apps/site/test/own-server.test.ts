@@ -11,6 +11,7 @@ import {
   PLACEHOLDER,
   readSubdomain,
   serverAddress,
+  thisBrowser,
   WORKER,
 } from '../src/own-server.ts';
 
@@ -84,6 +85,14 @@ describe('serverAddress', () => {
 
   it('uses the name sync-server’s copy gives the Worker', () => {
     expect(COPY_SCRIPT).toContain(`export const NAME = '${WORKER}';`);
+  });
+});
+
+describe('thisBrowser', () => {
+  it('names the keys that copy on a Mac or a Windows PC, and none where it can’t tell', () => {
+    expect(thisBrowser('mac').copyKeys).toBe('⌘C');
+    expect(thisBrowser('windows').copyKeys).toBe('Ctrl+C');
+    expect(thisBrowser(null).copyKeys).toBeNull();
   });
 });
 
@@ -239,6 +248,8 @@ describe('the guide on its page', () => {
     expect(problem().textContent).toContain('letters, numbers and dashes');
     expect(field().getAttribute('aria-invalid')).toBe('true');
     expect(field().getAttribute('aria-describedby')).toBe('subdomain-help subdomain-problem');
+    // Moving on takes focus from the field, so the problem is said for screen readers too.
+    expect(status()).toBe(problem().textContent);
     // Fixing it takes the problem away as they type.
     typeIn('jane-doe');
     expect(problem().hidden).toBe(true);
@@ -285,6 +296,15 @@ describe('the guide on its page', () => {
     expect(copied).toEqual(['Factwright sync']);
   });
 
+  it('says what’s wrong with a subdomain typed in, rather than asking for one, on Copy', async () => {
+    ownServerGuide(openGuide(), browser);
+    typeIn('jane_doe', true);
+    await click(copyButton('homepage-url'));
+    expect(copied).toEqual([]);
+    expect(problem().textContent).toContain('letters, numbers and dashes');
+    expect(document.activeElement).toBe(field());
+  });
+
   it('selects the value to copy with the keyboard when the browser won’t copy it', async () => {
     ownServerGuide(openGuide(), {
       ...browser,
@@ -296,6 +316,18 @@ describe('the guide on its page', () => {
     expect(document.getSelection()?.toString()).toBe(serverAddress('jane-doe'));
     expect(label(button)).toBe('Press ⌘C');
     expect(status()).toBe('Selected your server’s address. Press ⌘C to copy it.');
+  });
+
+  it('just says it’s selected where the keys to copy it can’t be told, such as on a phone', async () => {
+    ownServerGuide(openGuide(), {
+      ...browser,
+      copy: () => Promise.reject(new Error('Not allowed')),
+      copyKeys: null,
+    });
+    await click(copyButton('app-name'));
+    expect(document.getSelection()?.toString()).toBe('Factwright sync');
+    expect(label(copyButton('app-name'))).toBe('Selected');
+    expect(status()).toBe('Selected the application name, to copy.');
   });
 
   it('leaves the Copy buttons out where the browser can’t copy at all', () => {
