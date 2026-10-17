@@ -1,6 +1,6 @@
 # Website
 
-factwright.com: one page that explains Factwright and shows how it works, its download pages, a page for its browser extension, its privacy policy and terms, and a "not found" page. It's static: the page reads fine without its script, which only adds the motion.
+factwright.com: one page that explains Factwright and shows how it works, its download pages, a page for its browser extension, a guide to running your own sync server, its privacy policy and terms, and a "not found" page. It's static: the pages read fine without their script, which adds the motion, and the guide's tools.
 
 It's built on the design system in [`@factwright/ui`](../../packages/ui): its colors and fonts come from the same tokens as the app, in light and dark, so the drawings of the app's screens match the app itself.
 
@@ -9,9 +9,11 @@ It's built on the design system in [`@factwright/ui`](../../packages/ui): its co
 | `index.html` | The page: what Factwright is, how it works in five steps, the fact bank, the Run buttons, the templates, whose Claude does the work, its open-source code and who makes it, and questions |
 | `download.html`, `download/` | The download pages. `/download/mac` and `/download/windows` start that computer's download and say how to install it, with a link in case it doesn't start. `/download` goes on to the one for the visitor's computer, or shows both on a phone or Linux |
 | `extension.html` | The page for Save to Factwright, the browser extension, at `/extension`: what it does, how it treats what it reads, and setting it up, with a button for each store. Every page's footer links to it, and so do the home page, the download pages, and the app's Add job and Sync dialogs |
+| `own-server.html` | The guide to running your own sync server, at `/own-server`: what's good to know first, then four steps. Find your workers.dev subdomain and turn on R2, make a GitHub sign-in app, deploy [sync-server](https://github.com/factwright/sync-server)'s ready-to-deploy copy with Cloudflare's Deploy button, and connect Factwright. The footers link to it, and so does the home page where it talks about sync |
 | `privacy.html`, `terms.html` | The privacy policy and the terms of service, at `/privacy` and `/terms`. Every page's footer links to both, and so does signing in to sync, in the app and the web view |
 | `404.html` | The page for an address that doesn't exist |
 | `src/main.ts` | The motion: the app drawing plays a run in Claude's panel, a claim gets confirmed, the score bars fill, and each resume line opens the fact behind it |
+| `src/own-server.ts` | The guide's tools: the subdomain typed or pasted fills in every address on the page, each value gets a Copy button, and Make one makes the server's `BETTER_AUTH_SECRET` with the browser's own random generator. Without the script, the guide reads as plain steps, with "yourname" in each address |
 | `src/stores.ts` | The extension's listing in each browser's store, and whether the store has approved it yet, which the build writes into its page's buttons. A store that hasn't shows as coming soon, with no link. Until one has, the site's other mentions of the extension say it's coming soon too, from words in a `data-soon` span, which the build drops once a store is live |
 | `src/styles` | The site's layout and type, and the drawings of the app, in a few files that `index.css` imports in order |
 | `scripts/theme.ts` | The design system's theme as CSS, plus the colors Claude Code shows in Claude's panel |
@@ -34,7 +36,7 @@ pnpm --filter @factwright/site images
 ```
 
 ## Security
-The pages run only the site's own scripts and styles, connect nowhere (the Worker reads the update feeds, not the page), can't be shown inside another site, and keep to https. The site has its own address, apart from the web view at app.factwright.com, so nothing on it shares the address where the web view keeps its keys.
+The pages run only the site's own scripts and styles, connect nowhere (the Worker reads the update feeds, not the page), can't be shown inside another site, and keep to https. So the own-server guide's tools work in the page alone: the subdomain someone types and the secret it makes never leave it, and nothing is kept. The site has its own address, apart from the web view at app.factwright.com, so nothing on it shares the address where the web view keeps its keys.
 
 ## Search
 Every page has a title. Every page but the "not found" page, which asks search engines to skip it, also has a description and a canonical address, and the home page and the extension's page have the cards that link previews show. `public/robots.txt` lets search engines in, and `public/sitemap.xml` lists the pages worth finding.

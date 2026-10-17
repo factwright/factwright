@@ -7,6 +7,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - The sidebar links to the browser extension, Save to Factwright, beside Support Factwright, so it's always a click away. A copy built without a sync server leaves it out, since the extension saves through sync.
 - factwright.com's header has a Browser extension button beside GitHub, on screens wide enough for it to sit beside the page's links.
+- factwright.com/own-server, a guide to running your own sync server in a free Cloudflare account, in about 15 minutes and with no code to write: find your workers.dev subdomain, make a GitHub sign-in app, deploy with Cloudflare's Deploy button, and connect Factwright. Type your subdomain, and the page fills in every address for you to copy. It makes the server's secret in your browser, and sends nothing anywhere. It says up front that Cloudflare may ask for a payment method before it turns on R2, its file storage, and that updates to your own server aren't automatic yet. The site's footers and the home page link to it.
 
 ### Changed
 - factwright.com/extension links to Save to Factwright in the Chrome Web Store, now that Chrome has approved it, and the site's other mentions of the extension no longer say it's coming soon. Firefox's button says it's coming soon to Firefox Add-ons until that store approves it too.
