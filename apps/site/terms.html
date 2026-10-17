@@ -6,7 +6,7 @@
     <title>Terms of service · Factwright</title>
     <meta
       name="description"
-      content="The terms for using Factwright: the app, this website, its downloads and updates, and sync."
+      content="The terms for using Factwright: the app, this website, its downloads and updates, and sync, including paying for it."
     />
     <link rel="canonical" href="https://factwright.com/terms" />
     <meta name="color-scheme" content="light dark" />
@@ -35,7 +35,7 @@
     <main id="main" class="wrap legal">
       <div class="legal-head">
         <h1>Terms of service</h1>
-        <p class="legal-date">Effective <time datetime="2026-10-14">October 14, 2026</time></p>
+        <p class="legal-date">Effective <time datetime="2026-10-17">October 17, 2026</time></p>
         <p class="lede">
           These terms are the agreement between you and Neatifai LLC for using Factwright. By
           downloading or using the app, this website or sync, you agree to them. If you don’t agree,
@@ -54,6 +54,7 @@
             <li><a href="#you">What you send</a></li>
             <li><a href="#content">Your content</a></li>
             <li><a href="#sync">Sync and your account</a></li>
+            <li><a href="#paying">Paying for sync</a></li>
             <li><a href="#rules">What you may not do</a></li>
             <li><a href="#beta">The beta, and ending</a></li>
             <li><a href="#warranty">No warranties</a></li>
@@ -70,7 +71,14 @@
           <section class="legal-summary" id="short">
             <h2>The short version</h2>
             <ul>
-              <li><b>Factwright is free.</b> It’s in beta, so things may change or break.</li>
+              <li>
+                <b>The app is free,</b> and so is running your own sync server. It’s in beta, so
+                things may change or break.
+              </li>
+              <li>
+                <b>Sync on our server is a subscription,</b> $5 a month or $50 a year. It renews
+                until you cancel. You can cancel anytime, but payments generally aren’t refunded.
+              </li>
               <li>
                 <b>It runs on your own Claude account,</b> under Anthropic’s terms and your plan’s
                 limits.
@@ -120,8 +128,9 @@
             <p>
               You can support Factwright through Buy Me a Coffee or GitHub Sponsors, if you like. That
               goes to Steve Hillyer personally, who builds Factwright for us, under that service’s
-              terms. It isn’t a payment to us: it doesn’t buy features or support, and it isn’t
-              a charitable donation.
+              terms. It isn’t a payment to us: it doesn’t buy features, support or sync, and it
+              isn’t a charitable donation. A sync subscription is separate, as
+              <a href="#paying">Paying for sync</a> explains.
             </p>
           </section>
 
@@ -184,6 +193,10 @@
             <p>Sync is optional. If you use it:</p>
             <ul>
               <li>
+                Sync through our server needs a subscription, unless you have it for free, as
+                <a href="#paying">Paying for sync</a> explains.
+              </li>
+              <li>
                 Keep your devices and your recovery key safe. You’re responsible for what happens
                 under your account.
               </li>
@@ -195,8 +208,76 @@
                 Each account can store up to 1 GB, in files of up to 25 MB, and has fair limits on how
                 often it syncs. We may change these limits.
               </li>
-              <li>You can delete your account at any time, in the web view.</li>
+              <li>
+                You can delete your account at any time, in the web view. That ends any
+                subscription at once.
+              </li>
             </ul>
+          </section>
+
+          <section id="paying">
+            <h2>Paying for sync</h2>
+            <p>
+              The app is free. Sync through our server is a subscription, for $5 a month or $50 a
+              year, in US dollars, plus any sales tax or VAT where you live. Checkout may show the
+              price in your own currency.
+              <!--
+                Who sells it, in one sentence, the same as the privacy policy's (privacy.html#paying).
+                With Stripe Managed Payments, Stripe is the seller of record. If we sell it ourselves,
+                with Stripe as our payment processor, the sentence is instead: "We sell it to you, and
+                Stripe, our payment processor, takes your payment and sends your receipts."
+              -->
+              Stripe sells it to you as the seller of record, through Link, its checkout: it takes
+              your payment, handles the tax and sends your receipts, and its own terms for the sale
+              apply too.
+              We never see your card.
+            </p>
+            <ul>
+              <li>
+                <b>It renews until you cancel.</b> Your subscription renews automatically at the end
+                of each month or year, and you’re charged for the next one. Before a yearly
+                subscription renews, you’ll get an email reminding you.
+              </li>
+              <li>
+                <b>You can cancel anytime,</b> from your account page in the web view. Sync keeps
+                going to the end of the time you’ve paid for, and you’re not charged again.
+              </li>
+              <li>
+                <b>A payment that doesn’t go through</b> is tried again, and sync keeps going while
+                it is. If it can’t be paid in the end, the subscription ends.
+              </li>
+              <li>
+                <b>No refunds,</b> except where the law requires one, or when you were charged by
+                mistake, such as twice for one account.
+              </li>
+              <li>
+                <b>Price changes:</b> we’ll tell you by email at least 30 days before you’re charged a
+                new price, so you can cancel first if you’d like.
+              </li>
+              <li>
+                <b>When a subscription ends,</b> sync pauses. Each device keeps its own copy, and
+                what you synced stays on our server, still encrypted, until you delete your account.
+                You can still open it and download it there, and if you subscribe again, sync picks
+                up where it left off.
+              </li>
+              <li>
+                <b>Deleting your account</b> ends your subscription at once, and the time left on it
+                isn’t refunded. To keep syncing to the end of what you paid for, cancel first, and
+                delete your account after.
+              </li>
+            </ul>
+            <p>
+              <b>Free sync.</b> Accounts made before we started selling sync keep it free, for as
+              long as we run sync. And if money’s tight, email
+              <a href="mailto:steve@factwright.com">steve@factwright.com</a>, and we’ll turn on sync
+              for your account for free, with no questions asked, until you tell us you’re done
+              with it.
+            </p>
+            <p>
+              <b>Servers we don’t run.</b> Running your own sync server costs nothing from us, and
+              isn’t part of this subscription. What these terms say about sync covers only the sync
+              we run, at app.factwright.com, not a server you or anyone else runs.
+            </p>
           </section>
 
           <section id="rules">
@@ -219,8 +300,9 @@
             </p>
             <p>
               If we ever shut sync down, we’ll tell you at least 30 days before, so you can download
-              your data, unless something outside our control stops it sooner. The app keeps working
-              on your computer without it.
+              your data, unless something outside our control stops it sooner. We’ll stop charging
+              for it, and refund what you paid for any time after it ends. The app keeps working on
+              your computer without it.
             </p>
             <p>You can stop using Factwright at any time.</p>
           </section>
@@ -241,8 +323,8 @@
               As far as the law allows, we won’t be liable for any indirect, incidental, special,
               consequential or punitive damages, or for lost data, profits, jobs or opportunities,
               even if we were told they might happen. Our total liability for any claim about
-              Factwright is limited to the greater of $50 or what you paid us in the 12 months before
-              the claim.
+              Factwright is limited to the greater of $50 or what you paid for Factwright in the 12
+              months before the claim.
             </p>
             <p>Some places don’t allow these limits, so they may not all apply to you.</p>
           </section>
@@ -311,6 +393,7 @@
       <div class="wrap">
         <nav class="footer-links" aria-label="Extension, policies, code and support">
           <a href="/extension">Browser extension</a>
+          <a href="/sync">Sync</a>
           <a href="/own-server">Your own sync server</a>
           <a href="/privacy">Privacy policy</a>
           <a href="/terms" aria-current="page">Terms of service</a>

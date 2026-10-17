@@ -86,6 +86,7 @@ describe('offerDownloads', () => {
     expect(shown(root)).toEqual([
       ['Download for Mac', 'button button-primary button-lg'],
       ['open source', ''],
+      ['Sync', ''],
       ['Also for Windows', ''],
     ]);
     expect(root.querySelector<HTMLElement>('[data-for="mac"]')?.hidden).toBe(false);
@@ -97,6 +98,7 @@ describe('offerDownloads', () => {
     expect(shown(root)).toEqual([
       ['Download for Windows', 'button button-primary button-lg'],
       ['open source', ''],
+      ['Sync', ''],
       ['Also for Mac', ''],
     ]);
     // "Apple silicon and Intel" is about the Mac download, which a PC only sees as a link.
@@ -108,6 +110,7 @@ describe('offerDownloads', () => {
       'Download for Mac',
       'Download for Windows',
       'open source',
+      'Sync',
     ]);
   });
 });

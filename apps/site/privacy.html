@@ -35,7 +35,7 @@
     <main id="main" class="wrap legal">
       <div class="legal-head">
         <h1>Privacy policy</h1>
-        <p class="legal-date">Effective <time datetime="2026-10-16">October 16, 2026</time></p>
+        <p class="legal-date">Effective <time datetime="2026-10-17">October 17, 2026</time></p>
         <p class="lede">
           Factwright is built so your job hunt stays yours. This policy says what we collect, what
           we never see, and the choices you have.
@@ -54,6 +54,7 @@
             <li><a href="#updates">Updates</a></li>
             <li><a href="#site">Our websites</a></li>
             <li><a href="#sync">Sync and the web view</a></li>
+            <li><a href="#paying">Paying for sync</a></li>
             <li><a href="#extension">The browser extension</a></li>
             <li><a href="#email">Emails</a></li>
             <li><a href="#support">Supporting Factwright</a></li>
@@ -91,6 +92,10 @@
                 <b>We keep only what sync needs:</b> your name, email and account ID from the account
                 you sign in with, the devices you sign in on, and your encrypted job hunt with its
                 sizes and times.
+              </li>
+              <li>
+                <b>If you pay for sync, Stripe takes the payment,</b> and we never see your card. We
+                keep only Stripe’s IDs for you and your subscription, and its status and dates.
               </li>
               <li>
                 <b>We never sell your data</b> or share it for advertising. You can download or delete
@@ -244,8 +249,9 @@
               <li>Counts of requests from your IP address: about a day.</li>
               <li>
                 What our servers note for themselves, such as a request that failed with its address,
-                or the account ID when we delete an account someone asked us to, but nothing from
-                your job hunt: up to 7 days, at Cloudflare.
+                the account ID when we delete an account someone asked us to, or Stripe’s ID for a
+                subscription that needs a look, but nothing from your job hunt: up to 7 days, at
+                Cloudflare.
               </li>
             </ul>
             <p>
@@ -261,6 +267,47 @@
               or tracking. Signing out forgets the keys in that browser, and so does finding it’s been
               signed out another way. Your browser may also keep locked copies of files in its cache,
               and files you download or open there are saved by your browser as they are, unlocked.
+            </p>
+          </section>
+
+          <section id="paying">
+            <h2>Paying for sync</h2>
+            <p>
+              Sync through our server is a subscription.
+              <!--
+                Who sells it, in one sentence, the same as the terms' (terms.html#paying). With Stripe
+                Managed Payments, Stripe is the seller of record. If we sell it ourselves, with Stripe
+                as our payment processor, the sentence is instead: "Stripe takes your payment for us,
+                as our payment processor, so what you give at checkout, such as your card and billing
+                address, goes to Stripe, which also handles it under its own privacy policy."
+              -->
+              Stripe sells it to you as the seller of record, through Link, its checkout, so what
+              you give at checkout, such as your card and billing address, goes to Stripe, which
+              handles it under its own <a href="https://stripe.com/privacy">privacy policy</a>.
+              We never see your card.
+            </p>
+            <p>
+              When you first subscribe, we give Stripe your account’s email address and ID, so your
+              subscription stays with your account. From Stripe, we keep:
+            </p>
+            <ul>
+              <li>Stripe’s IDs for you as its customer, and for your subscription</li>
+              <li>
+                your subscription’s status, whether you’ve canceled it, and when the time you’ve paid
+                for ends
+              </li>
+              <li>when we last checked it with Stripe, and when you last started a checkout</li>
+            </ul>
+            <p>
+              We also keep whether we gave you sync for free because you asked. If we give it to an
+              email address with no account yet, we keep that address until an account signs up
+              with it, or until you ask us to forget it.
+            </p>
+            <p>
+              We keep all this until you delete your account. Deleting it deletes your customer
+              record at Stripe too, which ends your subscription at once. Stripe keeps its own
+              records of your payments, such as receipts, as the law requires, under its privacy
+              policy.
             </p>
           </section>
 
@@ -292,7 +339,8 @@
             <h2>Emails</h2>
             <p>
               If you email us, we use what you send to answer you. We keep it as long as we need to
-              answer you, then up to 2 years for our records.
+              answer you, then up to 2 years for our records. If you ask for free sync, we also use
+              your email address to turn it on, as <a href="#paying">Paying for sync</a> explains.
             </p>
           </section>
 
@@ -304,8 +352,8 @@
               takes your payment and keeps its own records, under its own privacy policy, and may show
               your name and message on its pages unless you choose not to. Steve sees what it shares,
               such as your name or username, your email address, the amount and any message, and uses
-              it only to thank you and for tax records. None of it is linked to your Factwright
-              account. You can ask about it at
+              it only to thank you and for tax records. It’s separate from paying for sync, and none
+              of it is linked to your Factwright account. You can ask about it at
               <a href="mailto:privacy@factwright.com">privacy@factwright.com</a>.
             </p>
           </section>
@@ -329,6 +377,10 @@
               either: your Claude account is your own.
             </p>
             <p>
+              If you pay for sync, Stripe gets your email address and account ID from us, and what
+              you give it at checkout, as <a href="#paying">Paying for sync</a> explains.
+            </p>
+            <p>
               We may disclose information if the law requires it, such as a valid court order, or to
               protect someone’s safety or our rights. Even then, we can hand over only what we have,
               and we can’t unlock your encrypted job hunt. If Neatifai or Factwright is ever sold or
@@ -340,8 +392,9 @@
             <h2>Where it’s kept</h2>
             <p>
               We’re in the United States. Cloudflare runs our services on its network around the
-              world, so your information may be stored or handled in the United States and other
-              countries. Wherever it is, this policy applies.
+              world, and Stripe takes payments around the world too, so your information may be
+              stored or handled in the United States and other countries. Wherever we keep it, this
+              policy applies.
             </p>
           </section>
 
@@ -350,7 +403,8 @@
             <p>
               We use your account and device details to run the sync you asked for, which is our
               agreement with you, and to keep the service working and secure, which is in your
-              interest and ours. Once a day, the sync service also counts how many accounts it has,
+              interest and ours. If you pay for sync, we use what Stripe tells us only to give you
+              the sync you paid for. Once a day, the sync service also counts how many accounts it has,
               how many are new and how many were used in the last week and month, and how many
               devices are signed in, in the app and in browsers. It keeps only those totals, for three
               months, so we can see how much it’s used, which is in our interest. If you email us, we
@@ -436,6 +490,8 @@
       <div class="wrap">
         <nav class="footer-links" aria-label="Extension, policies, code and support">
           <a href="/extension">Browser extension</a>
+          <a href="/sync">Sync</a>
+          <a href="/own-server">Your own sync server</a>
           <a href="/privacy" aria-current="page">Privacy policy</a>
           <a href="/terms">Terms of service</a>
           <a href="https://github.com/factwright/factwright">Source code</a>

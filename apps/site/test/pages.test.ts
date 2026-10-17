@@ -53,8 +53,26 @@ const EXTENSION_PRIVACY = '/privacy#extension';
 /** The guide to running your own sync server, which every page's footer links to. */
 const OWN_SERVER_PAGE = '/own-server';
 
-/** The privacy policy's footer gets its link to the guide with its next change, on another branch. */
-const NO_OWN_SERVER_LINK_YET = new Set(['privacy.html']);
+/** The page about sync and what it costs, which every page's footer links to. */
+const SYNC_PAGE = '/sync';
+
+/** What the terms and the privacy policy say about paying for sync, which the sync page links to. */
+const PAYING = ['/terms#paying', '/privacy#paying'];
+
+/** What the privacy policy says about sync and the web view, which the sync page links to. */
+const SYNC_PRIVACY = '/privacy#sync';
+
+/** Where to ask for sync for free, which the sync page and the terms give. */
+const MONEY_TIGHT = 'mailto:steve@factwright.com';
+
+/** The pages that say how to ask for sync for free. */
+const FREE_SYNC_PAGES = ['sync.html', 'terms.html'];
+
+/** Stripe's privacy policy, which the privacy policy points to for paying. */
+const STRIPE_PRIVACY = 'https://stripe.com/privacy';
+
+/** What sync on Factwright's own server costs, wherever the site or the app says it. */
+const PRICES = ['$5 a month', '$50 a year'];
 
 /**
  * Where the guide sends people to do each step: Cloudflare's and GitHub's sign-up pages and the
@@ -121,6 +139,10 @@ const MADE_UP = [
   'Jordan Avery',
 ];
 
+/** An element's words, with each run of spaces as one. */
+const said = (element: Element | null | undefined) =>
+  element?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
 /** The start of an element's markup, for a failing test to show. */
 const markup = (element: Element) => element.outerHTML.replace(/\s+/g, ' ').slice(0, 80);
 
@@ -147,6 +169,7 @@ describe.each([
   'download/windows.html',
   'extension.html',
   'own-server.html',
+  'sync.html',
   'privacy.html',
   'terms.html',
   '404.html',
@@ -170,7 +193,7 @@ describe.each([
     }
   });
 
-  it('links only to its own sections, the site’s pages, the downloads, the extension’s stores, its code, its maker, Anthropic’s terms and the own-server guide’s steps', () => {
+  it('links only to its own sections, the site’s pages, the downloads, the extension’s stores, its code, its maker, Anthropic’s and Stripe’s terms, the address for free sync and the own-server guide’s steps', () => {
     const doc = open(page);
     const legal = LEGAL_PAGES.includes(`/${page.replace('.html', '')}`);
     const allowed = [
@@ -182,9 +205,13 @@ describe.each([
       EXTENSION_PAGE,
       EXTENSION_PRIVACY,
       OWN_SERVER_PAGE,
+      SYNC_PAGE,
+      SYNC_PRIVACY,
+      ...PAYING,
       ...LISTINGS,
       ...MAKER,
-      ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL] : []),
+      ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL, STRIPE_PRIVACY] : []),
+      ...(FREE_SYNC_PAGES.includes(page) ? [MONEY_TIGHT] : []),
       ...(page === 'own-server.html' ? OWN_SERVER_STEPS : []),
     ];
     for (const link of doc.querySelectorAll('a[href]')) {
@@ -202,14 +229,12 @@ describe.each([
     expect(hrefs).toEqual(expect.arrayContaining([EXTENSION_PAGE, ...LEGAL_PAGES, SOURCE]));
   });
 
-  it.skipIf(NO_OWN_SERVER_LINK_YET.has(page))(
-    'links to the guide to running your own sync server from its footer',
-    () => {
-      const footer = open(page).querySelector('footer');
-      const link = footer?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`);
-      expect(link?.textContent).toBe('Your own sync server');
-    },
-  );
+  it('links to sync, and to the guide to running your own sync server, from its footer', () => {
+    const footer = open(page).querySelector('footer');
+    expect(footer?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('Sync');
+    const link = footer?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`);
+    expect(link?.textContent).toBe('Your own sync server');
+  });
 
   it('has no inline script, style or event handler, which its security policy would block', () => {
     const doc = open(page);
@@ -507,6 +532,7 @@ describe('the extension page', () => {
       'download/mac.html',
       'download/windows.html',
       'extension.html',
+      'sync.html',
     ]) {
       expect(readFileSync(join(SITE, page), 'utf8'), page).toContain('<span data-soon>');
       // Each opening replaces the last, so each is read before the next.
@@ -521,13 +547,22 @@ describe('the extension page', () => {
     }
   });
 
-  it('says it needs Factwright, with a link to what it is, and its download in the steps', () => {
+  it('says it needs Factwright and its sync, with links to what each is, and its download in the steps', () => {
     const doc = open('extension.html');
     const note = doc.querySelector('.ext-copy .ext-note');
-    expect(note?.textContent).toContain('Needs Factwright for Mac or Windows, with sync on');
+    expect(said(note)).toContain('Needs Factwright for Mac or Windows, with Factwright’s sync');
     // The download pages start the download at once, so only a link that says so goes there.
     expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
+    expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('Factwright’s sync');
     expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
+  });
+
+  it('says what sync costs where it says how to set it up', () => {
+    const setup = open('extension.html').querySelector('#setup .lede');
+    expect(said(setup)).toContain('It saves through Factwright’s sync');
+    expect(setup?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe(
+      `${PRICES[0]} or ${PRICES[1]}`,
+    );
   });
 
   it('links to the part of the privacy policy about the extension', () => {
@@ -637,7 +672,201 @@ describe('the own-server guide', () => {
   });
 });
 
+describe('the sync page', () => {
+  it('sets out both ways to sync side by side: ours, with its price, and your own, for free', () => {
+    const [ours, own] = [...open('sync.html').querySelectorAll('.sync-plan')];
+    expect(said(ours?.querySelector('h3'))).toBe('Factwright’s sync');
+    expect(said(ours)).toContain(`${PRICES[0]} or ${PRICES[1]}`);
+    expect(said(ours)).toContain('Cancel anytime, and sync keeps going to the end of the time');
+    expect(said(own?.querySelector('h3'))).toBe('Your own server');
+    expect(said(own?.querySelector('.sync-price'))).toBe('Free');
+    expect(own?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`)).not.toBeNull();
+  });
+
+  it('says what sync does: other computers, the phone and the extension, end-to-end encrypted', () => {
+    const what = open('sync.html').getElementById('what');
+    expect([...(what?.querySelectorAll('h3') ?? [])].map(said)).toEqual([
+      'Your other computers',
+      'Your phone',
+      'Save to Factwright',
+    ]);
+    expect(said(what)).toContain('even on a computer without Factwright');
+    expect(said(what)).toContain('End-to-end encrypted');
+  });
+
+  it('offers sync for free when money’s tight, in Steve’s own words, with his address', () => {
+    const note = open('sync.html').getElementById('money-tight');
+    expect(said(note)).toBe(
+      'Money’s tight? Email steve@factwright.com and I’ll turn on sync for free. No questions asked.',
+    );
+    expect(note?.querySelector('a')?.getAttribute('href')).toBe(MONEY_TIGHT);
+  });
+
+  it('says accounts from before sync had a price keep it free, for good', () => {
+    expect(said(open('sync.html').getElementById('early'))).toContain(
+      'Made your account before sync had a price? It stays free for you, for good.',
+    );
+  });
+
+  it('links to what the terms and the privacy policy say about paying, which they have', () => {
+    const doc = open('sync.html');
+    for (const href of PAYING)
+      expect(doc.querySelector(`main a[href="${href}"]`), href).not.toBeNull();
+    for (const href of [...PAYING, SYNC_PRIVACY]) {
+      const [page, part] = href.slice(1).split('#');
+      expect(open(`${page}.html`).getElementById(part ?? '')?.tagName, href).toBe('SECTION');
+    }
+  });
+
+  it('is where the home page points people: under its download buttons, where it talks about sync, and in its questions', () => {
+    const doc = open('index.html');
+    const note = doc.querySelector('.hero .hero-note');
+    expect(said(note)).toContain(
+      'Uses your own Claude plan · Sync $5 a month, or free on your own server',
+    );
+    expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('Sync');
+    expect(doc.querySelector(`.where a[href="${SYNC_PAGE}"]`)).not.toBeNull();
+    const question = doc.querySelector(`.faq a[href="${SYNC_PAGE}"]`)?.closest('details');
+    expect(question?.querySelector('summary')?.textContent).toBe('What does it cost?');
+  });
+
+  it('is where the extension’s page, the download pages and the own-server guide point people', () => {
+    for (const page of [
+      'extension.html',
+      'download/mac.html',
+      'download/windows.html',
+      'own-server.html',
+    ]) {
+      expect(open(page).querySelector(`main a[href="${SYNC_PAGE}"]`), page).not.toBeNull();
+    }
+  });
+
+  it('gives the same price everywhere it’s said, on the site and in the app', () => {
+    for (const page of [
+      'index.html',
+      'sync.html',
+      'extension.html',
+      'own-server.html',
+      'terms.html',
+    ]) {
+      const prices = [...said(open(page).body).matchAll(/\$[\d.,]+ a (?:month|year)/g)];
+      expect(prices.length, page).toBeGreaterThan(0);
+      for (const [price] of prices) expect(PRICES, page).toContain(price);
+    }
+    // The app's own sync screen shows it once Factwright's server sells sync.
+    const app = join(SITE, '..', 'desktop', 'src');
+    const shown = readdirSync(app, { recursive: true, encoding: 'utf8' })
+      .filter((path) => /\.tsx?$/.test(path))
+      .some((path) =>
+        readFileSync(join(app, path), 'utf8').includes(`'${PRICES[0]} or ${PRICES[1]}'`),
+      );
+    expect(shown).toBe(true);
+  });
+
+  it('keeps the home page’s search data saying Factwright is free, as the app is', () => {
+    const blocks = open('index.html').querySelectorAll('script[type="application/ld+json"]');
+    expect(JSON.parse(blocks[0]?.textContent ?? '').offers.price).toBe('0');
+  });
+});
+
+describe('the terms', () => {
+  const paying = () => said(open('terms.html').getElementById('paying'));
+
+  it('say up front that the app is free, and sync on our server is a subscription', () => {
+    const short = said(open('terms.html').getElementById('short'));
+    expect(short).toContain('The app is free, and so is running your own sync server.');
+    expect(short).toContain(
+      'Sync on our server is a subscription, $5 a month or $50 a year. It renews until you cancel. You can cancel anytime',
+    );
+  });
+
+  it('cover the price, renewing, canceling, refunds, price changes, free sync, deleting, and servers we don’t run', () => {
+    for (const part of [
+      `${PRICES[0]} or ${PRICES[1]}, in US dollars`,
+      'Your subscription renews automatically',
+      'You can cancel anytime,',
+      'Sync keeps going to the end of the time you’ve paid for',
+      'No refunds, except where the law requires one',
+      'at least 30 days before you’re charged a new price',
+      'Accounts made before we started selling sync keep it free',
+      'if money’s tight',
+      'Deleting your account ends your subscription at once',
+      'Running your own sync server costs nothing from us',
+    ]) {
+      expect(paying()).toContain(part);
+    }
+  });
+
+  it('keep supporting Factwright apart from paying for sync', () => {
+    const app = said(open('terms.html').getElementById('app'));
+    expect(app).toContain('It isn’t a payment to us: it doesn’t buy features, support or sync');
+    expect(app).toContain('A sync subscription is separate');
+  });
+});
+
+describe('the privacy policy', () => {
+  it('says Stripe takes payments, what we give it and keep, and for how long', () => {
+    const section = open('privacy.html').getElementById('paying');
+    expect(section?.querySelector(`a[href="${STRIPE_PRIVACY}"]`)).not.toBeNull();
+    for (const part of [
+      'We never see your card.',
+      'we give Stripe your account’s email address and ID',
+      'Stripe’s IDs for you as its customer, and for your subscription',
+      'your subscription’s status, whether you’ve canceled it, and when the time you’ve paid for ends',
+      'whether we gave you sync for free',
+      'we keep that address until an account signs up with it',
+      'We keep all this until you delete your account.',
+      'Deleting it deletes your customer record at Stripe too',
+      'Stripe keeps its own records of your payments',
+    ]) {
+      expect(said(section)).toContain(part);
+    }
+  });
+
+  it('was written for each column the server keeps about paying, so a new one waits on the policy', () => {
+    const folder = join(SITE, '..', 'server', 'migrations');
+    const sql = readdirSync(folder)
+      .filter((file) => file.endsWith('.sql'))
+      .map((file) => readFileSync(join(folder, file), 'utf8'))
+      .join('\n');
+    /** A table's columns, as it's made, then as later migrations add to them. */
+    const columns = (table: string) => {
+      const made = new RegExp(`create table "${table}" \\(([\\s\\S]*?)\\);`, 'i').exec(sql)?.[1];
+      const added = new RegExp(`alter table "${table}" add column "(\\w+)"`, 'gi');
+      return [
+        ...[...(made ?? '').matchAll(/(?:^|, )"(\w+)" (?:text|integer|real|blob)/g)],
+        ...[...sql.matchAll(added)],
+      ].map((match) => match[1]);
+    };
+    expect(columns('syncAccess')).toEqual([
+      'account',
+      'gift',
+      'customer',
+      'subscription',
+      'status',
+      'renewsAt',
+      'canceling',
+      'checkedAt',
+      'checkoutAt',
+      'updatedAt',
+    ]);
+    expect(columns('freeSyncEmail')).toEqual(['email', 'since']);
+  });
+});
+
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
+  it('says who sells sync, the same way as the other does', () => {
+    /** Who the page says sells sync: Stripe, as the seller of record, or us, with Stripe as our processor. */
+    const seller = (each: string) => {
+      const text = said(open(each).getElementById('paying'));
+      if (text.includes('Stripe sells it to you as the seller of record')) return 'Stripe';
+      if (text.includes('our payment processor')) return 'us';
+      return null;
+    };
+    expect(seller(page)).not.toBeNull();
+    expect(seller(page)).toBe(seller(page === 'terms.html' ? 'privacy.html' : 'terms.html'));
+  });
+
   it('says when it took effect', () => {
     const date = open(page).querySelector('.legal-date time')?.getAttribute('datetime') ?? '';
     expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -667,7 +896,15 @@ describe('the site’s build', () => {
     );
     expect(pages.length).toBeGreaterThan(6);
     for (const page of pages) expect(config, page).toContain(`'${page.replaceAll('\\', '/')}'`);
-    for (const path of ['/', '/download', EXTENSION_PAGE, OWN_SERVER_PAGE, '/privacy', '/terms']) {
+    for (const path of [
+      '/',
+      '/download',
+      EXTENSION_PAGE,
+      SYNC_PAGE,
+      OWN_SERVER_PAGE,
+      '/privacy',
+      '/terms',
+    ]) {
       expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
     }
   });
