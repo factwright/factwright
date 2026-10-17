@@ -62,6 +62,7 @@ export {
   isRequestId,
   isSealedKey,
   type KeyRecord,
+  knownFeatures,
   type Legal,
   LIMITS,
   type LinkRequest,

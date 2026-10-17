@@ -138,11 +138,12 @@ test('reaches Claude Code with its own plugin, and the setup check passes', asyn
     .toBe('passed');
 });
 
-// Factwright's own releases, which release.yml builds with FACTWRIGHT_SYNC_SERVER, can sync. A
-// copy built without it, such as from a fork or on this computer, can't. Nor can a copy another
-// program drives, as these tests do: it never asks the keychain for sync's keys, as on a Mac every
-// copy shares one Keychain item, and the keys in its data folder stay locked and as they are.
-test('syncs only if built with a sync server, and never while driven', async () => {
+// Factwright's own releases, which release.yml builds with FACTWRIGHT_SYNC_SERVER, sync through
+// Factwright's server. A copy built without it, such as from a fork or on this computer, leaves
+// Factwright's sync as a copy with it left it. Nor does a copy another program drives, as these
+// tests do, sync: it never asks the keychain for sync's keys, as on a Mac every copy shares one
+// Keychain item, and the keys in its data folder stay locked and as they are.
+test('uses Factwright’s sync only if built with it, and never while driven', async () => {
   const sync = window.getByRole('region', { name: 'Sync' });
   if (process.env.FACTWRIGHT_SYNC_SERVER) {
     await expect(sync.getByText('Can’t turn on here')).toBeVisible();

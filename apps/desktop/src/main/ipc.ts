@@ -544,6 +544,10 @@ export function registerIpc({
 
   answer('sync:status', () => sync.status());
   answer('sync:sign-in', () => sync.signInWithBrowser());
+  answer('sync:connect', (address) =>
+    typeof address === 'string' && address.length <= 2000 ? sync.connect(address) : REFUSED,
+  );
+  answer('sync:server-terms', () => sync.serverTerms());
   ipcMain.on('sync:cancel-sign-in', (event) => {
     if (fromApp(event)) sync.cancelSignIn();
   });

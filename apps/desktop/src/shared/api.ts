@@ -42,8 +42,10 @@ import type { RunTask } from './runs.ts';
 import type {
   AccountResult,
   ApprovalsView,
+  ConnectResult,
   LinkCodeResult,
   RecoveryKeyResult,
+  ServerTerms,
   SyncStatus,
 } from './sync.ts';
 import type { UpdateStatus } from './updates.ts';
@@ -229,12 +231,20 @@ export interface ShotUpload {
 /** How the main process passes the app's version to the window, as a command-line switch. */
 export const VERSION_ARGUMENT = '--factwright-version=';
 
+/** How the main process tells the window this copy has Factwright's own sync, as a switch. */
+export const SYNC_ARGUMENT = '--factwright-sync';
+
 /** What the app's window may ask of the main process. Nothing else crosses over. */
 export interface FactwrightApi {
   /** The operating system, so the window can make room for its title bar buttons. */
   platform: string;
   /** Factwright's own version, such as "0.1.1". */
   version: string;
+  /**
+   * Whether this copy has Factwright's own sync, as Factwright's releases do. A copy built
+   * anywhere else syncs only through a server of your own.
+   */
+  factwrightSync: boolean;
   claudeStatus(): Promise<ClaudeStatus>;
   /** The latest check of Factwright's setup with the user's Claude Code, or null before one. */
   setupCheck(): Promise<SetupCheck | null>;
@@ -361,8 +371,21 @@ export interface FactwrightApi {
   syncStatus(): Promise<SyncStatus>;
   /** Listens for changes in where sync stands. Returns a function that stops listening. */
   onSyncStatus(listener: (status: SyncStatus) => void): () => void;
-  /** Signs in to sync through the browser. Answers once the user approves, or it stops. */
+  /**
+   * Signs in to sync through the browser: to Factwright's own, or again to the server sync is
+   * with. Answers once the user approves, or it stops.
+   */
   signInToSync(): Promise<EditResult>;
+  /**
+   * Connects a server of your own, by its address: checks it, then signs in to it through the
+   * browser. Answers once the user approves, or it stops.
+   */
+  connectSyncServer(address: string): Promise<ConnectResult>;
+  /**
+   * The terms and price of the server sync is with, or of Factwright's own for turning sync on.
+   * Null when there's no server, or it didn't answer.
+   */
+  syncServerTerms(): Promise<ServerTerms | null>;
   cancelSyncSignIn(): void;
   /** On the account's first device: makes the recovery key to save before sync turns on. */
   makeRecoveryKey(): Promise<RecoveryKeyResult>;

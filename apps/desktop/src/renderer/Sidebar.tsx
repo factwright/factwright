@@ -10,6 +10,7 @@ import { LevelsChip } from './LevelsChip.tsx';
 import { ProfileSwitcher } from './profiles/ProfileSwitcher.tsx';
 import styles from './Sidebar.module.css';
 import { SyncCard } from './sync/SyncCard.tsx';
+import { extensionWorks } from './sync/servers.ts';
 import { UpdateCard } from './updates/UpdateCard.tsx';
 import type { ClaudeStatusView } from './useClaudeStatus.ts';
 import type { LevelChoices } from './useLevelChoices.ts';
@@ -36,6 +37,7 @@ export function Sidebar({
   terminal,
   setup,
   sync,
+  factwrightSync,
   linkRequests = [],
   linkAsking = null,
   onOpenSync,
@@ -68,6 +70,8 @@ export function Sidebar({
   /** The latest check of Factwright's setup, and how to run it again. */
   setup: { check: SetupCheck | null; checking: boolean; checkAgain: () => void };
   sync: SyncStatus | 'checking';
+  /** Whether this copy has Factwright's own sync, which the browser extension saves through. */
+  factwrightSync: boolean;
   /** Other devices asking to link, which this computer can approve. */
   linkRequests?: RequestView[];
   /** This computer, asking to be linked. */
@@ -152,8 +156,8 @@ export function Sidebar({
           )}
         </div>
         <div className={styles.footer}>
-          {/* The extension saves through sync, which a copy built without a sync server can't do. */}
-          {sync !== 'checking' && sync.state !== 'no-server' && (
+          {/* The extension saves through Factwright's own sync, for now. */}
+          {extensionWorks(sync, factwrightSync) && (
             <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
               <Puzzle size={14} aria-hidden="true" />
               Browser extension

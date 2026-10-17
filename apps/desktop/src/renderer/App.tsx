@@ -382,6 +382,7 @@ export function App({ api }: { api: FactwrightApi }) {
           terminal={api.platform === 'win32' ? 'PowerShell' : 'Terminal'}
           setup={setup}
           sync={sync}
+          factwrightSync={api.factwrightSync}
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
@@ -421,7 +422,7 @@ export function App({ api }: { api: FactwrightApi }) {
                   about.update({ skipped: true });
                   setPicked('jobs');
                 }}
-                // A copy built without a sync server doesn't offer it.
+                // Sync with Factwright's own server, set up by a copy that has it, isn't this one's.
                 onOpenSync={
                   sync !== 'checking' && sync.state === 'no-server' ? null : () => setDialog('sync')
                 }

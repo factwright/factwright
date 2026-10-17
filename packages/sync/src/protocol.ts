@@ -254,7 +254,21 @@ export function isLinkRequest(value: unknown): value is LinkRequest {
 /** What the server can do beyond the basics, so devices offer only what it has. */
 export type Feature =
   /** Approving a new device from one that's set up: requests to link, at API.requests. */
-  'approve';
+  | 'approve'
+  /**
+   * Sync on this server is a subscription, so the apps show its price. Only a server that sells
+   * sync lists it, as Factwright's will once it does. A server of your own never does.
+   */
+  | 'subscription';
+
+const FEATURES: ReadonlySet<unknown> = new Set<Feature>(['approve', 'subscription']);
+
+/**
+ * The features a server's sign-in options list that this version knows. Anything that isn't a
+ * list, from a server too old to say, is none.
+ */
+export const knownFeatures = (value: unknown): Feature[] =>
+  Array.isArray(value) ? value.filter((each): each is Feature => FEATURES.has(each)) : [];
 
 /**
  * The terms of service and privacy policy that signing in to a server means agreeing to, as

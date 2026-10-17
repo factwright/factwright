@@ -22,11 +22,17 @@ test.afterAll(async () => {
   await server?.close();
 });
 
-/** A computer running the app, pointed at the sync server running locally. */
-async function computer(empty: boolean): Promise<Opened> {
+/**
+ * A computer running the app, with Factwright's own sync as the server running locally, or, given
+ * null, without Factwright's sync, as a copy built anywhere else is.
+ */
+async function computer(
+  empty: boolean,
+  factwright: string | null = server.url.origin,
+): Promise<Opened> {
   const dataDir = newDataFolder({ empty });
   folders.push(dataDir);
-  const opened = await openApp(dataDir, { FACTWRIGHT_SERVER_URL: server.url.origin });
+  const opened = await openApp(dataDir, { FACTWRIGHT_SERVER_URL: factwright ?? '' });
   apps.push(opened);
   await opened.app.evaluate(({ safeStorage, shell }) => {
     // A stand-in keychain, so tests never reach this computer's real one.
@@ -43,16 +49,16 @@ async function computer(empty: boolean): Promise<Opened> {
   return opened;
 }
 
-/** In the browser, signed in: the person checks the code and allows the app. */
-async function approveInBrowser({ app }: Opened) {
+/** In the browser, signed in to the server: the person checks the code and allows the app. */
+async function approveInBrowser({ app }: Opened, on: TestServer = server, who: Account = person) {
   await expect
     .poll(() => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened.length))
     .toBe(1);
   const url = await app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened[0]);
   const userCode = new URL(url ?? '').searchParams.get('user_code') ?? '';
-  const headers = { authorization: `Bearer ${person.token}`, 'content-type': 'application/json' };
-  await fetch(new URL(`/api/auth/device?user_code=${userCode}`, server.url), { headers });
-  await fetch(new URL('/api/auth/device/approve', server.url), {
+  const headers = { authorization: `Bearer ${who.token}`, 'content-type': 'application/json' };
+  await fetch(new URL(`/api/auth/device?user_code=${userCode}`, on.url), { headers });
+  await fetch(new URL('/api/auth/device/approve', on.url), {
     method: 'POST',
     headers,
     body: JSON.stringify({ userCode }),
@@ -146,4 +152,41 @@ test('links a third computer from the first, once both show the same emoji', asy
   await expect(laptop.window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible({
     timeout: 20_000,
   });
+});
+
+test('connects a server of your own, in a copy without Factwright’s sync', async () => {
+  // As a server of your own runs: with GitHub sign-in, and without Factwright's legal pages.
+  const own = await startServer({
+    TERMS_URL: '',
+    PRIVACY_URL: '',
+    GITHUB_CLIENT_ID: 'test-client',
+    GITHUB_CLIENT_SECRET: 'test-secret',
+  });
+  const desk = await computer(false, null);
+  try {
+    const sam = await own.signUp('Sam Rivera');
+    const { window } = desk;
+    await syncCard(desk).getByRole('button', { name: 'Turn on…' }).click();
+    // This copy hasn't got Factwright's sync, so only a server of your own is offered.
+    await expect(window.getByRole('region', { name: 'Your own server' })).toBeVisible();
+    await expect(window.getByRole('region', { name: 'Factwright’s sync' })).toHaveCount(0);
+    await window.getByRole('button', { name: 'Connect your server…' }).click();
+    await window.getByRole('textbox', { name: 'Your server’s address' }).fill(own.url.origin);
+    await window.getByRole('button', { name: 'Connect' }).click();
+    await expect(
+      window.getByText(`Your browser opened ${own.url.host}’s sign-in page.`),
+    ).toBeVisible();
+    await approveInBrowser(desk, own, sam);
+    await expect(window.getByRole('heading', { name: 'Save your recovery key' })).toBeVisible();
+    await window.getByText('I’ve saved my recovery key somewhere safe').click();
+    await window.getByRole('button', { name: 'Turn on sync' }).click();
+    await expect(window.getByRole('heading', { name: 'Sync' })).toBeVisible();
+    await expect(window.getByText(/^Sync server:/)).toContainText(own.url.host);
+    await expect(window.getByText(/Up to date/).first()).toBeVisible({ timeout: 20_000 });
+    // The account key went to that server, locked with the recovery key.
+    expect(await sam.client.keys()).not.toBeNull();
+  } finally {
+    await desk.app.close().catch(() => {});
+    await own.close();
+  }
 });

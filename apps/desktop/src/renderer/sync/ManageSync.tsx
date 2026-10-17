@@ -1,4 +1,4 @@
-import { EXTENSION_URL, PRIVACY_URL, TERMS_URL } from '@factwright/core';
+import { EXTENSION_URL } from '@factwright/core';
 import type { AccountInfo } from '@factwright/sync';
 import { Button, DialogActions } from '@factwright/ui';
 import { Smartphone } from 'lucide-react';
@@ -9,7 +9,8 @@ import { RequestsPanel } from './Approve.tsx';
 import { Groups } from './Groups.tsx';
 import { QrCode } from './QrCode.tsx';
 import styles from './SyncDialog.module.css';
-import { timeAgo } from './useSync.ts';
+import { extensionWorks, hostOf, whose } from './servers.ts';
+import { timeAgo, useServerTerms } from './useSync.ts';
 
 type On = Extract<SyncStatus, { state: 'on' }>;
 
@@ -93,8 +94,8 @@ function LinkPanel({ api }: { api: FactwrightApi }) {
 }
 
 /**
- * Sync once it's on: how it stands, the account's devices, adding one, the browser extension's
- * page, and turning it off here.
+ * Sync once it's on: how it stands, and with which server when it's one of your own, the
+ * account's devices, adding one, the browser extension's page, and turning it off here.
  */
 export function ManageSync({
   api,
@@ -110,6 +111,8 @@ export function ManageSync({
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmOff, setConfirmOff] = useState(false);
+  const own = status.ownServer ?? null;
+  const terms = useServerTerms(api, own);
 
   const load = useCallback(async () => {
     const result = await api.syncAccount();
@@ -144,6 +147,12 @@ export function ManageSync({
           </button>
         )}
       </p>
+      {own && (
+        <p className={styles.hint}>
+          Sync server: <strong className={styles.server}>{hostOf(own)}</strong>. To use another,
+          turn off sync on this computer first.
+        </p>
+      )}
       {status.skipped > 0 && (
         <p className={styles.hint}>
           {status.skipped === 1 ? 'One file stays' : `${status.skipped} files stay`} on this
@@ -183,18 +192,20 @@ export function ManageSync({
         <LinkPanel api={api} />
       </section>
 
-      <section className={styles.section} aria-labelledby="sync-extension">
-        <h3 id="sync-extension" className={styles.heading}>
-          Saving jobs from your browser
-        </h3>
-        <p className={styles.hint}>
-          Save to Factwright, an extension for Chrome and Firefox, saves the job you’re looking at
-          to your job hunt, with its posting, through sync.{' '}
-          <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-            About the extension
-          </a>
-        </p>
-      </section>
+      {extensionWorks(status, api.factwrightSync) && (
+        <section className={styles.section} aria-labelledby="sync-extension">
+          <h3 id="sync-extension" className={styles.heading}>
+            Saving jobs from your browser
+          </h3>
+          <p className={styles.hint}>
+            Save to Factwright, an extension for Chrome and Firefox, saves the job you’re looking at
+            to your job hunt, with its posting, through sync.{' '}
+            <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+              About the extension
+            </a>
+          </p>
+        </section>
+      )}
 
       {problem && (
         <p className={styles.problem} role="alert">
@@ -202,17 +213,19 @@ export function ManageSync({
         </p>
       )}
 
-      <p className={styles.hint}>
-        What sync keeps, and for how long, is in Factwright’s{' '}
-        <a className={styles.link} href={PRIVACY_URL} target="_blank" rel="noreferrer">
-          privacy policy
-        </a>
-        . Using sync means you agree to the{' '}
-        <a className={styles.link} href={TERMS_URL} target="_blank" rel="noreferrer">
-          terms of service
-        </a>
-        .
-      </p>
+      {terms?.legal && (
+        <p className={styles.hint}>
+          What sync keeps, and for how long, is in {whose(own)}{' '}
+          <a className={styles.link} href={terms.legal.privacy} target="_blank" rel="noreferrer">
+            privacy policy
+          </a>
+          . Using sync means you agree to {own ? 'its' : 'the'}{' '}
+          <a className={styles.link} href={terms.legal.terms} target="_blank" rel="noreferrer">
+            terms of service
+          </a>
+          .
+        </p>
+      )}
 
       {confirmOff ? (
         <div className={styles.confirm}>

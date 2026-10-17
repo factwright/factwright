@@ -46,6 +46,9 @@ const tick = () => vi.setSystemTime(new Date(Date.now() + 1000));
 
 const readJson = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
 
+/** Alex's sync account, on Factwright's own server. */
+const ALEX = { email: 'alex@example.com', server: null };
+
 /** A data folder as an earlier version left it: a job hunt, a tracker and sync's notes. */
 function earlierJobHunt(): string[] {
   mkdirSync(join(home, 'workspace', 'jobs'), { recursive: true });
@@ -379,17 +382,17 @@ describe('Profiles, as the window uses them', () => {
     const first = profiles(profileToOpen(home));
     // The first profile's file can't be written for now.
     mkdirSync(join(home, 'profile.json'));
-    first.opened.noteSync('alex@example.com');
+    first.opened.noteSync(ALEX);
     expect(first.opened.add('Sam').ok).toBe(true);
     rmSync(join(home, 'profile.json'), { recursive: true });
-    first.opened.noteSync('alex@example.com');
+    first.opened.noteSync(ALEX);
     expect(readJson(join(home, 'profile.json'))).toMatchObject({ sync: 'alex@example.com' });
     expect(readdirSync(home).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 
   it('notes the sync account a profile uses only once there are others, for them to turn away', () => {
     const first = profiles(profileToOpen(home));
-    first.opened.noteSync('alex@example.com');
+    first.opened.noteSync(ALEX);
     // With one profile, nothing is written in the app's folder.
     expect(existsSync(join(home, 'profile.json'))).toBe(false);
     expect(first.opened.add('Sam').ok).toBe(true);
@@ -398,12 +401,43 @@ describe('Profiles, as the window uses them', () => {
     const sam = listProfiles(home)[1] as ProfileFolder;
     const second = profiles(sam);
     expect(second.opened.otherSyncAccounts()).toEqual([
-      { name: 'Alex Rivera', email: 'alex@example.com' },
+      { name: 'Alex Rivera', email: 'alex@example.com', server: null },
     ]);
-    second.opened.noteSync('sam@example.com');
-    expect(first.opened.otherSyncAccounts()).toEqual([{ name: 'Sam', email: 'sam@example.com' }]);
+    second.opened.noteSync({ email: 'sam@example.com', server: null });
+    expect(first.opened.otherSyncAccounts()).toEqual([
+      { name: 'Sam', email: 'sam@example.com', server: null },
+    ]);
     // Turning sync off frees the account.
     second.opened.noteSync(null);
     expect(first.opened.otherSyncAccounts()).toEqual([]);
+  });
+
+  it('notes which server a profile syncs with, as the same email elsewhere is another account', () => {
+    const first = profiles(profileToOpen(home));
+    expect(first.opened.add('Sam').ok).toBe(true);
+    const own = 'https://factwright-sync.sam.workers.dev';
+    first.opened.noteSync({ email: 'alex@example.com', server: own });
+    expect(readJson(join(home, 'profile.json'))).toMatchObject({
+      sync: 'alex@example.com',
+      syncServer: own,
+    });
+    const second = profiles(listProfiles(home)[1] as ProfileFolder);
+    expect(second.opened.otherSyncAccounts()).toEqual([
+      { name: 'Alex Rivera', email: 'alex@example.com', server: own },
+    ]);
+    // Moving to Factwright's own sync, with the same email, is noted too.
+    first.opened.noteSync(ALEX);
+    expect(second.opened.otherSyncAccounts()).toEqual([
+      { name: 'Alex Rivera', email: 'alex@example.com', server: null },
+    ]);
+  });
+
+  it('reads a sync account noted before there were servers of your own as Factwright’s', () => {
+    expect(profiles(profileToOpen(home)).opened.add('Sam').ok).toBe(true);
+    writeFileSync(
+      join(home, 'profile.json'),
+      JSON.stringify({ name: 'Alex Rivera', sync: 'alex@example.com' }),
+    );
+    expect(profileToOpen(home).sync).toEqual(ALEX);
   });
 });

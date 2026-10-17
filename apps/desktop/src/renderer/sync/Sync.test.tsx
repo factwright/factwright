@@ -48,8 +48,8 @@ const OLD_SERVER: ApprovalsView = {
 };
 
 /** The window's API, with sample sync and spies for the rest it uses here. */
-function apiFor(start: string, approve: string | null = 'old') {
-  const sync = sampleSync(start, approve);
+function apiFor(start: string, approve: string | null = 'old', server: string | null = null) {
+  const sync = sampleSync(start, approve, server);
   const api = {
     ...sync,
     copyText: vi.fn(async () => ({ ok: true as const })),
@@ -157,8 +157,10 @@ describe('SyncDialog', () => {
 
   it('says signing in agrees to the terms and privacy policy, with a link to each', async () => {
     await openDialog(apiFor('off'));
-    const terms = screen.getByRole('link', { name: 'terms of service' });
+    // They're the server's own, from its sign-in options.
+    const terms = await screen.findByRole('link', { name: 'terms of service' });
     const privacy = screen.getByRole('link', { name: 'privacy policy' });
+    expect(terms.parentElement?.textContent).toMatch(/^Signing in to Factwright’s sync means/);
     expect(terms.getAttribute('href')).toBe('https://factwright.com/terms');
     expect(privacy.getAttribute('href')).toBe('https://factwright.com/privacy');
     // The window opens links in the browser, so neither leaves the app.
@@ -309,9 +311,9 @@ describe('SyncDialog', () => {
     expect(link.getAttribute('rel')).toBe('noreferrer');
   });
 
-  it('says a copy built without a sync server can’t sync, with nothing to sign in to', async () => {
+  it('says sync set up with Factwright’s own stays as it is in a copy without it', async () => {
     const onClose = vi.fn();
-    const api = apiFor('no-server');
+    const api = apiFor('no-server', 'old', 'own-only');
     render(
       <SyncDialog
         api={api}
@@ -320,8 +322,10 @@ describe('SyncDialog', () => {
         onClose={onClose}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Sync isn’t in this copy' })).toBeTruthy();
-    expect(screen.getByText(/built from its code without a sync server/)).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Factwright’s sync isn’t in this copy' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/which this copy of Factwright doesn’t have/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Sign in with your browser' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'OK' }));
     expect(onClose).toHaveBeenCalledOnce();
@@ -334,6 +338,161 @@ describe('SyncDialog', () => {
     expect(timeAgo('2026-10-12T11:59:00', now)).toBe('1 minute ago');
     expect(timeAgo('2026-10-12T09:00:00', now)).toBe('3 hours ago');
     expect(timeAgo('2026-10-10T09:00:00', now)).toMatch(/^on /);
+  });
+});
+
+describe('choosing a server', () => {
+  const OWN = 'factwright-sync.sam.workers.dev';
+
+  it('offers Factwright’s sync and a server of your own, side by side', async () => {
+    const { container } = await openDialog(apiFor('off'));
+    const factwright = screen.getByRole('region', { name: 'Factwright’s sync' });
+    const own = screen.getByRole('region', { name: 'Your own server' });
+    expect(
+      within(factwright).getByRole('button', { name: 'Sign in with your browser' }),
+    ).toBeTruthy();
+    expect(within(own).getByText('Free')).toBeTruthy();
+    const guide = within(own).getByRole('link', { name: 'How to set one up' });
+    expect(guide.getAttribute('href')).toBe('https://github.com/factwright/sync-server');
+    expect(guide.getAttribute('target')).toBe('_blank');
+    expect(within(own).getByRole('button', { name: 'Connect your server…' })).toBeTruthy();
+    // No price until Factwright's server says sync there is a subscription.
+    await screen.findByRole('link', { name: 'terms of service' });
+    expect(screen.queryByText(/a month/)).toBeNull();
+    expect(screen.queryByText(/Money’s tight/)).toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('shows the price once Factwright’s server says sync there is a subscription', async () => {
+    await openDialog(apiFor('off', 'old', 'priced'));
+    const factwright = screen.getByRole('region', { name: 'Factwright’s sync' });
+    expect(await within(factwright).findByText('$5 a month or $50 a year')).toBeTruthy();
+    expect(within(factwright).getByText('Already subscribed? Same button.')).toBeTruthy();
+    const ask = screen.getByRole('link', { name: 'steve@factwright.com' });
+    expect(ask.getAttribute('href')).toBe('mailto:steve@factwright.com');
+  });
+
+  it('offers only a server of your own in a copy without Factwright’s sync', async () => {
+    await openDialog(apiFor('off', 'old', 'own-only'));
+    expect(screen.queryByRole('region', { name: 'Factwright’s sync' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sign in with your browser' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Your own server' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'terms of service' })).toBeNull();
+  });
+
+  it('connects a server of your own, naming it as it signs in and once sync is on', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const api = apiFor('off');
+    const { container } = await openDialog(api);
+    await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
+    expect(screen.getByRole('heading', { name: 'Connect your own server' })).toBeTruthy();
+    const field = screen.getByRole('textbox', { name: 'Your server’s address' });
+    expect(document.activeElement).toBe(field);
+    expect(screen.getByText(/Use only a server you run or trust/)).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await user.type(field, OWN);
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(
+      await screen.findByText(new RegExp(`Your browser opened ${OWN}’s sign-in page`)),
+    ).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByRole('heading', { name: 'Save your recovery key' })).toBeTruthy();
+    await user.click(
+      screen.getByRole('checkbox', { name: 'I’ve saved my recovery key somewhere safe' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Turn on sync' }));
+    expect(await screen.findByRole('heading', { name: 'Sync' })).toBeTruthy();
+    expect(screen.getByText(OWN).parentElement?.textContent).toMatch(
+      new RegExp(`^Sync server: ${OWN}\\. To use another, turn off sync on this computer first\\.`),
+    );
+    // The browser extension can't sync through it yet, and it has no terms of its own.
+    expect(screen.queryByRole('region', { name: 'Saving jobs from your browser' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'terms of service' })).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('says what’s wrong with a server, with the page that helps', async () => {
+    const user = userEvent.setup();
+    await openDialog(apiFor('off'));
+    await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
+    const field = screen.getByRole('textbox', { name: 'Your server’s address' });
+    await user.type(field, 'old.example.com');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(
+      'Your server needs an update for this version of Factwright.',
+    );
+    expect(within(alert).getByRole('link', { name: 'How to update' }).getAttribute('href')).toBe(
+      'https://github.com/factwright/sync-server',
+    );
+  });
+
+  it('goes back to the first screen, and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    await openDialog(apiFor('off'));
+    await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
+    await user.type(screen.getByRole('textbox', { name: 'Your server’s address' }), OWN);
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Connect your server…' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
+    expect(
+      (screen.getByRole('textbox', { name: 'Your server’s address' }) as HTMLInputElement).value,
+    ).toBe(OWN);
+  });
+
+  it('signs in again to a server of your own, or turns sync off here to choose another', async () => {
+    const user = userEvent.setup();
+    const api = apiFor('signed-out', 'old', 'own');
+    await openDialog(api);
+    expect(screen.getByRole('heading', { name: 'Sign in to sync again' })).toBeTruthy();
+    expect(screen.getByText(new RegExp(`signed out of sync on ${OWN}`))).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sign in with your browser' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'turn off sync on this computer' }));
+    expect(screen.getByText(/To sync again, you choose a server and sign in/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Turn off here' }));
+    expect(await screen.findByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Factwright’s sync' })).toBeTruthy();
+  });
+
+  it('names a server of your own while signing in to it again', async () => {
+    render(
+      <SyncDialog
+        api={apiFor('off')}
+        status={{
+          state: 'signing-in',
+          code: 'WDJB-MJHT',
+          url: `https://${OWN}/device?user_code=WDJBMJHT`,
+          ownServer: `https://${OWN}`,
+        }}
+        approvals={OLD_SERVER}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(new RegExp(`Your browser opened ${OWN}’s sign-in page\\. Sign in there`)),
+    ).toBeTruthy();
+    cleanup();
+    render(
+      <SyncDialog
+        api={apiFor('off')}
+        status={{
+          state: 'signing-in',
+          code: 'WDJB-MJHT',
+          url: 'https://app.factwright.com/device?user_code=WDJBMJHT',
+        }}
+        approvals={OLD_SERVER}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        /Your browser opened Factwright’s sign-in page\. Sign in with GitHub or Google/,
+      ),
+    ).toBeTruthy();
   });
 });
 

@@ -8,7 +8,7 @@ import { Sidebar } from './Sidebar.tsx';
 afterEach(cleanup);
 
 /** The sidebar with sync as given, and everything else quiet. */
-function renderSidebar(sync: SyncStatus | 'checking') {
+function renderSidebar(sync: SyncStatus | 'checking', factwrightSync = true) {
   render(
     <Sidebar
       page="jobs"
@@ -18,6 +18,7 @@ function renderSidebar(sync: SyncStatus | 'checking') {
       onRecheckClaude={vi.fn()}
       setup={{ check: null, checking: false, checkAgain: vi.fn() }}
       sync={sync}
+      factwrightSync={factwrightSync}
       onOpenSync={vi.fn()}
       onOpenClaudeSettings={vi.fn()}
       levels={null}
@@ -35,11 +36,27 @@ describe('Sidebar', () => {
     expect(link.getAttribute('target')).toBe('_blank');
   });
 
-  it('leaves the extension out of a copy built without a sync server, which it saves through', () => {
-    renderSidebar({ state: 'no-server' });
+  it('leaves the extension out of a copy without Factwright’s sync, which it saves through', () => {
+    renderSidebar({ state: 'off' }, false);
     expect(screen.queryByRole('link', { name: 'Browser extension' })).toBeNull();
     // Supporting Factwright doesn't need sync.
     expect(screen.getByRole('link', { name: 'Support Factwright' })).toBeTruthy();
+    cleanup();
+    // Nor where this computer syncs through Factwright's, set up by a copy that has it.
+    renderSidebar({ state: 'no-server' }, false);
+    expect(screen.queryByRole('link', { name: 'Browser extension' })).toBeNull();
+  });
+
+  it('leaves the extension out with a server of your own, which it can’t reach yet', () => {
+    renderSidebar({
+      state: 'signed-out',
+      email: 'sam@example.com',
+      ownServer: 'https://factwright-sync.sam.workers.dev',
+    });
+    expect(screen.queryByRole('link', { name: 'Browser extension' })).toBeNull();
+    cleanup();
+    renderSidebar({ state: 'signed-out', email: 'sam@example.com' });
+    expect(screen.getByRole('link', { name: 'Browser extension' })).toBeTruthy();
   });
 
   it('waits for sync’s check before linking to the extension', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLegal } from './protocol.ts';
+import { isLegal, knownFeatures } from './protocol.ts';
 
 describe('a server’s terms and privacy policy', () => {
   it('are two https pages', () => {
@@ -24,5 +24,18 @@ describe('a server’s terms and privacy policy', () => {
     expect(isLegal({ terms: privacy })).toBe(false);
     expect(isLegal(null)).toBe(false);
     expect(isLegal('https://factwright.com/terms')).toBe(false);
+  });
+});
+
+describe('a server’s features', () => {
+  it('are the ones this version knows, from a list', () => {
+    expect(knownFeatures(['approve', 'subscription'])).toEqual(['approve', 'subscription']);
+    expect(knownFeatures(['approve', 'teleport', 7, null])).toEqual(['approve']);
+  });
+
+  it('are none from a server too old to list them', () => {
+    expect(knownFeatures(undefined)).toEqual([]);
+    expect(knownFeatures('approve')).toEqual([]);
+    expect(knownFeatures({ approve: true })).toEqual([]);
   });
 });

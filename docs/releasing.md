@@ -54,8 +54,8 @@ repository's Releases page.
 - **Only Factwright's own.** The workflow builds with `FACTWRIGHT_SYNC_SERVER`
   (https://app.factwright.com) and `FACTWRIGHT_DOWNLOADS_URL` (https://downloads.factwright.com/)
   only when it runs in factwright/factwright, outside pull requests: for a release, or by hand on a
-  branch. Builds anywhere else, a fork's or a pull request's included, have no sync server and
-  never look for updates. A release stops before it builds unless both are set and answer as
+  branch. Builds anywhere else, a fork's or a pull request's included, have no Factwright's sync,
+  only a server of your own, and never look for updates. A release stops before it builds unless both are set and answer as
   Factwright's, as one without them, or with either wrong, would leave everyone who installs it
   unable to sync, and stuck on it for good. Each built app's tests then check it can turn sync on,
   and that its update settings name the download site, only if it was built with them.
@@ -180,7 +180,8 @@ After `pnpm --filter @factwright/desktop build`:
   Code and checks it opens, reaches Claude Code with its own plugin, and reads the workspace.
 
 These builds are for trying out only: macOS and Windows warn about apps that aren't signed, and
-they have no sync server or update settings, so they can't sync and never update themselves.
+they have no sync server or update settings, so they sync only through a server of your own, and
+never update themselves.
 `build` reads `FACTWRIGHT_SYNC_SERVER` and `dist:mac` or `dist:win` reads `FACTWRIGHT_DOWNLOADS_URL`,
 as the release workflow sets them for Factwright's own builds.
 

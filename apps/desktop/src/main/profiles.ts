@@ -46,6 +46,19 @@ const OPEN_FILE = 'profiles.json';
 /** A profile's name and the sync account it uses, in the profile's own folder. */
 const PROFILE_FILE = 'profile.json';
 
+/**
+ * The sync account a profile uses: its email, and its server, which is a server of your own's
+ * address, or null for Factwright's own.
+ */
+export interface SyncAccountNote {
+  email: string;
+  server: string | null;
+}
+
+const sameAccount = (one: SyncAccountNote | null, other: SyncAccountNote | null) =>
+  one === other ||
+  (one !== null && other !== null && one.email === other.email && one.server === other.server);
+
 /** Claude Code's own folder, in an added profile's folder: its login, settings and history. */
 const CLAUDE_FOLDER = 'claude';
 
@@ -72,8 +85,8 @@ export interface ProfileFolder {
   named: boolean;
   /** Its data folder: the app's own for the first profile, and one inside it for the rest. */
   dir: string;
-  /** The email of the sync account it uses, once it's noted, so no other profile here uses it. */
-  sync: string | null;
+  /** The sync account it uses, once it's noted, so no other profile here uses it. */
+  sync: SyncAccountNote | null;
 }
 
 const isId = (value: unknown): value is string =>
@@ -128,7 +141,10 @@ function readProfile(home: string, id: string): ProfileFolder | null {
   if (id !== FIRST_PROFILE && !(isFolder(dir) && existsSync(file))) return null;
   const kept = readJson(file);
   const name = parseProfileName(kept?.name);
-  const sync = typeof kept?.sync === 'string' && kept.sync ? kept.sync : null;
+  const email = typeof kept?.sync === 'string' && kept.sync ? kept.sync : null;
+  // Noted before there were servers of your own, it's Factwright's.
+  const server = typeof kept?.syncServer === 'string' && kept.syncServer ? kept.syncServer : null;
+  const sync = email ? { email, server } : null;
   const unnamed = id === FIRST_PROFILE ? FIRST_NAME : NO_NAME;
   return { id, name: name ?? unnamed, named: name !== null, dir, sync };
 }
@@ -313,7 +329,7 @@ export interface ProfilesDeps {
 export class Profiles {
   private readonly deps: ProfilesDeps;
   /** The sync account the open profile uses, as sync last said. */
-  private syncAccount: string | null;
+  private syncAccount: SyncAccountNote | null;
   /** Whether that's kept with the profile, or doesn't need to be yet. */
   private syncKept = true;
 
@@ -446,20 +462,20 @@ export class Profiles {
   }
 
   /**
-   * Notes the sync account the open profile uses, by its email, or null once sync is off here.
-   * It's kept with the profile only once there are others, so they can turn it away.
+   * Notes the sync account the open profile uses, by its email and server, or null once sync is
+   * off here. It's kept with the profile only once there are others, so they can turn it away.
    */
-  noteSync(email: string | null): void {
-    if (email === this.syncAccount && this.syncKept) return;
-    this.syncAccount = email;
+  noteSync(account: SyncAccountNote | null): void {
+    if (sameAccount(account, this.syncAccount) && this.syncKept) return;
+    this.syncAccount = account;
     this.keepSyncAccount();
   }
 
-  /** The sync accounts the other profiles here use, by email, with each profile's name. */
-  otherSyncAccounts(): { name: string; email: string }[] {
+  /** The sync accounts the other profiles here use, by email and server, with each one's name. */
+  otherSyncAccounts(): { name: string; email: string; server: string | null }[] {
     return listProfiles(this.deps.home).flatMap((profile) =>
       profile.id !== this.deps.open.id && profile.sync
-        ? [{ name: profile.name, email: profile.sync }]
+        ? [{ name: profile.name, ...profile.sync }]
         : [],
     );
   }
@@ -469,9 +485,12 @@ export class Profiles {
     const profiles = listProfiles(home);
     const mine = profiles.find((profile) => profile.id === open.id);
     this.syncKept = true;
-    if (profiles.length < 2 || !mine || mine.sync === this.syncAccount) return;
+    if (profiles.length < 2 || !mine || sameAccount(mine.sync, this.syncAccount)) return;
     try {
-      keep(mine, { sync: this.syncAccount });
+      keep(mine, {
+        sync: this.syncAccount?.email ?? null,
+        syncServer: this.syncAccount?.server ?? null,
+      });
     } catch {
       // Tried again the next time sync says where it stands.
       this.syncKept = false;
