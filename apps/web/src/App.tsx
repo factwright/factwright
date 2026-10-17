@@ -20,6 +20,7 @@ import {
   type Session,
   signInOptions,
 } from './server.ts';
+import { forgetSignInError, signInError } from './sign-in-errors.ts';
 import { openVault, type Vault } from './vault.ts';
 
 type State =
@@ -67,7 +68,19 @@ export function App() {
   const [loadedAt, setLoadedAt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A sign-in that didn't work comes back to the page that started it, with why in the address.
+  // That's taken out of the address at once, and handed to the first page to open, and no other,
+  // which says it until the person tries again.
+  const [signInProblem, setSignInProblem] = useState(() =>
+    signInError(location.search, location.origin),
+  );
   const today = localDate();
+
+  useEffect(forgetSignInError, []);
+
+  useEffect(() => {
+    if (state.stage !== 'loading') setSignInProblem(null);
+  }, [state.stage]);
 
   useEffect(() => {
     void (async () => {
@@ -194,6 +207,7 @@ export function App() {
             title="Sign in to Factwright"
             lead="Sign in to let Factwright on your computer sync your job hunt."
             returnTo={location.pathname + location.search}
+            signInProblem={signInProblem}
           />
         </Shell>
       );
@@ -208,6 +222,7 @@ export function App() {
             lead: 'Sign in with the account you use in Factwright, to link this phone.',
           })}
           returnTo={linkCode ? '/link' : '/'}
+          signInProblem={signInProblem}
         />
       </Shell>
     );
@@ -229,7 +244,7 @@ export function App() {
     const userCode = new URLSearchParams(location.search).get('user_code') ?? '';
     return (
       <Shell nav={nav}>
-        <ApproveDevice userCode={userCode} providers={providers} />
+        <ApproveDevice userCode={userCode} providers={providers} signInProblem={signInProblem} />
       </Shell>
     );
   }
@@ -244,6 +259,7 @@ export function App() {
           providers={providers}
           legal={legal}
           onSignedOut={forgetHere}
+          signInProblem={signInProblem}
         />
       </Shell>
     );

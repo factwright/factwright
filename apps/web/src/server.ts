@@ -67,12 +67,17 @@ export async function signInOptions(): Promise<ServerOptions> {
 }
 
 /**
- * Goes to GitHub or Google to sign in, then comes back to this page. When it can't start,
+ * Goes to GitHub or Google to sign in, then comes back to this page. When it doesn't work, it
+ * still comes back here, with why in the address (see sign-in-errors.ts). When it can't start,
  * says why, for the page to show.
  */
 export async function signIn(provider: Provider, returnTo: string): Promise<string | null> {
   try {
-    const response = await post('/api/auth/sign-in/social', { provider, callbackURL: returnTo });
+    const response = await post('/api/auth/sign-in/social', {
+      provider,
+      callbackURL: returnTo,
+      errorCallbackURL: returnTo,
+    });
     const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
     if (response.ok && typeof url === 'string') {
       location.assign(url);

@@ -148,7 +148,11 @@ describe('the web view', () => {
     expect(sessionStorage.getItem('factwright-link-code')).toBe(code);
 
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
-    expect(requests.at(-1)?.body).toEqual({ provider: 'github', callbackURL: '/link' });
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/link',
+      errorCallbackURL: '/link',
+    });
   });
 
   it('once signed in, uses the code just once', async () => {
@@ -213,6 +217,7 @@ describe('the web view', () => {
     expect(requests.at(-1)?.body).toEqual({
       provider: 'github',
       callbackURL: '/device?user_code=WDJBMJHT',
+      errorCallbackURL: '/device?user_code=WDJBMJHT',
     });
   });
 
@@ -222,5 +227,88 @@ describe('the web view', () => {
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Let your computer sign in?' })).toBeTruthy();
     expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+  });
+});
+
+describe('a sign-in that didn’t work', () => {
+  const CANCELED = 'Signing in was canceled. Try again whenever you’re ready.';
+
+  /** The page sign-in comes back to, with why it didn't work in the address. */
+  const back = (path: string, error: Record<string, string>) =>
+    history.replaceState(
+      null,
+      '',
+      `${path}${path.includes('?') ? '&' : '?'}${new URLSearchParams(error)}`,
+    );
+
+  it('says a server of your own is private, in Factwright’s words, and takes it out of the address', async () => {
+    back('/', { error: 'not_listed', error_description: 'This Factwright server is private.' });
+    server(null);
+    render(<App />);
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'This Factwright server is private: only the GitHub accounts its owner lists can sign in. If it’s yours, add your GitHub user name to ALLOWED_GITHUB_USERS in its settings on Cloudflare.',
+    );
+    expect(screen.getByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+    expect(location.pathname + location.search).toBe('/');
+  });
+
+  it('comes back to the code a computer showed, once canceled at GitHub, to try again', async () => {
+    back('/device?user_code=WDJBMJHT', {
+      error: 'access_denied',
+      error_description: 'The user has denied your application access.',
+    });
+    const requests = server(null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(CANCELED);
+    expect(location.pathname + location.search).toBe('/device?user_code=WDJBMJHT');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/device?user_code=WDJBMJHT',
+      errorCallbackURL: '/device?user_code=WDJBMJHT',
+    });
+  });
+
+  it('says what the server said, for a code Factwright doesn’t know', async () => {
+    back('/', { error: 'something_new', error_description: 'Something new went wrong.' });
+    server(null);
+    render(<App />);
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Signing in didn’t work: Something new went wrong.',
+    );
+  });
+
+  it('still asks a signed-in browser about the code, saying why signing in again didn’t', async () => {
+    back('/device?user_code=WDJBMJHT', { error: 'access_denied' });
+    server(SESSION);
+    render(<App />);
+    expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(CANCELED);
+    expect(location.search).toBe('?user_code=WDJBMJHT');
+  });
+
+  it('says it on the page it came back to, and not again', async () => {
+    back('/account', { error: 'access_denied' });
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    fakeServer({
+      'GET /api/auth/get-session': () => SESSION,
+      'GET /api/sign-in-options': () => ({ providers: ['github'] }),
+      'GET /api/sync/changes': () => ({ changes: [], cursor: 0, more: false }),
+      'GET /api/account': () => ({
+        user: { ...SESSION.user, since: '2026-10-01T12:00:00.000Z' },
+        devices: [],
+        usage: { bytes: 0, limit: 1024 ** 3, records: 0, files: 0 },
+      }),
+    });
+    render(<App />);
+    expect((await screen.findByRole('alert')).textContent).toBe(CANCELED);
+
+    await userEvent.click(screen.getByRole('link', { name: 'Jobs' }));
+    expect(await screen.findByText('No jobs yet')).toBeTruthy();
+    await userEvent.click(screen.getByRole('link', { name: 'Account' }));
+    expect(await screen.findByText(/of 1 GB used/)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

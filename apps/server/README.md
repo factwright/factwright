@@ -4,7 +4,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 
 - **One private store per account:** a Durable Object with its own database, plus a folder of encrypted files in R2.
 - **Identity from the session:** the account always comes from the verified session, never from the request.
-- **Sign-in:** [Better Auth](https://www.better-auth.com), with GitHub or Google. The desktop app and the browser extension, Save to Factwright, each sign in with a device code you approve in your browser, under a client ID of their own. Accounts and sessions live in D1. A session keeps the name of its device and no IP address, and GitHub's and Google's tokens aren't kept. A server of your own can let in only the GitHub accounts it lists (`ALLOWED_GITHUB_USERS`).
+- **Sign-in:** [Better Auth](https://www.better-auth.com), with GitHub or Google. The desktop app and the browser extension, Save to Factwright, each sign in with a device code you approve in your browser, under a client ID of their own. Accounts and sessions live in D1. A session keeps the name of its device and no IP address, and GitHub's and Google's tokens aren't kept. A server of your own can let in only the GitHub accounts it lists (`ALLOWED_GITHUB_USERS`). A sign-in that doesn't work goes back to the web view, never to Better Auth's own error page: to the page that started it, such as the code the app showed, with why in the address (`error` and `error_description`), for the web view to say in its own words. One that can't say where it started, such as one that ran out, goes to the web view's first page.
 - **The web view too:** it serves [the web view](../web), so the phone, sign-in and the API share one address.
 
 | Part | What it does |
@@ -67,6 +67,8 @@ The tests run the real Worker in workerd, through Wrangler's test harness, and t
 pnpm --filter @factwright/server test
 ```
 
+Signing in with GitHub from start to finish, as when it turns someone away or they cancel at GitHub, runs sign-in on its own, with GitHub faked and the accounts kept in memory ([`test/github.ts`](test/github.ts)).
+
 ## Deploying
 It runs on Cloudflare's free plan. The first deploy creates the database, the file bucket and the `app.factwright.com` address on its own, and Analytics Engine makes the dataset for the daily totals on the first count.
 
@@ -86,7 +88,7 @@ Only Factwright's own releases sync through app.factwright.com. Any copy of the 
 **Or from here.** In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL` and `PRIVACY_URL` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it. Then follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
 
 **Then, either way:**
-- Set who can sign in: `ALLOWED_GITHUB_USERS`, your GitHub user name, as a secret (`wrangler secret put ALLOWED_GITHUB_USERS`). To let in someone else too, add their user name after a comma. Only those accounts can make an account or sign in again, and anyone else is turned away with a note that the server is private. Unset, anyone with GitHub can, as on Factwright's own server. The Deploy button asks for it. Taking someone off the list stops them signing in again, but their devices stay signed in until they sign out.
+- Set who can sign in: `ALLOWED_GITHUB_USERS`, your GitHub user name, as a secret (`wrangler secret put ALLOWED_GITHUB_USERS`). To let in someone else too, add their user name after a comma. Only those accounts can make an account or sign in again, and anyone else is turned away, back in the web view, with a note that the server is private. Unset, anyone with GitHub can, as on Factwright's own server. The Deploy button asks for it. Taking someone off the list stops them signing in again, but their devices stay signed in until they sign out.
 - In Factwright, choose **Turn on…** under Sync, then **Connect your server…**, and type your server's address, such as `https://factwright-sync.yourname.workers.dev`. The app checks it answers as a sync server, then signs in to it through your browser ([apps/desktop](../desktop#sync)).
 - With no `TERMS_URL` and `PRIVACY_URL`, neither the web view nor the app names any terms or privacy policy for your server. Factwright's cover Neatifai's services, not yours.
 

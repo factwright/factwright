@@ -50,6 +50,7 @@ describe('signing in', () => {
     expect(requests[0]?.body).toEqual({
       provider: 'github',
       callbackURL: '/device?user_code=WDJBMJHT',
+      errorCallbackURL: '/device?user_code=WDJBMJHT',
     });
     const buttons = screen.getAllByRole('button') as HTMLButtonElement[];
     expect(buttons.map((button) => [button.textContent, button.disabled])).toEqual([
@@ -84,6 +85,26 @@ describe('signing in', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Can’t reach Factwright right now. Check your connection.',
     );
+  });
+
+  it('says why signing in from here didn’t work, until the person tries again', async () => {
+    fakeServer({
+      'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
+    });
+    const { container } = render(
+      <SignIn
+        providers={['github']}
+        legal={LEGAL}
+        returnTo="/"
+        signInProblem="Signing in was canceled. Try again whenever you’re ready."
+      />,
+    );
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Signing in was canceled. Try again whenever you’re ready.',
+    );
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('says when this server has no way to sign in yet', () => {

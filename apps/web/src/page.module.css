@@ -33,6 +33,8 @@
 
 .problem {
   color: var(--fw-bad);
+  /* An address in it, such as a server's, wraps rather than widening the page on a phone. */
+  overflow-wrap: anywhere;
 }
 
 .hint a {

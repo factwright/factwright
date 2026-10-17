@@ -11,6 +11,7 @@ export function SignIn({
   title = 'Your job hunt, anywhere',
   lead = 'Sign in to see the job hunt Factwright syncs from your computer. It opens here, in this browser, and stays locked everywhere else.',
   returnTo,
+  signInProblem = null,
 }: {
   providers: Provider[];
   /** The terms and privacy policy signing in agrees to, when the server has them. */
@@ -18,9 +19,11 @@ export function SignIn({
   title?: string;
   lead?: string;
   returnTo: string;
+  /** Why signing in from here didn't work, just now, to say until the person tries again. */
+  signInProblem?: string | null;
 }) {
   const [going, setGoing] = useState<Provider | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState(signInProblem);
   const start = async (provider: Provider) => {
     setGoing(provider);
     setProblem(null);

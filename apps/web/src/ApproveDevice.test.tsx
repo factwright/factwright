@@ -82,11 +82,33 @@ describe('letting the desktop app sign in', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
     expect(await screen.findByText(/sign in again here first/)).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
-    // GitHub brings the browser back to the same code.
+    // GitHub brings the browser back to the same code, whether signing in works or not.
     expect(requests.at(-1)?.body).toEqual({
       provider: 'github',
       callbackURL: '/device?user_code=WDJBMJHT',
+      errorCallbackURL: '/device?user_code=WDJBMJHT',
     });
+  });
+
+  it('says why signing in again didn’t work, with the code still to answer', async () => {
+    fakeServer({
+      'GET /api/auth/device': pending,
+      'POST /api/auth/device/approve': () => ({ success: true }),
+    });
+    render(
+      <ApproveDevice
+        userCode="WDJBMJHT"
+        providers={['github']}
+        signInProblem="Signing in was canceled. Try again whenever you’re ready."
+      />,
+    );
+    expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Signing in was canceled. Try again whenever you’re ready.',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Your computer is signed in.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('says when an answer didn’t go through', async () => {
