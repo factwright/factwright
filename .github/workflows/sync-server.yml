@@ -1,0 +1,52 @@
+name: Sync server copy
+
+# Checks that the sync server can still be made ready to deploy, as github.com/factwright/sync-server
+# holds it for people who run their own (apps/server/scripts/sync-server-copy.ts), and that Wrangler
+# takes it as it is. sync-server's own workflow makes and publishes it from each release's source,
+# so nothing here publishes it or needs a key.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/sync-server.yml
+  pull_request:
+    paths:
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/sync-server.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  copy:
+    name: Make the sync server ready to deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Only the server, the web view and what they're built from.
+      - run: pnpm install --frozen-lockfile --filter "@factwright/server..." --filter "@factwright/web..."
+      - run: pnpm --filter @factwright/server copy
+      - name: Wrangler takes it as it is
+        working-directory: apps/server/dist/sync-server
+        run: ../../node_modules/.bin/wrangler deploy --dry-run

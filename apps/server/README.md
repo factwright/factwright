@@ -20,6 +20,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `src/sync-totals.ts` | How much sync is used, in totals only: once a day, its accounts and sign-ins, kept in Workers Analytics Engine for the stats command in [`apps/site`](../site) |
 | `src/live.ts` | Tickets for listening to changes as they happen |
 | `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
+| `scripts/sync-server-copy.ts` | The server ready to deploy, as [github.com/factwright/sync-server](https://github.com/factwright/sync-server) holds it for people who run their own (`pnpm copy`) |
 
 ## The API
 Every route answers only the account of the session that calls it. The desktop app sends its session as a bearer token, and the web view as a cookie. A change sent with the cookie must come from the app's own pages, so another site can't make a signed-in browser act.
@@ -78,11 +79,15 @@ It runs on Cloudflare's free plan. The first deploy creates the database, the fi
 7. An `ADMIN_TOKEN` secret, to restore an account's store from a backup, or delete an account for someone who asked. Without it, neither works.
 
 ### Running your own
-Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one. To run your own:
-1. In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL` and `PRIVACY_URL` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it.
-2. Follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
-3. Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://factwright.yourname.workers.dev pnpm --filter @factwright/desktop build`. The build reads it, so set it there, then make the installers as usual.
-4. With `TERMS_URL` and `PRIVACY_URL` gone, the web view names no terms or privacy policy. A copy of the app built this way still links to factwright.com's ([`packages/core/src/legal.ts`](../../packages/core/src/legal.ts)), which cover Neatifai's services, not yours.
+Only Factwright's own releases sync through app.factwright.com. A copy of the app built anywhere else, such as from a fork, has no sync server until it's built with one.
+
+**Ready to deploy.** Within hours of each release, [github.com/factwright/sync-server](https://github.com/factwright/sync-server) has its server, with Cloudflare's Deploy button and the steps around it: a free workers.dev address, a GitHub OAuth app, and three secrets. Its own workflow makes it from that release's source with `pnpm --filter @factwright/server copy`, which you can run too, into `dist/sync-server` ([`scripts/sync-server-copy.ts`](scripts/sync-server-copy.ts)).
+
+**Or from here.** In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL` and `PRIVACY_URL` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it. Then follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
+
+**Then, either way:**
+- Build the app with `FACTWRIGHT_SYNC_SERVER` set to your server's address, such as `FACTWRIGHT_SYNC_SERVER=https://factwright-sync.yourname.workers.dev pnpm --filter @factwright/desktop build`. The build reads it, so set it there, then make the installers as usual.
+- With no `TERMS_URL` and `PRIVACY_URL`, the web view names no terms or privacy policy. A copy of the app built this way still links to factwright.com's ([`packages/core/src/legal.ts`](../../packages/core/src/legal.ts)), which cover Neatifai's services, not yours.
 
 ### Restoring an account
 Each store is backed up to R2 every day, and kept for 14 days. To put one back as it was on a day, with `ADMIN_TOKEN` set:
