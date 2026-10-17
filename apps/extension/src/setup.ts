@@ -280,6 +280,22 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     await giveBack(server, (await loadAccount())?.server ?? null);
     signedOut(note, choice);
   };
+  try {
+    await signInThrough(server, failed);
+  } catch (error) {
+    // Whatever goes wrong, such as the browser's storage failing, ends it the same way.
+    await failed(reasonOf(error, server));
+  }
+}
+
+/**
+ * Signs in through a server the browser lets the extension reach, and links it once it's in. When
+ * it can't, `failed` says why.
+ */
+async function signInThrough(
+  server: string,
+  failed: (note?: string) => Promise<void>,
+): Promise<void> {
   if (isOwn(server)) {
     show(
       app,
@@ -298,13 +314,7 @@ async function signIn(server: string, choice: Choice): Promise<void> {
   }
   await changeSettings({ server });
   const flow = deviceSignIn(server);
-  let pending: Awaited<ReturnType<typeof flow.start>>;
-  try {
-    pending = await flow.start();
-  } catch (error) {
-    await failed(reasonOf(error, server));
-    return;
-  }
+  const pending = await flow.start();
   // Only the server's own sign-in page, never an address it could name elsewhere.
   const at = URL.canParse(pending.url) ? new URL(pending.url) : null;
   if (at?.origin !== server) {
@@ -338,20 +348,16 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     await failed(result.reason === 'canceled' ? undefined : result.message);
     return;
   }
-  try {
-    const info = await clientFor(server, result.token).account();
-    const account: Account = {
-      server,
-      user: info.user.id,
-      email: info.user.email,
-      token: result.token,
-      keys: null,
-    };
-    await saveAccount(account);
-    void link(account);
-  } catch (error) {
-    await failed(reasonOf(error, server));
-  }
+  const info = await clientFor(server, result.token).account();
+  const account: Account = {
+    server,
+    user: info.user.id,
+    email: info.user.email,
+    token: result.token,
+    keys: null,
+  };
+  await saveAccount(account);
+  void link(account);
 }
 
 // --- Linking ------------------------------------------------------------------------------
