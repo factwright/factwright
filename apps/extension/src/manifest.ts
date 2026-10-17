@@ -1,17 +1,28 @@
 /** The browsers the extension is built for, each with a manifest of its own. */
 export type Target = 'chrome' | 'firefox';
 
-/** Factwright's sync server, the only site the extension may reach, unless a build names another. */
-export const DEFAULT_SERVER = 'https://app.factwright.com';
+/**
+ * Factwright's sync server: the one the stores' builds sync through, unless you choose a server of
+ * your own in setup. A build can name another with VITE_FACTWRIGHT_SYNC_SERVER (src/server.ts).
+ */
+export const FACTWRIGHT_SYNC = 'https://app.factwright.com';
 
 /**
- * The site the extension may reach, as a browser's permission names it: the sync server's, on any
- * port, since match patterns leave ports out.
+ * A sync server's site, as a browser's permission names it: the server's, on any port, since match
+ * patterns leave ports out.
  */
 export const hostPattern = (server: string) => {
   const { protocol, hostname } = new URL(server);
   return `${protocol}//${hostname}/*`;
 };
+
+/**
+ * Where a sync server of your own may be, which the extension may ask the browser to let it reach:
+ * any https address, and in a build for testing, this computer's over http too. Setup asks for the
+ * one address you type, only when you choose a server of your own.
+ */
+export const ownServers = (forStores: boolean): string[] =>
+  forStores ? ['https://*/*'] : ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
 
 /** The extension's ID on Firefox, which Firefox needs to sign it and to keep its data. */
 export const FIREFOX_ID = 'save@factwright.com';
@@ -27,13 +38,15 @@ const icons = Object.fromEntries(ICON_SIZES.map((size) => [size, `icons/${size}.
  * - running that one reading function in it (scripting)
  * - its own storage, for its sign-in and settings (storage)
  * - its item in the page's right-click menu (contextMenus)
- * - reaching Factwright's sync server, and no other site (host permissions)
+ * - reaching the sync server it's built for, Factwright's, and no other site (host permissions)
+ * - reaching a sync server of your own instead, asked for only when you choose one in setup, and
+ *   then only for its address (optional host permissions)
  * It has no content scripts and nothing pages can load, so sites can't tell it's installed.
  */
 export function manifest(
   target: Target,
   version: string,
-  server: string = DEFAULT_SERVER,
+  server: string = FACTWRIGHT_SYNC,
 ): Record<string, unknown> {
   const common = {
     manifest_version: 3,
@@ -51,6 +64,10 @@ export function manifest(
     },
     permissions: ['activeTab', 'scripting', 'storage', 'contextMenus'],
     host_permissions: [hostPattern(server)],
+    // The server it's built for is asked for at install, so it's never asked for again.
+    optional_host_permissions: ownServers(server === FACTWRIGHT_SYNC).filter(
+      (pattern) => pattern !== hostPattern(server),
+    ),
     commands: {
       'save-job': {
         suggested_key: { default: 'Alt+Shift+S' },
