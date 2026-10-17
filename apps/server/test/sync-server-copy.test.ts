@@ -50,12 +50,17 @@ describe('the sync server, ready to deploy', () => {
     }
   });
 
-  it('sets up the database’s tables before each deploy', () => {
-    const { scripts, devDependencies } = copyPackage('0.9.0', '4.145.0') as {
-      scripts: { deploy: string };
+  it('sets up the database’s tables before each deploy, by its binding', () => {
+    // The Deploy button lets you rename the database, and changes wrangler.jsonc to match but
+    // not package.json, so its scripts name the database by its binding, never by its name.
+    const { scripts, devDependencies } = copyPackage('0.9.0', '4.145.0', copy) as {
+      scripts: { deploy: string; dev: string };
       devDependencies: { wrangler: string };
     };
-    expect(scripts.deploy).toBe(`wrangler d1 migrations apply ${NAME} --remote && wrangler deploy`);
+    expect(scripts).toEqual({
+      deploy: 'wrangler d1 migrations apply DB --remote && wrangler deploy',
+      dev: 'wrangler d1 migrations apply DB --local && wrangler dev',
+    });
     expect(devDependencies.wrangler).toBe('4.145.0');
   });
 
