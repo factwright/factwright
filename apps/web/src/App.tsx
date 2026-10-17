@@ -1,5 +1,5 @@
 import { localDate } from '@factwright/core';
-import type { AccountKeys } from '@factwright/sync';
+import type { AccountKeys, Legal } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
@@ -26,12 +26,13 @@ type State =
   | { stage: 'loading' }
   /** The server couldn't say who's signed in: offline, or busy. */
   | { stage: 'unreachable' }
-  | { stage: 'signed-out'; providers: Provider[] }
+  | { stage: 'signed-out'; providers: Provider[]; legal: Legal | null }
   | {
       stage: 'signed-in';
       session: Session;
       providers: Provider[];
       features: ServerOptions['features'];
+      legal: Legal | null;
       keys: AccountKeys | null;
     };
 
@@ -70,7 +71,10 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const [session, { providers, features }] = await Promise.all([getSession(), signInOptions()]);
+      const [session, { providers, features, legal }] = await Promise.all([
+        getSession(),
+        signInOptions(),
+      ]);
       if (session === undefined) {
         setState({ stage: 'unreachable' });
         return;
@@ -79,7 +83,7 @@ export function App() {
         // Signed out from another device, run out, or the account deleted: this browser's keys
         // go too, as signing out here forgets them. The sign-in page doesn't wait for them to go.
         void forgetKeys().catch(() => {});
-        setState({ stage: 'signed-out', providers });
+        setState({ stage: 'signed-out', providers, legal });
         return;
       }
       // Signed in, the code is used from here, once. A code that didn't work isn't tried again.
@@ -89,6 +93,7 @@ export function App() {
         session,
         providers,
         features,
+        legal,
         keys: await savedKeys(session.user.id),
       });
     })();
@@ -104,6 +109,7 @@ export function App() {
     setState((current) => ({
       stage: 'signed-out',
       providers: 'providers' in current ? current.providers : [],
+      legal: 'legal' in current ? current.legal : null,
     }));
   }, []);
 
@@ -178,12 +184,13 @@ export function App() {
   }
 
   if (state.stage === 'signed-out') {
-    const { providers } = state;
+    const { providers, legal } = state;
     if (path === '/device') {
       return (
         <Shell>
           <SignIn
             providers={providers}
+            legal={legal}
             title="Sign in to Factwright"
             lead="Sign in to let Factwright on your computer sync your job hunt."
             returnTo={location.pathname + location.search}
@@ -195,6 +202,7 @@ export function App() {
       <Shell>
         <SignIn
           providers={providers}
+          legal={legal}
           {...(linkCode && {
             title: 'Link this phone',
             lead: 'Sign in with the account you use in Factwright, to link this phone.',
@@ -205,7 +213,7 @@ export function App() {
     );
   }
 
-  const { session, providers, features } = state;
+  const { session, providers, features, legal } = state;
   const nav = (
     <>
       <PageLink to="/" current={path === '/' || path.startsWith('/jobs/')}>
@@ -234,6 +242,7 @@ export function App() {
           vault={vault}
           keys={keys}
           providers={providers}
+          legal={legal}
           onSignedOut={forgetHere}
         />
       </Shell>

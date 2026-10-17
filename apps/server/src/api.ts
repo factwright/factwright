@@ -16,7 +16,7 @@ import {
 } from '@factwright/sync';
 import type { Auth } from './auth.ts';
 import { deviceName } from './auth-options.ts';
-import type { Env } from './env.ts';
+import { appUrl, type Env } from './env.ts';
 import { checkTicket, makeTicket } from './live.ts';
 import { type Asker, DELETED, SLOW_DOWN, type UserStore } from './store.ts';
 
@@ -479,7 +479,7 @@ async function listen(request: Request, env: Env, url: URL): Promise<Response> {
  */
 function fromAppPages(request: Request, env: Env): boolean {
   if (request.method === 'GET' || !request.headers.has('cookie')) return true;
-  return request.headers.get('origin') === new URL(env.APP_URL).origin;
+  return request.headers.get('origin') === appUrl(env, request);
 }
 
 /** Answers the API, for the account the request's session belongs to and no other. */

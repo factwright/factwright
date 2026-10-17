@@ -1,5 +1,4 @@
-import { PRIVACY_URL, TERMS_URL } from '@factwright/core';
-import type { AccountInfo, AccountKeys } from '@factwright/sync';
+import type { AccountInfo, AccountKeys, Legal } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { strToU8, zipSync } from 'fflate';
 import { Download } from 'lucide-react';
@@ -61,12 +60,15 @@ export function Account({
   vault,
   keys,
   providers,
+  legal,
   onSignedOut = () => {},
 }: {
   email: string;
   vault: Vault | null;
   keys: AccountKeys | null;
   providers: Provider[];
+  /** The terms and privacy policy using sync agrees to, when the server has them. */
+  legal: Legal | null;
   /** The server said this browser isn't signed in any more. */
   onSignedOut?: () => void;
 }) {
@@ -258,17 +260,19 @@ export function Account({
         </p>
       )}
 
-      <p className={page.hint}>
-        What sync keeps, and for how long, is in Factwright’s{' '}
-        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
-          privacy policy
-        </a>
-        . Using sync means you agree to the{' '}
-        <a href={TERMS_URL} target="_blank" rel="noreferrer">
-          terms of service
-        </a>
-        .
-      </p>
+      {legal && (
+        <p className={page.hint}>
+          What sync keeps, and for how long, is in Factwright’s{' '}
+          <a href={legal.privacy} target="_blank" rel="noreferrer">
+            privacy policy
+          </a>
+          . Using sync means you agree to the{' '}
+          <a href={legal.terms} target="_blank" rel="noreferrer">
+            terms of service
+          </a>
+          .
+        </p>
+      )}
     </div>
   );
 }

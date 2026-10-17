@@ -1,4 +1,5 @@
 import type { Job } from '@factwright/core';
+import type { Legal } from '@factwright/sync';
 import { vi } from 'vitest';
 import type { Vault } from './vault.ts';
 
@@ -64,6 +65,12 @@ export const vaultOf = (jobs: Job[], more: Partial<Vault> = {}): Vault => ({
   pages: new Map(jobs.map((job, index) => [job.id, `pageCode${index + 1}`])),
   ...more,
 });
+
+/** The terms and privacy policy Factwright's own server says signing in agrees to. */
+export const LEGAL: Legal = {
+  terms: 'https://factwright.com/terms',
+  privacy: 'https://factwright.com/privacy',
+};
 
 /** A request the stand-in server got. */
 export interface SeenRequest {

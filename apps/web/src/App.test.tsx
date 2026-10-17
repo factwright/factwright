@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.tsx';
 import { forgetKeys, savedKeys } from './keys.ts';
-import { fakeServer } from './testing.ts';
+import { fakeServer, LEGAL } from './testing.ts';
 
 // The test browser has no IndexedDB, and what's kept there is the page's own business.
 vi.mock('./keys.ts', () => ({
@@ -40,6 +40,36 @@ describe('the web view', () => {
     server(null);
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+  });
+
+  it('links to the terms and privacy policy the server names', async () => {
+    history.replaceState(null, '', '/');
+    fakeServer({
+      'GET /api/auth/get-session': () => null,
+      'GET /api/sign-in-options': () => ({ providers: ['github'], legal: LEGAL }),
+    });
+    render(<App />);
+    const terms = await screen.findByRole('link', { name: 'terms of service' });
+    expect(terms.getAttribute('href')).toBe(LEGAL.terms);
+    expect(screen.getByRole('link', { name: 'privacy policy' }).getAttribute('href')).toBe(
+      LEGAL.privacy,
+    );
+  });
+
+  it('names no terms when the server has none, or names pages that aren’t safe to link', async () => {
+    const unsafe = { terms: 'javascript:alert(1)', privacy: 'https://example.com/privacy' };
+    for (const legal of [undefined, unsafe]) {
+      history.replaceState(null, '', '/');
+      fakeServer({
+        'GET /api/auth/get-session': () => null,
+        'GET /api/sign-in-options': () => ({ providers: ['github'], legal }),
+      });
+      const { unmount } = render(<App />);
+      expect(await screen.findByRole('heading', { name: 'Your job hunt, anywhere' })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'terms of service' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'privacy policy' })).toBeNull();
+      unmount();
+    }
   });
 
   it('forgets this browser’s keys once the server says it’s signed out', async () => {

@@ -204,9 +204,13 @@ describe('signing in on the web', () => {
     expect(started.status).toBe(403);
   });
 
-  it('tells the web view which ways it has to sign in, and what more it can do', async () => {
+  it('tells the web view which ways it has to sign in, what more it can do, and its terms', async () => {
     const response = await fetch(new URL('/api/sign-in-options', server.url));
-    expect(await response.json()).toEqual({ providers: ['github'], features: ['approve'] });
+    expect(await response.json()).toEqual({
+      providers: ['github'],
+      features: ['approve'],
+      legal: { terms: 'https://factwright.com/terms', privacy: 'https://factwright.com/privacy' },
+    });
   });
 
   it('has no Google until it’s set up', async () => {

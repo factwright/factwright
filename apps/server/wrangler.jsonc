@@ -15,8 +15,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  // Factwright's own server. A server of your own leaves out APP_URL and the two legal pages, and
+  // `routes` above, so it runs at its workers.dev address with no terms of Neatifai's.
   "vars": {
     "APP_URL": "https://app.factwright.com",
+    "TERMS_URL": "https://factwright.com/terms",
+    "PRIVACY_URL": "https://factwright.com/privacy",
     "STORAGE_LIMIT_MB": "1024"
   },
   // Accounts and sessions, for signing in.

@@ -256,6 +256,31 @@ export type Feature =
   /** Approving a new device from one that's set up: requests to link, at API.requests. */
   'approve';
 
+/**
+ * The terms of service and privacy policy that signing in to a server means agreeing to, as
+ * Factwright's own server has them. A server of your own has none, unless you set yours.
+ */
+export interface Legal {
+  terms: string;
+  privacy: string;
+}
+
+/** An address a page can link to safely: https, with nothing that could run a script. */
+function isHttps(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2000) return false;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export const isLegal = (value: unknown): value is Legal =>
+  typeof value === 'object' &&
+  value !== null &&
+  isHttps((value as Partial<Legal>).terms) &&
+  isHttps((value as Partial<Legal>).privacy);
+
 /** What the server says when a request fails. */
 export interface ErrorBody {
   error: string;
