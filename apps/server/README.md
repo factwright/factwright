@@ -9,7 +9,7 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 
 | Part | What it does |
 |---|---|
-| `src/index.ts` | Routes each request: sign-in, the API, the web view, the operator's restore and delete, and the daily job: the backup, the cleanup and the totals |
+| `src/index.ts` | Routes each request: sign-in, the API, Stripe's webhook, the web view, the operator's restore, delete and free sync, and the daily job: the backup, the cleanup, the totals and the check of subscriptions |
 | `src/auth-options.ts`, `src/auth.ts` | Sign-in's settings, who a server of your own lets sign in, and device names for the account page |
 | `src/api.ts` | The sync API, for the signed-in account only |
 | `src/store.ts` | One account's store: records with their history, files, the locked account key, link codes and requests to link |
@@ -19,7 +19,8 @@ A Cloudflare Worker that handles sign-in and keeps each account's encrypted data
 | `src/daily-job.ts` | Runs the daily job's parts side by side, and waits for all of them, so one that fails can't cut another, such as the backup, short |
 | `src/sync-totals.ts` | How much sync is used, in totals only: once a day, its accounts and sign-ins, kept in Workers Analytics Engine for the stats command in [`apps/site`](../site) |
 | `src/live.ts` | Tickets for listening to changes as they happen |
-| `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`) |
+| `src/billing.ts` | Selling sync, on Factwright's own server only: who may sync, each account's Stripe customer, checkout and the customer portal, Stripe's webhook, and the daily check of subscriptions |
+| `migrations/` | The accounts database, as Better Auth's own tool writes it (`pnpm schema`), and who has sync where it's sold (`0003_sync_access.sql`) |
 | `scripts/sync-server-copy.ts` | The server ready to deploy, as [github.com/factwright/sync-server](https://github.com/factwright/sync-server) holds it for people who run their own (`pnpm copy`) |
 
 ## The API
@@ -36,8 +37,10 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST`, `GET /api/sync/requests`, `GET`, `DELETE /api/sync/requests/:id` | Requests to link, for approving a new device from one that's set up: asking, the account's waiting requests, one request, and calling it off. Each runs out after 10 minutes |
 | `POST /api/sync/requests/:id/approver`, `/key`, `/approve`, `/deny`, `/take` | The steps of approving one: a device offers to approve it, the new device shows its key, the approving device leaves the sealed account key or turns it down, and the new device picks it up, once |
 | `POST /api/sync/live/ticket`, `GET /api/sync/live` | Listening for changes, over a WebSocket |
-| `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, and how much you store |
-| `GET /api/account/export` | Everything the server keeps for your account, still locked |
+| `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, how much you store and, where sync is sold, how you have it |
+| `GET /api/account/export` | Everything the server keeps for your account: what you sync, still locked, and where sync is sold, your billing record |
+| `POST /api/billing/checkout`, `POST /api/billing/portal` | Paying for sync, where it's sold, from a browser's own sign-in: Stripe's checkout for a month or a year, and its customer portal (see [Selling sync](#selling-sync)) |
+| `POST /api/billing/stripe` | Stripe's webhook, signed with its secret. It needs no session |
 | `GET /api/sign-in-options` | The ways to sign in this server has set up, what more it can do, such as approving devices, and the terms and privacy policy signing in agrees to, when it has them (`TERMS_URL` and `PRIVACY_URL`). Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
 | `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
@@ -49,6 +52,89 @@ Better Auth's routes that list sessions (with their tokens), sign other sessions
 - Bursts of 600 requests per account, refilling at 10 a second.
 - Requests to link: one per device at a time, five waiting per account, ten an hour from each device, and only within 30 minutes of signing in.
 - Sign-in requests are limited per IP address, more tightly for signing in. The counts are deleted each day.
+
+## Selling sync
+Only Factwright's own server sells sync ([`src/billing.ts`](src/billing.ts)). Two steps turn it on, each with secrets.
+
+- **Stripe connected:** `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. From then on the webhook keeps subscriptions up to date, the portal works, and deleting an account deletes its Stripe customer.
+- **Selling:** add `STRIPE_PRICE_MONTHLY` and `STRIPE_PRICE_YEARLY`. Only then does anyone get asked to pay.
+
+Until then, and always on a server of your own:
+- sync is free
+- `/api/sign-in-options` doesn't list `subscription`
+- the billing routes answer 404
+
+**Who may sync:**
+- **Early accounts,** made before `EARLY_BEFORE`, keep sync for good. It's a rule, not a list, so there's no order to get wrong at launch.
+- **A gift of free sync,** for anyone who asked.
+- **A subscription** that's active, trialing, or past due while Stripe retries a payment.
+
+**Without sync**, an account gets 402 `subscription-needed` for what each route in `src/api.ts` marks as needing sync: sending changes and files, saving the account key, and adding devices. Everything else stays open:
+- reading all it has
+- listening for changes, so a device left open keeps a quiet socket rather than asking for a ticket every minute
+- calling a link or a request off
+- signing devices out
+- paying
+
+**Paying** happens in a browser's own sign-in with GitHub or Google. A device code's session gets 403, so one got by tricking someone can't reach their billing.
+- **Checkout:** `POST /api/billing/checkout`, with `{"period": "month"}` or `"year"`.
+  - It uses the account's own Stripe customer, made once with an idempotency key, so all its subscriptions sit together and Stripe can refuse a second.
+  - It closes after 35 minutes.
+  - It comes back to `/subscribe/done`, or to `/subscribe` if they leave.
+  - An account can start one every 10 seconds.
+  - A customer deleted in Stripe is made again.
+- **Portal:** `POST /api/billing/portal` opens Stripe's customer portal, which comes back to `/account`.
+
+**Stripe's word:** the webhook at `/api/billing/stripe` takes `checkout.session.completed` and every `customer.subscription.*` event.
+- **Checked:** each must be signed with `STRIPE_WEBHOOK_SECRET` in the last five minutes, and be at most 512 KB.
+- **Read back:** each time, the server reads the subscription back from Stripe. An older read never replaces a newer one, and a subscription that isn't syncing never replaces a different one that is.
+- **Accounts that are gone:** a subscription whose account isn't here is canceled.
+- **A second subscription:** if an account already has one live, the second is canceled and logged, to be refunded in Stripe.
+- **A cancellation** shows as "ending" whether Stripe records it as `cancel_at_period_end` or as `cancel_at`.
+- **The daily check:** the daily job reads back any subscription that should have had word by now, in case a webhook was missed.
+
+**What's kept:** never card details.
+- **The `syncAccess` table:** each account's gift, Stripe customer and subscription IDs, the subscription's status, when the time paid for ends, and whether it's canceling. The account's export includes it.
+- **The `freeSyncEmail` table:** emails given free sync before they had an account. Each is forgotten once an account signs up with it.
+
+**Deleting an account** deletes its Stripe customer first, which cancels all its subscriptions and takes its billing details out of Stripe.
+- If Stripe can't, the deletion stops, and trying again finishes it.
+- With Stripe not connected, an account that may still be paying can't be deleted until it is.
+
+### Giving sync away
+With `ADMIN_TOKEN` set, to give free sync to someone who asked, by email:
+
+```bash
+curl -X POST https://app.factwright.com/api/admin/free-sync \
+  -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
+  -d '{"email":"<their email>"}'
+```
+
+- **The answer** says whether it went to an account now (`"to": "account"`) or waits for one to sign up with that email (`"to": "email"`).
+- **A verified account only:** the gift goes only to an account whose email GitHub or Google says is verified.
+- **An account that was paying** (`"wasPaying": true`) has its subscription set to end with the time already paid for.
+- **Taking it back:** `"off": true` takes free sync back. It never takes an early account's.
+
+### Turning it on
+1. **Before selling:**
+   - The apps can pay. The web view has `/subscribe` and `/subscribe/done`, and the app sends people there.
+   - factwright.com's terms and privacy policy cover the subscription, and name Stripe.
+2. **In Factwright's own Stripe account, set up:**
+   - **The product:** a monthly price of $5 and a yearly price of $50, in US dollars. The app shows those amounts.
+   - **Checkout:** limit customers to one subscription.
+   - **Failed payments:** cancel the subscription once all retries fail, so past due never lasts.
+   - **The customer portal.**
+   - **A webhook endpoint** at `https://app.factwright.com/api/billing/stripe`, for `checkout.session.completed` and the `customer.subscription.*` events.
+   - **A restricted key** that can write Checkout Sessions, customer portal sessions, Customers and Subscriptions.
+3. **Try it on your computer:** use Stripe's test keys with `pnpm dev`, never on Factwright's server, so no test customer is ever kept there.
+4. **Deploy:** apply the migrations, then deploy. Sync stays free.
+5. **Turn it on:** with `wrangler secret put`, set:
+   - `EARLY_BEFORE`: the moment selling starts, as an ISO time
+   - `STRIPE_SECRET_KEY`
+   - `STRIPE_WEBHOOK_SECRET`
+   - `STRIPE_PRICE_MONTHLY` and `STRIPE_PRICE_YEARLY`, the two price IDs
+
+   Selling starts with the last one.
 
 ## Running it locally
 ```bash

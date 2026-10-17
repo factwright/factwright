@@ -181,7 +181,35 @@ export interface AccountInfo {
     records: number;
     files: number;
   };
+  /** How the account has sync, on a server that sells it. Other servers leave it out. */
+  access?: SyncAccess;
 }
+
+/**
+ * How an account has sync on a server that sells it. Reading what's synced never needs it: only
+ * sending changes and files, and adding devices.
+ */
+export interface SyncAccess {
+  /** Whether sync works for the account now. */
+  allowed: boolean;
+  /** Sync at no cost: "early" for accounts from before sync was sold, "free" for anyone who asked. */
+  gift: 'early' | 'free' | null;
+  /** The account's subscription, once it has had one. */
+  subscription: {
+    state: SubscriptionState;
+    /** When the time paid for ends, as an ISO time: when it renews, or ends if it's "ending". */
+    renewsAt: string | null;
+  } | null;
+}
+
+/**
+ * Where a subscription is, in the few states the apps show. Sync works in the first three.
+ * - "active": paid up, and it renews.
+ * - "ending": paid up to renewsAt, and canceled from then.
+ * - "retrying": a renewal's payment failed, and Stripe is trying it again.
+ * - "ended": canceled, or its payments failed for good.
+ */
+export type SubscriptionState = 'active' | 'ending' | 'retrying' | 'ended';
 
 /**
  * A new device asking to link, waiting for a device that's set up to approve it. Everything in

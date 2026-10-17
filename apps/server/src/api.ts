@@ -16,6 +16,14 @@ import {
 } from '@factwright/sync';
 import type { Auth } from './auth.ts';
 import { deviceName } from './auth-options.ts';
+import {
+  accessOf,
+  billingRecord,
+  openPortal,
+  sellsSync,
+  startCheckout,
+  stripeConnected,
+} from './billing.ts';
 import { appUrl, type Env } from './env.ts';
 import { checkTicket, makeTicket } from './live.ts';
 import { type Asker, DELETED, SLOW_DOWN, type UserStore } from './store.ts';
@@ -49,7 +57,7 @@ export const failure = (
   headers: Record<string, string> = {},
 ) => json({ error, message } satisfies ErrorBody, status, headers);
 
-const NOT_FOUND = () => failure(404, 'not-found', 'There’s nothing here.');
+export const NOT_FOUND = () => failure(404, 'not-found', 'There’s nothing here.');
 
 /** A request the server won't take as sent. */
 class Refused extends Error {}
@@ -103,8 +111,14 @@ interface Caller {
   env: Env;
   auth: Auth;
   account: string;
-  user: { id: string; email: string; name: string; createdAt: Date };
-  session: { id: string; userAgent?: string | null | undefined; createdAt: Date | string };
+  user: { id: string; email: string; emailVerified: boolean; name: string; createdAt: Date };
+  session: {
+    id: string;
+    userAgent?: string | null | undefined;
+    createdAt: Date | string;
+    /** How it signed in: "web" in a browser, or "device" with a code (auth-options.ts). */
+    via?: string | null | undefined;
+  };
   store: DurableObjectStub<UserStore>;
 }
 
@@ -387,8 +401,12 @@ async function devicesOf({ env, account, session }: Caller): Promise<Device[]> {
 }
 
 const getAccount: Handler = async (caller) => {
-  const { user, store, account } = caller;
-  const devices = await devicesOf(caller);
+  const { user, store, account, env } = caller;
+  const [devices, usage, access] = await Promise.all([
+    devicesOf(caller),
+    store.usage(account),
+    sellsSync(env) ? accessOf(env, user) : undefined,
+  ]);
   const info: AccountInfo = {
     user: {
       id: user.id,
@@ -397,9 +415,51 @@ const getAccount: Handler = async (caller) => {
       since: new Date(user.createdAt).toISOString(),
     },
     devices,
-    usage: await store.usage(account),
+    usage,
+    ...(access && { access }),
   };
   return json(info);
+};
+
+/**
+ * Whether the session is a browser's own sign-in with GitHub or Google. Paying happens in the
+ * browser, so a session from a device code, which someone might trick a person into approving,
+ * can't reach the account's billing.
+ */
+const inBrowser = (caller: Caller) => caller.session.via === 'web';
+
+const NOT_IN_BROWSER = () =>
+  failure(403, 'refused', 'Manage sync’s subscription from your account page in your browser.');
+
+/** Starts paying for a month or a year of sync, on a server that sells it: Stripe's checkout. */
+const postCheckout: Handler = async (caller) => {
+  const { request, env, user } = caller;
+  if (!sellsSync(env)) return NOT_FOUND();
+  if (!inBrowser(caller)) return NOT_IN_BROWSER();
+  const { period } = await readJson(request, SMALL_BODY);
+  if (period !== 'month' && period !== 'year') {
+    throw new Refused('Pay for a month or a year at a time.');
+  }
+  if ((await accessOf(env, user)).allowed) {
+    return failure(409, 'has-sync', 'This account has sync already.');
+  }
+  const url = await startCheckout(env, user, period, appUrl(env, request));
+  return url === 'slow-down'
+    ? failure(429, 'slow-down', 'A checkout just started. Wait a moment, then try again.', {
+        'retry-after': '10',
+      })
+    : json({ url });
+};
+
+/** Stripe's customer portal, for an account that's paid: its card, its plan, canceling. */
+const postPortal: Handler = async (caller) => {
+  const { request, env, account } = caller;
+  if (!stripeConnected(env)) return NOT_FOUND();
+  if (!inBrowser(caller)) return NOT_IN_BROWSER();
+  const url = await openPortal(env, account, appUrl(env, request));
+  return url
+    ? json({ url })
+    : failure(404, 'not-found', 'This account has no subscription to manage.');
 };
 
 const deleteDevice: Handler = async ({ env, account }, [id]) => {
@@ -410,48 +470,73 @@ const deleteDevice: Handler = async ({ env, account }, [id]) => {
 };
 
 const getExport: Handler = async (caller) => {
-  const { user, store, account } = caller;
-  const devices = await devicesOf(caller);
+  const { user, store, account, env } = caller;
+  const [devices, billing, kept] = await Promise.all([
+    devicesOf(caller),
+    billingRecord(env, account),
+    store.exportAll(account),
+  ]);
   const body = {
     about:
       'Your Factwright account, as the sync server keeps it. Records and files are locked with your account key; the Factwright app or web view can open them with your recovery key.',
     exportedAt: new Date().toISOString(),
     account: { id: user.id, email: user.email, name: user.name },
     devices,
-    store: await store.exportAll(account),
+    ...(billing && { billing }),
+    store: kept,
   };
   return json(body, 200, {
     'content-disposition': 'attachment; filename="factwright-account.json"',
   });
 };
 
-const ROUTES: [method: string, pattern: RegExp, handler: Handler][] = [
-  ['GET', /^\/api\/sync\/keys$/, getKeys],
-  ['PUT', /^\/api\/sync\/keys$/, putKeys],
-  ['GET', /^\/api\/sync\/changes$/, getChanges],
-  ['POST', /^\/api\/sync\/changes$/, postChanges],
-  ['GET', /^\/api\/sync\/records\/([^/]+)\/versions$/, getVersions],
-  ['GET', /^\/api\/sync\/records\/([^/]+)\/versions\/([^/]+)$/, getVersion],
-  ['POST', /^\/api\/sync\/files\/missing$/, postMissingFiles],
-  ['PUT', /^\/api\/sync\/files\/([^/]+)$/, putFile],
-  ['GET', /^\/api\/sync\/files\/([^/]+)$/, getFile],
-  ['POST', /^\/api\/sync\/links$/, postLink],
-  ['POST', /^\/api\/sync\/links\/([^/]+)\/take$/, takeLink],
-  ['DELETE', /^\/api\/sync\/links\/([^/]+)$/, deleteLink],
-  ['POST', /^\/api\/sync\/requests$/, postRequest],
-  ['GET', /^\/api\/sync\/requests$/, getRequests],
-  ['GET', /^\/api\/sync\/requests\/([^/]+)$/, getRequest],
-  ['DELETE', /^\/api\/sync\/requests\/([^/]+)$/, deleteRequest],
-  ['POST', /^\/api\/sync\/requests\/([^/]+)\/approver$/, postApprover],
-  ['POST', /^\/api\/sync\/requests\/([^/]+)\/key$/, postKey],
-  ['POST', /^\/api\/sync\/requests\/([^/]+)\/approve$/, postApprove],
-  ['POST', /^\/api\/sync\/requests\/([^/]+)\/deny$/, postDeny],
-  ['POST', /^\/api\/sync\/requests\/([^/]+)\/take$/, postTake],
-  ['POST', /^\/api\/sync\/live\/ticket$/, postLiveTicket],
-  ['GET', /^\/api\/account$/, getAccount],
-  ['DELETE', /^\/api\/account\/devices\/([^/]+)$/, deleteDevice],
-  ['GET', /^\/api\/account\/export$/, getExport],
+/**
+ * Whether a route needs sync, on a server that sells it: "sync" for sending changes and files and
+ * adding devices, "open" for everything else, which an account can do even when it can't sync:
+ * reading all it has, listening for changes, calling things off, signing devices out and paying.
+ */
+type Needs = 'sync' | 'open';
+
+const ROUTES: [method: string, pattern: RegExp, handler: Handler, needs: Needs][] = [
+  ['GET', /^\/api\/sync\/keys$/, getKeys, 'open'],
+  ['PUT', /^\/api\/sync\/keys$/, putKeys, 'sync'],
+  ['GET', /^\/api\/sync\/changes$/, getChanges, 'open'],
+  ['POST', /^\/api\/sync\/changes$/, postChanges, 'sync'],
+  ['GET', /^\/api\/sync\/records\/([^/]+)\/versions$/, getVersions, 'open'],
+  ['GET', /^\/api\/sync\/records\/([^/]+)\/versions\/([^/]+)$/, getVersion, 'open'],
+  ['POST', /^\/api\/sync\/files\/missing$/, postMissingFiles, 'open'],
+  ['PUT', /^\/api\/sync\/files\/([^/]+)$/, putFile, 'sync'],
+  ['GET', /^\/api\/sync\/files\/([^/]+)$/, getFile, 'open'],
+  ['POST', /^\/api\/sync\/links$/, postLink, 'sync'],
+  ['POST', /^\/api\/sync\/links\/([^/]+)\/take$/, takeLink, 'sync'],
+  ['DELETE', /^\/api\/sync\/links\/([^/]+)$/, deleteLink, 'open'],
+  ['POST', /^\/api\/sync\/requests$/, postRequest, 'sync'],
+  ['GET', /^\/api\/sync\/requests$/, getRequests, 'open'],
+  ['GET', /^\/api\/sync\/requests\/([^/]+)$/, getRequest, 'open'],
+  ['DELETE', /^\/api\/sync\/requests\/([^/]+)$/, deleteRequest, 'open'],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/approver$/, postApprover, 'sync'],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/key$/, postKey, 'sync'],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/approve$/, postApprove, 'sync'],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/deny$/, postDeny, 'open'],
+  ['POST', /^\/api\/sync\/requests\/([^/]+)\/take$/, postTake, 'sync'],
+  // Listening only hears that there's something to read. A device that can't sync keeps a quiet
+  // socket open rather than asking for a ticket again every minute.
+  ['POST', /^\/api\/sync\/live\/ticket$/, postLiveTicket, 'open'],
+  ['GET', /^\/api\/account$/, getAccount, 'open'],
+  ['DELETE', /^\/api\/account\/devices\/([^/]+)$/, deleteDevice, 'open'],
+  ['GET', /^\/api\/account\/export$/, getExport, 'open'],
+  ['POST', /^\/api\/billing\/checkout$/, postCheckout, 'open'],
+  ['POST', /^\/api\/billing\/portal$/, postPortal, 'open'],
 ];
+
+/** A route's address parts, decoded. Null when one can't be, so it can't name anything here. */
+function paramsOf(pattern: RegExp, pathname: string): string[] | null {
+  try {
+    return (pattern.exec(pathname) ?? []).slice(1).map(decodeURIComponent);
+  } catch {
+    return null;
+  }
+}
 
 /** A device listening for changes, with a ticket it got from its session. */
 async function listen(request: Request, env: Env, url: URL): Promise<Response> {
@@ -496,8 +581,12 @@ export async function handleApi(request: Request, env: Env, auth: Auth): Promise
   }
   const signedIn = await auth.api.getSession({ headers: request.headers });
   if (!signedIn) return failure(401, 'signed-out', 'Sign in again.');
-  const [, pattern, handler] = route;
-  const params = (pattern.exec(url.pathname) ?? []).slice(1).map(decodeURIComponent);
+  const [, pattern, handler, needs] = route;
+  const params = paramsOf(pattern, url.pathname);
+  if (!params) return NOT_FOUND();
+  if (needs === 'sync' && sellsSync(env) && !(await accessOf(env, signedIn.user)).allowed) {
+    return failure(402, 'subscription-needed', 'Sync on Factwright’s server needs a subscription.');
+  }
   const account = signedIn.user.id;
   const caller: Caller = {
     request,

@@ -88,4 +88,31 @@ describe('a server of your own', () => {
     // There's no such link, but the request got that far.
     expect((await take(server.url.origin)).status).toBe(404);
   });
+
+  it('sells nothing: sync is free, with no checkout, no portal and no Stripe webhook', async () => {
+    const sam = await server.signUp();
+    const auth = { authorization: `Bearer ${sam.token}` };
+    await expect(sam.client.saveKeys('k'.repeat(22), 'locked-account-key')).resolves.toBe('saved');
+    expect((await post('/api/billing/checkout', { period: 'month' }, auth)).status).toBe(404);
+    expect((await post('/api/billing/portal', {}, auth)).status).toBe(404);
+    expect((await post('/api/billing/stripe', {})).status).toBe(404);
+    expect(await sam.client.account()).not.toHaveProperty('access');
+  });
+
+  it('won’t delete an account that may still be paying, while it can’t reach Stripe', async () => {
+    const sam = await server.signUp();
+    await server.env.DB.prepare(
+      `INSERT INTO "syncAccess" (account, customer, subscription, status, updatedAt)
+       VALUES (?, 'cus_left', 'sub_left', 'active', ?)`,
+    )
+      .bind(sam.id, new Date().toISOString())
+      .run();
+    const deleted = await fetch(new URL('/api/admin/delete', server.url), {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ account: sam.id }),
+    });
+    expect(deleted.status).toBe(500);
+    expect((await sam.client.account()).user.id).toBe(sam.id);
+  });
 });

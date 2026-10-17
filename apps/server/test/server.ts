@@ -102,16 +102,26 @@ export async function startServer(vars: Record<string, string> = {}) {
     return { token, sessionId, client: clientFor(token, userAgent) };
   }
 
-  /** Makes an account with one signed-in session. */
-  async function signUp(name = 'Sam Rivera'): Promise<Account> {
+  /**
+   * Makes an account with one signed-in session, now: with a made-up email, verified, unless
+   * given one, as GitHub or Google would say it.
+   */
+  async function signUp(
+    name = 'Sam Rivera',
+    {
+      email,
+      verified = true,
+      since = new Date(),
+    }: { email?: string; verified?: boolean; since?: Date } = {},
+  ): Promise<Account> {
     const id = randomBytes(16).toString('hex');
-    const email = `${id}@example.com`;
-    const now = new Date().toISOString();
+    const address = email ?? `${id}@example.com`;
+    const now = since.toISOString();
     await env.DB.prepare(
       `INSERT INTO "user" (id, name, email, emailVerified, image, createdAt, updatedAt)
-       VALUES (?, ?, ?, 1, NULL, ?, ?)`,
+       VALUES (?, ?, ?, ?, NULL, ?, ?)`,
     )
-      .bind(id, name, email, now, now)
+      .bind(id, name, address, verified ? 1 : 0, now, now)
       .run();
     await env.DB.prepare(
       `INSERT INTO "account" (id, accountId, providerId, userId, createdAt, updatedAt)
@@ -119,7 +129,7 @@ export async function startServer(vars: Record<string, string> = {}) {
     )
       .bind(randomUUID(), randomBytes(4).readUInt32BE().toString(), id, now, now)
       .run();
-    return { id, email, ...(await newSession(id)) };
+    return { id, email: address, ...(await newSession(id)) };
   }
 
   return {

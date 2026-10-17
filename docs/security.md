@@ -206,6 +206,21 @@ Anyone can run Factwright's sync server in their own free Cloudflare account, fr
 - **Its own terms.** The app shows the terms of service and privacy policy each server names for itself: Factwright's for Factwright's sync, and none for a server of your own unless you set them. Factwright's don't cover a server Factwright doesn't run. To show them, the first screen of turning sync on asks Factwright's server what it offers, as its sign-in page does, which tells it no more than any visit: your IP address.
 - **Save to Factwright** syncs through Factwright's own server only, for now, so the app links to it only with Factwright's sync.
 
+### Paying for sync
+Factwright's own server sells sync, once it's set up to, through Stripe. A server of your own sells nothing.
+- **Stripe takes the payment.** The server sends you to Stripe's own checkout and customer portal, and never sees your card.
+  - It keeps only Stripe's IDs for you as a customer and for your subscription, the subscription's status, when the time paid for ends, and whether it's canceling.
+  - A gift of free sync is kept with them. Accounts from before sync was sold keep it for good by the date they were made, so nothing more is kept for them.
+  - Your account's export includes all of it.
+- **Only in your browser.** Checkout and the portal need a browser's own sign-in with GitHub or Google. A session from a device code, which someone might trick you into approving, can't reach your billing.
+- **Only Stripe's word counts.** Stripe's webhook must be signed with the endpoint's secret in the last five minutes. Even then, the server reads the subscription back from Stripe rather than trusting what the event says, so a forged or replayed event can't give anyone sync.
+- **Paying never touches your keys.** Everything is locked the same way whether you pay or not. An account that stops paying can still read, download and listen for all it has. Only sending changes and files and adding devices need sync.
+- **Free sync by email** goes only to an account whose email GitHub or Google says is verified, so someone who signed up with your address can't take a gift meant for you. An email waiting for its account is forgotten once the account signs up.
+- **Deleting your account** deletes your Stripe customer before anything else goes, which cancels your subscriptions and takes your billing details out of Stripe.
+  - If Stripe can't do it, nothing is deleted until trying again works, so nobody pays for an account that's gone.
+  - A subscription Stripe still names a deleted account for is canceled when the server hears of it.
+  - Stripe keeps its own record of payments, under its privacy policy.
+
 ### What the server sees
 - Your account: the email and name your sign-in shares, and which GitHub or Google account it is.
 - Each session: the device's name (for the app, your computer's name), and when it signed in and was last used.
@@ -230,7 +245,7 @@ A server that misbehaved couldn't read or forge what the desktop app syncs. It c
 ### Backups and deleting
 - Each account's store is snapshotted to R2 every day and kept for 14 days. Cloudflare also keeps 30 days of point-in-time recovery for each store, and 7 days for the accounts database (30 on a paid plan).
 - Something you delete in the app stays on the server, locked, while an earlier version holds it (90 days), then in backups (up to 14 days more) and Cloudflare's recovery (up to 30 days more).
-- Deleting your account signs out every device first, then removes your store, your files, your backups and your sign-in records. The store remembers it was deleted, so nothing can fill it again, and a last sweep a few minutes later catches an upload that was on its way. If deleting fails partway, trying again finishes it.
+- Deleting your account deletes your Stripe customer first, where you paid for sync. It then signs out every device, then removes your store, your files, your backups and your sign-in records. The store remembers it was deleted, so nothing can fill it again, and a last sweep a few minutes later catches an upload that was on its way. If deleting fails partway, trying again finishes it.
 - Someone who can't sign in any more can ask by email, and the operator can delete their account with a token only the operator has.
 
 ### The trade-off
