@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  type AccountInfo,
   type AccountKeys,
   accountKeys,
   type Bytes,
@@ -17,6 +18,7 @@ import {
   openWithRecoveryKey,
   readLinkCode,
   readRecoveryKey,
+  type SyncAccess,
   SyncClient,
   SyncError,
   toBase64Url,
@@ -29,6 +31,7 @@ import type {
   LinkCodeResult,
   RecoveryKeyResult,
   ServerTerms,
+  SyncActivity,
   SyncStatus,
 } from '../../shared/sync.ts';
 import type { Tracker } from '../jobs/tracker.ts';
@@ -81,6 +84,8 @@ export interface SyncAccountDeps {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** For tests: how linking by approval waits between looks at the other device. */
   approvalWait?: (ms: number) => Promise<void>;
+  /** For tests: how subscribing waits between looks at the account. */
+  subscriptionWait?: (ms: number) => Promise<void>;
 }
 
 const failed = (message: string) => ({ ok: false as const, message });
@@ -103,8 +108,29 @@ const UNCHECKED = 'unchecked';
  */
 const SERVER = 'server';
 
+/**
+ * Notes that sync stopped here because the account's subscription ended, where sync is sold, so it
+ * stays stopped after a restart until the account has sync again.
+ */
+const PAUSED = 'paused';
+
 /** How often, at most, a round of sync also looks for other devices' requests to link. */
 const REQUESTS_EVERY_MS = 60_000;
+
+/**
+ * How often, at most, a round of sync also asks how the account has sync, where it's sold, for a
+ * payment that didn't go through. Running out shows sooner, as the server turns sync down.
+ */
+const ACCESS_EVERY_MS = 60 * 60_000;
+
+/**
+ * Once the browser opens to subscribe: how often the app asks whether the account has sync, every
+ * few seconds at first, then less often, until checkout would have closed.
+ */
+const SUBSCRIBE_QUICK_MS = 3000;
+const SUBSCRIBE_QUICKLY_FOR_MS = 2 * 60_000;
+const SUBSCRIBE_SLOW_MS = 10_000;
+const SUBSCRIBE_FOR_MS = 40 * 60_000;
 
 /** How many times, and how far apart, linking with an approved key is tried while offline. */
 const KEY_TRIES = 12;
@@ -186,6 +212,16 @@ export class SyncAccount {
    * nothing more once another sign-in, or going back, overtook it.
    */
   private attempts = 0;
+  /** Counts waits for the account to have sync, so only the latest one carries on. */
+  private waits = 0;
+  /** Whether sync is carrying on now that the account has sync, so it carries on once. */
+  private carrying = false;
+  /** The account that subscribes, by its ID, which the page for subscribing checks it's signed in as. */
+  private subscriber: string | null = null;
+  /** When a round of sync last asked how the account has sync. */
+  private accessLooked = 0;
+  /** Where sync is sold: whether a renewal's payment didn't go through, as the server last said. */
+  private paymentFailed = false;
 
   constructor(deps: SyncAccountDeps) {
     this.deps = deps;
@@ -386,13 +422,34 @@ export class SyncAccount {
       // Signed in again, or stopped by a check, and not yet checked against the account, such as
       // when the app quit while asking for a new recovery key: it's checked before anything syncs.
       if (this.state.meta(UNCHECKED) === '1') await this.resume(accountKey);
+      else if (this.state.meta(PAUSED) === '1') this.openPaused(client);
       else await this.turnOnWith(client, accountKey);
       return;
     }
     await this.checkSetup();
   }
 
-  /** Signed in without the account key: is this the first device, or does it link to others? */
+  /**
+   * Opens paused, as sync was when the app closed, then asks once whether the account has sync
+   * again, such as after subscribing on the web, to carry on by itself.
+   */
+  private openPaused(client: SyncClient): void {
+    this.subscriber = this.state.meta('account');
+    this.set({ state: 'paused', email: this.email(), waiting: false });
+    client.account().then(
+      (account) => this.noteAccess(client, account.access),
+      (error: unknown) => {
+        if (error instanceof SyncError && error.kind === 'signed-out' && !this.overtaken(client)) {
+          this.signedOutElsewhere();
+        }
+      },
+    );
+  }
+
+  /**
+   * Signed in without the account key: is this the first device, or does it link to others? Where
+   * sync is sold, an account without it subscribes first.
+   */
   private async checkSetup(): Promise<void> {
     const client = this.client;
     if (!client) return;
@@ -401,6 +458,10 @@ export class SyncAccount {
       if (this.overtaken(client)) return;
       this.state.setMeta('account', account.user.id);
       this.state.setMeta('email', account.user.email);
+      if (account.access && !account.access.allowed) {
+        this.toSubscribe(account, account.access);
+        return;
+      }
       const keys = await client.keys();
       if (this.overtaken(client)) return;
       this.set({ state: 'setting-up', email: account.user.email, firstDevice: keys === null });
@@ -566,7 +627,8 @@ export class SyncAccount {
    *   stolen device may still hold, open nothing of it.
    * - Another key: the account isn't this computer's to sync with until it links, and linking
    *   adds this computer's job hunt to it. Nothing goes up before that.
-   * When the server can't be asked, sign-in says why, and nothing syncs.
+   * Where sync is sold, an account without it pauses with the same key, and subscribes first
+   * otherwise. When the server can't be asked, sign-in says why, and nothing syncs.
    */
   private async resume(accountKey: Bytes): Promise<EditResult> {
     const client = this.client;
@@ -588,6 +650,14 @@ export class SyncAccount {
     if (this.overtaken(client)) return OVERTAKEN;
     this.pending = null;
     const email = account.user.email;
+    // Where sync is sold, an account without it subscribes before this computer sets up again. One
+    // that's set up here with the account's key pauses, as below.
+    const { access } = account;
+    const paused = access !== undefined && !access.allowed;
+    if (paused && saved?.keyId !== keyId) {
+      this.toSubscribe(account, access);
+      return { ok: true };
+    }
     if (saved === null) {
       this.set({ state: 'setting-up', email, firstDevice: true, again: 'remade' });
       return { ok: true };
@@ -610,7 +680,7 @@ export class SyncAccount {
     if (before !== null && before !== account.user.id) this.startOver();
     this.state.setMeta('account', account.user.id);
     this.state.setMeta('email', account.user.email);
-    await this.turnOnWith(client, accountKey);
+    await this.turnOnWith(client, accountKey, paused);
     return { ok: true };
   }
 
@@ -697,6 +767,7 @@ export class SyncAccount {
         );
       }
     } catch (error) {
+      this.subscribeIfNeeded(error);
       return failed(reason(error));
     }
     this.pending = null;
@@ -721,8 +792,17 @@ export class SyncAccount {
       }
       return await this.checkAndTurnOn(client, accountKey);
     } catch (error) {
+      this.subscribeIfNeeded(error);
       return failed(reason(error));
     }
+  }
+
+  /**
+   * A step of setting up that the server turned down, as the account's subscription ended
+   * meanwhile: it subscribes first.
+   */
+  private subscribeIfNeeded(error: unknown): void {
+    if (error instanceof SyncError && error.kind === 'subscription-needed') void this.checkSetup();
   }
 
   /** On another device, or after losing every device: unlocks the account key with the recovery key. */
@@ -788,7 +868,11 @@ export class SyncAccount {
     return { ok: true };
   }
 
-  private async turnOnWith(client: SyncClient, accountKey: Bytes): Promise<void> {
+  /**
+   * Turns sync on with an account key, once it's the one the account uses. Where sync is sold, an
+   * account without it ("paused") keeps the key, and sync stays stopped until it has sync again.
+   */
+  private async turnOnWith(client: SyncClient, accountKey: Bytes, paused = false): Promise<void> {
     const keys = await accountKeys(accountKey);
     if (this.overtaken(client)) return;
     // Another account's data must never mix in: a different key starts over.
@@ -796,6 +880,11 @@ export class SyncAccount {
     this.state.setMeta('keyId', keys.id);
     this.state.setMeta(UNCHECKED, '0');
     if (this.kept) this.secrets.set(this.keyFor(this.kept), toBase64Url(accountKey));
+    if (paused) {
+      this.pause();
+      return;
+    }
+    this.state.setMeta(PAUSED, '0');
     this.accountKey = accountKey;
     this.keys = keys;
     await this.runner?.stop();
@@ -810,14 +899,7 @@ export class SyncAccount {
     });
     let skipped = 0;
     let lastSynced: string | null = null;
-    this.set({
-      state: 'on',
-      email: this.email(),
-      activity: 'syncing',
-      lastSynced,
-      message: null,
-      skipped,
-    });
+    this.set(this.on('syncing', lastSynced, null, skipped));
     let checked = false;
     // A runner that's been stopped or replaced speaks for nothing.
     const runner: SyncRunner = new SyncRunner({
@@ -834,6 +916,16 @@ export class SyncAccount {
           this.requestsLooked = Date.now();
           void this.approvals.refresh();
         }
+        // Where sync is sold, a payment that didn't go through shows, once in a while.
+        if (checked && Date.now() - this.accessLooked > ACCESS_EVERY_MS) {
+          this.accessLooked = Date.now();
+          client.account().then(
+            (account) => {
+              if (!this.closed && this.runner === runner) this.noteAccess(client, account.access);
+            },
+            () => {},
+          );
+        }
         // Once the server answers, the account's key is checked, until the check gets through.
         if (!checked) {
           checked = true;
@@ -849,7 +941,7 @@ export class SyncAccount {
       },
       onActivity: (activity, message) => {
         if (this.runner !== runner) return;
-        this.set({ state: 'on', email: this.email(), activity, lastSynced, message, skipped });
+        this.set(this.on(activity, lastSynced, message, skipped));
       },
       onRequests: () => {
         if (!this.closed && this.runner === runner) void this.approvals.refresh();
@@ -860,6 +952,10 @@ export class SyncAccount {
         this.approvals.use(null);
         this.endSession();
         this.set({ state: 'signed-out', email: this.email() });
+      },
+      onSubscriptionNeeded: () => {
+        if (this.closed || this.runner !== runner) return;
+        this.pause();
       },
     });
     this.runner = runner;
@@ -899,6 +995,7 @@ export class SyncAccount {
     this.state.setMeta('account', account.user.id);
     if (saved?.keyId === keys.id) {
       if (this.current.state === 'on') this.set({ ...this.current, email });
+      this.noteAccess(client, account.access);
       return true;
     }
     this.state.setMeta(UNCHECKED, '1');
@@ -993,12 +1090,174 @@ export class SyncAccount {
     this.approvals.dismiss();
   }
 
+  /** The account, its devices and its storage, which also tells how it has sync, where it's sold. */
   async account(): Promise<AccountResult> {
-    if (!this.client) return failed('Sign in first.');
+    const client = this.client;
+    if (!client) return failed('Sign in first.');
     try {
-      return { ok: true, account: await this.client.account() };
+      const account = await client.account();
+      this.noteAccess(client, account.access);
+      return { ok: true, account };
     } catch (error) {
       return failed(reason(error));
+    }
+  }
+
+  /** Sync's status while it's on, with whether a payment didn't go through, where sync is sold. */
+  private on(
+    activity: SyncActivity,
+    lastSynced: string | null,
+    message: string | null,
+    skipped: number,
+  ): SyncStatus {
+    return {
+      state: 'on',
+      email: this.email(),
+      activity,
+      lastSynced,
+      message,
+      skipped,
+      ...(this.paymentFailed && { paymentFailed: true as const }),
+    };
+  }
+
+  /** Where sync is sold: an account without it subscribes, in the browser, before setting up. */
+  private toSubscribe(account: AccountInfo, access: SyncAccess): void {
+    this.subscriber = account.user.id;
+    this.set({
+      state: 'subscribe',
+      email: account.user.email,
+      again: access.subscription !== null,
+      waiting: false,
+    });
+  }
+
+  /**
+   * The account can't sync without a subscription, where sync is sold: sync stops here, keeping
+   * the job hunt, the sign-in and the account key, until the account has sync again. It stays
+   * stopped after a restart.
+   */
+  private pause(): void {
+    const runner = this.runner;
+    this.runner = null;
+    void runner?.stop();
+    this.keys = null;
+    this.accountKey = null;
+    this.paymentFailed = false;
+    this.state.setMeta(PAUSED, '1');
+    this.subscriber = this.state.meta('account');
+    this.set({ state: 'paused', email: this.email(), waiting: false });
+  }
+
+  /**
+   * Keeps up with how the account has sync, from the server's word, where sync is sold. Without it,
+   * sync pauses here. With it again, a computer that's paused, or waiting to subscribe, carries on.
+   * A payment that didn't go through shows while sync carries on. A server that doesn't sell sync
+   * says nothing of it, and every account syncs there.
+   */
+  private noteAccess(client: SyncClient, access: SyncAccess | undefined): void {
+    if (this.overtaken(client)) return;
+    this.accessLooked = Date.now();
+    const status = this.current;
+    const allowed = !access || access.allowed;
+    if (status.state === 'on') {
+      if (!allowed) {
+        this.pause();
+        return;
+      }
+      const failed = access?.subscription?.state === 'retrying' && !access.gift;
+      if (failed === this.paymentFailed) return;
+      this.paymentFailed = failed;
+      const { paymentFailed: _, ...rest } = status;
+      this.set(failed ? { ...rest, paymentFailed: true } : rest);
+    } else if ((status.state === 'subscribe' || status.state === 'paused') && allowed) {
+      void this.carryOn(client);
+    }
+  }
+
+  /**
+   * Where sync is sold, for an account without it: opens the server's page for subscribing in the
+   * browser, naming the account, then asks every few seconds whether it has sync, and carries on
+   * by itself once it has: to setting up, or to syncing again.
+   */
+  async subscribe(): Promise<EditResult> {
+    const client = this.client;
+    const server = this.kept;
+    const { state } = this.current;
+    if (!client || !server || (state !== 'subscribe' && state !== 'paused')) {
+      return failed('Sign in first.');
+    }
+    const page = new URL('/subscribe', server.url);
+    if (this.subscriber) page.searchParams.set('account', this.subscriber);
+    await this.deps.openUrl(page.toString());
+    if (this.overtaken(client) || !this.setWaiting(true)) return OVERTAKEN;
+    void this.waitForSync(client);
+    return { ok: true };
+  }
+
+  /** Notes whether the app is asking every few seconds for the account to have sync. */
+  private setWaiting(waiting: boolean): boolean {
+    const status = this.current;
+    if (status.state !== 'subscribe' && status.state !== 'paused') return false;
+    this.set({ ...status, waiting });
+    return true;
+  }
+
+  /**
+   * Asks every few seconds whether the account has sync, until it has, the sign-in ends, or about as
+   * long as checkout stays open: then it stops waiting, and subscribing opens the page again.
+   */
+  private async waitForSync(client: SyncClient): Promise<void> {
+    const wait = ++this.waits;
+    const sleep =
+      this.deps.subscriptionWait ??
+      ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+    const current = () =>
+      !this.overtaken(client) &&
+      wait === this.waits &&
+      (this.current.state === 'subscribe' || this.current.state === 'paused');
+    const started = Date.now();
+    while (Date.now() - started < SUBSCRIBE_FOR_MS) {
+      const quick = Date.now() - started < SUBSCRIBE_QUICKLY_FOR_MS;
+      await sleep(quick ? SUBSCRIBE_QUICK_MS : SUBSCRIBE_SLOW_MS);
+      if (!current()) return;
+      let access: SyncAccess | undefined;
+      try {
+        access = (await client.account()).access;
+      } catch (error) {
+        if (!current()) return;
+        if (error instanceof SyncError && error.kind === 'signed-out') {
+          this.signedOutElsewhere();
+          return;
+        }
+        // Offline, or the server's busy: the next look may get through.
+        continue;
+      }
+      if (!current()) return;
+      if (!access || access.allowed) {
+        await this.carryOn(client);
+        return;
+      }
+    }
+    if (current()) this.setWaiting(false);
+  }
+
+  /**
+   * Once the account has sync: on to setting up this computer, or, with the account key it keeps,
+   * to syncing again, once the key's checked against the account's.
+   */
+  private async carryOn(client: SyncClient): Promise<void> {
+    if (this.carrying || this.overtaken(client) || !this.kept) return;
+    this.carrying = true;
+    // Any wait for it is over.
+    this.waits++;
+    try {
+      const saved = this.secrets.get(this.keyFor(this.kept));
+      const accountKey = saved ? fromBase64Url(saved) : null;
+      if (accountKey) await this.resume(accountKey);
+      else await this.checkSetup();
+    } finally {
+      this.carrying = false;
     }
   }
 
@@ -1079,6 +1338,8 @@ export class SyncAccount {
     this.accountKey = null;
     this.pending = null;
     this.kept = null;
+    this.subscriber = null;
+    this.paymentFailed = false;
     this.secrets.clear();
     this.state.clear();
   }

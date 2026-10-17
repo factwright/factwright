@@ -387,6 +387,7 @@ export function App({ api }: { api: FactwrightApi }) {
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
+          onSyncAccountPage={() => void api.openAccountPage()}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}

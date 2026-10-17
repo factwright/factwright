@@ -1,4 +1,4 @@
-import { type AccountInfo, readLinkCode, readRecoveryKey } from '@factwright/sync';
+import { type AccountInfo, readLinkCode, readRecoveryKey, type SyncAccess } from '@factwright/sync';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { ApprovalsView, RequestView, ServerTerms, SyncStatus } from '../../shared/sync.ts';
 
@@ -22,6 +22,7 @@ type SyncApi = Pick<
   | 'removeSyncDevice'
   | 'signOutOfSync'
   | 'useDifferentSyncAccount'
+  | 'subscribeToSync'
   | 'openAccountPage'
   | 'linkApprovals'
   | 'onLinkApprovals'
@@ -46,6 +47,7 @@ const FACTWRIGHT_TERMS: ServerTerms = {
 };
 const OWN_TERMS: ServerTerms = { legal: null, subscription: false };
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
 const ON: Extract<SyncStatus, { state: 'on' }> = {
   state: 'on',
@@ -86,6 +88,33 @@ const STARTS: Readonly<Record<string, SyncStatus>> = {
     skipped: 2,
   },
   'signed-out': { state: 'signed-out', email: EMAIL },
+  subscribe: { state: 'subscribe', email: EMAIL, again: false, waiting: false },
+  'subscribe-again': { state: 'subscribe', email: EMAIL, again: true, waiting: false },
+  'subscribe-waiting': { state: 'subscribe', email: EMAIL, again: false, waiting: true },
+  paused: { state: 'paused', email: EMAIL, waiting: false },
+  'paused-waiting': { state: 'paused', email: EMAIL, waiting: true },
+  'payment-failed': { ...ON, paymentFailed: true },
+};
+
+/** How the account has sync, for ?plan=, where Factwright's server sells it. */
+const PLANS: Readonly<Record<string, SyncAccess>> = {
+  active: {
+    allowed: true,
+    gift: null,
+    subscription: { state: 'active', renewsAt: daysFromNow(30) },
+  },
+  ending: {
+    allowed: true,
+    gift: null,
+    subscription: { state: 'ending', renewsAt: daysFromNow(12) },
+  },
+  retrying: {
+    allowed: true,
+    gift: null,
+    subscription: { state: 'retrying', renewsAt: daysFromNow(-2) },
+  },
+  free: { allowed: true, gift: 'free', subscription: null },
+  early: { allowed: true, gift: 'early', subscription: null },
 };
 
 const ACCOUNT: AccountInfo = {
@@ -180,12 +209,17 @@ function readSample(typed: string): { server: string } | { message: string; help
  * ?sync=), "quiet" for asking with no device ever offering, "stale" for a computer that signed in
  * too long ago to ask, or "old" for a server that can't approve devices yet. ?server= picks the
  * server: "own" for sync with a server of your own, "own-only" for a copy without Factwright's
- * sync, or "priced" for Factwright's once it says sync there is a subscription.
+ * sync, or "priced" for Factwright's once it says sync there is a subscription: signing in then
+ * goes on to subscribing (?sync=subscribe, "subscribe-again" or "subscribe-waiting"), and sync can
+ * pause (?sync=paused or "paused-waiting") or have a card that didn't go through
+ * (?sync=payment-failed). ?plan= picks how the account has sync, for the Sync screen: "active",
+ * "ending", "retrying", "free" or "early".
  */
 export function sampleSync(
   start: string | null,
   approve: string | null = null,
   server: string | null = null,
+  plan: string | null = null,
 ): SyncApi {
   const listeners = new Set<(status: SyncStatus) => void>();
   const begun = STARTS[start ?? 'off'] ?? { state: 'off' };
@@ -223,11 +257,11 @@ export function sampleSync(
       setTimeout(() => {
         if (status.state !== 'signing-in')
           return resolve({ ok: false, message: 'Signing in was canceled.' });
-        const next: SyncStatus = {
-          state: 'setting-up',
-          email: EMAIL,
-          firstDevice: start !== 'link',
-        };
+        // Where Factwright's server sells sync, the account subscribes first.
+        const next: SyncStatus =
+          server === 'priced' && !own
+            ? { state: 'subscribe', email: EMAIL, again: false, waiting: false }
+            : { state: 'setting-up', email: EMAIL, firstDevice: start !== 'link' };
         set(own ? onOwn(next, own) : next);
         resolve({ ok: true });
       }, 2500);
@@ -304,7 +338,16 @@ export function sampleSync(
       set({ ...status, activity: 'syncing' });
       setTimeout(() => keep({ ...ON, lastSynced: new Date().toISOString() }), 1200);
     },
-    syncAccount: async () => ({ ok: true, account: { ...ACCOUNT, devices } }),
+    syncAccount: async () => {
+      const access =
+        PLANS[plan ?? ''] ??
+        (start === 'payment-failed'
+          ? PLANS.retrying
+          : server === 'priced' && !ownServerOf(status)
+            ? PLANS.active
+            : undefined);
+      return { ok: true, account: { ...ACCOUNT, devices, ...(access && { access }) } };
+    },
     removeSyncDevice: async (id) => {
       devices = devices.filter((device) => device.id !== id);
       return { ok: true };
@@ -320,6 +363,19 @@ export function sampleSync(
       return { ok: true };
     },
     openAccountPage: async () => {},
+    // The made-up browser takes a moment to subscribe, then sync carries on.
+    subscribeToSync: async () => {
+      if (status.state !== 'subscribe' && status.state !== 'paused') {
+        return { ok: false, message: 'Sign in first.' };
+      }
+      set({ ...status, waiting: true });
+      setTimeout(() => {
+        if (status.state === 'subscribe' && status.waiting) {
+          keep({ state: 'setting-up', email: EMAIL, firstDevice: start !== 'link' });
+        } else if (status.state === 'paused' && status.waiting) keep(ON);
+      }, 2500);
+      return { ok: true };
+    },
     linkApprovals: async () => approvals,
     onLinkApprovals: (viewer) => {
       viewers.add(viewer);

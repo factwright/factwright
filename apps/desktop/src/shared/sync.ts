@@ -35,6 +35,23 @@ export type SyncStatus =
   /** Waiting for the user to approve signing in, in their browser. */
   | ({ state: 'signing-in'; code: string; url: string } & OnServer)
   /**
+   * Signed in to a server that sells sync, as Factwright's does, with an account that doesn't have
+   * it: the account subscribes in the browser, before this computer sets up.
+   */
+  | ({
+      state: 'subscribe';
+      email: string;
+      /** Whether the account had a subscription before, which ended. */
+      again: boolean;
+      /** Whether the app is checking every few seconds for the account to have sync. */
+      waiting: boolean;
+    } & OnServer)
+  /**
+   * Set up, but the account's subscription ended, so sync stopped here until it subscribes again.
+   * The job hunt here stays as it is, and so do the sign-in and the account key.
+   */
+  | ({ state: 'paused'; email: string; waiting: boolean } & OnServer)
+  /**
    * Signed in, but this computer doesn't have the account key yet. The first device makes it,
    * with a recovery key; any other gets it from a device that's set up, or the recovery key.
    */
@@ -54,6 +71,11 @@ export type SyncStatus =
       message: string | null;
       /** How many files stay on this computer, too big or with a name others can't hold. */
       skipped: number;
+      /**
+       * Where sync is sold: a renewal's payment didn't go through, and Stripe is trying it again.
+       * Sync carries on meanwhile. Left out otherwise.
+       */
+      paymentFailed?: true;
     } & OnServer)
   /**
    * The session ended, such as when this computer was signed out from another device. With a

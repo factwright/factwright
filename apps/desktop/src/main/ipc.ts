@@ -580,6 +580,7 @@ export function registerIpc({
   answer('sync:remove-device', (id) => (isId(id) ? sync.removeDevice(id) : REFUSED));
   answer('sync:sign-out', () => sync.signOut());
   answer('sync:different-account', () => sync.useDifferentAccount());
+  answer('sync:subscribe', () => sync.subscribe());
   answer('sync:account-page', () => sync.openAccountPage());
 
   // Profiles, each checked by Profiles itself. Opening another restarts the app on it.

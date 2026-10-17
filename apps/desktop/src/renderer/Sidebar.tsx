@@ -41,6 +41,7 @@ export function Sidebar({
   linkRequests = [],
   linkAsking = null,
   onOpenSync,
+  onSyncAccountPage,
   onOpenClaudeSettings,
   levels,
   jobCount,
@@ -77,6 +78,8 @@ export function Sidebar({
   /** This computer, asking to be linked. */
   linkAsking?: AskingView | null;
   onOpenSync: () => void;
+  /** Opens the sync account's page in the browser, such as to update a card that didn't go through. */
+  onSyncAccountPage?: () => void;
   /** Opens Claude's settings: its model, and what it may do without asking. */
   onOpenClaudeSettings: () => void;
   /** The user's choices of model and effort, once they've loaded. */
@@ -133,7 +136,13 @@ export function Sidebar({
           unsaved={update.unsaved}
           onRestart={update.onRestart}
         />
-        <SyncCard status={sync} requests={linkRequests} asking={linkAsking} onOpen={onOpenSync} />
+        <SyncCard
+          status={sync}
+          requests={linkRequests}
+          asking={linkAsking}
+          onOpen={onOpenSync}
+          {...(onSyncAccountPage && { onAccountPage: onSyncAccountPage })}
+        />
         <div className={styles.claude}>
           <ClaudeCard
             status={claude}

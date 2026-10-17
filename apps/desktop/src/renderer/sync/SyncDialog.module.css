@@ -507,3 +507,9 @@
   font-weight: 550;
   overflow-wrap: anywhere;
 }
+
+/* Subscribing in the browser, where sync is sold. */
+.subscribe {
+  display: flex;
+  margin-top: var(--fw-space-4);
+}

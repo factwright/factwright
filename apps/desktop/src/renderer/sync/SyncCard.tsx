@@ -6,6 +6,8 @@ interface CardView {
   line: string;
   help?: string;
   action?: string;
+  /** Whether the action opens the account's page in the browser, rather than the sync dialog. */
+  accountPage?: boolean;
 }
 
 /** How sync reads in the sidebar, in plain words, with what to do next. */
@@ -77,7 +79,44 @@ function describe(
         help: 'This computer was signed out of sync. Your job hunt here is safe.',
         action: 'Sign in…',
       };
+    case 'subscribe':
+      return status.waiting
+        ? {
+            tone: 'need',
+            line: 'Waiting for your browser',
+            help: 'Once you’ve subscribed, sync sets up by itself.',
+            action: 'Show',
+          }
+        : {
+            tone: 'need',
+            line: status.again ? 'Subscribe again to sync' : 'Subscribe to sync',
+            action: 'Finish setting up',
+          };
+    case 'paused':
+      return status.waiting
+        ? {
+            tone: 'need',
+            line: 'Paused',
+            help: 'Waiting for your browser. Once you’ve subscribed, sync picks up by itself.',
+            action: 'Show',
+          }
+        : {
+            tone: 'need',
+            line: 'Paused',
+            help: 'Your subscription ended. Your job hunt here is safe.',
+            action: 'Subscribe again…',
+          };
     case 'on':
+      // Still syncing while Stripe tries the card again, so the card says what to do about it.
+      if (status.paymentFailed && (status.activity === 'idle' || status.activity === 'syncing')) {
+        return {
+          tone: 'need',
+          line: 'Card didn’t go through',
+          help: 'Update it to keep sync going.',
+          action: 'Update card…',
+          accountPage: true,
+        };
+      }
       switch (status.activity) {
         case 'syncing':
           return { tone: 'checking', line: 'Syncing…', action: 'Manage' };
@@ -107,6 +146,7 @@ export function SyncCard({
   requests = [],
   asking = null,
   onOpen,
+  onAccountPage = onOpen,
 }: {
   status: SyncStatus | 'checking';
   /** Other devices asking to link, which this computer can approve. */
@@ -114,6 +154,8 @@ export function SyncCard({
   /** This computer, asking to be linked. */
   asking?: AskingView | null;
   onOpen: () => void;
+  /** Opens the account's page in the browser, where a card that didn't go through is updated. */
+  onAccountPage?: () => void;
 }) {
   const view = describe(status, requests, asking);
   return (
@@ -122,7 +164,11 @@ export function SyncCard({
       tone={view.tone}
       line={view.line}
       help={view.help}
-      action={view.action ? { label: view.action, onClick: onOpen } : null}
+      action={
+        view.action
+          ? { label: view.action, onClick: view.accountPage ? onAccountPage : onOpen }
+          : null
+      }
     />
   );
 }

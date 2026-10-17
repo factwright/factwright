@@ -1,7 +1,7 @@
 import { EXTENSION_URL } from '@factwright/core';
-import type { AccountInfo } from '@factwright/sync';
+import type { AccountInfo, SyncAccess } from '@factwright/sync';
 import { Button, DialogActions } from '@factwright/ui';
-import { Smartphone } from 'lucide-react';
+import { ArrowUpRight, Smartphone } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { ApprovalsView, LinkCode, SyncStatus } from '../../shared/sync.ts';
@@ -33,6 +33,62 @@ function standing(status: On): string {
     default:
       return status.message ?? 'Not syncing right now.';
   }
+}
+
+/** A day such as "November 17", with its year when that isn't this year. */
+export function dayOf(iso: string, now: Date = new Date()): string {
+  const day = new Date(iso);
+  return day.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(day.getFullYear() !== now.getFullYear() && { year: 'numeric' }),
+  });
+}
+
+/**
+ * How the account has sync, where it's sold: free, and why, or its subscription, with when it
+ * renews or ends, or that a card didn't go through. Manage opens the account's page on the web,
+ * where Stripe's portal changes the card or the plan, cancels, and has the receipts.
+ */
+function SubscriptionLine({ access, onManage }: { access: SyncAccess; onManage: () => void }) {
+  const live =
+    access.subscription && access.subscription.state !== 'ended' ? access.subscription : null;
+  const when = live?.renewsAt ? dayOf(live.renewsAt) : null;
+  let words: string;
+  if (access.gift === 'early') words = 'Free sync, for good. Thanks for being one of the first.';
+  else if (access.gift === 'free') {
+    words = `Free sync, from Steve. Good luck with the search!${
+      live && when ? ` Your subscription ends ${when}.` : ''
+    }`;
+  } else if (live?.state === 'retrying') {
+    words = 'Subscription: your card didn’t go through, so Stripe is trying it again.';
+  } else if (live?.state === 'ending') {
+    words = when ? `Subscription: canceled, syncing until ${when}.` : 'Subscription: canceled.';
+  } else if (live) words = when ? `Subscription: renews ${when}.` : 'Subscription: active.';
+  else return null;
+  return (
+    <p className={styles.hint}>
+      {words}
+      {live && (
+        <>
+          {' '}
+          <button
+            type="button"
+            className={`${styles.link} ${styles.outLink}`}
+            aria-label={
+              live.state === 'retrying'
+                ? 'Update your card on the web'
+                : 'Manage your subscription on the web'
+            }
+            onClick={onManage}
+          >
+            {live.state === 'retrying' ? 'Update card' : 'Manage'}
+            <ArrowUpRight size={13} aria-hidden="true" />
+          </button>
+        </>
+      )}
+    </p>
+  );
 }
 
 /** Adding a phone or computer: a QR code to scan, and a code to type. */
@@ -94,8 +150,9 @@ function LinkPanel({ api }: { api: FactwrightApi }) {
 }
 
 /**
- * Sync once it's on: how it stands, and with which server when it's one of your own, the
- * account's devices, adding one, the browser extension's page, and turning it off here.
+ * Sync once it's on: how it stands, and with which server when it's one of your own, how the
+ * account has sync where it's sold, the account's devices, adding one, the browser extension's
+ * page, and turning it off here.
  */
 export function ManageSync({
   api,
@@ -152,6 +209,9 @@ export function ManageSync({
           Sync server: <strong className={styles.server}>{hostOf(own)}</strong>. To use another,
           turn off sync on this computer first.
         </p>
+      )}
+      {account?.access && (
+        <SubscriptionLine access={account.access} onManage={() => void api.openAccountPage()} />
       )}
       {status.skipped > 0 && (
         <p className={styles.hint}>

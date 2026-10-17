@@ -22,6 +22,11 @@ export interface RunnerDeps {
   onActivity: (activity: SyncActivity, message: string | null) => void;
   /** When the session has ended, so sync stops until the user signs in again. */
   onSignedOut: () => void;
+  /**
+   * When the server says the account can't sync without a subscription, so sync stops until it
+   * has one, rather than trying again after every change.
+   */
+  onSubscriptionNeeded: () => void;
   /** When the server says the account's requests to link changed. */
   onRequests?: () => void;
   /** For tests. */
@@ -39,7 +44,8 @@ function problemOf(error: unknown): string {
 /**
  * Runs sync in the background: soon after each change here, as soon as another device changes
  * something, and every ten minutes anyway. One round at a time. When the server can't be
- * reached it waits, longer each time, and says so.
+ * reached it waits, longer each time, and says so. It stops for good once the session ends, or
+ * the account needs a subscription to sync.
  */
 export class SyncRunner {
   private readonly deps: RunnerDeps;
@@ -119,6 +125,11 @@ export class SyncRunner {
     if (error instanceof SyncError && error.kind === 'signed-out') {
       void this.stop();
       this.deps.onSignedOut();
+      return;
+    }
+    if (error instanceof SyncError && error.kind === 'subscription-needed') {
+      void this.stop();
+      this.deps.onSubscriptionNeeded();
       return;
     }
     const wait =
