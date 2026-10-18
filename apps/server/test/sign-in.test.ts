@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { authOptions, deviceName } from '../src/auth-options.ts';
-import { startServer, type TestServer } from './server.ts';
+import { sessionCookie, startServer, type TestServer } from './server.ts';
 
 let server: TestServer;
 
@@ -38,6 +38,16 @@ const pollForToken = (deviceCode: unknown) =>
     device_code: deviceCode,
     client_id: 'factwright-desktop',
   });
+
+/** The browser page letting go of a code it opened, for another account to open. Its status. */
+async function release(userCode: unknown, headers: Record<string, string>) {
+  const response = await fetch(new URL('/api/account/device-codes/release', server.url), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ userCode }),
+  });
+  return response.status;
+}
 
 describe('signing the desktop app in', () => {
   it('works with a code the user approves in their browser', async () => {
@@ -178,7 +188,62 @@ describe('signing the desktop app in', () => {
       { userCode: code.body.user_code },
       { authorization: `Bearer ${other.token}` },
     );
-    expect(stolen.status).toBe(403);
+    // Sign-in's own refusal, which the web view tells apart from a session that can't approve.
+    expect(stolen).toMatchObject({ status: 403, body: { error: 'access_denied' } });
+  });
+
+  it('lets the account that opened a code let go of it, for the account signed in next', async () => {
+    const code = await askForCode();
+    const userCode = String(code.body.user_code);
+    const sam = await server.signUp();
+    const alex = await server.signUp('Alex Kim');
+    // Sam's browser opens the code first, which ties it to Sam's account.
+    await openCode(userCode, sam.token);
+    expect(await openCode(userCode, alex.token)).not.toHaveProperty('client_id');
+
+    // Only Sam can let go of it, and only from the app's own pages.
+    expect(await release(userCode, { authorization: `Bearer ${alex.token}` })).toBe(204);
+    const elsewhere = { cookie: sessionCookie(sam.token), origin: 'https://elsewhere.example' };
+    expect(await release(userCode, elsewhere)).toBe(403);
+    expect(await openCode(userCode, alex.token)).not.toHaveProperty('client_id');
+    expect(await release(42, { authorization: `Bearer ${sam.token}` })).toBe(400);
+
+    // Sam lets go of it, as the code reads with its dash, then Alex opens it and lets the app in.
+    const dashed = `${userCode.slice(0, 4)}-${userCode.slice(4)}`.toLowerCase();
+    const own = { cookie: sessionCookie(sam.token), origin: server.url.origin };
+    expect(await release(dashed, own)).toBe(204);
+    expect(await openCode(userCode, alex.token)).toMatchObject({
+      status: 'pending',
+      client_id: 'factwright-desktop',
+    });
+    expect(await openCode(userCode, sam.token)).not.toHaveProperty('client_id');
+    const approved = await post(
+      '/api/auth/device/approve',
+      { userCode },
+      { authorization: `Bearer ${alex.token}` },
+    );
+    expect(approved.status).toBe(200);
+    const token = await pollForToken(code.body.device_code);
+    const desktop = server.clientFor(String(token.body.access_token), DESKTOP);
+    expect((await desktop.account()).user.id).toBe(alex.id);
+  });
+
+  it('keeps a code that was answered as it was answered, when asked to let go of it', async () => {
+    const code = await askForCode();
+    const sam = await server.signUp();
+    await openCode(code.body.user_code, sam.token);
+    await post(
+      '/api/auth/device/deny',
+      { userCode: code.body.user_code },
+      { authorization: `Bearer ${sam.token}` },
+    );
+    expect(await release(code.body.user_code, { authorization: `Bearer ${sam.token}` })).toBe(204);
+    const alex = await server.signUp('Alex Kim');
+    expect(await openCode(code.body.user_code, alex.token)).toEqual({
+      user_code: code.body.user_code,
+      status: 'denied',
+    });
+    expect((await pollForToken(code.body.device_code)).body.error).toBe('access_denied');
   });
 });
 

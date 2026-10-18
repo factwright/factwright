@@ -469,6 +469,30 @@ const deleteDevice: Handler = async ({ env, account }, [id]) => {
   return meta.changes > 0 ? empty() : NOT_FOUND();
 };
 
+/**
+ * Lets go of a sign-in code the desktop app or the browser extension showed, which this account
+ * opened but hasn't answered, so the account the person signs in with next can open it. Sign-in
+ * ties a code to the first account that opens it, and only that one can answer it, so without
+ * this, opening it signed in to the wrong account would leave it stuck there. A code that's been
+ * answered, or that's another account's, stays as it is. The code comes in the body, never the
+ * address, which a failure's log names.
+ */
+const releaseDeviceCode: Handler = async ({ request, env, account }) => {
+  const { userCode } = await readJson(request, SMALL_BODY);
+  if (typeof userCode !== 'string' || userCode.length > 100) {
+    throw new Refused('Name the code to let go of.');
+  }
+  // Found as sign-in finds it: as it's written, or in capitals without its dash.
+  const plain = userCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  await env.DB.prepare(
+    `UPDATE "deviceCode" SET "userId" = NULL
+     WHERE "userCode" IN (?, ?) AND "userId" = ? AND "status" = 'pending'`,
+  )
+    .bind(userCode, plain, account)
+    .run();
+  return empty();
+};
+
 const getExport: Handler = async (caller) => {
   const { user, store, account, env } = caller;
   const [devices, billing, kept] = await Promise.all([
@@ -524,6 +548,7 @@ const ROUTES: [method: string, pattern: RegExp, handler: Handler, needs: Needs][
   ['POST', /^\/api\/sync\/live\/ticket$/, postLiveTicket, 'open'],
   ['GET', /^\/api\/account$/, getAccount, 'open'],
   ['DELETE', /^\/api\/account\/devices\/([^/]+)$/, deleteDevice, 'open'],
+  ['POST', /^\/api\/account\/device-codes\/release$/, releaseDeviceCode, 'open'],
   ['GET', /^\/api\/account\/export$/, getExport, 'open'],
   ['POST', /^\/api\/billing\/checkout$/, postCheckout, 'open'],
   ['POST', /^\/api\/billing\/portal$/, postPortal, 'open'],

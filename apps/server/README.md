@@ -39,11 +39,12 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST /api/sync/live/ticket`, `GET /api/sync/live` | Listening for changes, over a WebSocket |
 | `GET /api/account`, `DELETE /api/account/devices/:id` | Who you are, your signed-in devices, how much you store and, where sync is sold, how you have it |
 | `GET /api/account/export` | Everything the server keeps for your account: what you sync, still locked, and where sync is sold, your billing record |
+| `POST /api/account/device-codes/release` | Lets go of a sign-in code the desktop app or the browser extension showed, which this account opened but hasn't answered, so the account you sign in with next can open it. The web view does this when you use another account for the code |
 | `POST /api/billing/checkout`, `POST /api/billing/portal` | Paying for sync, where it's sold, from a browser's own sign-in: Stripe's checkout for a month or a year, and its customer portal (see [Selling sync](#selling-sync)) |
 | `POST /api/billing/stripe` | Stripe's webhook, signed with its secret. It needs no session |
 | `GET /api/sign-in-options` | The ways to sign in this server has set up, what more it can do, such as approving devices, and the terms and privacy policy signing in agrees to, when it has them (`TERMS_URL` and `PRIVACY_URL`). Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
-| `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code |
+| `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code, and only for the account that opened the code first, as sign-in ties it to that one |
 
 Better Auth's routes that list sessions (with their tokens), sign other sessions out, or hand out a provider's token are off.
 
