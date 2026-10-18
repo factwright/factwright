@@ -78,9 +78,10 @@ export function sellsSync(env: Env): boolean {
  * that's neither true nor false stops checkout, rather than being taken for one of them.
  */
 function managedPayments(env: Env): boolean {
-  const setting = String(env.STRIPE_MANAGED_PAYMENTS || false)
-    .trim()
-    .toLowerCase();
+  const setting =
+    String(env.STRIPE_MANAGED_PAYMENTS ?? '')
+      .trim()
+      .toLowerCase() || 'false';
   if (setting !== 'true' && setting !== 'false') {
     throw new Error(`STRIPE_MANAGED_PAYMENTS is "${setting}". Set it to true or false.`);
   }
@@ -221,6 +222,8 @@ async function customerFor(env: Env, someone: Someone, again = false): Promise<s
  * "slow-down" when the account started one moments ago. The checkout closes after about half an
  * hour, and names the account on its subscription, so every event about it says whose it is.
  * - It asks for a tick, agreeing to the terms of service named in Stripe's public details.
+ * - It always says whether Managed Payments is on. Stripe can turn it on for an account's
+ *   checkouts by default, and a checkout's own word decides over that.
  * - With Managed Payments, Stripe works out the tax, and asks for the name and address it needs
  *   for it, so the checkout sends none of the settings Managed Payments refuses, such as
  *   automatic_tax and customer_update. Without it, the checkout adds no tax.
@@ -255,7 +258,7 @@ export async function startCheckout(
       success_url: `${address}/subscribe/done`,
       cancel_url: `${address}/subscribe`,
       'consent_collection[terms_of_service]': 'required',
-      ...(managed && { 'managed_payments[enabled]': 'true' }),
+      'managed_payments[enabled]': String(managed),
     });
   let session: { url: string } | null;
   try {

@@ -3,6 +3,9 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { text } from 'node:stream/consumers';
 
+/** The version of Stripe's API the server is written for. */
+export const STRIPE_VERSION = '2026-09-30.endive';
+
 /** A request the stand-in for Stripe got. */
 interface StripeRequest {
   method: string;
@@ -28,7 +31,8 @@ export interface FakeSubscription {
 /**
  * Stands in for Stripe's API, on this computer: customers to make and delete, checkout and
  * portal sessions, and subscriptions to read, update and cancel. It keeps each request, in
- * order, and fails them all while told to.
+ * order, and fails them all while told to. It refuses any request that doesn't ask for the API
+ * version the server is written for, so every test that calls it checks that too.
  */
 export async function startStripe() {
   const requests: StripeRequest[] = [];
@@ -57,6 +61,9 @@ export async function startStripe() {
     const missing = (param?: string) =>
       send(param ? 400 : 404, { error: { code: 'resource_missing', ...(param && { param }) } });
     const live = (id: string | null) => Boolean(id && customers.get(id)?.deleted === false);
+    if (version !== STRIPE_VERSION) {
+      return send(400, { error: { message: 'Not the API version the server is written for.' } });
+    }
     if (failing) return send(failing, { error: { message: 'The stand-in is failing.' } });
 
     if (request.method === 'POST' && url.pathname === '/v1/customers') {

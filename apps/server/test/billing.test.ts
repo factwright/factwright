@@ -4,6 +4,7 @@ import { type Account, startServer, type TestServer } from './server.ts';
 import {
   type FakeStripe,
   type FakeSubscription,
+  STRIPE_VERSION,
   signed,
   startStripe,
   subscription,
@@ -11,13 +12,12 @@ import {
 
 /**
  * Factwright's own server, selling sync through a stand-in for Stripe, since the start of 2026,
- * through Stripe's ordinary checkout, as wrangler.jsonc has it.
+ * through Stripe's ordinary checkout, as wrangler.jsonc has it now. The stand-in refuses any call
+ * that doesn't ask for STRIPE_VERSION, so every test here checks the server always does.
  */
 const WEBHOOK_SECRET = 'whsec_test_only_0123456789';
 const SELLING_SINCE = '2026-01-01T00:00:00.000Z';
 const ADMIN = { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' };
-/** The version of Stripe's API the server is written for. */
-const STRIPE_VERSION = '2026-09-30.endive';
 
 /**
  * What Managed Payments refuses on a subscription's checkout, as the start of each setting's
@@ -184,9 +184,11 @@ describe('a server that sells sync', () => {
       cancel_url: `${server.url.origin}/subscribe`,
       // A box to tick, agreeing to the terms named in Stripe's public details.
       'consent_collection[terms_of_service]': 'required',
+      // Stripe's ordinary checkout, said outright, so Stripe's default for the account can't
+      // turn Managed Payments on.
+      'managed_payments[enabled]': 'false',
     });
-    // Stripe's ordinary checkout, with Neatifai as the seller, and no tax added.
-    expect(form['managed_payments[enabled]']).toBeUndefined();
+    // No tax added.
     expect(form['automatic_tax[enabled]']).toBeUndefined();
     // It closes after about half an hour, so a tab left open can't pay later.
     const closes = Number(form.expires_at) - Date.now() / 1000;
@@ -430,24 +432,6 @@ describe('a server that sells sync', () => {
     const { sam, paid } = await paying();
     expect((await operator('/api/admin/delete', { account: sam.id })).status).toBe(204);
     expect(paid.status).toBe('canceled');
-  });
-
-  it('asks for the API version it’s written for, every time it calls Stripe', () => {
-    const calls = stripe.requests.map(
-      ({ method, path }) => `${method} ${path.replace(/\/(?:cus|sub)_[^/]+$/, '/:id')}`,
-    );
-    expect(new Set(calls)).toEqual(
-      new Set([
-        'POST /v1/customers',
-        'DELETE /v1/customers/:id',
-        'POST /v1/checkout/sessions',
-        'POST /v1/billing_portal/sessions',
-        'GET /v1/subscriptions/:id',
-        'POST /v1/subscriptions/:id',
-        'DELETE /v1/subscriptions/:id',
-      ]),
-    );
-    expect(stripe.requests.filter(({ version }) => version !== STRIPE_VERSION)).toEqual([]);
   });
 });
 

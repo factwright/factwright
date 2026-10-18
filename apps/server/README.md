@@ -94,8 +94,10 @@ Until then, and always on a server of your own:
 - the billing routes answer 404
 
 **How it's sold** is a plain setting in `wrangler.jsonc`, `STRIPE_MANAGED_PAYMENTS`. The terms say which way it's sold, so the setting and the terms change together (see [Turning it on](#turning-it-on)).
-- **`false`,** as now: Stripe's ordinary checkout, with Neatifai as the seller and Stripe as its payment processor. Checkout adds no tax.
-- **`true`:** [Stripe Managed Payments](https://docs.stripe.com/payments/managed-payments). Neatifai sells it through Link, Stripe's checkout, with Stripe's affiliate Sold through Link, LLC, as the merchant of record. Stripe works out the sales tax and VAT, collects it and pays it.
+- **`"false"`,** as now: Stripe's ordinary checkout, with Neatifai as the seller and Stripe as its payment processor. Checkout adds no tax. This holds even when Stripe turns Managed Payments on for the account's checkouts by default, as it can for new accounts.
+- **`"true"`:** [Stripe Managed Payments](https://docs.stripe.com/payments/managed-payments). Neatifai sells it through Link, Stripe's checkout, with Stripe's affiliate Sold through Link, LLC, as the merchant of record.
+  - Stripe works out the sales tax and VAT, collects it and pays it, in the more than 80 countries Managed Payments covers. Anywhere else, any tax is still Neatifai's to handle.
+  - Checkout shows people outside the US the price in their own currency, converted by Stripe (Adaptive Pricing, always on with Managed Payments).
 - **Anything else** stops checkout, rather than sell it one way while the terms say the other.
 
 **Who may sync:**
@@ -114,7 +116,8 @@ Until then, and always on a server of your own:
 - **Checkout:** `POST /api/billing/checkout`, with `{"period": "month"}` or `"year"`.
   - It uses the account's own Stripe customer, made once with an idempotency key, so all its subscriptions sit together and Stripe can refuse a second.
   - It asks them to tick a box agreeing to the terms of service, which Stripe links from its public details (`consent_collection`).
-  - With `STRIPE_MANAGED_PAYMENTS` on, it turns Managed Payments on (`managed_payments[enabled]`), and sends none of the settings Managed Payments refuses, such as `automatic_tax` or `customer_update`. Stripe asks for the name and address the tax needs, and keeps them on the account's customer.
+  - It says outright whether Managed Payments is on (`managed_payments[enabled]`), so Stripe's default for the account never decides.
+  - With Managed Payments on, it sends none of the settings Managed Payments refuses, such as `automatic_tax` or `customer_update`. Stripe asks for the name and address the tax needs, and keeps them on the account's customer.
   - It closes after 35 minutes.
   - It comes back to `/subscribe/done`, or to `/subscribe` if they leave.
   - An account can start one every 10 seconds.
@@ -129,7 +132,7 @@ Until then, and always on a server of your own:
 - **A cancellation** shows as "ending" whether Stripe records it as `cancel_at_period_end` or as `cancel_at`.
 - **The daily check:** the daily job reads back any subscription that should have had word by now, in case a webhook was missed.
 
-**Stripe's API version:** every call asks for `2026-09-30.endive`, so the default version in Stripe's dashboard can't change what the server sends or reads. Checkout takes Managed Payments from `2026-04-22.dahlia` on.
+**Stripe's API version:** every call the server makes asks for `2026-09-30.endive`, so the default version in Stripe's dashboard can't change what it sends or reads back. Checkout takes Managed Payments from `2026-04-22.dahlia` on. Stripe's events come in the webhook endpoint's own version, which doesn't matter here: the server reads only their type and IDs, then reads the subscription itself.
 
 **What's kept:** never card details.
 - **The `syncAccess` table:** each account's gift, Stripe customer and subscription IDs, the subscription's status, when the time paid for ends, and whether it's canceling. The account's export includes it.
@@ -156,8 +159,8 @@ curl -X POST https://app.factwright.com/api/admin/free-sync \
 ### Turning it on
 1. **Before selling:**
    - The apps can pay. The web view has `/subscribe` and `/subscribe/done`, and the app sends people there.
-   - factwright.com's terms and privacy policy cover the subscription, and say how it's sold, the way `STRIPE_MANAGED_PAYMENTS` is set. Each has one sentence for it, under Paying for sync (`#paying`): with `true`, it's sold through Link, with Sold through Link, LLC, as the merchant of record; with `false`, Stripe is only the payment processor. The comment beside each sentence has the other one. Change the setting and both sentences together.
-2. **Managed Payments, or not:** apply for it in Stripe's dashboard, and once Stripe approves, accept its terms there. Only then set `STRIPE_MANAGED_PAYMENTS` to `true`.
+   - factwright.com's terms and privacy policy cover the subscription, and say how it's sold, the way `STRIPE_MANAGED_PAYMENTS` is set. Each has one sentence for it, under Paying for sync (`#paying`): with `"true"`, it's sold through Link, with Sold through Link, LLC, as the merchant of record; with `"false"`, Stripe is only the payment processor. The comment beside each sentence has the other one. Change the setting and both sentences together.
+2. **Managed Payments, or not:** apply for it in Stripe's dashboard, and once Stripe approves, accept its terms there. Only then set `STRIPE_MANAGED_PAYMENTS` to `"true"`. Stripe may turn it on for every new checkout by default, but each checkout says which way it's sold, so the setting decides.
    - Decide before selling starts. It's only for new subscriptions, so any sold before the change stay as they were sold, and the terms have to cover those too.
    - If Stripe says no, leave it `false`. Checkout then adds no tax: Stripe Tax, the fallback, isn't set up here (`automatic_tax`).
 3. **In Factwright's own Stripe account, set up:**
@@ -171,8 +174,9 @@ curl -X POST https://app.factwright.com/api/admin/free-sync \
    - **The support email,** in the business details: an inbox someone reads every day. With Managed Payments, Stripe sends questions it needs help with there, and may refund a payment on its own after 48 hours without an answer.
    - **Checkout:** limit customers to one subscription.
    - **Failed payments:** cancel the subscription once all retries fail, so past due never lasts.
-   - **Renewal reminders:** turn on the emails about upcoming renewals, which go before every renewal, monthly ones too, and set Upcoming renewal events to 30 days.
-     - The terms promise an email 30 days before a yearly subscription renews, with how to cancel. Illinois's law on automatic renewals (815 ILCS 601/10) wants that notice 30 to 60 days ahead for a 12-month plan, saying how to cancel and by when.
+   - **Renewal reminders:** turn on the emails about upcoming renewals, which go before every renewal, monthly ones too, and set Upcoming renewal events to 30 days, or a little more if Stripe offers it.
+     - The terms promise an email 30 days before a yearly subscription renews, with how to cancel. Illinois's law on automatic renewals (815 ILCS 601/10) wants that notice no less than 30 and no more than 60 days ahead for a 12-month plan, saying how to cancel and by when.
+     - At exactly 30 days, an email that goes out a few hours late falls short. A longer lead is safer, with the terms saying "at least 30 days".
      - Set the emails' link for managing a subscription to the customer portal, so each says how to cancel.
      - With Managed Payments, Stripe sends a reminder before a subscription's 12-month anniversary even with these emails off, at the same timing.
    - **The customer portal:** canceling at the end of the period, switching between the monthly and yearly prices, updating the card, and the invoice history.
