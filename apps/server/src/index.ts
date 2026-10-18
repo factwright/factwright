@@ -13,6 +13,7 @@ import {
 } from './billing.ts';
 import { runAll } from './daily-job.ts';
 import type { Env } from './env.ts';
+import { extensionRedirects } from './extension-sign-in.ts';
 import { DELETED } from './store.ts';
 import { countSyncDaily } from './sync-totals.ts';
 
@@ -64,18 +65,25 @@ async function signIn(request: Request, env: Env, pathname: string): Promise<Res
 
 /**
  * The ways to sign in this server has set up, for the web view's buttons; what it can do beyond
- * the basics, so devices offer only that, such as whether sync here is a subscription; and the
- * terms and privacy policy signing in agrees to, when it has them. Older servers list no
- * features, and a server of your own no legal pages.
+ * the basics, so devices offer only that, such as whether sync here is a subscription; the return
+ * addresses Save to Factwright's sign-in window may go back to, for the extension to tell whether
+ * it can sign in that way here, and the page to check what it's asked; and the terms and privacy
+ * policy signing in agrees to, when it has them. Older servers list no features or return
+ * addresses, and a server of your own no legal pages.
  */
-function signInOptions(env: Env): Response {
+async function signInOptions(env: Env): Promise<Response> {
   const providers = [
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? ['github'] : []),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
   ];
   const features: Feature[] = ['approve', ...(sellsSync(env) ? (['subscription'] as const) : [])];
   const legal = { terms: env.TERMS_URL, privacy: env.PRIVACY_URL };
-  return json({ providers, features, ...(isLegal(legal) && { legal }) });
+  return json({
+    providers,
+    features,
+    extensionRedirects: await extensionRedirects(env.EXTENSION_IDS),
+    ...(isLegal(legal) && { legal }),
+  });
 }
 
 /** Whether a request carries the operator's token. Without one set, nothing does. */
@@ -209,7 +217,7 @@ export default {
           : NOT_FOUND();
       }
       if (pathname === STRIPE_WEBHOOK) return await stripeWebhook(request, env);
-      if (pathname === SIGN_IN_OPTIONS) return signInOptions(env);
+      if (pathname === SIGN_IN_OPTIONS) return await signInOptions(env);
       if (pathname.startsWith('/api/')) {
         return await handleApi(request, env, authFor(env, request));
       }

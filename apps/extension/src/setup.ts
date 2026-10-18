@@ -28,14 +28,16 @@ import {
   forgetAccount,
   giveBack,
   loadAccount,
+  returnAddress,
   saveAccount,
   signOut,
   syncFetch,
+  windowSignIn,
 } from './account.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
-  checkServer,
+  askServer,
   DEFAULT_SERVER,
   EXAMPLE,
   hostOf,
@@ -267,10 +269,11 @@ function choose(choice: Choice, note?: string): void {
 
 /**
  * Signs in to a sync server, from a click: asks the browser to let the extension reach it, checks
- * that a server of your own answers as a Factwright sync server, then signs in with a code. The
- * server is kept as your choice, and with the sign-in.
+ * that a server of your own answers as a Factwright sync server, then signs in: in the browser's
+ * own window, where the server knows this copy of the extension, or else with a code, as with
+ * `withCode`. The server is kept as your choice, and with the sign-in.
  */
-async function signIn(server: string, choice: Choice): Promise<void> {
+async function signIn(server: string, choice: Choice, withCode = false): Promise<void> {
   // Asked on the click, as browsers want: Firefox asks for Factwright's sync the first time, and
   // both browsers ask for a server of your own, its address alone.
   if (!(await allowSync(server))) {
@@ -283,7 +286,7 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     signedOut(note, choice);
   };
   try {
-    await signInThrough(server, failed);
+    await signInThrough(server, choice, failed, withCode);
   } catch (error) {
     // Whatever goes wrong, such as the browser's storage failing, ends it the same way.
     await failed(reasonOf(error, server));
@@ -296,7 +299,9 @@ async function signIn(server: string, choice: Choice): Promise<void> {
  */
 async function signInThrough(
   server: string,
+  choice: Choice,
   failed: (note?: string) => Promise<void>,
+  withCode: boolean,
 ): Promise<void> {
   if (isOwn(server)) {
     show(
@@ -304,17 +309,101 @@ async function signInThrough(
       heading('Set up Save to Factwright'),
       h('p', { class: 'muted', role: 'status' }, `Checking ${hostOf(server)}…`),
     );
-    const check = await checkServer(server, syncFetch);
-    if (check !== 'ok') {
-      await failed(
-        check === 'unreachable'
-          ? `${hostOf(server)} didn’t answer. Check its address and the connection, then try again.`
-          : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
-      );
-      return;
-    }
+  }
+  // Factwright's sync is asked too, for whether it signs this copy in through the window.
+  const asked = await askServer(server, syncFetch);
+  if (isOwn(server) && asked.check !== 'ok') {
+    await failed(
+      asked.check === 'unreachable'
+        ? `${hostOf(server)} didn’t answer. Check its address and the connection, then try again.`
+        : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
+    );
+    return;
   }
   await changeSettings({ server });
+  const redirect = returnAddress();
+  if (withCode || !redirect || !asked.redirects.includes(redirect)) {
+    await signInWithCode(server, failed);
+    return;
+  }
+  show(
+    app,
+    heading('Sign in to sync'),
+    h(
+      'p',
+      {},
+      `In the window that opened, at ${hostOf(server)}, sign in if it asks, then allow Save to Factwright.`,
+    ),
+    h(
+      'p',
+      { class: 'muted', role: 'status' },
+      'Waiting for you to allow it… To cancel, close that window.',
+    ),
+  );
+  const result = await windowSignIn(server, redirect);
+  if (result.ok) await signedIn(server, result.token);
+  else if (result.reason === 'canceled') await failed();
+  else if (result.reason === 'denied') {
+    await failed('You chose Don’t allow, so Save to Factwright didn’t sign in.');
+  } else {
+    // Nothing signed in, so a server of your own's permission goes back now, as when signing in
+    // fails any other way. Trying again asks for it again, on that click.
+    await giveBack(server, (await loadAccount())?.server ?? null);
+    windowFailed(server, choice, failed, result.message);
+  }
+}
+
+/**
+ * What a sign-in window that stopped short says: try again, or sign in with a code instead, for a
+ * browser whose window can't do it, as in a private window.
+ */
+function windowFailed(
+  server: string,
+  choice: Choice,
+  failed: (note?: string) => Promise<void>,
+  message: string,
+): void {
+  const reason =
+    message === 'Authorization page could not be loaded.'
+      ? `A page in the sign-in window didn’t load, so it closed. Check the connection, then try again.`
+      : message;
+  const again = button(
+    'Try again',
+    () => {
+      again.disabled = true;
+      void signIn(server, choice);
+    },
+    true,
+  );
+  const code = button('Sign in with a code instead', () => {
+    code.disabled = true;
+    void signIn(server, choice, true);
+  });
+  show(
+    app,
+    heading('Sign in to sync'),
+    problem(reason),
+    h(
+      'p',
+      { class: 'small muted' },
+      `Or sign in with a code: this tab shows one, and ${hostOf(server)} opens in a tab of its own, where you allow it.`,
+    ),
+    actions(
+      again,
+      code,
+      button('Cancel', () => void failed()),
+    ),
+  );
+}
+
+/**
+ * Signs in with a code, which the person allows in a tab at the server: for a server or a copy
+ * of the extension the window can't sign in, or when the person asks for it.
+ */
+async function signInWithCode(
+  server: string,
+  failed: (note?: string) => Promise<void>,
+): Promise<void> {
   const flow = deviceSignIn(server);
   const pending = await flow.start();
   // Only the server's own sign-in page, never an address it could name elsewhere.
@@ -350,15 +439,23 @@ async function signInThrough(
     await failed(result.reason === 'canceled' ? undefined : result.message);
     return;
   }
-  const info = await clientFor(server, result.token).account();
-  const account: Account = {
-    server,
-    user: info.user.id,
-    email: info.user.email,
-    token: result.token,
-    keys: null,
-  };
-  await saveAccount(account);
+  await signedIn(server, result.token);
+}
+
+/**
+ * Keeps a new sign-in, for the account it's for, then links it. A sign-in it can't keep is ended
+ * on the server, so it isn't left on the account's devices with no one to use it.
+ */
+async function signedIn(server: string, token: string): Promise<void> {
+  let account: Account;
+  try {
+    const info = await clientFor(server, token).account();
+    account = { server, user: info.user.id, email: info.user.email, token, keys: null };
+    await saveAccount(account);
+  } catch (error) {
+    await endSession({ server, token });
+    throw error;
+  }
   void link(account);
 }
 
