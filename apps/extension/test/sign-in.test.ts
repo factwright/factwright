@@ -149,7 +149,11 @@ describe('signing in through the browser’s window', () => {
         ok: false,
         reason: 'failed',
       });
-      expect(sent.mock.calls.some(([input]) => String(input).startsWith(evil))).toBe(false);
+      const reached = sent.mock.calls.map(
+        ([input]) => new URL(input instanceof Request ? input.url : String(input)).origin,
+      );
+      expect(reached).not.toContain(evil);
+      expect(reached).toContain(server.url.origin);
     } finally {
       sent.mockRestore();
     }
