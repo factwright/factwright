@@ -92,7 +92,7 @@ People who share a computer can each keep their own job hunt in a profile, and o
 - **Not private from each other.** As with a browser's profiles, anyone who can use the computer login can open any profile, read its files, and use its Claude and sync sign-ins. On a Mac, every profile's sync secrets are locked with the app's own Keychain item; on Windows, each profile's folder has its own key, locked to the Windows account. To keep job hunts private, give each person their own login on the computer.
 - **Removing a profile** moves its folder to the trash, where it can be restored. Its synced copy stays in its sync account. On a Mac, its Claude Code sign-in stays in the Keychain, so a restored folder is still signed in: it's the item named `Claude Code-credentials-` and a short code, which Keychain Access can delete. The open profile, the first one, whose folder holds the others, and one open in another copy of the app can't be removed.
 - **Updates are app-wide.** There's one copy of the app for every profile, and it updates once for all of them.
-- **Save to Factwright saves to the profile open last,** when it saves to Factwright on this computer: its helper goes by the profile `profiles.json` names, and takes an added profile's folder only if it's a folder of its own there, as the app does, or else the first profile's.
+- **Save to Factwright saves to the profile open last,** when it saves to Factwright on this computer: its helper goes by the profile `profiles.json` names, and takes an added profile's folder only if it's a folder of its own there, as the app does, or else the first profile's. Unlike the app, it doesn't check whether that profile's last start stopped short, so a job saved then waits in that profile until it opens again.
 
 ## Your data in the cloud
 Sync is off until you turn it on. Once it's on, your Mac, your Windows PC and your phone show the same job hunt, and everything is locked on your device before it leaves.
@@ -286,9 +286,10 @@ If you lose every device and your recovery key, your data can't be recovered, by
 - **Save to Factwright's helper.** The app carries the [helper](#the-browser-extension) the browsers
   start to save jobs on this computer: `Contents/Resources/helper/factwright-save` in the Mac app,
   and `factwright-save.exe` beside `Factwright.exe` on Windows, signed with the app, and checked
-  with it before a release goes out. On its first start, and after each update, the app registers it with
-  each browser it finds, for Save to Factwright alone: Chrome, Edge, Brave, Arc, Vivaldi and
-  Firefox.
+  with it before a release goes out. On its first start, and after each update, the app registers
+  it with each browser it finds, for Save to Factwright alone: Chrome, Edge, Brave, Arc, Vivaldi
+  and Firefox. Arc for Windows says nothing of where it looks, so it's registered by Chrome's key,
+  which Chromium's own browsers fall back to.
   - On a Mac, that's a small file naming the helper in each browser's folder in
     `~/Library/Application Support`. On Windows, it's a key under
     `HKEY_CURRENT_USER\Software`, naming such a file in Factwright's data folder.
@@ -296,7 +297,7 @@ If you lose every device and your recovery key, your data can't be recovered, by
     nothing, as that place goes away, and nor does a copy another program drives, as its tests do.
   - Uninstalling on Windows removes the keys and the files. On a Mac, moving Factwright to the
     Trash takes the helper with it, and the files that named it stay, naming nothing, so the
-    extension says it can't find Factwright.
+    extension can't reach Factwright, and says so.
 - **Only Factwright's own builds are set up to use its servers.** The release workflow builds
   with the sync server, app.factwright.com, and the download site, downloads.factwright.com, only
   when it runs in this repository, outside pull requests: for a release, or by hand to try one. A

@@ -50,13 +50,14 @@ export type PostingSaved = 'saved' | 'kept' | 'none' | 'failed';
 
 /**
  * How a save went: the job's ID, whether the job hunt had it already and what became of its
- * posting. Saved for Factwright on this computer while it's closed, `later` says it adds the job
- * the next time it opens. Or why it didn't save: "no-app" when Factwright on this computer can't be
- * reached, and "no-access" when the browser won't let the extension reach where it saves.
+ * posting. Saved for Factwright on this computer before it could answer, `later` says it adds the
+ * job: in a moment, when it's `open` but busy, as while it starts, or else the next time it opens.
+ * Or why it didn't save: "no-app" when Factwright on this computer can't be reached, and
+ * "no-access" when the browser won't let the extension reach where it saves.
  */
 export type SaveResult =
   | { ok: true; id: string; already: boolean; posting: PostingSaved }
-  | { ok: true; later: true }
+  | { ok: true; later: true; open?: true }
   | {
       ok: false;
       /** "paused": where sync is sold, the account doesn't have it now, so nothing syncs. */
@@ -175,7 +176,7 @@ function failed(error: unknown, server = 'Factwright’s sync'): SyncSaveResult 
         // The server turns the first change down, so this save added nothing, even to a job the
         // job hunt has already.
         message:
-          'Sync is paused, so nothing was saved. Subscribe in Factwright on your computer, then save it again.',
+          'Sync is paused, so nothing was saved. Subscribe in Factwright on your computer, then save it again, or save to Factwright on this computer instead, from Settings.',
       };
     }
     return { ok: false, reason: 'failed', message: error.message };

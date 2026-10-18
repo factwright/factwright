@@ -48,8 +48,10 @@ export type Destination =
   | { to: 'computer' }
   | null;
 
-export async function destination(): Promise<Destination> {
-  const account = await loadAccount();
+export async function destination(
+  load: () => Promise<Account | null> = loadAccount,
+): Promise<Destination> {
+  const account = await load();
   if (account?.keys) return { to: 'sync', account: { ...account, keys: account.keys } };
   return (await settings()).where === 'computer' ? { to: 'computer' } : null;
 }
@@ -68,6 +70,15 @@ function unreachable(error: unknown): { missing: boolean; message: string } {
   }
   return { missing: false, message: 'Factwright on this computer didn’t answer. Try again.' };
 }
+
+/**
+ * Whether this page, or the background, can send to Factwright on this computer now. Chrome makes
+ * each one's chrome.runtime once, with only what it may do then, and keeps it, so one that used
+ * chrome.runtime before the browser allowed native messaging can't send until it starts again.
+ * The background always has, until it next restarts, while a page opened since, such as the popup,
+ * can send. Firefox adds it to each as soon as it's allowed.
+ */
+export const canSendNow = (): boolean => typeof ext.runtime.sendNativeMessage === 'function';
 
 /** Sends the helper a message, and waits for its answer. */
 async function send(message: Record<string, string>): Promise<unknown> {
@@ -141,7 +152,9 @@ const NOT_KEPT: Problem = {
 export function readAnswer(answer: unknown): SaveResult {
   if (typeof answer !== 'object' || answer === null) return failedWith(NOT_KEPT);
   const said = answer as Record<string, unknown>;
-  if (said.ok === true && said.later === true) return { ok: true, later: true };
+  if (said.ok === true && said.later === true) {
+    return said.open === true ? { ok: true, later: true, open: true } : { ok: true, later: true };
+  }
   if (
     said.ok === true &&
     typeof said.id === 'string' &&
@@ -169,6 +182,13 @@ export async function saveOnComputer(job: JobToSave): Promise<SaveResult> {
       ok: false,
       reason: 'no-access',
       message: 'The browser doesn’t let Save to Factwright reach Factwright on this computer.',
+    };
+  }
+  if (!canSendNow()) {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: 'Close this, then click the Factwright button again to save it.',
     };
   }
   try {

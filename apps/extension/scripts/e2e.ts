@@ -682,8 +682,10 @@ try {
 
   // Through a copy that sells sync, as Factwright's will: an account that can't sync now is told
   // it needs a subscription, rather than asking Factwright on the computer to link it, and links
-  // once it has sync again. Then, with sync paused, a save saves nothing, and says why.
-  build({ VITE_FACTWRIGHT_SYNC_SERVER: selling.url.origin });
+  // once it has sync again. Then, with sync paused, a save saves nothing, and says why. And Use
+  // this computer instead leaves sync for Factwright on this computer, which this build asks the
+  // browser to let it reach at install, as a test can't answer the browser's prompt.
+  build({ VITE_FACTWRIGHT_SYNC_SERVER: selling.url.origin, FACTWRIGHT_NATIVE_AT_INSTALL: '1' });
   {
     /** The operator giving free sync, or taking it back, as Steve does for someone who asked. */
     const freeSync = async (email: string, off = false) => {
@@ -759,6 +761,27 @@ try {
     );
     check(errors.length === 0, 'with nothing going wrong on its pages');
     await context.close();
+
+    // Use this computer instead: it signs out of sync, and looks for Factwright on this computer,
+    // which isn't registered here.
+    const other = await browser(extension);
+    await throughSync(other.setup);
+    await signIn(other.setup, selling.url.origin, sam.token, false, 'Sync needs a subscription');
+    const extensions = async () =>
+      (await sam.client.account()).devices.filter((device) =>
+        device.name.startsWith('Save to Factwright'),
+      ).length;
+    const signedInBefore = await extensions();
+    await other.setup.getByRole('button', { name: 'Use this computer instead' }).click();
+    await other.setup
+      .getByRole('heading', { name: 'Get Factwright on this computer' })
+      .waitFor({ timeout: 15_000 });
+    check(
+      (await extensions()) === signedInBefore - 1,
+      'Use this computer instead signs out of sync, and looks for Factwright on this computer',
+    );
+    check(other.errors.length === 0, 'with nothing going wrong on its pages');
+    await other.context.close();
   }
 
   // Through the browser's own window for extensions, where Factwright's sync knows this copy, as it

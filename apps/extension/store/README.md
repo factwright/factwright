@@ -20,7 +20,7 @@ Version 0.2.0 signs in through the browser's own window wherever the server know
 >
 > Private by design:
 > • It reads a page only when you click its button, its menu item or its shortcut, and nothing as you browse. The popup sends nothing until you save.
-> • Saved to Factwright on the same computer, a job never leaves your computer. Through sync, what it saves is locked on your computer with your job hunt's own key before it's sent, so the sync server stores it in a form it can't read.
+> • Saved to Factwright on the same computer, a job goes straight to the app, never to a server. Through sync, what it saves is locked on your computer with your job hunt's own key before it's sent, so the sync server stores it in a form it can't read.
 > • It reaches no site but your sync server, Factwright's or one you run yourself, and has no analytics or tracking.
 > • A setting lets it save LinkedIn jobs by their link alone, without reading their postings.
 >
@@ -49,7 +49,7 @@ Don't list other companies' names in it. The Chrome Web Store rejected the first
    - **storage:** To keep the user's settings, such as whether to read LinkedIn postings.
    - **contextMenus:** For the Save job to Factwright item in the page's right-click menu.
    - **identity:** To sign the user in to their Factwright sync account with chrome.identity.launchWebAuthFlow, when they click Sign in to sync in setup. Chrome's own sign-in window opens the sync server's page (app.factwright.com, or the user's own server), where they sign in and allow the extension, and Chrome hands the answer to this extension alone, so there's no code to copy or compare. It never reads the user's Google account or email (no identity.email or getAuthToken).
-   - **nativeMessaging** (optional): Only for saving to the Factwright desktop app on the same computer, with no account. Nothing is asked at install: when the user chooses "Factwright on this computer" in setup, the extension asks for it with permissions.request. It then sends each job the user saves, and nothing else (its title, company, pay, link and posting text), to Factwright's own helper, com.factwright.save, which the Factwright app installs and registers for this extension's ID alone. It gives the permission back if the user sets it up to save through sync instead.
+   - **nativeMessaging** (optional): Only for saving to the Factwright desktop app on the same computer, with no account. Nothing is asked at install: when the user chooses "Factwright on this computer" in setup, the extension asks for it with permissions.request. It then sends each job the user saves, and nothing else (its title, company, pay, link, the site it's on, and its posting text), to Factwright's own helper, com.factwright.save, which the Factwright app installs and registers for this extension's ID alone. It gives the permission back if the user sets it up to save through sync instead.
    - **Host permission** (one box covers both):
      > app.factwright.com: To save the job to the user's job hunt through Factwright's sync server, the one site the extension reaches unless the user chooses a sync server of their own.
      >

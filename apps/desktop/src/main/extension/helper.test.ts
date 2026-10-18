@@ -66,6 +66,8 @@ const unicodeEscape = (code: string) => `\\u${code}`;
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
 
 const LATER = { ok: true, later: true };
+/** The job waits for an app that's open, but didn't answer in time. */
+const LATER_OPEN = { ok: true, later: true, open: true };
 const refused = (reason: string) => ({ ok: false, reason });
 
 /** The helper, built for the tests, and the folder it's built in. */
@@ -514,17 +516,30 @@ describe.skipIf(!compiler)(
         }
       });
 
-      it('is taken not to have answered when its answer can’t be passed on: the job waits', async () => {
+      it('is taken not to have answered when its answer can’t be passed on: the job waits for it, open', async () => {
         for (const answer of ['not JSON', '[1]', '{"ok":true', `{"id":"${'x'.repeat(4096)}"}`]) {
           const close = openApp(answer);
           try {
-            expect((await runAlongside(framed(JSON.stringify(JOB)))).answer, answer).toEqual(LATER);
+            expect((await runAlongside(framed(JSON.stringify(JOB)))).answer, answer).toEqual(
+              LATER_OPEN,
+            );
           } finally {
             close();
           }
           expect(inboxFiles(home)).toEqual(['.listening']);
         }
       });
+
+      it('is waited for 3 seconds, and then the job waits for it, open, as one busy starting', () => {
+        mkdirSync(inboxOf(home));
+        writeFileSync(join(inboxOf(home), '.listening'), String(process.pid));
+        const started = Date.now();
+        expect(save().answer).toEqual(LATER_OPEN);
+        const waited = Date.now() - started;
+        expect(waited).toBeGreaterThanOrEqual(2900);
+        expect(waited).toBeLessThan(10_000);
+        expect(jobsIn(home)).toHaveLength(1);
+      }, 20_000);
 
       it('isn’t waited for when its marker names no process that’s running', () => {
         const gone = spawnSync(process.execPath, ['-e', '']).pid;

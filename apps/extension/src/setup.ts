@@ -37,6 +37,7 @@ import {
 import {
   allowComputer,
   canReachComputer,
+  canSendNow,
   type Found,
   findComputer,
   giveBackComputer,
@@ -225,18 +226,52 @@ function chooseWhere(pick: Where, note?: string): void {
  * talk to apps on the computer: it looks for Factwright there, and saves to it from then on.
  */
 async function useComputer(allowed: Promise<boolean>): Promise<void> {
-  if (!(await allowed)) {
+  await allowed;
+  await lookForComputer();
+}
+
+/**
+ * A way back to saving on this computer from a sign-in to sync that's no longer wanted: it ends
+ * that sign-in, then sets Save to Factwright up to save to Factwright here. The browser is asked on
+ * the click itself, first, as Firefox wants. `stop` calls off whatever the sign-in has under way.
+ */
+function computerInstead(account: Account, label: string, stop?: () => void): HTMLButtonElement {
+  return button(label, () => {
+    const allowed = allowComputer();
+    stop?.();
+    void signOut(account).then(() => useComputer(allowed));
+  });
+}
+
+/** The address setup opens itself at again, to look for Factwright on this computer as it opens. */
+const LOOK_AGAIN = '#look-for-factwright';
+
+/**
+ * Looks for Factwright on this computer, and saves to it once it's there. Chrome lets a page talk
+ * to apps on the computer only if it's opened after the browser allowed it, so a page that can't
+ * yet opens itself again, once, and looks then (`reopened`).
+ */
+async function lookForComputer(reopened = false): Promise<void> {
+  if (!(await canReachComputer())) {
     where(
       'Save to Factwright needs the browser’s OK to talk to Factwright on this computer. Choose Continue, then allow it.',
       'computer',
     );
     return;
   }
-  await lookForComputer();
-}
-
-/** Looks for Factwright on this computer, and saves to it once it's there. */
-async function lookForComputer(): Promise<void> {
+  if (!canSendNow()) {
+    if (reopened) {
+      notFound({
+        ok: false,
+        missing: false,
+        message: 'This page can’t reach Factwright yet. Close it, then open Settings again.',
+      });
+      return;
+    }
+    location.hash = LOOK_AGAIN;
+    location.reload();
+    return;
+  }
   show(
     app,
     heading('Set up Save to Factwright'),
@@ -271,7 +306,11 @@ function notFound(found: Extract<Found, { ok: false }>): void {
       app,
       heading('Factwright didn’t answer'),
       problem(found.message),
-      h('p', {}, 'Check Factwright is up to date, then check again.'),
+      h(
+        'p',
+        {},
+        'Check Factwright is installed and up to date, and open it once, then check again. On a Mac, open it from Applications.',
+      ),
       actions(again, back),
     );
     return;
@@ -786,16 +825,20 @@ function needsSubscription(account: Account): void {
     ),
     actions(
       button('Check again', () => void link(account), true),
+      computerInstead(account, 'Use this computer instead'),
       button('Sign out', () => void signOut(account).then(() => signedOut())),
     ),
   );
 }
 
+/** What setup offers someone who was saving to this computer, partway through switching to sync. */
+const KEEP = 'Keep saving to this computer';
+
 /**
  * A sign-in too old to ask Factwright on the computer with, which the server allows only soon after
  * signing in: sign in again, or link with a link code or the recovery key, which still work.
  */
-function signInAgain(account: Account, others: HTMLElement): void {
+function signInAgain(account: Account, others: HTMLElement, fromComputer: boolean): void {
   const again = button(
     'Sign in again',
     () => {
@@ -815,7 +858,7 @@ function signInAgain(account: Account, others: HTMLElement): void {
       {},
       'It’s been a while since Save to Factwright signed in, so sign in again to ask Factwright on your computer to link it. Or link it with a link code or your recovery key.',
     ),
-    actions(again),
+    actions(again, fromComputer && computerInstead(account, KEEP)),
     others,
   );
 }
@@ -826,6 +869,8 @@ function signInAgain(account: Account, others: HTMLElement): void {
  */
 async function link(account: Account): Promise<void> {
   const client = clientFor(account.server, account.token);
+  // Saving to this computer until this links, it can go back to that.
+  const fromComputer = (await settings()).where === 'computer';
   let stopped = false;
   /** The request to link, once it's made, which stopping calls off. */
   let asked: LinkAsk | null = null;
@@ -841,7 +886,10 @@ async function link(account: Account): Promise<void> {
       app,
       heading('Link it with your job hunt'),
       problem(text),
-      actions(button('Ask again', () => void link(account), true)),
+      actions(
+        button('Ask again', () => void link(account), true),
+        fromComputer && computerInstead(account, KEEP, stop),
+      ),
       others,
     );
   };
@@ -881,6 +929,7 @@ async function link(account: Account): Promise<void> {
       ),
       actions(
         button('Check again', () => void link(account), true),
+        fromComputer && computerInstead(account, KEEP),
         button('Sign out', () => void signOut(account).then(() => signedOut())),
       ),
     );
@@ -896,8 +945,9 @@ async function link(account: Account): Promise<void> {
     ask = await LinkAsk.start(client);
     asked = ask;
   } catch (error) {
-    if (error instanceof SyncError && error.code === 'stale') signInAgain(account, others);
-    else await failed(error);
+    if (error instanceof SyncError && error.code === 'stale') {
+      signInAgain(account, others, fromComputer);
+    } else await failed(error);
     return;
   }
   // Calls the request off if the tab closes before it's done.
@@ -927,6 +977,7 @@ async function link(account: Account): Promise<void> {
       ),
       h('p', { class: 'muted' }, 'Waiting for Factwright…'),
       slowNote,
+      fromComputer && actions(computerInstead(account, KEEP, stop)),
       others,
     );
   const checking = (check: number[], approver: string) => {
@@ -1168,6 +1219,11 @@ function computerTakenAway(): void {
 }
 
 async function start(): Promise<void> {
+  if (location.hash === LOOK_AGAIN) {
+    history.replaceState(null, '', location.pathname);
+    void lookForComputer(true);
+    return;
+  }
   const account = await loadAccount();
   if (!account) {
     if ((await settings()).where === 'computer') void onComputer();

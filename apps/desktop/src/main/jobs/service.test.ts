@@ -269,6 +269,7 @@ describe('a job Save to Factwright saved on this computer', () => {
   it('adds it as New, with its posting kept as save_posting keeps one, and sends the list', () => {
     jobs.read();
     expect(jobs.addSaved(job)).toEqual({ ok: true, id, already: false, posting: 'saved' });
+    jobs.sendList();
     expect(readFileSync(posting(), 'utf8')).toBe(
       [
         '# Job posting',

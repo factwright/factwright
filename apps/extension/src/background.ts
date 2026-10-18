@@ -1,6 +1,6 @@
 import { LIGHT } from '@factwright/ui/tokens';
 import { browserName, canReachSync, clientFor, forgetAccount } from './account.ts';
-import { destination, saveOnComputer } from './computer.ts';
+import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
 import { isSave } from './messages.ts';
 import { isWebPage, readTab } from './read-tab.ts';
@@ -105,8 +105,15 @@ async function saveTab(tab: Tab): Promise<void> {
     await mark(tab, false, 'Open a job’s page, then save it.');
     return;
   }
-  if (!(await destination())) {
+  const to = await destination();
+  if (!to) {
     await openSetup();
+    return;
+  }
+  // Allowed native messaging since this background started, Chrome lets it send only once it
+  // starts again, so the popup, which can, saves this job.
+  if (to.to === 'computer' && !canSendNow() && (await canReachComputer())) {
+    await checkFirst(tab, 'Save to Factwright is ready to save it.');
     return;
   }
   const { page, unread } = await readTab(tab);
@@ -124,7 +131,8 @@ async function saveTab(tab: Tab): Promise<void> {
   }
   const name = [job.role, job.company].filter(Boolean).join(' at ');
   if ('later' in result) {
-    await mark(tab, true, `Saved ${name} for Factwright, which adds it when it’s open.`);
+    const when = result.open ? 'in a moment' : 'the next time it opens';
+    await mark(tab, true, `Saved ${name} for Factwright, which adds it ${when}.`);
   } else if (result.posting === 'failed') {
     await mark(tab, false, `Saved ${name}, but not its posting. Save it again to add it.`);
   } else if (result.already) {

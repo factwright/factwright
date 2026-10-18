@@ -38,6 +38,8 @@ let folder: string;
 let added: SavedJob[];
 let add: (job: SavedJob) => InboxAnswer;
 let inbox: JobInbox;
+/** How many times a look told the app its jobs changed. */
+let announced: number;
 /** What the inbox's watcher calls when the folder changes, standing in for the system's. */
 let changed: (() => void) | null;
 
@@ -61,6 +63,9 @@ function open(extra: { now?: number; pid?: number } = {}) {
   inbox = new JobInbox({
     folder,
     add: (job) => add(job),
+    added: () => {
+      announced += 1;
+    },
     watch: (_, onChange) => {
       changed = onChange;
       return { close: () => (changed = null) };
@@ -74,6 +79,7 @@ function open(extra: { now?: number; pid?: number } = {}) {
 
 beforeEach(() => {
   changed = null;
+  announced = 0;
   root = mkdtempSync(join(tmpdir(), 'factwright-inbox-'));
   folder = join(root, 'inbox');
   added = [];
@@ -109,6 +115,8 @@ describe('the inbox', () => {
     drop(named(NOW - 5000, 'aaaaaaaaaaaaaaaa'), { type: 'save', ...JOB, role: 'First' });
     open();
     expect(added.map((job) => job.role)).toEqual(['First', 'Second']);
+    // Once for both, so the window gets the new list once.
+    expect(announced).toBe(1);
     expect(answer(named(NOW - 5000, 'aaaaaaaaaaaaaaaa'))).toEqual(ADDED);
     expect(files()).toEqual([
       LISTENING,
@@ -190,9 +198,36 @@ describe('the inbox', () => {
       writeFileSync(join(folder, name), '');
       utimesSync(join(folder, name), old, old);
     }
-    writeFileSync(join(folder, `.${named(NOW, 'cccccccccccccccc')}.tmp`), '');
+    const young = join(folder, `.${named(NOW, 'cccccccccccccccc')}.tmp`);
+    writeFileSync(young, '');
+    utimesSync(young, (NOW - 5000) / 1000, (NOW - 5000) / 1000);
     open();
     expect(files()).toEqual([`.${named(NOW, 'cccccccccccccccc')}.tmp`, LISTENING]);
+  });
+
+  it('leaves a file it can’t delete, and carries on with the rest, never stopping the app', () => {
+    mkdirSync(folder);
+    // A folder named like a job, which deleting as a file can't take away.
+    mkdirSync(join(folder, `${named(NOW - 2000, '1111111111111111')}.json`));
+    drop(named(NOW - 1000, '2222222222222222'));
+    expect(() => open()).not.toThrow();
+    expect(added).toEqual([JOB]);
+    expect(answer(named(NOW - 2000, '1111111111111111'))).toMatchObject({ reason: 'bad-message' });
+    // Left alone from then on: it isn't read, or answered, again.
+    rmSync(join(folder, `${named(NOW - 2000, '1111111111111111')}.done`));
+    inbox.take();
+    expect(files()).toEqual([
+      LISTENING,
+      `${named(NOW - 2000, '1111111111111111')}.json`,
+      `${named(NOW - 1000, '2222222222222222')}.done`,
+    ]);
+  });
+
+  it('tells the app nothing changed when nothing was added', () => {
+    mkdirSync(folder);
+    drop(named(NOW), 'not JSON');
+    open();
+    expect(announced).toBe(0);
   });
 
   it('never takes jobs from an inbox that’s a link to somewhere else', () => {

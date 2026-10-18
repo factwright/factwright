@@ -308,8 +308,13 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const inbox = new JobInbox({
       folder: join(dataDir, INBOX_FOLDER),
       add: (job) => jobs.addSaved(job),
+      added: () => jobs.sendList(),
     });
-    inbox.start();
+    try {
+      inbox.start();
+    } catch {
+      // The inbox never keeps the app from opening: what's in it waits for the next start.
+    }
     // Each browser on this computer may start the helper, for Save to Factwright alone, once the
     // app has told it where the helper is: on the first start, and after each update. A copy
     // another program drives, as the tests do, leaves the browsers as they are, and so does one
@@ -333,8 +338,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         version: app.getVersion(),
         extraChromeIds: unpacked ? [unpacked] : [],
         run: runProgram,
-      }).catch(() => {
-        // The next start tries again.
+      }).catch((error: unknown) => {
+        // The next start tries again. A copy run from the code says why, such as an ID mistyped.
+        if (!app.isPackaged) console.error('Registering the helper with the browsers:', error);
       });
     }
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,

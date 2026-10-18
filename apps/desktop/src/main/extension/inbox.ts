@@ -66,6 +66,8 @@ export interface InboxDeps {
   folder: string;
   /** Adds a job to the job hunt, and says how it went. */
   add: (job: SavedJob) => InboxAnswer;
+  /** Once a look has added one or more jobs: to show the new list, once for them all. */
+  added?: () => void;
   /** Watches the inbox for changes: the system's own watching, unless a test stands in. */
   watch?: (folder: string, onChange: () => void) => Watcher;
   /** The clock, in milliseconds. Tests set it. */
@@ -102,6 +104,11 @@ export class JobInbox {
   private settling: ReturnType<typeof setTimeout> | null = null;
   /** Jobs answered already that stay for another try, so the helper gets one answer for each. */
   private readonly answered = new Set<string>();
+  /**
+   * Files that couldn't be deleted once they were taken, such as a folder named like a job, or a
+   * file another program holds: they're left alone from then on, so they stop nothing else.
+   */
+  private readonly stuck = new Set<string>();
 
   constructor(deps: InboxDeps) {
     this.deps = deps;
@@ -171,7 +178,8 @@ export class JobInbox {
 
   /**
    * Adds each job waiting in the inbox, in the order they came, and cleans away what's left over:
-   * a job the helper didn't finish writing, or an answer it didn't take.
+   * a job the helper didn't finish writing, or an answer it didn't take. Nothing in the inbox can
+   * stop the rest, or the app: whatever goes wrong with one file leaves it for the next look.
    */
   take(): void {
     const { folder } = this.deps;
@@ -182,20 +190,27 @@ export class JobInbox {
       return;
     }
     const now = this.now();
+    let added = false;
     for (const name of names) {
+      if (this.stuck.has(name)) continue;
       const job = INBOX_JOB.exec(name);
-      if (job) this.takeJob(name, Number(job[1]), now);
-      else if (LEFTOVER.test(name)) this.cleanAway(name, now);
+      try {
+        if (job) added = this.takeJob(name, Number(job[1]), now) || added;
+        else if (LEFTOVER.test(name)) this.cleanAway(name, now);
+      } catch {
+        // Tried again at the next look.
+      }
     }
+    if (added) this.deps.added?.();
   }
 
   /**
-   * Adds one job, answers the helper if it's still waiting, then deletes the job's file. A file
-   * that isn't a job is deleted, and nothing in it is kept. A job that couldn't be added, such as
-   * with the tracker's database busy, stays for the next look: saving the same job twice adds it
-   * once.
+   * Adds one job, answers the helper if it's still waiting, then deletes the job's file, and says
+   * whether it added it. A file that isn't a job is deleted, and nothing in it is kept. A job that
+   * couldn't be added, such as with the tracker's database busy, stays for the next look: saving
+   * the same job twice adds it once. One that can't be deleted is left alone from then on.
    */
-  private takeJob(name: string, at: number, now: number): void {
+  private takeJob(name: string, at: number, now: number): boolean {
     const file = join(this.deps.folder, name);
     let text: string | null = null;
     try {
@@ -203,7 +218,7 @@ export class JobInbox {
       if (stats.isFile() && stats.size <= MAX_BYTES) text = readFileSync(file, 'utf8');
     } catch {
       // Gone already, or not readable just now: the next look tries again.
-      return;
+      return false;
     }
     const job = text === null ? null : readSavedJob(text);
     let answer: InboxAnswer;
@@ -233,12 +248,17 @@ export class JobInbox {
         // The helper says the job waits, and it's added all the same.
       }
     }
-    if (done) {
+    if (!done) {
+      this.answered.add(name);
+      return false;
+    }
+    try {
       rmSync(file, { force: true });
       this.answered.delete(name);
-    } else {
-      this.answered.add(name);
+    } catch {
+      this.stuck.add(name);
     }
+    return answer.ok;
   }
 
   /** Deletes a half-written job or an answer nobody took, once it's been left long enough. */

@@ -96,6 +96,8 @@
 /** The answers the helper gives itself. The app's answer to a job goes back as the app wrote it. */
 static const char ANSWER_HELLO[] = "{\"ok\":true,\"version\":\"" FACTWRIGHT_VERSION "\"}";
 static const char ANSWER_LATER[] = "{\"ok\":true,\"later\":true}";
+/** The job waits for an app that's open, but didn't answer in time, such as one busy starting. */
+static const char ANSWER_LATER_OPEN[] = "{\"ok\":true,\"later\":true,\"open\":true}";
 static const char ANSWER_BAD_MESSAGE[] = "{\"ok\":false,\"reason\":\"bad-message\"}";
 static const char ANSWER_TOO_BIG[] = "{\"ok\":false,\"reason\":\"too-big\"}";
 static const char ANSWER_NO_FACTWRIGHT[] = "{\"ok\":false,\"reason\":\"no-factwright\"}";
@@ -915,9 +917,9 @@ static int rename_file(const Path *from, const Path *to) {
 }
 
 /**
- * Writes a job into the inbox whole, or not at all: to a hidden file made for it alone, which a
- * link can't stand in for, then flushed to the disk and renamed into place, so the app never sees
- * half of one. A file left half written is removed.
+ * Writes a job into the inbox whole, or not at all: to a file of its own whose name starts with a
+ * dot, which the app leaves alone, and which a link can't stand in for, then flushed to the disk
+ * and renamed into place, so the app never sees half of one. A file left half written is removed.
  */
 static int write_inbox_file(const Inbox *inbox, const char *draft, const char *name,
                             const unsigned char *bytes, size_t length) {
@@ -1102,19 +1104,22 @@ static int send_text(const char *answer) {
 /**
  * Waits for the open app's answer to a job, and passes it on: up to 3 seconds, looking every
  * 50 milliseconds. The app's answer is removed once it's read, as no one else needs it. One that
- * isn't a JSON object of at most 4096 bytes isn't passed on, nor is a link, and the job waits for
- * the app as if it had never answered.
+ * isn't a JSON object of at most 4096 bytes isn't passed on, nor is a link. Without an answer it
+ * can pass on, the job waits for the app, which is open, so it says so: the app adds it in a
+ * moment, as once it's done starting.
  */
 static int pass_on_answer(const Inbox *inbox, const char *name) {
   static unsigned char answer[APP_ANSWER_LIMIT + 1];
   char done[FILE_NAME_ROOM];
-  if (!file_name(done, "", name, ".done")) return send_text(ANSWER_LATER);
+  if (!file_name(done, "", name, ".done")) return send_text(ANSWER_LATER_OPEN);
   for (unsigned look = 0;; look++) {
     size_t length = 0;
     ReadResult found = read_inbox_file(inbox, done, answer, sizeof answer, &length);
     if (found != READ_MISSING) {
       remove_inbox_file(inbox, done);
-      if (found != READ_WHOLE || !is_json_object(answer, length)) return send_text(ANSWER_LATER);
+      if (found != READ_WHOLE || !is_json_object(answer, length)) {
+        return send_text(ANSWER_LATER_OPEN);
+      }
       Reader trimmed = {answer, length, 0};
       skip_spaces(&trimmed);
       while (length > trimmed.at && (answer[length - 1] == ' ' || answer[length - 1] == '\t' ||
@@ -1123,7 +1128,7 @@ static int pass_on_answer(const Inbox *inbox, const char *name) {
       }
       return send_answer(answer + trimmed.at, length - trimmed.at);
     }
-    if (look >= ANSWER_WAIT_MS / LOOK_EVERY_MS) return send_text(ANSWER_LATER);
+    if (look >= ANSWER_WAIT_MS / LOOK_EVERY_MS) return send_text(ANSWER_LATER_OPEN);
     pause_briefly();
   }
 }

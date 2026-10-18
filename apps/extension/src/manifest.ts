@@ -123,8 +123,9 @@ export function manifest(
         // Firefox 140 is the first to show what an extension sends, in its own words, at install.
         strict_min_version: '140.0',
         data_collection_permissions: {
-          // Sent only when you save a job, end-to-end encrypted, to your own sync account: the
-          // job's address, the posting's text, and the sign-in that saves it there.
+          // Sent only when you save a job: through sync, end-to-end encrypted, to your own sync
+          // account, the job's address, the posting's text, and the sign-in that saves it there.
+          // Saved to Factwright on this computer instead, the extension sends it to the app there.
           required: ['browsingActivity', 'websiteContent', 'authenticationInfo'],
         },
       },

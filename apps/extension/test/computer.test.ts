@@ -1,7 +1,9 @@
+import type { AccountKeys } from '@factwright/sync';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   allowComputer,
   canReachComputer,
+  canSendNow,
   destination,
   findComputer,
   giveBackComputer,
@@ -124,6 +126,32 @@ describe('where the extension saves', () => {
     browser.state.items.settings = { where: 'computer' };
     expect(await destination()).toEqual({ to: 'computer' });
   });
+
+  const account = {
+    server: 'https://app.factwright.com',
+    user: 'u1',
+    email: 'sam@example.com',
+    token: 't',
+    keys: null,
+  };
+
+  it('is sync once a sign-in there is linked, whatever was chosen before', async () => {
+    const keys = { id: 'k1' } as unknown as AccountKeys;
+    for (const where of ['computer', 'sync', null]) {
+      browser.state.items.settings = { where };
+      expect(await destination(async () => ({ ...account, keys }))).toEqual({
+        to: 'sync',
+        account: { ...account, keys },
+      });
+    }
+  });
+
+  it('stays this computer while a sign-in to sync isn’t linked yet', async () => {
+    browser.state.items.settings = { where: 'computer' };
+    expect(await destination(async () => account)).toEqual({ to: 'computer' });
+    browser.state.items.settings = { where: 'sync' };
+    expect(await destination(async () => account)).toBeNull();
+  });
 });
 
 describe('looking for Factwright on this computer', () => {
@@ -183,6 +211,14 @@ describe('saving to Factwright on this computer', () => {
     expect(String(browser.state.sent[0]?.message.posting)).toHaveLength(100_000);
   });
 
+  it('says when Factwright is open but busy, so it adds the job in a moment', async () => {
+    await allowComputer();
+    browser.state.answer = () => ({ ok: true, later: true, open: true });
+    expect(await saveOnComputer(JOB)).toEqual({ ok: true, later: true, open: true });
+    browser.state.answer = () => ({ ok: true, later: true, open: 'yes' });
+    expect(await saveOnComputer(JOB)).toEqual({ ok: true, later: true });
+  });
+
   it('passes on Factwright’s own answer when it’s open', async () => {
     await allowComputer();
     browser.state.answer = () => ({
@@ -197,6 +233,19 @@ describe('saving to Factwright on this computer', () => {
       already: true,
       posting: 'kept',
     });
+  });
+
+  it('says to open it again where the browser allowed it but this page can’t send yet', async () => {
+    // As Chrome leaves a page, or the background, that used chrome.runtime before it was allowed.
+    browser.state.native = true;
+    expect(canSendNow()).toBe(false);
+    expect(await saveOnComputer(JOB)).toEqual({
+      ok: false,
+      reason: 'failed',
+      message: 'Close this, then click the Factwright button again to save it.',
+    });
+    browser.sync();
+    expect(canSendNow()).toBe(true);
   });
 
   it('says the browser doesn’t let it, without trying, once the OK is taken away', async () => {

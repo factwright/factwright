@@ -171,7 +171,8 @@ export class JobsService {
    * Adds a job Save to Factwright saved on this computer, from the inbox, as a save through sync
    * adds it: its row, as New, and its posting as the person saw it, kept with the job's extras in
    * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. The
-   * same job, by its link, is added once, and saving it again adds its posting if it has none.
+   * same job, by its link, is added once, and saving it again adds its posting if it has none. The
+   * inbox sends the new list once it has added all it holds (sendList).
    */
   addSaved(job: SavedJob): InboxAnswer {
     const context = this.context();
@@ -181,8 +182,12 @@ export class JobsService {
     );
     if (!added.ok) return { ok: false, reason: 'failed', message: added.message };
     const posting = this.keepPosting(added.id, job, !added.already, context.today);
-    this.deps.onChange(this.list());
     return { ok: true, id: added.id, already: added.already, posting };
+  }
+
+  /** Sends the list as it is now, as after an edit: once the inbox has added what it holds. */
+  sendList(): void {
+    this.deps.onChange(this.list());
   }
 
   /**

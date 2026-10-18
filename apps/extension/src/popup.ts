@@ -2,7 +2,7 @@ import 'virtual:theme.css';
 import './ui.css';
 import { JOB_LIMITS } from '@factwright/core';
 import { canReachSync } from './account.ts';
-import { canReachComputer, type Destination, destination } from './computer.ts';
+import { canReachComputer, type Destination, destination, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import { askToSave } from './messages.ts';
@@ -154,6 +154,15 @@ function notes(page: PageJob, unread: Unread): Child[] {
   ];
 }
 
+/**
+ * Saves a job: to Factwright on this computer from the popup itself, which the browser lets talk to
+ * it as soon as it's allowed, or through sync, which the background does.
+ */
+function saveTo(to: Exclude<Destination, null>, job: JobToSave): Promise<SaveResult> {
+  if (to.to === 'computer') return saveOnComputer(job);
+  return askToSave((sent) => ext.runtime.sendMessage(sent), job);
+}
+
 function form(
   to: Exclude<Destination, null>,
   page: PageJob,
@@ -179,8 +188,7 @@ function form(
       return;
     }
     saving();
-    const send = (sent: unknown) => ext.runtime.sendMessage(sent);
-    done(to, edited, job, unread, await askToSave(send, job), keep.checked);
+    done(to, edited, job, unread, await saveTo(to, job), keep.checked);
   };
   const facts = h(
     'dl',
@@ -249,7 +257,9 @@ function savedWords(
   if ('later' in result) {
     return {
       title: 'Saved for Factwright on this computer.',
-      more: 'Factwright adds it to your job hunt, as New, the next time you open it.',
+      more: result.open
+        ? 'Factwright adds it to your job hunt, as New, in a moment.'
+        : 'Factwright adds it to your job hunt, as New, the next time you open it.',
     };
   }
   const syncs = to.to === 'sync' ? ' Factwright on your computer shows it once it syncs.' : '';
@@ -294,8 +304,7 @@ function done(
     const says = savedWords(result, to);
     const again = async () => {
       saving();
-      const send = (sent: unknown) => ext.runtime.sendMessage(sent);
-      done(to, page, job, unread, await askToSave(send, job), keepPosting);
+      done(to, page, job, unread, await saveTo(to, job), keepPosting);
     };
     message(
       says.title,
