@@ -53,7 +53,7 @@ To try saving to Factwright on this computer, build the desktop app's helper (`p
 FACTWRIGHT_EXTENSION_ID=<the unpacked extension's ID> pnpm dev
 ```
 
-To try it with a sync server of your own, choose Your own server in setup and type its address. One running locally is reached over http, which only a build for another server takes, so build it with that server's address, or any on this computer:
+To try it with a sync server of your own, choose Your own server in setup and type its address. A server of your own signs it in through the window alone, never with a code, since it could pass along a code Factwright's sync gave it, so a Chrome copy loaded this way needs its ID in that server's `EXTENSION_IDS`, which setup names. One running locally is reached over http, which only a build for another server takes, so build it with that server's address, or any on this computer:
 
 ```bash
 VITE_FACTWRIGHT_SYNC_SERVER=http://localhost:8787 pnpm --filter @factwright/extension build

@@ -56,6 +56,25 @@ type State =
 const LINK_CODE = 'factwright-link-code';
 
 /**
+ * What the sign-in page for a device's code says, by who asked for the code: the desktop app, or
+ * the browser extension, Save to Factwright, when it signs in with a code rather than through its
+ * window (EXTENSION_SIGN_IN). The server names them in the page's address, such as
+ * "for=extension". Anyone can change an address, so it only ever picks these words: signed in, the
+ * page goes by the server's own word for who asked. Without it, as for a code from before the
+ * server named them, it's the desktop app's.
+ */
+const DEVICE_SIGN_IN = {
+  desktop: {
+    title: 'Sign in to Factwright',
+    lead: 'Sign in to let Factwright on your computer sync your job hunt.',
+  },
+  extension: {
+    title: 'Sign in to set up Save to Factwright',
+    lead: 'Sign in with the account Factwright on your computer uses. Then Save to Factwright can save jobs to your job hunt.',
+  },
+} as const;
+
+/**
  * A link code from a QR code's address. It's taken out of the address at once, so it isn't
  * left in the browser's history, and kept for this tab only, until it's signed in.
  */
@@ -286,13 +305,15 @@ export function App() {
       );
     }
     if (path === '/device') {
+      const asker =
+        new URLSearchParams(location.search).get('for') === 'extension' ? 'extension' : 'desktop';
       return (
         <Shell>
           <SignIn
             providers={providers}
             legal={legal}
-            title="Sign in to Factwright"
-            lead="Sign in to let Factwright on your computer sync your job hunt."
+            {...DEVICE_SIGN_IN[asker]}
+            // Who asked stays in the address through signing in, with the code.
             returnTo={location.pathname + location.search}
             signInProblem={signInProblem}
           />
