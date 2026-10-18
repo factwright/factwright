@@ -360,4 +360,22 @@ describe('saving a job through sync', () => {
     const signedOut = server.clientFor('not-a-session');
     expect(await save(signedOut, keys)).toMatchObject({ ok: false, reason: 'signed-out' });
   });
+
+  it('names the sync server it couldn’t reach', async () => {
+    const { client, keys } = await account();
+    const gone = failingPush(client, () => true);
+    expect(await save(gone, keys)).toMatchObject({
+      ok: false,
+      reason: 'offline',
+      message: 'Couldn’t reach Factwright’s sync. Try again.',
+    });
+    const own = {
+      device: DEVICE,
+      server: 'your sync server, sync.example.com',
+      pause: async () => {},
+    };
+    expect(await saveJob(gone, keys, JOB, own)).toMatchObject({
+      message: 'Couldn’t reach your sync server, sync.example.com. Try again.',
+    });
+  });
 });
