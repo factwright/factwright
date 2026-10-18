@@ -1,7 +1,7 @@
 {
   "name": "@factwright/desktop",
   "productName": "Factwright",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "The Factwright app for Mac and Windows.",
   "author": "Neatifai LLC",
