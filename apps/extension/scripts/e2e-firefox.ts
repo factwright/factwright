@@ -9,11 +9,16 @@
 // allowing it would. The click that asks is a real one, as Firefox wants.
 //
 // The helper is the desktop app's, built for testing, and the app's own inbox code stands in for
-// the app, in folders of its own. Firefox looks for the helper's manifest in its home folder, and
-// on Linux that can be a temporary folder for Firefox alone. On a Mac or Windows, Firefox reads
-// the person's own, which a test never writes to, so there it says so and stops. It needs Firefox
-// 158 or later, Mozilla's own build rather than Ubuntu's snap, and a C compiler, for the helper.
-// `pnpm --filter @factwright/extension e2e:firefox`, with FIREFOX naming another Firefox to run.
+// the app, in folders of its own. Firefox looks for the helper's manifest in its home folder, so
+// the run gives it a temporary home of its own: by HOME on Linux, and on a Mac by
+// CFFIXED_USER_HOME, as a Mac's Firefox finds its Library from that rather than from HOME. It
+// never writes to the person's own, where their Factwright registers its helper, and it stops
+// before saving anything if Firefox finds a helper before the run has registered one, as it would
+// if it read theirs. On Windows, Firefox finds the helper through the person's own registry, which
+// a test never writes to, so there it says so and stops. It needs Firefox 158 or later, Mozilla's
+// own build rather than Ubuntu's snap, and a C compiler, for the helper.
+// `pnpm --filter @factwright/extension e2e:firefox`, with FIREFOX naming another Firefox to run
+// than the one on PATH, or on a Mac, the one in Applications.
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -38,12 +43,14 @@ import { FIREFOX_ID } from '../src/manifest.ts';
 import type { JobToSave, SaveResult } from '../src/save.ts';
 import { Firefox, waitFor } from './bidi.ts';
 
-if (process.platform !== 'linux') {
+if (process.platform !== 'linux' && process.platform !== 'darwin') {
   console.log(
-    'Skipped: the Firefox run needs Linux, where Firefox can have a home folder of its own to find Factwright’s helper in. On a Mac or Windows it would read yours, which a test never writes to. CI runs it on Linux.',
+    'Skipped: the Firefox run needs Linux or a Mac, where Firefox can have a home folder of its own to find Factwright’s helper in. On Windows it would read your registry, which a test never writes to. CI runs it on Linux.',
   );
   process.exit(0);
 }
+/** On a Mac, Firefox finds its home, and the helper's manifest in it, its own way. */
+const mac = process.platform === 'darwin';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** The desktop app, whose helper Firefox starts to save on this computer. */
@@ -54,16 +61,22 @@ function check(that: boolean, what: string): void {
   console.log(`✓ ${what}`);
 }
 
-/** Firefox: the one FIREFOX names, or the one on PATH. */
+/** Where Firefox's program is on a Mac, installed in Applications. */
+const MAC_FIREFOX = '/Applications/Firefox.app/Contents/MacOS/firefox';
+
+/** Firefox: the one FIREFOX names, or else the one in Applications on a Mac, or on PATH. */
 function firefoxProgram(): string {
   if (process.env.FIREFOX) return process.env.FIREFOX;
-  const found = (process.env.PATH ?? '')
-    .split(delimiter)
-    .map((folder) => join(folder, 'firefox'))
-    .find((path) => existsSync(path));
+  const found = (
+    mac
+      ? [MAC_FIREFOX]
+      : (process.env.PATH ?? '').split(delimiter).map((folder) => join(folder, 'firefox'))
+  ).find((path) => existsSync(path));
   if (!found) {
     console.error(
-      'There’s no Firefox to run: install Mozilla’s own, not the snap, or name one with FIREFOX.',
+      mac
+        ? 'There’s no Firefox to run: install it in Applications, or name one with FIREFOX.'
+        : 'There’s no Firefox to run: install Mozilla’s own, not the snap, or name one with FIREFOX.',
     );
     process.exit(1);
   }
@@ -154,7 +167,10 @@ const program = firefoxProgram();
 const work = mkdtempSync(join(tmpdir(), 'fw-firefox-'));
 /** Firefox's home folder, of its own, where it looks for the helper's manifest. */
 const home = join(work, 'home');
-const manifests = join(home, '.mozilla', 'native-messaging-hosts');
+/** Where in it: in its Library on a Mac, as in yours, and in .mozilla on Linux. */
+const manifests = mac
+  ? join(home, 'Library', 'Application Support', 'Mozilla', 'NativeMessagingHosts')
+  : join(home, '.mozilla', 'native-messaging-hosts');
 /** Factwright's data folder, which the helper built for testing takes from FACTWRIGHT_HELPER_HOME. */
 const data = join(work, 'factwright');
 const inboxFolder = join(data, INBOX_FOLDER);
@@ -233,6 +249,9 @@ try {
       HOME: home,
       // And its settings folder in it, so wherever a newer Firefox looks, it's this run's own.
       XDG_CONFIG_HOME: join(home, '.config'),
+      // A Mac's Firefox finds its home, and the Library it looks for the manifest in, by this,
+      // rather than by HOME.
+      CFFIXED_USER_HOME: home,
       // Passed on to the helper Firefox starts.
       FACTWRIGHT_HELPER_HOME: data,
     },
@@ -430,15 +449,30 @@ try {
     (await realm()) === realmBefore && (await canSend()),
     'and setup sends to the helper at once, from the same page, without opening again',
   );
+  // The guard for the person's own Factwright, before anything is saved. The run hasn't
+  // registered a helper yet, so Firefox must find none. If it finds one, it's reading a folder
+  // other than the run's, such as the person's own, where their Factwright registers its helper
+  // for the stores' Firefox ID, and the saves below would go to their Factwright. So the run stops
+  // here, having sent only hellos, setup's and this one, which change nothing.
   const unregistered = await hello();
+  if (unregistered.error !== `No such native application ${SAVE_HELPER}`) {
+    throw new Error(
+      `Stopped before saving anything. The run has registered no helper, so Firefox should say “No such native application ${SAVE_HELPER}”, but ${
+        unregistered.error === undefined
+          ? `a helper answered: ${JSON.stringify(unregistered.answer)}`
+          : `it said “${unregistered.error}”`
+      }. Firefox may be reading your own folder, where your Factwright registers its helper, rather than the run’s.`,
+    );
+  }
   check(
-    unregistered.error === 'No such native application com.factwright.save' &&
-      before === 'Get Factwright on this computer',
+    before === 'Get Factwright on this computer',
     `with no manifest, Firefox says “${unregistered.error}”, and setup says how to get Factwright`,
   );
 
   // Registered, but the helper isn't where the manifest says, as when Factwright was moved to the
-  // trash, which a Mac leaves registered.
+  // trash, which a Mac leaves registered. And the guard's other half: Firefox finds this manifest
+  // only if it reads the run's own folder, so if it says there's no such helper, the run stops
+  // here too, before it gives Firefox a helper to save through.
   registerHelper(GONE);
   const moved = await choose('Check again', [
     'Get Factwright on this computer',
@@ -446,6 +480,11 @@ try {
     'You’re set',
   ]);
   const gone = await hello();
+  if (gone.error === `No such native application ${SAVE_HELPER}`) {
+    throw new Error(
+      'Stopped before saving anything. Firefox doesn’t find the manifest the run registered, so it isn’t reading the run’s folder, and may be reading yours.',
+    );
+  }
   check(
     gone.error === 'An unexpected error occurred' && moved === 'Get Factwright on this computer',
     `with the helper gone, Firefox says “${gone.error}”, and setup says how to get Factwright`,
@@ -583,6 +622,15 @@ try {
   tracker?.close();
   await running?.close();
   proxy.close();
+  if (mac) {
+    try {
+      // A Mac gives the folders Firefox makes in its home, such as Library and Downloads, an
+      // access list that lets nothing delete them, which chmod -N takes off.
+      execFileSync('chmod', ['-R', '-N', work], { stdio: 'ignore' });
+    } catch {
+      // Then the folder stays, as below.
+    }
+  }
   try {
     // Firefox may hold its profile a moment after it stops.
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
