@@ -2,6 +2,7 @@ import { CLIENTS, STORE_RETURNS } from '@factwright/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
+import { DESKTOP_ANSWER_PATH, DESKTOP_TOKEN_PATH, desktopSignIn } from './desktop-sign-in.ts';
 import { ANSWER_PATH, extensionSignIn, TOKEN_PATH } from './extension-sign-in.ts';
 
 /** The apps that may sign in with a device code: the desktop app and the browser extension. */
@@ -132,10 +133,11 @@ export interface AuthSettings {
 
 /**
  * How people sign in: with GitHub or Google, through Better Auth. Accounts and sessions live in
- * D1. The desktop app signs in with a device code the user approves in their browser, then
- * sends its session as a bearer token. The browser extension signs in through the browser's own
- * window for extensions instead, where it can (extension-sign-in.ts). Nothing here ever touches
- * the keys that lock data.
+ * D1. The desktop app signs in to Factwright's sync with a device code the user approves in their
+ * browser, then sends its session as a bearer token. To a server of your own, it signs in through
+ * a page that sends the browser back to it (desktop-sign-in.ts), and the browser extension
+ * through the browser's own window for extensions, where it can (extension-sign-in.ts). Nothing
+ * here ever touches the keys that lock data.
  */
 export function authOptions(settings: AuthSettings) {
   return {
@@ -217,7 +219,8 @@ export function authOptions(settings: AuthSettings) {
       max: 100,
       customRules: {
         // Signing in, on the web or for the app, approving the app's code in the browser, and the
-        // browser extension's window: its answer, and its code traded for a session.
+        // sign-ins through the browser with a one-time code, for the browser extension and the
+        // desktop app: the page's answer, and the code traded for a session.
         ...Object.fromEntries(
           [
             '/sign-in/*',
@@ -227,6 +230,8 @@ export function authOptions(settings: AuthSettings) {
             '/device/deny',
             ANSWER_PATH,
             TOKEN_PATH,
+            DESKTOP_ANSWER_PATH,
+            DESKTOP_TOKEN_PATH,
           ].map((path) => [path, { window: 60, max: settings.signInsPerMinute ?? 10 }]),
         ),
         // The app asks every 5 seconds while the user signs in, for up to the code's 10 minutes.
@@ -257,6 +262,7 @@ export function authOptions(settings: AuthSettings) {
         new URL(settings.appUrl).origin,
         settings.extensionRedirects ?? (async () => STORE_RETURNS),
       ),
+      desktopSignIn(new URL(settings.appUrl).origin),
     ],
   } satisfies BetterAuthOptions;
 }

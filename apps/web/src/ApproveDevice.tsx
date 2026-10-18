@@ -33,7 +33,11 @@ const wordsFor = (host: string) => ({
   app: {
     title: 'Let your computer sign in?',
     check: 'Check that your computer shows this code:',
-    only: 'Only allow it if you just started signing in from Factwright. It lets that computer sync your job hunt.',
+    // The desktop app shows a code only for Factwright's sync, the server its copy was built for.
+    // To a server of your own, it signs in through the browser with no code (desktop-sign-in.ts).
+    // So a code here that the computer doesn't show is someone else's: a server of your own could
+    // get one from this server, and send the browser here for the person to allow.
+    only: 'Only allow it if you just started signing in from Factwright. It lets that computer sync your job hunt. If Factwright on your computer shows no code, don’t allow it.',
     account: 'Your computer signs in to this account.',
     switch:
       'Sign in with the account you want your computer to use. Then you’ll see this code again.',

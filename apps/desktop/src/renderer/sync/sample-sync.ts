@@ -178,6 +178,13 @@ function onOwn(status: SyncStatus, own: string): SyncStatus {
     : { ...status, ownServer: own };
 }
 
+/** Signing in to a server of your own, which shows no code: the browser comes back to the app. */
+const signingInTo = (own: string): SyncStatus =>
+  onOwn(
+    { ...SIGNING_IN, code: null, url: `${own}/sign-in/desktop?client_id=factwright-desktop` },
+    own,
+  );
+
 /** What a server of your own's address in the preview says, as the app would check it. */
 function readSample(typed: string): { server: string } | { message: string; help?: 'update' } {
   const text = typed.trim();
@@ -225,7 +232,12 @@ export function sampleSync(
 ): SyncApi {
   const listeners = new Set<(status: SyncStatus) => void>();
   const begun = STARTS[start ?? 'off'] ?? { state: 'off' };
-  let status = server === 'own' ? onOwn(begun, OWN_SERVER) : begun;
+  let status =
+    server !== 'own'
+      ? begun
+      : begun.state === 'signing-in'
+        ? signingInTo(OWN_SERVER)
+        : onOwn(begun, OWN_SERVER);
   const factwrightTerms = { ...FACTWRIGHT_TERMS, subscription: server === 'priced' };
   let devices = ACCOUNT.devices;
   const set = (next: SyncStatus) => {
@@ -253,9 +265,7 @@ export function sampleSync(
     own: string | undefined,
   ): Promise<{ ok: true } | { ok: false; message: string }> =>
     new Promise((resolve) => {
-      set(
-        own ? onOwn({ ...SIGNING_IN, url: `${own}/device?user_code=WDJBMJHT` }, own) : SIGNING_IN,
-      );
+      set(own ? signingInTo(own) : SIGNING_IN);
       setTimeout(() => {
         if (status.state !== 'signing-in')
           return resolve({ ok: false, message: 'Signing in was canceled.' });

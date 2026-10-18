@@ -1,5 +1,10 @@
 import { rmSync } from 'node:fs';
-import { type Account, startServer, type TestServer } from '@factwright/server/testing';
+import {
+  type Account,
+  sessionCookie,
+  startServer,
+  type TestServer,
+} from '@factwright/server/testing';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp } from './app.ts';
 import { newDataFolder } from './workspace.ts';
@@ -63,6 +68,36 @@ async function approveInBrowser({ app }: Opened, on: TestServer = server, who: A
     headers,
     body: JSON.stringify({ userCode }),
   });
+}
+
+/**
+ * In the browser on this computer, signed in to a server of your own: the person allows the app,
+ * with no code to compare, and the page sends the browser back to the app, at its address on this
+ * computer. The page the app answers with there.
+ */
+async function allowInBrowser({ app }: Opened, on: TestServer, who: Account): Promise<string> {
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened.length))
+    .toBe(1);
+  const page = new URL(
+    (await app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened[0])) ?? '',
+  );
+  expect(page.origin + page.pathname).toBe(`${on.url.origin}/sign-in/desktop`);
+  const answered = await fetch(new URL('/api/auth/desktop/authorize', on.url), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie: sessionCookie(who.token),
+      origin: on.url.origin,
+    },
+    body: JSON.stringify({
+      ...Object.fromEntries(page.searchParams),
+      allow: true,
+      account: who.id,
+    }),
+  });
+  const { url } = (await answered.json()) as { url: string };
+  return (await fetch(url)).text();
 }
 
 const syncCard = ({ window }: Opened) => window.getByRole('region', { name: 'Sync' });
@@ -173,10 +208,14 @@ test('connects a server of your own, in a copy without Factwright’s sync', asy
     await window.getByRole('button', { name: 'Connect your server…' }).click();
     await window.getByRole('textbox', { name: 'Your server’s address' }).fill(own.url.origin);
     await window.getByRole('button', { name: 'Connect' }).click();
+    // No code to compare: the browser comes back to the app, on this computer.
     await expect(
-      window.getByText(`Your browser opened ${own.url.host}’s sign-in page.`),
+      window.getByText(
+        `Your browser opened ${own.url.host}’s sign-in page. Sign in there and allow Factwright, then come back here.`,
+      ),
     ).toBeVisible();
-    await approveInBrowser(desk, own, sam);
+    await expect(window.getByText(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/)).toHaveCount(0);
+    expect(await allowInBrowser(desk, own, sam)).toContain('Factwright is signed in');
     await expect(window.getByRole('heading', { name: 'Save your recovery key' })).toBeVisible();
     await window.getByText('I’ve saved my recovery key somewhere safe').click();
     await window.getByRole('button', { name: 'Turn on sync' }).click();

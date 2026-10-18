@@ -44,6 +44,13 @@ describe('letting the desktop app sign in', () => {
     expect(accountLine()).toBe(
       'Signed in as sam@example.com. Your computer signs in to this account. Use another account',
     );
+    // The app shows a code only for the server its copy was built for. A server of your own could
+    // pass along one of this server's, and send the browser here: the computer shows no code then.
+    expect(
+      screen.getByText(
+        'Only allow it if you just started signing in from Factwright. It lets that computer sync your job hunt. If Factwright on your computer shows no code, don’t allow it.',
+      ),
+    ).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
 
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));

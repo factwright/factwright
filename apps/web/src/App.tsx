@@ -1,15 +1,18 @@
 import { localDate } from '@factwright/core';
 import {
   type AccountKeys,
+  DESKTOP_SIGN_IN,
   EXTENSION_SIGN_IN,
   type ExtensionAsk,
   type Legal,
   readAskQuery,
+  readDesktopAskQuery,
   type SyncAccess,
 } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
+import { ApproveDesktop } from './ApproveDesktop.tsx';
 import { ApproveDevice } from './ApproveDevice.tsx';
 import { ApproveExtension } from './ApproveExtension.tsx';
 import { Dashboard } from './Dashboard.tsx';
@@ -95,6 +98,12 @@ function extensionAsk(redirects: string[]): ExtensionAsk | null {
   const ask = readAskQuery(new URLSearchParams(location.search));
   return ask && redirects.includes(ask.redirect) ? ask : null;
 }
+
+/**
+ * What the desktop app asked, from this page's address, when it's an ask it makes: back to it on
+ * the computer the browser runs on.
+ */
+const desktopAsk = () => readDesktopAskQuery(new URLSearchParams(location.search));
 
 /** How long the job hunt stays as loaded before coming back to the page updates it. */
 const STALE_MS = 30_000;
@@ -285,6 +294,25 @@ export function App() {
         </Shell>
       );
     }
+    if (path === DESKTOP_SIGN_IN.page) {
+      // As the desktop app opens it, to sign in to a server of your own, which signing in comes
+      // back to.
+      return (
+        <Shell>
+          {desktopAsk() ? (
+            <SignIn
+              providers={providers}
+              legal={legal}
+              {...DEVICE_SIGN_IN.desktop}
+              returnTo={location.pathname + location.search}
+              signInProblem={signInProblem}
+            />
+          ) : (
+            <ApproveDesktop ask={null} account="" email="" />
+          )}
+        </Shell>
+      );
+    }
     if (path === '/subscribe' || path === '/subscribe/done') {
       const done = path === '/subscribe/done';
       return (
@@ -369,6 +397,21 @@ export function App() {
       <Shell>
         <ApproveExtension
           ask={extensionAsk(state.extensionRedirects)}
+          account={session.user.id}
+          email={session.user.email}
+          providers={providers}
+          signInProblem={signInProblem}
+        />
+      </Shell>
+    );
+  }
+
+  if (path === DESKTOP_SIGN_IN.page) {
+    // On the way back to the desktop app, with nothing to go on to from here.
+    return (
+      <Shell>
+        <ApproveDesktop
+          ask={desktopAsk()}
           account={session.user.id}
           email={session.user.email}
           providers={providers}

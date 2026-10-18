@@ -70,9 +70,9 @@ export interface ExtensionAsk {
 }
 
 /** A challenge: SHA-256 of a verifier, in URL-safe base64, 43 characters. */
-const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+export const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 /** A state: at least 16 random bytes in URL-safe base64, and at most 128 characters. */
-const STATE = /^[A-Za-z0-9_-]{22,128}$/;
+export const STATE = /^[A-Za-z0-9_-]{22,128}$/;
 /** A verifier, as RFC 7636 allows them: 43 to 128 characters from its list. */
 export const VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
 /** A code the server hands out: 32 random bytes in URL-safe base64. */

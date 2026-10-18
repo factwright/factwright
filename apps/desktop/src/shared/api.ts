@@ -373,9 +373,9 @@ export interface FactwrightApi {
   onSyncStatus(listener: (status: SyncStatus) => void): () => void;
   /**
    * Signs in to sync through the browser: to Factwright's own, or again to the server sync is
-   * with. Answers once the user approves, or it stops.
+   * with, which may need an update first. Answers once the user approves, or it stops.
    */
-  signInToSync(): Promise<EditResult>;
+  signInToSync(): Promise<ConnectResult>;
   /**
    * Connects a server of your own, by its address: checks it, then signs in to it through the
    * browser. Answers once the user approves, or it stops.

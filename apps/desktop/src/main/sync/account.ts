@@ -38,6 +38,7 @@ import type { Tracker } from '../jobs/tracker.ts';
 import { Approvals } from './approvals.ts';
 import { computerName, userAgent } from './device.ts';
 import { SyncEngine } from './engine.ts';
+import { LoopbackFlow } from './loopback.ts';
 import { adoptGainedColumns, adoptGainedTables } from './rows.ts';
 import { SyncRunner } from './runner.ts';
 import { type Keychain, NO_KEYCHAIN_MESSAGE, Secrets } from './secrets.ts';
@@ -194,7 +195,11 @@ export class SyncAccount {
   private keys: AccountKeys | null = null;
   private accountKey: Bytes | null = null;
   private runner: SyncRunner | null = null;
-  private signIn: DeviceSignIn | null = null;
+  /**
+   * A sign-in waiting for the browser: with a device code to Factwright's sync, or back on this
+   * computer, with no code, to a server of your own.
+   */
+  private signIn: DeviceSignIn | LoopbackFlow | null = null;
   /** The account key made for a first device, kept until its recovery key is saved. */
   private pending: { accountKey: Bytes; recovery: Bytes } | null = null;
   private device = 'This computer';
@@ -549,12 +554,19 @@ export class SyncAccount {
 
   /**
    * Signs in through the browser: to the server sync is with here, to sign in again, or else to
-   * Factwright's own.
+   * Factwright's own. A server of your own is checked first, as connecting it was, as it may
+   * need an update for this version to sign in to it.
    */
-  async signInWithBrowser(): Promise<EditResult> {
+  async signInWithBrowser(): Promise<ConnectResult> {
     const server = this.kept ?? this.factwright();
     if (!server) return failed(NO_SERVER);
-    this.attempts++;
+    const attempt = ++this.attempts;
+    if (server.own && this.secrets.available()) {
+      const checked = await checkServer(server.url, this.deps.fetch ?? fetch);
+      // Going back, another sign-in, or turning sync off here while it was checked calls it off.
+      if (this.closed || attempt !== this.attempts || this.kept !== server) return OVERTAKEN;
+      if (!checked.ok) return checked;
+    }
     return this.signInTo(server);
   }
 
@@ -581,7 +593,13 @@ export class SyncAccount {
     return this.signInTo({ url: address.server, own: true });
   }
 
-  /** Signs in to a server through the browser: shows a code, opens the page, and waits for the user. */
+  /**
+   * Signs in to a server through the browser: opens the page, and waits for the user. To
+   * Factwright's sync, it shows a code to check there. A server of your own sends the browser back
+   * to the app, on this computer, with no code: a code it showed could be one it got from
+   * Factwright's sync and passed along, for the person to allow there, while the answer that comes
+   * back names the server that gave it (LoopbackFlow).
+   */
   private async signInTo(server: SyncServer): Promise<EditResult> {
     if (!this.secrets.available()) {
       this.set({ state: 'unavailable' });
@@ -590,13 +608,20 @@ export class SyncAccount {
     this.signIn?.cancel();
     const before: SyncStatus =
       this.current.state === 'signing-in' ? { state: 'off' } : this.current;
-    const flow = new DeviceSignIn({
-      server: server.url,
-      clientId: CLIENTS.desktop,
-      userAgent: userAgent(this.deps.version, this.device),
-      ...(this.deps.fetch && { fetch: this.deps.fetch }),
-      ...(this.deps.sleep && { sleep: this.deps.sleep }),
-    });
+    const named = userAgent(this.deps.version, this.device);
+    const flow = server.own
+      ? new LoopbackFlow({
+          server: server.url,
+          userAgent: named,
+          ...(this.deps.fetch && { fetch: this.deps.fetch }),
+        })
+      : new DeviceSignIn({
+          server: server.url,
+          clientId: CLIENTS.desktop,
+          userAgent: named,
+          ...(this.deps.fetch && { fetch: this.deps.fetch }),
+          ...(this.deps.sleep && { sleep: this.deps.sleep }),
+        });
     this.signIn = flow;
     // Another sign-in, or closing the app, took over: that says how things stand.
     const overtaken = () => this.closed || this.signIn !== flow;
@@ -606,7 +631,7 @@ export class SyncAccount {
       if (this.current.state === 'signing-in') this.set(before);
       return failed(message);
     };
-    let pending: Awaited<ReturnType<DeviceSignIn['start']>>;
+    let pending: { code: string | null; url: string };
     try {
       pending = await flow.start();
     } catch (error) {
@@ -614,6 +639,7 @@ export class SyncAccount {
       return stop(reason(error));
     }
     if (overtaken()) return OVERTAKEN;
+    if (flow.canceled) return stop(OVERTAKEN.message);
     // Only the sync server's own pages open: never another site, or a file on this computer.
     if (new URL(pending.url).origin !== server.url) {
       flow.cancel();
@@ -621,7 +647,11 @@ export class SyncAccount {
     }
     this.signingInTo = server;
     this.set({ state: 'signing-in', code: pending.code, url: pending.url });
-    await this.deps.openUrl(pending.url);
+    try {
+      await this.deps.openUrl(pending.url);
+    } catch {
+      // A browser that didn't open leaves the link to copy, so signing in waits all the same.
+    }
     if (overtaken()) return OVERTAKEN;
     const result = await flow.finish();
     if (overtaken()) {

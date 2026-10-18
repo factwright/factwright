@@ -61,7 +61,10 @@ function describe(
       return {
         tone: 'need',
         line: 'Finish signing in',
-        help: `In your browser, check the code is ${status.code}.`,
+        help:
+          status.code === null
+            ? 'In your browser, allow Factwright to sign in.'
+            : `In your browser, check the code is ${status.code}.`,
         action: 'Show',
       };
     case 'setting-up':

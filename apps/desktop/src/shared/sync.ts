@@ -32,8 +32,12 @@ export type SyncStatus =
    * from Factwright's code on the data folder of one from factwright.com. It's left as it is.
    */
   | { state: 'no-server' }
-  /** Waiting for the user to approve signing in, in their browser. */
-  | ({ state: 'signing-in'; code: string; url: string } & OnServer)
+  /**
+   * Waiting for the user to allow signing in, in their browser, at `url`. To Factwright's sync,
+   * the page shows a code to check against `code`. A server of your own has none: the browser
+   * comes back to the app instead.
+   */
+  | ({ state: 'signing-in'; code: string | null; url: string } & OnServer)
   /**
    * Signed in to a server that sells sync, as Factwright's does, with an account that doesn't have
    * it: the account subscribes in the browser, before this computer sets up.

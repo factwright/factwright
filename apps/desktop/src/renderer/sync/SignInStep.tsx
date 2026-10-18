@@ -115,20 +115,33 @@ export function SignInStep({
     const copy = async () => {
       setCopied((await api.copyText(status.url)).ok);
     };
+    // A server of your own shows no code: the browser comes back to the app, on this computer.
+    const { code } = status;
     return (
       <>
-        <p className={styles.lead}>
-          Your browser opened {whose(own)} sign-in page.{' '}
-          {own ? 'Sign in there' : 'Sign in with GitHub or Google'}, then check the page shows this
-          code before you allow it:
-        </p>
-        <p className={styles.code}>{status.code}</p>
+        {code === null ? (
+          <p className={styles.lead}>
+            Your browser opened {whose(own)} sign-in page. Sign in there and allow Factwright, then
+            come back here.
+          </p>
+        ) : (
+          <>
+            <p className={styles.lead}>
+              Your browser opened {whose(own)} sign-in page.{' '}
+              {own ? 'Sign in there' : 'Sign in with GitHub or Google'}, then check the page shows
+              this code before you allow it:
+            </p>
+            <p className={styles.code}>{code}</p>
+          </>
+        )}
         <p className={styles.hint} aria-live="polite">
           Waiting for your browser…{' '}
           <button type="button" className={styles.link} onClick={copy}>
             {copied ? 'Link copied' : 'Copy the link'}
           </button>{' '}
-          to open it somewhere else.
+          {code === null
+            ? 'to open it in another browser on this computer.'
+            : 'to open it somewhere else.'}
         </p>
         <DialogActions>
           <Button onClick={() => api.cancelSyncSignIn()}>Cancel</Button>
