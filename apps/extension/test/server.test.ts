@@ -1,6 +1,8 @@
+import { returnAddress, STORE_RETURNS } from '@factwright/sync';
 import { describe, expect, it } from 'vitest';
 import { FACTWRIGHT_SYNC, hostPattern, manifest } from '../src/manifest.ts';
 import {
+  askServer,
   checkServer,
   DEFAULT_SERVER,
   isOwn,
@@ -130,6 +132,31 @@ describe('checking a server', () => {
     expect(await checkServer(OWN, async () => new Response(cut))).toBe('unreachable');
   });
 
+  it('reads the return addresses the server knows for the sign-in window', async () => {
+    const redirects = ['https://gjhjddlohoonikgdbfcfnljeffilblai.chromiumapp.org/'];
+    expect(
+      await askServer(
+        OWN,
+        answering(200, JSON.stringify({ providers: [], extensionRedirects: [...redirects, 42] })),
+      ),
+    ).toEqual({ check: 'ok', redirects });
+    // A server from before the window knows none, so the extension signs in with a code there.
+    expect(await askServer(OWN, answering(200, '{"providers":[]}'))).toEqual({
+      check: 'ok',
+      redirects: [],
+    });
+    expect(
+      await askServer(
+        OWN,
+        answering(200, JSON.stringify({ providers: [], extensionRedirects: redirects[0] })),
+      ),
+    ).toEqual({ check: 'ok', redirects: [] });
+    // And one that isn't a sync server, none at all.
+    expect(
+      await askServer(OWN, answering(200, JSON.stringify({ extensionRedirects: redirects }))),
+    ).toEqual({ check: 'not-sync', redirects: [] });
+  });
+
   it('reads sign-in options as a Factwright sync server’s only with a list of ways to sign in', () => {
     expect(isSyncServer({ providers: ['github', 'google'] })).toBe(true);
     expect(isSyncServer({ providers: 'github' })).toBe(false);
@@ -149,6 +176,38 @@ describe('the server it’s built for', () => {
   it('names a server of your own by its address', () => {
     expect(isOwn(OWN)).toBe(true);
     expect(serverName(OWN)).toBe('your sync server, factwright-sync.sam.workers.dev');
+  });
+});
+
+describe('the manifest’s permissions', () => {
+  it('asks for the browser’s own sign-in window, which shows no warning, and nothing more', () => {
+    for (const target of ['chrome', 'firefox'] as const) {
+      expect(manifest(target, '1.0.0').permissions).toEqual([
+        'activeTab',
+        'scripting',
+        'storage',
+        'contextMenus',
+        'identity',
+      ]);
+    }
+  });
+
+  it('gives Firefox the ID whose return address sync servers know', async () => {
+    const gecko = (
+      manifest('firefox', '1.0.0').browser_specific_settings as {
+        gecko: { id: string };
+      }
+    ).gecko;
+    expect(await returnAddress(gecko.id)).toBe(STORE_RETURNS[1]);
+  });
+
+  it('has no content scripts, and nothing a page can load or message', () => {
+    for (const target of ['chrome', 'firefox'] as const) {
+      const built = manifest(target, '1.0.0');
+      expect(built.content_scripts).toBeUndefined();
+      expect(built.web_accessible_resources).toBeUndefined();
+      expect(built.externally_connectable).toBeUndefined();
+    }
   });
 });
 

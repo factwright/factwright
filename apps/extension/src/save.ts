@@ -59,7 +59,8 @@ export type SaveResult =
   | { ok: true; later: true }
   | {
       ok: false;
-      reason: 'signed-out' | 'offline' | 'full' | 'no-access' | 'no-app' | 'failed';
+      /** "paused": where sync is sold, the account doesn't have it now, so nothing syncs. */
+      reason: 'signed-out' | 'offline' | 'full' | 'no-access' | 'no-app' | 'paused' | 'failed';
       message: string;
     };
 
@@ -166,6 +167,16 @@ function failed(error: unknown, server = 'Factwright’s sync'): SyncSaveResult 
     }
     if (error.kind === 'full') {
       return { ok: false, reason: 'full', message: 'Your sync account is full.' };
+    }
+    if (error.kind === 'subscription-needed') {
+      return {
+        ok: false,
+        reason: 'paused',
+        // The server turns the first change down, so this save added nothing, even to a job the
+        // job hunt has already.
+        message:
+          'Sync is paused, so nothing was saved. Subscribe in Factwright on your computer, then save it again.',
+      };
     }
     return { ok: false, reason: 'failed', message: error.message };
   }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import styles from './Account.module.css';
 import { forgetKeys } from './keys.ts';
 import page from './page.module.css';
+import { SubscriptionSection } from './Subscription.tsx';
 import { client, deleteAccount, PROVIDER_NAMES, type Provider, signIn, signOut } from './server.ts';
 import { fileContents, type Vault } from './vault.ts';
 
@@ -52,8 +53,9 @@ async function downloadCopy(vault: Vault, keys: AccountKeys): Promise<number> {
 }
 
 /**
- * The account: who's signed in, the devices that are, how much is stored, a copy of everything
- * to download, signing out here, and deleting the account.
+ * The account: who's signed in, the devices that are, how much is stored, how the account has
+ * sync where it's sold, a copy of everything to download, signing out here, and deleting the
+ * account.
  */
 export function Account({
   email,
@@ -140,6 +142,10 @@ export function Account({
     location.assign('/');
   };
 
+  // A subscription that's still running ends when the account goes.
+  const subscription = info?.access?.subscription;
+  const paying = subscription != null && subscription.state !== 'ended';
+
   const deleteIt = async () => {
     const result = await deleteAccount();
     if (result === 'deleted') {
@@ -187,6 +193,10 @@ export function Account({
         )}
       </section>
 
+      {info?.access && (
+        <SubscriptionSection access={info.access} onSignedOut={() => signedOut.current()} />
+      )}
+
       <section className={page.section} aria-labelledby="copy">
         <h2 id="copy" className={page.heading}>
           A copy of your job hunt
@@ -220,6 +230,8 @@ export function Account({
             <p className={page.lead}>
               Delete your account? Your synced job hunt, its backups and your sign-in go for good.
               The job hunt on your computers stays there.
+              {paying &&
+                ' Your subscription ends with it, straight away, and the time left on it isn’t refunded.'}
             </p>
             {freshSignIn ? (
               <>

@@ -507,3 +507,19 @@
   font-weight: 550;
   overflow-wrap: anywhere;
 }
+
+/* Subscribing in the browser, where sync is sold. */
+.subscribe {
+  display: flex;
+  margin-top: var(--fw-space-4);
+}
+
+/* Something to do about the subscription, at the top of Sync, such as a card that didn't go through. */
+.notice {
+  margin-bottom: var(--fw-space-4);
+}
+
+.noticeText {
+  margin: 0 0 var(--fw-space-2);
+  line-height: 1.45;
+}

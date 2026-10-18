@@ -1,24 +1,38 @@
 // Runs Save to Factwright in Chromium, from setting it up to saving a job: through a server of
 // your own, chosen in setup, with a site that counts every request standing in for the server it's
 // built for, and then through the server it's built for, a local copy of the sync server standing
-// in for Factwright's sync. It signs in with a code, then links both ways, with the emoji
-// Factwright on a computer checks, and with a link code. The computer's side runs here, with the
-// same code the desktop app uses. Then it saves straight to Factwright on this computer, through
-// the desktop app's helper, built for testing, and the app's own inbox code, in a folder of its
-// own (it needs a C compiler, as the desktop app's helper does). `pnpm --filter @factwright/extension e2e` (it needs Playwright's
+// in for Factwright's sync. Where the server doesn't know this copy, it signs in with a code, then
+// links both ways, with the emoji Factwright on a computer checks, and with a link code. Where it
+// does, as Factwright's knows the stores' copies, it signs in through the browser's own window for
+// extensions, with no code: signed in there already, or signing in there first, and turned down,
+// closed, or failing partway, for a code instead. Then, through a copy that sells sync, as
+// Factwright's will, an account without sync is told it needs a subscription, links once it has
+// one, and saves nothing while sync is paused. The computer's side runs here, with the same code
+// the desktop app uses. Then it saves straight to Factwright on this computer, through the desktop
+// app's helper, built for testing, and the app's own inbox code, in a folder of its own (it needs
+// a C compiler, as the desktop app's helper does). `pnpm --filter @factwright/extension e2e` (it
+// needs Playwright's
 // Chromium: `pnpm --filter @factwright/site exec playwright install chromium`). With
 // `-- --screenshots`, it also draws the stores' screenshots, into store/screenshots, from what it
 // shows along the way, and with `-- --shots <folder>`, saves each setup page it checks there, in
 // light and dark.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { INBOX_FOLDER, INBOX_JOB, SAVE_HELPER } from '@factwright/core';
-import { startServer, type TestServer } from '@factwright/server/testing';
+import { sessionCookie, startServer, type TestServer } from '@factwright/server/testing';
 import {
   accountKeys,
   checkEmoji,
@@ -35,7 +49,7 @@ import {
   rowName,
 } from '@factwright/sync';
 import { LIGHT } from '@factwright/ui/tokens';
-import { type Browser, chromium, type Page } from '@playwright/test';
+import { type Browser, type BrowserContext, chromium, type Page } from '@playwright/test';
 // Factwright's own inbox, as the desktop app runs it, standing in for the app on this computer.
 import { JobInbox } from '../../desktop/src/main/extension/inbox.ts';
 import { JobsService } from '../../desktop/src/main/jobs/service.ts';
@@ -106,6 +120,7 @@ async function browser(extension: string, env: Record<string, string> = {}) {
     context.serviceWorkers()[0] ??
     (await context.waitForEvent('serviceworker', { timeout: 15_000 }));
   const id = new URL(worker.url()).host;
+  if (id !== unpackedId(extension)) throw new Error(`Chromium gave the extension ${id}.`);
   const setup = await context.newPage();
   const errors: string[] = [];
   setup.on('pageerror', (error) => errors.push(error.message));
@@ -150,9 +165,11 @@ async function frame(
  * a person's would be. With `before`, only what's above that element, to fit a store's picture.
  */
 async function capture(page: Page, before?: string): Promise<Buffer> {
+  // Only the words change, so links and the like stay as the page has them.
   await page.evaluate(() => {
-    for (const element of document.querySelectorAll('p')) {
-      element.textContent = (element.textContent ?? '').replace(
+    const words = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = words.nextNode(); node; node = words.nextNode()) {
+      node.textContent = (node.textContent ?? '').replace(
         /\b\w+@example\.com\b/,
         'sam@example.com',
       );
@@ -210,9 +227,16 @@ async function throughSync(setup: Page): Promise<void> {
 
 /**
  * Signs the extension in to a server, Factwright's or one of your own, chosen in setup: it shows
- * a code, which the person allows in the browser.
+ * a code, which the person allows in the browser. Then setup goes on to linking, unless it shows
+ * another step, `next`.
  */
-async function signIn(setup: Page, origin: string, token: string, own = false): Promise<void> {
+async function signIn(
+  setup: Page,
+  origin: string,
+  token: string,
+  own = false,
+  next = 'Link it with your job hunt',
+): Promise<void> {
   if (own) {
     await setup.getByRole('radio', { name: 'Your own server' }).check();
     await setup.locator('#server').fill(origin);
@@ -227,9 +251,39 @@ async function signIn(setup: Page, origin: string, token: string, own = false): 
     headers: { ...auth, 'content-type': 'application/json' },
     body: JSON.stringify({ userCode }),
   });
-  await setup
-    .getByRole('heading', { name: 'Link it with your job hunt' })
-    .waitFor({ timeout: 30_000 });
+  await setup.getByRole('heading', { name: next }).waitFor({ timeout: 30_000 });
+}
+
+/**
+ * The ID Chromium gives an extension loaded from a folder, as it works it out: from a hash of the
+ * folder's path, with each hex digit as a letter from a to p.
+ */
+const unpackedId = (folder: string) =>
+  [...createHash('sha256').update(realpathSync(folder)).digest().subarray(0, 16).toString('hex')]
+    .map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 16)))
+    .join('');
+
+/** The browser signed in at a server, as signing in there with GitHub or Google leaves it. */
+async function signedInAt(context: BrowserContext, server: TestServer, token: string) {
+  const [name = '', value = ''] = sessionCookie(token).split(/=(.*)/s);
+  await context.addCookies([
+    { name, value, url: server.url.origin, httpOnly: true, sameSite: 'Lax' },
+  ]);
+}
+
+/**
+ * Clicks Sign in to sync, and gives the browser's sign-in window that opens for it, never the
+ * setup tab the extension opens on install, which can open late.
+ */
+async function openWindow(context: BrowserContext, setup: Page): Promise<Page> {
+  const opened = context.waitForEvent('page', {
+    predicate: (page) => !page.url().startsWith('chrome-extension://'),
+    timeout: 15_000,
+  });
+  await setup.getByRole('button', { name: 'Sign in to sync' }).click();
+  const window = await opened;
+  await window.waitForLoadState();
+  return window;
 }
 
 /**
@@ -290,6 +344,30 @@ const server = await startServer();
 const origin = server.url.origin;
 /** A sync server that sends its sign-in to another address than the one it was reached at. */
 const moved = await startServer({ APP_URL: 'https://sync.example.com' });
+/** A copy that sells sync, as Factwright's will. Nothing here pays, so nothing reaches Stripe. */
+const selling = await startServer({
+  STRIPE_SECRET_KEY: 'rk_test_only',
+  STRIPE_WEBHOOK_SECRET: 'whsec_test_only',
+  STRIPE_PRICE_MONTHLY: 'price_month',
+  STRIPE_PRICE_YEARLY: 'price_year',
+  STRIPE_API_URL: 'http://127.0.0.1:9',
+  EARLY_BEFORE: '2026-01-01T00:00:00.000Z',
+});
+const extension = join(ROOT, 'dist', 'chrome');
+// There before it's built, for its ID.
+mkdirSync(extension, { recursive: true });
+// The web view, which shows the sign-in window's page.
+execFileSync('pnpm', ['--filter', '@factwright/web', 'build'], { stdio: 'ignore' });
+/**
+ * A copy of the sync server standing in for Factwright's that knows this copy of the extension,
+ * as Factwright's knows the stores' copies, so it signs in through the browser's window. With
+ * GitHub to sign in with, though nothing here goes there.
+ */
+const windowed = await startServer({
+  EXTENSION_IDS: unpackedId(extension),
+  GITHUB_CLIENT_ID: 'github-app-id',
+  GITHUB_CLIENT_SECRET: 'not-used',
+});
 const standIn = await notSync();
 const typo = await notSync();
 const build = (env: Record<string, string> = {}) =>
@@ -298,7 +376,6 @@ const build = (env: Record<string, string> = {}) =>
     env: { ...process.env, ...env },
     stdio: 'ignore',
   });
-const extension = join(ROOT, 'dist', 'chrome');
 let failed = false;
 try {
   build({ VITE_FACTWRIGHT_SYNC_SERVER: standIn.origin });
@@ -578,7 +655,10 @@ try {
     await setup.locator('#server').fill('not an address');
     await setup.getByRole('radio', { name: 'Factwright’s sync' }).check();
     await signIn(setup, factwright.url.origin, sam.token);
-    check(true, 'signs in through Factwright’s sync, whatever’s left in your own server’s box');
+    check(
+      true,
+      'signs in through Factwright’s sync, whatever’s left in your own server’s box, with a code where it doesn’t know this copy',
+    );
     await factwright.env.DB.prepare(
       'UPDATE "session" SET createdAt = ? WHERE userId = ? AND token != ?',
     )
@@ -597,6 +677,243 @@ try {
       (await setup.getByText('Saves through Factwright’s sync').count()) === 1,
       'links with a link code too, through Factwright’s sync',
     );
+    await context.close();
+  }
+
+  // Through a copy that sells sync, as Factwright's will: an account that can't sync now is told
+  // it needs a subscription, rather than asking Factwright on the computer to link it, and links
+  // once it has sync again. Then, with sync paused, a save saves nothing, and says why.
+  build({ VITE_FACTWRIGHT_SYNC_SERVER: selling.url.origin });
+  {
+    /** The operator giving free sync, or taking it back, as Steve does for someone who asked. */
+    const freeSync = async (email: string, off = false) => {
+      const response = await fetch(new URL('/api/admin/free-sync', selling.url), {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ email, ...(off && { off: true }) }),
+      });
+      if (!response.ok) throw new Error(`Free sync answered ${response.status}.`);
+    };
+    // Sync was turned on while the account had it, which it has no longer.
+    const sam = await selling.signUp();
+    await freeSync(sam.email);
+    const accountKey = newAccountKey();
+    const keys = await accountKeys(accountKey);
+    await sam.client.saveKeys(
+      keys.id,
+      await lockWithRecoveryKey(accountKey, newRecoveryKey().bytes),
+    );
+    await freeSync(sam.email, true);
+    const { context, setup, errors } = await browser(extension);
+    await throughSync(setup);
+    await signIn(setup, selling.url.origin, sam.token, false, 'Sync needs a subscription');
+    check(
+      (await setup
+        .getByText('Factwright’s sync needs a subscription, and this account doesn’t have one now')
+        .count()) === 1 && (await sam.client.linkRequests()).length === 0,
+      'says sync needs a subscription, asking Factwright on the computer nothing',
+    );
+    check(
+      (await setup.getByRole('link', { name: 'How to set one up' }).getAttribute('href')) ===
+        'https://github.com/factwright/sync-server',
+      'pointing to a sync server of your own, which is free',
+    );
+    await shoot(setup, '7-subscription');
+
+    await freeSync(sam.email);
+    const code = newLinkCode();
+    const link = await lockForLink(accountKey, code.bytes);
+    await sam.client.saveLink(link.id, link.data);
+    await setup.getByRole('button', { name: 'Check again' }).click();
+    await setup
+      .getByRole('heading', { name: 'Link it with your job hunt' })
+      .waitFor({ timeout: 15_000 });
+    check(true, 'asks Factwright on the computer once the account has sync again');
+    await setup.locator('summary').click();
+    await setup.fill('#code', code.text);
+    await setup.getByRole('button', { name: 'Link with the code' }).click();
+    await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 15_000 });
+
+    await freeSync(sam.email, true);
+    const result = (await setup.evaluate(
+      (sent) =>
+        (
+          globalThis as unknown as {
+            chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+          }
+        ).chrome.runtime.sendMessage({ type: 'save', job: sent }),
+      {
+        url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
+        site: 'jobs.lever.co',
+        company: 'Harbor & Pine',
+        role: 'Senior Product Manager, Data',
+        pay: '',
+        posting: 'About the role\n\nLead the data platform.',
+      },
+    )) as { ok: boolean; reason?: string; message?: string };
+    check(
+      !result.ok &&
+        result.reason === 'paused' &&
+        (await sam.client.changes(0)).changes.length === 0,
+      'saves nothing while sync is paused, and says why',
+    );
+    check(errors.length === 0, 'with nothing going wrong on its pages');
+    await context.close();
+  }
+
+  // Through the browser's own window for extensions, where Factwright's sync knows this copy, as it
+  // knows the stores' copies: no code to compare, since the browser hands the answer to this
+  // extension alone.
+  build({ VITE_FACTWRIGHT_SYNC_SERVER: windowed.url.origin });
+  {
+    // Signed in at the server in this browser already: the window asks once, naming the account.
+    const { sam, accountKey } = await account(windowed);
+    const { context, setup, errors } = await browser(extension);
+    await signedInAt(context, windowed, sam.token);
+    await throughSync(setup);
+    const window = await openWindow(context, setup);
+    check(
+      window.url().startsWith(`${windowed.url.origin}/sign-in/extension?`),
+      'opens the server’s own page in the browser’s window',
+    );
+    await window.getByRole('heading', { name: 'Let Save to Factwright sign in?' }).waitFor();
+    check(
+      (await window.getByText(sam.email).count()) === 1 &&
+        (await window.getByRole('link', { name: 'Jobs' }).count()) === 0,
+      'which names the account it signs in to, with nothing to wander off to',
+    );
+    check(
+      (await setup.getByText('In the window that opened').count()) === 1 &&
+        (await setup.locator('.code').count()) === 0 &&
+        (await window.locator('.code, [class*="code"]').count()) === 0,
+      'with no code to compare, in setup or in the window',
+    );
+    await shoot(setup, '8-window-waiting');
+    await shoot(window, '9-window-allow');
+    const closed = window.waitForEvent('close');
+    await window.getByRole('button', { name: 'Allow', exact: true }).click();
+    await closed;
+    await setup
+      .getByRole('heading', { name: 'Link it with your job hunt' })
+      .waitFor({ timeout: 30_000 });
+    check(true, 'signs in once it’s allowed, and the window closes by itself');
+    const devices = (await sam.client.account()).devices;
+    const signedIn = devices.find(
+      (device) => device.name === 'Save to Factwright in Chrome on Mac',
+    );
+    check(
+      signedIn !== undefined && devices.length === 2,
+      'signs in under its own name, as a session of its own',
+    );
+    const via = await windowed.env.DB.prepare(`SELECT via FROM "session" WHERE id = ?`)
+      .bind(signedIn?.id)
+      .first<{ via: string }>();
+    check(
+      via?.via === 'device',
+      'a device’s session, which can’t approve devices or delete the account',
+    );
+    const code = newLinkCode();
+    const link = await lockForLink(accountKey, code.bytes);
+    await sam.client.saveLink(link.id, link.data);
+    await setup.locator('summary').click();
+    await setup.fill('#code', code.text);
+    await setup.getByRole('button', { name: 'Link with the code' }).click();
+    await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 15_000 });
+    check(true, 'and links, as with any sign-in');
+    check(errors.length === 0, 'with nothing going wrong on its pages');
+    await context.close();
+  }
+  {
+    // Signed out in this browser: the window signs in at the server first, then asks.
+    const { sam } = await account(windowed);
+    const { context, setup, errors } = await browser(extension);
+    await throughSync(setup);
+    const window = await openWindow(context, setup);
+    await window.getByRole('heading', { name: 'Sign in to Factwright' }).waitFor();
+    check(
+      (await window.getByRole('button', { name: 'Continue with GitHub' }).count()) === 1,
+      'signed out, the window signs in at the server first',
+    );
+    await shoot(window, '10-window-sign-in');
+    // GitHub brings the window back to the same page, signed in.
+    await signedInAt(context, windowed, sam.token);
+    await window.reload();
+    await window.getByRole('heading', { name: 'Let Save to Factwright sign in?' }).waitFor();
+    const closed = window.waitForEvent('close');
+    await window.getByRole('button', { name: 'Allow', exact: true }).click();
+    await closed;
+    await setup
+      .getByRole('heading', { name: 'Link it with your job hunt' })
+      .waitFor({ timeout: 30_000 });
+    check(
+      (await sam.client.account()).devices.some(
+        (device) => device.name === 'Save to Factwright in Chrome on Mac',
+      ),
+      'then asks, and signs in once it’s allowed',
+    );
+    check(errors.length === 0, 'with nothing going wrong on its pages');
+    await context.close();
+  }
+  {
+    // Turned down, or closed: nothing signs in, and setup is back where it started.
+    const { sam } = await account(windowed);
+    const { context, setup } = await browser(extension);
+    await signedInAt(context, windowed, sam.token);
+    await throughSync(setup);
+    let window = await openWindow(context, setup);
+    const closed = window.waitForEvent('close');
+    await window.getByRole('button', { name: 'Don’t allow' }).click();
+    await closed;
+    await setup.getByText('You chose Don’t allow, so Save to Factwright didn’t sign in.').waitFor();
+    check(
+      (await sam.client.account()).devices.length === 1,
+      'turned down, signs nothing in, and says so',
+    );
+    window = await openWindow(context, setup);
+    await window.getByRole('button', { name: 'Allow', exact: true }).waitFor();
+    await window.close();
+    await setup.getByRole('button', { name: 'Sign in to sync' }).waitFor();
+    check(
+      (await setup.getByRole('alert').count()) === 0 &&
+        (await sam.client.account()).devices.length === 1,
+      'closed, signs nothing in, and asks nothing',
+    );
+
+    // A window that stops short, as Chrome's does when a page in it doesn't load, offers a code
+    // instead. Chrome's own answer stands in here, since the window isn't the test's to break.
+    const failing = await context.newPage();
+    await failing.addInitScript(() => {
+      (
+        globalThis as unknown as { chrome: { identity: { launchWebAuthFlow: unknown } } }
+      ).chrome.identity.launchWebAuthFlow = async () => {
+        throw new Error('Authorization page could not be loaded.');
+      };
+    });
+    await failing.goto(setup.url());
+    await throughSync(failing);
+    await failing.getByRole('button', { name: 'Sign in to sync' }).click();
+    await failing.getByRole('button', { name: 'Sign in with a code instead' }).waitFor({
+      timeout: 15_000,
+    });
+    check(
+      (await failing.getByRole('alert').textContent()) ===
+        'A page in the sign-in window didn’t load, so it closed. Check the connection, then try again.',
+      'says when the window stopped short',
+    );
+    await shoot(failing, '11-window-failed');
+    await failing.getByRole('button', { name: 'Sign in with a code instead' }).click();
+    const userCode = ((await failing.locator('.code').textContent()) ?? '').replace('-', '');
+    const auth = { authorization: `Bearer ${sam.token}` };
+    await fetch(`${windowed.url.origin}/api/auth/device?user_code=${userCode}`, { headers: auth });
+    await fetch(`${windowed.url.origin}/api/auth/device/approve`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ userCode }),
+    });
+    await failing
+      .getByRole('heading', { name: 'Link it with your job hunt' })
+      .waitFor({ timeout: 30_000 });
+    check(true, 'and then signs in with a code, as before');
     await context.close();
   }
 
@@ -761,6 +1078,8 @@ try {
   await server.close();
   await factwright.close();
   await moved.close();
+  await selling.close();
+  await windowed.close();
   standIn.close();
   typo.close();
   // Built again for Factwright's own sync server, as the stores get it.

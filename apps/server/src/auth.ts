@@ -8,6 +8,7 @@ import {
 } from './auth-options.ts';
 import { closeBilling } from './billing.ts';
 import { appUrl, type Env } from './env.ts';
+import { extensionRedirects } from './extension-sign-in.ts';
 
 const provider = (id?: string, secret?: string): Provider | undefined =>
   id && secret ? { clientId: id, clientSecret: secret } : undefined;
@@ -30,6 +31,7 @@ export async function deleteEverything(env: Env, accountId: string): Promise<voi
 
 /** Sign-in for the app served at an address. */
 export function createAuth(env: Env, address: string) {
+  let redirects: Promise<string[]> | undefined;
   return betterAuth(
     authOptions({
       appUrl: address,
@@ -52,6 +54,10 @@ export function createAuth(env: Env, address: string) {
       ...(Number(env.SIGN_INS_PER_MINUTE) > 0 && {
         signInsPerMinute: Number(env.SIGN_INS_PER_MINUTE),
       }),
+      extensionRedirects: () => {
+        redirects ??= extensionRedirects(env.EXTENSION_IDS);
+        return redirects;
+      },
     }),
   );
 }

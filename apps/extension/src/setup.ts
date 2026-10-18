@@ -1,5 +1,6 @@
 import 'virtual:theme.css';
 import './ui.css';
+import { FREE_SYNC_EMAIL, OWN_SERVER_GUIDE } from '@factwright/core';
 import {
   type AccountKeys,
   API,
@@ -12,6 +13,7 @@ import {
   openWithRecoveryKey,
   readLinkCode,
   readRecoveryKey,
+  type SyncAccess,
   type SyncClient,
   SyncError,
 } from '@factwright/sync';
@@ -26,9 +28,11 @@ import {
   forgetAccount,
   giveBack,
   loadAccount,
+  returnAddress,
   saveAccount,
   signOut,
   syncFetch,
+  windowSignIn,
 } from './account.ts';
 import {
   allowComputer,
@@ -40,7 +44,7 @@ import {
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
-  checkServer,
+  askServer,
   DEFAULT_SERVER,
   EXAMPLE,
   hostOf,
@@ -457,10 +461,11 @@ function choose(choice: Choice, note?: string): void {
 
 /**
  * Signs in to a sync server, from a click: asks the browser to let the extension reach it, checks
- * that a server of your own answers as a Factwright sync server, then signs in with a code. The
- * server is kept as your choice, and with the sign-in.
+ * that a server of your own answers as a Factwright sync server, then signs in: in the browser's
+ * own window, where the server knows this copy of the extension, or else with a code, as with
+ * `withCode`. The server is kept as your choice, and with the sign-in.
  */
-async function signIn(server: string, choice: Choice): Promise<void> {
+async function signIn(server: string, choice: Choice, withCode = false): Promise<void> {
   // Asked on the click, as browsers want: Firefox asks for Factwright's sync the first time, and
   // both browsers ask for a server of your own, its address alone.
   if (!(await allowSync(server))) {
@@ -473,7 +478,7 @@ async function signIn(server: string, choice: Choice): Promise<void> {
     signedOut(note, choice);
   };
   try {
-    await signInThrough(server, failed);
+    await signInThrough(server, choice, failed, withCode);
   } catch (error) {
     // Whatever goes wrong, such as the browser's storage failing, ends it the same way.
     await failed(reasonOf(error, server));
@@ -486,7 +491,9 @@ async function signIn(server: string, choice: Choice): Promise<void> {
  */
 async function signInThrough(
   server: string,
+  choice: Choice,
   failed: (note?: string) => Promise<void>,
+  withCode: boolean,
 ): Promise<void> {
   if (isOwn(server)) {
     show(
@@ -494,17 +501,101 @@ async function signInThrough(
       heading('Set up Save to Factwright'),
       h('p', { class: 'muted', role: 'status' }, `Checking ${hostOf(server)}…`),
     );
-    const check = await checkServer(server, syncFetch);
-    if (check !== 'ok') {
-      await failed(
-        check === 'unreachable'
-          ? `${hostOf(server)} didn’t answer. Check its address and the connection, then try again.`
-          : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
-      );
-      return;
-    }
+  }
+  // Factwright's sync is asked too, for whether it signs this copy in through the window.
+  const asked = await askServer(server, syncFetch);
+  if (isOwn(server) && asked.check !== 'ok') {
+    await failed(
+      asked.check === 'unreachable'
+        ? `${hostOf(server)} didn’t answer. Check its address and the connection, then try again.`
+        : `${hostOf(server)} doesn’t answer as a Factwright sync server. Check its address: it’s the one Factwright on your computer uses.`,
+    );
+    return;
   }
   await changeSettings({ server });
+  const redirect = returnAddress();
+  if (withCode || !redirect || !asked.redirects.includes(redirect)) {
+    await signInWithCode(server, failed);
+    return;
+  }
+  show(
+    app,
+    heading('Sign in to sync'),
+    h(
+      'p',
+      {},
+      `In the window that opened, at ${hostOf(server)}, sign in if it asks, then allow Save to Factwright.`,
+    ),
+    h(
+      'p',
+      { class: 'muted', role: 'status' },
+      'Waiting for you to allow it… To cancel, close that window.',
+    ),
+  );
+  const result = await windowSignIn(server, redirect);
+  if (result.ok) await signedIn(server, result.token);
+  else if (result.reason === 'canceled') await failed();
+  else if (result.reason === 'denied') {
+    await failed('You chose Don’t allow, so Save to Factwright didn’t sign in.');
+  } else {
+    // Nothing signed in, so a server of your own's permission goes back now, as when signing in
+    // fails any other way. Trying again asks for it again, on that click.
+    await giveBack(server, (await loadAccount())?.server ?? null);
+    windowFailed(server, choice, failed, result.message);
+  }
+}
+
+/**
+ * What a sign-in window that stopped short says: try again, or sign in with a code instead, for a
+ * browser whose window can't do it, as in a private window.
+ */
+function windowFailed(
+  server: string,
+  choice: Choice,
+  failed: (note?: string) => Promise<void>,
+  message: string,
+): void {
+  const reason =
+    message === 'Authorization page could not be loaded.'
+      ? `A page in the sign-in window didn’t load, so it closed. Check the connection, then try again.`
+      : message;
+  const again = button(
+    'Try again',
+    () => {
+      again.disabled = true;
+      void signIn(server, choice);
+    },
+    true,
+  );
+  const code = button('Sign in with a code instead', () => {
+    code.disabled = true;
+    void signIn(server, choice, true);
+  });
+  show(
+    app,
+    heading('Sign in to sync'),
+    problem(reason),
+    h(
+      'p',
+      { class: 'small muted' },
+      `Or sign in with a code: this tab shows one, and ${hostOf(server)} opens in a tab of its own, where you allow it.`,
+    ),
+    actions(
+      again,
+      code,
+      button('Cancel', () => void failed()),
+    ),
+  );
+}
+
+/**
+ * Signs in with a code, which the person allows in a tab at the server: for a server or a copy
+ * of the extension the window can't sign in, or when the person asks for it.
+ */
+async function signInWithCode(
+  server: string,
+  failed: (note?: string) => Promise<void>,
+): Promise<void> {
   const flow = deviceSignIn(server);
   const pending = await flow.start();
   // Only the server's own sign-in page, never an address it could name elsewhere.
@@ -540,15 +631,23 @@ async function signInThrough(
     await failed(result.reason === 'canceled' ? undefined : result.message);
     return;
   }
-  const info = await clientFor(server, result.token).account();
-  const account: Account = {
-    server,
-    user: info.user.id,
-    email: info.user.email,
-    token: result.token,
-    keys: null,
-  };
-  await saveAccount(account);
+  await signedIn(server, result.token);
+}
+
+/**
+ * Keeps a new sign-in, for the account it's for, then links it. A sign-in it can't keep is ended
+ * on the server, so it isn't left on the account's devices with no one to use it.
+ */
+async function signedIn(server: string, token: string): Promise<void> {
+  let account: Account;
+  try {
+    const info = await clientFor(server, token).account();
+    account = { server, user: info.user.id, email: info.user.email, token, keys: null };
+    await saveAccount(account);
+  } catch (error) {
+    await endSession({ server, token });
+    throw error;
+  }
   void link(account);
 }
 
@@ -594,7 +693,10 @@ function otherWays(account: Account, client: SyncClient, onDone: () => void): HT
   };
   const failed = async (error: unknown) => {
     if (await signInEnded(error)) onDone();
-    else tell(reasonOf(error, account.server));
+    else if (subscriptionNeeded(error)) {
+      onDone();
+      needsSubscription(account);
+    } else tell(reasonOf(error, account.server));
   };
   const withCode = async () => {
     const code = readLinkCode(codeField.value);
@@ -640,6 +742,52 @@ function otherWays(account: Account, client: SyncClient, onDone: () => void): HT
     keyField,
     actions(button('Link with the recovery key', () => void withKey())),
     said,
+  );
+}
+
+/** Whether the server turned a request down because the account needs a subscription to sync. */
+const subscriptionNeeded = (error: unknown) =>
+  error instanceof SyncError && error.kind === 'subscription-needed';
+
+/**
+ * Where sync is sold, as on Factwright's server, an account without it can't link a browser: it
+ * subscribes in Factwright on the computer first, or runs a server of its own, which is free.
+ */
+function needsSubscription(account: Account): void {
+  const own = isOwn(account.server);
+  show(
+    app,
+    heading('Sync needs a subscription'),
+    h(
+      'p',
+      {},
+      `${own ? `Sync through ${hostOf(account.server)}` : 'Factwright’s sync'} needs a subscription, and this account doesn’t have one now. Subscribe in Factwright on your computer, from Sync, then come back here.`,
+    ),
+    !own &&
+      h(
+        'p',
+        {},
+        'Rather run your own sync server? It’s free. ',
+        h('a', { href: OWN_SERVER_GUIDE, target: '_blank', rel: 'noopener' }, 'How to set one up'),
+        '. Then sign out here, and set Save to Factwright up with it.',
+      ),
+    !own &&
+      h(
+        'p',
+        { class: 'small muted' },
+        'Money’s tight? Email ',
+        h('a', { href: `mailto:${FREE_SYNC_EMAIL}` }, FREE_SYNC_EMAIL),
+        ' and I’ll turn on sync for free. No questions asked.',
+      ),
+    h(
+      'p',
+      { class: 'small muted' },
+      `This is ${account.email}, on ${serverName(account.server)}. If Factwright on your computer syncs with another account or server, sign out and set it up with that one.`,
+    ),
+    actions(
+      button('Check again', () => void link(account), true),
+      button('Sign out', () => void signOut(account).then(() => signedOut())),
+    ),
   );
 }
 
@@ -699,12 +847,20 @@ async function link(account: Account): Promise<void> {
   };
   const failed = async (error: unknown) => {
     if (await signInEnded(error)) stop();
-    else ended(reasonOf(error, account.server));
+    else if (subscriptionNeeded(error)) {
+      stop();
+      needsSubscription(account);
+    } else ended(reasonOf(error, account.server));
   };
 
   let saved: Awaited<ReturnType<SyncClient['keys']>>;
+  // Where sync is sold, how the account has it. A server that doesn't sell sync says nothing.
+  let access: SyncAccess | undefined;
   try {
-    saved = await client.keys();
+    [saved, access] = await Promise.all([
+      client.keys(),
+      client.account().then((info) => info.access),
+    ]);
   } catch (error) {
     await failed(error);
     return;
@@ -728,6 +884,10 @@ async function link(account: Account): Promise<void> {
         button('Sign out', () => void signOut(account).then(() => signedOut())),
       ),
     );
+    return;
+  }
+  if (access && !access.allowed) {
+    needsSubscription(account);
     return;
   }
 

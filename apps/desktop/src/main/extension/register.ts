@@ -10,7 +10,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, posix, win32 } from 'node:path';
-import { EXTENSION_IDS, SAVE_HELPER } from '@factwright/core';
+import { SAVE_HELPER } from '@factwright/core';
+import { EXTENSION_IDS } from '@factwright/sync';
 import { BROWSERS, type Browser, type BrowserId } from './browsers.ts';
 
 /**

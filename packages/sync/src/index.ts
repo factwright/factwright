@@ -21,6 +21,22 @@ export { type ClientOptions, SyncClient, SyncError, type SyncErrorKind } from '.
 export { fromCode, toCode } from './code.ts';
 export { CHECK_EMOJI, checkEmoji } from './emoji.ts';
 export {
+  askUrl,
+  askValues,
+  CODE,
+  challengeOf,
+  EXTENSION_IDS,
+  EXTENSION_SIGN_IN,
+  type ExtensionAsk,
+  readAsk,
+  readAskQuery,
+  returnAddress,
+  STORE_RETURNS,
+  VERIFIER,
+  WindowSignIn,
+  type WindowSignInDeps,
+} from './extension-sign-in.ts';
+export {
   ACCOUNT_KEY_BYTES,
   type AccountKeys,
   accountKeys,
@@ -66,6 +82,7 @@ export {
   type Legal,
   LIMITS,
   type LinkRequest,
+  type Period,
   type PushChange,
   type PushResponse,
   type PushResult,

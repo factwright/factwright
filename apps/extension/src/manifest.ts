@@ -1,4 +1,4 @@
-import { EXTENSION_IDS } from '@factwright/core';
+import { EXTENSION_IDS } from '@factwright/sync';
 
 /** The browsers the extension is built for, each with a manifest of its own. */
 export type Target = 'chrome' | 'firefox';
@@ -28,7 +28,8 @@ export const ownServers = (forStores: boolean): string[] =>
 
 /**
  * The extension's ID on Firefox, which Firefox needs to sign it and to keep its data, and which
- * Factwright's helper lets reach it on this computer.
+ * its sign-in window's return address comes from, as sync servers know it (@factwright/sync),
+ * and which Factwright's helper lets reach it on this computer.
  */
 export const FIREFOX_ID = EXTENSION_IDS.firefox;
 
@@ -52,6 +53,8 @@ export interface Asks {
  * - running that one reading function in it (scripting)
  * - its own storage, for its sign-in and settings (storage)
  * - its item in the page's right-click menu (contextMenus)
+ * - the browser's own window to sign in to sync through (identity), which shows no warning in
+ *   either browser, at install or on an update
  * - reaching the sync server it's built for, Factwright's, and no other site (host permissions)
  * - reaching a sync server of your own instead, asked for only when you choose one in setup, and
  *   then only for its address (optional host permissions)
@@ -84,6 +87,7 @@ export function manifest(
       'scripting',
       'storage',
       'contextMenus',
+      'identity',
       ...(asks.nativeAtInstall ? ['nativeMessaging'] : []),
     ],
     // Asked for when you choose to save to Factwright on this computer, so an update that brings

@@ -1,4 +1,4 @@
-import { EXTENSION_IDS } from '@factwright/core';
+import { EXTENSION_IDS } from '@factwright/sync';
 import { describe, expect, it } from 'vitest';
 import { FIREFOX_ID, manifest } from '../src/manifest.ts';
 
@@ -6,7 +6,13 @@ describe('each browser’s manifest', () => {
   it('asks for native messaging only when it’s used, so an update asks nothing of anyone', () => {
     for (const target of ['chrome', 'firefox'] as const) {
       const built = manifest(target, '0.2.0');
-      expect(built.permissions).toEqual(['activeTab', 'scripting', 'storage', 'contextMenus']);
+      expect(built.permissions).toEqual([
+        'activeTab',
+        'scripting',
+        'storage',
+        'contextMenus',
+        'identity',
+      ]);
       expect(built.optional_permissions).toEqual(['nativeMessaging']);
     }
   });

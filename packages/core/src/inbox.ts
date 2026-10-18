@@ -12,15 +12,6 @@ import { JOB_LIMITS } from './new-job.ts';
 /** The helper's name, as the browsers know it: what the extension asks for, and the app registers. */
 export const SAVE_HELPER = 'com.factwright.save';
 
-/**
- * Save to Factwright's IDs, the only extensions the browsers let reach the helper: its Chrome Web
- * Store item, which Chrome, Edge, Brave, Arc and Vivaldi all install it from, and its Firefox ID.
- */
-export const EXTENSION_IDS = {
-  chrome: 'gjhjddlohoonikgdbfcfnljeffilblai',
-  firefox: 'save@factwright.com',
-} as const;
-
 /** The inbox, in each profile's data folder: beside the workspace, not in it, so it never syncs. */
 export const INBOX_FOLDER = 'inbox';
 

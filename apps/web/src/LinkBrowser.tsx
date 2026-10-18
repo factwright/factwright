@@ -18,6 +18,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { saveKeys } from './keys.ts';
 import styles from './page.module.css';
+import { navigate } from './route.ts';
 import { client, signOut } from './server.ts';
 
 type Result = { ok: true; keys: AccountKeys } | { ok: false; message: string };
@@ -88,7 +89,11 @@ function CodeForm({
   const send = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    setProblem(await submit(text));
+    try {
+      setProblem(await submit(text));
+    } catch (error) {
+      setProblem(reasonOf(error));
+    }
     setBusy(false);
   };
   return (
@@ -168,6 +173,9 @@ const ENDED: Record<Exclude<AskStep['state'], 'waiting' | 'check'>, string> = {
     'Something changed the request on its way between your devices, so nothing was linked. Ask again.',
 };
 const MISMATCH = 'Nothing was linked. If you didn’t start this, you can ignore it.';
+/** Why a code or a computer's approval can't link this browser, where sync is sold. */
+const PAUSED =
+  'Linking with a code needs sync, which this account doesn’t have now. Subscribe, then try again. Your recovery key still opens your job hunt here.';
 const BROKEN = 'That didn’t work, so nothing was linked. Ask again.';
 
 type Asking =
@@ -180,9 +188,11 @@ type Asking =
 const reasonOf = (error: unknown) =>
   error instanceof SyncError && error.kind === 'offline'
     ? 'Can’t reach Factwright right now. Check your connection.'
-    : error instanceof Error
-      ? error.message
-      : String(error);
+    : error instanceof SyncError && error.kind === 'subscription-needed'
+      ? PAUSED
+      : error instanceof Error
+        ? error.message
+        : String(error);
 
 /** Keeps an approved key, waiting out a dropped connection: it was picked up once, for good. */
 async function keepApproved(account: string, accountKey: Bytes): Promise<Result> {
@@ -428,6 +438,7 @@ export function LinkBrowser({
   account,
   email,
   canApprove = false,
+  needsSync = null,
   code,
   onLinked,
   onSignedOut = () => {},
@@ -437,6 +448,12 @@ export function LinkBrowser({
   email: string;
   /** Whether to ask a device that's set up to approve this browser, as the server can. */
   canApprove?: boolean;
+  /**
+   * Where sync is sold and the account doesn't have it: "again" once its subscription ended, or
+   * "first" without one. A code or a computer's approval can't link a browser until it has sync,
+   * but the recovery key, which only reads, still opens the job hunt here.
+   */
+  needsSync?: 'again' | 'first' | null;
   /** A link code from the QR code's address, to use straight away. */
   code: string | null;
   onLinked: (keys: AccountKeys) => void;
@@ -458,11 +475,52 @@ export function LinkBrowser({
   useEffect(() => {
     if (!code || started.current) return;
     started.current = true;
-    void linkWithCode(account, code).then((result) => {
-      setProblem(finish(result));
-      setLinking(false);
-    });
+    void linkWithCode(account, code).then(
+      (result) => {
+        setProblem(finish(result));
+        setLinking(false);
+      },
+      (error: unknown) => {
+        setProblem(reasonOf(error));
+        setLinking(false);
+      },
+    );
   });
+
+  if (needsSync && !linking) {
+    const again = needsSync === 'again';
+    return (
+      <section className={styles.card} aria-labelledby="link-title">
+        <h1 id="link-title" className={styles.title}>
+          {again ? 'Sync is paused' : 'Sync needs a subscription'}
+        </h1>
+        <p className={styles.lead}>
+          {again
+            ? 'Your subscription ended, so this browser can’t link with a code or your computer’s approval until you subscribe again. The job hunt on your computers is safe.'
+            : 'Sync on Factwright’s server needs a subscription, so this browser can’t link with a code or your computer’s approval until the account has one.'}
+        </p>
+        <div className={styles.actions}>
+          <Button variant="primary" onClick={() => navigate('/subscribe')}>
+            {again ? 'Subscribe again' : 'Subscribe'}
+          </Button>
+        </div>
+        <p className={styles.hint}>
+          Your recovery key still opens your job hunt here, as it was when sync last ran.
+        </p>
+        <CodeForm
+          label="Recovery key"
+          button="Unlock"
+          username={email}
+          submit={async (text) => finish(await linkWithRecoveryKey(account, text))}
+        />
+        {problem && (
+          <p className={styles.problem} role="alert">
+            {problem}
+          </p>
+        )}
+      </section>
+    );
+  }
 
   if (linking) {
     return (

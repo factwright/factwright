@@ -1,3 +1,4 @@
+import { FREE_SYNC_EMAIL, SYNC_PRICE_WORDS } from '@factwright/core';
 import { Button } from '@factwright/ui';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -5,11 +6,23 @@ import type { ServerTerms } from '../../shared/sync.ts';
 import styles from './SyncDialog.module.css';
 import { OWN_SERVER_GUIDE } from './servers.ts';
 
-/** What sync on Factwright's own server costs, once it says sync there is a subscription. */
-const PRICE = '$5 a month or $50 a year';
-
-/** Where someone who can't pay asks for sync for free. */
-const MONEY_TIGHT = 'steve@factwright.com';
+/** Where sync is sold: that someone who can't pay can ask for it for free, no questions asked. */
+export function MoneyTight() {
+  return (
+    <p className={styles.hint}>
+      Money’s tight? Email{' '}
+      <a
+        className={styles.link}
+        href={`mailto:${FREE_SYNC_EMAIL}`}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {FREE_SYNC_EMAIL}
+      </a>{' '}
+      and I’ll turn on sync for free. No questions asked.
+    </p>
+  );
+}
 
 /**
  * The first screen of turning sync on: Factwright's own sync and a server of your own, side by
@@ -47,7 +60,7 @@ export function ChooseStep({
               <h3 id="sync-factwright" className={styles.choiceTitle}>
                 Factwright’s sync
               </h3>
-              <p className={styles.choiceLine}>{priced ? PRICE : 'Nothing to set up'}</p>
+              <p className={styles.choiceLine}>{priced ? SYNC_PRICE_WORDS : 'Nothing to set up'}</p>
               <p className={styles.choiceText}>
                 {priced
                   ? 'Nothing to set up. Cancel anytime.'
@@ -88,20 +101,7 @@ export function ChooseStep({
           </div>
         </section>
       </div>
-      {priced && (
-        <p className={styles.hint}>
-          Money’s tight? Email{' '}
-          <a
-            className={styles.link}
-            href={`mailto:${MONEY_TIGHT}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {MONEY_TIGHT}
-          </a>{' '}
-          and I’ll turn on sync for free. No questions asked.
-        </p>
-      )}
+      {priced && <MoneyTight />}
     </>
   );
 }

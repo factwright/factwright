@@ -1,4 +1,11 @@
-import { type AccountKeys, CLIENTS, DeviceSignIn, SyncClient } from '@factwright/sync';
+import {
+  type AccountKeys,
+  CLIENTS,
+  DeviceSignIn,
+  type SignInResult,
+  SyncClient,
+  WindowSignIn,
+} from '@factwright/sync';
 import { ext } from './ext.ts';
 import { hostPattern } from './manifest.ts';
 import { DEFAULT_SERVER } from './server.ts';
@@ -164,11 +171,46 @@ export const clientFor = (server: string, token: string) =>
 export const deviceSignIn = (server: string) =>
   new DeviceSignIn({ server, clientId: CLIENTS.extension, fetch: syncFetch });
 
+/**
+ * Where this copy's sign-in window returns to, as the browser names it for this extension alone,
+ * or null in a browser with no such window.
+ */
+export function returnAddress(): string | null {
+  try {
+    return ext.identity?.getRedirectURL() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** What each browser says when the person closes the window, which is canceling. */
+const CLOSED = new Set(['The user did not approve access.', 'User cancelled or denied access.']);
+
+/**
+ * Signs the extension in through the browser's own window (WindowSignIn): the server's page asks
+ * there, where the person signs in if they need to, and only this extension gets the answer.
+ */
+export async function windowSignIn(server: string, redirect: string): Promise<SignInResult> {
+  const flow = new WindowSignIn({ server, redirect, fetch: syncFetch });
+  const url = await flow.start();
+  let returned: string | undefined;
+  try {
+    returned = await ext.identity?.launchWebAuthFlow({ url, interactive: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return CLOSED.has(message)
+      ? { ok: false, reason: 'canceled', message: 'Signing in was canceled.' }
+      : { ok: false, reason: 'failed', message };
+  }
+  if (!returned) return { ok: false, reason: 'canceled', message: 'Signing in was canceled.' };
+  return flow.finish(returned);
+}
+
 /** How long signing out waits for the server, before forgetting the sign-in here anyway. */
 const SIGN_OUT_MS = 10_000;
 
 /** Ends the extension's session on the server, so its sign-in can't be used again. */
-export async function endSession(account: Account): Promise<void> {
+export async function endSession(account: Pick<Account, 'server' | 'token'>): Promise<void> {
   await syncFetch(new URL('/api/auth/sign-out', account.server), {
     method: 'POST',
     headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },
