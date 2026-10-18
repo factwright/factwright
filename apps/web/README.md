@@ -5,7 +5,7 @@ Your job hunt on your phone, or in any browser. It downloads your synced data an
 - **Signing in** with GitHub or Google. When it doesn't work, such as when you cancel at GitHub, or a server of your own doesn't list you, it comes back to the page you started on, such as the code the desktop app showed, and says why in plain words.
 - **Linking this browser:** approve it from a computer that's set up, once both show the same emoji; scan the QR code a computer shows; type its code; or use your recovery key. The keys are kept in this browser as Web Crypto keys that can't be read back out.
 - **Your jobs:** the numbers that matter, the views, search, and each job's next step. A job shows where it stands, your notes, calls, history and links, and opens its documents and resumes. With more than one kind of job, a menu shows one kind's jobs, as on the computer.
-- **Letting the desktop app sign in:** the app opens `/device` in your browser, where you check its code and allow it.
+- **Letting the desktop app or the browser extension sign in:** each opens `/device` in your browser, where you check its code and allow it. The page says which account it signs in to. Use another account signs you out here and in with another, then comes back to the same code.
 - **Your account:** your signed-in devices, how much you store, a copy of everything to download, signing out, and deleting the account.
 
 It builds the job list with the same code as the desktop app, from [`@factwright/core`](../../packages/core), so both show the same jobs.

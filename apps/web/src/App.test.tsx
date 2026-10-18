@@ -24,7 +24,11 @@ function server(session: object | null) {
     'GET /api/auth/get-session': () => session,
     'GET /api/sign-in-options': () => ({ providers: ['github'] }),
     'GET /api/sync/changes': () => ({ changes: [], cursor: 0, more: false }),
-    'GET /api/auth/device': () => ({ user_code: 'WDJBMJHT', status: 'pending' }),
+    'GET /api/auth/device': () => ({
+      user_code: 'WDJBMJHT',
+      status: 'pending',
+      client_id: 'factwright-desktop',
+    }),
     'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
   });
 }
@@ -227,6 +231,36 @@ describe('the web view', () => {
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Let your computer sign in?' })).toBeTruthy();
     expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+  });
+
+  it('says who’s signed in with the code, and asks the account signed in next about the same one', async () => {
+    history.replaceState(null, '', '/device?user_code=WDJBMJHT');
+    vi.mocked(forgetKeys).mockClear();
+    const requests = server(SESSION);
+    const { unmount } = render(<App />);
+    expect((await screen.findByText('sam@example.com')).closest('p')?.textContent).toMatch(
+      /^Signed in as sam@example\.com\. /,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Use another account' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
+    await waitFor(() => expect(requests.at(-1)?.path).toBe('/api/auth/sign-out'));
+    expect(requests.find(({ path }) => path === '/api/auth/sign-in/social')?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/device?user_code=WDJBMJHT',
+      errorCallbackURL: '/device?user_code=WDJBMJHT',
+    });
+    expect(requests.find(({ path }) => path.endsWith('/release'))?.body).toEqual({
+      userCode: 'WDJBMJHT',
+    });
+    expect(forgetKeys).toHaveBeenCalled();
+    unmount();
+
+    // GitHub brings the browser back to the same code, signed in to the other account.
+    server({ ...SESSION, user: { id: 'alex', email: 'alex@example.com', name: 'Alex' } });
+    render(<App />);
+    expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+    expect(screen.getByText('alex@example.com')).toBeTruthy();
+    expect(screen.queryByText('sam@example.com')).toBeNull();
   });
 });
 
