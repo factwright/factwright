@@ -42,25 +42,33 @@ async function closeRun() {
 }
 
 // The tests' build is made without FACTWRIGHT_SYNC_SERVER, as a fork's is, unless the shell that
-// runs them has one, as Factwright's own releases are built with. The browser extension saves
-// through Factwright's sync, so only a copy with it links to it.
+// runs them has one, as Factwright's own releases are built with.
 test('offers only a server of your own in a copy built without Factwright’s sync', async () => {
   const { window } = opened;
   const sync = window.getByRole('region', { name: 'Sync' });
-  const extension = window.getByRole('link', { name: 'Browser extension' });
   await sync.getByRole('button', { name: 'Turn on…' }).click();
   const own = window.getByRole('region', { name: 'Your own server' });
   await expect(own.getByRole('button', { name: 'Connect your server…' })).toBeVisible();
   const factwright = window.getByRole('region', { name: 'Factwright’s sync' });
-  if (process.env.FACTWRIGHT_SYNC_SERVER) {
-    await expect(factwright).toBeVisible();
-    // Not clicked: it would open factwright.com in the browser of whoever runs the tests.
-    await expect(extension).toHaveAttribute('href', 'https://factwright.com/extension');
-  } else {
-    await expect(factwright).toHaveCount(0);
-    await expect(extension).toHaveCount(0);
-  }
+  if (process.env.FACTWRIGHT_SYNC_SERVER) await expect(factwright).toBeVisible();
+  else await expect(factwright).toHaveCount(0);
   await window.getByRole('button', { name: 'Not now' }).click();
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+});
+
+// Saving to this computer needs no sync, so every copy offers the extension's window. One the
+// tests drive leaves the browsers on the computer that runs them as they are.
+test('opens Save to Factwright’s window from the sidebar, leaving the browsers alone', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Browser extension' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Save to Factwright' });
+  // Not clicked: it would open factwright.com in the browser of whoever runs the tests.
+  await expect(dialog.getByRole('link', { name: 'Factwright’s extension page' })).toHaveAttribute(
+    'href',
+    'https://factwright.com/extension',
+  );
+  await expect(dialog.getByText(/leaves your browsers as they are/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
   await expect(window.getByRole('dialog')).toHaveCount(0);
 });
 

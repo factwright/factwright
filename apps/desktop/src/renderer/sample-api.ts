@@ -12,6 +12,7 @@ import {
 } from '../shared/rounds.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
+import { sampleSaveHelper } from './extension/sample-helper.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleProfiles } from './profiles/sample-profiles.ts';
@@ -353,7 +354,8 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * README's screenshots show it, and ?ask=more makes the first run's round three questions, or
  * ?ask=kinds a number and a line of words.
  * ?permit=edit, write, read, page, profile or template has the first run ask Claude Code's OK
- * for that instead, in its dialog.
+ * for that instead, in its dialog. ?helper picks where the browsers stand in the Save to
+ * Factwright window (see extension/sample-helper.ts).
  */
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
@@ -605,6 +607,7 @@ export function sampleApi(): FactwrightApi {
         : { state: 'none' },
     onUpdateChanged: () => () => {},
     installUpdate: async () => true,
+    ...sampleSaveHelper(query.get('helper'), query.get('platform') ?? 'darwin'),
     // Which model Claude runs on, kept until the page reloads.
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {

@@ -39,6 +39,7 @@ import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RevisionRequest, RevisionState } from './revision.ts';
 import type { QuestionRound, RoundReply } from './rounds.ts';
 import type { RunTask } from './runs.ts';
+import type { SaveHelperView, SetUpResult } from './save-helper.ts';
 import type {
   AccountResult,
   ApprovalsView,
@@ -492,6 +493,18 @@ export interface FactwrightApi {
   onUpdateChanged(listener: (status: UpdateStatus) => void): () => void;
   /** Restarts into a downloaded update. Answers whether there was one to install. */
   installUpdate(): Promise<boolean>;
+  /**
+   * Where saving from each browser to Factwright on this computer stands, for the Save to
+   * Factwright window. Looking never touches a browser's folders.
+   */
+  saveHelperStatus(): Promise<SaveHelperView>;
+  /**
+   * Sets browsers up so Save to Factwright can save to Factwright on this computer: the ones
+   * given, or every one found. On a Mac, macOS may ask the user first, once for each browser.
+   */
+  setUpSaveHelper(only?: string[]): Promise<SetUpResult>;
+  /** Opens Files & Folders in macOS's System Settings. Answers whether it opened. */
+  openFilesAndFolders(): Promise<boolean>;
   /** The profiles on this computer, and how the open one signs in to Claude Code. */
   profiles(): Promise<ProfileList>;
   /**

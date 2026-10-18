@@ -44,11 +44,16 @@
   gap: var(--fw-space-2);
   margin: 0 calc(-1 * var(--fw-space-1));
   padding: 6px var(--fw-space-2);
+  border: 0;
   border-radius: var(--fw-radius-sm);
+  background: none;
   color: var(--fw-muted);
+  font: inherit;
   font-size: var(--fw-text-sm);
   font-weight: 550;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .link svg {
