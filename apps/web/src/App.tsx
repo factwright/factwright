@@ -255,6 +255,21 @@ export function App() {
         </Shell>
       );
     }
+    if (path === '/account') {
+      // As the desktop app opens it, to manage a subscription or download a copy: it comes back.
+      return (
+        <Shell>
+          <SignIn
+            providers={providers}
+            legal={legal}
+            title="Your account"
+            lead="Sign in to see your account: its devices, a copy of your job hunt, and paying for sync where it’s sold."
+            returnTo="/account"
+            signInProblem={signInProblem}
+          />
+        </Shell>
+      );
+    }
     return (
       <Shell>
         <SignIn
@@ -350,7 +365,7 @@ export function App() {
           email={session.user.email}
           // A browser that's linked already, back here from a QR code, doesn't ask again.
           canApprove={features.includes('approve') && !keys}
-          paused={access !== null && !access.allowed}
+          needsSync={access && !access.allowed ? (access.subscription ? 'again' : 'first') : null}
           code={linkCode}
           onSignedOut={forgetHere}
           onLinked={(linked) => {

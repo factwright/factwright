@@ -62,9 +62,15 @@ function SubscriptionLine({ access, onManage }: { access: SyncAccess; onManage: 
   let words: string;
   if (access.gift === 'early') words = 'Free sync, for good. Thanks for being one of the first.';
   else if (access.gift === 'free') {
-    words = `Free sync, from Steve. Good luck with the search!${
-      live && when ? ` Your subscription ends ${when}.` : ''
-    }`;
+    // A subscription from before the gift ends with the time paid for, unless it was renewed since.
+    const also = !live
+      ? ''
+      : live.state === 'ending'
+        ? when
+          ? ` Your subscription ends ${when}.`
+          : ' Your subscription ends with the time paid for.'
+        : ` Your subscription still renews${when ? ` ${when}` : ''}: cancel it, as sync is free.`;
+    words = `Free sync, from Steve. Good luck with the search!${also}`;
   } else if (live?.state === 'ending') {
     words = when ? `Subscription: canceled, syncing until ${when}.` : 'Subscription: canceled.';
   } else if (live?.state === 'active') {

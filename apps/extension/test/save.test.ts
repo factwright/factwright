@@ -385,7 +385,7 @@ describe('saving a job through sync', () => {
       ok: false,
       reason: 'paused',
       message:
-        'Sync is paused, so this job wasn’t saved. Subscribe again in Factwright on your computer, then save it.',
+        'Sync is paused, so nothing was saved. Subscribe in Factwright on your computer, then save it again.',
     });
     expect((await client.changes(0)).changes).toEqual([]);
   });

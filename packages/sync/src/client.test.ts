@@ -71,7 +71,7 @@ describe('SyncClient', () => {
     });
   });
 
-  it('starts paying for sync, and opens the portal, at Stripe’s https pages only', async () => {
+  it('starts paying for sync, and opens the portal, at the https pages the server gives only', async () => {
     const { client, fetch } = fakeServer(
       json({ url: 'https://checkout.stripe.com/c/pay/cs_test_1' }),
       json({ url: 'https://billing.stripe.com/p/session/test_1' }),

@@ -91,8 +91,9 @@ const STARTS: Readonly<Record<string, SyncStatus>> = {
   subscribe: { state: 'subscribe', email: EMAIL, again: false, waiting: false },
   'subscribe-again': { state: 'subscribe', email: EMAIL, again: true, waiting: false },
   'subscribe-waiting': { state: 'subscribe', email: EMAIL, again: false, waiting: true },
-  paused: { state: 'paused', email: EMAIL, waiting: false },
-  'paused-waiting': { state: 'paused', email: EMAIL, waiting: true },
+  paused: { state: 'paused', email: EMAIL, again: true, waiting: false },
+  'paused-waiting': { state: 'paused', email: EMAIL, again: true, waiting: true },
+  'paused-free': { state: 'paused', email: EMAIL, again: false, waiting: false },
   'payment-failed': { ...ON, paymentFailed: true },
 };
 
@@ -211,7 +212,8 @@ function readSample(typed: string): { server: string } | { message: string; help
  * server: "own" for sync with a server of your own, "own-only" for a copy without Factwright's
  * sync, or "priced" for Factwright's once it says sync there is a subscription: signing in then
  * goes on to subscribing (?sync=subscribe, "subscribe-again" or "subscribe-waiting"), and sync can
- * pause (?sync=paused or "paused-waiting") or have a card that didn't go through
+ * pause (?sync=paused, "paused-waiting", or "paused-free" once free sync ended) or have a card that
+ * didn't go through
  * (?sync=payment-failed). ?plan= picks how the account has sync, for the Sync screen: "active",
  * "ending", "retrying", "free" or "early".
  */

@@ -286,6 +286,25 @@ describe('the account page’s subscription, where sync is sold', () => {
     }
   });
 
+  it('says a subscription renewed beside free sync can be canceled, as sync is free', async () => {
+    fakeServer({
+      'GET /api/account': () => ({
+        ...INFO,
+        access: {
+          allowed: true,
+          gift: 'free',
+          subscription: { state: 'active', renewsAt: RENEWS },
+        },
+      }),
+    });
+    render(page());
+    expect(
+      await screen.findByText(
+        `You also have a subscription, which renews ${dayOf(RENEWS)}. Sync is free for you, so you can cancel it.`,
+      ),
+    ).toBeTruthy();
+  });
+
   it('says a free gift ends a subscription that was still running', async () => {
     fakeServer({
       'GET /api/account': () => ({

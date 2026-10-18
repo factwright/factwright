@@ -105,9 +105,11 @@ export function SubscriptionSection({
         {live && (
           <>
             <p className={page.hint}>
-              {when
-                ? `Your subscription ends ${when}, and won’t renew.`
-                : 'Your subscription ends with the time paid for, and won’t renew.'}
+              {live.state === 'ending'
+                ? when
+                  ? `Your subscription ends ${when}, and won’t renew.`
+                  : 'Your subscription ends with the time paid for, and won’t renew.'
+                : `You also have a subscription, which renews${when ? ` ${when}` : ''}. Sync is free for you, so you can cancel it.`}
             </p>
             <div className={page.actions}>{manage()}</div>
           </>
@@ -206,17 +208,19 @@ export function SyncNote({
   const stripe = useStripePage(onSignedOut);
   if (!access) return null;
   if (!access.allowed) {
+    // Once a subscription ended, or without one, as when free sync ended.
+    const subscribe = access.subscription ? 'Subscribe again' : 'Subscribe';
     return (
       <div className={page.note}>
         <Notice title="Sync is paused">
           <p className={page.noteText}>
             {updatedAt
-              ? `What’s here is from ${dayOf(updatedAt)}. Subscribe again, and it catches up.`
-              : 'Subscribe again, and your job hunt syncs here.'}
+              ? `What’s here is from ${dayOf(updatedAt)}. ${subscribe}, and it catches up.`
+              : `${subscribe}, and your job hunt syncs here.`}
           </p>
           <div className={page.noteActions}>
             <Button size="sm" variant="primary" onClick={() => navigate('/subscribe')}>
-              Subscribe again
+              {subscribe}
             </Button>
           </div>
         </Notice>

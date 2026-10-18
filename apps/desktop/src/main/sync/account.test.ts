@@ -1596,11 +1596,19 @@ describe('a server that sells sync', () => {
     await mac.synced();
   }
 
-  /** Waits for sync to pause here. */
-  const paused = (mac: ReturnType<typeof computer>) =>
+  /**
+   * Waits for sync to pause here: `again` once a subscription ended, or not, as when free sync was
+   * taken back.
+   */
+  const paused = (mac: ReturnType<typeof computer>, again: boolean) =>
     vi.waitFor(
       () =>
-        expect(mac.sync.status()).toEqual({ state: 'paused', email: seller.email, waiting: false }),
+        expect(mac.sync.status()).toEqual({
+          state: 'paused',
+          email: seller.email,
+          again,
+          waiting: false,
+        }),
       { timeout: 10_000 },
     );
 
@@ -1674,7 +1682,8 @@ describe('a server that sells sync', () => {
     await freeSync(seller.email, true);
     mac.write('notes/while-paused.md', 'Written while sync was paused');
     mac.sync.requestSync();
-    await paused(mac);
+    // Free sync was taken back: there was no subscription to end.
+    await paused(mac, false);
     const tried = pushes();
     for (const name of ['a', 'b', 'c']) {
       mac.write(`notes/${name}.md`, name);
@@ -1682,7 +1691,7 @@ describe('a server that sells sync', () => {
     }
     await new Promise((done) => setTimeout(done, 2500));
     expect(pushes()).toBe(tried);
-    expect(mac.sync.status()).toEqual({ state: 'paused', email: seller.email, waiting: false });
+    expect(mac.sync.status()).toMatchObject({ state: 'paused', waiting: false });
 
     // Subscribing again picks up where it left off: what changed while paused goes up.
     expect(await mac.sync.subscribe()).toEqual({ ok: true });
@@ -1699,13 +1708,18 @@ describe('a server that sells sync', () => {
     await freeSync(seller.email, true);
     first.write('notes/paused.md', 'Paused');
     first.sync.requestSync();
-    await paused(first);
+    await paused(first, false);
     await first.sync.stop();
 
     const { pushes, fetchWith } = counting();
     const again = sellingComputer('Sam’s Mac', first.dataDir, fetchWith);
     await again.sync.start();
-    expect(again.sync.status()).toEqual({ state: 'paused', email: seller.email, waiting: false });
+    expect(again.sync.status()).toEqual({
+      state: 'paused',
+      email: seller.email,
+      again: false,
+      waiting: false,
+    });
     await new Promise((done) => setTimeout(done, 500));
     expect(pushes()).toBe(0);
     await again.sync.stop();
@@ -1752,7 +1766,81 @@ describe('a server that sells sync', () => {
     await subscription(seller, 'canceled');
 
     expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
-    expect(mac.sync.status()).toEqual({ state: 'paused', email: seller.email, waiting: false });
+    expect(mac.sync.status()).toEqual({
+      state: 'paused',
+      email: seller.email,
+      again: true,
+      waiting: false,
+    });
+  });
+
+  /** Sam's Mac, set up with free sync, then paused once it was taken back. */
+  async function pausedMac(fetchWith?: typeof fetch) {
+    await freeSync(seller.email);
+    const mac = sellingComputer('Sam’s Mac', undefined, fetchWith);
+    await setUpFirstHere(mac);
+    await freeSync(seller.email, true);
+    mac.write('notes/paused.md', 'Written while paused');
+    mac.sync.requestSync();
+    await paused(mac, false);
+    return mac;
+  }
+
+  it('asks again on coming back to the app, and carries on once the account has sync', async () => {
+    const mac = await pausedMac();
+    // Subscribed from another device, then back to the app here.
+    await subscription(seller, 'active');
+    mac.sync.lookAgain();
+    await mac.synced();
+  });
+
+  it('stays paused when carrying on doesn’t get through, and carries on at the next look', async () => {
+    // Each answer about the account, in order: through, or lost on the way.
+    const answers: ('through' | 'lost')[] = [];
+    const mac = await pausedMac(async (input, init) => {
+      const lost = new URL(String(input)).pathname === '/api/account' && answers.shift() === 'lost';
+      if (lost) throw new TypeError('fetch failed');
+      return fetch(input, init);
+    });
+    await freeSync(seller.email);
+    // The look sees sync is back, then the connection drops as it carries on.
+    answers.push('through', 'lost');
+    expect((await mac.sync.account()).ok).toBe(true);
+    await vi.waitFor(() => expect(answers).toEqual([]));
+    await new Promise((done) => setTimeout(done, 300));
+    expect(mac.sync.status()).toMatchObject({ state: 'paused' });
+    // The next look gets through.
+    expect((await mac.sync.account()).ok).toBe(true);
+    await mac.synced();
+  });
+
+  it('pays no mind to an answer about the account from before it carried on', async () => {
+    let hold: Gate | null = null;
+    const mac = await pausedMac(async (input, init) => {
+      const response = await fetch(input, init);
+      const held = hold;
+      if (held && new URL(String(input)).pathname === '/api/account') {
+        hold = null;
+        held.waiting = true;
+        await held.opened;
+      }
+      return response;
+    });
+    // A look asked while the account had no sync, held on its way back.
+    const late = gate();
+    hold = late;
+    mac.sync.lookAgain();
+    await vi.waitFor(() => expect(late.waiting).toBe(true));
+    // Meanwhile the account gets sync again, and another look carries on.
+    await freeSync(seller.email);
+    expect((await mac.sync.account()).ok).toBe(true);
+    await mac.synced();
+    // The late answer, that it had no sync, comes in after: sync carries on all the same.
+    late.open();
+    await new Promise((done) => setTimeout(done, 300));
+    mac.write('notes/after.md', 'After');
+    mac.sync.requestSync();
+    await mac.synced();
   });
 
   it('subscribes again before a second computer links, once the subscription ended', async () => {

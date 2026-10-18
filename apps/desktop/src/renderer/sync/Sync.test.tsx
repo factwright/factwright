@@ -124,8 +124,9 @@ describe('SyncCard', () => {
       'Waiting for your browser',
       'Show',
     ],
-    [{ state: 'paused', email: 'a', waiting: false }, 'Paused', 'Subscribe again…'],
-    [{ state: 'paused', email: 'a', waiting: true }, 'Paused', 'Show'],
+    [{ state: 'paused', email: 'a', again: true, waiting: false }, 'Paused', 'Subscribe again…'],
+    [{ state: 'paused', email: 'a', again: false, waiting: false }, 'Paused', 'Subscribe…'],
+    [{ state: 'paused', email: 'a', again: true, waiting: true }, 'Paused', 'Show'],
   ] as [SyncStatus | 'checking', string, string | null][])(
     'says how sync stands, and what to do (%o)',
     async (status, line, action) => {
@@ -157,8 +158,23 @@ describe('SyncCard, where sync is sold', () => {
   });
 
   it('says sync is paused, keeping what it says about the job hunt here', () => {
-    render(<SyncCard status={{ state: 'paused', email: 'a', waiting: false }} onOpen={vi.fn()} />);
+    const { rerender } = render(
+      <SyncCard
+        status={{ state: 'paused', email: 'a', again: true, waiting: false }}
+        onOpen={vi.fn()}
+      />,
+    );
     expect(screen.getByText('Your subscription ended. Your job hunt here is safe.')).toBeTruthy();
+    // Free sync that ended had no subscription to end.
+    rerender(
+      <SyncCard
+        status={{ state: 'paused', email: 'a', again: false, waiting: false }}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText('Sync needs a subscription now. Your job hunt here is safe.'),
+    ).toBeTruthy();
   });
 
   it('says what’s wrong first when sync can’t run, even with a card that didn’t go through', () => {

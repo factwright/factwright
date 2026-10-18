@@ -101,8 +101,10 @@ function describe(
         : {
             tone: 'need',
             line: 'Paused',
-            help: 'Your subscription ended. Your job hunt here is safe.',
-            action: 'Subscribe again…',
+            help: status.again
+              ? 'Your subscription ended. Your job hunt here is safe.'
+              : 'Sync needs a subscription now. Your job hunt here is safe.',
+            action: status.again ? 'Subscribe again…' : 'Subscribe…',
           };
     case 'on':
       // Still syncing while Stripe tries the card again, so the card says what to do about it.

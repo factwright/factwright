@@ -47,10 +47,16 @@ export type SyncStatus =
       waiting: boolean;
     } & OnServer)
   /**
-   * Set up, but the account's subscription ended, so sync stopped here until it subscribes again.
-   * The job hunt here stays as it is, and so do the sign-in and the account key.
+   * Set up, but the account doesn't have sync now, where it's sold, so sync stopped here until it
+   * has. The job hunt here stays as it is, and so do the sign-in and the account key.
    */
-  | ({ state: 'paused'; email: string; waiting: boolean } & OnServer)
+  | ({
+      state: 'paused';
+      email: string;
+      /** Whether its subscription ended, rather than it never having one, as when free sync ended. */
+      again: boolean;
+      waiting: boolean;
+    } & OnServer)
   /**
    * Signed in, but this computer doesn't have the account key yet. The first device makes it,
    * with a recovery key; any other gets it from a device that's set up, or the recovery key.

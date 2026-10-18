@@ -173,9 +173,9 @@ const ENDED: Record<Exclude<AskStep['state'], 'waiting' | 'check'>, string> = {
     'Something changed the request on its way between your devices, so nothing was linked. Ask again.',
 };
 const MISMATCH = 'Nothing was linked. If you didn’t start this, you can ignore it.';
-/** Why nothing links while the account can't sync, on a server that sells it. */
+/** Why a code or a computer's approval can't link this browser, where sync is sold. */
 const PAUSED =
-  'Your subscription ended, so sync is paused, and this browser can’t link until you subscribe again.';
+  'Linking with a code needs sync, which this account doesn’t have now. Subscribe, then try again. Your recovery key still opens your job hunt here.';
 const BROKEN = 'That didn’t work, so nothing was linked. Ask again.';
 
 type Asking =
@@ -438,7 +438,7 @@ export function LinkBrowser({
   account,
   email,
   canApprove = false,
-  paused = false,
+  needsSync = null,
   code,
   onLinked,
   onSignedOut = () => {},
@@ -449,10 +449,11 @@ export function LinkBrowser({
   /** Whether to ask a device that's set up to approve this browser, as the server can. */
   canApprove?: boolean;
   /**
-   * Whether sync is paused, on a server that sells it, as the account's subscription ended: no
-   * browser links until it subscribes again.
+   * Where sync is sold and the account doesn't have it: "again" once its subscription ended, or
+   * "first" without one. A code or a computer's approval can't link a browser until it has sync,
+   * but the recovery key, which only reads, still opens the job hunt here.
    */
-  paused?: boolean;
+  needsSync?: 'again' | 'first' | null;
   /** A link code from the QR code's address, to use straight away. */
   code: string | null;
   onLinked: (keys: AccountKeys) => void;
@@ -486,21 +487,37 @@ export function LinkBrowser({
     );
   });
 
-  if (paused && !linking) {
+  if (needsSync && !linking) {
+    const again = needsSync === 'again';
     return (
       <section className={styles.card} aria-labelledby="link-title">
         <h1 id="link-title" className={styles.title}>
-          Sync is paused
+          {again ? 'Sync is paused' : 'Sync needs a subscription'}
         </h1>
         <p className={styles.lead}>
-          Your subscription ended, so this browser can’t link to your job hunt until you subscribe
-          again. The job hunt on your computers is safe.
+          {again
+            ? 'Your subscription ended, so this browser can’t link with a code or your computer’s approval until you subscribe again. The job hunt on your computers is safe.'
+            : 'Sync on Factwright’s server needs a subscription, so this browser can’t link with a code or your computer’s approval until the account has one.'}
         </p>
         <div className={styles.actions}>
           <Button variant="primary" onClick={() => navigate('/subscribe')}>
-            Subscribe again
+            {again ? 'Subscribe again' : 'Subscribe'}
           </Button>
         </div>
+        <p className={styles.hint}>
+          Your recovery key still opens your job hunt here, as it was when sync last ran.
+        </p>
+        <CodeForm
+          label="Recovery key"
+          button="Unlock"
+          username={email}
+          submit={async (text) => finish(await linkWithRecoveryKey(account, text))}
+        />
+        {problem && (
+          <p className={styles.problem} role="alert">
+            {problem}
+          </p>
+        )}
       </section>
     );
   }

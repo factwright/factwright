@@ -19,7 +19,9 @@ const CANCELED = 'Signing in was canceled.';
 function lead(status: Waiting, own: string | null): string {
   const price = own ? '' : ` It’s ${SYNC_PRICE_WORDS}.`;
   if (status.state === 'paused') {
-    return 'Your subscription ended, so this computer stopped syncing. Your job hunt here is safe, and what you change stays here. Subscribe again, and sync picks up where it left off.';
+    return status.again
+      ? 'Your subscription ended, so this computer stopped syncing. Your job hunt here is safe, and what you change stays here. Subscribe again, and sync picks up where it left off.'
+      : `Sync needs a subscription now, so this computer stopped syncing. Your job hunt here is safe, and what you change stays here. Subscribe, and sync picks up where it left off.${price}`;
   }
   if (status.again) {
     return `Your subscription ended, so sync is paused for your account. Subscribe again to sync this computer.${price}`;
@@ -52,7 +54,7 @@ export function SubscribeStep({
   const [confirmOff, setConfirmOff] = useState(false);
   const own = status.ownServer ?? null;
   const paused = status.state === 'paused';
-  const again = paused || status.again;
+  const again = status.again;
 
   // Asks how the account stands as the step opens, so one that has sync by now, such as after
   // subscribing from the phone, carries on without the browser.

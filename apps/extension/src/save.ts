@@ -173,8 +173,10 @@ function failed(error: unknown, server = 'Factwright’s sync'): SaveResult {
       return {
         ok: false,
         reason: 'paused',
+        // The server turns the first change down, so this save added nothing, even to a job the
+        // job hunt has already.
         message:
-          'Sync is paused, so this job wasn’t saved. Subscribe again in Factwright on your computer, then save it.',
+          'Sync is paused, so nothing was saved. Subscribe in Factwright on your computer, then save it again.',
       };
     }
     return { ok: false, reason: 'failed', message: error.message };

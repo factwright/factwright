@@ -1,5 +1,5 @@
 import { accountKeys, newAccountKey, newLinkCode } from '@factwright/sync';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.tsx';
@@ -476,6 +476,37 @@ describe('subscribing, where sync is sold', () => {
     expect(requests.some((request) => request.path === '/api/sync/requests')).toBe(false);
     await userEvent.click(screen.getByRole('button', { name: 'Subscribe again' }));
     expect(location.pathname).toBe('/subscribe');
+  });
+
+  it('asks a new account to subscribe, rather than saying a subscription ended', async () => {
+    history.replaceState(null, '', '/');
+    selling({ allowed: false, gift: null, subscription: null });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sync needs a subscription' })).toBeTruthy();
+    expect(screen.queryByText(/ended/)).toBeNull();
+  });
+
+  it('says subscribe, not subscribe again, on the jobs page once free sync ended', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    selling({ allowed: false, gift: null, subscription: null });
+    render(<App />);
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toContain('Subscribe, and it catches up.');
+    expect(within(note).getByRole('button', { name: 'Subscribe' })).toBeTruthy();
+  });
+
+  it('comes back to the account page after signing in there, as the app opens it', async () => {
+    history.replaceState(null, '', '/account');
+    const requests = selling(PAUSED, null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your account' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/account',
+      errorCallbackURL: '/account',
+    });
   });
 
   it('asks nothing about sync of a server that doesn’t sell it', async () => {
