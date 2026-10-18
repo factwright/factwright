@@ -70,6 +70,9 @@ describe('a server of your own', () => {
   it('has the app approve its code at its own address', async () => {
     const code = await post('/api/auth/device/code', { client_id: 'factwright-desktop' });
     expect(code.body.verification_uri).toBe(`${server.url.origin}/device`);
+    expect(code.body.verification_uri_complete).toBe(
+      `${server.url.origin}/device?user_code=${String(code.body.user_code)}&for=desktop`,
+    );
   });
 
   it('names no terms or privacy policy', async () => {

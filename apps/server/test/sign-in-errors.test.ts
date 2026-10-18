@@ -22,11 +22,16 @@ const from = (path: string) => ({ callbackURL: path, errorCallbackURL: path });
 describe('a sign-in that doesn’t work', () => {
   it('comes back to the web view’s page that started it, with why, and keeps its code', async () => {
     const landed = await signIn(serverWith('octocat'), HUBOT, {
-      start: from('/device?user_code=WDJBMJHT'),
+      start: from('/device?user_code=WDJBMJHT&for=extension'),
     });
     expect(page(landed)).toEqual({
       page: `${APP}/device`,
-      query: { user_code: 'WDJBMJHT', error: 'not_listed', error_description: NOT_LISTED },
+      query: {
+        user_code: 'WDJBMJHT',
+        for: 'extension',
+        error: 'not_listed',
+        error_description: NOT_LISTED,
+      },
     });
   });
 
