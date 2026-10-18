@@ -9,16 +9,16 @@ It's a device on your sync account, as a linked browser is: it signs in with a c
 | `src/page/read-job.ts` | Reads the job on a page: the job data sites publish for search engines first, then each big job site's own layout (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby, Glassdoor, ZipRecruiter, SmartRecruiters, and Hacker News's "Who is hiring?" posts), then the page's main text, except on LinkedIn. Text you selected stands in for the posting, and on Hacker News, says which post is the job. `test/fixtures` has pages from these sites as real browsers showed them. It reads the page as it is, without copying or changing it. The browser sends this one function into the page, so it holds everything it needs |
 | `src/tab-job.ts` | A job's own address, and a job from a tab's address and title alone, for a page it doesn't read. The company from an address when the page names none, never a job board's. What a save without the popup checks first |
 | `src/read-tab.ts` | Reads the tab you're on, as you've asked: the page, or its link alone |
-| `src/save.ts` | Saves a job through sync, as Add job in the app would: its row as New, its history's first line, and the posting in `saved/<job ID>/posting.md`. The same job, by its link, is saved once, and saving it again adds a posting it doesn't have yet |
+| `src/save.ts` | Saves a job through sync, as Add job in the app would: its row as New, its history's first line, and the posting in `saved/<job ID>/posting.md`. The same job, by its link, is saved once, and saving it again adds a posting it doesn't have yet. While sync is paused, as an account's subscription ended, it saves nothing and says so |
 | `src/server.ts` | Which sync server it uses: Factwright's, or a server of your own. Your own server's address is https, the address alone, with no path or login, and setup checks it answers as a Factwright sync server before signing in to it |
 | `src/settings.ts` | Your settings, kept in the browser: the sync server setup offers, and how it treats LinkedIn |
 | `src/account.ts` | The extension's own sign-in, the server it's for and the account's keys, in its IndexedDB; the browser's permission to reach that server; and its requests to sync, which go only to that server and never carry the browser's cookies |
 | `src/popup.ts` | The popup under the toolbar button: the job it read and its posting, to check and save |
-| `src/setup.ts` | The setup page: choosing which sync, signing in, linking, the LinkedIn setting and the account |
+| `src/setup.ts` | The setup page: choosing which sync, signing in, linking, the LinkedIn setting and the account. Where sync is sold, as on Factwright's server, an account without it gets "Sync needs a subscription" instead of linking: subscribe in Factwright on your computer, or run a server of your own, with Check again |
 | `src/background.ts` | Saves for the popup, the right-click menu and the keyboard shortcut, and opens setup on install. A save without the popup takes only a page that looks like one job, and leaves anything else for the popup: Chrome opens it, and Firefox, which lets only a click open it, marks the button with “!” |
 | `src/manifest.ts` | Each browser's manifest, asking for as little as it can |
 | `scripts/build.ts` | Builds both browsers' folders and zips, and checks the built page reader works on its own |
-| `scripts/e2e.ts` | Runs the built extension in Chromium against two local sync servers, the one it's built for and one chosen in setup as your own, from setting up to saving |
+| `scripts/e2e.ts` | Runs the built extension in Chromium against local sync servers, from setting up to saving: the one it's built for, one chosen in setup as your own, and one that sells sync, as Factwright's will |
 | `scripts/icons.ts` | Draws its icons from Factwright's app icon |
 | `store/` | What the Chrome Web Store and Firefox Add-ons ask for: the listing, the permissions and the data, and screenshots |
 

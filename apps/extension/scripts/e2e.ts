@@ -2,8 +2,10 @@
 // your own, chosen in setup, with a site that counts every request standing in for the server it's
 // built for, and then through the server it's built for, a local copy of the sync server standing
 // in for Factwright's sync. It signs in with a code, then links both ways, with the emoji
-// Factwright on a computer checks, and with a link code. The computer's side runs here, with the
-// same code the desktop app uses. `pnpm --filter @factwright/extension e2e` (it needs Playwright's
+// Factwright on a computer checks, and with a link code. Then, through a copy that sells sync, as
+// Factwright's will, an account without sync is told it needs a subscription, links once it has
+// one, and saves nothing while sync is paused. The computer's side runs here, with the same code
+// the desktop app uses. `pnpm --filter @factwright/extension e2e` (it needs Playwright's
 // Chromium: `pnpm --filter @factwright/site exec playwright install chromium`). With
 // `-- --screenshots`, it also draws the stores' screenshots, into store/screenshots, from what it
 // shows along the way, and with `-- --shots <folder>`, saves each setup page it checks there, in
@@ -137,9 +139,11 @@ async function frame(
  * a person's would be. With `before`, only what's above that element, to fit a store's picture.
  */
 async function capture(page: Page, before?: string): Promise<Buffer> {
+  // Only the words change, so links and the like stay as the page has them.
   await page.evaluate(() => {
-    for (const element of document.querySelectorAll('p')) {
-      element.textContent = (element.textContent ?? '').replace(
+    const words = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = words.nextNode(); node; node = words.nextNode()) {
+      node.textContent = (node.textContent ?? '').replace(
         /\b\w+@example\.com\b/,
         'sam@example.com',
       );
@@ -190,9 +194,16 @@ const SAMPLE_JOB = {
 
 /**
  * Signs the extension in to a server, Factwright's or one of your own, chosen in setup: it shows
- * a code, which the person allows in the browser.
+ * a code, which the person allows in the browser. Then setup goes on to linking, unless it shows
+ * another step, `next`.
  */
-async function signIn(setup: Page, origin: string, token: string, own = false): Promise<void> {
+async function signIn(
+  setup: Page,
+  origin: string,
+  token: string,
+  own = false,
+  next = 'Link it with your job hunt',
+): Promise<void> {
   if (own) {
     await setup.getByRole('radio', { name: 'Your own server' }).check();
     await setup.locator('#server').fill(origin);
@@ -207,9 +218,7 @@ async function signIn(setup: Page, origin: string, token: string, own = false): 
     headers: { ...auth, 'content-type': 'application/json' },
     body: JSON.stringify({ userCode }),
   });
-  await setup
-    .getByRole('heading', { name: 'Link it with your job hunt' })
-    .waitFor({ timeout: 30_000 });
+  await setup.getByRole('heading', { name: next }).waitFor({ timeout: 30_000 });
 }
 
 /** A site on this computer that answers everything with "Not found", and counts what it's asked. */
@@ -238,6 +247,15 @@ const server = await startServer();
 const origin = server.url.origin;
 /** A sync server that sends its sign-in to another address than the one it was reached at. */
 const moved = await startServer({ APP_URL: 'https://sync.example.com' });
+/** A copy that sells sync, as Factwright's will. Nothing here pays, so nothing reaches Stripe. */
+const selling = await startServer({
+  STRIPE_SECRET_KEY: 'rk_test_only',
+  STRIPE_WEBHOOK_SECRET: 'whsec_test_only',
+  STRIPE_PRICE_MONTHLY: 'price_month',
+  STRIPE_PRICE_YEARLY: 'price_year',
+  STRIPE_API_URL: 'http://127.0.0.1:9',
+  EARLY_BEFORE: '2026-01-01T00:00:00.000Z',
+});
 const standIn = await notSync();
 const typo = await notSync();
 const build = (env: Record<string, string> = {}) =>
@@ -535,6 +553,86 @@ try {
     );
     await context.close();
   }
+
+  // Through a copy that sells sync, as Factwright's will: an account that can't sync now is told
+  // it needs a subscription, rather than asking Factwright on the computer to link it, and links
+  // once it has sync again. Then, with sync paused, a save saves nothing, and says why.
+  build({ VITE_FACTWRIGHT_SYNC_SERVER: selling.url.origin });
+  {
+    /** The operator giving free sync, or taking it back, as Steve does for someone who asked. */
+    const freeSync = async (email: string, off = false) => {
+      const response = await fetch(new URL('/api/admin/free-sync', selling.url), {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ email, ...(off && { off: true }) }),
+      });
+      if (!response.ok) throw new Error(`Free sync answered ${response.status}.`);
+    };
+    // Sync was turned on while the account had it, which it has no longer.
+    const sam = await selling.signUp();
+    await freeSync(sam.email);
+    const accountKey = newAccountKey();
+    const keys = await accountKeys(accountKey);
+    await sam.client.saveKeys(
+      keys.id,
+      await lockWithRecoveryKey(accountKey, newRecoveryKey().bytes),
+    );
+    await freeSync(sam.email, true);
+    const { context, setup, errors } = await browser(extension);
+    await signIn(setup, selling.url.origin, sam.token, false, 'Sync needs a subscription');
+    check(
+      (await setup
+        .getByText('Factwright’s sync needs a subscription, and this account doesn’t have one now')
+        .count()) === 1 && (await sam.client.linkRequests()).length === 0,
+      'says sync needs a subscription, asking Factwright on the computer nothing',
+    );
+    check(
+      (await setup.getByRole('link', { name: 'How to set one up' }).getAttribute('href')) ===
+        'https://github.com/factwright/sync-server',
+      'pointing to a sync server of your own, which is free',
+    );
+    await shoot(setup, '7-subscription');
+
+    await freeSync(sam.email);
+    const code = newLinkCode();
+    const link = await lockForLink(accountKey, code.bytes);
+    await sam.client.saveLink(link.id, link.data);
+    await setup.getByRole('button', { name: 'Check again' }).click();
+    await setup
+      .getByRole('heading', { name: 'Link it with your job hunt' })
+      .waitFor({ timeout: 15_000 });
+    check(true, 'asks Factwright on the computer once the account has sync again');
+    await setup.locator('summary').click();
+    await setup.fill('#code', code.text);
+    await setup.getByRole('button', { name: 'Link with the code' }).click();
+    await setup.getByRole('heading', { name: 'You’re set' }).waitFor({ timeout: 15_000 });
+
+    await freeSync(sam.email, true);
+    const result = (await setup.evaluate(
+      (sent) =>
+        (
+          globalThis as unknown as {
+            chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+          }
+        ).chrome.runtime.sendMessage({ type: 'save', job: sent }),
+      {
+        url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
+        site: 'jobs.lever.co',
+        company: 'Harbor & Pine',
+        role: 'Senior Product Manager, Data',
+        pay: '',
+        posting: 'About the role\n\nLead the data platform.',
+      },
+    )) as { ok: boolean; reason?: string; message?: string };
+    check(
+      !result.ok &&
+        result.reason === 'paused' &&
+        (await sam.client.changes(0)).changes.length === 0,
+      'saves nothing while sync is paused, and says why',
+    );
+    check(errors.length === 0, 'with nothing going wrong on its pages');
+    await context.close();
+  }
 } catch (error) {
   failed = true;
   console.error(error);
@@ -544,6 +642,7 @@ try {
   await server.close();
   await factwright.close();
   await moved.close();
+  await selling.close();
   standIn.close();
   typo.close();
   // Built again for Factwright's own sync server, as the stores get it.
