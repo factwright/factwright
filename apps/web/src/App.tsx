@@ -57,7 +57,8 @@ const LINK_CODE = 'factwright-link-code';
 
 /**
  * What the sign-in page for a device's code says, by who asked for the code: the desktop app, or
- * the browser extension, Save to Factwright. The server names them in the page's address, such as
+ * the browser extension, Save to Factwright, when it signs in with a code rather than through its
+ * window (EXTENSION_SIGN_IN). The server names them in the page's address, such as
  * "for=extension". Anyone can change an address, so it only ever picks these words: signed in, the
  * page goes by the server's own word for who asked. Without it, as for a code from before the
  * server named them, it's the desktop app's.
