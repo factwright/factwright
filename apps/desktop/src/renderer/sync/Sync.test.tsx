@@ -144,21 +144,15 @@ describe('SyncCard', () => {
 });
 
 describe('SyncCard, where sync is sold', () => {
-  it('says a card didn’t go through while sync carries on, and opens the account page for it', async () => {
+  it('says a card didn’t go through while sync carries on, opening Sync to update it', async () => {
     const onOpen = vi.fn();
-    const onAccountPage = vi.fn();
     const { container } = render(
-      <SyncCard
-        status={{ ...ON, paymentFailed: true }}
-        onOpen={onOpen}
-        onAccountPage={onAccountPage}
-      />,
+      <SyncCard status={{ ...ON, paymentFailed: true }} onOpen={onOpen} />,
     );
     expect(screen.getByText('Card didn’t go through')).toBeTruthy();
     expect(screen.getByText('Update it to keep sync going.')).toBeTruthy();
     screen.getByRole('button', { name: 'Update card…' }).click();
-    expect(onAccountPage).toHaveBeenCalledOnce();
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledOnce();
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
@@ -918,11 +912,6 @@ describe('subscribing, where sync is sold', () => {
       /^Subscription: canceled, syncing until .+\. Manage$/,
       'Manage your subscription on the web',
     ],
-    [
-      'retrying',
-      /^Subscription: your card didn’t go through, so Stripe is trying it again\. Update card$/,
-      'Update your card on the web',
-    ],
     ['free', /^Free sync, from Steve\. Good luck with the search!$/, null],
     ['early', /^Free sync, for good\. Thanks for being one of the first\.$/, null],
   ] as [string, RegExp, string | null][])(
@@ -941,6 +930,19 @@ describe('subscribing, where sync is sold', () => {
       expect(opened).toHaveBeenCalledOnce();
     },
   );
+
+  it('says at the top of the Sync screen when a card didn’t go through, with a way to update it', async () => {
+    const api = apiFor('payment-failed', 'old', 'priced');
+    const opened = vi.spyOn(api, 'openAccountPage');
+    const { container } = await openDialog(api);
+    const note = await screen.findByRole('note');
+    expect(within(note).getByText('Your card didn’t go through')).toBeTruthy();
+    expect(within(note).getByText(/Stripe tries it again for up to two weeks/)).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    within(note).getByRole('button', { name: 'Update card' }).click();
+    expect(opened).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/^Subscription:/)).toBeNull();
+  });
 
   it('says nothing about a subscription where sync isn’t sold', async () => {
     await openDialog(apiFor('on'));

@@ -1,6 +1,6 @@
 import { EXTENSION_URL } from '@factwright/core';
 import type { AccountInfo, SyncAccess } from '@factwright/sync';
-import { Button, DialogActions } from '@factwright/ui';
+import { Button, DialogActions, Notice } from '@factwright/ui';
 import { ArrowUpRight, Smartphone } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
@@ -45,10 +45,15 @@ export function dayOf(iso: string, now: Date = new Date()): string {
   });
 }
 
+/** Whether a renewal's payment didn't go through, and Stripe is trying it again. */
+const cardFailed = (access: SyncAccess) =>
+  access.subscription?.state === 'retrying' && access.gift === null;
+
 /**
  * How the account has sync, where it's sold: free, and why, or its subscription, with when it
- * renews or ends, or that a card didn't go through. Manage opens the account's page on the web,
- * where Stripe's portal changes the card or the plan, cancels, and has the receipts.
+ * renews or ends. A card that didn't go through has a notice of its own, above. Manage opens the
+ * account's page on the web, where Stripe's portal changes the card or the plan, cancels, and has
+ * the receipts.
  */
 function SubscriptionLine({ access, onManage }: { access: SyncAccess; onManage: () => void }) {
   const live =
@@ -60,12 +65,11 @@ function SubscriptionLine({ access, onManage }: { access: SyncAccess; onManage: 
     words = `Free sync, from Steve. Good luck with the search!${
       live && when ? ` Your subscription ends ${when}.` : ''
     }`;
-  } else if (live?.state === 'retrying') {
-    words = 'Subscription: your card didn’t go through, so Stripe is trying it again.';
   } else if (live?.state === 'ending') {
     words = when ? `Subscription: canceled, syncing until ${when}.` : 'Subscription: canceled.';
-  } else if (live) words = when ? `Subscription: renews ${when}.` : 'Subscription: active.';
-  else return null;
+  } else if (live?.state === 'active') {
+    words = when ? `Subscription: renews ${when}.` : 'Subscription: active.';
+  } else return null;
   return (
     <p className={styles.hint}>
       {words}
@@ -75,14 +79,10 @@ function SubscriptionLine({ access, onManage }: { access: SyncAccess; onManage: 
           <button
             type="button"
             className={`${styles.link} ${styles.outLink}`}
-            aria-label={
-              live.state === 'retrying'
-                ? 'Update your card on the web'
-                : 'Manage your subscription on the web'
-            }
+            aria-label="Manage your subscription on the web"
             onClick={onManage}
           >
-            {live.state === 'retrying' ? 'Update card' : 'Manage'}
+            Manage
             <ArrowUpRight size={13} aria-hidden="true" />
           </button>
         </>
@@ -195,6 +195,20 @@ export function ManageSync({
   return (
     <>
       <RequestsPanel api={api} approvals={approvals} />
+      {account?.access && cardFailed(account.access) && (
+        <div className={styles.notice}>
+          <Notice title="Your card didn’t go through">
+            <p className={styles.noticeText}>
+              Update it to keep sync going. Stripe tries it again for up to two weeks, and sync
+              carries on meanwhile.
+            </p>
+            <Button size="sm" variant="primary" onClick={() => void api.openAccountPage()}>
+              Update card
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </Button>
+          </Notice>
+        </div>
+      )}
       <p className={styles.standing} aria-live="polite">
         <span className={`${styles.dot} ${DOTS[status.activity]}`} aria-hidden="true" />
         {standing(status)}

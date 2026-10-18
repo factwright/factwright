@@ -244,7 +244,7 @@ describe('the page checkout comes back to', () => {
     expect(screen.getByRole('heading', { name: 'Finishing up…' })).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'You’re subscribed' })).toBeTruthy();
     expect(screen.getByText('Go back to Factwright: it’s finishing setting up sync.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Your account' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'account page' }).getAttribute('href')).toBe(
       '/account',
     );
     expect(looks).toBe(3);

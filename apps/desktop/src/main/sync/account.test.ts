@@ -85,7 +85,7 @@ function computer(
   const statuses: SyncStatus[] = [];
   const applied = vi.fn();
   // The pages the app opens in the browser: the person approves a sign-in's code there.
-  const opened: string[] = [];
+  const pages: string[] = [];
   const sync = new SyncAccount({
     dataDir,
     server: factwright,
@@ -94,7 +94,7 @@ function computer(
     tracker,
     workspace,
     openUrl: async (url) => {
-      opened.push(url);
+      pages.push(url);
       if (new URL(url).pathname === '/device') await approve(url);
     },
     onStatus: (status) => statuses.push(status),
@@ -113,7 +113,7 @@ function computer(
     tracker,
     applied,
     statuses,
-    opened,
+    pages,
     write: (path: string, text: string) => {
       mkdirSync(join(workspace, ...path.split('/').slice(0, -1)), { recursive: true });
       writeFileSync(join(workspace, ...path.split('/')), text);
@@ -1638,7 +1638,7 @@ describe('a server that sells sync', () => {
 
     expect(await mac.sync.subscribe()).toEqual({ ok: true });
     // The browser opens the server's page for subscribing, naming the account it's for.
-    expect(mac.opened.at(-1)).toBe(`${selling?.url.origin}/subscribe?account=${seller.id}`);
+    expect(mac.pages.at(-1)).toBe(`${selling?.url.origin}/subscribe?account=${seller.id}`);
     expect(mac.sync.status()).toMatchObject({ state: 'subscribe', waiting: true });
 
     await subscription(seller, 'active');
@@ -1686,7 +1686,7 @@ describe('a server that sells sync', () => {
 
     // Subscribing again picks up where it left off: what changed while paused goes up.
     expect(await mac.sync.subscribe()).toEqual({ ok: true });
-    expect(mac.opened.at(-1)).toBe(`${selling?.url.origin}/subscribe?account=${seller.id}`);
+    expect(mac.pages.at(-1)).toBe(`${selling?.url.origin}/subscribe?account=${seller.id}`);
     await subscription(seller, 'active');
     await mac.synced();
     expect((await seller.client.account()).usage.records).toBe(records + 4);

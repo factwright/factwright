@@ -6,8 +6,6 @@ interface CardView {
   line: string;
   help?: string;
   action?: string;
-  /** Whether the action opens the account's page in the browser, rather than the sync dialog. */
-  accountPage?: boolean;
 }
 
 /** How sync reads in the sidebar, in plain words, with what to do next. */
@@ -114,7 +112,6 @@ function describe(
           line: 'Card didn’t go through',
           help: 'Update it to keep sync going.',
           action: 'Update card…',
-          accountPage: true,
         };
       }
       switch (status.activity) {
@@ -146,7 +143,6 @@ export function SyncCard({
   requests = [],
   asking = null,
   onOpen,
-  onAccountPage = onOpen,
 }: {
   status: SyncStatus | 'checking';
   /** Other devices asking to link, which this computer can approve. */
@@ -154,8 +150,6 @@ export function SyncCard({
   /** This computer, asking to be linked. */
   asking?: AskingView | null;
   onOpen: () => void;
-  /** Opens the account's page in the browser, where a card that didn't go through is updated. */
-  onAccountPage?: () => void;
 }) {
   const view = describe(status, requests, asking);
   return (
@@ -164,11 +158,7 @@ export function SyncCard({
       tone={view.tone}
       line={view.line}
       help={view.help}
-      action={
-        view.action
-          ? { label: view.action, onClick: view.accountPage ? onAccountPage : onOpen }
-          : null
-      }
+      action={view.action ? { label: view.action, onClick: onOpen } : null}
     />
   );
 }

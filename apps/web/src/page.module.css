@@ -75,6 +75,11 @@
   margin-top: 28px;
 }
 
+/* A section's line, then more about it, such as the account's subscription. */
+.section .lead + .hint {
+  margin-top: var(--fw-space-1);
+}
+
 .heading {
   margin: 0 0 var(--fw-space-2);
   font-size: 13px;

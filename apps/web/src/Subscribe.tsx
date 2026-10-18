@@ -33,7 +33,7 @@ function SyncReady({ title, children }: { title: string; children: ReactNode }) 
       </h1>
       {children}
       <p className={page.hint}>
-        Your account page shows your subscription, and manages it.{' '}
+        Your{' '}
         <a
           href="/account"
           onClick={(event) => {
@@ -41,8 +41,9 @@ function SyncReady({ title, children }: { title: string; children: ReactNode }) 
             navigate('/account');
           }}
         >
-          Your account
-        </a>
+          account page
+        </a>{' '}
+        shows your subscription, and manages it.
       </p>
     </section>
   );
