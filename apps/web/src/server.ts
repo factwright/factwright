@@ -77,9 +77,14 @@ export async function signInOptions(): Promise<ServerOptions> {
 /**
  * Goes to GitHub or Google to sign in, then comes back to this page. When it doesn't work, it
  * still comes back here, with why in the address (see sign-in-errors.ts). When it can't start,
- * says why, for the page to show.
+ * says why, for the page to show. `beforeGoing` runs once it has started, just before the
+ * browser goes, such as to sign out of the account that's signed in now. It mustn't throw.
  */
-export async function signIn(provider: Provider, returnTo: string): Promise<string | null> {
+export async function signIn(
+  provider: Provider,
+  returnTo: string,
+  beforeGoing?: () => Promise<void>,
+): Promise<string | null> {
   try {
     const response = await post('/api/auth/sign-in/social', {
       provider,
@@ -88,6 +93,7 @@ export async function signIn(provider: Provider, returnTo: string): Promise<stri
     });
     const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
     if (response.ok && typeof url === 'string') {
+      await beforeGoing?.();
       location.assign(url);
       return null;
     }
@@ -132,7 +138,14 @@ export type DeviceCode =
   | { ok: true; status: 'pending' | 'approved' | 'denied'; asker: 'app' | 'extension' }
   | { ok: false; message: string };
 
-/** Opens a code the app shows, which ties it to this account until it's answered. */
+/** What the page says about a code another account opened first, which only it can answer. */
+export const TAKEN =
+  'That code was opened with another account. In Factwright, start signing in again.';
+
+/**
+ * Opens a code the app shows, which ties it to this account until it's answered, or until this
+ * account lets go of it (see releaseDeviceCode). Only the account it's tied to can answer it.
+ */
 export async function openDeviceCode(userCode: string): Promise<DeviceCode> {
   const response = await fetch(`/api/auth/device?${new URLSearchParams({ user_code: userCode })}`);
   const answer = (await response.json().catch(() => ({}))) as {
@@ -144,6 +157,8 @@ export async function openDeviceCode(userCode: string): Promise<DeviceCode> {
     response.ok &&
     (answer.status === 'pending' || answer.status === 'approved' || answer.status === 'denied')
   ) {
+    // Sign-in says who asked only to the account the code is tied to.
+    if (answer.client_id === undefined) return { ok: false, message: TAKEN };
     const asker = answer.client_id === CLIENTS.extension ? 'extension' : 'app';
     return { ok: true, status: answer.status, asker };
   }
@@ -156,17 +171,33 @@ export async function openDeviceCode(userCode: string): Promise<DeviceCode> {
   };
 }
 
-/** Lets the app sign in, or turns it away. */
+/**
+ * Lets the app sign in, or turns it away. "sign-in" means this browser needs to sign in here
+ * first, and "taken" that the code is another account's.
+ */
 export async function answerDeviceCode(
   userCode: string,
   allow: boolean,
-): Promise<'answered' | 'sign-in' | 'failed'> {
+): Promise<'answered' | 'sign-in' | 'taken' | 'failed'> {
   const response = await post(allow ? '/api/auth/device/approve' : '/api/auth/device/deny', {
     userCode,
   });
   if (response.ok) return 'answered';
-  // Only a session from signing in here, in the browser, may let a computer in.
-  return response.status === 403 ? 'sign-in' : 'failed';
+  // Signed out since the page opened.
+  if (response.status === 401) return 'sign-in';
+  if (response.status !== 403) return 'failed';
+  // Sign-in's own refusal: another account opened the code first. Otherwise, only a session from
+  // signing in here, in the browser, may let a computer in.
+  const { error } = (await response.json().catch(() => ({}))) as { error?: unknown };
+  return error === 'access_denied' ? 'taken' : 'sign-in';
+}
+
+/**
+ * Lets go of a code this account opened but hasn't answered, so the account signed in next can
+ * open it, for someone who opened it signed in to the wrong account.
+ */
+export async function releaseDeviceCode(userCode: string): Promise<void> {
+  await post('/api/account/device-codes/release', { userCode });
 }
 
 /** Deletes the account and everything in it. "sign-in" means it needs a fresh sign-in first. */

@@ -287,7 +287,12 @@ export function App() {
     const userCode = new URLSearchParams(location.search).get('user_code') ?? '';
     return (
       <Shell nav={nav}>
-        <ApproveDevice userCode={userCode} providers={providers} signInProblem={signInProblem} />
+        <ApproveDevice
+          userCode={userCode}
+          email={session.user.email}
+          providers={providers}
+          signInProblem={signInProblem}
+        />
       </Shell>
     );
   }

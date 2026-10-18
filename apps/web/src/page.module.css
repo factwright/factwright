@@ -63,6 +63,18 @@
   text-align: center;
 }
 
+/* Who's signed in here, which a device signs in to once it's let in. */
+.account {
+  margin: 0;
+  padding: var(--fw-space-3);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-sunken);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+  /* A long email wraps rather than widening the page on a phone. */
+  overflow-wrap: anywhere;
+}
+
 .done {
   display: flex;
   align-items: center;
@@ -158,8 +170,13 @@
   cursor: pointer;
 }
 
-.linkButton:hover {
+.linkButton:hover:not(:disabled) {
   text-decoration: underline;
+}
+
+.linkButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* A note at the top of a page, such as sync being paused. */
