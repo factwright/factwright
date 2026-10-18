@@ -20,6 +20,8 @@ on:
       - .github/workflows/release.yml
       - apps/desktop/electron-builder.config.mjs
       - apps/desktop/build/**
+      - apps/desktop/helper/**
+      - apps/desktop/scripts/build-helper.ts
       - pnpm-workspace.yaml
 
 permissions:
@@ -217,9 +219,9 @@ jobs:
         run: pnpm --filter @factwright/desktop dist:win
       - name: Check what's in the app
         run: pnpm --filter @factwright/desktop check-package
-      # Every program and module signed, so Windows runs each one. The app and its installer are
-      # signed by the publisher installed copies check each update against, which their update
-      # settings name.
+      # Every program and module signed, so Windows runs each one. The app, its installer and the
+      # helper Save to Factwright saves through are signed by the publisher installed copies check
+      # each update against, which their update settings name.
       - name: Check everything is signed
         if: env.SIGNED == 'true'
         shell: pwsh
@@ -227,7 +229,7 @@ jobs:
           AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
         run: |
           $expected = $env:AZURE_PUBLISHER_NAME
-          $ours = @(Get-ChildItem apps/desktop/dist/*.exe) + @(Get-Item apps/desktop/dist/win-unpacked/Factwright.exe)
+          $ours = @(Get-ChildItem apps/desktop/dist/*.exe) + @(Get-Item apps/desktop/dist/win-unpacked/Factwright.exe) + @(Get-Item apps/desktop/dist/win-unpacked/factwright-save.exe)
           $all = $ours + @(Get-ChildItem apps/desktop/dist/win-unpacked -Recurse -Include *.exe, *.node, *.dll)
           foreach ($file in $all) {
             $signature = Get-AuthenticodeSignature $file.FullName
@@ -237,7 +239,7 @@ jobs:
             $name = (Get-AuthenticodeSignature $file.FullName).SignerCertificate.GetNameInfo('SimpleName', $false)
             if ($name -ne $expected) { throw "$($file.Name) is signed by $name, not $expected" }
           }
-          Write-Output "$($all.Count) files signed; the app and its installer by $expected."
+          Write-Output "$($all.Count) files signed; the app, its installer and its helper by $expected."
           # A build with a download site looks for updates, and takes only this publisher's.
           if ($env:FACTWRIGHT_DOWNLOADS_URL) {
             $settings = Get-Content apps/desktop/dist/win-unpacked/resources/app-update.yml -Raw

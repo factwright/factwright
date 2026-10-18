@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { INBOX_FOLDER } from '@factwright/core';
 import {
   app,
   autoUpdater as macInstaller,
@@ -20,6 +21,8 @@ import { useClaudeFolder } from './claude/launch.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
+import { JobInbox } from './extension/inbox.ts';
+import { helperName, registerSaveHelper, runProgram } from './extension/register.ts';
 import { registerIpc } from './ipc.ts';
 import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
@@ -299,6 +302,41 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     await server.start();
 
     jobs.watch();
+    // Jobs Save to Factwright saved on this computer, which the helper each browser starts drops
+    // in the profile's inbox: the ones that came while the app was closed now, the rest as they
+    // come.
+    const inbox = new JobInbox({
+      folder: join(dataDir, INBOX_FOLDER),
+      add: (job) => jobs.addSaved(job),
+    });
+    inbox.start();
+    // Each browser on this computer may start the helper, for Save to Factwright alone, once the
+    // app has told it where the helper is: on the first start, and after each update. A copy
+    // another program drives, as the tests do, leaves the browsers as they are, and so does one
+    // run from the code, unless it's given an unpacked extension's ID to allow too.
+    const unpacked = develop('FACTWRIGHT_EXTENSION_ID');
+    if (!driven && (app.isPackaged || unpacked)) {
+      void registerSaveHelper({
+        platform: process.platform,
+        userHome: app.getPath('home'),
+        env: {
+          APPDATA: app.getPath('appData'),
+          LOCALAPPDATA: process.env.LOCALAPPDATA,
+          SystemRoot: process.env.SystemRoot,
+        },
+        appHome: home,
+        helper: app.isPackaged
+          ? process.platform === 'darwin'
+            ? join(process.resourcesPath, 'helper', helperName(process.platform))
+            : join(dirname(process.execPath), helperName(process.platform))
+          : join(app.getAppPath(), 'helper', 'out', helperName(process.platform)),
+        version: app.getVersion(),
+        extraChromeIds: unpacked ? [unpacked] : [],
+        run: runProgram,
+      }).catch(() => {
+        // The next start tries again.
+      });
+    }
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
     // so the profile follows the workspace too.
     const stopWatchingProfile = watchWorkspace(
@@ -432,6 +470,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       setup.stop();
       server.stop();
       printer.close();
+      inbox.stop();
       jobs.stop();
       stopWatchingProfile();
       void sync.stop();

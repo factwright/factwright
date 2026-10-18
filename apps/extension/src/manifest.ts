@@ -1,3 +1,5 @@
+import { EXTENSION_IDS } from '@factwright/core';
+
 /** The browsers the extension is built for, each with a manifest of its own. */
 export type Target = 'chrome' | 'firefox';
 
@@ -24,13 +26,25 @@ export const hostPattern = (server: string) => {
 export const ownServers = (forStores: boolean): string[] =>
   forStores ? ['https://*/*'] : ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
 
-/** The extension's ID on Firefox, which Firefox needs to sign it and to keep its data. */
-export const FIREFOX_ID = 'save@factwright.com';
+/**
+ * The extension's ID on Firefox, which Firefox needs to sign it and to keep its data, and which
+ * Factwright's helper lets reach it on this computer.
+ */
+export const FIREFOX_ID = EXTENSION_IDS.firefox;
 
 /** The icon sizes each browser shows, from the toolbar up to the store. */
 export const ICON_SIZES = [16, 32, 48, 128] as const;
 
 const icons = Object.fromEntries(ICON_SIZES.map((size) => [size, `icons/${size}.png`]));
+
+/** What a build asks for beyond what the stores' build does. */
+export interface Asks {
+  /**
+   * Native messaging at install, for the end-to-end run, whose browser can't answer the prompt
+   * that asks for it when setup does. Never in the stores' build.
+   */
+  nativeAtInstall?: boolean;
+}
 
 /**
  * The extension's manifest for a browser. It asks for as little as it can:
@@ -41,12 +55,15 @@ const icons = Object.fromEntries(ICON_SIZES.map((size) => [size, `icons/${size}.
  * - reaching the sync server it's built for, Factwright's, and no other site (host permissions)
  * - reaching a sync server of your own instead, asked for only when you choose one in setup, and
  *   then only for its address (optional host permissions)
+ * - talking to Factwright on this computer, through the helper Factwright installs, asked for only
+ *   when you choose to save there in setup (optional native messaging)
  * It has no content scripts and nothing pages can load, so sites can't tell it's installed.
  */
 export function manifest(
   target: Target,
   version: string,
   server: string = FACTWRIGHT_SYNC,
+  asks: Asks = {},
 ): Record<string, unknown> {
   const common = {
     manifest_version: 3,
@@ -62,7 +79,17 @@ export function manifest(
       default_popup: 'popup.html',
       default_icon: icons,
     },
-    permissions: ['activeTab', 'scripting', 'storage', 'contextMenus'],
+    permissions: [
+      'activeTab',
+      'scripting',
+      'storage',
+      'contextMenus',
+      ...(asks.nativeAtInstall ? ['nativeMessaging'] : []),
+    ],
+    // Asked for when you choose to save to Factwright on this computer, so an update that brings
+    // it asks nothing of anyone: a new permission the extension needs from install would turn it
+    // off in Chrome until accepted.
+    ...(asks.nativeAtInstall ? {} : { optional_permissions: ['nativeMessaging'] }),
     host_permissions: [hostPattern(server)],
     // The server it's built for is asked for at install, so it's never asked for again.
     optional_host_permissions: ownServers(server === FACTWRIGHT_SYNC).filter(

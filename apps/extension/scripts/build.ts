@@ -40,6 +40,15 @@ const server = (() => {
 /** Only a build for Factwright's own sync goes to the stores, so only it gets zips. */
 const forStores = server === FACTWRIGHT_SYNC;
 
+/**
+ * For the end-to-end run alone: native messaging asked for at install, as its browser can't
+ * answer the prompt that asks for it when setup does. The stores' build always asks in setup.
+ */
+const nativeAtInstall = process.env.FACTWRIGHT_NATIVE_AT_INSTALL === '1';
+if (nativeAtInstall && forStores) {
+  throw new Error('The stores’ build asks for native messaging in setup, never at install.');
+}
+
 /** Every file under a folder, by its path inside it. */
 function filesIn(folder: string): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
@@ -117,7 +126,7 @@ for (const target of ['chrome', 'firefox'] as const satisfies readonly Target[])
   cpSync(join(DIST, 'build'), out, { recursive: true });
   writeFileSync(
     join(out, 'manifest.json'),
-    `${JSON.stringify(manifest(target, version, server), null, 2)}\n`,
+    `${JSON.stringify(manifest(target, version, server, { nativeAtInstall }), null, 2)}\n`,
   );
   if (!forStores) {
     console.log(`dist/${target}, for ${server}: no zip, since it's not for the stores`);

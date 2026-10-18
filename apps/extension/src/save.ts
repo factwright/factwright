@@ -1,15 +1,13 @@
 import {
-  companyKey,
   JOB_LIMITS,
   jobIdFor,
   localDate,
   newJobRows,
   normalizeUrl,
-  roleKey,
   savedPostingFile,
   savedPostingMarkdown,
   shortCode,
-  slug,
+  wholeJobId,
 } from '@factwright/core';
 import {
   type AccountKeys,
@@ -50,13 +48,23 @@ export interface JobToSave {
  */
 export type PostingSaved = 'saved' | 'kept' | 'none' | 'failed';
 
+/**
+ * How a save went: the job's ID, whether the job hunt had it already and what became of its
+ * posting. Saved for Factwright on this computer while it's closed, `later` says it adds the job
+ * the next time it opens. Or why it didn't save: "no-app" when Factwright on this computer can't be
+ * reached, and "no-access" when the browser won't let the extension reach where it saves.
+ */
 export type SaveResult =
   | { ok: true; id: string; already: boolean; posting: PostingSaved }
+  | { ok: true; later: true }
   | {
       ok: false;
-      reason: 'signed-out' | 'offline' | 'full' | 'no-access' | 'failed';
+      reason: 'signed-out' | 'offline' | 'full' | 'no-access' | 'no-app' | 'failed';
       message: string;
     };
+
+/** How a save through sync went, which always knows where the job went. */
+export type SyncSaveResult = Exclude<SaveResult, { later: true }>;
 
 /** How many jobs with the same company and role it tries IDs for: "-2" up to this. */
 const MAX_SAME = 50;
@@ -128,15 +136,6 @@ async function currentJob(
   return change ? openJob(keys, change) : null;
 }
 
-/**
- * The ID a job had before IDs were cut short to fit a folder's name: its company's and role's
- * whole keys. The app still knows the jobs it added or found before then by these.
- */
-function wholeId(company: string, role: string): string | null {
-  const companyPart = companyKey(company) || slug(company);
-  return companyPart ? `${companyPart}--${roleKey(role) || 'general'}` : null;
-}
-
 /** Whether a jobs row has a link to the same address. */
 function hasLink(row: RowRecord['row'], url: string): boolean {
   let links: unknown;
@@ -153,7 +152,7 @@ function hasLink(row: RowRecord['row'], url: string): boolean {
 }
 
 /** What went wrong, in words, by what the sync client says. */
-function failed(error: unknown, server = 'Factwright’s sync'): SaveResult {
+function failed(error: unknown, server = 'Factwright’s sync'): SyncSaveResult {
   if (error instanceof SyncError) {
     if (error.kind === 'signed-out') {
       return { ok: false, reason: 'signed-out', message: 'Save to Factwright was signed out.' };
@@ -188,7 +187,7 @@ export async function saveJob(
   keys: AccountKeys,
   job: JobToSave,
   deps: SaveDeps,
-): Promise<SaveResult> {
+): Promise<SyncSaveResult> {
   const now = deps.now?.() ?? new Date();
   const today = localDate(now);
   const made: Made = { device: deps.device.slice(0, 200), at: now.toISOString() };
@@ -209,7 +208,7 @@ export async function saveJob(
   const pause = deps.pause ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   try {
     // A job with a long company or title, which the app knows by its whole ID from before.
-    const whole = wholeId(fields.company, fields.role);
+    const whole = wholeJobId(fields.company, fields.role);
     const known = whole && whole !== base ? await currentJob(client, keys, whole) : null;
     if (whole && known && hasLink(known.row, fields.link)) {
       const kept = await addPosting(client, keys, whole, posting, made, pause);

@@ -10,11 +10,12 @@ It:
 ## How it's put together
 | Folder | What's there |
 |---|---|
-| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), Claude's tools ([`src/main/tools`](src/main/tools)), your jobs ([`src/main/jobs`](src/main/jobs)), and sync ([`src/main/sync`](src/main/sync)) |
+| [`src/main`](src/main) | The main process: the window, the app's security rules, running Claude Code ([`src/main/claude`](src/main/claude)), Claude's tools ([`src/main/tools`](src/main/tools)), your jobs ([`src/main/jobs`](src/main/jobs)), sync ([`src/main/sync`](src/main/sync)), and saving from the browser on this computer ([`src/main/extension`](src/main/extension)) |
+| [`helper`](helper) | The small helper the browsers start to hand Factwright the jobs Save to Factwright saves on this computer, in C, built for the installers by `pnpm --filter @factwright/desktop helper` |
 | [`src/preload`](src/preload) | The bridge: the short list of requests the window may make |
 | [`src/renderer`](src/renderer) | The window's screens, built from the [design system](../../packages/ui) |
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
-| [`scripts`](scripts) | The development runner, the app icons' drawing, the README's screenshots, a fix node-pty needs after every install, and a release's check and publishing, with a test that runs the publishing against stand-ins for R2 |
+| [`scripts`](scripts) | The development runner, the app icons' drawing, the README's screenshots, a fix node-pty needs after every install, the helper's build, and a release's check and publishing, with a test that runs the publishing against stand-ins for R2 |
 | [`build`](build) | The app icons, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`), and what the Mac's hardened runtime allows. The installers build them in, and the app shows the icon in the Dock while you develop |
 | [`release-notes`](release-notes) | What's new in each version, which installed copies show as they update |
 
@@ -174,7 +175,7 @@ The jobs screen ([`src/renderer/jobs`](src/renderer/jobs)) follows the approved 
   - archiving, which takes it out of your lists without losing anything
 
   Beside the list when there's room, and over it when the window is narrow.
-- **Adding a job:** the top bar's Add job button, for jobs you found yourself. It links to Save to Factwright, the browser extension, for a job found in the browser.
+- **Adding a job:** the top bar's Add job button, for jobs you found yourself. It links to Save to Factwright, the browser extension, for a job found in the browser, which can save straight to Factwright on this computer ([below](#save-to-factwright-on-this-computer)).
 - **Filters:** fit, minimum pay, has a resume, and archived jobs.
 - **Your journey:** how far your jobs got and how they ended, as a summary or a flow chart of every path they took, drawn in the app. It also copies the paths as text for sankeymatic.com, or saves a spreadsheet with each step's date. With more than one kind of job, it shows one kind's, or compares them side by side, and the spreadsheet says each job's kind.
 - **Opening files:** documents open formatted, in the app. Resumes open in your own PDF or Word app, and only PDF and Word files inside the workspace can open that way.
@@ -195,6 +196,13 @@ Sync keeps your workspace and tracker the same on each of your computers, and yo
 - **Only Factwright's own builds,** made by its release workflow, have its sync server, app.factwright.com, and its download site. A copy built anywhere else, such as from a fork or on your own computer, has neither: it syncs only through a server of your own, and it never looks for updates.
   - **To sync a copy you build,** run a [sync server](../server#running-your-own) of your own, and connect it in the Sync dialog, as any copy can. To build one in as the copy's own, set `FACTWRIGHT_SYNC_SERVER` to its address for `pnpm --filter @factwright/desktop build`.
   - **For updates,** set `FACTWRIGHT_DOWNLOADS_URL` to a site of your own for `dist:mac` or `dist:win`, which write it into the installers, and put each version's installers and its `latest.yml` or `latest-mac.yml` there, as [docs/releasing.md](../../docs/releasing.md) describes. A Mac copy installs an update only if the two are signed with the same certificate, so a copy built without one never updates; to give copies to other people, that's a Developer ID certificate.
+
+## Save to Factwright on this computer
+Save to Factwright, the browser extension ([`apps/extension`](../extension)), can save straight to Factwright on the same computer, with no account and no sync. The browser hands each job to a small helper the app carries ([`helper`](helper)), through its native messaging, and the helper drops it in an inbox in the data folder of the profile open last ([`src/main/extension`](src/main/extension)):
+- **Registering the helper:** on its first start, and after each update, the app tells each browser it finds where the helper is, and that only Save to Factwright may start it: Chrome, Edge, Brave, Arc, Vivaldi and Firefox, each in its own place for native messaging hosts. On a Mac that's a small file in each browser's folder in `~/Library/Application Support`, and on Windows a key under `HKEY_CURRENT_USER\Software` naming a file in the app's data folder. It notes what it did in `save-helper.json` there, and does it again only when the version, the helper's place or the browsers it finds change. A copy run from its disk image, or that macOS hasn't moved to where it lives yet, registers nothing, as that place goes away, and nor does a copy another program drives, as the tests do. Uninstalling on Windows takes the registrations away.
+- **The helper** reads one message, takes it only if it's a job and nothing else (its link, site, title, company, pay and posting), and writes it whole into `inbox/` in the profile's folder, beside the workspace, so it never syncs and Claude's tools can't reach it. With the app open, it waits a moment for the app's answer, and hands it back to the extension. With it closed, it says the job waits.
+- **The inbox:** while the app is open, it adds each job as it comes, and the ones that came while it was closed as it starts: as New, with its posting kept in `saved/<job ID>/posting.md`, as a save through sync does, so sync carries it to your other devices if it's on. The same job, by its link, is added once. Anything that isn't a job is deleted, with nothing in it kept.
+- **Trying it from the code:** `pnpm --filter @factwright/desktop helper` builds the helper. A copy run from the code registers it only when `FACTWRIGHT_EXTENSION_ID` names an unpacked extension to allow, beside the stores' build, as `chrome://extensions` shows its ID.
 
 ## Profiles
 People who share a computer each keep their own job hunt in a profile of their own ([`src/main/profiles.ts`](src/main/profiles.ts)). A profile is also a fresh start, for trying a setup from scratch.
