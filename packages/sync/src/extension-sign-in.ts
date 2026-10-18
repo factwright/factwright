@@ -118,6 +118,25 @@ export function readAsk(values: Readonly<Record<string, unknown>>): ExtensionAsk
   return { redirect: redirect_uri, challenge: code_challenge, state };
 }
 
+/** What an ask's address carries, by name. */
+const ASK_FIELDS = [
+  'client_id',
+  'response_type',
+  'redirect_uri',
+  'code_challenge',
+  'code_challenge_method',
+  'state',
+] as const;
+
+/**
+ * An ask from the page's address, as readAsk takes it, or null when any of its fields comes twice,
+ * which the browser and the page could each read a different way.
+ */
+export function readAskQuery(query: URLSearchParams): ExtensionAsk | null {
+  if (ASK_FIELDS.some((field) => query.getAll(field).length > 1)) return null;
+  return readAsk(Object.fromEntries(query));
+}
+
 /** An ask's values, as the page sends them to the server with its answer. */
 export const askValues = (ask: ExtensionAsk) => ({
   client_id: CLIENTS.extension,
@@ -135,16 +154,20 @@ export async function challengeOf(verifier: string): Promise<string> {
 
 /**
  * The answer at the return address: in its fragment, which is never sent anywhere, even if the
- * browser didn't take the address first. The state must be this sign-in's own.
+ * browser didn't take the address first. The state must be this sign-in's own, and the server
+ * that gave it the one this sign-in went to (`iss`, RFC 9207). Every Factwright server knows the
+ * same return addresses, so without that, a server of your own that misbehaved could send the
+ * window on to Factwright's page, and have the code Factwright gave you sent back to it.
  */
 function readAnswer(
   returned: string,
   redirect: string,
   state: string,
+  issuer: string,
 ): { code: string } | { denied: boolean } {
   if (!returned.startsWith(redirect) || !URL.canParse(returned)) return { denied: false };
   const answer = new URLSearchParams(new URL(returned).hash.slice(1));
-  if (answer.get('state') !== state) return { denied: false };
+  if (answer.get('state') !== state || answer.get('iss') !== issuer) return { denied: false };
   const code = answer.get('code');
   if (code && CODE.test(code)) return { code };
   return { denied: answer.get('error') === 'access_denied' };
@@ -183,7 +206,12 @@ export class WindowSignIn {
 
   /** Reads the window's answer, and gets the extension's session for a code. */
   async finish(returned: string): Promise<SignInResult> {
-    const answer = readAnswer(returned, this.deps.redirect, this.state);
+    const answer = readAnswer(
+      returned,
+      this.deps.redirect,
+      this.state,
+      new URL(this.deps.server).origin,
+    );
     if (!('code' in answer)) {
       return answer.denied
         ? { ok: false, reason: 'denied', message: 'Signing in was declined in the browser.' }

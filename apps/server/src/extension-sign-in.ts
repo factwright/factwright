@@ -64,9 +64,12 @@ export async function extensionRedirects(setting: string | undefined): Promise<s
   return [...new Set([...STORE_RETURNS, ...added.filter((each) => each !== null)])];
 }
 
-/** The address the window goes on to, with an answer in its fragment. */
-const answerAt = (ask: ExtensionAsk, answer: Record<string, string>) =>
-  `${ask.redirect}#${new URLSearchParams({ ...answer, state: ask.state })}`;
+/**
+ * The address the window goes on to, with an answer in its fragment, naming the server that gave
+ * it (`iss`, RFC 9207), for the extension to check it's the one it asked.
+ */
+const answerAt = (ask: ExtensionAsk, issuer: string, answer: Record<string, string>) =>
+  `${ask.redirect}#${new URLSearchParams({ ...answer, state: ask.state, iss: issuer })}`;
 
 /** A request that isn't one this takes, in OAuth's words. */
 const invalid = (description: string) =>
@@ -80,10 +83,10 @@ const BAD_GRANT = () =>
   });
 
 /**
- * The two steps, as sign-in's own routes. `redirects` gives the return addresses this server
- * knows.
+ * The two steps, as sign-in's own routes. `issuer` is this server's own address, which its
+ * answers name, and `redirects` gives the return addresses it knows.
  */
-export function extensionSignIn(redirects: () => Promise<readonly string[]>) {
+export function extensionSignIn(issuer: string, redirects: () => Promise<readonly string[]>) {
   return {
     id: 'extension-sign-in',
     endpoints: {
@@ -101,7 +104,9 @@ export function extensionSignIn(redirects: () => Promise<readonly string[]>) {
             throw invalid('That isn’t a sign-in Save to Factwright asked for.');
           }
           if (typeof body.allow !== 'boolean') throw invalid('Allow it, or don’t.');
-          if (!body.allow) return ctx.json({ url: answerAt(ask, { error: 'access_denied' }) });
+          if (!body.allow) {
+            return ctx.json({ url: answerAt(ask, issuer, { error: 'access_denied' }) });
+          }
           const signedIn = await getAuthoritativeSessionFromCtx(ctx);
           if (!signedIn) {
             throw new APIError('UNAUTHORIZED', {
@@ -117,6 +122,14 @@ export function extensionSignIn(redirects: () => Promise<readonly string[]>) {
               error_description: 'Allow it from a browser signed in to Factwright.',
             });
           }
+          // The account the page named, as it was when it opened, so another tab's sign-in since
+          // can't swap the account the person allowed.
+          if (body.account !== signedIn.user.id) {
+            throw new APIError('CONFLICT', {
+              error: 'account_changed',
+              error_description: 'This browser is signed in to another account now.',
+            });
+          }
           const code = toBase64Url(randomBytes(32));
           const granted: Granted = {
             user: signedIn.user.id,
@@ -128,7 +141,7 @@ export function extensionSignIn(redirects: () => Promise<readonly string[]>) {
             value: JSON.stringify(granted),
             expiresAt: new Date(Date.now() + CODE_MS),
           });
-          return ctx.json({ url: answerAt(ask, { code }) });
+          return ctx.json({ url: answerAt(ask, issuer, { code }) });
         },
       ),
 

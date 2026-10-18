@@ -4,7 +4,7 @@ import {
   EXTENSION_SIGN_IN,
   type ExtensionAsk,
   type Legal,
-  readAsk,
+  readAskQuery,
   type SyncAccess,
 } from '@factwright/sync';
 import { Button } from '@factwright/ui';
@@ -30,7 +30,7 @@ import {
   type Session,
   signInOptions,
 } from './server.ts';
-import { forgetSignInError, signInError } from './sign-in-errors.ts';
+import { backFromSigningIn, forgetSignInError, signInError } from './sign-in-errors.ts';
 import { openVault, type Vault } from './vault.ts';
 
 type State =
@@ -73,7 +73,7 @@ function takeLinkCode(): string | null {
  * answer: for a return address it knows.
  */
 function extensionAsk(redirects: string[]): ExtensionAsk | null {
-  const ask = readAsk(Object.fromEntries(new URLSearchParams(location.search)));
+  const ask = readAskQuery(new URLSearchParams(location.search));
   return ask && redirects.includes(ask.redirect) ? ask : null;
 }
 
@@ -101,7 +101,7 @@ export function App() {
   // That's taken out of the address at once, and handed to the first page to open, and no other,
   // which says it until the person tries again.
   const [signInProblem, setSignInProblem] = useState(() =>
-    signInError(location.search, location.origin),
+    signInError(location.search, location.origin, backFromSigningIn()),
   );
   const today = localDate();
 
@@ -261,7 +261,7 @@ export function App() {
               signInProblem={signInProblem}
             />
           ) : (
-            <ApproveExtension ask={null} email="" />
+            <ApproveExtension ask={null} account="" email="" />
           )}
         </Shell>
       );
@@ -348,6 +348,7 @@ export function App() {
       <Shell>
         <ApproveExtension
           ask={extensionAsk(state.extensionRedirects)}
+          account={session.user.id}
           email={session.user.email}
           providers={providers}
           signInProblem={signInProblem}

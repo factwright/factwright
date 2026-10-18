@@ -33,12 +33,17 @@ export const NOT_ASKED =
  */
 export function ApproveExtension({
   ask,
+  account,
   email,
   providers = [],
   signInProblem = null,
 }: {
   ask: ExtensionAsk | null;
-  /** The account signed in here, which the extension signs in to once it's allowed. */
+  /**
+   * The account signed in here, by its ID and email, which the extension signs in to once it's
+   * allowed, and no other.
+   */
+  account: string;
   email: string;
   providers?: Provider[];
   /** Why signing in again here didn't work, just now, to say until the person answers. */
@@ -52,7 +57,7 @@ export function ApproveExtension({
     if (!ask) return;
     setBusy(true);
     setSignInSaid(null);
-    const result = await answerExtension(ask, allow);
+    const result = await answerExtension(ask, allow, account);
     if (result.ok) {
       setStep('going');
       leaveFor(result.url);
@@ -104,6 +109,9 @@ export function ApproveExtension({
           <p className={styles.lead}>
             Save to Factwright, the browser extension, asks to sign in to sync, so it can save jobs
             to your job hunt from this browser.
+          </p>
+          <p className={styles.hint}>
+            Only allow it if you just clicked Sign in to sync in Save to Factwright’s setup.
           </p>
           <SignedInAs
             email={email}

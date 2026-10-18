@@ -253,7 +253,10 @@ export function authOptions(settings: AuthSettings) {
         verificationUri: '/device',
         validateClient: (clientId: string) => DEVICE_CLIENTS.has(clientId),
       }),
-      extensionSignIn(settings.extensionRedirects ?? (async () => STORE_RETURNS)),
+      extensionSignIn(
+        new URL(settings.appUrl).origin,
+        settings.extensionRedirects ?? (async () => STORE_RETURNS),
+      ),
     ],
   } satisfies BetterAuthOptions;
 }

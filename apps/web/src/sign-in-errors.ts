@@ -35,20 +35,48 @@ function words(code: string, origin: string): string | undefined {
 /** The most of a description the page shows. */
 const DESCRIPTION_LIMIT = 300;
 
+/** Kept in this tab while a sign-in it started is away at GitHub or Google. */
+const SIGNING_IN = 'factwright-signing-in';
+
+/**
+ * Notes that this tab is going to sign in, just before it goes, so the page it comes back to knows
+ * the address it comes back with is sign-in's own.
+ */
+export function markSigningIn(): void {
+  try {
+    sessionStorage.setItem(SIGNING_IN, '1');
+  } catch {
+    // A browser that keeps nothing only shows our own words.
+  }
+}
+
+/** Whether this tab is back from a sign-in it started. */
+export function backFromSigningIn(): boolean {
+  try {
+    return sessionStorage.getItem(SIGNING_IN) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Why signing in didn't work, from the address it came back to, or null when it says nothing.
  * Sign-in sends the browser back to the page that started it, with a code for what went wrong,
  * and sometimes a description: GitHub's or Google's, such as when someone cancels there, or the
  * server's, such as when a server of your own turns someone away. A code we know gets our own
- * words, whatever the description says. Any other gets the description, as it came.
+ * words, whatever the description says. Any other gets the description, as it came, but only back
+ * from a sign-in this tab started (`ownSignIn`), so a link someone sends can't put words of theirs
+ * on Factwright's own pages, such as the ones that let a device sign in.
  */
-export function signInError(search: string, origin: string): string | null {
+export function signInError(search: string, origin: string, ownSignIn: boolean): string | null {
   const query = new URLSearchParams(search);
   const code = query.get('error');
   if (!code) return null;
   const known = words(code, origin);
   if (known) return known;
-  const description = query.get('error_description')?.trim().slice(0, DESCRIPTION_LIMIT);
+  const description = ownSignIn
+    ? query.get('error_description')?.trim().slice(0, DESCRIPTION_LIMIT)
+    : undefined;
   return description
     ? `Signing in didn’t work: ${description}`
     : 'Signing in didn’t work. Try again in a moment.';
@@ -56,9 +84,15 @@ export function signInError(search: string, origin: string): string | null {
 
 /**
  * Takes why signing in didn't work out of the address, so it isn't kept in the browser's history,
- * or sent along when signing in again. The rest stays, such as the code a computer showed.
+ * or sent along when signing in again, and forgets this tab was signing in. The rest stays, such
+ * as the code a computer showed.
  */
 export function forgetSignInError(): void {
+  try {
+    sessionStorage.removeItem(SIGNING_IN);
+  } catch {
+    // Nothing was kept.
+  }
   const query = new URLSearchParams(location.search);
   if (!query.has('error') && !query.has('error_description')) return;
   query.delete('error');

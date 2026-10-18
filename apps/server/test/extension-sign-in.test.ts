@@ -41,11 +41,18 @@ async function newAsk(redirect = CHROME) {
   };
 }
 
-/** The web view's page answering, from a browser signed in with `token`'s session. */
+/**
+ * The web view's page answering, from a browser signed in with `token`'s session, for the account
+ * it names, which is the one signed in unless given another.
+ */
 async function answer(
   values: Record<string, unknown>,
   allow: boolean,
-  { token, origin = server.url.origin }: { token?: string; origin?: string } = {},
+  {
+    token,
+    account,
+    origin = server.url.origin,
+  }: { token?: string; account?: string; origin?: string } = {},
 ) {
   const response = await fetch(new URL(EXTENSION_SIGN_IN.answer, server.url), {
     method: 'POST',
@@ -54,7 +61,7 @@ async function answer(
       'user-agent': CHROME_ON_MAC,
       ...(token && { cookie: sessionCookie(token), origin }),
     },
-    body: JSON.stringify({ ...values, allow }),
+    body: JSON.stringify({ ...values, allow, ...(account && { account }) }),
   });
   return {
     status: response.status,
@@ -90,7 +97,7 @@ async function trade(code: unknown, verifier: string, redirect = CHROME) {
 async function allowed(redirect = CHROME) {
   const sam = await server.signUp();
   const ask = await newAsk(redirect);
-  const answered = await answer(ask.values, true, { token: sam.token });
+  const answered = await answer(ask.values, true, { token: sam.token, account: sam.id });
   expect(answered.status).toBe(200);
   return { sam, ask, code: fragment(answered.body.url).get('code') ?? '' };
 }
@@ -112,7 +119,7 @@ describe('signing the browser extension in through its window', () => {
   it('gives a code once it’s allowed, which the extension trades for a session of its own', async () => {
     const sam = await server.signUp();
     const ask = await newAsk();
-    const answered = await answer(ask.values, true, { token: sam.token });
+    const answered = await answer(ask.values, true, { token: sam.token, account: sam.id });
     expect(answered.status).toBe(200);
     expect(answered.cache).toBe('no-store');
     const url = new URL(String(answered.body.url));
@@ -122,6 +129,8 @@ describe('signing the browser extension in through its window', () => {
     const back = fragment(url);
     expect(back.get('state')).toBe(ask.values.state);
     expect(back.get('code')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // Naming this server, for the extension to check it's the one it asked (RFC 9207).
+    expect(back.get('iss')).toBe(server.url.origin);
 
     const traded = await trade(back.get('code'), ask.verifier);
     expect(traded.status).toBe(200);
@@ -214,7 +223,7 @@ describe('signing the browser extension in through its window', () => {
     const sam = await server.signUp();
     for (const redirect of [CHROME, FIREFOX, OWN_COPY_RETURN]) {
       const { values } = await newAsk(redirect);
-      expect((await answer(values, true, { token: sam.token })).status).toBe(200);
+      expect((await answer(values, true, { token: sam.token, account: sam.id })).status).toBe(200);
     }
     for (const redirect of [
       // Another extension, in Chrome and in Firefox.
@@ -238,7 +247,7 @@ describe('signing the browser extension in through its window', () => {
     ]) {
       const { values } = await newAsk(redirect);
       for (const allow of [true, false]) {
-        const refused = await answer(values, allow, { token: sam.token });
+        const refused = await answer(values, allow, { token: sam.token, account: sam.id });
         expect(refused.status, redirect).toBe(400);
         expect(refused.body.error).toBe('invalid_request');
         expect(refused.body.url).toBeUndefined();
@@ -262,7 +271,10 @@ describe('signing the browser extension in through its window', () => {
       { response_type: 'token' },
     ];
     for (const change of broken) {
-      const refused = await answer({ ...values, ...change }, true, { token: sam.token });
+      const refused = await answer({ ...values, ...change }, true, {
+        token: sam.token,
+        account: sam.id,
+      });
       expect(refused.status, JSON.stringify(change)).toBe(400);
     }
     expect((await answer(values, 'yes' as unknown as boolean, { token: sam.token })).status).toBe(
@@ -279,7 +291,21 @@ describe('signing the browser extension in through its window', () => {
     expect(Object.fromEntries(fragment(url))).toEqual({
       error: 'access_denied',
       state: values.state,
+      iss: server.url.origin,
     });
+  });
+
+  it('allows it only for the account the page named, as it was when it opened', async () => {
+    const sam = await server.signUp();
+    const alex = await server.signUp('Alex Chen');
+    const { values } = await newAsk();
+    // Signed in as Alex in another tab since the page named Sam, or a page that names no one.
+    for (const account of [sam.id, undefined]) {
+      const changed = await answer(values, true, { token: alex.token, account });
+      expect(changed.status).toBe(409);
+      expect(changed.body.error).toBe('account_changed');
+      expect(changed.body.url).toBeUndefined();
+    }
   });
 
   it('needs a browser signed in here to allow it', async () => {
@@ -311,6 +337,7 @@ describe('signing the browser extension in through its window', () => {
     const { values } = await newAsk();
     const elsewhere = await answer(values, true, {
       token: sam.token,
+      account: sam.id,
       origin: 'https://evil.example',
     });
     expect(elsewhere.status).toBe(403);

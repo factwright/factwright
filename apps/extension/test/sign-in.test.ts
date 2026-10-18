@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { sessionCookie, startServer, type TestServer } from '@factwright/server/testing';
-import { EXTENSION_SIGN_IN, readAsk, STORE_RETURNS } from '@factwright/sync';
+import {
+  challengeOf,
+  EXTENSION_SIGN_IN,
+  randomBytes,
+  readAsk,
+  STORE_RETURNS,
+  toBase64Url,
+} from '@factwright/sync';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { returnAddress, windowSignIn } from '../src/account.ts';
 
@@ -39,10 +46,10 @@ beforeEach(() => {
 
 /**
  * Someone signed in to the server in this browser, answering the page as the web view does: its
- * request, with their browser's cookie, from the page's own address. The browser then hands the
- * extension the address the page goes on to.
+ * request, with their browser's cookie, from the page's own address, for the account it names.
+ * The browser then hands the extension the address the page goes on to.
  */
-function answers(token: string, allow: boolean) {
+function answers({ id, token }: { id: string; token: string }, allow: boolean) {
   return async (url: string) => {
     const page = new URL(url);
     const ask = readAsk(Object.fromEntries(page.searchParams));
@@ -53,7 +60,7 @@ function answers(token: string, allow: boolean) {
         cookie: sessionCookie(token),
         origin: server.url.origin,
       },
-      body: JSON.stringify({ ...Object.fromEntries(page.searchParams), allow }),
+      body: JSON.stringify({ ...Object.fromEntries(page.searchParams), allow, account: id }),
     });
     const { url: next } = (await response.json()) as { url: string };
     expect(ask && next.startsWith(`${ask.redirect}#`)).toBe(true);
@@ -64,7 +71,7 @@ function answers(token: string, allow: boolean) {
 describe('signing in through the browser’s window', () => {
   it('opens the server’s own page, asking for this copy alone, tied to this sign-in', async () => {
     const sam = await server.signUp();
-    browser.person = answers(sam.token, true);
+    browser.person = answers(sam, true);
     await windowSignIn(server.url.origin, STORE_RETURNS[0] as string);
     const [opened] = browser.opened;
     const page = new URL(opened ?? '');
@@ -81,7 +88,7 @@ describe('signing in through the browser’s window', () => {
 
   it('gets a session of its own for the account allowed in the browser', async () => {
     const sam = await server.signUp();
-    browser.person = answers(sam.token, true);
+    browser.person = answers(sam, true);
     const result = await windowSignIn(server.url.origin, returnAddress() ?? '');
     expect(result.ok).toBe(true);
     const token = result.ok ? result.token : '';
@@ -96,7 +103,7 @@ describe('signing in through the browser’s window', () => {
 
   it('says so when the person doesn’t allow it', async () => {
     const sam = await server.signUp();
-    browser.person = answers(sam.token, false);
+    browser.person = answers(sam, false);
     expect(await windowSignIn(server.url.origin, returnAddress() ?? '')).toMatchObject({
       ok: false,
       reason: 'denied',
@@ -122,12 +129,38 @@ describe('signing in through the browser’s window', () => {
     });
   });
 
+  it('takes no answer from a server it didn’t ask, and sends that server nothing', async () => {
+    const sam = await server.signUp();
+    // A server of your own that sends the window on to Factwright's page, with the state it saw
+    // and a challenge of its own, to have the code Factwright gives sent back to it to trade.
+    const evil = 'https://sync.evil.example';
+    const challenge = await challengeOf(toBase64Url(randomBytes(32)));
+    browser.person = async (url) => {
+      const onward = new URL(EXTENSION_SIGN_IN.page, server.url);
+      onward.search = new URLSearchParams({
+        ...Object.fromEntries(new URL(url).searchParams),
+        code_challenge: challenge,
+      }).toString();
+      return answers(sam, true)(onward.toString());
+    };
+    const sent = vi.spyOn(globalThis, 'fetch');
+    try {
+      expect(await windowSignIn(evil, returnAddress() ?? '')).toMatchObject({
+        ok: false,
+        reason: 'failed',
+      });
+      expect(sent.mock.calls.some(([input]) => String(input).startsWith(evil))).toBe(false);
+    } finally {
+      sent.mockRestore();
+    }
+  });
+
   it('gets nothing for an answer another sign-in was given', async () => {
     const sam = await server.signUp();
     // The person allows one sign-in, and the window hands that answer to another.
     let first = '';
     browser.person = async (url) => {
-      first = await answers(sam.token, true)(url);
+      first = await answers(sam, true)(url);
       return first;
     };
     await windowSignIn(server.url.origin, returnAddress() ?? '');

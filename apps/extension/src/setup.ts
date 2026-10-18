@@ -345,7 +345,12 @@ async function signInThrough(
   else if (result.reason === 'canceled') await failed();
   else if (result.reason === 'denied') {
     await failed('You chose Don’t allow, so Save to Factwright didn’t sign in.');
-  } else windowFailed(server, choice, failed, result.message);
+  } else {
+    // Nothing signed in, so a server of your own's permission goes back now, as when signing in
+    // fails any other way. Trying again asks for it again, on that click.
+    await giveBack(server, (await loadAccount())?.server ?? null);
+    windowFailed(server, choice, failed, result.message);
+  }
 }
 
 /**
@@ -437,17 +442,20 @@ async function signInWithCode(
   await signedIn(server, result.token);
 }
 
-/** Keeps a new sign-in, for the account it's for, then links it. */
+/**
+ * Keeps a new sign-in, for the account it's for, then links it. A sign-in it can't keep is ended
+ * on the server, so it isn't left on the account's devices with no one to use it.
+ */
 async function signedIn(server: string, token: string): Promise<void> {
-  const info = await clientFor(server, token).account();
-  const account: Account = {
-    server,
-    user: info.user.id,
-    email: info.user.email,
-    token,
-    keys: null,
-  };
-  await saveAccount(account);
+  let account: Account;
+  try {
+    const info = await clientFor(server, token).account();
+    account = { server, user: info.user.id, email: info.user.email, token, keys: null };
+    await saveAccount(account);
+  } catch (error) {
+    await endSession({ server, token });
+    throw error;
+  }
   void link(account);
 }
 

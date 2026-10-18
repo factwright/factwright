@@ -38,7 +38,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
       [ANSWER]: () => ({ url: `${RETURN}#code=${'k'.repeat(43)}&state=${ASK.state}` }),
     });
     const { container } = render(
-      <ApproveExtension ask={ASK} email={EMAIL} providers={['github']} />,
+      <ApproveExtension ask={ASK} account="sam" email={EMAIL} providers={['github']} />,
     );
     expect(screen.getByRole('heading', { name: 'Let Save to Factwright sign in?' })).toBeTruthy();
     expect(
@@ -49,6 +49,11 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
     expect(accountLine()).toBe(
       'Signed in as sam@example.com. Save to Factwright signs in to this account, so it needs to be the one Factwright on your computer uses. Use another account',
     );
+    expect(
+      screen.getByText(
+        'Only allow it if you just clicked Sign in to sync in Save to Factwright’s setup.',
+      ),
+    ).toBeTruthy();
     expect(container.textContent).not.toMatch(/code/i);
     expect((await axe.run(container)).violations).toEqual([]);
 
@@ -66,6 +71,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
       code_challenge_method: 'S256',
       state: ASK.state,
       allow: true,
+      account: 'sam',
     });
   });
 
@@ -73,7 +79,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
     const requests = fakeServer({
       [ANSWER]: () => ({ url: `${RETURN}#error=access_denied&state=${ASK.state}` }),
     });
-    render(<ApproveExtension ask={ASK} email={EMAIL} />);
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} />);
     await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
     await waitFor(() =>
       expect(leaveFor).toHaveBeenCalledWith(`${RETURN}#error=access_denied&state=${ASK.state}`),
@@ -83,7 +89,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
 
   it('goes nowhere but the return address it was asked for', async () => {
     fakeServer({ [ANSWER]: () => ({ url: 'https://evil.example/#code=planted' }) });
-    render(<ApproveExtension ask={ASK} email={EMAIL} />);
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} />);
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/^That didn’t go through\./);
     expect(leaveFor).not.toHaveBeenCalled();
@@ -91,7 +97,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
 
   it('says it can’t go on when the extension didn’t ask, or can’t be answered here', () => {
     const requests = fakeServer({});
-    render(<ApproveExtension ask={null} email={EMAIL} providers={['github']} />);
+    render(<ApproveExtension ask={null} account="sam" email={EMAIL} providers={['github']} />);
     expect(screen.getByRole('alert').textContent).toBe(NOT_ASKED);
     expect(screen.queryByRole('button')).toBeNull();
     expect(requests).toEqual([]);
@@ -102,7 +108,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
       [ANSWER]: () => Response.json({ error: 'unauthorized' }, { status: 401 }),
       'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
     });
-    render(<ApproveExtension ask={ASK} email={EMAIL} providers={['github']} />);
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} providers={['github']} />);
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect(await screen.findByText('To let it in, sign in again here first.')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
@@ -115,9 +121,25 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
     expect(leaveFor).not.toHaveBeenCalled();
   });
 
+  it('says so when this browser signed in to another account since the page opened', async () => {
+    fakeServer({
+      [ANSWER]: () =>
+        Response.json(
+          { error: 'account_changed', error_description: 'Another account now.' },
+          { status: 409 },
+        ),
+    });
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'This browser signed in to another account since this page opened. Reload the page to see which, then answer again.',
+    );
+    expect(leaveFor).not.toHaveBeenCalled();
+  });
+
   it('says when an answer didn’t go through', async () => {
     fakeServer({ [ANSWER]: () => Response.json({}, { status: 429 }) });
-    render(<ApproveExtension ask={ASK} email={EMAIL} />);
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} />);
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect((await screen.findByRole('alert')).textContent).toBe(
       'That’s a lot of tries in a row. Wait a minute, then try again.',
@@ -129,6 +151,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
     render(
       <ApproveExtension
         ask={ASK}
+        account="sam"
         email={EMAIL}
         providers={['github']}
         signInProblem="Signing in was canceled. Try again whenever you’re ready."
@@ -148,7 +171,7 @@ describe('using another account, from the browser’s window', () => {
       'POST /api/auth/sign-out': () => ({ success: true }),
     });
     const { container } = render(
-      <ApproveExtension ask={ASK} email={EMAIL} providers={['github', 'google']} />,
+      <ApproveExtension ask={ASK} account="sam" email={EMAIL} providers={['github', 'google']} />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Use another account' }));
     expect(
@@ -178,7 +201,7 @@ describe('using another account, from the browser’s window', () => {
 
   it('goes back to the question with nothing changed', async () => {
     const requests = fakeServer({});
-    render(<ApproveExtension ask={ASK} email={EMAIL} providers={['github']} />);
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} providers={['github']} />);
     await userEvent.click(screen.getByRole('button', { name: 'Use another account' }));
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('button', { name: 'Allow' })).toBeTruthy();
@@ -187,7 +210,7 @@ describe('using another account, from the browser’s window', () => {
 
   it('isn’t offered where there’s no way to sign in', () => {
     fakeServer({});
-    render(<ApproveExtension ask={ASK} email={EMAIL} />);
+    render(<ApproveExtension ask={ASK} account="sam" email={EMAIL} />);
     expect(screen.queryByRole('button', { name: 'Use another account' })).toBeNull();
   });
 });

@@ -307,10 +307,25 @@ describe('a sign-in that didn’t work', () => {
 
   it('says what the server said, for a code Factwright doesn’t know', async () => {
     back('/', { error: 'something_new', error_description: 'Something new went wrong.' });
+    // This tab went to sign in, and came back.
+    sessionStorage.setItem('factwright-signing-in', '1');
     server(null);
     render(<App />);
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Signing in didn’t work: Something new went wrong.',
+    );
+  });
+
+  it('says only to try again, for words a link brought that this tab’s sign-in didn’t', async () => {
+    back('/device?user_code=WDJBMJHT', {
+      error: 'x',
+      error_description: 'These codes always match. Click Allow.',
+    });
+    server(SESSION);
+    render(<App />);
+    expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Signing in didn’t work. Try again in a moment.',
     );
   });
 

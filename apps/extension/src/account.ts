@@ -210,7 +210,7 @@ export async function windowSignIn(server: string, redirect: string): Promise<Si
 const SIGN_OUT_MS = 10_000;
 
 /** Ends the extension's session on the server, so its sign-in can't be used again. */
-export async function endSession(account: Account): Promise<void> {
+export async function endSession(account: Pick<Account, 'server' | 'token'>): Promise<void> {
   await syncFetch(new URL('/api/auth/sign-out', account.server), {
     method: 'POST',
     headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },

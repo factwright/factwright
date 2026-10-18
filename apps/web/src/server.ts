@@ -10,6 +10,7 @@ import {
   SyncClient,
   SyncError,
 } from '@factwright/sync';
+import { markSigningIn } from './sign-in-errors.ts';
 
 /** Who's signed in, as sign-in reports it. */
 export interface Session {
@@ -104,6 +105,7 @@ export async function signIn(
     const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
     if (response.ok && typeof url === 'string') {
       await beforeGoing?.();
+      markSigningIn();
       location.assign(url);
       return null;
     }
@@ -220,13 +222,18 @@ export type ExtensionAnswer =
   | { ok: false; reason: 'problem'; message: string };
 
 /**
- * Lets Save to Factwright sign in, or doesn't. The server gives the address its answer goes to,
- * which is the return address it was asked for, and nothing else.
+ * Lets Save to Factwright sign in to `account`, the one the page names, or doesn't. The server
+ * gives the address its answer goes to, which is the return address it was asked for, and nothing
+ * else.
  */
-export async function answerExtension(ask: ExtensionAsk, allow: boolean): Promise<ExtensionAnswer> {
+export async function answerExtension(
+  ask: ExtensionAsk,
+  allow: boolean,
+  account: string,
+): Promise<ExtensionAnswer> {
   let response: Response;
   try {
-    response = await post(EXTENSION_SIGN_IN.answer, { ...askValues(ask), allow });
+    response = await post(EXTENSION_SIGN_IN.answer, { ...askValues(ask), allow, account });
   } catch {
     return {
       ok: false,
@@ -246,7 +253,9 @@ export async function answerExtension(ask: ExtensionAsk, allow: boolean): Promis
     message:
       response.status === 429
         ? 'That’s a lot of tries in a row. Wait a minute, then try again.'
-        : 'That didn’t go through. Close this window, and sign in again from Save to Factwright’s setup.',
+        : response.status === 409
+          ? 'This browser signed in to another account since this page opened. Reload the page to see which, then answer again.'
+          : 'That didn’t go through. Close this window, and sign in again from Save to Factwright’s setup.',
   };
 }
 

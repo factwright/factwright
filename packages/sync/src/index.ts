@@ -29,6 +29,7 @@ export {
   EXTENSION_SIGN_IN,
   type ExtensionAsk,
   readAsk,
+  readAskQuery,
   returnAddress,
   STORE_RETURNS,
   VERIFIER,

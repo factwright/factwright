@@ -25,7 +25,7 @@ It builds the job list with the same code as the desktop app, from [`@factwright
 | `src/server.ts` | Sign-in, and the client for the sync server |
 | `src/Subscribe.tsx` | Subscribing to sync, where it's sold: monthly or yearly, then Stripe's checkout (`/subscribe`), and the page it comes back to (`/subscribe/done`) |
 | `src/Subscription.tsx` | How the account has sync, on the account page, the jobs page's note when sync is paused or a payment didn't go through, and going to Stripe's pages |
-| `src/sign-in-errors.ts` | What the page says when signing in didn't work: our own words for the codes it knows, or else the server's description. It takes them out of the address, keeping the rest |
+| `src/sign-in-errors.ts` | What the page says when signing in didn't work: our own words for the codes it knows, or else the description that came back, after a sign-in this tab started. It takes them out of the address, keeping the rest |
 | `src/jobs.ts` | The phone's job list: most pressing first, the views, and search |
 | `public/_headers` | The pages' security headers: nothing but the app's own scripts may run |
 | `scripts/icons.ts` | Draws the browser tab's icon and the home-screen icons from Factwright's mark (`pnpm --filter @factwright/web icons`) |
