@@ -154,6 +154,11 @@ a:focus-visible {
   font-size: var(--fw-text-sm);
 }
 
+/* A note under a choice, in line with the choice's words. */
+.choice .aside {
+  margin: var(--fw-space-2) 0 0 calc(16px + var(--fw-space-3));
+}
+
 /* Your own server's address, under its choice, in line with the choice's words. */
 .address {
   margin-left: calc(16px + var(--fw-space-3));

@@ -118,6 +118,17 @@ export {
   hnThreadMarkdown,
   readHnThread,
 } from './hn.ts';
+export {
+  INBOX_FOLDER,
+  INBOX_JOB,
+  INBOX_LIMIT,
+  type InboxAnswer,
+  type PostingSaved,
+  readSavedJob,
+  SAVE_HELPER,
+  SAVED_POSTING_LIMIT,
+  type SavedJob,
+} from './inbox.ts';
 export { type Invite, type InviteOptions, MAX_INVITE_LENGTH, readInvite } from './invite.ts';
 export {
   type CollectedJob,
@@ -179,7 +190,14 @@ export {
   markdownTable,
   type Section,
 } from './markdown.ts';
-export { JOB_LIMITS, jobIdFor, type NewJobRows, newJobRows, shortCode } from './new-job.ts';
+export {
+  JOB_LIMITS,
+  jobIdFor,
+  type NewJobRows,
+  newJobRows,
+  shortCode,
+  wholeJobId,
+} from './new-job.ts';
 export { type PayRange, parsePay } from './pay.ts';
 export {
   decodeEntities,

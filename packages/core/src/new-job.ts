@@ -39,6 +39,17 @@ export function jobIdFor(company: string, role: string, code?: string): string {
   return `${companyPart || (code ? `job-${code}` : 'job')}--${rolePart || 'general'}`;
 }
 
+/**
+ * The ID a job had before IDs were cut short to fit a folder's name: its company's and role's
+ * whole keys. The app still knows the jobs it added or found before then by these, so saving the
+ * same job again from the browser looks for it there too. Null for a company with no Latin letters,
+ * whose ID was never this.
+ */
+export function wholeJobId(company: string, role: string): string | null {
+  const companyPart = companyKey(company) || slug(company);
+  return companyPart ? `${companyPart}--${roleKey(role) || 'general'}` : null;
+}
+
 /** A new job's rows, as the app keeps them and sync carries them. */
 export interface NewJobRows {
   job: Record<string, string | number | null>;

@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   ASK_ID,
   askedFile,
@@ -7,13 +8,18 @@ import {
   type CallDoc,
   type CollectedJob,
   collectJobs,
+  type InboxAnswer,
   JOB_EXTRAS,
   type JobDocs,
   jobList,
   localDate,
+  type PostingSaved,
   readAllCallDocs,
   readJobExtras,
   readRecords,
+  type SavedJob,
+  savedPostingFile,
+  savedPostingMarkdown,
 } from '@factwright/core';
 import type {
   AddJobResult,
@@ -33,6 +39,20 @@ import type {
 import { readShot, saveShot, shotFile } from './shots.ts';
 import type { EditContext, Tracker } from './tracker.ts';
 import { diskWorkspace, watchWorkspace } from './workspace.ts';
+
+/**
+ * Writes a file whole, or not at all: to a hidden file beside it first, which sync leaves alone,
+ * then moved into place, so nothing reads half of it.
+ */
+function writeWhole(file: string, text: string): void {
+  const draft = join(dirname(file), `.${basename(file)}.${randomBytes(4).toString('hex')}.tmp`);
+  try {
+    writeFileSync(draft, text);
+    renameSync(draft, file);
+  } finally {
+    rmSync(draft, { force: true });
+  }
+}
 
 export interface JobsDeps {
   /** The workspace folder. */
@@ -145,6 +165,53 @@ export class JobsService {
 
   addJob(job: NewJob): AddJobResult {
     return this.saved(this.deps.tracker.addJob(job, this.context()));
+  }
+
+  /**
+   * Adds a job Save to Factwright saved on this computer, from the inbox, as a save through sync
+   * adds it: its row, as New, and its posting as the person saw it, kept with the job's extras in
+   * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. The
+   * same job, by its link, is added once, and saving it again adds its posting if it has none. The
+   * inbox sends the new list once it has added all it holds (sendList).
+   */
+  addSaved(job: SavedJob): InboxAnswer {
+    const context = this.context();
+    const added = this.deps.tracker.addSavedJob(
+      { company: job.company, role: job.role, link: job.url, pay: job.pay },
+      context,
+    );
+    if (!added.ok) return { ok: false, reason: 'failed', message: added.message };
+    const posting = this.keepPosting(added.id, job, !added.already, context.today);
+    return { ok: true, id: added.id, already: added.already, posting };
+  }
+
+  /** Sends the list as it is now, as after an edit: once the inbox has added what it holds. */
+  sendList(): void {
+    this.deps.onChange(this.list());
+  }
+
+  /**
+   * Keeps a saved job's posting, and says what became of it. A job the job hunt had already keeps
+   * the posting it has. A new job's replaces one left from an earlier job with its ID, since
+   * deleted on another device.
+   */
+  private keepPosting(jobId: string, job: SavedJob, replace: boolean, today: string): PostingSaved {
+    if (!job.posting) return 'none';
+    const file = join(this.deps.workspace, ...savedPostingFile(jobId).split('/'));
+    if (!replace && existsSync(file)) return 'kept';
+    const text = savedPostingMarkdown({
+      url: job.url,
+      site: job.site,
+      savedOn: today,
+      text: job.posting,
+    });
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      writeWhole(file, text);
+      return 'saved';
+    } catch {
+      return 'failed';
+    }
   }
 
   addCall(jobId: string, call: NewCall): EditResult {

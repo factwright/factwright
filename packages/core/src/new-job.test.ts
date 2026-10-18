@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JOB_LIMITS, jobIdFor, newJobRows, shortCode } from './new-job.ts';
+import { JOB_LIMITS, jobIdFor, newJobRows, shortCode, wholeJobId } from './new-job.ts';
 
 describe('a new job', () => {
   it('takes its ID from its company and role, as Add job does', () => {
@@ -24,6 +24,14 @@ describe('a new job', () => {
     expect(shortCode('https://jobs.example.jp/124')).not.toBe(code);
     expect(jobIdFor('株式会社', 'エンジニア', code)).toBe(`job-${code}--general`);
     expect(jobIdFor('株式会社', 'エンジニア')).toBe('job--general');
+  });
+
+  it('knows the whole ID a job had before IDs were cut short', () => {
+    const company = 'A'.repeat(70);
+    expect(wholeJobId(company, 'Staff Engineer')).toBe(`${'a'.repeat(70)}--staff-engineer`);
+    expect(jobIdFor(company, 'Staff Engineer')).not.toBe(wholeJobId(company, 'Staff Engineer'));
+    expect(wholeJobId('Acme', '')).toBe('acme--general');
+    expect(wholeJobId('株式会社', 'エンジニア')).toBeNull();
   });
 
   it('starts with every column the app’s tracker keeps, and its history', () => {

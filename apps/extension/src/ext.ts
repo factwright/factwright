@@ -18,6 +18,12 @@ export interface MenuClick {
   selectionText?: string;
 }
 
+/** Sites the extension may reach, and the browser's features it may use, such as native messaging. */
+export interface Permissions {
+  origins?: string[];
+  permissions?: string[];
+}
+
 interface Event<Listener> {
   addListener(listener: Listener): void;
 }
@@ -28,6 +34,12 @@ export interface Ext {
     getURL(path: string): string;
     getManifest(): { version: string };
     sendMessage(message: unknown): Promise<unknown>;
+    /**
+     * Sends a message to a program on this computer, such as the helper Factwright installs, and
+     * waits for its answer. It's there only once the browser lets the extension use native
+     * messaging, which it asks for when you choose to save to Factwright on this computer.
+     */
+    sendNativeMessage?(application: string, message: object): Promise<unknown>;
     /** A listener answers with sendResponse, and returns true while it works on the answer. */
     onMessage: Event<
       (
@@ -38,6 +50,14 @@ export interface Ext {
     >;
     onInstalled: Event<(details: { reason: string }) => void>;
     onStartup: Event<() => void>;
+    /** The extension's own pages that are open, such as its setup page in a tab. */
+    getContexts?(filter: {
+      contextTypes: 'TAB'[];
+      documentUrls: string[];
+    }): Promise<{ tabId: number; windowId: number }[]>;
+  };
+  windows: {
+    update(windowId: number, properties: { focused?: boolean }): Promise<unknown>;
   };
   tabs: {
     query(query: { active?: boolean; currentWindow?: boolean; url?: string }): Promise<Tab[]>;
@@ -78,10 +98,10 @@ export interface Ext {
     onCommand: Event<(command: string, tab?: Tab) => void>;
   };
   permissions: {
-    contains(permissions: { origins: string[] }): Promise<boolean>;
-    request(permissions: { origins: string[] }): Promise<boolean>;
-    remove(permissions: { origins: string[] }): Promise<boolean>;
-    getAll(): Promise<{ origins?: string[] }>;
+    contains(permissions: Permissions): Promise<boolean>;
+    request(permissions: Permissions): Promise<boolean>;
+    remove(permissions: Permissions): Promise<boolean>;
+    getAll(): Promise<Permissions>;
   };
   /**
    * The browser's own window for extensions to sign in through: it opens a page, and once that

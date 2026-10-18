@@ -324,6 +324,81 @@ describe('addJob', () => {
   });
 });
 
+describe('addSavedJob', () => {
+  const lever = 'https://jobs.lever.co/harborpine/4f1c2b7e';
+  const saved = (extra: Partial<{ company: string; role: string; link: string }> = {}) =>
+    tracker.addSavedJob(
+      { company: 'Harbor & Pine', role: 'Senior PM, Data', link: lever, pay: '$165k', ...extra },
+      AT,
+    );
+
+  it('adds a job saved on this computer as New, as a save through sync does', () => {
+    expect(saved()).toEqual({ ok: true, id: 'harbor-and-pine--senior-pm-data', already: false });
+    const rows = newJobRows({
+      id: 'harbor-and-pine--senior-pm-data',
+      company: 'Harbor & Pine',
+      role: 'Senior PM, Data',
+      link: lever,
+      pay: '$165k',
+      status: 'new',
+      today: TODAY,
+      now: NOW,
+      statusId: 'any',
+    });
+    expect(tracker.syncRow('jobs', 'harbor-and-pine--senior-pm-data')).toEqual(rows.job);
+    expect(history('harbor-and-pine--senior-pm-data')).toEqual([['new', TODAY]]);
+  });
+
+  it('adds the same job, by its link, once', () => {
+    saved();
+    expect(saved()).toEqual({ ok: true, id: 'harbor-and-pine--senior-pm-data', already: true });
+    // The same link written another way is the same job.
+    expect(saved({ link: `${lever}?utm_source=linkedin` })).toMatchObject({ already: true });
+    expect(tracker.rows()).toHaveLength(2);
+  });
+
+  it('gives another job with the same company and title the next ID', () => {
+    saved();
+    expect(saved({ link: 'https://jobs.lever.co/harborpine/9d2e' })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--senior-pm-data-2',
+      already: false,
+    });
+    expect(saved({ link: 'https://jobs.lever.co/harborpine/9d2e' })).toMatchObject({
+      id: 'harbor-and-pine--senior-pm-data-2',
+      already: true,
+    });
+  });
+
+  it('finds a job the app knew by its whole ID, from before IDs were cut short', () => {
+    const company = 'A'.repeat(70);
+    tracker.saveCollected(
+      [
+        collected(`${'a'.repeat(70)}--staff-engineer`, {
+          company,
+          companyKey: 'a'.repeat(70),
+          links: [{ url: lever, label: 'Posting' }],
+        }),
+      ],
+      NOW,
+    );
+    expect(saved({ company, role: 'Staff Engineer' })).toEqual({
+      ok: true,
+      id: `${'a'.repeat(70)}--staff-engineer`,
+      already: true,
+    });
+  });
+
+  it('gives a company with no Latin letters an ID from its link', () => {
+    const added = saved({ company: '株式会社', role: 'エンジニア' });
+    expect(added).toEqual({
+      ok: true,
+      id: jobIdFor('株式会社', 'エンジニア', shortCode(normalizeUrl(lever))),
+      already: false,
+    });
+  });
+});
+
 describe('a job another device adds through sync', () => {
   const added = () =>
     newJobRows({

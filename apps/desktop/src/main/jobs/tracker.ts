@@ -12,6 +12,7 @@ import {
   jobIdFor,
   type KnownJob,
   type Note,
+  newJobRows,
   normalizeUrl,
   questionKey,
   readStatus,
@@ -26,6 +27,7 @@ import {
   trackedChange,
   trackedNote,
   trackedRow,
+  wholeJobId,
 } from '@factwright/core';
 import type { RowValues } from '@factwright/sync';
 import type {
@@ -145,6 +147,21 @@ const failed = (message: string): { ok: false; message: string } => ({ ok: false
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
 const NO_NOTE = failed('That note isn’t in your tracker anymore. Reload and try again.');
 const DONE: EditResult = { ok: true };
+
+/** How many jobs with the same company and role a saved job tries IDs for: "-2" up to this. */
+const MAX_SAME = 50;
+
+/**
+ * What adding a job saved on this computer did: the job's ID, and whether the job hunt had it
+ * already, by its link. Or why it couldn't be added.
+ */
+export type SavedJobResult =
+  | { ok: true; id: string; already: boolean }
+  | { ok: false; message: string };
+
+/** Whether a job has a link to the same address. */
+const hasLink = (job: TrackedRow, url: string) =>
+  job.links.some((link) => normalizeUrl(link.url) === normalizeUrl(url));
 
 /**
  * The tracker: a small SQLite database, outside the workspace, of what the user sets by hand.
@@ -559,6 +576,47 @@ export class Tracker {
       if (note) this.insertNote(id, note, today, now);
     });
     return { ok: true, jobId: id };
+  }
+
+  /**
+   * Adds a job Save to Factwright saved on this computer, as it adds one through sync: the same
+   * rows, as New, with its history's first line, and an ID from its company and role. The same
+   * job, by its link, is added once: when the ID it would take is held by a job with the same
+   * link, that's the job, and nothing is added. When another job holds it, the next ID, "-2" on, is
+   * tried. A job with a long company or title that the app knows by its whole ID, from before IDs
+   * were cut short, counts too.
+   */
+  addSavedJob(
+    job: { company: string; role: string; link: string; pay: string },
+    context: EditContext,
+  ): SavedJobResult {
+    const code = job.link ? shortCode(normalizeUrl(job.link)) : undefined;
+    const base = jobIdFor(job.company, job.role, code);
+    const whole = wholeJobId(job.company, job.role);
+    const known = whole && whole !== base ? this.row(whole) : null;
+    if (whole && known && hasLink(known, job.link)) return { ok: true, id: whole, already: true };
+    for (let n = 1; n <= MAX_SAME; n++) {
+      const id = n === 1 ? base : `${base}-${n}`;
+      const held = this.row(id);
+      if (held) {
+        if (hasLink(held, job.link)) return { ok: true, id, already: true };
+        continue;
+      }
+      const rows = newJobRows({
+        id,
+        ...job,
+        status: 'new',
+        today: context.today,
+        now: context.now,
+        statusId: randomUUID(),
+      });
+      this.transaction(() => {
+        this.applySyncRow('jobs', id, rows.job);
+        this.applySyncRow('status_log', String(rows.status.id), rows.status);
+      });
+      return { ok: true, id, already: false };
+    }
+    return failed('Too many jobs with that company and title.');
   }
 
   /**

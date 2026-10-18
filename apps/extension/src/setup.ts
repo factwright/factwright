@@ -34,6 +34,14 @@ import {
   syncFetch,
   windowSignIn,
 } from './account.ts';
+import {
+  allowComputer,
+  canReachComputer,
+  canSendNow,
+  type Found,
+  findComputer,
+  giveBackComputer,
+} from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
@@ -47,12 +55,14 @@ import {
   serverName,
   signInWay,
 } from './server.ts';
-import { changeSettings, settings } from './settings.ts';
+import { changeSettings, settings, type Where } from './settings.ts';
 
 /**
- * The setup page, in a tab of its own so it stays open while you approve things elsewhere: it
- * signs Save to Factwright in to sync, links it with your job hunt from Factwright on your
- * computer, and then holds its settings and its account.
+ * The setup page, in a tab of its own so it stays open while you approve things elsewhere. It asks
+ * where saved jobs go. For Factwright on this computer, it asks the browser to let the extension
+ * talk to it, and checks Factwright is there. Through sync, it signs Save to Factwright in and
+ * links it with your job hunt from Factwright on your computer. Then it holds its settings, and
+ * its account.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -139,6 +149,212 @@ function askForAccess(account: Account, next: () => void): void {
   );
 }
 
+// --- Where saved jobs go -------------------------------------------------------------------
+
+/** What setup says first, wherever saved jobs go. */
+const ABOUT =
+  'Save to Factwright saves the job you’re looking at, with its posting as you see it, to your Factwright job hunt.';
+
+/**
+ * Setup's first page: where saved jobs go. Factwright on this computer needs no account, and
+ * through sync is for Factwright on another computer. It offers the place given, or the one chosen
+ * last time, or else this computer, with what went wrong with it, if anything did.
+ */
+function where(note?: string, pick?: Where): void {
+  void settings().then((saved) => chooseWhere(pick ?? saved.where ?? 'computer', note));
+}
+
+function chooseWhere(pick: Where, note?: string): void {
+  const computer = option(
+    'where',
+    'computer',
+    'Factwright on this computer',
+    'No account needed. Factwright adds them when it’s open.',
+    pick === 'computer',
+  );
+  const sync = option(
+    'where',
+    'sync',
+    'Through sync',
+    'For when Factwright runs on another computer. Uses Factwright’s sync or your own server.',
+    pick === 'sync',
+  );
+  const asks = h(
+    'p',
+    { class: 'small muted aside', hidden: pick !== 'computer' },
+    'The browser asks once to let Save to Factwright talk to apps on this computer. It talks only to Factwright.',
+  );
+  const picked = () => {
+    asks.hidden = !computer.input.checked;
+  };
+  computer.input.addEventListener('change', picked);
+  sync.input.addEventListener('change', picked);
+  const submit = h('button', { type: 'submit', class: 'primary' }, 'Continue');
+  const go = (event: Event) => {
+    event.preventDefault();
+    if (sync.input.checked) {
+      chooseSync();
+      return;
+    }
+    // Asked on the click itself, before anything is waited on, as Firefox wants. While the
+    // browser asks, what went wrong before is gone, and the button waits.
+    const allowed = allowComputer();
+    app.querySelector('[role="alert"]')?.remove();
+    submit.disabled = true;
+    void useComputer(allowed);
+  };
+  show(
+    app,
+    heading('Set up Save to Factwright'),
+    h('p', {}, ABOUT),
+    h(
+      'form',
+      { on: { submit: go } },
+      h(
+        'fieldset',
+        { class: 'choices' },
+        h('legend', {}, 'Where should saved jobs go?'),
+        h('div', { class: 'choice' }, computer.label, asks),
+        h('div', { class: 'choice' }, sync.label),
+      ),
+      note && problem(note),
+      actions(submit),
+    ),
+  );
+}
+
+/**
+ * Sets Save to Factwright up to save to Factwright on this computer, once the browser allows it to
+ * talk to apps on the computer: it looks for Factwright there, and saves to it from then on.
+ */
+async function useComputer(allowed: Promise<boolean>): Promise<void> {
+  await allowed;
+  await lookForComputer();
+}
+
+/**
+ * A way back to saving on this computer from a sign-in to sync that's no longer wanted: it ends
+ * that sign-in, then sets Save to Factwright up to save to Factwright here. The browser is asked on
+ * the click itself, first, as Firefox wants. `stop` calls off whatever the sign-in has under way.
+ */
+function computerInstead(account: Account, label: string, stop?: () => void): HTMLButtonElement {
+  return button(label, () => {
+    const allowed = allowComputer();
+    stop?.();
+    void signOut(account).then(() => useComputer(allowed));
+  });
+}
+
+/** The address setup opens itself at again, to look for Factwright on this computer as it opens. */
+const LOOK_AGAIN = '#look-for-factwright';
+
+/**
+ * Looks for Factwright on this computer, and saves to it once it's there. Chrome lets a page talk
+ * to apps on the computer only if it's opened after the browser allowed it, so a page that can't
+ * yet opens itself again, once, and looks then (`reopened`).
+ */
+async function lookForComputer(reopened = false): Promise<void> {
+  if (!(await canReachComputer())) {
+    where(
+      'Save to Factwright needs the browser’s OK to talk to Factwright on this computer. Choose Continue, then allow it.',
+      'computer',
+    );
+    return;
+  }
+  if (!canSendNow()) {
+    if (reopened) {
+      notFound({
+        ok: false,
+        missing: false,
+        message: 'This page can’t reach Factwright yet. Close it, then open Settings again.',
+      });
+      return;
+    }
+    location.hash = LOOK_AGAIN;
+    location.reload();
+    return;
+  }
+  show(
+    app,
+    heading('Set up Save to Factwright'),
+    h('p', { class: 'muted', role: 'status' }, 'Looking for Factwright on this computer…'),
+  );
+  const found = await findComputer();
+  if (!found.ok) {
+    notFound(found);
+    return;
+  }
+  await changeSettings({ where: 'computer' });
+  void onComputer();
+}
+
+/**
+ * Factwright isn't on this computer, or didn't answer: how to get it, and a way to look again. On
+ * a Mac, an app opened from its disk image, before it's in Applications, can't let browsers reach
+ * it, so the steps say where to open it from.
+ */
+function notFound(found: Extract<Found, { ok: false }>): void {
+  const again = button(
+    'Check again',
+    () => {
+      again.disabled = true;
+      void lookForComputer();
+    },
+    true,
+  );
+  const back = button('Back', () => where(undefined, 'computer'));
+  if (!found.missing) {
+    show(
+      app,
+      heading('Factwright didn’t answer'),
+      problem(found.message),
+      h(
+        'p',
+        {},
+        'Check Factwright is installed and up to date, and open it once, then check again. On a Mac, open it from Applications.',
+      ),
+      actions(again, back),
+    );
+    return;
+  }
+  show(
+    app,
+    heading('Get Factwright on this computer'),
+    h(
+      'p',
+      {},
+      'Save to Factwright saves jobs to Factwright, the free app for Mac and Windows, but it couldn’t find Factwright on this computer.',
+    ),
+    h(
+      'ol',
+      { class: 'steps' },
+      h(
+        'li',
+        {},
+        'Download Factwright from ',
+        h(
+          'a',
+          { href: 'https://factwright.com/download', target: '_blank', rel: 'noopener' },
+          'factwright.com',
+        ),
+        ', and install it.',
+      ),
+      h(
+        'li',
+        {},
+        'Open it once, so it can let your browsers reach it. On a Mac, open it from Applications.',
+      ),
+      h('li', {}, 'Come back here, and check again.'),
+    ),
+    h(
+      'p',
+      { class: 'small muted' },
+      'Installed already? Update it, then open it once: earlier versions can’t take jobs from the browser.',
+    ),
+    actions(again, back),
+  );
+}
+
 // --- Signing in ---------------------------------------------------------------------------
 
 /** The sync setup signs in to, as it's picked on the page: Factwright's, or your own server. */
@@ -149,20 +365,30 @@ interface Choice {
 }
 
 /**
- * Setup's first page, with the sync you chose last time, or with the choice that went wrong and
- * what went wrong with it.
+ * Setup once it isn't signed in: after signing out, its first page, where saved jobs go. After a
+ * sign-in that went wrong, its choice of sync, with the sync you chose, or the choice that went
+ * wrong and what went wrong with it.
  */
 function signedOut(note?: string, choice?: Choice): void {
+  if (note === undefined && choice === undefined) {
+    where();
+    return;
+  }
+  chooseSync(note, choice);
+}
+
+/** Setup's choice of sync, with the one you chose last time, or the one given. */
+function chooseSync(note?: string, choice?: Choice): void {
   void settings().then(({ server }) =>
     choose(choice ?? { own: isOwn(server), address: isOwn(server) ? server : '' }, note),
   );
 }
 
-/** One choice of sync, a card to click anywhere on: named by its title, described by its words. */
-function option(id: string, title: string, about: string, checked: boolean) {
+/** One choice, a card to click anywhere on: named by its title, described by its words. */
+function option(group: string, id: string, title: string, about: string, checked: boolean) {
   const input = h('input', {
     type: 'radio',
-    name: 'sync',
+    name: group,
     id,
     checked,
     'aria-labelledby': `${id}-title`,
@@ -184,12 +410,14 @@ function option(id: string, title: string, about: string, checked: boolean) {
 
 function choose(choice: Choice, note?: string): void {
   const factwrights = option(
+    'sync',
     'factwright',
     'Factwright’s sync',
     hostOf(DEFAULT_SERVER),
     !choice.own,
   );
   const own = option(
+    'sync',
     'own',
     'Your own server',
     'A sync server you run, at the address Factwright on your computer uses.',
@@ -264,7 +492,10 @@ function choose(choice: Choice, note?: string): void {
         h('li', {}, 'Approve linking it, in Factwright on your computer.'),
       ),
       note && problem(note),
-      actions(submit),
+      actions(
+        submit,
+        button('Back', () => where(undefined, 'sync')),
+      ),
     ),
   );
 }
@@ -476,6 +707,9 @@ async function keep(account: Account, client: SyncClient, accountKey: Bytes): Pr
   const saved = await whileOffline(() => client.keys());
   if (saved && saved.keyId !== keys.id) return false;
   await saveAccount({ ...account, keys });
+  // Saves go through sync from now on, so the browser's OK to talk to this computer goes back.
+  await changeSettings({ where: 'sync' });
+  void giveBackComputer();
   void linked({ ...account, keys });
   return true;
 }
@@ -597,16 +831,20 @@ function needsSubscription(account: Account): void {
     ),
     actions(
       button('Check again', () => void link(account), true),
+      computerInstead(account, 'Use this computer instead'),
       button('Sign out', () => void signOut(account).then(() => signedOut())),
     ),
   );
 }
 
+/** What setup offers someone who was saving to this computer, partway through switching to sync. */
+const KEEP = 'Keep saving to this computer';
+
 /**
  * A sign-in too old to ask Factwright on the computer with, which the server allows only soon after
  * signing in: sign in again, or link with a link code or the recovery key, which still work.
  */
-function signInAgain(account: Account, others: HTMLElement): void {
+function signInAgain(account: Account, others: HTMLElement, fromComputer: boolean): void {
   const again = button(
     'Sign in again',
     () => {
@@ -626,7 +864,7 @@ function signInAgain(account: Account, others: HTMLElement): void {
       {},
       'It’s been a while since Save to Factwright signed in, so sign in again to ask Factwright on your computer to link it. Or link it with a link code or your recovery key.',
     ),
-    actions(again),
+    actions(again, fromComputer && computerInstead(account, KEEP)),
     others,
   );
 }
@@ -637,6 +875,8 @@ function signInAgain(account: Account, others: HTMLElement): void {
  */
 async function link(account: Account): Promise<void> {
   const client = clientFor(account.server, account.token);
+  // Saving to this computer until this links, it can go back to that.
+  const fromComputer = (await settings()).where === 'computer';
   let stopped = false;
   /** The request to link, once it's made, which stopping calls off. */
   let asked: LinkAsk | null = null;
@@ -652,7 +892,10 @@ async function link(account: Account): Promise<void> {
       app,
       heading('Link it with your job hunt'),
       problem(text),
-      actions(button('Ask again', () => void link(account), true)),
+      actions(
+        button('Ask again', () => void link(account), true),
+        fromComputer && computerInstead(account, KEEP, stop),
+      ),
       others,
     );
   };
@@ -692,6 +935,7 @@ async function link(account: Account): Promise<void> {
       ),
       actions(
         button('Check again', () => void link(account), true),
+        fromComputer && computerInstead(account, KEEP),
         button('Sign out', () => void signOut(account).then(() => signedOut())),
       ),
     );
@@ -707,8 +951,9 @@ async function link(account: Account): Promise<void> {
     ask = await LinkAsk.start(client);
     asked = ask;
   } catch (error) {
-    if (error instanceof SyncError && error.code === 'stale') signInAgain(account, others);
-    else await failed(error);
+    if (error instanceof SyncError && error.code === 'stale') {
+      signInAgain(account, others, fromComputer);
+    } else await failed(error);
     return;
   }
   // Calls the request off if the tab closes before it's done.
@@ -738,6 +983,7 @@ async function link(account: Account): Promise<void> {
       ),
       h('p', { class: 'muted' }, 'Waiting for Factwright…'),
       slowNote,
+      fromComputer && actions(computerInstead(account, KEEP, stop)),
       others,
     );
   const checking = (check: number[], approver: string) => {
@@ -830,47 +1076,51 @@ async function link(account: Account): Promise<void> {
 
 // --- Linked: how to use it, its settings and its account -----------------------------------
 
-async function linked(account: Account): Promise<void> {
-  const { linkedInText } = await settings();
-  const linkedIn = h('input', { id: 'linkedin', type: 'checkbox', checked: linkedInText });
+/**
+ * How to save a job, wherever saved jobs go, and how it shows in Factwright: `shows`, the last
+ * step, says that.
+ */
+const savingSteps = (shows: string) => [
+  h('h2', {}, 'Saving a job'),
+  h(
+    'ul',
+    { class: 'steps' },
+    h(
+      'li',
+      {},
+      'On a job’s page, click the Factwright button in the toolbar, check the title, company and posting, and save it. Pin the button so it’s always there.',
+    ),
+    h(
+      'li',
+      {},
+      'Or press Alt+Shift+S (Option+Shift+S on a Mac), or right-click the page and choose Save job to Factwright, to save it without opening anything. Anything to check first, such as a company it can’t tell, opens the popup instead, or in Firefox, which lets only a click open it, marks the button with “!” for you to click.',
+    ),
+    h(
+      'li',
+      {},
+      'On a page it can’t read well, select the posting’s text first, and that’s what’s saved.',
+    ),
+    h('li', {}, shows),
+  ),
+];
+
+/** What it reads and when, with `sent`, where what it saves goes. */
+const whatItReads = (sent: string) => [
+  h('h2', {}, 'What it reads, and when'),
+  h(
+    'p',
+    { class: 'small muted' },
+    `It reads a page only when you click its button, its menu item or its shortcut, and sends nothing until you save. ${sent}`,
+  ),
+];
+
+/** The LinkedIn setting, which changes as soon as it's clicked. */
+function linkedInSetting(checked: boolean): Child[] {
+  const linkedIn = h('input', { id: 'linkedin', type: 'checkbox', checked });
   linkedIn.addEventListener('change', () => {
     void changeSettings({ linkedInText: linkedIn.checked });
   });
-  show(
-    app,
-    heading('You’re set'),
-    h('p', {}, `Save to Factwright saves jobs to the job hunt of ${account.email}.`),
-    h('h2', {}, 'Saving a job'),
-    h(
-      'ul',
-      { class: 'steps' },
-      h(
-        'li',
-        {},
-        'On a job’s page, click the Factwright button in the toolbar, check the title, company and posting, and save it. Pin the button so it’s always there.',
-      ),
-      h(
-        'li',
-        {},
-        'Or press Alt+Shift+S (Option+Shift+S on a Mac), or right-click the page and choose Save job to Factwright, to save it without opening anything. Anything to check first, such as a company it can’t tell, opens the popup instead, or in Firefox, which lets only a click open it, marks the button with “!” for you to click.',
-      ),
-      h(
-        'li',
-        {},
-        'On a page it can’t read well, select the posting’s text first, and that’s what’s saved.',
-      ),
-      h(
-        'li',
-        {},
-        'It shows in Factwright on your computer as a New job once it syncs, with its link and its posting.',
-      ),
-    ),
-    h('h2', {}, 'What it reads, and when'),
-    h(
-      'p',
-      { class: 'small muted' },
-      'It reads a page only when you click its button, its menu item or its shortcut, and sends nothing until you save. What it saves is locked with your job hunt’s key, which it keeps in this browser where it can’t be copied out.',
-    ),
+  return [
     h('h2', {}, 'LinkedIn'),
     h(
       'label',
@@ -883,14 +1133,30 @@ async function linked(account: Account): Promise<void> {
       { class: 'small muted' },
       'Factwright’s own tools never read LinkedIn. With this on, Save to Factwright reads the LinkedIn job you’re looking at when you click to save it, as copying it yourself would. LinkedIn’s terms forbid software that copies from it, so turn this off to save LinkedIn jobs by their link and title alone.',
     ),
+  ];
+}
+
+async function linked(account: Account): Promise<void> {
+  const { linkedInText } = await settings();
+  show(
+    app,
+    heading('You’re set'),
+    h('p', {}, `Save to Factwright saves jobs to the job hunt of ${account.email}.`),
+    ...savingSteps(
+      'It shows in Factwright on your computer as a New job once it syncs, with its link and its posting.',
+    ),
+    ...whatItReads(
+      'What it saves is locked with your job hunt’s key, which it keeps in this browser where it can’t be copied out.',
+    ),
+    ...linkedInSetting(linkedInText),
     h('h2', {}, 'Account'),
     h('p', {}, account.email),
     h(
       'p',
       { class: 'small muted' },
       isOwn(account.server)
-        ? `Saves through your own sync server, ${hostOf(account.server)}. To use another, sign out, then set it up again.`
-        : `Saves through Factwright’s sync, ${hostOf(account.server)}.`,
+        ? `Saves through your own sync server, ${hostOf(account.server)}. To use another, or to save to Factwright on this computer instead, sign out, then set it up again.`
+        : `Saves through Factwright’s sync, ${hostOf(account.server)}. To save to Factwright on this computer instead, sign out, then choose it.`,
     ),
     actions(
       button('Sign out of Save to Factwright', () => {
@@ -900,10 +1166,74 @@ async function linked(account: Account): Promise<void> {
   );
 }
 
+// --- Saving to this computer: how to use it, and its settings -------------------------------
+
+/**
+ * Set up to save to Factwright on this computer: how to use it, its settings, and a way to save
+ * through sync instead. When the browser has taken away its OK to talk to Factwright, it asks for
+ * that back first.
+ */
+async function onComputer(): Promise<void> {
+  if (!(await canReachComputer())) {
+    computerTakenAway();
+    return;
+  }
+  const { linkedInText } = await settings();
+  show(
+    app,
+    heading('You’re set'),
+    h(
+      'p',
+      {},
+      'Save to Factwright saves jobs to Factwright on this computer. Factwright adds them when it’s open, or the next time you open it.',
+    ),
+    ...savingSteps('It shows in Factwright as a New job, with its link and its posting.'),
+    ...whatItReads(
+      'What it saves goes from this browser straight to Factwright on this computer, and nowhere else.',
+    ),
+    ...linkedInSetting(linkedInText),
+    h('h2', {}, 'Where jobs go'),
+    h('p', {}, 'Factwright on this computer'),
+    h(
+      'p',
+      { class: 'small muted' },
+      'For Factwright on another computer, save through sync instead: Factwright’s sync or your own server.',
+    ),
+    actions(button('Save through sync instead', () => chooseSync())),
+  );
+}
+
+/** The browser has taken away the extension's OK to talk to Factwright on this computer. */
+function computerTakenAway(): void {
+  show(
+    app,
+    heading('Let it reach Factwright on this computer'),
+    h(
+      'p',
+      {},
+      'Save to Factwright saves jobs to Factwright on this computer, through the browser. The browser has that turned off for it, so it can’t save jobs.',
+    ),
+    actions(
+      button(
+        'Allow it',
+        () => void allowComputer().then((ok) => (ok ? onComputer() : computerTakenAway())),
+        true,
+      ),
+      button('Save through sync instead', () => chooseSync()),
+    ),
+  );
+}
+
 async function start(): Promise<void> {
+  if (location.hash === LOOK_AGAIN) {
+    history.replaceState(null, '', location.pathname);
+    void lookForComputer(true);
+    return;
+  }
   const account = await loadAccount();
   if (!account) {
-    signedOut();
+    if ((await settings()).where === 'computer') void onComputer();
+    else where();
     return;
   }
   if (!(await canReachSync(account.server))) {

@@ -177,3 +177,28 @@ Var pid
     Pop $R0
   FunctionEnd
 !endif
+
+; Save to Factwright saves to the app on this computer through its helper, factwright-save.exe,
+; which the app registers with each browser it finds as it starts: a key for each under HKCU,
+; naming a manifest the app writes in its data folder, and a record of what it registered
+; (src/main/extension/register.ts). Uninstalling takes it all away, so no browser is left starting
+; a helper that's gone, and a reinstall registers again. An update runs the old version's
+; uninstaller first, with --updated, and the new version keeps the registration, so then it stays.
+!macro customUnInstall
+  ${IfNot} ${isUpdated}
+    DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.factwright.save"
+    DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\com.factwright.save"
+    DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.factwright.save"
+    DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.factwright.save"
+    DeleteRegKey HKCU "Software\Vivaldi\NativeMessagingHosts\com.factwright.save"
+    DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\com.factwright.save"
+    ; The app installs for this user alone, so $APPDATA is this user's, where Electron keeps the
+    ; app's data folder. The job hunt in it stays, as deleteAppDataOnUninstall says.
+    Delete "$APPDATA\Factwright\save-helper\chrome.json"
+    Delete "$APPDATA\Factwright\save-helper\firefox.json"
+    ; A manifest half written when the app stopped, if there's one.
+    Delete "$APPDATA\Factwright\save-helper\.*.tmp"
+    RMDir "$APPDATA\Factwright\save-helper"
+    Delete "$APPDATA\Factwright\save-helper.json"
+  ${EndIf}
+!macroend

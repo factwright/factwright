@@ -253,3 +253,66 @@ describe('screenshots and questions for Claude', () => {
     expect(trashed).toHaveLength(1);
   });
 });
+
+describe('a job Save to Factwright saved on this computer', () => {
+  const job = {
+    url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
+    site: 'jobs.lever.co',
+    company: 'Harbor & Pine',
+    role: 'Senior PM, Data',
+    pay: '$165k–$190k',
+    posting: 'About the role\n\nLead the data platform’s roadmap.',
+  };
+  const id = 'harbor-and-pine--senior-pm-data';
+  const posting = () => join(root, 'saved', id, 'posting.md');
+
+  it('adds it as New, with its posting kept as save_posting keeps one, and sends the list', () => {
+    jobs.read();
+    expect(jobs.addSaved(job)).toEqual({ ok: true, id, already: false, posting: 'saved' });
+    jobs.sendList();
+    expect(readFileSync(posting(), 'utf8')).toBe(
+      [
+        '# Job posting',
+        '',
+        `- **Source:** ${job.url}`,
+        "- **Saved:** 2026-10-10 from jobs.lever.co in the user's browser, as the page showed it",
+        '',
+        '---',
+        '',
+        job.posting,
+        '',
+      ].join('\n'),
+    );
+    const added = changes.at(-1)?.jobs.find((each) => each.id === id);
+    expect(added).toMatchObject({ company: 'Harbor & Pine', status: 'new', manual: true });
+  });
+
+  it('adds the same job once, keeping the posting it has, or adding one it lacks', () => {
+    expect(jobs.addSaved({ ...job, posting: '' })).toMatchObject({
+      already: false,
+      posting: 'none',
+    });
+    expect(existsSync(posting())).toBe(false);
+    expect(jobs.addSaved(job)).toEqual({ ok: true, id, already: true, posting: 'saved' });
+    expect(jobs.addSaved({ ...job, posting: 'Another posting' })).toEqual({
+      ok: true,
+      id,
+      already: true,
+      posting: 'kept',
+    });
+    expect(readFileSync(posting(), 'utf8')).toContain('Lead the data platform’s roadmap.');
+  });
+
+  it('replaces a posting left from an earlier job with its ID', () => {
+    write(`saved/${id}/posting.md`, 'An old posting');
+    expect(jobs.addSaved(job)).toMatchObject({ already: false, posting: 'saved' });
+    expect(readFileSync(posting(), 'utf8')).toContain('Lead the data platform’s roadmap.');
+  });
+
+  it('says when its posting couldn’t be kept, with the job in', () => {
+    // A file where the job's folder of saved extras would go.
+    write('saved', 'not a folder');
+    expect(jobs.addSaved(job)).toEqual({ ok: true, id, already: false, posting: 'failed' });
+    expect(tracker.rows().some((each) => each.id === id)).toBe(true);
+  });
+});

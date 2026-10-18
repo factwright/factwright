@@ -1,0 +1,30 @@
+# The save helper
+
+`factwright-save` is the small program Save to Factwright, the browser extension, saves through on this computer, with no account and no sync. Factwright's installers carry it, and the app registers it with each browser it finds as the native messaging host `com.factwright.save`, which only Save to Factwright may start. [Save to Factwright on this computer](../README.md#save-to-factwright-on-this-computer) has the whole picture.
+
+## What it does
+The browser starts it for each message from the extension, and talks to it over stdin and stdout, as native messaging does: each message, and each answer, is its length in four bytes, then that much JSON. It reads one message, answers it, and stops.
+- **A hello,** `{"type":"hello"}`: it answers with the app's version, `{"ok":true,"version":"0.9.0"}`, without touching the disk. Setup sends one to find Factwright.
+- **A job,** `{"type":"save","url":…,"site":…,"company":…,"role":…,"pay":…,"posting":…}`: those seven keys and no others, each once, each a string of good UTF-8, up to 1 MiB in all. It finds the app's data folder and the profile open last, and writes the job, exactly as it came, as a file of its own in that profile's `inbox` folder, named for when it came. It's written whole to a hidden file first, then renamed, so the app never sees half of one. With the app open, the helper waits up to 3 seconds for the app's answer and passes it on, or else answers `{"ok":true,"later":true,"open":true}`: the app, busy, as while it starts, adds the job in a moment. With the app closed, it answers `{"ok":true,"later":true}` at once, and the app adds the job at its next start.
+- **Anything else** gets `{"ok":false,"reason":"bad-message"}`, and nothing is written. The other reasons it gives are `too-big`, over 1 MiB; `no-factwright`, when Factwright never ran here, so there's no data folder; `full`, when 200 jobs wait already; and `failed`, when the inbox couldn't be made or the job couldn't be written.
+
+[`packages/core/src/inbox.ts`](../../../packages/core/src/inbox.ts) has the names and limits the extension, the helper and the app agree on.
+
+## What it never does
+- **Read anything else.** Besides the message, it reads only `profiles.json`, which says which profile is open, and the inbox: how many jobs wait there, and the app's own notes, saying it's open and what it answered.
+- **Write anything else.** It writes only the job's file, in the inbox, which it makes if it's missing. It never follows a link where it writes: an inbox that's a link is refused, as is a file in the inbox that's one, and an added profile whose folder is a link counts as no profile, so the job goes to the first profile's inbox. The app's data folder, and the folders above it, are followed wherever they lead, as the app follows them.
+- **Talk to anything else.** No network, and no other program: only the browser that started it.
+- **Take orders from where it runs.** What the browser passes it, such as the extension's address, changes nothing, and nothing in its environment can point the installers' helper at another folder. The browser's own check of its registration decides who may start it.
+
+## Building it
+```bash
+pnpm --filter @factwright/desktop helper
+```
+
+[`scripts/build-helper.ts`](../scripts/build-helper.ts) builds `factwright-save.c`, one file of C11 that needs nothing but the system's own libraries, into `helper/out`, with the app's version from `package.json` built in. Every warning is an error. `pnpm dist:mac` and `dist:win` build it first.
+- **Mac:** with Xcode's clang, one program for both Apple silicon and Intel, for macOS 12 and later. The installer puts it in the app's resources, as `Factwright.app/Contents/Resources/helper/factwright-save`, signed with the app.
+- **Windows:** with clang, as on GitHub's runners, or MinGW's gcc, or Visual Studio's cl in its developer prompt. The installer puts it beside `Factwright.exe`, as `factwright-save.exe`, signed with it.
+- **Linux:** only for the tests.
+
+## Testing it
+[`src/main/extension/helper.test.ts`](../src/main/extension/helper.test.ts) builds it with `--testing`, which lets it take its data folder from `FACTWRIGHT_HELPER_HOME`, into a temporary folder: a build for the tests can never go in `helper/out`, so the installers never carry one. Then it runs the helper as a browser does, against temporary data folders: hellos, jobs into the first profile and added ones, links where folders should be, a full inbox, every kind of message it must refuse, and a stand-in for the open app that answers. The tests run with the rest (`pnpm test`) on any computer with a C compiler, and are skipped without one.
