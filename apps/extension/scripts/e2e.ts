@@ -26,6 +26,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
@@ -85,14 +86,18 @@ async function account(server: TestServer) {
 /** The sites every server here is on: this computer's, which the builds here may reach. */
 const LOCAL_SITE = 'http://127.0.0.1/*';
 
+/** Each browser it opens, so it can close any that a failure leaves open. */
+const browsers: BrowserContext[] = [];
+
 /**
- * The extension, loaded in a fresh Chromium, and its setup page. The browser's prompts can't be
- * answered in a test, so a request to reach any site but this computer's is answered no, as
- * declining it would be. A request for native messaging goes to the browser, which a build for the
- * test grants at install. Each request is noted, as `asked`, to check what setup asked for.
+ * The extension, loaded in a fresh Chromium, with a profile of its own in the run's folder, and its
+ * setup page. The browser's prompts can't be answered in a test, so a request to reach any site
+ * but this computer's is answered no, as declining it would be. A request for native messaging
+ * goes to the browser, which a build for the test grants at install. Each request is noted, as
+ * `asked`, to check what setup asked for.
  */
 async function browser(extension: string, env: Record<string, string> = {}) {
-  const profile = mkdtempSync(join(tmpdir(), 'fw-ext-'));
+  const profile = mkdtempSync(join(work, 'profile-'));
   const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium',
     headless: true,
@@ -101,6 +106,7 @@ async function browser(extension: string, env: Record<string, string> = {}) {
     // What the browser passes on to the programs it starts, such as Factwright's helper.
     env: { ...process.env, ...env } as Record<string, string>,
   });
+  browsers.push(context);
   await context.addInitScript((local) => {
     type Asked = { origins?: string[]; permissions?: string[] };
     type Permissions = { request(asked: Asked): Promise<boolean> };
@@ -284,11 +290,11 @@ async function openWindow(context: BrowserContext, setup: Page): Promise<Page> {
 }
 
 /**
- * Factwright's helper, built for testing: it takes the app's data folder from
+ * Factwright's helper, built for testing, in the run's folder: it takes the app's data folder from
  * FACTWRIGHT_HELPER_HOME, which the helper the installers carry never does.
  */
 function testingHelper(): string {
-  const out = join(mkdtempSync(join(tmpdir(), 'fw-helper-')), 'factwright-save');
+  const out = join(mkdtempSync(join(work, 'helper-')), 'factwright-save');
   execFileSync('node', ['scripts/build-helper.ts', '--testing', '--out', out], {
     cwd: DESKTOP,
     stdio: 'ignore',
@@ -399,6 +405,12 @@ const build = (env: Record<string, string> = {}) =>
     env: { ...process.env, ...env },
     stdio: 'ignore',
   });
+/**
+ * The run's own temporary folder, for each browser's profile, the helper built for testing, and
+ * Factwright's data folder on this computer. It's removed once the run is done, passing or not:
+ * what `--shots` and `--screenshots` save goes elsewhere.
+ */
+const work = mkdtempSync(join(tmpdir(), 'fw-chromium-'));
 let failed = false;
 try {
   build({ VITE_FACTWRIGHT_SYNC_SERVER: standIn.origin });
@@ -1027,7 +1039,7 @@ try {
   // as a test can't answer the browser's prompt for it.
   build({ VITE_FACTWRIGHT_SYNC_SERVER: standIn.origin, FACTWRIGHT_NATIVE_AT_INSTALL: '1' });
   {
-    const home = mkdtempSync(join(tmpdir(), 'fw-home-'));
+    const home = mkdtempSync(join(work, 'home-'));
     const inboxFolder = join(home, INBOX_FOLDER);
     const helper = testingHelper();
     const { context, setup, errors, id, profile } = await browser(extension, {
@@ -1177,6 +1189,16 @@ try {
   failed = true;
   console.error(error);
 } finally {
+  // Any browser a failure left open is closed first, as Chromium writes to its profile while it
+  // runs: Playwright stops one that won't close as the run ends. Then the run's folder goes,
+  // before anything below can fail and skip it.
+  for (const context of browsers) await context.close().catch(() => {});
+  try {
+    // Chromium may hold its profile a moment after it stops.
+    rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch {
+    // A temporary folder left behind does no harm.
+  }
   // Set while framing, which TypeScript can't follow from here.
   await (framer as Browser | null)?.close();
   await server.close();
