@@ -15,13 +15,18 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  // Factwright's own server. A server of your own leaves out APP_URL and the two legal pages, and
-  // `routes` above, so it runs at its workers.dev address with no terms of Neatifai's.
+  // Factwright's own server. A server of your own leaves out APP_URL, the two legal pages and how
+  // sync is sold, and `routes` above, so it runs at its workers.dev address with no terms of
+  // Neatifai's.
   "vars": {
     "APP_URL": "https://app.factwright.com",
     "TERMS_URL": "https://factwright.com/terms",
     "PRIVACY_URL": "https://factwright.com/privacy",
-    "STORAGE_LIMIT_MB": "1024"
+    "STORAGE_LIMIT_MB": "1024",
+    // How sync is sold, once it is: "true" through Stripe Managed Payments, only once Stripe has
+    // approved it for Factwright's account, or "false" through Stripe's ordinary checkout. The
+    // terms say which (factwright.com/terms#paying), so change them together.
+    "STRIPE_MANAGED_PAYMENTS": "false"
   },
   // Accounts and sessions, for signing in.
   "d1_databases": [

@@ -59,6 +59,14 @@ export interface Env {
   STRIPE_PRICE_MONTHLY?: string;
   STRIPE_PRICE_YEARLY?: string;
   /**
+   * How sync is sold: true through Stripe Managed Payments, with Stripe's affiliate as the
+   * merchant of record, once Stripe has approved it for the account. Unset or false, through
+   * Stripe's ordinary checkout, with Stripe only as the payment processor. A plain setting in
+   * wrangler.jsonc, changed along with the terms, which say which it is. wrangler.jsonc may give
+   * it as text or as true or false.
+   */
+  STRIPE_MANAGED_PAYMENTS?: string | boolean;
+  /**
    * When sync started being sold, as an ISO time, such as "2026-11-02T15:00:00Z". Accounts made
    * before it keep sync for good. Unset, none do.
    */
