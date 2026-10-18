@@ -75,6 +75,7 @@
   margin-top: 16px;
   color: var(--fw-muted);
   font-size: 14.5px;
+  text-wrap: pretty;
 }
 
 .ext-note a,

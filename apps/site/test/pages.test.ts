@@ -74,13 +74,17 @@ const STRIPE_PRIVACY = 'https://stripe.com/privacy';
 /** Link's terms for what it sells as the merchant of record, which the terms link to. */
 const LINK_TERMS = 'https://link.com/terms#sold-through-link-terms';
 
-/** The desktop app's own source files, leaving out its tests. */
-const appSources = () => {
-  const app = join(SITE, '..', 'desktop', 'src');
-  return readdirSync(app, { recursive: true, encoding: 'utf8' })
-    .filter((path) => /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path))
-    .map((path) => readFileSync(join(app, path), 'utf8'));
-};
+/**
+ * The apps' own source files, leaving out their tests: the desktop app's, and the shared words in
+ * @factwright/core that it and the web view show, such as sync's price.
+ */
+const appSources = () =>
+  [join(SITE, '..', 'desktop', 'src'), join(SITE, '..', '..', 'packages', 'core', 'src')].flatMap(
+    (folder) =>
+      readdirSync(folder, { recursive: true, encoding: 'utf8' })
+        .filter((path) => /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path))
+        .map((path) => readFileSync(join(folder, path), 'utf8')),
+  );
 
 /**
  * Each price in some words, as "$5 a month", however it's written: "$5 a month", "$5 per month"
@@ -568,21 +572,29 @@ describe('the extension page', () => {
     }
   });
 
-  it('says it needs Factwright and its sync, with links to what each is, and its download in the steps', () => {
+  it('says it needs Factwright and sync, ours or your own, with links to what each is, and its download in the steps', () => {
     const doc = open('extension.html');
     const note = doc.querySelector('.ext-copy .ext-note');
-    expect(said(note)).toContain('Needs Factwright for Mac or Windows, with Factwright’s sync');
+    expect(said(note)).toContain(
+      'Needs Factwright for Mac or Windows, with Factwright’s sync or your own server',
+    );
     // The download pages start the download at once, so only a link that says so goes there.
     expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
     expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('Factwright’s sync');
+    expect(note?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`)?.textContent).toBe(
+      'your own server',
+    );
     expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
   });
 
-  it('says what sync costs where it says how to set it up', () => {
+  it('says what each way to sync costs where it says how to set it up', () => {
     const setup = open('extension.html').querySelector('#setup .lede');
-    expect(said(setup)).toContain('It saves through Factwright’s sync');
-    expect(setup?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe(
-      `${PRICES[0]} or ${PRICES[1]}`,
+    expect(said(setup)).toContain(
+      'Factwright’s sync, for $5 a month or $50 a year, or a server of your own, for free.',
+    );
+    expect(setup?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('Factwright’s sync');
+    expect(setup?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`)?.textContent).toBe(
+      'a server of your own',
     );
   });
 
@@ -721,10 +733,12 @@ describe('the sync page', () => {
       'Money’s tight? Email steve@factwright.com and I’ll turn on sync for free. No questions asked.',
     );
     expect(note?.querySelector('a')?.getAttribute('href')).toBe(MONEY_TIGHT);
-    // The app's sync screen says it the same way, around the same address.
-    const offer = appSources().find((source) => source.includes('Money’s tight? Email'));
+    // The app's sync screen says it the same way, with the same address.
+    const sources = appSources();
+    const offer = sources.find((source) => source.includes('Money’s tight? Email'));
     expect(offer).toContain('and I’ll turn on sync for free. No questions asked.');
-    expect(offer).toContain(`'${MONEY_TIGHT.replace('mailto:', '')}'`);
+    const address = `'${MONEY_TIGHT.replace('mailto:', '')}'`;
+    expect(sources.some((source) => source.includes(address))).toBe(true);
   });
 
   it('says accounts from before sync had a price keep it free, for good', () => {
