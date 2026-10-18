@@ -137,6 +137,71 @@ export const checkServer = async (
   fetcher: typeof fetch = fetch,
 ): Promise<ServerCheck> => (await askServer(server, fetcher)).check;
 
+/**
+ * How setup signs in to a server: through the browser's window, with this copy's return address,
+ * or with a code the person allows in a tab at the server. Or, when it can't sign in there, why.
+ */
+export type SignInWay = { by: 'window'; redirect: string } | { by: 'code' } | { problem: string };
+
+/**
+ * How setup signs in to a server, from what asking it found. The window, where the server knows
+ * this copy's return address. Otherwise a code, but only with the server this copy was built for.
+ * A server of your own could pass along a code another server gave it, such as Factwright's sync:
+ * setup would show that code, and the person, signed in there, would allow it on that server's
+ * own page, giving whoever runs yours a session on their account there. The window's answer names
+ * the server that gave it, which the extension checks, so a server of your own signs in through
+ * the window alone, even after it stops short, and one that can't says what to change.
+ */
+export function signInWay(
+  server: string,
+  answer: ServerAnswer,
+  /** This copy's return address, or null in a browser with no window for extensions. */
+  redirect: string | null,
+  /** This copy's ID, for a server of your own to add to the ones it knows. */
+  id: string,
+  /** Whether the person asked for a code, after the window stopped short. */
+  withCode = false,
+): SignInWay {
+  const known = redirect !== null && answer.redirects.includes(redirect) ? redirect : null;
+  if (!isOwn(server)) {
+    return known && !withCode ? { by: 'window', redirect: known } : { by: 'code' };
+  }
+  if (known) return { by: 'window', redirect: known };
+  const host = hostOf(server);
+  if (redirect === null) {
+    return {
+      problem:
+        'This browser has no sign-in window for extensions, which Save to Factwright needs to sign in to a server of your own.',
+    };
+  }
+  if (answer.redirects.length === 0) {
+    return {
+      problem: `${host} needs an update for this version of Save to Factwright, which signs in to a server of your own through the browser’s window. Update it, then try again.`,
+    };
+  }
+  return {
+    problem: `${host} doesn’t know this copy of Save to Factwright, so it can’t sign it in. Add its ID, ${id}, to EXTENSION_IDS in the server’s settings, then try again.`,
+  };
+}
+
+/**
+ * The page a code's sign-in opens, from the server's answer: the server's own sign-in page, never
+ * an address it could name elsewhere. Or what to say instead.
+ */
+export function codePage(
+  url: string,
+  server: string,
+): { ok: true; url: string } | { ok: false; problem: string } {
+  const at = URL.canParse(url) ? new URL(url) : null;
+  if (at?.origin === server) return { ok: true, url };
+  return {
+    ok: false,
+    problem: at?.host
+      ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so Save to Factwright didn’t open it.`
+      : `${hostOf(server)} didn’t give a sign-in page Save to Factwright can open.`,
+  };
+}
+
 /** Whether a server is one of your own, not the one the extension was built for. */
 export const isOwn = (server: string): boolean => server !== DEFAULT_SERVER;
 

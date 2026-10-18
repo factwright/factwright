@@ -25,8 +25,11 @@ type Step =
   | 'sign-in'
   | { problem: string };
 
-/** What the page says, for the desktop app or for the browser extension, Save to Factwright. */
-const WORDS = {
+/**
+ * What the page says, for the desktop app or for the browser extension, Save to Factwright, on
+ * this server, `host`, such as app.factwright.com.
+ */
+const wordsFor = (host: string) => ({
   app: {
     title: 'Let your computer sign in?',
     check: 'Check that your computer shows this code:',
@@ -42,7 +45,12 @@ const WORDS = {
   extension: {
     title: 'Let Save to Factwright sign in?',
     check: 'Check that the Set up Save to Factwright tab, the one you came from, shows this code:',
-    only: 'Only allow it if you just started setting up Save to Factwright, the browser extension. It lets the extension save jobs to your job hunt from this browser.',
+    // Setup shows a code only for the server its copy was built for, which its 0.2 versions name
+    // beside it. With a server of your own, it signs in through the browser's window, with no
+    // code. So a code here that the tab doesn't show is someone else's: a server of your own could
+    // get one from this server, and send the window, or a tab, here for the person to allow
+    // (signInWay, in apps/extension/src/server.ts).
+    only: `Only allow it if you just started setting up Save to Factwright, the browser extension. It lets the extension save jobs to your job hunt from this browser. If that tab shows no code, or names a server other than ${host}, don’t allow it.`,
     account:
       'Save to Factwright signs in to this account, so it needs to be the one Factwright on your computer uses.',
     switch:
@@ -52,7 +60,7 @@ const WORDS = {
     declined: 'Turned away. Save to Factwright won’t sign in with this code.',
     again: 'To let it in, sign in again here first. Then you’ll see the code again.',
   },
-} as const;
+});
 
 /** "WDJBMJHT" as "WDJB-MJHT", easier to compare with what the app shows. */
 const spaced = (code: string) =>
@@ -86,7 +94,7 @@ export function ApproveDevice({
   const [asker, setAsker] = useState<'app' | 'extension'>('app');
   const [busy, setBusy] = useState(false);
   const [signInSaid, setSignInSaid] = useState(signInProblem);
-  const words = WORDS[asker];
+  const words = wordsFor(location.host)[asker];
 
   useEffect(() => {
     let live = true;

@@ -1,5 +1,13 @@
+import { DeviceSignIn } from '@factwright/sync';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { allowSync, canReachSync, giveBack, reachOnly, readAccount } from '../src/account.ts';
+import {
+  allowSync,
+  canReachSync,
+  deviceSignIn,
+  giveBack,
+  reachOnly,
+  readAccount,
+} from '../src/account.ts';
 import { hostPattern } from '../src/manifest.ts';
 import { DEFAULT_SERVER } from '../src/server.ts';
 
@@ -164,5 +172,14 @@ describe('giving back a server where signing in failed', () => {
   it('carries on when the browser won’t give it back', async () => {
     browser.answers.fails = true;
     await expect(giveBack(OWN, null)).resolves.toBeUndefined();
+  });
+});
+
+describe('signing in with a code', () => {
+  it('signs in with a code only to the server it’s built for, never to one of your own', () => {
+    expect(deviceSignIn(DEFAULT_SERVER)).toBeInstanceOf(DeviceSignIn);
+    expect(() => deviceSignIn(OWN)).toThrow(
+      'Save to Factwright signs in to a server of your own through the browser’s window alone.',
+    );
   });
 });
