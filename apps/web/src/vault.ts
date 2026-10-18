@@ -69,6 +69,11 @@ export interface Vault {
    * history and wherever that history syncs, so the address shows only the code.
    */
   pages: Map<string, string>;
+  /**
+   * When the server last took a change to the job hunt, as an ISO time, or null before it took
+   * any: how up to date what's here is, once sync is paused.
+   */
+  updatedAt: string | null;
 }
 
 /** How much of the code a job's page address keeps: 96 bits, plenty within one job hunt. */
@@ -179,7 +184,9 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
   const files = new Map<string, SyncedFile>();
   const rows: Record<string, StoredRow[]> = { jobs: [], status_log: [], calls: [], notes: [] };
   let unreadable = 0;
+  let updatedAt: string | null = null;
   for (const change of await allChanges(client)) {
+    if (updatedAt === null || change.at > updatedAt) updatedAt = change.at;
     if (change.deleted) continue;
     const plain = await openRecord(keys, change.record, change.version, change.data);
     const record = plain && decodeRecord(plain);
@@ -249,5 +256,6 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
     rows,
     unreadable,
     pages,
+    updatedAt,
   };
 }

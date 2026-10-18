@@ -241,7 +241,13 @@ export {
   type WorkspaceEntry,
   type WorkspaceReader,
 } from './records.ts';
-export { EXTENSION_URL } from './site.ts';
+export {
+  EXTENSION_URL,
+  FREE_SYNC_EMAIL,
+  OWN_SERVER_GUIDE,
+  SYNC_PRICE,
+  SYNC_PRICE_WORDS,
+} from './site.ts';
 export {
   byJob,
   callOrder,

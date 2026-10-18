@@ -1,3 +1,5 @@
+import { EXTENSION_IDS } from '@factwright/sync';
+
 /** The browsers the extension is built for, each with a manifest of its own. */
 export type Target = 'chrome' | 'firefox';
 
@@ -24,8 +26,11 @@ export const hostPattern = (server: string) => {
 export const ownServers = (forStores: boolean): string[] =>
   forStores ? ['https://*/*'] : ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
 
-/** The extension's ID on Firefox, which Firefox needs to sign it and to keep its data. */
-export const FIREFOX_ID = 'save@factwright.com';
+/**
+ * The extension's ID on Firefox, which Firefox needs to sign it and to keep its data, and which
+ * its sign-in window's return address comes from, as sync servers know it (@factwright/sync).
+ */
+export const FIREFOX_ID = EXTENSION_IDS.firefox;
 
 /** The icon sizes each browser shows, from the toolbar up to the store. */
 export const ICON_SIZES = [16, 32, 48, 128] as const;
@@ -38,6 +43,8 @@ const icons = Object.fromEntries(ICON_SIZES.map((size) => [size, `icons/${size}.
  * - running that one reading function in it (scripting)
  * - its own storage, for its sign-in and settings (storage)
  * - its item in the page's right-click menu (contextMenus)
+ * - the browser's own window to sign in to sync through (identity), which shows no warning in
+ *   either browser, at install or on an update
  * - reaching the sync server it's built for, Factwright's, and no other site (host permissions)
  * - reaching a sync server of your own instead, asked for only when you choose one in setup, and
  *   then only for its address (optional host permissions)
@@ -62,7 +69,7 @@ export function manifest(
       default_popup: 'popup.html',
       default_icon: icons,
     },
-    permissions: ['activeTab', 'scripting', 'storage', 'contextMenus'],
+    permissions: ['activeTab', 'scripting', 'storage', 'contextMenus', 'identity'],
     host_permissions: [hostPattern(server)],
     // The server it's built for is asked for at install, so it's never asked for again.
     optional_host_permissions: ownServers(server === FACTWRIGHT_SYNC).filter(

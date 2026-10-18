@@ -48,8 +48,13 @@ const OLD_SERVER: ApprovalsView = {
 };
 
 /** The window's API, with sample sync and spies for the rest it uses here. */
-function apiFor(start: string, approve: string | null = 'old', server: string | null = null) {
-  const sync = sampleSync(start, approve, server);
+function apiFor(
+  start: string,
+  approve: string | null = 'old',
+  server: string | null = null,
+  plan: string | null = null,
+) {
+  const sync = sampleSync(start, approve, server, plan);
   const api = {
     ...sync,
     copyText: vi.fn(async () => ({ ok: true as const })),
@@ -104,6 +109,24 @@ describe('SyncCard', () => {
     [{ state: 'signed-out', email: 'a' }, 'Sign in again', 'Sign in…'],
     [{ state: 'unavailable' }, 'Can’t turn on here', null],
     [{ state: 'no-server' }, 'Not in this copy', null],
+    [
+      { state: 'subscribe', email: 'a', again: false, waiting: false },
+      'Subscribe to sync',
+      'Finish setting up',
+    ],
+    [
+      { state: 'subscribe', email: 'a', again: true, waiting: false },
+      'Subscribe again to sync',
+      'Finish setting up',
+    ],
+    [
+      { state: 'subscribe', email: 'a', again: false, waiting: true },
+      'Waiting for your browser',
+      'Show',
+    ],
+    [{ state: 'paused', email: 'a', again: true, waiting: false }, 'Paused', 'Subscribe again…'],
+    [{ state: 'paused', email: 'a', again: false, waiting: false }, 'Paused', 'Subscribe…'],
+    [{ state: 'paused', email: 'a', again: true, waiting: true }, 'Paused', 'Show'],
   ] as [SyncStatus | 'checking', string, string | null][])(
     'says how sync stands, and what to do (%o)',
     async (status, line, action) => {
@@ -119,6 +142,50 @@ describe('SyncCard', () => {
       expect((await axe.run(container)).violations).toEqual([]);
     },
   );
+});
+
+describe('SyncCard, where sync is sold', () => {
+  it('says a card didn’t go through while sync carries on, opening Sync to update it', async () => {
+    const onOpen = vi.fn();
+    const { container } = render(
+      <SyncCard status={{ ...ON, paymentFailed: true }} onOpen={onOpen} />,
+    );
+    expect(screen.getByText('Card didn’t go through')).toBeTruthy();
+    expect(screen.getByText('Update it to keep sync going.')).toBeTruthy();
+    screen.getByRole('button', { name: 'Update card…' }).click();
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('says sync is paused, keeping what it says about the job hunt here', () => {
+    const { rerender } = render(
+      <SyncCard
+        status={{ state: 'paused', email: 'a', again: true, waiting: false }}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Your subscription ended. Your job hunt here is safe.')).toBeTruthy();
+    // Free sync that ended had no subscription to end.
+    rerender(
+      <SyncCard
+        status={{ state: 'paused', email: 'a', again: false, waiting: false }}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText('Sync needs a subscription now. Your job hunt here is safe.'),
+    ).toBeTruthy();
+  });
+
+  it('says what’s wrong first when sync can’t run, even with a card that didn’t go through', () => {
+    render(
+      <SyncCard
+        status={{ ...ON, activity: 'offline', message: 'Can’t reach it.', paymentFailed: true }}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Offline')).toBeTruthy();
+  });
 });
 
 describe('SyncDialog', () => {
@@ -755,5 +822,148 @@ describe('linking by approval', () => {
     expect(screen.getByText('A device wants to link')).toBeTruthy();
     expect(screen.getByText('Chrome on Windows asked to sync your job hunt.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Review' })).toBeTruthy();
+  });
+});
+
+describe('subscribing, where sync is sold', () => {
+  it('asks to subscribe after signing in to Factwright’s sync, then sets up once it has', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const api = apiFor('off', 'old', 'priced');
+    const { container } = await openDialog(api);
+    await user.click(screen.getByRole('button', { name: 'Sign in with your browser' }));
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByRole('heading', { name: 'Subscribe to sync' })).toBeTruthy();
+    expect(screen.getByText('Signed in as sam.rivera@example.com.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Sync on Factwright’s server is $5 a month or $50 a year. You can cancel anytime, and sync keeps going to the end of what you paid for.',
+      ),
+    ).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Subscribe in your browser' }));
+    expect(
+      screen.getByText(
+        /Waiting for your browser… Once you’ve subscribed, this carries on by itself\./,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open the page again' })).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByRole('heading', { name: 'Save your recovery key' })).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('keeps the money’s tight line, and running a server of your own, beside subscribing', async () => {
+    const user = userEvent.setup();
+    const api = apiFor('subscribe', 'old', 'priced');
+    await openDialog(api);
+    const ask = screen.getByRole('link', { name: 'steve@factwright.com' });
+    expect(ask.getAttribute('href')).toBe('mailto:steve@factwright.com');
+    expect(ask.parentElement?.textContent).toBe(
+      'Money’s tight? Email steve@factwright.com and I’ll turn on sync for free. No questions asked.',
+    );
+    const guide = screen.getByRole('link', { name: 'How to set one up' });
+    expect(guide.getAttribute('href')).toBe('https://github.com/factwright/sync-server');
+    // Choosing a server of your own instead ends this sign-in, and connects one.
+    await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
+    expect(await screen.findByRole('heading', { name: 'Connect your own server' })).toBeTruthy();
+  });
+
+  it('asks how the account stands as the step opens, so one with sync by now carries on', async () => {
+    const api = apiFor('subscribe', 'old', 'priced');
+    const asked = vi.spyOn(api, 'syncAccount');
+    await openDialog(api);
+    expect(asked).toHaveBeenCalled();
+  });
+
+  it('asks an account whose subscription ended to subscribe again', async () => {
+    const { container } = await openDialog(apiFor('subscribe-again', 'old', 'priced'));
+    expect(screen.getByRole('heading', { name: 'Subscribe to sync again' })).toBeTruthy();
+    expect(screen.getByText(/Subscribe again to sync this computer\./)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Subscribe again in your browser' })).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('ends the sign-in with the wrong account from the subscribe step', async () => {
+    const user = userEvent.setup();
+    await openDialog(apiFor('subscribe', 'old', 'priced'));
+    await user.click(screen.getByRole('button', { name: 'Use a different account' }));
+    expect(await screen.findByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
+  });
+
+  it('picks up where it left off once a paused computer subscribes again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { container } = await openDialog(apiFor('paused', 'old', 'priced'));
+    expect(screen.getByRole('heading', { name: 'Sync is paused' })).toBeTruthy();
+    expect(
+      screen.getByText(/Your job hunt here is safe, and what you change stays here\./),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'steve@factwright.com' })).toBeTruthy();
+    // Switching servers means turning sync off here first, as when signed out.
+    expect(screen.queryByRole('button', { name: 'Connect your server…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use a different account' })).toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Subscribe again in your browser' }));
+    expect(screen.getByText(/Waiting for your browser…/)).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByRole('heading', { name: 'Sync' })).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('turns sync off on a paused computer, to use another server', async () => {
+    const user = userEvent.setup();
+    await openDialog(apiFor('paused', 'old', 'priced'));
+    await user.click(screen.getByRole('button', { name: 'turn off sync on this computer' }));
+    await user.click(screen.getByRole('button', { name: 'Turn off here' }));
+    expect(await screen.findByRole('heading', { name: 'Sync your job hunt' })).toBeTruthy();
+  });
+
+  it.each([
+    ['active', /^Subscription: renews .+\. Manage$/, 'Manage your subscription on the web'],
+    [
+      'ending',
+      /^Subscription: canceled, syncing until .+\. Manage$/,
+      'Manage your subscription on the web',
+    ],
+    ['free', /^Free sync, from Steve\. Good luck with the search!$/, null],
+    ['early', /^Free sync, for good\. Thanks for being one of the first\.$/, null],
+  ] as [string, RegExp, string | null][])(
+    'says on the Sync screen how the account has sync (%s), and manages it on the web',
+    async (plan, line, button) => {
+      const api = apiFor('on', 'old', 'priced', plan);
+      const opened = vi.spyOn(api, 'openAccountPage');
+      const { container } = await openDialog(api);
+      // The paragraph's whole text, with its button's.
+      const words = await screen.findByText(
+        (_, element) => element?.tagName === 'P' && line.test(element.textContent ?? ''),
+      );
+      expect((await axe.run(container)).violations).toEqual([]);
+      if (!button) return;
+      within(words).getByRole('button', { name: button }).click();
+      expect(opened).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('says at the top of the Sync screen when a card didn’t go through, with a way to update it', async () => {
+    const api = apiFor('payment-failed', 'old', 'priced');
+    const opened = vi.spyOn(api, 'openAccountPage');
+    const { container } = await openDialog(api);
+    const note = await screen.findByRole('note');
+    expect(within(note).getByText('Your card didn’t go through')).toBeTruthy();
+    expect(within(note).getByText(/Stripe tries it again for up to two weeks/)).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    within(note).getByRole('button', { name: 'Update card' }).click();
+    expect(opened).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/^Subscription:/)).toBeNull();
+  });
+
+  it('says nothing about a subscription where sync isn’t sold', async () => {
+    await openDialog(apiFor('on'));
+    expect(await screen.findByText('Factwright on Sam’s MacBook Pro')).toBeTruthy();
+    expect(screen.queryByText(/^Subscription:/)).toBeNull();
+    expect(screen.queryByText(/^Free sync/)).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { STORE_RETURNS } from '@factwright/sync';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { authOptions, deviceName } from '../src/auth-options.ts';
 import { APP, serverWith } from './github.ts';
@@ -292,6 +293,7 @@ describe('signing in on the web', () => {
     expect(await response.json()).toEqual({
       providers: ['github'],
       features: ['approve'],
+      extensionRedirects: STORE_RETURNS,
       legal: { terms: 'https://factwright.com/terms', privacy: 'https://factwright.com/privacy' },
     });
   });

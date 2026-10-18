@@ -40,6 +40,9 @@ const keychain = {
 let person: Account;
 /** The same person, on a server of their own, for the tests that start one. */
 let ownPerson: Account;
+/** A server that sells sync, as Factwright's will, for the tests that start one, and the person on it. */
+let selling: TestServer | undefined;
+let seller: Account;
 const folders: string[] = [];
 const opened: SyncAccount[] = [];
 
@@ -56,7 +59,8 @@ afterEach(async () => {
 async function approve(url: string) {
   const { origin, searchParams } = new URL(url);
   const userCode = searchParams.get('user_code') ?? '';
-  const signedIn = origin === server.url.origin ? person : ownPerson;
+  const signedIn =
+    origin === server.url.origin ? person : origin === selling?.url.origin ? seller : ownPerson;
   const headers = { authorization: `Bearer ${signedIn.token}`, 'content-type': 'application/json' };
   await fetch(new URL(`/api/auth/device?user_code=${userCode}`, origin), { headers });
   await fetch(new URL('/api/auth/device/approve', origin), {
@@ -80,6 +84,8 @@ function computer(
   const tracker = new Tracker(join(dataDir, 'tracker.db'));
   const statuses: SyncStatus[] = [];
   const applied = vi.fn();
+  // The pages the app opens in the browser: the person approves a sign-in's code there.
+  const pages: string[] = [];
   const sync = new SyncAccount({
     dataDir,
     server: factwright,
@@ -87,11 +93,15 @@ function computer(
     keychain,
     tracker,
     workspace,
-    openUrl: approve,
+    openUrl: async (url) => {
+      pages.push(url);
+      if (new URL(url).pathname === '/device') await approve(url);
+    },
     onStatus: (status) => statuses.push(status),
     onApplied: applied,
     computerName: async () => name,
     sleep: async () => {},
+    subscriptionWait: (ms) => new Promise((done) => setTimeout(done, Math.min(ms, 25))),
     ...(fetchWith && { fetch: fetchWith }),
     ...(otherProfiles && { otherProfiles }),
   });
@@ -103,6 +113,7 @@ function computer(
     tracker,
     applied,
     statuses,
+    pages,
     write: (path: string, text: string) => {
       mkdirSync(join(workspace, ...path.split('/').slice(0, -1)), { recursive: true });
       writeFileSync(join(workspace, ...path.split('/')), text);
@@ -1525,5 +1536,383 @@ describe('a server of your own', () => {
         firstDevice: true,
       });
     });
+  });
+});
+
+describe('a server that sells sync', () => {
+  /** What the server's operator sends to give free sync, or take it back. */
+  const freeSync = (email: string, off = false) =>
+    fetch(new URL('/api/admin/free-sync', selling?.url), {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ email, ...(off && { off: true }) }),
+    }).then((response) => expect(response.ok).toBe(true));
+
+  /** An account's subscription, as Stripe last told the server: in this state, renewing in a month. */
+  async function subscription(account: Account, status: 'active' | 'past_due' | 'canceled') {
+    const now = new Date();
+    await selling?.env.DB.prepare(
+      `INSERT INTO "syncAccess" (account, subscription, status, renewsAt, canceling, updatedAt)
+       VALUES (?, 'sub_test', ?, ?, 0, ?)
+       ON CONFLICT (account) DO UPDATE SET subscription = excluded.subscription,
+         status = excluded.status, renewsAt = excluded.renewsAt`,
+    )
+      .bind(
+        account.id,
+        status,
+        new Date(now.getTime() + 30 * 86_400_000).toISOString(),
+        now.toISOString(),
+      )
+      .run();
+  }
+
+  /** A fetch that counts the changes each computer sends. */
+  function counting() {
+    let pushes = 0;
+    const fetchWith: typeof fetch = async (input, init) => {
+      if (init?.method === 'POST' && new URL(String(input)).pathname === '/api/sync/changes') {
+        pushes += 1;
+      }
+      return fetch(input, init);
+    };
+    return { pushes: () => pushes, fetchWith };
+  }
+
+  /** A computer that syncs through the server that sells sync. */
+  const sellingComputer = (name: string, dataDir?: string, fetchWith?: typeof fetch) =>
+    computer(name, dataDir, fetchWith, undefined, selling?.url.toString() ?? null);
+
+  /** Signs in and turns sync on as the account's first device, once the account has sync. */
+  async function setUpFirstHere(mac: ReturnType<typeof computer>) {
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'setting-up',
+      email: seller.email,
+      firstDevice: true,
+    });
+    await recoveryKey(mac.sync);
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    await mac.synced();
+  }
+
+  /**
+   * Waits for sync to pause here: `again` once a subscription ended, or not, as when free sync was
+   * taken back.
+   */
+  const paused = (mac: ReturnType<typeof computer>, again: boolean) =>
+    vi.waitFor(
+      () =>
+        expect(mac.sync.status()).toEqual({
+          state: 'paused',
+          email: seller.email,
+          again,
+          waiting: false,
+        }),
+      { timeout: 10_000 },
+    );
+
+  beforeAll(async () => {
+    selling = await startServer({
+      STRIPE_SECRET_KEY: 'rk_test_only',
+      STRIPE_WEBHOOK_SECRET: 'whsec_test_only',
+      STRIPE_PRICE_MONTHLY: 'price_month',
+      STRIPE_PRICE_YEARLY: 'price_year',
+      // Nothing here reaches Stripe: the app never pays, only the browser does.
+      STRIPE_API_URL: 'http://127.0.0.1:9',
+      EARLY_BEFORE: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
+  afterAll(async () => {
+    await selling?.close();
+    selling = undefined;
+  });
+
+  beforeEach(async () => {
+    seller = (await selling?.signUp('Sam Rivera')) as Account;
+  });
+
+  it('asks to subscribe after signing in, then sets up once the account has sync', async () => {
+    const mac = sellingComputer('Sam’s Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'subscribe',
+      email: seller.email,
+      again: false,
+      waiting: false,
+    });
+
+    expect(await mac.sync.subscribe()).toEqual({ ok: true });
+    // The browser opens the server's page for subscribing, naming the account it's for.
+    expect(mac.pages.at(-1)).toBe(`${selling?.url.origin}/subscribe?account=${seller.id}`);
+    expect(mac.sync.status()).toMatchObject({ state: 'subscribe', waiting: true });
+
+    await subscription(seller, 'active');
+    await vi.waitFor(
+      () =>
+        expect(mac.sync.status()).toEqual({
+          state: 'setting-up',
+          email: seller.email,
+          firstDevice: true,
+        }),
+      { timeout: 10_000 },
+    );
+    await recoveryKey(mac.sync);
+    expect(await mac.sync.turnOn()).toEqual({ ok: true });
+    await mac.synced();
+  });
+
+  it('skips subscribing for an account with sync already: free sync, or from before it was sold', async () => {
+    await freeSync(seller.email);
+    await setUpFirstHere(sellingComputer('Sam’s Mac'));
+
+    seller = (await selling?.signUp('Sam Rivera', { since: new Date('2025-12-01') })) as Account;
+    await setUpFirstHere(sellingComputer('Sam’s PC'));
+  });
+
+  it('pauses once the subscription ends, without trying again after each change, then picks up', async () => {
+    await freeSync(seller.email);
+    const { pushes, fetchWith } = counting();
+    const mac = sellingComputer('Sam’s Mac', undefined, fetchWith);
+    await setUpFirstHere(mac);
+    const records = (await seller.client.account()).usage.records;
+
+    await freeSync(seller.email, true);
+    mac.write('notes/while-paused.md', 'Written while sync was paused');
+    mac.sync.requestSync();
+    // Free sync was taken back: there was no subscription to end.
+    await paused(mac, false);
+    const tried = pushes();
+    for (const name of ['a', 'b', 'c']) {
+      mac.write(`notes/${name}.md`, name);
+      mac.sync.requestSync();
+    }
+    await new Promise((done) => setTimeout(done, 2500));
+    expect(pushes()).toBe(tried);
+    expect(mac.sync.status()).toMatchObject({ state: 'paused', waiting: false });
+
+    // Subscribing again picks up where it left off: what changed while paused goes up.
+    expect(await mac.sync.subscribe()).toEqual({ ok: true });
+    expect(mac.pages.at(-1)).toBe(`${selling?.url.origin}/subscribe?account=${seller.id}`);
+    await subscription(seller, 'active');
+    await mac.synced();
+    expect((await seller.client.account()).usage.records).toBe(records + 4);
+  });
+
+  it('stays paused after a restart, and carries on by itself once the account has sync again', async () => {
+    await freeSync(seller.email);
+    const first = sellingComputer('Sam’s Mac');
+    await setUpFirstHere(first);
+    await freeSync(seller.email, true);
+    first.write('notes/paused.md', 'Paused');
+    first.sync.requestSync();
+    await paused(first, false);
+    await first.sync.stop();
+
+    const { pushes, fetchWith } = counting();
+    const again = sellingComputer('Sam’s Mac', first.dataDir, fetchWith);
+    await again.sync.start();
+    expect(again.sync.status()).toEqual({
+      state: 'paused',
+      email: seller.email,
+      again: false,
+      waiting: false,
+    });
+    await new Promise((done) => setTimeout(done, 500));
+    expect(pushes()).toBe(0);
+    await again.sync.stop();
+
+    // Sync given back while the app was closed, such as free sync from Steve.
+    await freeSync(seller.email);
+    const back = sellingComputer('Sam’s Mac', first.dataDir);
+    await back.sync.start();
+    await back.synced();
+  });
+
+  it('says a payment didn’t go through, while sync carries on, until the card works', async () => {
+    await subscription(seller, 'past_due');
+    const mac = sellingComputer('Sam’s Mac');
+    await setUpFirstHere(mac);
+    await vi.waitFor(
+      () => expect(mac.sync.status()).toMatchObject({ state: 'on', paymentFailed: true }),
+      { timeout: 10_000 },
+    );
+    mac.write('notes/still.md', 'Still syncing');
+    mac.sync.requestSync();
+    await mac.synced();
+
+    await subscription(seller, 'active');
+    // Looking at the account, as the Sync screen does, notes it.
+    const looked = await mac.sync.account();
+    expect(looked.ok && looked.account.access).toMatchObject({ allowed: true });
+    expect(mac.sync.status()).toMatchObject({ state: 'on', activity: 'idle' });
+    expect(mac.sync.status()).not.toHaveProperty('paymentFailed');
+  });
+
+  it('pauses on signing in again with its key, once the subscription ended meanwhile', async () => {
+    await subscription(seller, 'active');
+    const mac = sellingComputer('Sam’s Mac');
+    await setUpFirstHere(mac);
+    // Signed out from another device, then the subscription ran out.
+    const device = (await seller.client.account()).devices.find((each) => !each.current);
+    if (!device) throw new Error('The Mac isn’t signed in.');
+    await seller.client.removeDevice(device.id);
+    mac.sync.requestSync();
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
+      timeout: 10_000,
+    });
+    await subscription(seller, 'canceled');
+
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({
+      state: 'paused',
+      email: seller.email,
+      again: true,
+      waiting: false,
+    });
+  });
+
+  /** Sam's Mac, set up with free sync, then paused once it was taken back. */
+  async function pausedMac(fetchWith?: typeof fetch) {
+    await freeSync(seller.email);
+    const mac = sellingComputer('Sam’s Mac', undefined, fetchWith);
+    await setUpFirstHere(mac);
+    await freeSync(seller.email, true);
+    mac.write('notes/paused.md', 'Written while paused');
+    mac.sync.requestSync();
+    await paused(mac, false);
+    return mac;
+  }
+
+  it('pauses when a link code is turned down, before any change had to be sent', async () => {
+    await freeSync(seller.email);
+    const mac = sellingComputer('Sam’s Mac');
+    await setUpFirstHere(mac);
+    // Free sync taken back, with nothing changed here since, so no round has been turned down.
+    await freeSync(seller.email, true);
+    expect(await mac.sync.makeLinkCode()).toMatchObject({ ok: false });
+    await paused(mac, false);
+  });
+
+  it('asks again on coming back to the app while it waits to subscribe', async () => {
+    const mac = sellingComputer('Sam’s Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toMatchObject({ state: 'subscribe', waiting: false });
+    // Subscribed from the phone, then back to the app here.
+    await subscription(seller, 'active');
+    mac.sync.lookAgain();
+    await vi.waitFor(
+      () =>
+        expect(mac.sync.status()).toEqual({
+          state: 'setting-up',
+          email: seller.email,
+          firstDevice: true,
+        }),
+      { timeout: 10_000 },
+    );
+  });
+
+  it('asks again on coming back to the app, and carries on once the account has sync', async () => {
+    const mac = await pausedMac();
+    // Subscribed from another device, then back to the app here.
+    await subscription(seller, 'active');
+    mac.sync.lookAgain();
+    await mac.synced();
+  });
+
+  it('stays paused when carrying on doesn’t get through, and carries on at the next look', async () => {
+    // Each answer about the account, in order: through, or lost on the way.
+    const answers: ('through' | 'lost')[] = [];
+    const mac = await pausedMac(async (input, init) => {
+      const lost = new URL(String(input)).pathname === '/api/account' && answers.shift() === 'lost';
+      if (lost) throw new TypeError('fetch failed');
+      return fetch(input, init);
+    });
+    await freeSync(seller.email);
+    // The look sees sync is back, then the connection drops as it carries on.
+    answers.push('through', 'lost');
+    expect((await mac.sync.account()).ok).toBe(true);
+    await vi.waitFor(() => expect(answers).toEqual([]));
+    await new Promise((done) => setTimeout(done, 300));
+    expect(mac.sync.status()).toMatchObject({ state: 'paused' });
+    // The next look gets through.
+    expect((await mac.sync.account()).ok).toBe(true);
+    await mac.synced();
+  });
+
+  it('pays no mind to an answer about the account from before it carried on', async () => {
+    let hold: Gate | null = null;
+    const mac = await pausedMac(async (input, init) => {
+      const response = await fetch(input, init);
+      const held = hold;
+      if (held && new URL(String(input)).pathname === '/api/account') {
+        hold = null;
+        held.waiting = true;
+        await held.opened;
+      }
+      return response;
+    });
+    // A look asked while the account had no sync, held on its way back.
+    const late = gate();
+    hold = late;
+    mac.sync.lookAgain();
+    await vi.waitFor(() => expect(late.waiting).toBe(true));
+    // Meanwhile the account gets sync again, and another look carries on.
+    await freeSync(seller.email);
+    expect((await mac.sync.account()).ok).toBe(true);
+    await mac.synced();
+    // The late answer, that it had no sync, comes in after: sync carries on all the same.
+    late.open();
+    await new Promise((done) => setTimeout(done, 300));
+    mac.write('notes/after.md', 'After');
+    mac.sync.requestSync();
+    await mac.synced();
+  });
+
+  it('subscribes again before a second computer links, once the subscription ended', async () => {
+    await subscription(seller, 'canceled');
+    const pc = sellingComputer('Sam’s PC');
+    await pc.sync.start();
+    expect(await pc.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(pc.sync.status()).toEqual({
+      state: 'subscribe',
+      email: seller.email,
+      again: true,
+      waiting: false,
+    });
+  });
+
+  it('stops waiting once the sign-in ends, and never carries on after', async () => {
+    const mac = sellingComputer('Sam’s Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(await mac.sync.subscribe()).toEqual({ ok: true });
+    expect(await mac.sync.useDifferentAccount()).toEqual({ ok: true });
+    expect(mac.sync.status()).toEqual({ state: 'off' });
+    await subscription(seller, 'active');
+    await new Promise((done) => setTimeout(done, 500));
+    expect(mac.sync.status()).toEqual({ state: 'off' });
+  });
+
+  it('carries on as soon as the account has sync, when the window asks how it stands', async () => {
+    const mac = sellingComputer('Sam’s Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toMatchObject({ state: 'subscribe', waiting: false });
+    // Subscribed from the phone, without the app opening the browser.
+    await subscription(seller, 'active');
+    expect((await mac.sync.account()).ok).toBe(true);
+    await vi.waitFor(
+      () =>
+        expect(mac.sync.status()).toEqual({
+          state: 'setting-up',
+          email: seller.email,
+          firstDevice: true,
+        }),
+      { timeout: 10_000 },
+    );
   });
 });

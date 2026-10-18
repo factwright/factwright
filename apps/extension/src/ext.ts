@@ -83,6 +83,15 @@ export interface Ext {
     remove(permissions: { origins: string[] }): Promise<boolean>;
     getAll(): Promise<{ origins?: string[] }>;
   };
+  /**
+   * The browser's own window for extensions to sign in through: it opens a page, and once that
+   * page goes to this extension's return address, closes, and hands the address to this extension
+   * alone. Missing where a browser doesn't have it.
+   */
+  identity?: {
+    getRedirectURL(): string;
+    launchWebAuthFlow(details: { url: string; interactive: boolean }): Promise<string | undefined>;
+  };
 }
 
 /** The browser's extension APIs: Firefox's `browser`, or Chrome's `chrome`. */

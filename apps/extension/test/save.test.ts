@@ -361,6 +361,35 @@ describe('saving a job through sync', () => {
     expect(await save(signedOut, keys)).toMatchObject({ ok: false, reason: 'signed-out' });
   });
 
+  it('says sync is paused, saving nothing, when the account needs a subscription', async () => {
+    const { client, keys } = await account();
+    const paused = new Proxy(client, {
+      get(target, key) {
+        if (key === 'push' || key === 'putFile') {
+          return () =>
+            Promise.reject(
+              new SyncError(
+                'subscription-needed',
+                'Sync on Factwright’s server needs a subscription.',
+                402,
+                null,
+                'subscription-needed',
+              ),
+            );
+        }
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    expect(await save(paused, keys)).toEqual({
+      ok: false,
+      reason: 'paused',
+      message:
+        'Sync is paused, so nothing was saved. Subscribe in Factwright on your computer, then save it again.',
+    });
+    expect((await client.changes(0)).changes).toEqual([]);
+  });
+
   it('names the sync server it couldn’t reach', async () => {
     const { client, keys } = await account();
     const gone = failingPush(client, () => true);

@@ -2,23 +2,23 @@
 
 The browser extension, for Chrome and Firefox. On a job's page, click its button, check the title and company, and save it: the job lands in your Factwright job hunt as New, with its link and its posting as you saw it, through sync, from any computer: Factwright's sync, or a sync server of your own. It reads pages that need a sign-in too, since it reads what's on your screen, LinkedIn included, unless you turn that off.
 
-It's a device on your sync account, as a linked browser is: it signs in with a code you approve in your browser, and Factwright on your computer approves linking it, after you check both show the same emoji. Everything it saves is locked with your job hunt's key before it leaves the browser. [docs/security.md](../../docs/security.md#the-browser-extension) has the design.
+It's a device on your sync account, as a linked browser is: it signs in through the browser's own window for extensions, where you allow it on your sync server's page, and Factwright on your computer approves linking it, after you check both show the same emoji. A server that doesn't know this copy signs it in with a code you approve in your browser instead. Everything it saves is locked with your job hunt's key before it leaves the browser. [docs/security.md](../../docs/security.md#the-browser-extension) has the design.
 
 | Part | What it does |
 |---|---|
 | `src/page/read-job.ts` | Reads the job on a page: the job data sites publish for search engines first, then each big job site's own layout (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby, Glassdoor, ZipRecruiter, SmartRecruiters, and Hacker News's "Who is hiring?" posts), then the page's main text, except on LinkedIn. Text you selected stands in for the posting, and on Hacker News, says which post is the job. `test/fixtures` has pages from these sites as real browsers showed them. It reads the page as it is, without copying or changing it. The browser sends this one function into the page, so it holds everything it needs |
 | `src/tab-job.ts` | A job's own address, and a job from a tab's address and title alone, for a page it doesn't read. The company from an address when the page names none, never a job board's. What a save without the popup checks first |
 | `src/read-tab.ts` | Reads the tab you're on, as you've asked: the page, or its link alone |
-| `src/save.ts` | Saves a job through sync, as Add job in the app would: its row as New, its history's first line, and the posting in `saved/<job ID>/posting.md`. The same job, by its link, is saved once, and saving it again adds a posting it doesn't have yet |
+| `src/save.ts` | Saves a job through sync, as Add job in the app would: its row as New, its history's first line, and the posting in `saved/<job ID>/posting.md`. The same job, by its link, is saved once, and saving it again adds a posting it doesn't have yet. While sync is paused, as an account's subscription ended, it saves nothing and says so |
 | `src/server.ts` | Which sync server it uses: Factwright's, or a server of your own. Your own server's address is https, the address alone, with no path or login, and setup checks it answers as a Factwright sync server before signing in to it |
 | `src/settings.ts` | Your settings, kept in the browser: the sync server setup offers, and how it treats LinkedIn |
-| `src/account.ts` | The extension's own sign-in, the server it's for and the account's keys, in its IndexedDB; the browser's permission to reach that server; and its requests to sync, which go only to that server and never carry the browser's cookies |
+| `src/account.ts` | The extension's own sign-in, through the browser's window or with a code, the server it's for and the account's keys, in its IndexedDB; the browser's permission to reach that server; and its requests to sync, which go only to that server and never carry the browser's cookies |
 | `src/popup.ts` | The popup under the toolbar button: the job it read and its posting, to check and save |
-| `src/setup.ts` | The setup page: choosing which sync, signing in, linking, the LinkedIn setting and the account |
+| `src/setup.ts` | The setup page: choosing which sync, signing in, linking, the LinkedIn setting and the account. Where sync is sold, as on Factwright's server, an account without it gets "Sync needs a subscription" instead of linking: subscribe in Factwright on your computer, or run a server of your own, with Check again |
 | `src/background.ts` | Saves for the popup, the right-click menu and the keyboard shortcut, and opens setup on install. A save without the popup takes only a page that looks like one job, and leaves anything else for the popup: Chrome opens it, and Firefox, which lets only a click open it, marks the button with “!” |
 | `src/manifest.ts` | Each browser's manifest, asking for as little as it can |
 | `scripts/build.ts` | Builds both browsers' folders and zips, and checks the built page reader works on its own |
-| `scripts/e2e.ts` | Runs the built extension in Chromium against two local sync servers, the one it's built for and one chosen in setup as your own, from setting up to saving |
+| `scripts/e2e.ts` | Runs the built extension in Chromium against local sync servers, from setting up to saving: the one it's built for, one chosen in setup as your own, and one that sells sync, as Factwright's will |
 | `scripts/icons.ts` | Draws its icons from Factwright's app icon |
 | `store/` | What the Chrome Web Store and Firefox Add-ons ask for: the listing, the permissions and the data, and screenshots |
 
@@ -26,6 +26,7 @@ It's a device on your sync account, as a linked browser is: it signs in with a c
 - **activeTab and scripting:** read the tab you're on, once, when you click its button, its menu item or its shortcut. Nothing else, and nothing as you browse. The popup sends nothing until you save.
 - **storage:** keep its settings.
 - **contextMenus:** its Save job to Factwright item in the page's right-click menu.
+- **identity:** the browser's own window to sign in to sync through, which hands the answer to this extension alone, so there's no code to compare. Neither browser shows a warning for it, at install or on an update. It never reads your Google account or email.
 - **app.factwright.com:** Factwright's sync, the one site it reaches unless you choose a server of your own. Both browsers grant it at install, and let you take it away later: setup then asks for it back.
 - **A server of your own** (optional, `https://*/*`): asked for only when you choose Your own server in setup, and then for the address you type alone, so the browser asks you once, for that one site. It keeps that permission only while it's signed in there, or signing in: it's given back when you sign out, when signing in there fails or you cancel it, and when it signs in somewhere else. A wider permission you allow yourself in the browser's settings, such as all https sites, is yours, and it never takes that back. Its sign-in and everything it saves go only to the server it signed in to, and with your own, it reaches nothing of Factwright's.
 
@@ -42,7 +43,7 @@ It makes `dist/chrome` and `dist/firefox`, and a zip of each.
 - **Chrome:** open `chrome://extensions`, turn on Developer mode, then Load unpacked and pick `dist/chrome`.
 - **Firefox:** open `about:debugging#/runtime/this-firefox`, then Load Temporary Add-on and pick `dist/firefox/manifest.json`. It stays until Firefox restarts.
 
-Setup opens on its own. To try it with a sync server of your own, choose Your own server in setup and type its address. One running locally is reached over http, which only a build for another server takes, so build it with that server's address, or any on this computer:
+Setup opens on its own. A copy loaded this way signs in to Factwright's sync with a code, since its server knows only the stores' copies by their IDs, and Chrome gives a copy loaded from a folder an ID of its own. Firefox gives it the stores' ID, so it signs in through the window. A server's `EXTENSION_IDS` can add a copy's ID ([apps/server](../server/README.md#save-to-factwrights-window)). To try it with a sync server of your own, choose Your own server in setup and type its address. One running locally is reached over http, which only a build for another server takes, so build it with that server's address, or any on this computer:
 
 ```bash
 VITE_FACTWRIGHT_SYNC_SERVER=http://localhost:8787 pnpm --filter @factwright/extension build

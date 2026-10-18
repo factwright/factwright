@@ -2,6 +2,7 @@ import { Button } from '@factwright/ui';
 import { CircleCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { forgetKeys } from './keys.ts';
+import { OtherAccount, SignedInAs } from './OtherAccount.tsx';
 import styles from './page.module.css';
 import {
   answerDeviceCode,
@@ -160,25 +161,16 @@ export function ApproveDevice({
           <p className={styles.lead}>{words.check}</p>
           <p className={styles.code}>{spaced(userCode.toUpperCase())}</p>
           <p className={styles.hint}>{words.only}</p>
-          <p className={styles.account}>
-            Signed in as <strong>{email}</strong>. {words.account}
-            {providers.length > 0 && (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className={styles.linkButton}
-                  disabled={busy}
-                  onClick={() => {
-                    setSignInSaid(null);
-                    setStep('switching');
-                  }}
-                >
-                  Use another account
-                </button>
-              </>
-            )}
-          </p>
+          <SignedInAs
+            email={email}
+            about={words.account}
+            providers={providers}
+            busy={busy}
+            onSwitch={() => {
+              setSignInSaid(null);
+              setStep('switching');
+            }}
+          />
           <div className={styles.actions}>
             <Button disabled={busy} onClick={() => answer(false)}>
               Don’t allow
@@ -192,34 +184,17 @@ export function ApproveDevice({
       )}
       {step === 'switching' && (
         <>
-          <p className={styles.lead}>{words.switch}</p>
-          <p className={styles.hint}>
-            This signs {email} out of this browser. To use another{' '}
-            {providers.map((provider) => PROVIDER_NAMES[provider]).join(' or ')} account, switch to
-            it there first.
-          </p>
-          <div className={styles.actions}>
-            <Button
-              variant="quiet"
-              disabled={busy}
-              onClick={() => {
-                setSignInSaid(null);
-                setStep('asking');
-              }}
-            >
-              Back
-            </Button>
-            {providers.map((provider) => (
-              <Button
-                key={provider}
-                variant={provider === providers[0] ? 'primary' : 'secondary'}
-                disabled={busy}
-                onClick={() => void switchTo(provider)}
-              >
-                Sign in with {PROVIDER_NAMES[provider]}
-              </Button>
-            ))}
-          </div>
+          <OtherAccount
+            lead={words.switch}
+            email={email}
+            providers={providers}
+            busy={busy}
+            onBack={() => {
+              setSignInSaid(null);
+              setStep('asking');
+            }}
+            onPick={(provider) => void switchTo(provider)}
+          />
           {said}
         </>
       )}
