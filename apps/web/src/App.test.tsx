@@ -18,6 +18,11 @@ const SESSION = {
   user: { id: 'sam', email: 'sam@example.com', name: 'Sam' },
 };
 
+/** What signing in for a device's code says it's for: the desktop app, or the extension. */
+const DESKTOP_LEAD = 'Sign in to let Factwright on your computer sync your job hunt.';
+const EXTENSION_LEAD =
+  'Sign in with the account Factwright on your computer uses. Then Save to Factwright can save jobs to your job hunt.';
+
 /** The server, with whoever's signed in, and an empty job hunt. */
 function server(session: object | null) {
   return fakeServer({
@@ -213,16 +218,61 @@ describe('the web view', () => {
   });
 
   it('signs in to let the desktop app sign in, and comes back to the code', async () => {
-    history.replaceState(null, '', '/device?user_code=WDJBMJHT');
+    history.replaceState(null, '', '/device?user_code=WDJBMJHT&for=desktop');
     const requests = server(null);
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+    expect(screen.getByText(DESKTOP_LEAD)).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
     expect(requests.at(-1)?.body).toEqual({
       provider: 'github',
-      callbackURL: '/device?user_code=WDJBMJHT',
-      errorCallbackURL: '/device?user_code=WDJBMJHT',
+      callbackURL: '/device?user_code=WDJBMJHT&for=desktop',
+      errorCallbackURL: '/device?user_code=WDJBMJHT&for=desktop',
     });
+  });
+
+  it('signs in to let the browser extension sign in, with the account the computer uses', async () => {
+    history.replaceState(null, '', '/device?user_code=WDJBMJHT&for=extension');
+    const requests = server(null);
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in to set up Save to Factwright' }),
+    ).toBeTruthy();
+    expect(screen.getByText(EXTENSION_LEAD)).toBeTruthy();
+    expect(screen.queryByText(DESKTOP_LEAD)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/device?user_code=WDJBMJHT&for=extension',
+      errorCallbackURL: '/device?user_code=WDJBMJHT&for=extension',
+    });
+  });
+
+  it('says it’s for the desktop app when the address doesn’t say who asked', async () => {
+    // A code from before the server said, or an address someone changed.
+    for (const search of [
+      '?user_code=WDJBMJHT',
+      '?user_code=WDJBMJHT&for=%3Cb%3Ephone%3C%2Fb%3E',
+    ]) {
+      history.replaceState(null, '', `/device${search}`);
+      const requests = server(null);
+      const { unmount } = render(<App />);
+      expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+      expect(screen.getByText(DESKTOP_LEAD)).toBeTruthy();
+      expect(screen.queryByText(/phone/)).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+      expect(requests.at(-1)?.body).toMatchObject({ callbackURL: `/device${search}` });
+      unmount();
+    }
+  });
+
+  it('asks about the code by what the server says asked, whatever the address says', async () => {
+    history.replaceState(null, '', '/device?user_code=WDJBMJHT&for=extension');
+    server(SESSION);
+    render(<App />);
+    expect(await screen.findByText('WDJB-MJHT')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Let your computer sign in?' })).toBeTruthy();
+    expect(screen.getByText('Check that your computer shows this code:')).toBeTruthy();
   });
 
   it('asks a signed-in browser about the desktop app’s code, linked or not', async () => {
@@ -302,6 +352,24 @@ describe('a sign-in that didn’t work', () => {
       provider: 'github',
       callbackURL: '/device?user_code=WDJBMJHT',
       errorCallbackURL: '/device?user_code=WDJBMJHT',
+    });
+  });
+
+  it('comes back to the code the browser extension showed, still saying it’s for the extension', async () => {
+    back('/device?user_code=WDJBMJHT&for=extension', { error: 'access_denied' });
+    const requests = server(null);
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in to set up Save to Factwright' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(CANCELED);
+    expect(location.pathname + location.search).toBe('/device?user_code=WDJBMJHT&for=extension');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/device?user_code=WDJBMJHT&for=extension',
+      errorCallbackURL: '/device?user_code=WDJBMJHT&for=extension',
     });
   });
 

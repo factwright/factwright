@@ -44,6 +44,7 @@ Every route answers only the account of the session that calls it. The desktop a
 | `POST /api/billing/stripe` | Stripe's webhook, signed with its secret. It needs no session |
 | `GET /api/sign-in-options` | The ways to sign in this server has set up, what more it can do, such as approving devices, and the terms and privacy policy signing in agrees to, when it has them (`TERMS_URL` and `PRIVACY_URL`). Anyone can ask |
 | `POST /api/auth/delete-user` | Deletes the account and everything in it. It needs a session from a browser's sign-in with GitHub or Google in the last 15 minutes: one from a device code can't. Trying again finishes a deletion that failed partway |
+| `POST /api/auth/device/code` | A sign-in code for the desktop app or the browser extension, as Better Auth gives it, with who asked added to the address of the page that approves it (`verification_uri_complete`): `for=desktop` or `for=extension`. The web view's sign-in page picks its words with it, and nothing more |
 | `POST /api/auth/device/approve` | Approves a device's code. Only a browser's session can, never one from a device code, and only for the account that opened the code first, as sign-in ties it to that one |
 
 Better Auth's routes that list sessions (with their tokens), sign other sessions out, or hand out a provider's token are off.
