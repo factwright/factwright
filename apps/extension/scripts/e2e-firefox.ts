@@ -433,6 +433,9 @@ try {
     'before it’s set up, the background saves nothing, and says to set it up',
   );
   const backgroundBefore = await background();
+  // The checks below that it's still the same background compare this, which tells them nothing
+  // if Firefox lists no background at all.
+  check(backgroundBefore !== '', 'Firefox lists the extension’s background, by its ID');
   const realmBefore = await realm();
 
   // Continue on Factwright on this computer, before Factwright has registered its helper.

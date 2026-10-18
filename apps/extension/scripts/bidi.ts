@@ -127,9 +127,26 @@ export class Firefox {
         firefox.on('exit', (code) => reject(new Error(`Firefox stopped, with ${code}: ${said}`)));
       });
       const socket = new WebSocket(`${address}/session`);
+      // A Firefox that says where it listens may still never open the session, so it gets as long
+      // as a command to.
       await new Promise((resolve, reject) => {
-        socket.addEventListener('open', resolve, { once: true });
-        socket.addEventListener('error', () => reject(new Error('Firefox’s session didn’t open.')));
+        const timer = setTimeout(() => {
+          // First, as closing it says it didn't open at all.
+          reject(new Error('Firefox’s session didn’t open in time.'));
+          socket.close();
+        }, COMMAND_MS);
+        socket.addEventListener(
+          'open',
+          (event) => {
+            clearTimeout(timer);
+            resolve(event);
+          },
+          { once: true },
+        );
+        socket.addEventListener('error', () => {
+          clearTimeout(timer);
+          reject(new Error('Firefox’s session didn’t open.'));
+        });
       });
       const client = new Firefox(firefox, socket);
       const session = await client.send<{ capabilities: { browserVersion: string } }>(
@@ -146,6 +163,11 @@ export class Firefox {
 
   /** Sends a command, and waits for its result. */
   send<Result>(method: string, params: Record<string, unknown> = {}): Promise<Result> {
+    // Once the session's gone, the socket drops what's sent without a word, so the command fails
+    // at once, rather than when its time is up.
+    if (this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error(`${method}: Firefox ended the session.`));
+    }
     const id = ++this.next;
     return new Promise<Result>((resolve, reject) => {
       const timer = setTimeout(() => {
