@@ -38,12 +38,14 @@ import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
   askServer,
+  codePage,
   DEFAULT_SERVER,
   EXAMPLE,
   hostOf,
   isOwn,
   readServer,
   serverName,
+  signInWay,
 } from './server.ts';
 import { changeSettings, settings } from './settings.ts';
 
@@ -271,7 +273,8 @@ function choose(choice: Choice, note?: string): void {
  * Signs in to a sync server, from a click: asks the browser to let the extension reach it, checks
  * that a server of your own answers as a Factwright sync server, then signs in: in the browser's
  * own window, where the server knows this copy of the extension, or else with a code, as with
- * `withCode`. The server is kept as your choice, and with the sign-in.
+ * `withCode`, but only with the server this copy was built for (signInWay). The server is kept as
+ * your choice, and with the sign-in.
  */
 async function signIn(server: string, choice: Choice, withCode = false): Promise<void> {
   // Asked on the click, as browsers want: Firefox asks for Factwright's sync the first time, and
@@ -321,8 +324,12 @@ async function signInThrough(
     return;
   }
   await changeSettings({ server });
-  const redirect = returnAddress();
-  if (withCode || !redirect || !asked.redirects.includes(redirect)) {
+  const way = signInWay(server, asked, returnAddress(), ext.runtime.id, withCode);
+  if ('problem' in way) {
+    await failed(way.problem);
+    return;
+  }
+  if (way.by === 'code') {
     await signInWithCode(server, failed);
     return;
   }
@@ -340,7 +347,7 @@ async function signInThrough(
       'Waiting for you to allow it… To cancel, close that window.',
     ),
   );
-  const result = await windowSignIn(server, redirect);
+  const result = await windowSignIn(server, way.redirect);
   if (result.ok) await signedIn(server, result.token);
   else if (result.reason === 'canceled') await failed();
   else if (result.reason === 'denied') {
@@ -354,8 +361,9 @@ async function signInThrough(
 }
 
 /**
- * What a sign-in window that stopped short says: try again, or sign in with a code instead, for a
- * browser whose window can't do it, as in a private window.
+ * What a sign-in window that stopped short says: try again, or, with the server this copy was
+ * built for, sign in with a code instead, for a browser whose window can't do it, as in a private
+ * window. A server of your own signs in through the window alone (signInWay).
  */
 function windowFailed(
   server: string,
@@ -379,26 +387,29 @@ function windowFailed(
     code.disabled = true;
     void signIn(server, choice, true);
   });
+  const own = isOwn(server);
   show(
     app,
     heading('Sign in to sync'),
     problem(reason),
-    h(
-      'p',
-      { class: 'small muted' },
-      `Or sign in with a code: this tab shows one, and ${hostOf(server)} opens in a tab of its own, where you allow it.`,
-    ),
+    !own &&
+      h(
+        'p',
+        { class: 'small muted' },
+        `Or sign in with a code: this tab shows one, and ${hostOf(server)} opens in a tab of its own, where you allow it.`,
+      ),
     actions(
       again,
-      code,
+      !own && code,
       button('Cancel', () => void failed()),
     ),
   );
 }
 
 /**
- * Signs in with a code, which the person allows in a tab at the server: for a server or a copy
- * of the extension the window can't sign in, or when the person asks for it.
+ * Signs in with a code, which the person allows in a tab at the server: only with the server this
+ * copy was built for (signInWay), where the window can't sign it in, or when the person asks for
+ * it.
  */
 async function signInWithCode(
   server: string,
@@ -406,18 +417,13 @@ async function signInWithCode(
 ): Promise<void> {
   const flow = deviceSignIn(server);
   const pending = await flow.start();
-  // Only the server's own sign-in page, never an address it could name elsewhere.
-  const at = URL.canParse(pending.url) ? new URL(pending.url) : null;
-  if (at?.origin !== server) {
+  const opens = codePage(pending.url, server);
+  if (!opens.ok) {
     flow.cancel();
-    await failed(
-      at
-        ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so Save to Factwright didn’t open it. Type the address Factwright on your computer uses.`
-        : `${hostOf(server)} didn’t give a sign-in page Save to Factwright can open. Check its address: it’s the one Factwright on your computer uses.`,
-    );
+    await failed(opens.problem);
     return;
   }
-  const page = () => void ext.tabs.create({ url: pending.url });
+  const page = () => void ext.tabs.create({ url: opens.url });
   show(
     app,
     heading('Sign in to sync'),

@@ -4,7 +4,7 @@ What the Chrome Web Store and Firefox Add-ons ask for, ready to paste, and the s
 
 Before the first upload, the sync server and factwright.com must be deployed with this version: the server takes the extension's sign-in, and the privacy policy describes it. The same goes for the first upload that lets you choose a server of your own: factwright.com's privacy policy says it may reach one.
 
-Version 0.2.0 signs in through the browser's own window wherever the server knows the stores' copies, and with a code where it doesn't, so it can go out before or after the sync server that knows them. Until that server is deployed, it signs in with a code, as 0.1.x does.
+Version 0.2.0 signs in through the browser's own window wherever the server knows the stores' copies. With Factwright's sync it signs in with a code where the server doesn't, so it can go out before or after the sync server that knows them: until that server is deployed, it signs in with a code, as 0.1.x does. A server of your own signs it in through the window alone, never with a code, so a server of your own needs a version with the window. sync-server publishes its first with Factwright's next release, so every one deployed from there has it.
 
 ## The listing
 
