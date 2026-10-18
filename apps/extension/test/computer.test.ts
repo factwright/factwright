@@ -166,11 +166,14 @@ describe('looking for Factwright on this computer', () => {
 
   it('says it’s missing when the browser can’t find or start the helper', async () => {
     await allowComputer();
+    // Chrome's words, then Firefox's, as scripts/e2e-firefox.ts sees Firefox say them: for a
+    // helper that isn't registered, then for one that isn't where its registration says.
     for (const said of [
       'Specified native messaging host not found.',
       'Access to the specified native messaging host is forbidden.',
       'Failed to start native messaging host.',
       'No such native application com.factwright.save',
+      'An unexpected error occurred',
     ]) {
       browser.state.answer = () => {
         throw new Error(said);
@@ -183,6 +186,11 @@ describe('looking for Factwright on this computer', () => {
     await allowComputer();
     browser.state.answer = () => {
       throw new Error('Native host has exited.');
+    };
+    expect(await findComputer()).toMatchObject({ ok: false, missing: false });
+    // Only Firefox's words for something unexpected, whole, read as Factwright missing.
+    browser.state.answer = () => {
+      throw new Error('Saving failed: an unexpected error occurred while writing');
     };
     expect(await findComputer()).toMatchObject({ ok: false, missing: false });
     browser.state.answer = () => ({ ok: true });
@@ -255,10 +263,20 @@ describe('saving to Factwright on this computer', () => {
 
   it('says Factwright isn’t there when the browser can’t find the helper', async () => {
     await allowComputer();
-    browser.state.answer = () => {
-      throw new Error('Specified native messaging host not found.');
-    };
-    expect(await saveOnComputer(JOB)).toMatchObject({ ok: false, reason: 'no-app' });
+    for (const said of [
+      'Specified native messaging host not found.',
+      'An unexpected error occurred',
+    ]) {
+      browser.state.answer = () => {
+        throw new Error(said);
+      };
+      expect(await saveOnComputer(JOB)).toEqual({
+        ok: false,
+        reason: 'no-app',
+        message:
+          'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it once.',
+      });
+    }
   });
 });
 
