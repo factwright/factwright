@@ -80,7 +80,7 @@ describe('a server of your own', () => {
     // It knows the stores' copies of Save to Factwright, as Factwright's own server does.
     expect(await response.json()).toEqual({
       providers: ['github'],
-      features: ['approve'],
+      features: ['approve', 'loopback-sign-in'],
       extensionRedirects: STORE_RETURNS,
     });
   });

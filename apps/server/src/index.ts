@@ -102,7 +102,8 @@ async function signIn(request: Request, env: Env, pathname: string): Promise<Res
 
 /**
  * The ways to sign in this server has set up, for the web view's buttons; what it can do beyond
- * the basics, so devices offer only that, such as whether sync here is a subscription; the return
+ * the basics, so devices offer only that, such as whether sync here is a subscription, and whether
+ * the desktop app can sign in with no code to compare (desktop-sign-in.ts); the return
  * addresses Save to Factwright's sign-in window may go back to, for the extension to tell whether
  * it can sign in that way here, and the page to check what it's asked; and the terms and privacy
  * policy signing in agrees to, when it has them. Older servers list no features or return
@@ -113,7 +114,11 @@ async function signInOptions(env: Env): Promise<Response> {
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? ['github'] : []),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
   ];
-  const features: Feature[] = ['approve', ...(sellsSync(env) ? (['subscription'] as const) : [])];
+  const features: Feature[] = [
+    'approve',
+    ...(sellsSync(env) ? (['subscription'] as const) : []),
+    'loopback-sign-in',
+  ];
   const legal = { terms: env.TERMS_URL, privacy: env.PRIVACY_URL };
   return json({
     providers,

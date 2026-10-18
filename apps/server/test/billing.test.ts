@@ -92,7 +92,11 @@ const rowOf = (account: Account) =>
 
 describe('a server that sells sync', () => {
   it('tells the apps sync here is a subscription', async () => {
-    expect(await server.clientFor(null).features()).toEqual(['approve', 'subscription']);
+    expect(await server.clientFor(null).features()).toEqual([
+      'approve',
+      'subscription',
+      'loopback-sign-in',
+    ]);
   });
 
   it('lets an account without sync read, listen, call things off and pay, but send nothing', async () => {

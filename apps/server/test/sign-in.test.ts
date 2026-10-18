@@ -292,7 +292,7 @@ describe('signing in on the web', () => {
     const response = await fetch(new URL('/api/sign-in-options', server.url));
     expect(await response.json()).toEqual({
       providers: ['github'],
-      features: ['approve'],
+      features: ['approve', 'loopback-sign-in'],
       extensionRedirects: STORE_RETURNS,
       legal: { terms: 'https://factwright.com/terms', privacy: 'https://factwright.com/privacy' },
     });

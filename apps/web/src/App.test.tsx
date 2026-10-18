@@ -682,3 +682,72 @@ describe('Save to Factwright’s sign-in, in the browser’s window', () => {
     expect(location.pathname + location.search).toBe(asking());
   });
 });
+
+describe('the desktop app’s sign-in to a server of your own, back on its computer', () => {
+  const BACK = 'http://127.0.0.1:51004/signed-in';
+  /** The page's address, as the desktop app makes it, for an address on the computer. */
+  const asking = (redirect = BACK) =>
+    `/sign-in/desktop?${new URLSearchParams({
+      client_id: 'factwright-desktop',
+      response_type: 'code',
+      redirect_uri: redirect,
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+      state: 's'.repeat(22),
+    })}`;
+  const NOT_ASKED =
+    'This isn’t a sign-in Factwright on your computer can finish here. In Factwright, start signing in again.';
+
+  it('signs in there first, and comes back to what the app asked', async () => {
+    history.replaceState(null, '', asking());
+    const requests = server(null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+    expect(screen.getByText(DESKTOP_LEAD)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: asking(),
+      errorCallbackURL: asking(),
+    });
+  });
+
+  it('asks a signed-in browser, linked or not, with nothing to wander off to', async () => {
+    history.replaceState(null, '', asking());
+    server(SESSION);
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: 'Let Factwright on your computer sign in?' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Jobs' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Account' })).toBeNull();
+  });
+
+  it('won’t go on for an address that isn’t the app’s on the computer, signed in or not', async () => {
+    for (const session of [null, SESSION]) {
+      for (const redirect of [
+        'https://sync.evil.example/signed-in',
+        'http://localhost:51004/signed-in',
+      ]) {
+        history.replaceState(null, '', asking(redirect));
+        server(session);
+        const { unmount } = render(<App />);
+        expect((await screen.findByRole('alert')).textContent).toBe(NOT_ASKED);
+        expect(screen.queryByRole('button')).toBeNull();
+        unmount();
+      }
+    }
+  });
+
+  it('comes back to what the app asked, once canceled at GitHub, to try again', async () => {
+    history.replaceState(null, '', `${asking()}&error=access_denied`);
+    server(null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Signing in was canceled. Try again whenever you’re ready.',
+    );
+    expect(location.pathname + location.search).toBe(asking());
+  });
+});

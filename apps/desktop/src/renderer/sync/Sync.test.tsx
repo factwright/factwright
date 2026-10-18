@@ -94,6 +94,11 @@ describe('SyncCard', () => {
     [{ state: 'off' }, 'Off', 'Turn on…'],
     [{ state: 'signing-in', code: 'WDJB-MJHT', url: 'x' }, 'Finish signing in', 'Show'],
     [
+      { state: 'signing-in', code: null, url: 'x', ownServer: 'https://sync.sam.example' },
+      'Finish signing in',
+      'Show',
+    ],
+    [
       { state: 'setting-up', email: 'a', firstDevice: true },
       'Save your recovery key',
       'Finish setting up',
@@ -539,14 +544,14 @@ describe('choosing a server', () => {
     expect(screen.getByRole('region', { name: 'Factwright’s sync' })).toBeTruthy();
   });
 
-  it('names a server of your own while signing in to it again', async () => {
-    render(
+  it('names a server of your own while signing in to it, with no code to compare', async () => {
+    const { container } = render(
       <SyncDialog
         api={apiFor('off')}
         status={{
           state: 'signing-in',
-          code: 'WDJB-MJHT',
-          url: `https://${OWN}/device?user_code=WDJBMJHT`,
+          code: null,
+          url: `https://${OWN}/sign-in/desktop?client_id=factwright-desktop`,
           ownServer: `https://${OWN}`,
         }}
         approvals={OLD_SERVER}
@@ -554,8 +559,14 @@ describe('choosing a server', () => {
       />,
     );
     expect(
-      screen.getByText(new RegExp(`Your browser opened ${OWN}’s sign-in page\\. Sign in there`)),
+      screen.getByText(
+        `Your browser opened ${OWN}’s sign-in page. Sign in there and allow Factwright, then come back here.`,
+      ),
     ).toBeTruthy();
+    // The browser comes back to this computer, so the link opens only in a browser here.
+    expect(screen.getByText(/to open it in another browser on this computer\.$/)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/code/i);
+    expect((await axe.run(container)).violations).toEqual([]);
     cleanup();
     render(
       <SyncDialog

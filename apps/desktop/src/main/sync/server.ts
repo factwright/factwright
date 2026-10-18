@@ -102,9 +102,10 @@ export async function askSignInOptions(
 /**
  * What this version of Factwright needs from a server of your own. Approving a new device from one
  * that's set up is how it links them, and every server copy from github.com/factwright/sync-server
- * has it.
+ * has it. It signs in to one only through the browser with no code to compare, coming back to the
+ * app on this computer (loopback.ts), which servers have had since this version.
  */
-const NEEDS: readonly Feature[] = ['approve'];
+const NEEDS: readonly Feature[] = ['approve', 'loopback-sign-in'];
 
 /** Whether a server of your own will do, or why not, with the page that helps. */
 export type ServerCheck =

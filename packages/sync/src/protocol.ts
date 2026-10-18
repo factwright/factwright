@@ -292,9 +292,19 @@ export type Feature =
    * Sync on this server is a subscription, so the apps show its price. Only a server that sells
    * sync lists it, as Factwright's will once it does. A server of your own never does.
    */
-  | 'subscription';
+  | 'subscription'
+  /**
+   * The desktop app can sign in through the browser with no code to compare: the server's page
+   * sends the browser back to the app, on the computer it runs on (desktop-sign-in.ts). The
+   * desktop app signs in to a server of your own only this way.
+   */
+  | 'loopback-sign-in';
 
-const FEATURES: ReadonlySet<unknown> = new Set<Feature>(['approve', 'subscription']);
+const FEATURES: ReadonlySet<unknown> = new Set<Feature>([
+  'approve',
+  'subscription',
+  'loopback-sign-in',
+]);
 
 /**
  * The features a server's sign-in options list that this version knows. Anything that isn't a
