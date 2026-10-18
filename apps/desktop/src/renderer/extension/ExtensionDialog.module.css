@@ -1,0 +1,118 @@
+.intro,
+.hint,
+.problem {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+  line-height: 1.5;
+}
+
+.intro {
+  color: var(--fw-text);
+}
+
+.hint {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+/* Under the steps, the way to the setting they name. */
+.open {
+  margin-top: 6px;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  margin-top: 22px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+/* Each browser on this computer, with where it stands and what can be done. */
+.browsers {
+  display: flex;
+  flex-direction: column;
+  margin: var(--fw-space-1) 0 0;
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  list-style: none;
+}
+
+.browser {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: var(--fw-space-2) var(--fw-space-2) var(--fw-space-2) var(--fw-space-3);
+}
+
+.browser + .browser {
+  border-top: 1px solid var(--fw-border);
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--fw-radius-full);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+}
+
+.ready {
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+}
+
+.waiting {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.blocked {
+  background: var(--fw-tone-amber-bg);
+  color: var(--fw-tone-amber-fg);
+}
+
+.action {
+  flex: none;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 18px;
+}

@@ -4,9 +4,9 @@
  * extension by its Chrome Web Store ID, and Firefox reads one of its own, which names it by its
  * Firefox ID.
  *
- * On a Mac, each reads manifest files from folders in ~/Library/Application Support. On Windows,
- * each reads keys in the registry, under HKEY_CURRENT_USER\Software, whose value is the path of a
- * manifest file, which can be anywhere.
+ * On a Mac, the app finds each by its app in Applications, and each reads manifest files from
+ * folders in ~/Library/Application Support. On Windows, each reads keys in the registry, under
+ * HKEY_CURRENT_USER\Software, whose value is the path of a manifest file, which can be anywhere.
  */
 
 /** A browser, by the name the app knows it by. */
@@ -15,11 +15,16 @@ export type BrowserId = 'chrome' | 'chromium' | 'edge' | 'brave' | 'vivaldi' | '
 /** A browser, where it's found, and where it looks for the helper, on a Mac and on Windows. */
 export interface Browser {
   id: BrowserId;
+  /** Its name, as the app shows it. */
+  name: string;
   /** The manifest it reads: the Chrome family's, or Firefox's. */
   manifest: 'chrome' | 'firefox';
   mac: {
-    /** Its own folder, in ~/Library/Application Support, there once it has run. */
-    folder: string;
+    /**
+     * Its app, by the names it's installed under in Applications. The app looks for these, never in
+     * the browser's own folder, which macOS keeps from other apps without the user's OK.
+     */
+    apps: readonly string[];
     /** The folders it reads manifests from, in ~/Library/Application Support. */
     manifestFolders: readonly string[];
   };
@@ -43,8 +48,9 @@ export interface Browser {
 export const BROWSERS: readonly Browser[] = [
   {
     id: 'chrome',
+    name: 'Google Chrome',
     manifest: 'chrome',
-    mac: { folder: 'Google/Chrome', manifestFolders: ['Google/Chrome/NativeMessagingHosts'] },
+    mac: { apps: ['Google Chrome.app'], manifestFolders: ['Google/Chrome/NativeMessagingHosts'] },
     windows: {
       folder: '%LOCALAPPDATA%\\Google\\Chrome\\User Data',
       keys: ['Google\\Chrome\\NativeMessagingHosts'],
@@ -52,8 +58,9 @@ export const BROWSERS: readonly Browser[] = [
   },
   {
     id: 'chromium',
+    name: 'Chromium',
     manifest: 'chrome',
-    mac: { folder: 'Chromium', manifestFolders: ['Chromium/NativeMessagingHosts'] },
+    mac: { apps: ['Chromium.app'], manifestFolders: ['Chromium/NativeMessagingHosts'] },
     windows: {
       folder: '%LOCALAPPDATA%\\Chromium\\User Data',
       keys: ['Chromium\\NativeMessagingHosts'],
@@ -61,8 +68,12 @@ export const BROWSERS: readonly Browser[] = [
   },
   {
     id: 'edge',
+    name: 'Microsoft Edge',
     manifest: 'chrome',
-    mac: { folder: 'Microsoft Edge', manifestFolders: ['Microsoft Edge/NativeMessagingHosts'] },
+    mac: {
+      apps: ['Microsoft Edge.app'],
+      manifestFolders: ['Microsoft Edge/NativeMessagingHosts'],
+    },
     windows: {
       folder: '%LOCALAPPDATA%\\Microsoft\\Edge\\User Data',
       keys: ['Microsoft\\Edge\\NativeMessagingHosts'],
@@ -70,9 +81,10 @@ export const BROWSERS: readonly Browser[] = [
   },
   {
     id: 'brave',
+    name: 'Brave',
     manifest: 'chrome',
     mac: {
-      folder: 'BraveSoftware/Brave-Browser',
+      apps: ['Brave Browser.app'],
       manifestFolders: [
         'Google/Chrome/NativeMessagingHosts',
         'BraveSoftware/Brave-Browser/NativeMessagingHosts',
@@ -88,8 +100,9 @@ export const BROWSERS: readonly Browser[] = [
   },
   {
     id: 'vivaldi',
+    name: 'Vivaldi',
     manifest: 'chrome',
-    mac: { folder: 'Vivaldi', manifestFolders: ['Vivaldi/NativeMessagingHosts'] },
+    mac: { apps: ['Vivaldi.app'], manifestFolders: ['Vivaldi/NativeMessagingHosts'] },
     windows: {
       folder: '%LOCALAPPDATA%\\Vivaldi\\User Data',
       keys: ['Google\\Chrome\\NativeMessagingHosts', 'Vivaldi\\NativeMessagingHosts'],
@@ -97,8 +110,9 @@ export const BROWSERS: readonly Browser[] = [
   },
   {
     id: 'arc',
+    name: 'Arc',
     manifest: 'chrome',
-    mac: { folder: 'Arc/User Data', manifestFolders: ['Arc/User Data/NativeMessagingHosts'] },
+    mac: { apps: ['Arc.app'], manifestFolders: ['Arc/User Data/NativeMessagingHosts'] },
     windows: {
       folder: '%LOCALAPPDATA%\\Packages\\TheBrowserCompany.Arc_*',
       keys: ['Google\\Chrome\\NativeMessagingHosts'],
@@ -106,8 +120,12 @@ export const BROWSERS: readonly Browser[] = [
   },
   {
     id: 'firefox',
+    name: 'Firefox',
     manifest: 'firefox',
-    mac: { folder: 'Firefox', manifestFolders: ['Mozilla/NativeMessagingHosts'] },
+    mac: {
+      apps: ['Firefox.app', 'Firefox Developer Edition.app', 'Firefox Nightly.app'],
+      manifestFolders: ['Mozilla/NativeMessagingHosts'],
+    },
     windows: {
       folder: '%APPDATA%\\Mozilla\\Firefox',
       keys: ['Mozilla\\NativeMessagingHosts'],

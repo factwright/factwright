@@ -49,7 +49,7 @@ It makes `dist/chrome` and `dist/firefox`, and a zip of each.
 
 Setup opens on its own. A copy loaded this way signs in to Factwright's sync with a code, since its server knows only the stores' copies by their IDs, and Chrome gives a copy loaded from a folder an ID of its own. Firefox gives it the stores' ID, so it signs in through the window. A server's `EXTENSION_IDS` can add a copy's ID ([apps/server](../server/README.md#save-to-factwrights-window)).
 
-To try saving to Factwright on this computer, build the desktop app's helper (`pnpm --filter @factwright/desktop helper`), then run the desktop app from the code with the unpacked extension's ID, from `chrome://extensions`, so it registers the helper for it as well as the stores' ID:
+To try saving to Factwright on this computer, build the desktop app's helper (`pnpm --filter @factwright/desktop helper`), then run the desktop app from the code with the unpacked extension's ID, from `chrome://extensions`, so it registers the helper for it as well as the stores' ID. On a Mac, then set the browser up in the app's Save to Factwright window (Browser extension, in its sidebar), as macOS asks first:
 
 ```bash
 FACTWRIGHT_EXTENSION_ID=<the unpacked extension's ID> pnpm dev

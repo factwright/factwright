@@ -29,7 +29,8 @@ repository's Releases page.
   beside `Factwright.exe` on Windows. It's signed with the app, so the Gatekeeper and Windows signature
   checks below cover it. `check-package` checks it's there, on a Mac for both kinds, and each
   built app's tests check it answers with the app's version. The app registers it with the
-  browsers as it starts; uninstalling on Windows takes that away again.
+  browsers as it starts on Windows, and on a Mac when the user sets each browser up in its Save to
+  Factwright window; uninstalling on Windows takes that away again.
 - **Signed.**
   - The Mac app is signed with Neatifai's Developer ID, then notarized and stapled by Apple, so
     Gatekeeper opens it.

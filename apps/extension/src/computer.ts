@@ -73,7 +73,7 @@ function unreachable(error: unknown): { missing: boolean; message: string } {
     return {
       missing: true,
       message:
-        'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it once.',
+        'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it. On a Mac, then choose Browser extension in its sidebar, and set up this browser.',
     };
   }
   return { missing: false, message: 'Factwright on this computer didn’t answer. Try again.' };

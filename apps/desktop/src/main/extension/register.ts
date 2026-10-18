@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   mkdirSync,
   readdirSync,
@@ -12,19 +12,28 @@ import {
 import { basename, dirname, join, posix, win32 } from 'node:path';
 import { SAVE_HELPER } from '@factwright/core';
 import { EXTENSION_IDS } from '@factwright/sync';
+import type { HelperState, HelperUnavailable, SaveHelperView } from '../../shared/save-helper.ts';
 import { BROWSERS, type Browser, type BrowserId } from './browsers.ts';
 
 /**
  * Registering the helper with the browsers. Save to Factwright reaches the app on this computer
  * through the browser's native messaging: the browser starts the helper the app installs
- * (apps/desktop/helper) once a manifest it reads names the helper and the extension. So as the app
- * starts, it gives each browser it finds a manifest: on a Mac, a file in the browser's own folders,
- * and on Windows, a file in the app's data folder, which a key in the registry names.
+ * (apps/desktop/helper) once a manifest it reads names the helper and the extension. On a Mac
+ * that's a file in the browser's own folders, and on Windows, a file in the app's data folder,
+ * which a key in the registry names.
+ *
+ * On Windows the app registers with each browser it finds as it starts, which asks nothing of the
+ * user. On a Mac it never touches a browser's folders until the user sets that browser up in the
+ * Save to Factwright window: macOS keeps each app's data from other apps, and asks the user, or
+ * blocks it and says so, when one tries. Once a browser is set up, a start keeps its manifest
+ * current.
  *
  * A record in the app's data folder notes what was registered, for which version and helper, so an
- * ordinary start only reads a few small files. It registers again when the app is a new version or
- * has moved, a browser turns up, or a manifest has gone or changed. A browser that couldn't be
- * registered is left out of the record, so the next start tries it again.
+ * ordinary start only reads a few small files of the app's own. Windows registers again when the
+ * app is a new version or has moved, a browser turns up, or a manifest has gone or changed, and a
+ * browser that couldn't be registered is left out of the record, so the next start tries it
+ * again. A Mac writes again only for the browsers set up, when the app has moved or the manifests
+ * would read differently, and notes the browsers macOS refused, until the user tries again.
  *
  * Uninstalling on Windows takes the keys, the manifests and the record away again
  * (build/installer.nsh). A Mac has no uninstaller: the helper goes to the Trash with the app, and
@@ -43,7 +52,7 @@ const DESCRIPTION = 'Saves jobs from Save to Factwright to the Factwright app on
 /** A Chrome extension's ID: 32 letters from a to p. */
 const CHROME_ID = /^[a-p]{32}$/;
 
-/** The folder in a browser's own folder that holds its manifests on a Mac. */
+/** The folder in a browser's own folder that holds its manifests. */
 const MANIFESTS = 'NativeMessagingHosts';
 
 /** How long reg.exe may take to set a key before it counts as failed. */
@@ -62,6 +71,8 @@ export interface Disk {
   list(path: string): string[];
   /** Whether a file is there. */
   isFile(path: string): boolean;
+  /** Whether a folder is there, such as an app in Applications, which is a folder. */
+  isFolder(path: string): boolean;
   /** A file's text, or null when it can't be read. */
   read(path: string): string | null;
   /**
@@ -83,6 +94,13 @@ export const localDisk: Disk = {
   isFile(path) {
     try {
       return statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  },
+  isFolder(path) {
+    try {
+      return statSync(path).isDirectory();
     } catch {
       return false;
     }
@@ -150,6 +168,11 @@ export interface SaveHelperDeps {
    */
   extraChromeIds?: readonly string[];
   /**
+   * The folders a Mac's apps are installed in, where the browsers are looked for: Applications,
+   * and the one in the user's home folder, unless others are given.
+   */
+  applications?: readonly string[];
+  /**
    * Runs a program, without a shell, as runProgram does, and settles once it's done: it rejects
    * when the program can't start or fails. Registering runs reg.exe on Windows.
    */
@@ -167,13 +190,26 @@ export interface SaveHelperDeps {
  * - disk-image: the app runs from a disk image or another disk, under /Volumes, which goes away
  *   once it's ejected.
  * - unchanged: it's registered already, for this version and helper, and nothing's changed since.
+ * - not-set-up: on a Mac, no browser is set up yet. The user sets each up in the Save to
+ *   Factwright window, and until then the app leaves the browsers' folders alone.
  */
-export type SkipReason = 'other-system' | 'no-helper' | 'translocated' | 'disk-image' | 'unchanged';
+export type SkipReason =
+  | 'other-system'
+  | 'no-helper'
+  | 'translocated'
+  | 'disk-image'
+  | 'unchanged'
+  | 'not-set-up';
 
 /** A browser that couldn't be registered, and what went wrong. */
 export interface BrowserProblem {
   browser: BrowserId;
   message: string;
+  /**
+   * Whether the system refused: macOS does until the user lets Factwright reach that browser's
+   * data, in System Settings, under Privacy & Security, then Files & Folders.
+   */
+  blocked: boolean;
 }
 
 /**
@@ -188,7 +224,15 @@ export type Registration =
 interface HelperRecord {
   version: string;
   helper: string;
+  /** The browsers that can reach the helper. */
   browsers: string[];
+  /** On a Mac, the browsers macOS refused, until the user sets them up again. */
+  blocked: string[];
+  /**
+   * On a Mac, a digest of the manifests last written, so a start knows they're current without
+   * reading the browsers' folders. Null in a record from before there was one.
+   */
+  manifests: string | null;
 }
 
 /** A manifest file to write, and the browsers that read it. */
@@ -208,9 +252,9 @@ interface RegistryKey {
 /** Each kind of manifest's text. */
 type ManifestTexts = Record<Browser['manifest'], string>;
 
-/** What registering on this computer takes: each file and key once, however many browsers read it. */
+/** What registering takes: each file and key once, however many browsers read it. */
 interface Plan {
-  /** The browsers found, in the order of BROWSERS. */
+  /** The browsers registered with, in the order of BROWSERS. */
   found: BrowserId[];
   files: ManifestFile[];
   keys: RegistryKey[];
@@ -219,6 +263,12 @@ interface Plan {
 }
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** Whether the system refused, as macOS does when an app reaches another app's data unallowed. */
+const refused = (error: unknown) => {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === 'EPERM' || code === 'EACCES';
+};
 
 const jsonText = (value: object) => `${JSON.stringify(value, null, 2)}\n`;
 
@@ -246,20 +296,36 @@ function manifestTexts(deps: SaveHelperDeps): ManifestTexts {
   };
 }
 
+/** A digest of the manifests' texts, which changes whenever either would. */
+const digestOf = (texts: ManifestTexts) =>
+  createHash('sha256').update(texts.chrome).update('\0').update(texts.firefox).digest('hex');
+
 /**
- * Whether a browser has run: its own folder is there with something of the browser's in it. One
- * holding nothing but a manifests folder was made for another browser, as registering for Brave
- * makes Chrome's on a Mac, and hidden files, such as the Finder's, aren't the browser's.
+ * Whether a browser has run on Windows: its own folder is there with something of the browser's
+ * in it. One holding nothing but a manifests folder was made for another browser, and hidden files
+ * aren't the browser's.
  */
 const hasRun = (disk: Disk, folder: string) =>
   disk.list(folder).some((name) => name !== MANIFESTS && !name.startsWith('.'));
 
-/** The browsers found on a Mac, and a manifest in each folder they read, made if it's missing. */
-function macPlan(deps: SaveHelperDeps, disk: Disk, texts: ManifestTexts): Plan {
+/**
+ * The browsers installed on a Mac, by their apps in Applications. Never by their own folders,
+ * which macOS keeps from other apps.
+ */
+function macBrowsers(deps: SaveHelperDeps, disk: Disk): Browser[] {
+  const folders = deps.applications ?? ['/Applications', posix.join(deps.userHome, 'Applications')];
+  return BROWSERS.filter((browser) =>
+    browser.mac.apps.some((app) =>
+      folders.some((folder) => disk.isFolder(posix.join(folder, app))),
+    ),
+  );
+}
+
+/** A manifest in each folder the given browsers read on a Mac, made if it's missing. */
+function macPlan(deps: SaveHelperDeps, texts: ManifestTexts, browsers: readonly Browser[]): Plan {
   const support = posix.join(deps.userHome, 'Library', 'Application Support');
-  const found = BROWSERS.filter((browser) => hasRun(disk, posix.join(support, browser.mac.folder)));
   const files = new Map<string, ManifestFile>();
-  for (const browser of found) {
+  for (const browser of browsers) {
     for (const folder of browser.mac.manifestFolders) {
       const path = posix.join(support, folder, `${SAVE_HELPER}.json`);
       const file = files.get(path) ?? { path, text: texts[browser.manifest], browsers: [] };
@@ -268,7 +334,7 @@ function macPlan(deps: SaveHelperDeps, disk: Disk, texts: ManifestTexts): Plan {
     }
   }
   return {
-    found: found.map((browser) => browser.id),
+    found: browsers.map((browser) => browser.id),
     files: [...files.values()],
     keys: [],
     record: posix.join(deps.appHome, RECORD_FILE),
@@ -295,15 +361,20 @@ function foundOnWindows(disk: Disk, folder: string): boolean {
     .some((name) => name.toLowerCase().startsWith(start) && hasRun(disk, win32.join(parent, name)));
 }
 
+/** The browsers that have run on Windows, by their own folders. */
+function windowsBrowsers(deps: SaveHelperDeps, disk: Disk): Browser[] {
+  return BROWSERS.filter((browser) => {
+    const folder = windowsFolder(browser.windows.folder, deps.env);
+    return folder !== null && foundOnWindows(disk, folder);
+  });
+}
+
 /**
  * The browsers found on Windows, the manifests their keys name, in the app's data folder, and
  * each key once, however many browsers read it.
  */
 function windowsPlan(deps: SaveHelperDeps, disk: Disk, texts: ManifestTexts): Plan {
-  const found = BROWSERS.filter((browser) => {
-    const folder = windowsFolder(browser.windows.folder, deps.env);
-    return folder !== null && foundOnWindows(disk, folder);
-  });
+  const found = windowsBrowsers(deps, disk);
   const folder = win32.join(deps.appHome, MANIFEST_FOLDER);
   const files = new Map<string, ManifestFile>();
   const keys = new Map<string, RegistryKey>();
@@ -327,25 +398,43 @@ function windowsPlan(deps: SaveHelperDeps, disk: Disk, texts: ManifestTexts): Pl
   };
 }
 
+const recordPath = (deps: SaveHelperDeps) =>
+  (deps.platform === 'win32' ? win32 : posix).join(deps.appHome, RECORD_FILE);
+
 /** The record, or null when there's none, or it isn't one. */
 function readRecord(text: string | null): HelperRecord | null {
   if (text === null) return null;
   try {
-    const { version, helper, browsers } = JSON.parse(text) ?? {};
-    const listed = Array.isArray(browsers) && browsers.every((each) => typeof each === 'string');
-    return typeof version === 'string' && typeof helper === 'string' && listed
-      ? { version, helper, browsers }
+    const { version, helper, browsers, blocked, manifests } = JSON.parse(text) ?? {};
+    const names = (list: unknown): list is string[] =>
+      Array.isArray(list) && list.every((each) => typeof each === 'string');
+    return typeof version === 'string' && typeof helper === 'string' && names(browsers)
+      ? {
+          version,
+          helper,
+          browsers,
+          blocked: names(blocked) ? blocked : [],
+          manifests: typeof manifests === 'string' ? manifests : null,
+        }
       : null;
   } catch {
     return null;
   }
 }
 
+/** Writes the record. Without it, the next start registers again, which does no harm. */
+function writeRecord(disk: Disk, path: string, record: object): void {
+  try {
+    disk.write(path, jsonText(record));
+  } catch {
+    // As above.
+  }
+}
+
 /**
- * Whether it's registered already: the record is for this version and helper, lists every
- * browser found, and each manifest is there as it would be written now. On Windows that's the
- * two in the app's data folder, as the keys aren't read back, so an ordinary start never runs
- * reg.exe.
+ * Whether Windows is registered already: the record is for this version and helper, lists every
+ * browser found, and each manifest is there as it would be written now. That's the two in the
+ * app's data folder, as the keys aren't read back, so an ordinary start never runs reg.exe.
  */
 function upToDate(plan: Plan, deps: SaveHelperDeps, disk: Disk): boolean {
   const record = readRecord(disk.read(plan.record));
@@ -359,14 +448,20 @@ function upToDate(plan: Plan, deps: SaveHelperDeps, disk: Disk): boolean {
 }
 
 /**
- * Writes each manifest, then sets each key, then notes the browsers it all worked for. A browser
- * that one of its manifests or keys failed for is left out, and the rest go ahead. A key never
- * names a manifest that couldn't be written.
+ * Writes each manifest, then sets each key: the browsers it all worked for, and the ones it
+ * didn't, and why. A browser that one of its manifests or keys failed for is left out, and the
+ * rest go ahead. A key never names a manifest that couldn't be written.
  */
-async function register(plan: Plan, deps: SaveHelperDeps, disk: Disk): Promise<Registration> {
-  const problems = new Map<BrowserId, string>();
-  const fail = (browsers: BrowserId[], message: string) => {
-    for (const browser of browsers) if (!problems.has(browser)) problems.set(browser, message);
+async function writeAll(
+  plan: Plan,
+  deps: SaveHelperDeps,
+  disk: Disk,
+): Promise<{ registered: BrowserId[]; failed: BrowserProblem[] }> {
+  const problems = new Map<BrowserId, { message: string; blocked: boolean }>();
+  const fail = (browsers: BrowserId[], message: string, blocked = false) => {
+    for (const browser of browsers) {
+      if (!problems.has(browser)) problems.set(browser, { message, blocked });
+    }
   };
   const unwritten = new Map<string, string>();
   for (const file of plan.files) {
@@ -374,7 +469,7 @@ async function register(plan: Plan, deps: SaveHelperDeps, disk: Disk): Promise<R
       disk.write(file.path, file.text);
     } catch (error) {
       unwritten.set(file.path, messageOf(error));
-      fail(file.browsers, messageOf(error));
+      fail(file.browsers, messageOf(error), refused(error));
     }
   }
   // The system's own reg.exe, by its whole path: a program run by its name alone is looked for
@@ -394,35 +489,76 @@ async function register(plan: Plan, deps: SaveHelperDeps, disk: Disk): Promise<R
       fail(browsers, messageOf(error));
     }
   }
-  const worked = plan.found.filter((browser) => !problems.has(browser));
-  const failed = plan.found.flatMap((browser) => {
-    const message = problems.get(browser);
-    return message === undefined ? [] : [{ browser, message }];
-  });
-  // Only once something worked, or nothing was there to fail: otherwise everything is tried again.
-  if (worked.length > 0 || failed.length === 0) {
-    const record: HelperRecord = { version: deps.version, helper: deps.helper, browsers: worked };
-    try {
-      disk.write(plan.record, jsonText(record));
-    } catch {
-      // Without it, the next start registers again, which does no harm.
-    }
-  }
-  return { registered: worked, failed };
+  return {
+    registered: plan.found.filter((browser) => !problems.has(browser)),
+    failed: plan.found.flatMap((browser) => {
+      const problem = problems.get(browser);
+      return problem === undefined ? [] : [{ browser, ...problem }];
+    }),
+  };
 }
 
 /**
- * Registers the helper with each browser on this computer, so Save to Factwright can reach the
- * app, unless it's registered already: for the app's start, after it's ready. Each browser it
- * finds gets a manifest naming the helper and Save to Factwright's IDs, with any more Chrome IDs
- * given. A browser that fails never stops the others.
- *
- * It's skipped when the helper isn't there, or a Mac app runs from somewhere that goes away, as
- * the browsers would be left starting a helper that's gone. Anywhere but a Mac or Windows it does
- * nothing. It rejects, with nothing written, if a Chrome ID isn't one, or the helper's path isn't
- * whole.
+ * Registers on Windows with each browser found, and notes the browsers it worked for: only once
+ * something worked, or nothing was there to fail, as otherwise everything is tried again.
  */
-export async function registerSaveHelper(deps: SaveHelperDeps): Promise<Registration> {
+async function registerOnWindows(
+  deps: SaveHelperDeps,
+  disk: Disk,
+  texts: ManifestTexts,
+  again: boolean,
+): Promise<Registration> {
+  const plan = windowsPlan(deps, disk, texts);
+  if (!again && upToDate(plan, deps, disk)) return { skipped: 'unchanged' };
+  const result = await writeAll(plan, deps, disk);
+  if (result.registered.length > 0 || result.failed.length === 0) {
+    writeRecord(disk, plan.record, {
+      version: deps.version,
+      helper: deps.helper,
+      browsers: result.registered,
+    });
+  }
+  return result;
+}
+
+/**
+ * Sets the given browsers up on a Mac, and notes where each stands: the ones it worked for join
+ * those set up before, and the ones macOS refused are noted as blocked, while the rest keep what
+ * they had.
+ */
+async function setUpOnMac(
+  deps: SaveHelperDeps,
+  disk: Disk,
+  texts: ManifestTexts,
+  browsers: readonly Browser[],
+  before: HelperRecord | null,
+): Promise<Registration> {
+  const plan = macPlan(deps, texts, browsers);
+  const result = await writeAll(plan, deps, disk);
+  const tried = new Set<string>(plan.found);
+  const blocked = result.failed.filter((problem) => problem.blocked).map((each) => each.browser);
+  const kept = (list: string[] | undefined) => (id: string) =>
+    (list ?? []).includes(id) && !tried.has(id);
+  const ids = BROWSERS.map((browser) => browser.id);
+  writeRecord(disk, plan.record, {
+    version: deps.version,
+    helper: deps.helper,
+    browsers: ids.filter((id) => kept(before?.browsers)(id) || result.registered.includes(id)),
+    blocked: ids.filter((id) => kept(before?.blocked)(id) || blocked.includes(id)),
+    manifests: digestOf(texts),
+  });
+  return result;
+}
+
+/**
+ * What registering needs before anything is read or written: it rejects, with nothing written, if
+ * a Chrome ID isn't one, or the helper's path isn't whole, and it's skipped when the helper isn't
+ * there, or a Mac app runs from somewhere that goes away, as the browsers would be left starting a
+ * helper that's gone. Anywhere but a Mac or Windows, there's nothing to do.
+ */
+function prepare(
+  deps: SaveHelperDeps,
+): { skipped: SkipReason } | { disk: Disk; texts: ManifestTexts } {
   const { platform, helper } = deps;
   if (platform !== 'darwin' && platform !== 'win32') return { skipped: 'other-system' };
   const paths = platform === 'win32' ? win32 : posix;
@@ -436,7 +572,107 @@ export async function registerSaveHelper(deps: SaveHelperDeps): Promise<Registra
   if (platform === 'darwin' && helper.startsWith('/Volumes/')) return { skipped: 'disk-image' };
   const disk = deps.disk ?? localDisk;
   if (!disk.isFile(helper)) return { skipped: 'no-helper' };
-  const plan = platform === 'darwin' ? macPlan(deps, disk, texts) : windowsPlan(deps, disk, texts);
-  if (upToDate(plan, deps, disk)) return { skipped: 'unchanged' };
-  return register(plan, deps, disk);
+  return { disk, texts };
+}
+
+/**
+ * Registers the helper as the app starts, so Save to Factwright can reach the app. On Windows,
+ * each browser found gets a manifest naming the helper and Save to Factwright's IDs, with any more
+ * Chrome IDs given, unless it's registered already. On a Mac, only the browsers the user set up
+ * are kept current, and none are touched until there are some. A browser that fails never stops
+ * the others.
+ */
+export async function registerSaveHelper(deps: SaveHelperDeps): Promise<Registration> {
+  const ready = prepare(deps);
+  if ('skipped' in ready) return ready;
+  const { disk, texts } = ready;
+  if (deps.platform === 'win32') return registerOnWindows(deps, disk, texts, false);
+  const record = readRecord(disk.read(recordPath(deps)));
+  if (record === null || record.browsers.length === 0) return { skipped: 'not-set-up' };
+  if (record.helper === deps.helper && record.manifests === digestOf(texts)) {
+    // The manifests read as they would now: only the record learns the version.
+    if (record.version !== deps.version) {
+      writeRecord(disk, recordPath(deps), { ...record, version: deps.version });
+    }
+    return { skipped: 'unchanged' };
+  }
+  // The app moved, the manifests would read differently, or the record is from before there was a
+  // digest: the browsers set up get theirs written again.
+  return setUpOnMac(
+    deps,
+    disk,
+    texts,
+    BROWSERS.filter((browser) => record.browsers.includes(browser.id)),
+    record,
+  );
+}
+
+/**
+ * Sets browsers up because the user asked, in the Save to Factwright window: on a Mac, the ones
+ * given that are installed, or every one installed, which macOS may ask the user about, along with
+ * any set up before whose manifests are out of date. On Windows, it registers with every browser
+ * found, as a start would, even when nothing seems to have changed.
+ */
+export async function setUpSaveHelper(
+  deps: SaveHelperDeps,
+  only?: readonly string[],
+): Promise<Registration> {
+  const ready = prepare(deps);
+  if ('skipped' in ready) return ready;
+  const { disk, texts } = ready;
+  if (deps.platform === 'win32') return registerOnWindows(deps, disk, texts, true);
+  const record = readRecord(disk.read(recordPath(deps)));
+  const asked = macBrowsers(deps, disk).filter((browser) => !only || only.includes(browser.id));
+  const stale =
+    record && (record.helper !== deps.helper || record.manifests !== digestOf(texts))
+      ? record.browsers
+      : [];
+  const browsers = BROWSERS.filter(
+    (browser) => asked.includes(browser) || stale.includes(browser.id),
+  );
+  if (browsers.length === 0) return { registered: [], failed: [] };
+  return setUpOnMac(deps, disk, texts, browsers, record);
+}
+
+/** Why the browsers can't be set up, by why registering would be skipped. */
+const UNAVAILABLE: Partial<Record<SkipReason, HelperUnavailable>> = {
+  'other-system': 'other-system',
+  'no-helper': 'no-helper',
+  translocated: 'translocated',
+  'disk-image': 'disk-image',
+};
+
+/**
+ * Where each browser on this computer stands, for the Save to Factwright window, from the record
+ * alone: on a Mac, the browsers are found by their apps, so looking never touches their folders.
+ */
+export function saveHelperStatus(deps: SaveHelperDeps): SaveHelperView {
+  const onRequest = deps.platform === 'darwin';
+  let ready: ReturnType<typeof prepare>;
+  try {
+    ready = prepare(deps);
+  } catch {
+    return { unavailable: 'no-helper', onRequest, browsers: [] };
+  }
+  if ('skipped' in ready) {
+    return { unavailable: UNAVAILABLE[ready.skipped] ?? 'no-helper', onRequest, browsers: [] };
+  }
+  const { disk } = ready;
+  const record = readRecord(disk.read(recordPath(deps)));
+  const stateOf = (id: string): HelperState =>
+    record?.browsers.includes(id)
+      ? 'ready'
+      : record?.blocked.includes(id)
+        ? 'blocked'
+        : 'not-set-up';
+  const found = deps.platform === 'darwin' ? macBrowsers(deps, disk) : windowsBrowsers(deps, disk);
+  return {
+    unavailable: null,
+    onRequest,
+    browsers: found.map((browser) => ({
+      id: browser.id,
+      name: browser.name,
+      state: stateOf(browser.id),
+    })),
+  };
 }

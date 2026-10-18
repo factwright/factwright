@@ -4,8 +4,9 @@ The app's side of Save to Factwright, the browser extension ([`apps/extension`](
 
 | File | What it does |
 |---|---|
-| `browsers.ts` | Where each browser looks for the helper it may start, on a Mac and on Windows: Chrome, Chromium, Edge, Brave, Arc, Vivaldi and Firefox |
-| `register.ts` | Tells each browser it finds where the helper is, and that only Save to Factwright may start it, on the first start and after each update |
+| `browsers.ts` | Where each browser looks for the helper it may start, on a Mac and on Windows, and how it's found: Chrome, Chromium, Edge, Brave, Arc, Vivaldi and Firefox |
+| `register.ts` | Tells each browser where the helper is, and that only Save to Factwright may start it: on Windows, each one found as the app starts; on a Mac, each one the user sets up, as macOS asks them first, with nothing touched until then. Also where each browser stands, for the window |
+| `save-helper.ts` | The Save to Factwright window's side of it: where each browser stands, setting browsers up, and opening Files & Folders in macOS's System Settings |
 | `inbox.ts` | Adds the jobs the helper drops in the open profile's inbox, as they come and as the app starts, and answers the helper while the app is open |
 | `helper.test.ts` | Builds the helper ([`apps/desktop/helper`](../../../helper)) for testing, and checks it takes only jobs, drops them where the app looks, and hands back the app's answer |
 
