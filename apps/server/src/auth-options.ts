@@ -1,7 +1,8 @@
-import { CLIENTS } from '@factwright/sync';
+import { CLIENTS, STORE_RETURNS } from '@factwright/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
+import { ANSWER_PATH, extensionSignIn, TOKEN_PATH } from './extension-sign-in.ts';
 
 /** The apps that may sign in with a device code: the desktop app and the browser extension. */
 const DEVICE_CLIENTS: ReadonlySet<string> = new Set(Object.values(CLIENTS));
@@ -42,13 +43,15 @@ function deviceOnly<T extends { userAgent?: string | null; ipAddress?: string | 
 const WEB_SIGN_IN = /^\/callback\//;
 
 /**
- * Whether a session is the browser extension's: made with a device code it asked for under its
- * own name. Its name then says so, such as "Save to Factwright in Chrome on Mac", so the account
- * page and the app's question about linking it tell it apart from a browser's own sign-in.
+ * Whether a session is the browser extension's: made through the browser's window for extensions,
+ * or with a device code it asked for under its own name. Its name then says so, such as "Save to
+ * Factwright in Chrome on Mac", so the account page and the app's question about linking it tell
+ * it apart from a browser's own sign-in.
  */
 const byExtension = (context: { path?: string; body?: unknown } | null | undefined) =>
-  context?.path === '/device/token' &&
-  (context.body as { client_id?: unknown } | undefined)?.client_id === CLIENTS.extension;
+  context?.path === TOKEN_PATH ||
+  (context?.path === '/device/token' &&
+    (context.body as { client_id?: unknown } | undefined)?.client_id === CLIENTS.extension);
 
 /**
  * How a session signed in: "web" after GitHub or Google, in a browser, or "device" with a code
@@ -120,12 +123,19 @@ export interface AuthSettings {
   beforeDeleteUser: (accountId: string, request?: Request) => Promise<void>;
   /** Sign-ins each IP address may start in a minute. */
   signInsPerMinute?: number;
+  /**
+   * The return addresses the browser extension's sign-in window may go back to: the stores'
+   * copies' unless set (extension-sign-in.ts).
+   */
+  extensionRedirects?: () => Promise<readonly string[]>;
 }
 
 /**
  * How people sign in: with GitHub or Google, through Better Auth. Accounts and sessions live in
  * D1. The desktop app signs in with a device code the user approves in their browser, then
- * sends its session as a bearer token. Nothing here ever touches the keys that lock data.
+ * sends its session as a bearer token. The browser extension signs in through the browser's own
+ * window for extensions instead, where it can (extension-sign-in.ts). Nothing here ever touches
+ * the keys that lock data.
  */
 export function authOptions(settings: AuthSettings) {
   return {
@@ -206,11 +216,18 @@ export function authOptions(settings: AuthSettings) {
       window: 60,
       max: 100,
       customRules: {
-        // Signing in, on the web or for the app, and approving the app's code in the browser.
+        // Signing in, on the web or for the app, approving the app's code in the browser, and the
+        // browser extension's window: its answer, and its code traded for a session.
         ...Object.fromEntries(
-          ['/sign-in/*', '/device/code', '/device', '/device/approve', '/device/deny'].map(
-            (path) => [path, { window: 60, max: settings.signInsPerMinute ?? 10 }],
-          ),
+          [
+            '/sign-in/*',
+            '/device/code',
+            '/device',
+            '/device/approve',
+            '/device/deny',
+            ANSWER_PATH,
+            TOKEN_PATH,
+          ].map((path) => [path, { window: 60, max: settings.signInsPerMinute ?? 10 }]),
         ),
         // The app asks every 5 seconds while the user signs in, for up to the code's 10 minutes.
         // Better Auth only starts counting again after a quiet minute, so this covers all of it.
@@ -236,6 +253,7 @@ export function authOptions(settings: AuthSettings) {
         verificationUri: '/device',
         validateClient: (clientId: string) => DEVICE_CLIENTS.has(clientId),
       }),
+      extensionSignIn(settings.extensionRedirects ?? (async () => STORE_RETURNS)),
     ],
   } satisfies BetterAuthOptions;
 }

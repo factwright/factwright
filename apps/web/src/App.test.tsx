@@ -518,3 +518,84 @@ describe('subscribing, where sync is sold', () => {
     expect(requests.some((request) => request.path === '/api/account')).toBe(false);
   });
 });
+
+describe('Save to Factwright’s sign-in, in the browser’s window', () => {
+  const RETURN = 'https://gjhjddlohoonikgdbfcfnljeffilblai.chromiumapp.org/';
+  /** The page's address, as the extension makes it, for a return address. */
+  const asking = (redirect = RETURN) =>
+    `/sign-in/extension?${new URLSearchParams({
+      client_id: 'factwright-extension',
+      response_type: 'code',
+      redirect_uri: redirect,
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+      state: 's'.repeat(22),
+    })}`;
+  const NOT_ASKED =
+    'This isn’t a sign-in Save to Factwright can finish here. Close this window, and sign in again from Save to Factwright’s setup.';
+
+  /** The server, with whoever's signed in, knowing the stores' Chrome copy alone. */
+  const serving = (session: object | null) =>
+    fakeServer({
+      'GET /api/auth/get-session': () => session,
+      'GET /api/sign-in-options': () => ({ providers: ['github'], extensionRedirects: [RETURN] }),
+      'GET /api/sync/changes': () => ({ changes: [], cursor: 0, more: false }),
+      'POST /api/auth/sign-in/social': () => ({ url: location.href, redirect: true }),
+    });
+
+  it('signs in there first, and comes back to what the extension asked', async () => {
+    history.replaceState(null, '', asking());
+    const requests = serving(null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Sign in with the account Factwright on your computer uses, to let Save to Factwright save jobs to it.',
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: asking(),
+      errorCallbackURL: asking(),
+    });
+  });
+
+  it('asks a signed-in browser, with nothing to wander off to', async () => {
+    history.replaceState(null, '', asking());
+    serving(SESSION);
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: 'Let Save to Factwright sign in?' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Jobs' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Account' })).toBeNull();
+  });
+
+  it('won’t go on for a return address the server doesn’t know, signed in or not', async () => {
+    for (const session of [null, SESSION]) {
+      history.replaceState(
+        null,
+        '',
+        asking('https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.chromiumapp.org/'),
+      );
+      serving(session);
+      const { unmount } = render(<App />);
+      expect((await screen.findByRole('alert')).textContent).toBe(NOT_ASKED);
+      expect(screen.queryByRole('button')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('comes back to what the extension asked, once canceled at GitHub, to try again', async () => {
+    history.replaceState(null, '', `${asking()}&error=access_denied`);
+    serving(null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Signing in was canceled. Try again whenever you’re ready.',
+    );
+    expect(location.pathname + location.search).toBe(asking());
+  });
+});

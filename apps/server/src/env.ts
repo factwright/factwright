@@ -39,6 +39,13 @@ export interface Env {
   /** Sign in with Google, once its OAuth client's ID and secret are set. */
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /**
+   * Other copies of Save to Factwright that may sign in through the browser's own window, by
+   * their extension ID, separated by commas: a Chrome extension's 32 letters, or a Firefox
+   * add-on's ID. The stores' copies always may. Others sign in with a device code, as older
+   * versions do (extension-sign-in.ts).
+   */
+  EXTENSION_IDS?: string;
   /** Lets the operator restore an account's store from a backup. Unset, there's no way in. */
   ADMIN_TOKEN?: string;
   /**

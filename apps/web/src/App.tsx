@@ -1,9 +1,17 @@
 import { localDate } from '@factwright/core';
-import type { AccountKeys, Legal, SyncAccess } from '@factwright/sync';
+import {
+  type AccountKeys,
+  EXTENSION_SIGN_IN,
+  type ExtensionAsk,
+  type Legal,
+  readAsk,
+  type SyncAccess,
+} from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
 import { ApproveDevice } from './ApproveDevice.tsx';
+import { ApproveExtension } from './ApproveExtension.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { JobView } from './JobView.tsx';
 import { forgetKeys, savedKeys } from './keys.ts';
@@ -29,12 +37,18 @@ type State =
   | { stage: 'loading' }
   /** The server couldn't say who's signed in: offline, or busy. */
   | { stage: 'unreachable' }
-  | { stage: 'signed-out'; providers: Provider[]; legal: Legal | null }
+  | {
+      stage: 'signed-out';
+      providers: Provider[];
+      extensionRedirects: string[];
+      legal: Legal | null;
+    }
   | {
       stage: 'signed-in';
       session: Session;
       providers: Provider[];
       features: ServerOptions['features'];
+      extensionRedirects: string[];
       legal: Legal | null;
       keys: AccountKeys | null;
     };
@@ -52,6 +66,15 @@ function takeLinkCode(): string | null {
     history.replaceState(null, '', location.pathname + location.search);
   }
   return sessionStorage.getItem(LINK_CODE);
+}
+
+/**
+ * What Save to Factwright asked, from this page's address, when it's an ask this server can
+ * answer: for a return address it knows.
+ */
+function extensionAsk(redirects: string[]): ExtensionAsk | null {
+  const ask = readAsk(Object.fromEntries(new URLSearchParams(location.search)));
+  return ask && redirects.includes(ask.redirect) ? ask : null;
 }
 
 /** How long the job hunt stays as loaded before coming back to the page updates it. */
@@ -90,7 +113,7 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const [session, { providers, features, legal }] = await Promise.all([
+      const [session, { providers, features, extensionRedirects, legal }] = await Promise.all([
         getSession(),
         signInOptions(),
       ]);
@@ -102,7 +125,7 @@ export function App() {
         // Signed out from another device, run out, or the account deleted: this browser's keys
         // go too, as signing out here forgets them. The sign-in page doesn't wait for them to go.
         void forgetKeys().catch(() => {});
-        setState({ stage: 'signed-out', providers, legal });
+        setState({ stage: 'signed-out', providers, extensionRedirects, legal });
         return;
       }
       // Signed in, the code is used from here, once. A code that didn't work isn't tried again.
@@ -112,6 +135,7 @@ export function App() {
         session,
         providers,
         features,
+        extensionRedirects,
         legal,
         keys: await savedKeys(session.user.id),
       });
@@ -144,6 +168,7 @@ export function App() {
     setState((current) => ({
       stage: 'signed-out',
       providers: 'providers' in current ? current.providers : [],
+      extensionRedirects: 'extensionRedirects' in current ? current.extensionRedirects : [],
       legal: 'legal' in current ? current.legal : null,
     }));
   }, []);
@@ -222,6 +247,25 @@ export function App() {
 
   if (state.stage === 'signed-out') {
     const { providers, legal } = state;
+    if (path === EXTENSION_SIGN_IN.page) {
+      // In the browser's own window for extensions, which signing in comes back to.
+      return (
+        <Shell>
+          {extensionAsk(state.extensionRedirects) ? (
+            <SignIn
+              providers={providers}
+              legal={legal}
+              title="Sign in to Factwright"
+              lead="Sign in with the account Factwright on your computer uses, to let Save to Factwright save jobs to it."
+              returnTo={location.pathname + location.search}
+              signInProblem={signInProblem}
+            />
+          ) : (
+            <ApproveExtension ask={null} email="" />
+          )}
+        </Shell>
+      );
+    }
     if (path === '/subscribe' || path === '/subscribe/done') {
       const done = path === '/subscribe/done';
       return (
@@ -297,6 +341,20 @@ export function App() {
       </PageLink>
     </>
   );
+
+  if (path === EXTENSION_SIGN_IN.page) {
+    // In the browser's own window for extensions, with nothing to go on to from there.
+    return (
+      <Shell>
+        <ApproveExtension
+          ask={extensionAsk(state.extensionRedirects)}
+          email={session.user.email}
+          providers={providers}
+          signInProblem={signInProblem}
+        />
+      </Shell>
+    );
+  }
 
   if (path === '/device') {
     const userCode = new URLSearchParams(location.search).get('user_code') ?? '';

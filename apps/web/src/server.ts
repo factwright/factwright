@@ -1,5 +1,8 @@
 import {
+  askValues,
   CLIENTS,
+  EXTENSION_SIGN_IN,
+  type ExtensionAsk,
   type Feature,
   isLegal,
   knownFeatures,
@@ -45,31 +48,38 @@ export async function getSession(): Promise<Session | null | undefined> {
 }
 
 /**
- * What the server offers: the ways to sign in it has set up, what more it can do, and the terms
- * and privacy policy signing in agrees to, which a server of your own doesn't have.
+ * What the server offers: the ways to sign in it has set up, what more it can do, the return
+ * addresses Save to Factwright's sign-in window may go back to, and the terms and privacy policy
+ * signing in agrees to, which a server of your own doesn't have.
  */
 export interface ServerOptions {
   providers: Provider[];
   features: Feature[];
+  extensionRedirects: string[];
   legal: Legal | null;
 }
 
 /** What the server offers. One that can't say offers nothing. */
 export async function signInOptions(): Promise<ServerOptions> {
   const response = await fetch('/api/sign-in-options').catch(() => null);
-  if (!response?.ok) return { providers: [], features: [], legal: null };
+  if (!response?.ok) return { providers: [], features: [], extensionRedirects: [], legal: null };
   const {
     providers = [],
     features = [],
+    extensionRedirects = [],
     legal,
   } = (await response.json().catch(() => ({}))) as {
     providers?: Provider[];
     features?: unknown;
+    extensionRedirects?: unknown;
     legal?: unknown;
   };
   return {
     providers,
     features: knownFeatures(features),
+    extensionRedirects: Array.isArray(extensionRedirects)
+      ? extensionRedirects.filter((each) => typeof each === 'string')
+      : [],
     legal: isLegal(legal) ? legal : null,
   };
 }
@@ -198,6 +208,46 @@ export async function answerDeviceCode(
  */
 export async function releaseDeviceCode(userCode: string): Promise<void> {
   await post('/api/account/device-codes/release', { userCode });
+}
+
+/**
+ * What happened to an answer for Save to Factwright: where to go with it, to its return address,
+ * or why it can't go. "sign-in" means this browser needs to sign in here first.
+ */
+export type ExtensionAnswer =
+  | { ok: true; url: string }
+  | { ok: false; reason: 'sign-in' }
+  | { ok: false; reason: 'problem'; message: string };
+
+/**
+ * Lets Save to Factwright sign in, or doesn't. The server gives the address its answer goes to,
+ * which is the return address it was asked for, and nothing else.
+ */
+export async function answerExtension(ask: ExtensionAsk, allow: boolean): Promise<ExtensionAnswer> {
+  let response: Response;
+  try {
+    response = await post(EXTENSION_SIGN_IN.answer, { ...askValues(ask), allow });
+  } catch {
+    return {
+      ok: false,
+      reason: 'problem',
+      message: 'Can’t reach Factwright right now. Check your connection, then try again.',
+    };
+  }
+  const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
+  if (response.ok && typeof url === 'string' && url.startsWith(`${ask.redirect}#`)) {
+    return { ok: true, url };
+  }
+  // Signed out since the page opened, or a session that can't let anything in.
+  if (response.status === 401 || response.status === 403) return { ok: false, reason: 'sign-in' };
+  return {
+    ok: false,
+    reason: 'problem',
+    message:
+      response.status === 429
+        ? 'That’s a lot of tries in a row. Wait a minute, then try again.'
+        : 'That didn’t go through. Close this window, and sign in again from Save to Factwright’s setup.',
+  };
 }
 
 /** Deletes the account and everything in it. "sign-in" means it needs a fresh sign-in first. */

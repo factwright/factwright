@@ -14,6 +14,11 @@ export function replace(path: string): void {
   window.dispatchEvent(new Event(CHANGED));
 }
 
+/** Leaves the web view for another address, leaving nothing of this page in the tab's history. */
+export function leaveFor(url: string): void {
+  location.replace(url);
+}
+
 /** The page the web view is on, kept up to date as it moves. */
 export function usePath(): string {
   const [path, setPath] = useState(location.pathname);

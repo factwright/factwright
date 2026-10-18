@@ -5,7 +5,8 @@ Your job hunt on your phone, or in any browser. It downloads your synced data an
 - **Signing in** with GitHub or Google. When it doesn't work, such as when you cancel at GitHub, or a server of your own doesn't list you, it comes back to the page you started on, such as the code the desktop app showed, and says why in plain words.
 - **Linking this browser:** approve it from a computer that's set up, once both show the same emoji; scan the QR code a computer shows; type its code; or use your recovery key. The keys are kept in this browser as Web Crypto keys that can't be read back out.
 - **Your jobs:** the numbers that matter, the views, search, and each job's next step. A job shows where it stands, your notes, calls, history and links, and opens its documents and resumes. With more than one kind of job, a menu shows one kind's jobs, as on the computer.
-- **Letting the desktop app or the browser extension sign in:** each opens `/device` in your browser, where you check its code and allow it. The page says which account it signs in to. Use another account signs you out here and in with another, then comes back to the same code.
+- **Letting the desktop app sign in:** it opens `/device` in your browser, where you check its code and allow it. The page says which account it signs in to. Use another account signs you out here and in with another, then comes back to the same code. Save to Factwright's older versions sign in this way too.
+- **Letting the browser extension sign in:** Save to Factwright opens `/sign-in/extension` in the browser's own window for extensions, where you sign in if you aren't, and allow it, with no code to compare. The page names the account, with Use another account as above, and goes back to the extension, which the browser closes the window for. It goes on only for a return address the server knows, which the browser hands to that extension alone.
 - **Your account:** your signed-in devices, how much you store, a copy of everything to download, signing out, and deleting the account.
 - **Paying for sync,** on a server that sells it, as Factwright's will. It lists `subscription` in `/api/sign-in-options`, and the account says how it has sync. A server of your own never sells it, so none of this shows there.
   - **Subscribing:** the desktop app opens `/subscribe`, with the account it's signed in as. You pick $5 a month or $50 a year, and Stripe's checkout takes the payment, by redirecting there, as sign-in does. Nothing of Stripe's runs on these pages. If this browser is signed in with another account than the app's, it says so before anyone pays for the wrong one. An account with sync already, or free sync, has nothing to pay.
@@ -17,7 +18,8 @@ It builds the job list with the same code as the desktop app, from [`@factwright
 
 | Part | What it does |
 |---|---|
-| `src/App.tsx` | Which page to show: signing in, linking, letting the desktop app sign in, subscribing, the jobs, a job, or the account |
+| `src/App.tsx` | Which page to show: signing in, linking, letting the desktop app or the browser extension sign in, subscribing, the jobs, a job, or the account |
+| `src/ApproveDevice.tsx`, `src/ApproveExtension.tsx` | Letting the desktop app sign in with its code, and the browser extension through the browser's window. `src/OtherAccount.tsx` has the account they name, and using another |
 | `src/vault.ts` | Downloads every record, opens each with the account's keys, and builds the job list |
 | `src/keys.ts` | Keeps the account's keys in this browser, in IndexedDB |
 | `src/server.ts` | Sign-in, and the client for the sync server |

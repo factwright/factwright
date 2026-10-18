@@ -82,14 +82,26 @@ const CHECK_MS = 15_000;
 export type ServerCheck = 'ok' | 'unreachable' | 'not-sync';
 
 /**
- * Checks that a server of your own answers as a Factwright sync server, before setup signs in to
- * it. The answer must be its own: a redirect anywhere doesn't count. A server that's busy or
- * failing for now, as one can be while it's deployed, didn't answer, so trying again may work.
+ * What asking a server found: whether it answers as a Factwright sync server, and, when it does,
+ * the return addresses it knows for the extension's sign-in window. A server from before the
+ * window knows none, and signs the extension in with a code.
  */
-export async function checkServer(
+export interface ServerAnswer {
+  check: ServerCheck;
+  redirects: string[];
+}
+
+/**
+ * Asks a server for its sign-in options, before setup signs in to it, as Factwright's releases
+ * check their own server. The answer must be its own: a redirect anywhere doesn't count. A server
+ * that's busy or failing for now, as one can be while it's deployed, didn't answer, so trying
+ * again may work.
+ */
+export async function askServer(
   server: string,
   fetcher: typeof fetch = fetch,
-): Promise<ServerCheck> {
+): Promise<ServerAnswer> {
+  const none = (check: ServerCheck): ServerAnswer => ({ check, redirects: [] });
   let text: string;
   try {
     const response = await fetcher(new URL('/api/sign-in-options', server), {
@@ -97,18 +109,33 @@ export async function checkServer(
       redirect: 'manual',
       signal: AbortSignal.timeout(CHECK_MS),
     });
-    if (response.status === 429 || response.status >= 500) return 'unreachable';
-    if (!response.ok) return 'not-sync';
+    if (response.status === 429 || response.status >= 500) return none('unreachable');
+    if (!response.ok) return none('not-sync');
     text = await response.text();
   } catch {
-    return 'unreachable';
+    return none('unreachable');
   }
+  let answer: unknown;
   try {
-    return isSyncServer(JSON.parse(text)) ? 'ok' : 'not-sync';
+    answer = JSON.parse(text);
   } catch {
-    return 'not-sync';
+    return none('not-sync');
   }
+  if (!isSyncServer(answer)) return none('not-sync');
+  const { extensionRedirects } = answer as { extensionRedirects?: unknown };
+  return {
+    check: 'ok',
+    redirects: Array.isArray(extensionRedirects)
+      ? extensionRedirects.filter((each) => typeof each === 'string')
+      : [],
+  };
 }
+
+/** Checks that a server of your own answers as a Factwright sync server (see askServer). */
+export const checkServer = async (
+  server: string,
+  fetcher: typeof fetch = fetch,
+): Promise<ServerCheck> => (await askServer(server, fetcher)).check;
 
 /** Whether a server is one of your own, not the one the extension was built for. */
 export const isOwn = (server: string): boolean => server !== DEFAULT_SERVER;
