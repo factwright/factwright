@@ -1,5 +1,6 @@
 import 'virtual:theme.css';
 import './ui.css';
+import { FREE_SYNC_EMAIL, OWN_SERVER_GUIDE } from '@factwright/core';
 import {
   type AccountKeys,
   API,
@@ -12,6 +13,7 @@ import {
   openWithRecoveryKey,
   readLinkCode,
   readRecoveryKey,
+  type SyncAccess,
   type SyncClient,
   SyncError,
 } from '@factwright/sync';
@@ -399,7 +401,10 @@ function otherWays(account: Account, client: SyncClient, onDone: () => void): HT
   };
   const failed = async (error: unknown) => {
     if (await signInEnded(error)) onDone();
-    else tell(reasonOf(error, account.server));
+    else if (subscriptionNeeded(error)) {
+      onDone();
+      needsSubscription(account);
+    } else tell(reasonOf(error, account.server));
   };
   const withCode = async () => {
     const code = readLinkCode(codeField.value);
@@ -445,6 +450,52 @@ function otherWays(account: Account, client: SyncClient, onDone: () => void): HT
     keyField,
     actions(button('Link with the recovery key', () => void withKey())),
     said,
+  );
+}
+
+/** Whether the server turned a request down because the account needs a subscription to sync. */
+const subscriptionNeeded = (error: unknown) =>
+  error instanceof SyncError && error.kind === 'subscription-needed';
+
+/**
+ * Where sync is sold, as on Factwright's server, an account without it can't link a browser: it
+ * subscribes in Factwright on the computer first, or runs a server of its own, which is free.
+ */
+function needsSubscription(account: Account): void {
+  const own = isOwn(account.server);
+  show(
+    app,
+    heading('Sync needs a subscription'),
+    h(
+      'p',
+      {},
+      `${own ? `Sync through ${hostOf(account.server)}` : 'Factwright’s sync'} needs a subscription, and this account doesn’t have one now. Subscribe in Factwright on your computer, from Sync, then come back here.`,
+    ),
+    !own &&
+      h(
+        'p',
+        {},
+        'Rather run your own sync server? It’s free. ',
+        h('a', { href: OWN_SERVER_GUIDE, target: '_blank', rel: 'noopener' }, 'How to set one up'),
+        '. Then sign out here, and set Save to Factwright up with it.',
+      ),
+    !own &&
+      h(
+        'p',
+        { class: 'small muted' },
+        'Money’s tight? Email ',
+        h('a', { href: `mailto:${FREE_SYNC_EMAIL}` }, FREE_SYNC_EMAIL),
+        ' and I’ll turn on sync for free. No questions asked.',
+      ),
+    h(
+      'p',
+      { class: 'small muted' },
+      `This is ${account.email}, on ${serverName(account.server)}. If Factwright on your computer syncs with another account or server, sign out and set it up with that one.`,
+    ),
+    actions(
+      button('Check again', () => void link(account), true),
+      button('Sign out', () => void signOut(account).then(() => signedOut())),
+    ),
   );
 }
 
@@ -504,12 +555,20 @@ async function link(account: Account): Promise<void> {
   };
   const failed = async (error: unknown) => {
     if (await signInEnded(error)) stop();
-    else ended(reasonOf(error, account.server));
+    else if (subscriptionNeeded(error)) {
+      stop();
+      needsSubscription(account);
+    } else ended(reasonOf(error, account.server));
   };
 
   let saved: Awaited<ReturnType<SyncClient['keys']>>;
+  // Where sync is sold, how the account has it. A server that doesn't sell sync says nothing.
+  let access: SyncAccess | undefined;
   try {
-    saved = await client.keys();
+    [saved, access] = await Promise.all([
+      client.keys(),
+      client.account().then((info) => info.access),
+    ]);
   } catch (error) {
     await failed(error);
     return;
@@ -533,6 +592,10 @@ async function link(account: Account): Promise<void> {
         button('Sign out', () => void signOut(account).then(() => signedOut())),
       ),
     );
+    return;
+  }
+  if (access && !access.allowed) {
+    needsSubscription(account);
     return;
   }
 

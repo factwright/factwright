@@ -1,5 +1,5 @@
 import { accountKeys, newAccountKey, newLinkCode } from '@factwright/sync';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.tsx';
@@ -344,5 +344,177 @@ describe('a sign-in that didn’t work', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Account' }));
     expect(await screen.findByText(/of 1 GB used/)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('subscribing, where sync is sold', () => {
+  /** The account, with sync as given, on a server that sells it. */
+  const accountWith = (access: object) => ({
+    user: { id: 'sam', email: 'sam@example.com', name: 'Sam', since: '2026-10-01T00:00:00Z' },
+    devices: [],
+    usage: { bytes: 0, limit: 1024 ** 3, records: 0, files: 0 },
+    access,
+  });
+  const PAUSED = {
+    allowed: false,
+    gift: null,
+    subscription: { state: 'ended', renewsAt: '2026-10-30T12:00:00.000Z' },
+  };
+
+  /** A server that sells sync, with Sam signed in and the job hunt last changed on Oct 30. */
+  function selling(access: object, session: object | null = SESSION) {
+    return fakeServer({
+      'GET /api/auth/get-session': () => session,
+      'GET /api/sign-in-options': () => ({
+        providers: ['github'],
+        features: ['approve', 'subscription'],
+      }),
+      'GET /api/account': () => accountWith(access),
+      // A change the job list has no use for, so the job hunt opens empty, as of its time.
+      'GET /api/sync/changes': () => ({
+        changes: [
+          {
+            record: 'A'.repeat(43),
+            version: 2,
+            seq: 1,
+            data: 'gone',
+            file: null,
+            deleted: true,
+            at: '2026-10-30T15:00:00.000Z',
+          },
+        ],
+        cursor: 1,
+        more: false,
+      }),
+      'POST /api/sync/requests': () => new Response(null, { status: 201 }),
+    });
+  }
+
+  it('signs in to subscribe, coming back with the account the app named', async () => {
+    history.replaceState(null, '', '/subscribe?account=sam');
+    const requests = selling(PAUSED, null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Subscribe to sync' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/subscribe?account=sam',
+      errorCallbackURL: '/subscribe?account=sam',
+    });
+  });
+
+  it('says to go back to Factwright after paying, even signed out here', async () => {
+    history.replaceState(null, '', '/subscribe/done');
+    selling(PAUSED, null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Thanks for subscribing' })).toBeTruthy();
+    expect(
+      screen.getByText(/Go back to Factwright: it’s finishing setting up sync\./),
+    ).toBeTruthy();
+  });
+
+  it('subscribes from a browser that isn’t linked, as the app’s browser usually isn’t', async () => {
+    history.replaceState(null, '', '/subscribe');
+    selling({ allowed: false, gift: null, subscription: null });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Subscribe to sync' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Link this browser' })).toBeNull();
+  });
+
+  it('says sync is paused on the jobs page, and how up to date the job hunt is', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    selling(PAUSED);
+    render(<App />);
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toContain('Sync is paused');
+    const day = new Date('2026-10-30T15:00:00.000Z').toLocaleDateString(undefined, {
+      month: 'long',
+      day: 'numeric',
+    });
+    expect(note.textContent).toContain(`What’s here is from ${day}.`);
+    await userEvent.click(screen.getByRole('button', { name: 'Subscribe again' }));
+    expect(location.pathname).toBe('/subscribe');
+  });
+
+  it('says on the jobs page when a payment didn’t go through', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    selling({
+      allowed: true,
+      gift: null,
+      subscription: { state: 'retrying', renewsAt: '2026-10-30T12:00:00.000Z' },
+    });
+    render(<App />);
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toContain('Your card didn’t go through');
+    expect(screen.getByRole('button', { name: 'Update your card' })).toBeTruthy();
+  });
+
+  it('shows no note while the account syncs as usual', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    const requests = selling({
+      allowed: true,
+      gift: null,
+      subscription: { state: 'active', renewsAt: '2026-11-30T12:00:00.000Z' },
+    });
+    render(<App />);
+    expect(await screen.findByText('No jobs yet')).toBeTruthy();
+    await waitFor(() =>
+      expect(requests.some((request) => request.path === '/api/account')).toBe(true),
+    );
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('says a browser can’t link while sync is paused, with a way to subscribe again', async () => {
+    history.replaceState(null, '', '/');
+    const requests = selling(PAUSED);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sync is paused' })).toBeTruthy();
+    // It never asks a computer to approve it, which the server would turn down.
+    expect(requests.some((request) => request.path === '/api/sync/requests')).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Subscribe again' }));
+    expect(location.pathname).toBe('/subscribe');
+  });
+
+  it('asks a new account to subscribe, rather than saying a subscription ended', async () => {
+    history.replaceState(null, '', '/');
+    selling({ allowed: false, gift: null, subscription: null });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Sync needs a subscription' })).toBeTruthy();
+    expect(screen.queryByText(/ended/)).toBeNull();
+  });
+
+  it('says subscribe, not subscribe again, on the jobs page once free sync ended', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    selling({ allowed: false, gift: null, subscription: null });
+    render(<App />);
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toContain('Subscribe, and it catches up.');
+    expect(within(note).getByRole('button', { name: 'Subscribe' })).toBeTruthy();
+  });
+
+  it('comes back to the account page after signing in there, as the app opens it', async () => {
+    history.replaceState(null, '', '/account');
+    const requests = selling(PAUSED, null);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your account' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
+    expect(requests.at(-1)?.body).toEqual({
+      provider: 'github',
+      callbackURL: '/account',
+      errorCallbackURL: '/account',
+    });
+  });
+
+  it('asks nothing about sync of a server that doesn’t sell it', async () => {
+    history.replaceState(null, '', '/');
+    vi.mocked(savedKeys).mockResolvedValue(await accountKeys(newAccountKey()));
+    const requests = server(SESSION);
+    render(<App />);
+    expect(await screen.findByText('No jobs yet')).toBeTruthy();
+    expect(requests.some((request) => request.path === '/api/account')).toBe(false);
   });
 });

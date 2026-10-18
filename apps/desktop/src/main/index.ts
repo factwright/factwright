@@ -409,6 +409,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       opener,
     });
     void sync.start();
+    // Coming back to the app, or the computer waking, asks a paused computer's account whether it
+    // has sync again, as after subscribing from another device.
+    app.on('browser-window-focus', () => sync.lookAgain());
+    powerMonitor.on('resume', () => sync.lookAgain());
+    powerMonitor.on('unlock-screen', () => sync.lookAgain());
     void reminders.start();
     // A call's hour can begin while the computer sleeps, so waking looks again.
     powerMonitor.on('resume', () => reminders.check());

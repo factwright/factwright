@@ -424,6 +424,12 @@ export interface FactwrightApi {
   signOutOfSync(): Promise<EditResult>;
   /** Ends a sign-in with the wrong account, before sync sets up, keeping all this computer has. */
   useDifferentSyncAccount(): Promise<EditResult>;
+  /**
+   * Where sync is sold, for an account without it: opens the sync server's page for subscribing
+   * in the browser, then checks every few seconds until the account has sync, and carries on by
+   * itself, to setting up or to syncing again.
+   */
+  subscribeToSync(): Promise<EditResult>;
   /** Opens the account's page on the web, to download everything or delete the account. */
   openAccountPage(): Promise<void>;
   /** Everything about the user: their answers, notes and confidential names, and how far it's come. */

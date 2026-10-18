@@ -76,6 +76,74 @@ describe('linking a phone', () => {
     expect(onLinked).not.toHaveBeenCalled();
   });
 
+  it('says sync is paused when a code can’t link, where sync is sold, and lets them try again', async () => {
+    const code = newLinkCode();
+    let answered = 0;
+    // The server turns down taking the link: the account's subscription ended.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        answered += 1;
+        return Response.json(
+          {
+            error: 'subscription-needed',
+            message: 'Sync on Factwright’s server needs a subscription.',
+          },
+          { status: 402 },
+        );
+      }),
+    );
+    render(<LinkBrowser account="sam" email="sam@example.com" code={null} onLinked={vi.fn()} />);
+    await userEvent.type(screen.getByLabelText('Code from your computer'), code.text);
+    await userEvent.click(screen.getByRole('button', { name: 'Link' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Linking with a code needs sync, which this account doesn’t have now. Subscribe, then try again. Your recovery key still opens your job hunt here.',
+    );
+    // The form isn't left waiting: it can be sent again.
+    expect(screen.getByRole('button', { name: 'Link' })).toHaveProperty('disabled', false);
+    expect(answered).toBe(1);
+  });
+
+  it('says sync is paused before anyone tries, and still opens the job hunt with the recovery key', async () => {
+    const { keys, recovery, saved } = await anAccount();
+    // Reading stays open while sync is paused: only linking with a code or an approval needs it.
+    fakeServer({ 'GET /api/sync/keys': () => ({ keys: saved }) });
+    const onLinked = vi.fn();
+    const { container } = render(
+      <LinkBrowser
+        account="sam"
+        email="sam@example.com"
+        code={null}
+        needsSync="again"
+        onLinked={onLinked}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Sync is paused' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Subscribe again' })).toBeTruthy();
+    expect(screen.queryByLabelText('Code from your computer')).toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
+    await userEvent.type(screen.getByLabelText('Recovery key'), recovery.text);
+    await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(onLinked).toHaveBeenCalledOnce());
+    expect(onLinked.mock.calls[0]?.[0]).toMatchObject({ id: keys.id });
+  });
+
+  it('says sync needs a subscription to an account that never had one, not that one ended', () => {
+    fakeServer({});
+    render(
+      <LinkBrowser
+        account="sam"
+        email="sam@example.com"
+        code={null}
+        needsSync="first"
+        onLinked={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Sync needs a subscription' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Subscribe' })).toBeTruthy();
+    expect(screen.queryByText(/ended/)).toBeNull();
+  });
+
   it('won’t keep a key that belongs to another account', async () => {
     const { accountKey } = await anAccount();
     const other = await anAccount();

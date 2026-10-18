@@ -97,6 +97,7 @@ const api: FactwrightApi = {
   removeSyncDevice: (id) => ipcRenderer.invoke('sync:remove-device', id),
   signOutOfSync: () => ipcRenderer.invoke('sync:sign-out'),
   useDifferentSyncAccount: () => ipcRenderer.invoke('sync:different-account'),
+  subscribeToSync: () => ipcRenderer.invoke('sync:subscribe'),
   openAccountPage: () => ipcRenderer.invoke('sync:account-page'),
   profile: () => ipcRenderer.invoke('about:profile'),
   saveAnswers: (changes) => ipcRenderer.invoke('about:save', changes),

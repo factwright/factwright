@@ -53,6 +53,53 @@ describe('SyncClient', () => {
     await expect(offline).rejects.toMatchObject({ kind: 'offline' });
   });
 
+  it('says when sync needs a subscription, which trying again won’t fix', async () => {
+    const { client } = fakeServer(
+      json(
+        {
+          error: 'subscription-needed',
+          message: 'Sync on Factwright’s server needs a subscription.',
+        },
+        402,
+      ),
+    );
+    await expect(client.push([])).rejects.toMatchObject({
+      kind: 'subscription-needed',
+      status: 402,
+      code: 'subscription-needed',
+      message: 'Sync on Factwright’s server needs a subscription.',
+    });
+  });
+
+  it('starts paying for sync, and opens the portal, at the https pages the server gives only', async () => {
+    const { client, fetch } = fakeServer(
+      json({ url: 'https://checkout.stripe.com/c/pay/cs_test_1' }),
+      json({ url: 'https://billing.stripe.com/p/session/test_1' }),
+      json({ error: 'has-sync', message: 'This account has sync already.' }, 409),
+      new Response('slow down', { status: 429, headers: { 'retry-after': '10' } }),
+      json({ url: 'javascript:alert(1)' }),
+      json({}),
+    );
+    expect(await client.checkout('year')).toBe('https://checkout.stripe.com/c/pay/cs_test_1');
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(String(url)).toBe('https://app.example/api/billing/checkout');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe('{"period":"year"}');
+    expect(await client.portal()).toBe('https://billing.stripe.com/p/session/test_1');
+    expect(String(fetch.mock.calls[1]?.[0])).toBe('https://app.example/api/billing/portal');
+    await expect(client.checkout('month')).rejects.toMatchObject({
+      kind: 'conflict',
+      code: 'has-sync',
+    });
+    await expect(client.checkout('month')).rejects.toMatchObject({
+      kind: 'slow-down',
+      retryAfter: 10,
+    });
+    // Anything but an https page is the server's mistake, never somewhere to send the browser.
+    await expect(client.portal()).rejects.toMatchObject({ kind: 'server' });
+    await expect(client.checkout('month')).rejects.toMatchObject({ kind: 'server' });
+  });
+
   it('takes an answer about the account or its key that doesn’t make sense as a server problem', async () => {
     const { client } = fakeServer(
       json({ keys: null }),
