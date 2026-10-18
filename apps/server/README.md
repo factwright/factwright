@@ -132,7 +132,7 @@ Until then, and always on a server of your own:
 - **A cancellation** shows as "ending" whether Stripe records it as `cancel_at_period_end` or as `cancel_at`.
 - **The daily check:** the daily job reads back any subscription that should have had word by now, in case a webhook was missed.
 
-**Stripe's API version:** every call the server makes asks for `2026-09-30.endive`, so the default version in Stripe's dashboard can't change what it sends or reads back. Checkout takes Managed Payments from `2026-04-22.dahlia` on. Stripe's events come in the webhook endpoint's own version, which doesn't matter here: the server reads only their type and IDs, then reads the subscription itself.
+**Stripe's API version:** every call the server makes asks for `2026-09-30.endive`, so the default version in Stripe's dashboard can't change what it sends or reads back. Checkout takes Managed Payments from `2026-04-22.dahlia` on. Stripe's events come in the webhook endpoint's own version, which doesn't matter here: the server reads only what kind of event it is and which subscription it names, then reads the subscription itself.
 
 **What's kept:** never card details.
 - **The `syncAccess` table:** each account's gift, Stripe customer and subscription IDs, the subscription's status, when the time paid for ends, and whether it's canceling. The account's export includes it.
@@ -162,7 +162,7 @@ curl -X POST https://app.factwright.com/api/admin/free-sync \
    - factwright.com's terms and privacy policy cover the subscription, and say how it's sold, the way `STRIPE_MANAGED_PAYMENTS` is set. Each has one sentence for it, under Paying for sync (`#paying`): with `"true"`, it's sold through Link, with Sold through Link, LLC, as the merchant of record; with `"false"`, Stripe is only the payment processor. The comment beside each sentence has the other one. Change the setting and both sentences together.
 2. **Managed Payments, or not:** apply for it in Stripe's dashboard, and once Stripe approves, accept its terms there. Only then set `STRIPE_MANAGED_PAYMENTS` to `"true"`. Stripe may turn it on for every new checkout by default, but each checkout says which way it's sold, so the setting decides.
    - Decide before selling starts. It's only for new subscriptions, so any sold before the change stay as they were sold, and the terms have to cover those too.
-   - If Stripe says no, leave it `false`. Checkout then adds no tax: Stripe Tax, the fallback, isn't set up here (`automatic_tax`).
+   - If Stripe says no, leave it `"false"`. Checkout then adds no tax: Stripe Tax, the fallback, isn't set up here (`automatic_tax`).
 3. **In Factwright's own Stripe account, set up:**
    - **The product:** a monthly price of $5 and a yearly price of $50, in US dollars. The app shows those amounts.
      - **Its tax code** must be one Managed Payments takes, such as `txcd_10103000`, software as a service for personal use. Stripe's dashboard marks those "Eligible for Managed Payments".
