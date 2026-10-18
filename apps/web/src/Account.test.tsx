@@ -357,6 +357,10 @@ describe('the account page’s subscription, where sync is sold', () => {
     render(page());
     await screen.findByRole('heading', { name: 'Your subscription' });
     await userEvent.click(screen.getByRole('button', { name: 'Delete my account…' }));
-    expect(screen.getByText(/Your subscription ends with it, straight away\./)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Your subscription ends with it, straight away, and the time left on it isn’t refunded\./,
+      ),
+    ).toBeTruthy();
   });
 });

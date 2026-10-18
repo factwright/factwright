@@ -230,7 +230,8 @@ export function Account({
             <p className={page.lead}>
               Delete your account? Your synced job hunt, its backups and your sign-in go for good.
               The job hunt on your computers stays there.
-              {paying && ' Your subscription ends with it, straight away.'}
+              {paying &&
+                ' Your subscription ends with it, straight away, and the time left on it isn’t refunded.'}
             </p>
             {freshSignIn ? (
               <>

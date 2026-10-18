@@ -236,7 +236,8 @@ export function Subscribe({
           ? `You pay $${SYNC_PRICE.month} now, and it renews automatically at $${SYNC_PRICE.month} a month until you cancel.`
           : `You pay $${SYNC_PRICE.year} now, and it renews automatically at $${SYNC_PRICE.year} a year until you cancel.`}{' '}
         Cancel anytime from your account page, and sync keeps going to the end of what you paid for.
-        Stripe adds tax where it applies, and there are no other fees.
+        Prices are in US dollars, plus any sales tax or VAT where you live. Checkout may offer your
+        own currency, at Stripe’s exchange rate, which includes a fee of a few percent.
         {legal && (
           <>
             {' '}

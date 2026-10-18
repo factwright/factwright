@@ -488,23 +488,25 @@ export class SyncAccount {
         clearInterval(this.pausedTimer);
         return;
       }
-      this.lookWhilePaused(true);
+      this.lookWithoutSync(true);
     }, PAUSED_EVERY_MS);
   }
 
   /**
-   * On coming back to the app, or the computer waking: a computer that's paused asks the account
-   * whether it has sync again, at most once a minute.
+   * On coming back to the app, or the computer waking: a computer that's paused, or waiting to
+   * subscribe, asks the account whether it has sync now, at most once a minute, as it may have
+   * subscribed from another device meanwhile.
    */
   lookAgain(): void {
-    this.lookWhilePaused(false);
+    this.lookWithoutSync(false);
   }
 
-  private lookWhilePaused(now: boolean): void {
+  private lookWithoutSync(now: boolean): void {
     const client = this.client;
     const status = this.current;
+    if (!client || (status.state !== 'paused' && status.state !== 'subscribe')) return;
     // While it waits for the browser, it's asking every few seconds anyway.
-    if (!client || status.state !== 'paused' || status.waiting) return;
+    if (status.waiting) return;
     if (!now && Date.now() - this.pausedLooked < PAUSED_AGAIN_MS) return;
     this.pausedLooked = Date.now();
     this.lookAtAccess(client);
@@ -1119,6 +1121,7 @@ export class SyncAccount {
         },
       };
     } catch (error) {
+      this.subscriptionNeeded(error);
       return failed(reason(error));
     }
   }
@@ -1223,7 +1226,8 @@ export class SyncAccount {
   private pause(access?: SyncAccess): void {
     const runner = this.runner;
     this.runner = null;
-    if (runner) this.stopping = runner.stop();
+    // A round that ends in an error still counts as stopped.
+    if (runner) this.stopping = runner.stop().catch(() => {});
     this.accessEpoch++;
     this.keys = null;
     this.accountKey = null;

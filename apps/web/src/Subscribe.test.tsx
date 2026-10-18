@@ -87,7 +87,7 @@ describe('the subscribe page', () => {
     const terms = await screen.findByRole('link', { name: 'terms of service' });
     expect(terms.getAttribute('href')).toBe('https://factwright.com/terms#paying');
     expect(terms.parentElement?.textContent).toBe(
-      'You pay $5 now, and it renews automatically at $5 a month until you cancel. Cancel anytime from your account page, and sync keeps going to the end of what you paid for. Stripe adds tax where it applies, and there are no other fees. The terms of service say more.',
+      'You pay $5 now, and it renews automatically at $5 a month until you cancel. Cancel anytime from your account page, and sync keeps going to the end of what you paid for. Prices are in US dollars, plus any sales tax or VAT where you live. Checkout may offer your own currency, at Stripe’s exchange rate, which includes a fee of a few percent. The terms of service say more.',
     );
     await userEvent.click(screen.getByRole('radio', { name: /\$50 a year/ }));
     expect(terms.parentElement?.textContent).toMatch(

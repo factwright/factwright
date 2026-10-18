@@ -1786,6 +1786,35 @@ describe('a server that sells sync', () => {
     return mac;
   }
 
+  it('pauses when a link code is turned down, before any change had to be sent', async () => {
+    await freeSync(seller.email);
+    const mac = sellingComputer('Sam’s Mac');
+    await setUpFirstHere(mac);
+    // Free sync taken back, with nothing changed here since, so no round has been turned down.
+    await freeSync(seller.email, true);
+    expect(await mac.sync.makeLinkCode()).toMatchObject({ ok: false });
+    await paused(mac, false);
+  });
+
+  it('asks again on coming back to the app while it waits to subscribe', async () => {
+    const mac = sellingComputer('Sam’s Mac');
+    await mac.sync.start();
+    expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
+    expect(mac.sync.status()).toMatchObject({ state: 'subscribe', waiting: false });
+    // Subscribed from the phone, then back to the app here.
+    await subscription(seller, 'active');
+    mac.sync.lookAgain();
+    await vi.waitFor(
+      () =>
+        expect(mac.sync.status()).toEqual({
+          state: 'setting-up',
+          email: seller.email,
+          firstDevice: true,
+        }),
+      { timeout: 10_000 },
+    );
+  });
+
   it('asks again on coming back to the app, and carries on once the account has sync', async () => {
     const mac = await pausedMac();
     // Subscribed from another device, then back to the app here.
