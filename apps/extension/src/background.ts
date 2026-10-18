@@ -4,6 +4,7 @@ import { ext, type Tab } from './ext.ts';
 import { isSave } from './messages.ts';
 import { isWebPage, readTab } from './read-tab.ts';
 import { type JobToSave, type SaveResult, saveJob } from './save.ts';
+import { serverName } from './server.ts';
 import { needsChecking, toSave } from './tab-job.ts';
 
 /**
@@ -40,15 +41,16 @@ async function save(job: JobToSave): Promise<SaveResult> {
   if (!account?.keys) {
     return { ok: false, reason: 'signed-out', message: 'Set up Save to Factwright first.' };
   }
-  if (!(await canReachSync())) {
+  if (!(await canReachSync(account.server))) {
     return {
       ok: false,
       reason: 'no-access',
-      message: 'The browser doesn’t let Save to Factwright reach Factwright’s sync.',
+      message: `The browser doesn’t let Save to Factwright reach ${serverName(account.server)}.`,
     };
   }
-  const result = await saveJob(clientFor(account.token), account.keys, job, {
+  const result = await saveJob(clientFor(account.server, account.token), account.keys, job, {
     device: `Save to Factwright in ${browserName()}`,
+    server: serverName(account.server),
   });
   if (!result.ok && result.reason === 'signed-out') await forgetAccount();
   return result;

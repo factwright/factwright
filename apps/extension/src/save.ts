@@ -66,6 +66,8 @@ const TRIES = 3;
 export interface SaveDeps {
   /** What the job's records say made them, such as "Save to Factwright in Chrome". */
   device: string;
+  /** The sync server as the person knows it, to name it when it can't be reached. */
+  server?: string;
   now?: () => Date;
   uuid?: () => string;
   /** Waits before trying again: a second, then two. */
@@ -151,7 +153,7 @@ function hasLink(row: RowRecord['row'], url: string): boolean {
 }
 
 /** What went wrong, in words, by what the sync client says. */
-function failed(error: unknown): SaveResult {
+function failed(error: unknown, server = 'Factwright’s sync'): SaveResult {
   if (error instanceof SyncError) {
     if (error.kind === 'signed-out') {
       return { ok: false, reason: 'signed-out', message: 'Save to Factwright was signed out.' };
@@ -160,7 +162,7 @@ function failed(error: unknown): SaveResult {
       return {
         ok: false,
         reason: 'offline',
-        message: 'Couldn’t reach Factwright’s sync. Try again.',
+        message: `Couldn’t reach ${server}. Try again.`,
       };
     }
     if (error.kind === 'full') {
@@ -251,7 +253,7 @@ export async function saveJob(
     }
     return { ok: false, reason: 'failed', message: 'Too many jobs with that company and title.' };
   } catch (error) {
-    return failed(error);
+    return failed(error, deps.server);
   }
 }
 

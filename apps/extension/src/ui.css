@@ -49,7 +49,8 @@ label {
 }
 
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="url"] {
   width: 100%;
   font: inherit;
   color: inherit;
@@ -61,6 +62,7 @@ input[type="password"] {
 
 input[type="text"]:focus-visible,
 input[type="password"]:focus-visible,
+input[type="url"]:focus-visible,
 summary:focus-visible,
 .posting:focus-visible,
 button:focus-visible,
@@ -79,6 +81,86 @@ a:focus-visible {
 
 .check input {
   margin-top: 3px;
+}
+
+/* Setup's choice of sync: each a card to click anywhere on, which fills in once it's picked. */
+.choices {
+  border: 0;
+  margin: var(--fw-space-4) 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.choices legend {
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: var(--fw-space-2);
+}
+
+.choice {
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+  padding: var(--fw-space-3) var(--fw-space-4);
+  margin-bottom: var(--fw-space-2);
+}
+
+.choice:has(input[type="radio"]:checked) {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent-soft);
+}
+
+.choice:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+.choice .pick {
+  display: flex;
+  gap: var(--fw-space-3);
+  align-items: flex-start;
+  margin: 0;
+  color: var(--fw-text);
+  font-size: var(--fw-text-base);
+  cursor: pointer;
+}
+
+.choice input[type="radio"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--fw-accent);
+  cursor: pointer;
+}
+
+.choice input[type="radio"]:focus-visible {
+  outline: none;
+}
+
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.words .title {
+  font-weight: 600;
+}
+
+.words .about {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+/* Your own server's address, under its choice, in line with the choice's words. */
+.address {
+  margin-left: calc(16px + var(--fw-space-3));
+}
+
+.address p {
+  margin: var(--fw-space-2) 0 0;
 }
 
 .actions {
