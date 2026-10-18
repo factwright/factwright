@@ -1,14 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, posix, win32 } from 'node:path';
 import { SAVE_HELPER } from '@factwright/core';
 import { EXTENSION_IDS } from '@factwright/sync';
@@ -77,9 +70,10 @@ export interface Disk {
   read(path: string): string | null;
   /**
    * Writes a file whole, making its folder if it's missing: first to a hidden file beside it,
-   * then moved into place, so a browser never reads half of one.
+   * then moved into place, so a browser never reads half of one. It runs off the app's main
+   * thread, as macOS may ask the user before letting it through, and the app shouldn't stall.
    */
-  write(path: string, text: string): void;
+  write(path: string, text: string): Promise<void>;
 }
 
 /** This computer's own files. */
@@ -112,15 +106,15 @@ export const localDisk: Disk = {
       return null;
     }
   },
-  write(path, text) {
+  async write(path, text) {
     const folder = dirname(path);
-    mkdirSync(folder, { recursive: true });
+    await mkdir(folder, { recursive: true });
     const draft = join(folder, `.${basename(path)}.${randomBytes(4).toString('hex')}.tmp`);
     try {
-      writeFileSync(draft, text);
-      renameSync(draft, path);
+      await writeFile(draft, text);
+      await rename(draft, path);
     } finally {
-      rmSync(draft, { force: true });
+      await rm(draft, { force: true });
     }
   },
 };
@@ -264,11 +258,13 @@ interface Plan {
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** Whether the system refused, as macOS does when an app reaches another app's data unallowed. */
-const refused = (error: unknown) => {
-  const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === 'EPERM' || code === 'EACCES';
-};
+/**
+ * Whether macOS refused, as it does when an app reaches another app's data unallowed: "Operation
+ * not permitted". "Permission denied" is the folder's own permissions instead, which Files & Folders
+ * can't change, and Windows refusing is something else again, such as another program in the way.
+ */
+const refusedByMacOS = (platform: NodeJS.Platform, error: unknown) =>
+  platform === 'darwin' && (error as NodeJS.ErrnoException | null)?.code === 'EPERM';
 
 const jsonText = (value: object) => `${JSON.stringify(value, null, 2)}\n`;
 
@@ -423,13 +419,22 @@ function readRecord(text: string | null): HelperRecord | null {
 }
 
 /** Writes the record. Without it, the next start registers again, which does no harm. */
-function writeRecord(disk: Disk, path: string, record: object): void {
+async function writeRecord(disk: Disk, path: string, record: object): Promise<void> {
   try {
-    disk.write(path, jsonText(record));
+    await disk.write(path, jsonText(record));
   } catch {
     // As above.
   }
 }
+
+/**
+ * Whether the manifests the record notes read as they would now: written for this helper, with
+ * the same text. A record from 0.9.0 notes no digest, but it was written for the stores' IDs, as
+ * now, so for the same helper it reads the same.
+ */
+const current = (record: HelperRecord, deps: SaveHelperDeps, texts: ManifestTexts) =>
+  record.helper === deps.helper &&
+  (record.manifests === null || record.manifests === digestOf(texts));
 
 /**
  * Whether Windows is registered already: the record is for this version and helper, lists every
@@ -466,10 +471,10 @@ async function writeAll(
   const unwritten = new Map<string, string>();
   for (const file of plan.files) {
     try {
-      disk.write(file.path, file.text);
+      await disk.write(file.path, file.text);
     } catch (error) {
       unwritten.set(file.path, messageOf(error));
-      fail(file.browsers, messageOf(error), refused(error));
+      fail(file.browsers, messageOf(error), refusedByMacOS(deps.platform, error));
     }
   }
   // The system's own reg.exe, by its whole path: a program run by its name alone is looked for
@@ -512,7 +517,7 @@ async function registerOnWindows(
   if (!again && upToDate(plan, deps, disk)) return { skipped: 'unchanged' };
   const result = await writeAll(plan, deps, disk);
   if (result.registered.length > 0 || result.failed.length === 0) {
-    writeRecord(disk, plan.record, {
+    await writeRecord(disk, plan.record, {
       version: deps.version,
       helper: deps.helper,
       browsers: result.registered,
@@ -540,7 +545,7 @@ async function setUpOnMac(
   const kept = (list: string[] | undefined) => (id: string) =>
     (list ?? []).includes(id) && !tried.has(id);
   const ids = BROWSERS.map((browser) => browser.id);
-  writeRecord(disk, plan.record, {
+  await writeRecord(disk, plan.record, {
     version: deps.version,
     helper: deps.helper,
     browsers: ids.filter((id) => kept(before?.browsers)(id) || result.registered.includes(id)),
@@ -589,15 +594,20 @@ export async function registerSaveHelper(deps: SaveHelperDeps): Promise<Registra
   if (deps.platform === 'win32') return registerOnWindows(deps, disk, texts, false);
   const record = readRecord(disk.read(recordPath(deps)));
   if (record === null || record.browsers.length === 0) return { skipped: 'not-set-up' };
-  if (record.helper === deps.helper && record.manifests === digestOf(texts)) {
-    // The manifests read as they would now: only the record learns the version.
-    if (record.version !== deps.version) {
-      writeRecord(disk, recordPath(deps), { ...record, version: deps.version });
+  if (current(record, deps, texts)) {
+    // The manifests read as they would now: only the record learns the version, and the digest.
+    const digest = digestOf(texts);
+    if (record.version !== deps.version || record.manifests !== digest) {
+      await writeRecord(disk, recordPath(deps), {
+        ...record,
+        version: deps.version,
+        manifests: digest,
+      });
     }
     return { skipped: 'unchanged' };
   }
-  // The app moved, the manifests would read differently, or the record is from before there was a
-  // digest: the browsers set up get theirs written again.
+  // The app moved, or the manifests would read differently: the browsers set up get theirs
+  // written again.
   return setUpOnMac(
     deps,
     disk,
@@ -623,10 +633,7 @@ export async function setUpSaveHelper(
   if (deps.platform === 'win32') return registerOnWindows(deps, disk, texts, true);
   const record = readRecord(disk.read(recordPath(deps)));
   const asked = macBrowsers(deps, disk).filter((browser) => !only || only.includes(browser.id));
-  const stale =
-    record && (record.helper !== deps.helper || record.manifests !== digestOf(texts))
-      ? record.browsers
-      : [];
+  const stale = record && !current(record, deps, texts) ? record.browsers : [];
   const browsers = BROWSERS.filter(
     (browser) => asked.includes(browser) || stale.includes(browser.id),
   );
@@ -673,6 +680,7 @@ export function saveHelperStatus(deps: SaveHelperDeps): SaveHelperView {
       id: browser.id,
       name: browser.name,
       state: stateOf(browser.id),
+      allow: deps.platform === 'darwin' ? [...browser.mac.allow] : [],
     })),
   };
 }

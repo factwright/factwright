@@ -1,6 +1,6 @@
 # The save helper
 
-`factwright-save` is the small program Save to Factwright, the browser extension, saves through on this computer, with no account and no sync. Factwright's installers carry it, and the app registers it with each browser it finds as the native messaging host `com.factwright.save`, which only Save to Factwright may start. [Save to Factwright on this computer](../README.md#save-to-factwright-on-this-computer) has the whole picture.
+`factwright-save` is the small program Save to Factwright, the browser extension, saves through on this computer, with no account and no sync. Factwright's installers carry it, and the app registers it as the native messaging host `com.factwright.save`, which only Save to Factwright may start: on Windows with each browser it finds as it starts, and on a Mac with each browser the user sets up in its Save to Factwright window. [Save to Factwright on this computer](../README.md#save-to-factwright-on-this-computer) has the whole picture.
 
 ## What it does
 The browser starts it for each message from the extension, and talks to it over stdin and stdout, as native messaging does: each message, and each answer, is its length in four bytes, then that much JSON. It reads one message, answers it, and stops.

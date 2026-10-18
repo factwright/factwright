@@ -116,3 +116,18 @@
   margin: 0;
   padding-left: 18px;
 }
+
+/* What setting a browser up came to, read out and focused once it's done. */
+.said {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+  line-height: 1.5;
+}
+
+.said:empty {
+  display: none;
+}
+
+.said:focus {
+  outline: none;
+}

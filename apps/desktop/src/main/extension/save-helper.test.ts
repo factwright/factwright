@@ -7,8 +7,8 @@ const VIEW: SaveHelperView = {
   unavailable: null,
   onRequest: true,
   browsers: [
-    { id: 'chrome', name: 'Google Chrome', state: 'blocked' },
-    { id: 'firefox', name: 'Firefox', state: 'ready' },
+    { id: 'chrome', name: 'Google Chrome', state: 'blocked', allow: ['Google Chrome'] },
+    { id: 'firefox', name: 'Firefox', state: 'ready', allow: ['Firefox'] },
   ],
 };
 

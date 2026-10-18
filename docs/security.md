@@ -290,9 +290,9 @@ If you lose every device and your recovery key, your data can't be recovered, by
   and `factwright-save.exe` beside `Factwright.exe` on Windows, signed with the app, and checked
   with it before a release goes out. The app registers it for Save to Factwright alone: on
   Windows with each browser it finds, as it starts and after each update, and on a Mac with each
-  browser the user sets up in its Save to Factwright window, as macOS asks them first: Chrome,
-  Edge, Brave, Arc, Vivaldi and Firefox. Arc for Windows says nothing of where it looks, so it's registered by Chrome's key,
-  which Chromium's own browsers fall back to.
+  browser the user sets up in its Save to Factwright window, which macOS may ask them about:
+  Chrome, Chromium, Edge, Brave, Arc, Vivaldi and Firefox. Arc for Windows says nothing of where
+  it looks, so it's registered by Chrome's key, which Chromium's own browsers fall back to.
   - On a Mac, that's a small file naming the helper in each browser's folder in
     `~/Library/Application Support`. On Windows, it's a key under
     `HKEY_CURRENT_USER\Software`, naming such a file in Factwright's data folder.

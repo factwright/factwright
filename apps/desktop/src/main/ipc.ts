@@ -604,9 +604,12 @@ export function registerIpc({
   // Save to Factwright saving to this computer, from its window: where each browser stands,
   // setting browsers up, which macOS may ask the user about, and macOS's Files & Folders settings.
   answer('helper:status', () => saveHelper.status());
-  answer('helper:set-up', (only) =>
-    only === undefined || isBrowsers(only) ? saveHelper.setUp(only) : REFUSED,
-  );
+  answer('helper:set-up', (only) => {
+    // Refused with an error, which the window shows, as it expects where browsers stand.
+    if (only !== undefined && !isBrowsers(only))
+      throw new Error('Those aren’t browsers to set up.');
+    return saveHelper.setUp(only);
+  });
   answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
   registerAboutIpc(answer, { about, previews, templates });

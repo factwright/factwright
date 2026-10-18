@@ -18,6 +18,7 @@ const UNAVAILABLE: readonly HelperUnavailable[] = [
  * Sample answers for the Save to Factwright window, which ?helper picks:
  * - unset: Google Chrome isn't set up yet, and Firefox is ready.
  * - blocked: macOS blocked Google Chrome.
+ * - brave: Brave too, which macOS blocked, and whose file goes in Chrome's folder as well.
  * - refuse: setting a browser up is refused, as when the user chooses Don't Allow.
  * - none: no browser Save to Factwright runs in is installed.
  * - development, translocated, disk-image, no-helper or other-system: this copy can't set the
@@ -39,8 +40,19 @@ export function sampleSaveHelper(
             id: 'chrome',
             name: 'Google Chrome',
             state: !onRequest ? 'ready' : choice === 'blocked' ? 'blocked' : 'not-set-up',
+            allow: onRequest ? ['Google Chrome'] : [],
           },
-          { id: 'firefox', name: 'Firefox', state: 'ready' },
+          ...(choice === 'brave'
+            ? [
+                {
+                  id: 'brave',
+                  name: 'Brave',
+                  state: 'blocked' as const,
+                  allow: ['Google Chrome', 'Brave Browser'],
+                },
+              ]
+            : []),
+          { id: 'firefox', name: 'Firefox', state: 'ready', allow: onRequest ? ['Firefox'] : [] },
         ];
   const view = (): SaveHelperView => ({
     unavailable,

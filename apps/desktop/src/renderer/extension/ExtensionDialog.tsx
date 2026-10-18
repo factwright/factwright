@@ -1,7 +1,7 @@
 import { EXTENSION_URL } from '@factwright/core';
 import { Button, Dialog, DialogActions, Notice } from '@factwright/ui';
 import { Check } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type {
   HelperBrowserView,
@@ -24,10 +24,28 @@ const UNAVAILABLE: Record<HelperUnavailable, string> = {
     'This copy of Factwright is missing the small helper your browsers reach it through. Install it again from factwright.com.',
 };
 
+/** Names joined as people say them: "A", "A and B", "A, B and C". */
+const listed = (names: string[]) =>
+  names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+
+/** What became of setting a browser up, said once it's done. */
+function outcome(browser: HelperBrowserView, result: SetUpResult): string {
+  const now = result.view.browsers.find((each) => each.id === browser.id);
+  const problem = result.problems.find((each) => each.id === browser.id);
+  if (now?.state === 'ready' && !problem) return `${browser.name} is ready.`;
+  if (now?.state === 'blocked') {
+    return `macOS didn’t let Factwright set up ${browser.name}. The steps below say how to allow it.`;
+  }
+  return problem
+    ? `${browser.name} couldn’t be set up: ${problem.message}`
+    : `${browser.name} isn’t set up yet. Try again.`;
+}
+
 /**
  * The browser extension's window: what Save to Factwright does, where to get it, and saving
- * straight to Factwright on this computer. On a Mac, each browser is set up here, as macOS asks
- * the user first. Nothing touches a browser's folders until they choose Set up.
+ * straight to Factwright on this computer. On a Mac, each browser is set up here, as macOS keeps
+ * each browser's folder to that browser. Nothing touches a browser's folder until the user
+ * chooses Set up.
  */
 export function ExtensionDialog({
   api,
@@ -37,16 +55,17 @@ export function ExtensionDialog({
   onClose: () => void;
 }) {
   const [view, setView] = useState<SaveHelperView | null>(null);
-  const [problems, setProblems] = useState<SetUpResult['problems']>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [said, setSaid] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const status = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     let live = true;
     api
       .saveHelperStatus()
-      .then((status) => {
-        if (live) setView(status);
+      .then((found) => {
+        if (live) setView(found);
       })
       .catch(() => {
         if (live)
@@ -57,23 +76,30 @@ export function ExtensionDialog({
     };
   }, [api]);
 
+  // What setting up came to is said where it's read out, and focus goes there, as the button that
+  // was clicked may be gone.
+  useEffect(() => {
+    if (said) status.current?.focus();
+  }, [said]);
+
   const setUp = async (browser: HelperBrowserView) => {
     setBusy(browser.id);
+    setSaid(null);
     setFailed(null);
     try {
       const result = await api.setUpSaveHelper([browser.id]);
       setView(result.view);
-      setProblems(result.problems);
+      setSaid(outcome(browser, result));
     } catch {
-      setFailed(`Setting up ${browser.name} didn’t work. Try again.`);
+      setSaid(`Setting up ${browser.name} didn’t work. Try again.`);
     } finally {
       setBusy(null);
     }
   };
 
   const blocked = view?.browsers.filter((browser) => browser.state === 'blocked') ?? [];
-  // A problem macOS caused shows as its browser's state and the steps below, the rest as said.
-  const otherProblems = problems.filter((problem) => !problem.blocked);
+  // The apps to turn on in Files & Folders: Brave's file goes in Chrome's folder too.
+  const allow = [...new Set(blocked.flatMap((browser) => browser.allow))];
 
   return (
     <Dialog
@@ -82,7 +108,7 @@ export function ExtensionDialog({
       onClose={onClose}
     >
       <p className={styles.intro}>
-        Get it for Chrome or Firefox on{' '}
+        Get it on{' '}
         <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
           Factwright’s extension page
         </a>
@@ -98,15 +124,16 @@ export function ExtensionDialog({
         {view && !view.unavailable && (
           <>
             <p className={styles.intro}>
-              Save to Factwright can save straight to Factwright here, with no account and no sync.
+              From version 0.2, Save to Factwright can save straight to Factwright here, with no
+              account and no sync.
               {view.onRequest
-                ? ' Each browser finds Factwright through a small file Factwright adds to that browser’s folder. macOS keeps each app’s folder to itself, so it asks you first, once for each browser: choose Allow.'
+                ? ' Each browser finds Factwright through a small file Factwright adds to that browser’s folder, which macOS keeps to that browser, so you set each one up here. macOS may ask you to allow it: choose Allow. If it blocks it instead, this window shows how to allow it.'
                 : ' Factwright tells each browser where to find it when it starts.'}
             </p>
             {view.browsers.length === 0 ? (
               <p className={styles.hint}>
-                Factwright didn’t find a browser Save to Factwright runs in: Chrome, Edge, Brave,
-                Arc, Vivaldi or Firefox.
+                Factwright didn’t find a browser Save to Factwright runs in: Chrome, Chromium, Edge,
+                Brave, Arc, Vivaldi or Firefox.
               </p>
             ) : (
               <ul className={styles.browsers} aria-label="Your browsers">
@@ -114,35 +141,47 @@ export function ExtensionDialog({
                   <li key={browser.id} className={styles.browser}>
                     <span className={styles.name}>{browser.name}</span>
                     <BrowserState browser={browser} />
-                    {browser.state !== 'ready' && (
-                      <span className={styles.action}>
-                        <Button
-                          size="sm"
-                          variant={browser.state === 'not-set-up' ? 'primary' : 'secondary'}
-                          disabled={busy !== null}
-                          aria-label={`${browser.state === 'not-set-up' ? 'Set up' : 'Try again for'} ${browser.name}`}
-                          onClick={() => void setUp(browser)}
-                        >
-                          {busy === browser.id
-                            ? 'Setting up…'
-                            : browser.state === 'not-set-up'
-                              ? 'Set up'
-                              : 'Try again'}
-                        </Button>
-                      </span>
-                    )}
+                    <span className={styles.action}>
+                      <Button
+                        size="sm"
+                        variant={
+                          browser.state === 'not-set-up'
+                            ? 'primary'
+                            : browser.state === 'ready'
+                              ? 'quiet'
+                              : 'secondary'
+                        }
+                        disabled={busy !== null}
+                        aria-label={
+                          browser.state === 'ready'
+                            ? `Set up ${browser.name} again`
+                            : browser.state === 'blocked'
+                              ? `Try again for ${browser.name}`
+                              : `Set up ${browser.name}`
+                        }
+                        onClick={() => void setUp(browser)}
+                      >
+                        {busy === browser.id
+                          ? 'Setting up…'
+                          : browser.state === 'ready'
+                            ? 'Set up again'
+                            : browser.state === 'blocked'
+                              ? 'Try again'
+                              : 'Set up'}
+                      </Button>
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
+            <p ref={status} className={styles.said} role="status" tabIndex={-1}>
+              {said}
+            </p>
             {blocked.length > 0 && (
               <Notice title="To let macOS allow it">
                 <ol className={styles.steps}>
                   <li>Open System Settings, then Privacy & Security, then Files & Folders.</li>
-                  <li>
-                    Under Factwright, turn on {blocked.map((browser) => browser.name).join(' and ')}
-                    .
-                  </li>
+                  <li>Under Factwright, turn on {listed(allow)}.</li>
                   <li>Come back here and choose Try again.</li>
                 </ol>
                 <p className={`${styles.hint} ${styles.open}`}>
@@ -156,14 +195,6 @@ export function ExtensionDialog({
                 </p>
               </Notice>
             )}
-            {otherProblems.map((problem) => (
-              <p key={problem.id} className={styles.problem} role="alert">
-                {problem.name} couldn’t be set up: {problem.message}
-              </p>
-            ))}
-            <p className={styles.hint}>
-              Saving to this computer needs Save to Factwright 0.2 or later.
-            </p>
           </>
         )}
         {failed && (

@@ -39,16 +39,18 @@ const row = (name: string) => {
   return within(item);
 };
 
+/** The line that says what setting a browser up came to. */
+const said = () => screen.getByRole('status');
+
 describe('ExtensionDialog', () => {
-  it('says where each browser stands, and sets one up only when asked', async () => {
+  it('says where each browser stands, and sets one up only when asked, saying how it went', async () => {
     const api = sampled();
     const { container } = render(<ExtensionDialog api={api} onClose={vi.fn()} />);
     await screen.findByRole('list', { name: 'Your browsers' });
     expect(row('Google Chrome').getByText('Not set up')).toBeTruthy();
     expect(row('Firefox').getByText('Ready')).toBeTruthy();
-    expect(
-      screen.getByText(/macOS keeps each app’s folder to itself, so it asks you first/),
-    ).toBeTruthy();
+    expect(screen.getByText(/From version 0.2, Save to Factwright can save straight/)).toBeTruthy();
+    expect(screen.getByText(/macOS may ask you to allow it: choose Allow/)).toBeTruthy();
     // Looking sets nothing up.
     expect(api.setUpSaveHelper).not.toHaveBeenCalled();
     expect((await axe.run(container)).violations).toEqual([]);
@@ -56,7 +58,11 @@ describe('ExtensionDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set up Google Chrome' }));
     expect(api.setUpSaveHelper).toHaveBeenCalledWith(['chrome']);
     expect(await row('Google Chrome').findByText('Ready', {}, { timeout: 2000 })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Set up|Try again/ })).toBeNull();
+    // The button that was clicked is gone: what happened is said, and focus goes there.
+    expect(said().textContent).toBe('Google Chrome is ready.');
+    expect(document.activeElement).toBe(said());
+    // A browser that's ready can be set up again, as when its file has gone.
+    expect(screen.getByRole('button', { name: 'Set up Google Chrome again' })).toBeTruthy();
   });
 
   it('says how to let macOS allow a browser it refused, and opens Files & Folders', async () => {
@@ -66,21 +72,34 @@ describe('ExtensionDialog', () => {
     expect(
       await row('Google Chrome').findByText('macOS said no', {}, { timeout: 2000 }),
     ).toBeTruthy();
+    expect(said().textContent).toBe(
+      'macOS didn’t let Factwright set up Google Chrome. The steps below say how to allow it.',
+    );
     const note = screen.getByRole('note');
     expect(within(note).getByText('To let macOS allow it')).toBeTruthy();
     expect(within(note).getByText('Under Factwright, turn on Google Chrome.')).toBeTruthy();
-    // macOS refusing shows as the browser's state and these steps, not as an error.
-    expect(screen.queryByRole('alert')).toBeNull();
     await userEvent.click(within(note).getByRole('button', { name: 'Open Files & Folders' }));
     expect(api.openFilesAndFolders).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Try again for Google Chrome' })).toBeTruthy();
+  });
+
+  it('names each app to allow, as Files & Folders does, Chrome’s too for Brave', async () => {
+    render(<ExtensionDialog api={sampled('brave')} onClose={vi.fn()} />);
+    await screen.findByRole('list', { name: 'Your browsers' });
+    expect(
+      within(screen.getByRole('note')).getByText(
+        'Under Factwright, turn on Google Chrome and Brave Browser.',
+      ),
+    ).toBeTruthy();
   });
 
   it('says in words what went wrong besides macOS refusing', async () => {
     const view: SaveHelperView = {
       unavailable: null,
       onRequest: true,
-      browsers: [{ id: 'chrome', name: 'Google Chrome', state: 'not-set-up' }],
+      browsers: [
+        { id: 'chrome', name: 'Google Chrome', state: 'not-set-up', allow: ['Google Chrome'] },
+      ],
     };
     const result: SetUpResult = {
       view,
@@ -95,10 +114,22 @@ describe('ExtensionDialog', () => {
     };
     render(<ExtensionDialog api={api} onClose={vi.fn()} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Set up Google Chrome' }));
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Google Chrome couldn’t be set up: The disk is full.',
-    );
+    expect(said().textContent).toBe('Google Chrome couldn’t be set up: The disk is full.');
     expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('says so when setting up fails outright', async () => {
+    const api = {
+      ...sampled(),
+      setUpSaveHelper: vi.fn(async (): Promise<SetUpResult> => {
+        throw new Error('Those aren’t browsers to set up.');
+      }),
+    };
+    render(<ExtensionDialog api={api} onClose={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Set up Google Chrome' }));
+    expect(said().textContent).toBe('Setting up Google Chrome didn’t work. Try again.');
+    // What the window knew still shows.
+    expect(row('Google Chrome').getByText('Not set up')).toBeTruthy();
   });
 
   it('says why this copy can’t set up the browsers', async () => {
@@ -113,7 +144,7 @@ describe('ExtensionDialog', () => {
   it('says when no browser it runs in is installed', async () => {
     render(<ExtensionDialog api={sampled('none')} onClose={vi.fn()} />);
     expect(
-      await screen.findByText(/didn’t find a browser Save to Factwright runs in/),
+      await screen.findByText(/didn’t find a browser Save to Factwright runs in: Chrome, Chromium/),
     ).toBeTruthy();
   });
 

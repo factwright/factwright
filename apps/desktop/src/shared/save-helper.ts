@@ -19,6 +19,11 @@ export interface HelperBrowserView {
   /** Its name, as the app shows it, such as "Google Chrome". */
   name: string;
   state: HelperState;
+  /**
+   * On a Mac, the apps whose folders it reads, as Files & Folders names them, where the user lets
+   * Factwright reach them: Brave's include Google Chrome's. None on Windows.
+   */
+  allow: string[];
 }
 
 /**

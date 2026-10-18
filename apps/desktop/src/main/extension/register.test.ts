@@ -86,6 +86,8 @@ let refuse: (args: readonly string[]) => boolean;
 let touched: string[];
 /** The paths macOS keeps from Factwright, as it does another app's data, until the user allows it. */
 let guarded: (path: string) => boolean;
+/** How a guarded path refuses: macOS's own "Operation not permitted", unless a test says otherwise. */
+let refusal: 'EPERM' | 'EACCES';
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'factwright-register-'));
@@ -94,6 +96,7 @@ beforeEach(() => {
   refuse = () => false;
   touched = [];
   guarded = () => false;
+  refusal = 'EPERM';
 });
 
 afterEach(() => {
@@ -117,9 +120,7 @@ const onDisk = (path: string) =>
 function reach(path: string): void {
   touched.push(path);
   if (guarded(path)) {
-    throw Object.assign(new Error(`EPERM: operation not permitted, open '${path}'`), {
-      code: 'EPERM',
-    });
+    throw Object.assign(new Error(`${refusal}: refused, open '${path}'`), { code: refusal });
   }
 }
 
@@ -160,10 +161,10 @@ const disk: Disk = {
     }
     return localDisk.read(onDisk(path));
   },
-  write: (path, text) => {
+  write: async (path, text) => {
     writes.push(path);
     reach(path);
-    localDisk.write(onDisk(path), text);
+    await localDisk.write(onDisk(path), text);
   },
 };
 
@@ -196,11 +197,10 @@ const inBrowsers = () =>
   touched.filter((path) => path.startsWith(`${SUPPORT}/`) && !path.startsWith(`${MAC_APP_HOME}/`));
 
 /** A record written as Factwright 0.9.0 wrote it, before there was a digest of the manifests. */
-const oldRecord = (browsers: string[]) =>
-  localDisk.write(
-    onDisk(MAC_RECORD),
-    JSON.stringify({ version: '0.9.0', helper: MAC_HELPER, browsers }),
-  );
+function oldRecord(browsers: string[], helper = MAC_HELPER): void {
+  mkdirSync(dirname(onDisk(MAC_RECORD)), { recursive: true });
+  writeFileSync(onDisk(MAC_RECORD), JSON.stringify({ version: '0.9.0', helper, browsers }));
+}
 
 const DIGEST = expect.stringMatching(/^[0-9a-f]{64}$/);
 
@@ -265,8 +265,8 @@ describe('registering on a Mac', () => {
       unavailable: null,
       onRequest: true,
       browsers: [
-        { id: 'chrome', name: 'Google Chrome', state: 'not-set-up' },
-        { id: 'firefox', name: 'Firefox', state: 'not-set-up' },
+        { id: 'chrome', name: 'Google Chrome', state: 'not-set-up', allow: ['Google Chrome'] },
+        { id: 'firefox', name: 'Firefox', state: 'not-set-up', allow: ['Firefox'] },
       ],
     });
     expect(inBrowsers()).toEqual([]);
@@ -298,9 +298,9 @@ describe('registering on a Mac', () => {
     expect(existsSync(onDisk(`${SUPPORT}/Microsoft Edge`))).toBe(false);
     expect(existsSync(onDisk(`${SUPPORT}/Vivaldi`))).toBe(false);
     expect(saveHelperStatus(onMac()).browsers).toEqual([
-      { id: 'chrome', name: 'Google Chrome', state: 'ready' },
-      { id: 'edge', name: 'Microsoft Edge', state: 'not-set-up' },
-      { id: 'firefox', name: 'Firefox', state: 'ready' },
+      { id: 'chrome', name: 'Google Chrome', state: 'ready', allow: ['Google Chrome'] },
+      { id: 'edge', name: 'Microsoft Edge', state: 'not-set-up', allow: ['Microsoft Edge'] },
+      { id: 'firefox', name: 'Firefox', state: 'ready', allow: ['Firefox'] },
     ]);
     // Asked for none in particular, every browser found.
     expect((await setUp(onMac())).result).toEqual({
@@ -320,6 +320,16 @@ describe('registering on a Mac', () => {
     expect(readJson(manifestIn('BraveSoftware/Brave-Browser'))).toStrictEqual(
       chromeManifest(MAC_HELPER),
     );
+    // Where macOS keeps Chrome's folder, Brave is blocked, and the steps name Chrome to allow too.
+    rmSync(onDisk(MAC_RECORD));
+    guarded = (path) => path.startsWith(`${SUPPORT}/Google/Chrome/`);
+    expect((await setUp(onMac(), ['brave'])).result).toMatchObject({
+      registered: [],
+      failed: [{ browser: 'brave', blocked: true }],
+    });
+    expect(saveHelperStatus(onMac()).browsers).toEqual([
+      { id: 'brave', name: 'Brave', state: 'blocked', allow: ['Google Chrome', 'Brave Browser'] },
+    ]);
   });
 
   it('notes a browser macOS refused, which the others don’t wait on, until the user allows it', async () => {
@@ -344,7 +354,15 @@ describe('registering on a Mac', () => {
     });
     expect(inBrowsers()).toEqual([]);
 
-    // Something else in the way is a failure, but not macOS refusing.
+    // A folder's own permissions are a failure, but not macOS refusing: Files & Folders can't help.
+    refusal = 'EACCES';
+    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+      registered: [],
+      failed: [{ browser: 'chrome', message: expect.stringContaining('EACCES'), blocked: false }],
+    });
+    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
+
+    // Nor is something else in the way.
     guarded = () => false;
     mkdirSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
     expect((await setUp(onMac(), ['chrome'])).result).toEqual({
@@ -404,14 +422,16 @@ describe('registering on a Mac', () => {
     expect(readJson(manifestIn('Google/Chrome')).path).toBe(MAC_HELPER);
   });
 
-  it('keeps current a browser 0.9.0 registered on its own, and leaves alone a record of none', async () => {
-    // 0.9.0 registered Chrome as it started, where macOS let it, and noted no digest.
+  it('takes over 0.9.0’s record without reaching the browsers, unless the app has moved since', async () => {
+    // 0.9.0 registered Chrome as it started, where macOS let it, and noted no digest. Its
+    // manifests read as 0.9.1's would for the same helper, so the record only gains the digest.
     oldRecord(['chrome']);
     expect(await register(onMac({ version: '0.9.1' }))).toEqual({
-      result: { registered: ['chrome'], failed: [] },
-      writes: [manifestIn('Google/Chrome'), MAC_RECORD],
+      result: { skipped: 'unchanged' },
+      writes: [MAC_RECORD],
       runs: [],
     });
+    expect(inBrowsers()).toEqual([]);
     expect(readJson(MAC_RECORD)).toStrictEqual({
       version: '0.9.1',
       helper: MAC_HELPER,
@@ -419,6 +439,14 @@ describe('registering on a Mac', () => {
       blocked: [],
       manifests: DIGEST,
     });
+    // Registered for a helper somewhere else, Chrome's manifest is written again.
+    oldRecord(['chrome'], '/Volumes/Old/Factwright.app/Contents/Resources/helper/factwright-save');
+    expect(await register(onMac({ version: '0.9.1' }))).toEqual({
+      result: { registered: ['chrome'], failed: [] },
+      writes: [manifestIn('Google/Chrome'), MAC_RECORD],
+      runs: [],
+    });
+    expect(readJson(manifestIn('Google/Chrome')).path).toBe(MAC_HELPER);
     // Where macOS kept it out of every browser, 0.9.0 noted none, and that's left as it is.
     oldRecord([]);
     touched = [];
@@ -651,13 +679,22 @@ describe('registering on Windows', () => {
       runs: [],
     });
   });
+  it('never counts a refusal on Windows as macOS’s, which only a Mac has', async () => {
+    ran(`${LOCAL}\\Google\\Chrome\\User Data`);
+    guarded = (path) => path === CHROME_JSON;
+    expect((await register(onWindows())).result).toEqual({
+      registered: [],
+      failed: [{ browser: 'chrome', message: expect.stringContaining('EPERM'), blocked: false }],
+    });
+  });
+
   it('says each browser found is ready, and registers again when the window asks, even unchanged', async () => {
     ran(`${LOCAL}\\Google\\Chrome\\User Data`);
     await register(onWindows());
     expect(saveHelperStatus(onWindows())).toEqual({
       unavailable: null,
       onRequest: false,
-      browsers: [{ id: 'chrome', name: 'Google Chrome', state: 'ready' }],
+      browsers: [{ id: 'chrome', name: 'Google Chrome', state: 'ready', allow: [] }],
     });
     expect((await register(onWindows())).result).toEqual({ skipped: 'unchanged' });
     expect((await setUp(onWindows())).runs).toEqual([

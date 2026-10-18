@@ -342,7 +342,7 @@ function notFound(found: Extract<Found, { ok: false }>): void {
       h(
         'li',
         {},
-        'Open it, so it can let your browsers reach it. On a Mac, open it from Applications, then choose Browser extension in its sidebar, and Set up beside this browser. macOS asks you first: choose Allow.',
+        'Open it, so it can let your browsers reach it. On a Mac, open it from Applications, then choose Browser extension in its sidebar, and Set up beside this browser. If macOS asks, choose Allow.',
       ),
       h('li', {}, 'Come back here, and check again.'),
     ),
