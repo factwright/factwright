@@ -93,6 +93,11 @@ Until then, and always on a server of your own:
 - `/api/sign-in-options` doesn't list `subscription`
 - the billing routes answer 404
 
+**How it's sold** is a plain setting in `wrangler.jsonc`, `STRIPE_MANAGED_PAYMENTS`. The terms say which way it's sold, so the setting and the terms change together (see [Turning it on](#turning-it-on)).
+- **`false`,** as now: Stripe's ordinary checkout, with Neatifai as the seller and Stripe as its payment processor. Checkout adds no tax.
+- **`true`:** [Stripe Managed Payments](https://docs.stripe.com/payments/managed-payments). Neatifai sells it through Link, Stripe's checkout, with Stripe's affiliate Sold through Link, LLC, as the merchant of record. Stripe works out the sales tax and VAT, collects it and pays it.
+- **Anything else** stops checkout, rather than sell it one way while the terms say the other.
+
 **Who may sync:**
 - **Early accounts,** made before `EARLY_BEFORE`, keep sync for good. It's a rule, not a list, so there's no order to get wrong at launch.
 - **A gift of free sync,** for anyone who asked.
@@ -108,11 +113,13 @@ Until then, and always on a server of your own:
 **Paying** happens in a browser's own sign-in with GitHub or Google. A device code's session gets 403, so one got by tricking someone can't reach their billing.
 - **Checkout:** `POST /api/billing/checkout`, with `{"period": "month"}` or `"year"`.
   - It uses the account's own Stripe customer, made once with an idempotency key, so all its subscriptions sit together and Stripe can refuse a second.
+  - It asks them to tick a box agreeing to the terms of service, which Stripe links from its public details (`consent_collection`).
+  - With `STRIPE_MANAGED_PAYMENTS` on, it turns Managed Payments on (`managed_payments[enabled]`), and sends none of the settings Managed Payments refuses, such as `automatic_tax` or `customer_update`. Stripe asks for the name and address the tax needs, and keeps them on the account's customer.
   - It closes after 35 minutes.
   - It comes back to `/subscribe/done`, or to `/subscribe` if they leave.
   - An account can start one every 10 seconds.
   - A customer deleted in Stripe is made again.
-- **Portal:** `POST /api/billing/portal` opens Stripe's customer portal, which comes back to `/account`.
+- **Portal:** `POST /api/billing/portal` opens Stripe's customer portal, which comes back to `/account`. With Managed Payments, people can also cancel, or change their card, on link.com.
 
 **Stripe's word:** the webhook at `/api/billing/stripe` takes `checkout.session.completed` and every `customer.subscription.*` event.
 - **Checked:** each must be signed with `STRIPE_WEBHOOK_SECRET` in the last five minutes, and be at most 512 KB.
@@ -122,11 +129,13 @@ Until then, and always on a server of your own:
 - **A cancellation** shows as "ending" whether Stripe records it as `cancel_at_period_end` or as `cancel_at`.
 - **The daily check:** the daily job reads back any subscription that should have had word by now, in case a webhook was missed.
 
+**Stripe's API version:** every call asks for `2026-09-30.endive`, so the default version in Stripe's dashboard can't change what the server sends or reads. Checkout takes Managed Payments from `2026-04-22.dahlia` on.
+
 **What's kept:** never card details.
 - **The `syncAccess` table:** each account's gift, Stripe customer and subscription IDs, the subscription's status, when the time paid for ends, and whether it's canceling. The account's export includes it.
 - **The `freeSyncEmail` table:** emails given free sync before they had an account. Each is forgotten once an account signs up with it.
 
-**Deleting an account** deletes its Stripe customer first, which cancels all its subscriptions and takes its billing details out of Stripe.
+**Deleting an account** deletes its Stripe customer first, which cancels all its subscriptions. Its payments and invoices stay in the Stripe account.
 - If Stripe can't, the deletion stops, and trying again finishes it.
 - With Stripe not connected, an account that may still be paying can't be deleted until it is.
 
@@ -147,17 +156,31 @@ curl -X POST https://app.factwright.com/api/admin/free-sync \
 ### Turning it on
 1. **Before selling:**
    - The apps can pay. The web view has `/subscribe` and `/subscribe/done`, and the app sends people there.
-   - factwright.com's terms and privacy policy cover the subscription, and name Stripe.
-2. **In Factwright's own Stripe account, set up:**
+   - factwright.com's terms and privacy policy cover the subscription, and say how it's sold, the way `STRIPE_MANAGED_PAYMENTS` is set. Each has one sentence for it, under Paying for sync (`#paying`): with `true`, it's sold through Link, with Sold through Link, LLC, as the merchant of record; with `false`, Stripe is only the payment processor. The comment beside each sentence has the other one. Change the setting and both sentences together.
+2. **Managed Payments, or not:** apply for it in Stripe's dashboard, and once Stripe approves, accept its terms there. Only then set `STRIPE_MANAGED_PAYMENTS` to `true`.
+   - Decide before selling starts. It's only for new subscriptions, so any sold before the change stay as they were sold, and the terms have to cover those too.
+   - If Stripe says no, leave it `false`. Checkout then adds no tax: Stripe Tax, the fallback, isn't set up here (`automatic_tax`).
+3. **In Factwright's own Stripe account, set up:**
    - **The product:** a monthly price of $5 and a yearly price of $50, in US dollars. The app shows those amounts.
+     - **Its tax code** must be one Managed Payments takes, such as `txcd_10103000`, software as a service for personal use. Stripe's dashboard marks those "Eligible for Managed Payments".
+     - **Tax goes on top** of the prices (exclusive, Stripe's default), as the terms say.
+   - **Public details:**
+     - the name Factwright
+     - the statement descriptor `FACTWRIGHT`, which the terms name
+     - the terms, `https://factwright.com/terms`, and the privacy policy, `https://factwright.com/privacy`. Checkout asks people to agree to the terms it finds there, so they have to be set first.
+   - **The support email,** in the business details: an inbox someone reads every day. With Managed Payments, Stripe sends questions it needs help with there, and may refund a payment on its own after 48 hours without an answer.
    - **Checkout:** limit customers to one subscription.
    - **Failed payments:** cancel the subscription once all retries fail, so past due never lasts.
-   - **The customer portal.**
+   - **Renewal reminders:** turn on the emails about upcoming renewals, which go before every renewal, monthly ones too, and set Upcoming renewal events to 30 days.
+     - The terms promise an email 30 days before a yearly subscription renews, with how to cancel. Illinois's law on automatic renewals (815 ILCS 601/10) wants that notice 30 to 60 days ahead for a 12-month plan, saying how to cancel and by when.
+     - Set the emails' link for managing a subscription to the customer portal, so each says how to cancel.
+     - With Managed Payments, Stripe sends a reminder before a subscription's 12-month anniversary even with these emails off, at the same timing.
+   - **The customer portal:** canceling at the end of the period, switching between the monthly and yearly prices, updating the card, and the invoice history.
    - **A webhook endpoint** at `https://app.factwright.com/api/billing/stripe`, for `checkout.session.completed` and the `customer.subscription.*` events.
    - **A restricted key** that can write Checkout Sessions, customer portal sessions, Customers and Subscriptions.
-3. **Try it on your computer:** use Stripe's test keys with `pnpm dev`, never on Factwright's server, so no test customer is ever kept there.
-4. **Deploy:** apply the migrations, then deploy. Sync stays free.
-5. **Turn it on:** with `wrangler secret put`, set:
+4. **Try it on your computer:** use Stripe's test keys with `pnpm dev`, never on Factwright's server, so no test customer is ever kept there. Try `STRIPE_MANAGED_PAYMENTS` the way it'll be set, in `.dev.vars`.
+5. **Deploy:** apply the migrations, then deploy, with `STRIPE_MANAGED_PAYMENTS` matching the terms. Sync stays free.
+6. **Turn it on:** with `wrangler secret put`, set:
    - `EARLY_BEFORE`: the moment selling starts, as an ISO time
    - `STRIPE_SECRET_KEY`
    - `STRIPE_WEBHOOK_SECRET`
@@ -200,7 +223,7 @@ Only Factwright's own releases sync through app.factwright.com. Any copy of the 
 
 **Ready to deploy.** Within hours of each release, [github.com/factwright/sync-server](https://github.com/factwright/sync-server) has its server, with Cloudflare's Deploy button and the steps around it: a free workers.dev address, a GitHub OAuth app, three secrets, and who may sign in. Its own workflow makes it from that release's source with `pnpm --filter @factwright/server copy`, which you can run too, into `dist/sync-server` ([`scripts/sync-server-copy.ts`](scripts/sync-server-copy.ts)).
 
-**Or from here.** In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL` and `PRIVACY_URL` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it. Then follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
+**Or from here.** In `wrangler.jsonc`, delete `routes`, and delete `APP_URL`, `TERMS_URL`, `PRIVACY_URL` and `STRIPE_MANAGED_PAYMENTS` from `vars`. The server then runs at its free workers.dev address, such as `https://factwright.yourname.workers.dev`, and goes by the address each request came to, so it needs no domain. For a domain of your own, put it in `routes` and set `APP_URL` to it. Then follow the steps above in your account, with your address in place of app.factwright.com, the OAuth callbacks' included.
 
 **Then, either way:**
 - Set who can sign in: `ALLOWED_GITHUB_USERS`, your GitHub user name, as a secret (`wrangler secret put ALLOWED_GITHUB_USERS`). To let in someone else too, add their user name after a comma. Only those accounts can make an account or sign in again, and anyone else is turned away, back in the web view, with a note that the server is private. Unset, anyone with GitHub can, as on Factwright's own server. The Deploy button asks for it. Taking someone off the list stops them signing in again, but their devices stay signed in until they sign out.

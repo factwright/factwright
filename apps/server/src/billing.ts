@@ -12,6 +12,12 @@ import type { Env } from './env.ts';
  */
 
 const STRIPE = 'https://api.stripe.com';
+/**
+ * The version of Stripe's API every call asks for, so what the server sends and reads doesn't
+ * change with the account's default version in Stripe's dashboard. Checkout takes Managed Payments
+ * from 2026-04-22.dahlia on.
+ */
+const STRIPE_VERSION = '2026-09-30.endive';
 
 /** The subscription states sync works in: paid up, or a renewal's payment being retried. */
 const SYNCING = ['active', 'trialing', 'past_due'];
@@ -63,6 +69,22 @@ export function stripeConnected(env: Env): boolean {
 /** Whether this server sells sync: Stripe connected, and both prices set. */
 export function sellsSync(env: Env): boolean {
   return stripeConnected(env) && Boolean(env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
+}
+
+/**
+ * Whether sync is sold through Stripe Managed Payments (STRIPE_MANAGED_PAYMENTS is true), with
+ * Stripe's affiliate as the merchant of record, handling the tax, rather than through Stripe's
+ * ordinary checkout, where Stripe only takes the payment. The terms say which it is, so a value
+ * that's neither true nor false stops checkout, rather than being taken for one of them.
+ */
+function managedPayments(env: Env): boolean {
+  const setting = String(env.STRIPE_MANAGED_PAYMENTS || false)
+    .trim()
+    .toLowerCase();
+  if (setting !== 'true' && setting !== 'false') {
+    throw new Error(`STRIPE_MANAGED_PAYMENTS is "${setting}". Set it to true or false.`);
+  }
+  return setting === 'true';
 }
 
 /** An email as sign-in keeps it, and as it's matched: trimmed and in lowercase. */
@@ -134,8 +156,9 @@ class StripeError extends Error {
 }
 
 /**
- * A call to Stripe's API with the restricted key, as a form. Null when the object it names is
- * gone; a StripeError when Stripe refuses it. A key for a POST makes trying it again safe.
+ * A call to Stripe's API with the restricted key, as a form, in the API version the server is
+ * written for. Null when the object it names is gone; a StripeError when Stripe refuses it. A key
+ * for a POST makes trying it again safe.
  */
 async function stripe<T>(
   env: Env,
@@ -148,6 +171,7 @@ async function stripe<T>(
     method,
     headers: {
       authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'stripe-version': STRIPE_VERSION,
       ...(form && { 'content-type': 'application/x-www-form-urlencoded' }),
       ...(idempotencyKey && { 'idempotency-key': idempotencyKey }),
     },
@@ -196,6 +220,10 @@ async function customerFor(env: Env, someone: Someone, again = false): Promise<s
  * Starts Stripe's checkout for a month or a year of sync, and returns its address, or
  * "slow-down" when the account started one moments ago. The checkout closes after about half an
  * hour, and names the account on its subscription, so every event about it says whose it is.
+ * - It asks for a tick, agreeing to the terms of service named in Stripe's public details.
+ * - With Managed Payments, Stripe works out the tax, and asks for the name and address it needs
+ *   for it, so the checkout sends none of the settings Managed Payments refuses, such as
+ *   automatic_tax and customer_update. Without it, the checkout adds no tax.
  */
 export async function startCheckout(
   env: Env,
@@ -203,6 +231,7 @@ export async function startCheckout(
   period: 'month' | 'year',
   address: string,
 ): Promise<string | 'slow-down'> {
+  const managed = managedPayments(env);
   const recent = new Date(Date.now() - CHECKOUT_SECONDS * 1000).toISOString();
   const { meta } = await env.DB.prepare(
     `INSERT INTO "syncAccess" (account, checkoutAt, updatedAt) VALUES (?, ?, ?)
@@ -225,6 +254,8 @@ export async function startCheckout(
       expires_at: String(Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60),
       success_url: `${address}/subscribe/done`,
       cancel_url: `${address}/subscribe`,
+      'consent_collection[terms_of_service]': 'required',
+      ...(managed && { 'managed_payments[enabled]': 'true' }),
     });
   let session: { url: string } | null;
   try {
@@ -260,7 +291,7 @@ export async function openPortal(
   }
 }
 
-/** A subscription as Stripe describes it, in whichever API version the account uses. */
+/** A subscription as Stripe describes it, in the API version the server asks for. */
 interface StripeSubscription {
   id: string;
   status: string;
@@ -269,9 +300,7 @@ interface StripeSubscription {
   /** When it's set to end, in Unix seconds. Newer accounts' portal cancels set this alone. */
   cancel_at?: number | null;
   metadata?: { account?: string };
-  /** Where older API versions keep when the time paid for ends. */
-  current_period_end?: number;
-  /** And where newer ones keep it. */
+  /** When the time paid for ends, kept on each of its items. */
   items?: { data?: { current_period_end?: number }[] };
 }
 
@@ -342,10 +371,7 @@ async function follow(env: Env, id: string): Promise<void> {
       return;
     }
   }
-  const ends =
-    subscription.cancel_at ??
-    subscription.items?.data?.[0]?.current_period_end ??
-    subscription.current_period_end;
+  const ends = subscription.cancel_at ?? subscription.items?.data?.[0]?.current_period_end;
   const canceling = subscription.cancel_at_period_end || subscription.cancel_at != null;
   await env.DB.prepare(
     `INSERT INTO "syncAccess"
@@ -426,9 +452,10 @@ export async function takeBackFreeSync(env: Env, email: string): Promise<void> {
 }
 
 /**
- * Before an account goes, deletes its Stripe customer, which cancels every subscription it has
- * and takes its billing details out of Stripe. It throws when it can't, so the deletion stops and
- * can be tried again. With Stripe not connected it refuses, while the account may still be paying.
+ * Before an account goes, deletes its Stripe customer, which cancels every subscription it has.
+ * Its payments and invoices stay in the Stripe account. It throws when it can't, so the deletion
+ * stops and can be tried again. With Stripe not connected it refuses, while the account may still
+ * be paying.
  */
 export async function closeBilling(env: Env, account: string): Promise<void> {
   const row = await rowOf(env, account);

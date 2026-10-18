@@ -9,24 +9,58 @@ import {
   subscription,
 } from './stripe.ts';
 
-/** Factwright's own server, selling sync through a stand-in for Stripe, since the start of 2026. */
+/**
+ * Factwright's own server, selling sync through a stand-in for Stripe, since the start of 2026,
+ * through Stripe's ordinary checkout, as wrangler.jsonc has it.
+ */
 const WEBHOOK_SECRET = 'whsec_test_only_0123456789';
 const SELLING_SINCE = '2026-01-01T00:00:00.000Z';
 const ADMIN = { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' };
+/** The version of Stripe's API the server is written for. */
+const STRIPE_VERSION = '2026-09-30.endive';
+
+/**
+ * What Managed Payments refuses on a subscription's checkout, as the start of each setting's
+ * name: docs.stripe.com/payments/managed-payments/update-checkout, and the custom text and the
+ * place of the card's reuse agreement, which its standard checkout refuses too.
+ */
+const REFUSED_BY_MANAGED_PAYMENTS = [
+  'adaptive_pricing',
+  'automatic_tax',
+  'tax_id_collection',
+  'subscription_data[default_tax_rates]',
+  'payment_method_configuration',
+  'payment_method_types',
+  'excluded_payment_method_types',
+  'customer_update[name]',
+  'customer_update[address]',
+  'shipping_address_collection',
+  'shipping_options',
+  'subscription_data[application_fee_percent]',
+  'subscription_data[on_behalf_of]',
+  'subscription_data[transfer_data]',
+  'subscription_data[invoice_settings]',
+  'invoice_creation',
+  'custom_text',
+  'consent_collection[payment_method_reuse_agreement]',
+];
 
 let stripe: FakeStripe;
 let server: TestServer;
 
+/** The settings that connect the server to the stand-in for Stripe, and sell sync. */
+const selling = () => ({
+  STRIPE_SECRET_KEY: 'rk_test_only',
+  STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+  STRIPE_PRICE_MONTHLY: 'price_month',
+  STRIPE_PRICE_YEARLY: 'price_year',
+  STRIPE_API_URL: stripe.url,
+  EARLY_BEFORE: SELLING_SINCE,
+});
+
 beforeAll(async () => {
   stripe = await startStripe();
-  server = await startServer({
-    STRIPE_SECRET_KEY: 'rk_test_only',
-    STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
-    STRIPE_PRICE_MONTHLY: 'price_month',
-    STRIPE_PRICE_YEARLY: 'price_year',
-    STRIPE_API_URL: stripe.url,
-    EARLY_BEFORE: SELLING_SINCE,
-  });
+  server = await startServer(selling());
 });
 
 afterAll(async () => {
@@ -135,7 +169,10 @@ describe('a server that sells sync', () => {
     expect(made).toMatchObject({ path: '/v1/customers', idempotencyKey: `customer-${sam.id}` });
     expect(made?.form.get('metadata[account]')).toBe(sam.id);
     const form = Object.fromEntries(opened?.form ?? []);
-    expect(opened?.authorization).toBe('Bearer rk_test_only');
+    expect(opened).toMatchObject({
+      authorization: 'Bearer rk_test_only',
+      version: STRIPE_VERSION,
+    });
     expect(form).toMatchObject({
       mode: 'subscription',
       customer: (await rowOf(sam))?.customer,
@@ -145,7 +182,12 @@ describe('a server that sells sync', () => {
       'subscription_data[metadata][account]': sam.id,
       success_url: `${server.url.origin}/subscribe/done`,
       cancel_url: `${server.url.origin}/subscribe`,
+      // A box to tick, agreeing to the terms named in Stripe's public details.
+      'consent_collection[terms_of_service]': 'required',
     });
+    // Stripe's ordinary checkout, with Neatifai as the seller, and no tax added.
+    expect(form['managed_payments[enabled]']).toBeUndefined();
+    expect(form['automatic_tax[enabled]']).toBeUndefined();
     // It closes after about half an hour, so a tab left open can't pay later.
     const closes = Number(form.expires_at) - Date.now() / 1000;
     expect(closes).toBeGreaterThan(30 * 60);
@@ -388,5 +430,88 @@ describe('a server that sells sync', () => {
     const { sam, paid } = await paying();
     expect((await operator('/api/admin/delete', { account: sam.id })).status).toBe(204);
     expect(paid.status).toBe('canceled');
+  });
+
+  it('asks for the API version it’s written for, every time it calls Stripe', () => {
+    const calls = stripe.requests.map(
+      ({ method, path }) => `${method} ${path.replace(/\/(?:cus|sub)_[^/]+$/, '/:id')}`,
+    );
+    expect(new Set(calls)).toEqual(
+      new Set([
+        'POST /v1/customers',
+        'DELETE /v1/customers/:id',
+        'POST /v1/checkout/sessions',
+        'POST /v1/billing_portal/sessions',
+        'GET /v1/subscriptions/:id',
+        'POST /v1/subscriptions/:id',
+        'DELETE /v1/subscriptions/:id',
+      ]),
+    );
+    expect(stripe.requests.filter(({ version }) => version !== STRIPE_VERSION)).toEqual([]);
+  });
+});
+
+/** Starts a checkout for an account on a server, as its account page in the browser does. */
+const checkout = (on: TestServer, account: Account, period: string) =>
+  fetch(new URL('/api/billing/checkout', on.url), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ period }),
+  });
+
+describe('a server that sells sync through Stripe Managed Payments', () => {
+  let managed: TestServer;
+
+  beforeAll(async () => {
+    managed = await startServer({ ...selling(), STRIPE_MANAGED_PAYMENTS: 'true' });
+  });
+
+  afterAll(async () => {
+    await managed?.close();
+  });
+
+  it('starts Stripe’s checkout with Managed Payments on, and nothing it refuses', async () => {
+    const sam = await managed.signUp();
+    const started = await checkout(managed, sam, 'month');
+    expect(await started.json()).toEqual({ url: 'https://checkout.stripe.com/c/pay/cs_test_1' });
+    const opened = stripe.requests.at(-1);
+    expect(opened).toMatchObject({ path: '/v1/checkout/sessions', version: STRIPE_VERSION });
+    const form = Object.fromEntries(opened?.form ?? []);
+    expect(form).toMatchObject({
+      mode: 'subscription',
+      'line_items[0][price]': 'price_month',
+      'line_items[0][quantity]': '1',
+      client_reference_id: sam.id,
+      'subscription_data[metadata][account]': sam.id,
+      success_url: `${managed.url.origin}/subscribe/done`,
+      cancel_url: `${managed.url.origin}/subscribe`,
+      'consent_collection[terms_of_service]': 'required',
+      'managed_payments[enabled]': 'true',
+    });
+    // Its own customer, which Stripe fills in with the name and address the tax needs.
+    expect(form.customer).toMatch(/^cus_/);
+    const refused = Object.keys(form).filter((name) =>
+      REFUSED_BY_MANAGED_PAYMENTS.some((start) => name.startsWith(start)),
+    );
+    expect(refused).toEqual([]);
+  });
+});
+
+describe('a server whose way of selling sync is neither true nor false', () => {
+  let unsure: TestServer;
+
+  beforeAll(async () => {
+    unsure = await startServer({ ...selling(), STRIPE_MANAGED_PAYMENTS: 'yes' });
+  });
+
+  afterAll(async () => {
+    await unsure?.close();
+  });
+
+  it('starts no checkout, rather than guess which way the terms say', async () => {
+    const sam = await unsure.signUp();
+    const asked = stripe.requests.length;
+    expect((await checkout(unsure, sam, 'year')).status).toBe(500);
+    expect(stripe.requests.length).toBe(asked);
   });
 });

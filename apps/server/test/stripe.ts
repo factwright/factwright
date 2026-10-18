@@ -10,9 +10,11 @@ interface StripeRequest {
   form: URLSearchParams;
   authorization: string | undefined;
   idempotencyKey: string | undefined;
+  /** The API version it asked for (Stripe-Version). */
+  version: string | undefined;
 }
 
-/** A subscription as the stand-in keeps it, in the shape of Stripe's newer API versions. */
+/** A subscription as the stand-in keeps it, in the shape of the API version the server asks for. */
 export interface FakeSubscription {
   id: string;
   status: string;
@@ -39,12 +41,14 @@ export async function startStripe() {
     const url = new URL(request.url ?? '/', 'http://stripe.test');
     const form = new URLSearchParams(await text(request));
     const key = request.headers['idempotency-key'];
+    const version = request.headers['stripe-version'];
     requests.push({
       method: request.method ?? '',
       path: url.pathname,
       form,
       authorization: request.headers.authorization,
       idempotencyKey: typeof key === 'string' ? key : undefined,
+      version: typeof version === 'string' ? version : undefined,
     });
     const send = (status: number, body: unknown) => {
       response.writeHead(status, { 'content-type': 'application/json' });
