@@ -66,6 +66,14 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Saving to Factwright on this computer, in the Firefox GitHub's runners carry: Mozilla's
-      # own, as the run needs, with gcc for the desktop app's helper.
+      # Firefox 158 from Mozilla, checked against the hash Mozilla published for it: 157, the
+      # runners' own for now, doesn't let WebDriver BiDi click in an extension's own pages.
+      - name: Download Firefox
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/firefox.tar.xz" https://archive.mozilla.org/pub/firefox/releases/158.0/linux-x86_64/en-US/firefox-158.0.tar.xz
+          echo "9549b054ec4cf85f50f6a19d8c6fb79580312e71ebc4ec2cb217ec9af09dc12a  $RUNNER_TEMP/firefox.tar.xz" | sha256sum --check
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
+      # Saving to Factwright on this computer in it, with gcc for the desktop app's helper.
       - run: pnpm --filter @factwright/extension e2e:firefox
+        env:
+          FIREFOX: ${{ runner.temp }}/firefox/firefox

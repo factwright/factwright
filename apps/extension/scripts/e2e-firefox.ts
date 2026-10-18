@@ -11,8 +11,8 @@
 // The helper is the desktop app's, built for testing, and the app's own inbox code stands in for
 // the app, in folders of its own. Firefox looks for the helper's manifest in its home folder, and
 // on Linux that can be a temporary folder for Firefox alone. On a Mac or Windows, Firefox reads
-// the person's own, which a test never writes to, so there it says so and stops. It needs Firefox,
-// Mozilla's own build rather than Ubuntu's snap, and a C compiler, for the helper.
+// the person's own, which a test never writes to, so there it says so and stops. It needs Firefox
+// 158 or later, Mozilla's own build rather than Ubuntu's snap, and a C compiler, for the helper.
 // `pnpm --filter @factwright/extension e2e:firefox`, with FIREFOX naming another Firefox to run.
 import { execFileSync } from 'node:child_process';
 import {
@@ -239,6 +239,12 @@ try {
   });
   running = firefox;
   console.log(`Firefox ${firefox.version}, ${program}`);
+  // Firefox 157's WebDriver BiDi doesn't click in an extension's own pages, and 158's does.
+  if (Number.parseInt(firefox.version, 10) < 158) {
+    throw new Error(
+      `Firefox ${firefox.version} can’t click in an extension’s pages over WebDriver BiDi, so the run needs Firefox 158 or later: name one with FIREFOX.`,
+    );
+  }
 
   // Each error on the extension's pages, as Firefox's console hears it.
   const own = await firefox.ownWindow();

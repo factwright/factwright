@@ -69,13 +69,13 @@ pnpm --filter @factwright/extension e2e
 
 With `-- --shots <folder>`, it also saves each setup page it checks, in light and dark, to look over a change.
 
-Firefox has a run of its own for saving to Factwright on this computer, as Playwright's Firefox can't load extensions: it drives a real Firefox over WebDriver BiDi, with the stores' build, the desktop app's helper built for testing, and the app's inbox code. Firefox finds the helper through a manifest in its home folder, which on Linux the run makes a temporary folder of its own, so it runs on Linux alone, as CI does. On a Mac or Windows, Firefox would read your own, so the run says so and stops. It needs Mozilla's Firefox, not Ubuntu's snap, and a C compiler:
+Firefox has a run of its own for saving to Factwright on this computer, as Playwright's Firefox can't load extensions: it drives a real Firefox over WebDriver BiDi, with the stores' build, the desktop app's helper built for testing, and the app's inbox code. Firefox finds the helper through a manifest in its home folder, which on Linux the run makes a temporary folder of its own, so it runs on Linux alone, as CI does. On a Mac or Windows, Firefox would read your own, so the run says so and stops. It needs Mozilla's Firefox 158 or later, not Ubuntu's snap, and a C compiler:
 
 ```bash
 pnpm --filter @factwright/extension e2e:firefox
 ```
 
-`FIREFOX=<path>` runs another Firefox. When Firefox can't reach the helper, it says "No such native application com.factwright.save" for one that isn't registered, or isn't for this extension, and only "An unexpected error occurred" for one that isn't where its manifest says, as when Factwright was moved to the trash. Setup reads both as Factwright not found, as it does Chrome's words.
+`FIREFOX=<path>` runs another Firefox, as CI does with Mozilla's 158, since its runners' own is older. When Firefox can't reach the helper, it says "No such native application com.factwright.save" for one that isn't registered, or isn't for this extension, and only "An unexpected error occurred" for one that isn't where its manifest says, as when Factwright was moved to the trash. Setup reads both as Factwright not found, as it does Chrome's words.
 
 ## Publishing it
 Both stores take the zip that `build` makes. [store/README.md](store/README.md) has what each asks for, in words to paste, and the steps.
