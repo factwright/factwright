@@ -23,6 +23,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A sign-in that doesn't work comes back to Factwright's own page and says why, in plain words, instead of a generic error page with a code. It comes back to the page you started on, so the code the desktop app or the browser extension showed is still there to approve once you try again. Cancel at GitHub, and it says signing in was canceled. On a server of your own that doesn't list you, it says the server is private, and where its owner adds you. For a sign-in that ran out or finished in another browser, a server's GitHub app set up with the wrong callback URL or secret, or an email that already has an account made another way, it says what to do. Anything else shows what the server said.
 - factwright.com/extension links to Save to Factwright in the Chrome Web Store, now that Chrome has approved it, and the site's other mentions of the extension no longer say it's coming soon. Firefox's button says it's coming soon to Firefox Add-ons until that store approves it too.
 
+### Fixed
+- A cover letter's PDF reads from the top: a system that reads its text, such as an applicant tracking system, now gets your name, headline and contact details first, then the date, the recipient and the letter. Before, it got them last, in every template. Nothing moves on the page.
+
 ## 0.8.0 - 2026-10-16
 
 ### Added

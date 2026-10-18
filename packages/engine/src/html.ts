@@ -36,8 +36,8 @@ function page(title: string, fonts: string, sheets: readonly string[], body: str
   .contact span{white-space:nowrap}
   mark.ph{background:#fff1a8;color:#5a4a00;padding:0 3px;border-radius:2px}
   .row,.title{break-after:avoid}
-  /* A template's marks can position an element, such as the dots on a date rail, so its siblings are positioned too, which keeps the PDF's text in reading order. */
-  .hdr,.stats,section,.tl .d{position:relative}
+  /* A template's marks can position an element, such as the dots on a date rail, so its siblings are positioned too, which keeps the PDF's text in reading order. Chromium writes positioned elements after the rest, so a cover letter's text is positioned like its header, or the header would come last. */
+  .hdr,.stats,section,.tl .d,.letter{position:relative}
 </style>${sheets.map((css) => `<style>${css}</style>`).join('')}</head><body>${body}</body></html>`;
 }
 
