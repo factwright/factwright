@@ -16,8 +16,8 @@ export const OWN_SERVER_GUIDE = 'https://github.com/factwright/sync-server';
  */
 export const SYNC_PRICE = { month: 5, year: 50 } as const;
 
-/** Sync's price, in words: "$5 a month or $50 a year". */
-export const SYNC_PRICE_WORDS = `$${SYNC_PRICE.month} a month or $${SYNC_PRICE.year} a year`;
+/** Sync's price, in words, as factwright.com says it too. Its test checks it matches SYNC_PRICE. */
+export const SYNC_PRICE_WORDS = '$5 a month or $50 a year';
 
 /** Where someone who can't pay for sync asks for it for free, no questions asked. */
 export const FREE_SYNC_EMAIL = 'steve@factwright.com';

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forgetKeys } from './keys.ts';
 import { Subscribe, Subscribed, timing } from './Subscribe.tsx';
 import { browser } from './Subscription.tsx';
-import { fakeServer } from './testing.ts';
+import { fakeServer, LEGAL } from './testing.ts';
 
 // The test browser has no IndexedDB, and what's kept there is the page's own business.
 vi.mock('./keys.ts', () => ({ forgetKeys: vi.fn(async () => {}) }));
@@ -35,9 +35,9 @@ const ENDED: SyncAccess = {
 
 const onSignedOut = vi.fn();
 
-/** The subscribe page, for Sam, signed in here. */
+/** The subscribe page, for Sam, signed in here, on a server with Factwright's terms. */
 const subscribePage = () => (
-  <Subscribe account="sam" email="sam@example.com" onSignedOut={onSignedOut} />
+  <Subscribe account="sam" email="sam@example.com" legal={LEGAL} onSignedOut={onSignedOut} />
 );
 
 let went: ReturnType<typeof vi.fn<(url: string) => void>>;
@@ -79,6 +79,29 @@ describe('the subscribe page', () => {
       'disabled',
       true,
     );
+  });
+
+  it('says before checkout what’s paid, that it renews until canceled, and how to cancel', async () => {
+    fakeServer({ 'GET /api/account': () => infoWith(NONE) });
+    render(subscribePage());
+    const terms = await screen.findByRole('link', { name: 'terms of service' });
+    expect(terms.getAttribute('href')).toBe('https://factwright.com/terms#paying');
+    expect(terms.parentElement?.textContent).toBe(
+      'You pay $5 now, and it renews automatically at $5 a month until you cancel. Cancel anytime from your account page, and sync keeps going to the end of what you paid for. Stripe adds tax where it applies, and there are no other fees. The terms of service say more.',
+    );
+    await userEvent.click(screen.getByRole('radio', { name: /\$50 a year/ }));
+    expect(terms.parentElement?.textContent).toMatch(
+      /^You pay \$50 now, and it renews automatically at \$50 a year until you cancel\. /,
+    );
+  });
+
+  it('names no terms where the server has none', async () => {
+    fakeServer({ 'GET /api/account': () => infoWith(NONE) });
+    render(
+      <Subscribe account="sam" email="sam@example.com" legal={null} onSignedOut={onSignedOut} />,
+    );
+    expect(await screen.findByText(/renews automatically at \$5 a month/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'terms of service' })).toBeNull();
   });
 
   it('keeps the money’s tight line and the way to run your own server', async () => {

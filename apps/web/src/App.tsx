@@ -295,7 +295,12 @@ export function App() {
   if (path === '/subscribe') {
     return (
       <Shell nav={nav}>
-        <Subscribe account={session.user.id} email={session.user.email} onSignedOut={forgetHere} />
+        <Subscribe
+          account={session.user.id}
+          email={session.user.email}
+          legal={legal}
+          onSignedOut={forgetHere}
+        />
       </Shell>
     );
   }

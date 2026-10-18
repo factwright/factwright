@@ -1,5 +1,5 @@
 import { FREE_SYNC_EMAIL, OWN_SERVER_GUIDE, SYNC_PRICE } from '@factwright/core';
-import { type AccountInfo, type Period, SyncError } from '@factwright/sync';
+import { type AccountInfo, type Legal, type Period, SyncError } from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { ArrowUpRight, CircleCheck } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
@@ -79,21 +79,32 @@ function HasSync({ info }: { info: AccountInfo }) {
   );
 }
 
+/** Where the terms of service say how paying for sync works, renewing and canceling. */
+function payingTerms(legal: Legal): string {
+  const terms = new URL(legal.terms);
+  terms.hash = 'paying';
+  return terms.toString();
+}
+
 /**
  * The page the app opens to subscribe to sync, on a server that sells it: monthly or yearly, then
- * Stripe's checkout, which comes back to /subscribe/done, or here if the person leaves it. An
- * account with sync already, or a server that doesn't sell it, has nothing to pay. When the app
- * names the account it's signed in with, and this browser is signed in with another, it says so
- * before anyone pays for the wrong one.
+ * Stripe's checkout, which comes back to /subscribe/done, or here if the person leaves it. Before
+ * checkout, it says what's paid and how often, that it renews until canceled, and how to cancel,
+ * as the terms do. An account with sync already, or a server that doesn't sell it, has nothing to
+ * pay. When the app names the account it's signed in with, and this browser is signed in with
+ * another, it says so before anyone pays for the wrong one.
  */
 export function Subscribe({
   account,
   email,
+  legal,
   onSignedOut,
 }: {
   /** The account this browser is signed in with, by its ID. */
   account: string;
   email: string;
+  /** The terms of service and privacy policy paying agrees to, when the server has them. */
+  legal: Legal | null;
   onSignedOut: () => void;
 }) {
   const [asked, setAsked] = useState<Asked>({ state: 'loading' });
@@ -220,9 +231,22 @@ export function Subscribe({
           </span>
         </label>
       </fieldset>
-      <p className={page.hint}>
-        Cancel anytime, and sync keeps going to the end of what you paid for. Stripe takes the
-        payment, and adds tax where it applies.
+      <p className={page.hint} aria-live="polite">
+        {period === 'month'
+          ? `You pay $${SYNC_PRICE.month} now, and it renews automatically at $${SYNC_PRICE.month} a month until you cancel.`
+          : `You pay $${SYNC_PRICE.year} now, and it renews automatically at $${SYNC_PRICE.year} a year until you cancel.`}{' '}
+        Cancel anytime from your account page, and sync keeps going to the end of what you paid for.
+        Stripe adds tax where it applies, and there are no other fees.
+        {legal && (
+          <>
+            {' '}
+            The{' '}
+            <a href={payingTerms(legal)} target="_blank" rel="noreferrer">
+              terms of service
+            </a>{' '}
+            say more.
+          </>
+        )}
       </p>
       <div className={page.actions}>
         <Button variant="primary" disabled={stripe.opening} onClick={() => void pay()}>
