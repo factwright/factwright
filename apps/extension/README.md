@@ -20,6 +20,8 @@ Setup asks where saved jobs go. **Factwright on this computer** needs nothing bu
 | `src/manifest.ts` | Each browser's manifest, asking for as little as it can |
 | `scripts/build.ts` | Builds both browsers' folders and zips, and checks the built page reader works on its own |
 | `scripts/e2e.ts` | Runs the built extension in Chromium, from setting up to saving: against local sync servers, the one it's built for, one chosen in setup as your own, and one that sells sync, as Factwright's will, and straight to Factwright on this computer, through the desktop app's helper and its inbox |
+| `scripts/e2e-firefox.ts` | Saves straight to Factwright on this computer in a real Firefox, the stores' build: Firefox's own grant of native messaging on setup's click, the helper reached at once from setup and from the background, what setup says when Firefox can't find the helper, and saves with Factwright closed and open. Linux alone, as CI runs it |
+| `scripts/bidi.ts` | A small WebDriver BiDi client, to drive a real Firefox, which Playwright can't do with an extension |
 | `scripts/icons.ts` | Draws its icons from Factwright's app icon |
 | `store/` | What the Chrome Web Store and Firefox Add-ons ask for: the listing, the permissions and the data, and screenshots |
 
@@ -66,6 +68,14 @@ pnpm --filter @factwright/extension e2e
 ```
 
 With `-- --shots <folder>`, it also saves each setup page it checks, in light and dark, to look over a change.
+
+Firefox has a run of its own for saving to Factwright on this computer, as Playwright's Firefox can't load extensions: it drives a real Firefox over WebDriver BiDi, with the stores' build, the desktop app's helper built for testing, and the app's inbox code. Firefox finds the helper through a manifest in its home folder, which on Linux the run makes a temporary folder of its own, so it runs on Linux alone, as CI does. On a Mac or Windows, Firefox would read your own, so the run says so and stops. It needs Mozilla's Firefox 158 or later, not Ubuntu's snap, and a C compiler:
+
+```bash
+pnpm --filter @factwright/extension e2e:firefox
+```
+
+`FIREFOX=<path>` runs another Firefox, as CI does with Mozilla's 158, since its runners' own is older. When Firefox can't reach the helper, it says "No such native application com.factwright.save" for one that isn't registered, or isn't for this extension, and only "An unexpected error occurred" for one that isn't where its manifest says, as when Factwright was moved to the trash. Setup reads both as Factwright not found, as it does Chrome's words.
 
 ## Publishing it
 Both stores take the zip that `build` makes. [store/README.md](store/README.md) has what each asks for, in words to paste, and the steps.
