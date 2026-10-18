@@ -71,6 +71,27 @@ const FREE_SYNC_PAGES = ['sync.html', 'terms.html'];
 /** Stripe's privacy policy, which the privacy policy points to for paying. */
 const STRIPE_PRIVACY = 'https://stripe.com/privacy';
 
+/** Link's terms for what it sells as the merchant of record, which the terms link to. */
+const LINK_TERMS = 'https://link.com/terms#sold-through-link-terms';
+
+/** The desktop app's own source files, leaving out its tests. */
+const appSources = () => {
+  const app = join(SITE, '..', 'desktop', 'src');
+  return readdirSync(app, { recursive: true, encoding: 'utf8' })
+    .filter((path) => /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path))
+    .map((path) => readFileSync(join(app, path), 'utf8'));
+};
+
+/**
+ * Each price in some words, as "$5 a month", however it's written: "$5 a month", "$5 per month"
+ * or "$5/mo".
+ */
+const pricesIn = (text: string) =>
+  [...text.matchAll(/\$\s?([\d.,]+)\s*(?:a|per|\/)\s*(month|year|mo|yr)\b/g)].map(
+    ([, amount, period]) =>
+      `$${amount} a ${({ mo: 'month', yr: 'year' } as Record<string, string>)[period ?? ''] ?? period}`,
+  );
+
 /** What sync on Factwright's own server costs, wherever the site or the app says it. */
 const PRICES = ['$5 a month', '$50 a year'];
 
@@ -210,7 +231,7 @@ describe.each([
       ...PAYING,
       ...LISTINGS,
       ...MAKER,
-      ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL, STRIPE_PRIVACY] : []),
+      ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL, STRIPE_PRIVACY, LINK_TERMS] : []),
       ...(FREE_SYNC_PAGES.includes(page) ? [MONEY_TIGHT] : []),
       ...(page === 'own-server.html' ? OWN_SERVER_STEPS : []),
     ];
@@ -694,12 +715,16 @@ describe('the sync page', () => {
     expect(said(what)).toContain('End-to-end encrypted');
   });
 
-  it('offers sync for free when money’s tight, in Steve’s own words, with his address', () => {
+  it('offers sync for free when money’s tight, in Steve’s own words, as the app does', () => {
     const note = open('sync.html').getElementById('money-tight');
     expect(said(note)).toBe(
       'Money’s tight? Email steve@factwright.com and I’ll turn on sync for free. No questions asked.',
     );
     expect(note?.querySelector('a')?.getAttribute('href')).toBe(MONEY_TIGHT);
+    // The app's sync screen says it the same way, around the same address.
+    const offer = appSources().find((source) => source.includes('Money’s tight? Email'));
+    expect(offer).toContain('and I’ll turn on sync for free. No questions asked.');
+    expect(offer).toContain(`'${MONEY_TIGHT.replace('mailto:', '')}'`);
   });
 
   it('says accounts from before sync had a price keep it free, for good', () => {
@@ -741,26 +766,38 @@ describe('the sync page', () => {
     }
   });
 
-  it('gives the same price everywhere it’s said, on the site and in the app', () => {
-    for (const page of [
+  it('gives the same price everywhere it’s said: on the site, in the READMEs and the store listing, and in the app', () => {
+    const pages = readdirSync(SITE, { recursive: true, encoding: 'utf8' }).filter(
+      (path) => path.endsWith('.html') && !/^(node_modules|dist|public)\b/.test(path),
+    );
+    const words = pages.map((page) => {
+      const doc = open(page);
+      const description = doc.querySelector('meta[name="description"]')?.getAttribute('content');
+      return [page, `${description ?? ''} ${doc.body.textContent ?? ''}`] as const;
+    });
+    const readmes = ['../../README.md', '../extension/store/README.md'].map(
+      (path) => [path, readFileSync(join(SITE, path), 'utf8')] as const,
+    );
+    for (const [where, text] of [...words, ...readmes]) {
+      for (const price of pricesIn(text)) expect(PRICES, where).toContain(price);
+    }
+    // Each of these says it.
+    for (const where of [
       'index.html',
       'sync.html',
       'extension.html',
       'own-server.html',
       'terms.html',
+      '../../README.md',
+      '../extension/store/README.md',
     ]) {
-      const prices = [...said(open(page).body).matchAll(/\$[\d.,]+ a (?:month|year)/g)];
-      expect(prices.length, page).toBeGreaterThan(0);
-      for (const [price] of prices) expect(PRICES, page).toContain(price);
+      const text = [...words, ...readmes].find(([path]) => path === where)?.[1] ?? '';
+      expect(pricesIn(text).length, where).toBeGreaterThan(0);
     }
     // The app's own sync screen shows it once Factwright's server sells sync.
-    const app = join(SITE, '..', 'desktop', 'src');
-    const shown = readdirSync(app, { recursive: true, encoding: 'utf8' })
-      .filter((path) => /\.tsx?$/.test(path))
-      .some((path) =>
-        readFileSync(join(app, path), 'utf8').includes(`'${PRICES[0]} or ${PRICES[1]}'`),
-      );
-    expect(shown).toBe(true);
+    expect(appSources().some((source) => source.includes(`'${PRICES[0]} or ${PRICES[1]}'`))).toBe(
+      true,
+    );
   });
 
   it('keeps the home page’s search data saying Factwright is free, as the app is', () => {
@@ -783,15 +820,16 @@ describe('the terms', () => {
   it('cover the price, renewing, canceling, refunds, price changes, free sync, deleting, and servers we don’t run', () => {
     for (const part of [
       `${PRICES[0]} or ${PRICES[1]}, in US dollars`,
-      'Your subscription renews automatically',
-      'You can cancel anytime,',
+      'You pay when you subscribe, and your subscription renews automatically',
+      'you’ll get an email reminding you 30 days ahead, with how to cancel',
+      'You can cancel anytime, from your account page in the web view, or by emailing us.',
       'Sync keeps going to the end of the time you’ve paid for',
-      'No refunds, except where the law requires one',
-      'at least 30 days before you’re charged a new price',
+      'No refunds from us, except where the law requires one',
+      'we’ll email you 30 days before a new price applies to you, with how to cancel',
       'Accounts made before we started selling sync keep it free',
       'if money’s tight',
       'Deleting your account ends your subscription at once',
-      'Running your own sync server costs nothing from us',
+      'We don’t charge for running your own sync server',
     ]) {
       expect(paying()).toContain(part);
     }
@@ -809,21 +847,20 @@ describe('the privacy policy', () => {
     const section = open('privacy.html').getElementById('paying');
     expect(section?.querySelector(`a[href="${STRIPE_PRIVACY}"]`)).not.toBeNull();
     for (const part of [
-      'We never see your card.',
+      'We never see your full card number.',
       'we give Stripe your account’s email address and ID',
-      'Stripe’s IDs for you as its customer, and for your subscription',
-      'your subscription’s status, whether you’ve canceled it, and when the time you’ve paid for ends',
-      'whether we gave you sync for free',
-      'we keep that address until an account signs up with it',
-      'We keep all this until you delete your account.',
-      'Deleting it deletes your customer record at Stripe too',
-      'Stripe keeps its own records of your payments',
+      'We keep these until you delete your account.',
+      'Deleting it deletes your customer record at Stripe too, which ends your subscription at once.',
+      'until an account signs up with it, or until you ask us to forget it',
+      'Stripe also shows us, in our Stripe account, your name, email address and billing address',
+      'the kind of card you used and its last four digits',
+      'for as long as that law requires, even after you delete your account',
     ]) {
       expect(said(section)).toContain(part);
     }
   });
 
-  it('was written for each column the server keeps about paying, so a new one waits on the policy', () => {
+  it('says what each column the server keeps about paying holds, so a new one waits on the policy', () => {
     const folder = join(SITE, '..', 'server', 'migrations');
     const sql = readdirSync(folder)
       .filter((file) => file.endsWith('.sql'))
@@ -838,33 +875,49 @@ describe('the privacy policy', () => {
         ...[...sql.matchAll(added)],
       ].map((match) => match[1]);
     };
-    expect(columns('syncAccess')).toEqual([
-      'account',
-      'gift',
-      'customer',
-      'subscription',
-      'status',
-      'renewsAt',
-      'canceling',
-      'checkedAt',
-      'checkoutAt',
-      'updatedAt',
-    ]);
-    expect(columns('freeSyncEmail')).toEqual(['email', 'since']);
+    /** The policy's words for each column. An account's ID is the one the policy's sync part covers. */
+    const told: Record<string, Record<string, string | null>> = {
+      syncAccess: {
+        account: null,
+        gift: 'whether we gave you sync for free',
+        customer: 'Stripe’s IDs for you as its customer',
+        subscription: 'and for your subscription',
+        status: 'your subscription’s status',
+        renewsAt: 'when the time you’ve paid for ends',
+        canceling: 'whether you’ve canceled it',
+        checkedAt: 'when we last checked it with Stripe',
+        checkoutAt: 'when you last started a checkout',
+        updatedAt: 'when any of this last changed',
+      },
+      freeSyncEmail: { email: 'we keep that address', since: 'and when we gave it' },
+    };
+    const policy = said(open('privacy.html').getElementById('paying'));
+    for (const [table, words] of Object.entries(told)) {
+      expect(columns(table), table).toEqual(Object.keys(words));
+      for (const [column, phrase] of Object.entries(words)) {
+        if (phrase) expect(policy, `${table}.${column}`).toContain(phrase);
+      }
+    }
   });
 });
 
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
-  it('says who sells sync, the same way as the other does', () => {
-    /** Who the page says sells sync: Stripe, as the seller of record, or us, with Stripe as our processor. */
-    const seller = (each: string) => {
+  it('says how sync is sold, the same way as the other does', () => {
+    /** How the page says sync is sold: through Link, as the merchant of record, or with Stripe as our processor. */
+    const sold = (each: string) => {
       const text = said(open(each).getElementById('paying'));
-      if (text.includes('Stripe sells it to you as the seller of record')) return 'Stripe';
-      if (text.includes('our payment processor')) return 'us';
+      if (text.includes('Sold through Link, LLC, as the merchant of record')) return 'Link';
+      if (text.includes('our payment processor')) return 'Stripe';
       return null;
     };
-    expect(seller(page)).not.toBeNull();
-    expect(seller(page)).toBe(seller(page === 'terms.html' ? 'privacy.html' : 'terms.html'));
+    expect(sold(page)).not.toBeNull();
+    expect(sold(page)).toBe(sold(page === 'terms.html' ? 'privacy.html' : 'terms.html'));
+  });
+
+  it('links to Link’s terms for the sale while Link is the merchant of record', () => {
+    const doc = open('terms.html');
+    const linked = doc.querySelector(`#paying a[href="${LINK_TERMS}"]`) !== null;
+    expect(linked).toBe(said(doc.getElementById('paying')).includes('as the merchant of record'));
   });
 
   it('says when it took effect', () => {

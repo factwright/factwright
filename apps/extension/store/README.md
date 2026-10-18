@@ -22,9 +22,9 @@ Before the first upload, the sync server and factwright.com must be deployed wit
 > • It reaches no site but Factwright's sync, and has no analytics or tracking.
 > • A setting lets it save LinkedIn jobs by their link alone, without reading their postings.
 >
-> Save to Factwright is free. It saves through Factwright's sync, so it needs Factwright, the free desktop app for Mac and Windows, with sync turned on. Sync is $5 a month or $50 a year: factwright.com/sync. Factwright is open source: github.com/factwright/factwright
+> Save to Factwright costs nothing to add. It saves through Factwright's sync, so it needs Factwright, the free desktop app for Mac and Windows, with sync turned on. Sync is a subscription, $5 a month or $50 a year: factwright.com/sync. Factwright is open source: github.com/factwright/factwright
 
-The price goes into both listings when Factwright starts selling sync, with the factwright.com deploy that adds /sync, and not before: until then, leave out "Sync is $5 a month or $50 a year: factwright.com/sync." Both stores ask a listing to say when an extension needs something paid to work, so it stays while the extension can save only through Factwright's sync.
+The price goes into both listings when Factwright starts selling sync, with the factwright.com deploy that adds /sync, and not before: until then, leave out "Sync is a subscription, $5 a month or $50 a year: factwright.com/sync." Both stores ask a listing to say when an extension needs something paid to work, so it stays while the extension can save only through Factwright's sync.
 
 Don't list other companies' names in it. The Chrome Web Store rejected the first submission for keyword spam (violation Yellow Argon) over "LinkedIn, Indeed, Greenhouse, Lever, Workday and other job sites". One mention of LinkedIn, for its setting, is the most it should carry.
 
