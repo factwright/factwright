@@ -1,6 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+// pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { type Opened, openApp, terminalText } from './app.ts';
 import { version } from './paths.ts';
 import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder } from './workspace.ts';
@@ -195,6 +197,32 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
   const dialog = window.getByRole('dialog', { name: 'AlexRiveraCoverLetter10142026_Acme.pdf' });
   await expect(dialog.getByRole('img', { name: 'Page 1 of 1' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Done' }).click();
+  // The PDF reads from the top, as applicant systems read it: the name and contact details, then
+  // the letter. Chromium writes positioned elements last, so the letter is positioned like its
+  // header, or the header would come last, after the signature.
+  const loading = getDocument({
+    data: new Uint8Array(
+      readFileSync(
+        join(dataDir, 'workspace', ACME_FOLDER, 'AlexRiveraCoverLetter10142026_Acme.pdf'),
+      ),
+    ),
+    disableFontFace: true,
+    verbosity: 0,
+  });
+  try {
+    const page = await (await loading.promise).getPage(1);
+    const { items } = await page.getTextContent({ disableNormalization: true });
+    const text = items
+      .map((item) => ('str' in item ? item.str : ''))
+      .join(' ')
+      .toLowerCase();
+    for (const header of ['alex rivera', 'alex@example.com']) {
+      expect(text.indexOf(header)).toBeGreaterThanOrEqual(0);
+      expect(text.indexOf(header)).toBeLessThan(text.indexOf('dear sam lee'));
+    }
+  } finally {
+    await loading.destroy();
+  }
   await expect(
     letter.getByRole('button', { name: 'Open AlexRiveraCoverLetter10142026_Acme.docx' }),
   ).toBeVisible();
