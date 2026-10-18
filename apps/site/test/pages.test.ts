@@ -572,23 +572,23 @@ describe('the extension page', () => {
     }
   });
 
-  it('says it needs Factwright and sync, ours or your own, with links to what each is, and its download in the steps', () => {
+  it('says it saves to Factwright, on the same computer or through sync, with links to what each is, and its download in the steps', () => {
     const doc = open('extension.html');
     const note = doc.querySelector('.ext-copy .ext-note');
     expect(said(note)).toContain(
-      'Needs Factwright for Mac or Windows, with Factwright’s sync or your own server',
+      'Saves to Factwright on the same computer, or through sync from anywhere',
     );
     // The download pages start the download at once, so only a link that says so goes there.
     expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
-    expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('Factwright’s sync');
-    expect(note?.querySelector(`a[href="${OWN_SERVER_PAGE}"]`)?.textContent).toBe(
-      'your own server',
-    );
+    expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('sync');
     expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
   });
 
-  it('says what each way to sync costs where it says how to set it up', () => {
+  it('says what each way to sync costs where it says how to set it up, after saving with no account', () => {
     const setup = open('extension.html').querySelector('#setup .lede');
+    expect(said(setup)).toContain(
+      'It saves straight to Factwright on the same computer, with no account, or through sync from any computer',
+    );
     expect(said(setup)).toContain(
       'Factwright’s sync, for $5 a month or $50 a year, or a server of your own, for free.',
     );
