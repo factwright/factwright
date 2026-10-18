@@ -1,22 +1,27 @@
 import 'virtual:theme.css';
 import './ui.css';
 import { JOB_LIMITS } from '@factwright/core';
-import { canReachSync, loadAccount } from './account.ts';
+import { canReachSync } from './account.ts';
+import { canReachComputer, type Destination, destination, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import { askToSave } from './messages.ts';
 import type { PageJob } from './page/read-job.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
 import type { JobToSave, SaveResult } from './save.ts';
-import { DEFAULT_SERVER, serverName } from './server.ts';
+import { serverName } from './server.ts';
 import { isJobAddress, toSave } from './tab-job.ts';
 
 /**
  * The popup under the toolbar button: it reads the job on the page you're on, lets you check its
- * title, company, pay and posting, and saves it to your job hunt. Nothing is sent until you save.
+ * title, company, pay and posting, and saves it to your job hunt, through sync or straight to
+ * Factwright on this computer. Nothing is sent until you save.
  */
 
 const app = document.getElementById('app') as HTMLElement;
+
+/** Where the extension saves, once the popup has looked: an account to manage only through sync. */
+let savingTo: Destination = null;
 
 /** Where the posting's text came from, as the popup says it. */
 const SOURCES: Record<PageJob['source'], string> = {
@@ -45,7 +50,11 @@ const settingsLink = () =>
   h(
     'p',
     { class: 'small muted' },
-    h('a', { href: 'setup.html', target: '_blank', rel: 'noopener' }, 'Settings and account'),
+    h(
+      'a',
+      { href: 'setup.html', target: '_blank', rel: 'noopener' },
+      savingTo?.to === 'computer' ? 'Settings' : 'Settings and account',
+    ),
   );
 
 const button = (text: string, click: () => void, primary = false) =>
@@ -68,10 +77,15 @@ function message(text: string, ...more: Child[]): void {
   show(app, heading(), h('p', {}, text), ...more, settingsLink());
 }
 
-/** What to say when the browser has taken away the extension's one site, its sync server. */
-function noAccess(server: string): void {
+/**
+ * What to say when the browser has taken away where the extension saves: its one site, its sync
+ * server, or native messaging, which reaches Factwright on this computer.
+ */
+function noAccess(to: Exclude<Destination, null>): void {
+  const where =
+    to.to === 'computer' ? 'Factwright on this computer' : serverName(to.account.server);
   message(
-    `The browser doesn’t let Save to Factwright reach ${serverName(server)}, so it can’t save jobs.`,
+    `The browser doesn’t let Save to Factwright reach ${where}, so it can’t save jobs.`,
     h('div', { class: 'actions' }, button('Allow it in setup', openSetup, true)),
   );
 }
@@ -140,7 +154,22 @@ function notes(page: PageJob, unread: Unread): Child[] {
   ];
 }
 
-function form(page: PageJob, unread: Unread, problem?: string, keepPosting = true): void {
+/**
+ * Saves a job: to Factwright on this computer from the popup itself, which the browser lets talk to
+ * it as soon as it's allowed, or through sync, which the background does.
+ */
+function saveTo(to: Exclude<Destination, null>, job: JobToSave): Promise<SaveResult> {
+  if (to.to === 'computer') return saveOnComputer(job);
+  return askToSave((sent) => ext.runtime.sendMessage(sent), job);
+}
+
+function form(
+  to: Exclude<Destination, null>,
+  page: PageJob,
+  unread: Unread,
+  problem?: string,
+  keepPosting = true,
+): void {
   const start = toSave(page);
   const hasPosting = Boolean(start.posting.trim());
   const keep = h('input', { id: 'keep', type: 'checkbox', checked: hasPosting && keepPosting });
@@ -155,12 +184,11 @@ function form(page: PageJob, unread: Unread, problem?: string, keepPosting = tru
     };
     const edited = { ...page, title: job.role, company: job.company, pay: job.pay };
     if (!job.company) {
-      form(edited, unread, 'Add the company’s name.', keep.checked);
+      form(to, edited, unread, 'Add the company’s name.', keep.checked);
       return;
     }
     saving();
-    const send = (sent: unknown) => ext.runtime.sendMessage(sent);
-    done(edited, job, unread, await askToSave(send, job), keep.checked);
+    done(to, edited, job, unread, await saveTo(to, job), keep.checked);
   };
   const facts = h(
     'dl',
@@ -213,13 +241,28 @@ function saving(): void {
   show(app, heading(), h('p', { class: 'muted' }, 'Saving to your job hunt…'));
 }
 
-/** What the popup says once a job is in, by what became of its posting. */
-function savedWords(result: Extract<SaveResult, { ok: true }>): {
+/**
+ * What the popup says once a job is saved, by what became of its posting, and where it went: for
+ * Factwright on this computer, which shows it at once, or takes it when it next opens, or through
+ * sync, which Factwright shows once it syncs.
+ */
+function savedWords(
+  result: Extract<SaveResult, { ok: true }>,
+  to: Exclude<Destination, null>,
+): {
   title: string;
   more?: string;
   retry?: boolean;
 } {
-  const syncs = 'Factwright on your computer shows it once it syncs.';
+  if ('later' in result) {
+    return {
+      title: 'Saved for Factwright on this computer.',
+      more: result.open
+        ? 'Factwright adds it to your job hunt, as New, in a moment.'
+        : 'Factwright adds it to your job hunt, as New, the next time you open it.',
+    };
+  }
+  const syncs = to.to === 'sync' ? ' Factwright on your computer shows it once it syncs.' : '';
   if (result.posting === 'failed') {
     return {
       title: result.already
@@ -244,12 +287,13 @@ function savedWords(result: Extract<SaveResult, { ok: true }>): {
     title: 'Saved to your job hunt, as New.',
     more:
       result.posting === 'none'
-        ? `With its link. ${syncs}`
-        : `With the posting as you saw it. ${syncs}`,
+        ? `With its link.${syncs}`
+        : `With the posting as you saw it.${syncs}`,
   };
 }
 
 function done(
+  to: Exclude<Destination, null>,
   page: PageJob,
   job: JobToSave,
   unread: Unread,
@@ -257,11 +301,10 @@ function done(
   keepPosting: boolean,
 ): void {
   if (result.ok) {
-    const says = savedWords(result);
+    const says = savedWords(result, to);
     const again = async () => {
       saving();
-      const send = (sent: unknown) => ext.runtime.sendMessage(sent);
-      done(page, job, unread, await askToSave(send, job), keepPosting);
+      done(to, page, job, unread, await saveTo(to, job), keepPosting);
     };
     message(
       says.title,
@@ -284,20 +327,23 @@ function done(
     return;
   }
   if (result.reason === 'no-access') {
-    void loadAccount().then((account) => noAccess(account?.server ?? DEFAULT_SERVER));
+    noAccess(to);
     return;
   }
-  form(page, unread, result.message, keepPosting);
+  form(to, page, unread, result.message, keepPosting);
 }
 
 async function start(): Promise<void> {
-  const account = await loadAccount();
-  if (!account?.keys) {
+  const to = await destination();
+  savingTo = to;
+  if (!to) {
     notSetUp();
     return;
   }
-  if (!(await canReachSync(account.server))) {
-    noAccess(account.server);
+  const reachable =
+    to.to === 'computer' ? await canReachComputer() : await canReachSync(to.account.server);
+  if (!reachable) {
+    noAccess(to);
     return;
   }
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
@@ -306,7 +352,7 @@ async function start(): Promise<void> {
     return;
   }
   const { page, unread } = await readTab(tab);
-  form(page, unread);
+  form(to, page, unread);
 }
 
 void start();

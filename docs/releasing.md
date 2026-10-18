@@ -22,6 +22,14 @@ repository's Releases page.
   node-pty stops a terminal there through a helper started that way.
 - **Only the app.** The archive holds the built app, its package file and node-pty, without
   source maps: never the folder's sources, tests or settings. `check-package` checks it.
+- **The helper.** Save to Factwright saves to the app on the same computer through
+  `factwright-save`, a small program the browsers start, which `pnpm dist:mac` and `dist:win`
+  build from `apps/desktop/helper` first. The installers put it in
+  `Factwright.app/Contents/Resources/helper` on a Mac, one file for Apple silicon and Intel, and
+  beside `Factwright.exe` on Windows. It's signed with the app, so the Gatekeeper and Windows signature
+  checks below cover it. `check-package` checks it's there, on a Mac for both kinds, and each
+  built app's tests check it answers with the app's version. The app registers it with the
+  browsers as it starts; uninstalling on Windows takes that away again.
 - **Signed.**
   - The Mac app is signed with Neatifai's Developer ID, then notarized and stapled by Apple, so
     Gatekeeper opens it.
@@ -143,11 +151,11 @@ Azure identity validation on 2029-01-12. Releases stop until each is renewed.
    - it's built with Factwright's sync server and download site, and both answer
 
    Then it builds, signs and notarizes on a Mac and on Windows. It checks:
-   - the app's archive holds only the app
+   - the app's archive holds only the app, and the helper is beside it
    - Gatekeeper and Windows accept the signatures, the app's own by Neatifai's name
    - the Mac app's certificate is from Apple's G2 authority, and Apple's ticket is stapled to it
    - each built app starts with a stand-in Claude Code, can turn sync on, and looks for updates
-     at the download site
+     at the download site, and its helper answers
 
    Only then does it upload, refusing to replace a version that's out already, and first records
    where each installer came from if the repository is public. A release that isn't signed is
@@ -174,10 +182,14 @@ run's artifacts. A run by hand on a tag is a release.
 ## On this computer
 After `pnpm --filter @factwright/desktop build`:
 - `pnpm --filter @factwright/desktop dist:mac` builds the Mac app into `apps/desktop/dist`, signed
-  for this computer alone. `dist:win` does the same on Windows, unsigned.
-- `pnpm --filter @factwright/desktop check-package` checks the app's archive holds only the app.
+  for this computer alone. `dist:win` does the same on Windows, unsigned. Each builds the helper
+  first, which takes a C compiler: Xcode's command line tools on a Mac, and on Windows clang,
+  MinGW, or Visual Studio's from its developer prompt.
+- `pnpm --filter @factwright/desktop check-package` checks the app's archive holds only the app,
+  and the helper is beside it.
 - `pnpm --filter @factwright/desktop e2e:packaged` starts the built app with a stand-in Claude
-  Code and checks it opens, reaches Claude Code with its own plugin, and reads the workspace.
+  Code and checks it opens, reaches Claude Code with its own plugin, and reads the workspace, and
+  that its helper answers.
 
 These builds are for trying out only: macOS and Windows warn about apps that aren't signed, and
 they have no sync server or update settings, so they sync only through a server of your own, and

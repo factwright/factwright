@@ -32,8 +32,35 @@ export type SyncStatus =
    * from Factwright's code on the data folder of one from factwright.com. It's left as it is.
    */
   | { state: 'no-server' }
-  /** Waiting for the user to approve signing in, in their browser. */
-  | ({ state: 'signing-in'; code: string; url: string } & OnServer)
+  /**
+   * Waiting for the user to allow signing in, in their browser, at `url`. To Factwright's sync,
+   * the page shows a code to check against `code`. A server of your own has none: the browser
+   * comes back to the app instead.
+   */
+  | ({ state: 'signing-in'; code: string | null; url: string } & OnServer)
+  /**
+   * Signed in to a server that sells sync, as Factwright's does, with an account that doesn't have
+   * it: the account subscribes in the browser, before this computer sets up.
+   */
+  | ({
+      state: 'subscribe';
+      email: string;
+      /** Whether the account had a subscription before, which ended. */
+      again: boolean;
+      /** Whether the app is checking every few seconds for the account to have sync. */
+      waiting: boolean;
+    } & OnServer)
+  /**
+   * Set up, but the account doesn't have sync now, where it's sold, so sync stopped here until it
+   * has. The job hunt here stays as it is, and so do the sign-in and the account key.
+   */
+  | ({
+      state: 'paused';
+      email: string;
+      /** Whether its subscription ended, rather than it never having one, as when free sync ended. */
+      again: boolean;
+      waiting: boolean;
+    } & OnServer)
   /**
    * Signed in, but this computer doesn't have the account key yet. The first device makes it,
    * with a recovery key; any other gets it from a device that's set up, or the recovery key.
@@ -54,6 +81,11 @@ export type SyncStatus =
       message: string | null;
       /** How many files stay on this computer, too big or with a name others can't hold. */
       skipped: number;
+      /**
+       * Where sync is sold: a renewal's payment didn't go through, and Stripe is trying it again.
+       * Sync carries on meanwhile. Left out otherwise.
+       */
+      paymentFailed?: true;
     } & OnServer)
   /**
    * The session ended, such as when this computer was signed out from another device. With a

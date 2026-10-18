@@ -22,6 +22,15 @@ const UPDATE_SETTINGS: Readonly<Record<string, string>> = {
   win32: 'resources/app-update.yml',
 };
 
+/**
+ * Where the app keeps the helper Save to Factwright saves through, from the folder its program is
+ * in: in its resources on a Mac, and beside its program on Windows.
+ */
+const HELPER: Readonly<Record<string, string>> = {
+  darwin: '../Resources/helper/factwright-save',
+  win32: 'factwright-save.exe',
+};
+
 // A copy installed from a release can stand in, with FACTWRIGHT_SYNC_SERVER and
 // FACTWRIGHT_DOWNLOADS_URL set as release.yml built it.
 const executable =
@@ -162,6 +171,26 @@ test('looks for updates only if built with a download site', () => {
   } else {
     expect(existsSync(settings)).toBe(false);
   }
+});
+
+// The helper the browsers start for Save to Factwright answers a hello, as the extension sends
+// one, with the app's version. A hello reads and writes nothing on disk, so this runs anywhere.
+test('carries the helper Save to Factwright reaches, which answers with the app’s version', () => {
+  const message = Buffer.from(JSON.stringify({ type: 'hello' }));
+  // Native messaging's framing: the message's length in four bytes, then the message.
+  const length = Buffer.alloc(4);
+  length.writeUInt32LE(message.length);
+  // Started as Chrome starts it, with the extension's origin, which it ignores.
+  const started = spawnSync(
+    join(dirname(executable), HELPER[process.platform] ?? 'none'),
+    ['chrome-extension://gjhjddlohoonikgdbfcfnljeffilblai/'],
+    { input: Buffer.concat([length, message]), timeout: 10_000 },
+  );
+  expect(started.error).toBeUndefined();
+  const answer = started.stdout;
+  expect(answer.length, String(started.stderr)).toBeGreaterThan(4);
+  expect(answer.readUInt32LE(0)).toBe(answer.length - 4);
+  expect(JSON.parse(answer.subarray(4).toString('utf8'))).toEqual({ ok: true, version });
 });
 
 // Never on this computer, where it would start on the user's own data folder.

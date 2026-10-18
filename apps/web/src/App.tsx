@@ -1,9 +1,20 @@
 import { localDate } from '@factwright/core';
-import type { AccountKeys, Legal } from '@factwright/sync';
+import {
+  type AccountKeys,
+  DESKTOP_SIGN_IN,
+  EXTENSION_SIGN_IN,
+  type ExtensionAsk,
+  type Legal,
+  readAskQuery,
+  readDesktopAskQuery,
+  type SyncAccess,
+} from '@factwright/sync';
 import { Button } from '@factwright/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Account } from './Account.tsx';
+import { ApproveDesktop } from './ApproveDesktop.tsx';
 import { ApproveDevice } from './ApproveDevice.tsx';
+import { ApproveExtension } from './ApproveExtension.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { JobView } from './JobView.tsx';
 import { forgetKeys, savedKeys } from './keys.ts';
@@ -12,6 +23,8 @@ import page from './page.module.css';
 import { navigate, replace, usePath } from './route.ts';
 import { PageLink, Shell } from './Shell.tsx';
 import { SignIn } from './SignIn.tsx';
+import { Subscribe, Subscribed } from './Subscribe.tsx';
+import { SyncNote } from './Subscription.tsx';
 import {
   client,
   getSession,
@@ -20,24 +33,49 @@ import {
   type Session,
   signInOptions,
 } from './server.ts';
-import { forgetSignInError, signInError } from './sign-in-errors.ts';
+import { backFromSigningIn, forgetSignInError, signInError } from './sign-in-errors.ts';
 import { openVault, type Vault } from './vault.ts';
 
 type State =
   | { stage: 'loading' }
   /** The server couldn't say who's signed in: offline, or busy. */
   | { stage: 'unreachable' }
-  | { stage: 'signed-out'; providers: Provider[]; legal: Legal | null }
+  | {
+      stage: 'signed-out';
+      providers: Provider[];
+      extensionRedirects: string[];
+      legal: Legal | null;
+    }
   | {
       stage: 'signed-in';
       session: Session;
       providers: Provider[];
       features: ServerOptions['features'];
+      extensionRedirects: string[];
       legal: Legal | null;
       keys: AccountKeys | null;
     };
 
 const LINK_CODE = 'factwright-link-code';
+
+/**
+ * What the sign-in page for a device's code says, by who asked for the code: the desktop app, or
+ * the browser extension, Save to Factwright, when it signs in with a code rather than through its
+ * window (EXTENSION_SIGN_IN). The server names them in the page's address, such as
+ * "for=extension". Anyone can change an address, so it only ever picks these words: signed in, the
+ * page goes by the server's own word for who asked. Without it, as for a code from before the
+ * server named them, it's the desktop app's.
+ */
+const DEVICE_SIGN_IN = {
+  desktop: {
+    title: 'Sign in to Factwright',
+    lead: 'Sign in to let Factwright on your computer sync your job hunt.',
+  },
+  extension: {
+    title: 'Sign in to set up Save to Factwright',
+    lead: 'Sign in with the account Factwright on your computer uses. Then Save to Factwright can save jobs to your job hunt.',
+  },
+} as const;
 
 /**
  * A link code from a QR code's address. It's taken out of the address at once, so it isn't
@@ -51,6 +89,21 @@ function takeLinkCode(): string | null {
   }
   return sessionStorage.getItem(LINK_CODE);
 }
+
+/**
+ * What Save to Factwright asked, from this page's address, when it's an ask this server can
+ * answer: for a return address it knows.
+ */
+function extensionAsk(redirects: string[]): ExtensionAsk | null {
+  const ask = readAskQuery(new URLSearchParams(location.search));
+  return ask && redirects.includes(ask.redirect) ? ask : null;
+}
+
+/**
+ * What the desktop app asked, from this page's address, when it's an ask it makes: back to it on
+ * the computer the browser runs on.
+ */
+const desktopAsk = () => readDesktopAskQuery(new URLSearchParams(location.search));
 
 /** How long the job hunt stays as loaded before coming back to the page updates it. */
 const STALE_MS = 30_000;
@@ -68,11 +121,15 @@ export function App() {
   const [loadedAt, setLoadedAt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // How the account has sync, on a server that sells it, for the notes that say it's paused or a
+  // payment didn't go through.
+  const [access, setAccess] = useState<SyncAccess | null>(null);
+  const [accessLooked, setAccessLooked] = useState(false);
   // A sign-in that didn't work comes back to the page that started it, with why in the address.
   // That's taken out of the address at once, and handed to the first page to open, and no other,
   // which says it until the person tries again.
   const [signInProblem, setSignInProblem] = useState(() =>
-    signInError(location.search, location.origin),
+    signInError(location.search, location.origin, backFromSigningIn()),
   );
   const today = localDate();
 
@@ -84,7 +141,7 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const [session, { providers, features, legal }] = await Promise.all([
+      const [session, { providers, features, extensionRedirects, legal }] = await Promise.all([
         getSession(),
         signInOptions(),
       ]);
@@ -96,7 +153,7 @@ export function App() {
         // Signed out from another device, run out, or the account deleted: this browser's keys
         // go too, as signing out here forgets them. The sign-in page doesn't wait for them to go.
         void forgetKeys().catch(() => {});
-        setState({ stage: 'signed-out', providers, legal });
+        setState({ stage: 'signed-out', providers, extensionRedirects, legal });
         return;
       }
       // Signed in, the code is used from here, once. A code that didn't work isn't tried again.
@@ -106,6 +163,7 @@ export function App() {
         session,
         providers,
         features,
+        extensionRedirects,
         legal,
         keys: await savedKeys(session.user.id),
       });
@@ -113,6 +171,22 @@ export function App() {
   }, []);
 
   const keys = state.stage === 'signed-in' ? state.keys : null;
+  const selling = state.stage === 'signed-in' && state.features.includes('subscription');
+
+  const loadAccess = useCallback(async () => {
+    if (!selling) return;
+    try {
+      setAccess((await client.account()).access ?? null);
+    } catch {
+      // The notes wait for the next look.
+    } finally {
+      setAccessLooked(true);
+    }
+  }, [selling]);
+
+  useEffect(() => {
+    void loadAccess();
+  }, [loadAccess]);
 
   // Signed out from elsewhere while the page was open, such as from a computer after this phone
   // was lost: the job hunt it shows and the keys it keeps go at once, not at the next reload.
@@ -122,6 +196,7 @@ export function App() {
     setState((current) => ({
       stage: 'signed-out',
       providers: 'providers' in current ? current.providers : [],
+      extensionRedirects: 'extensionRedirects' in current ? current.extensionRedirects : [],
       legal: 'legal' in current ? current.legal : null,
     }));
   }, []);
@@ -163,12 +238,14 @@ export function App() {
   // Coming back to the page brings the job hunt up to date.
   useEffect(() => {
     const update = () => {
-      if (document.visibilityState === 'visible' && Date.now() - loadedAt > STALE_MS)
+      if (document.visibilityState === 'visible' && Date.now() - loadedAt > STALE_MS) {
         void refresh();
+        void loadAccess();
+      }
     };
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);
-  }, [refresh, loadedAt]);
+  }, [refresh, loadAccess, loadedAt]);
 
   if (state.stage === 'loading') {
     return (
@@ -198,15 +275,89 @@ export function App() {
 
   if (state.stage === 'signed-out') {
     const { providers, legal } = state;
-    if (path === '/device') {
+    if (path === EXTENSION_SIGN_IN.page) {
+      // In the browser's own window for extensions, which signing in comes back to.
+      return (
+        <Shell>
+          {extensionAsk(state.extensionRedirects) ? (
+            <SignIn
+              providers={providers}
+              legal={legal}
+              title="Sign in to Factwright"
+              lead="Sign in with the account Factwright on your computer uses, to let Save to Factwright save jobs to it."
+              returnTo={location.pathname + location.search}
+              signInProblem={signInProblem}
+            />
+          ) : (
+            <ApproveExtension ask={null} account="" email="" />
+          )}
+        </Shell>
+      );
+    }
+    if (path === DESKTOP_SIGN_IN.page) {
+      // As the desktop app opens it, to sign in to a server of your own, which signing in comes
+      // back to.
+      return (
+        <Shell>
+          {desktopAsk() ? (
+            <SignIn
+              providers={providers}
+              legal={legal}
+              {...DEVICE_SIGN_IN.desktop}
+              returnTo={location.pathname + location.search}
+              signInProblem={signInProblem}
+            />
+          ) : (
+            <ApproveDesktop ask={null} account="" email="" />
+          )}
+        </Shell>
+      );
+    }
+    if (path === '/subscribe' || path === '/subscribe/done') {
+      const done = path === '/subscribe/done';
       return (
         <Shell>
           <SignIn
             providers={providers}
             legal={legal}
-            title="Sign in to Factwright"
-            lead="Sign in to let Factwright on your computer sync your job hunt."
+            title={done ? 'Thanks for subscribing' : 'Subscribe to sync'}
+            lead={
+              done
+                ? 'Go back to Factwright: it’s finishing setting up sync. To see your subscription here, sign in.'
+                : 'Sign in with the account you use in Factwright, to subscribe to sync.'
+            }
             returnTo={location.pathname + location.search}
+            signInProblem={signInProblem}
+          />
+        </Shell>
+      );
+    }
+    if (path === '/device') {
+      const asker =
+        new URLSearchParams(location.search).get('for') === 'extension' ? 'extension' : 'desktop';
+      return (
+        <Shell>
+          <SignIn
+            providers={providers}
+            legal={legal}
+            {...DEVICE_SIGN_IN[asker]}
+            // Who asked stays in the address through signing in, with the code.
+            returnTo={location.pathname + location.search}
+            signInProblem={signInProblem}
+          />
+        </Shell>
+      );
+    }
+    if (path === '/account') {
+      // As the desktop app opens it, to manage a subscription or download a copy: it comes back.
+      return (
+        <Shell>
+          <SignIn
+            providers={providers}
+            legal={legal}
+            title="Your account"
+            lead="Sign in to see your account: its devices, a copy of your job hunt, and paying for sync where it’s sold."
+            returnTo="/account"
             signInProblem={signInProblem}
           />
         </Shell>
@@ -240,6 +391,36 @@ export function App() {
     </>
   );
 
+  if (path === EXTENSION_SIGN_IN.page) {
+    // In the browser's own window for extensions, with nothing to go on to from there.
+    return (
+      <Shell>
+        <ApproveExtension
+          ask={extensionAsk(state.extensionRedirects)}
+          account={session.user.id}
+          email={session.user.email}
+          providers={providers}
+          signInProblem={signInProblem}
+        />
+      </Shell>
+    );
+  }
+
+  if (path === DESKTOP_SIGN_IN.page) {
+    // On the way back to the desktop app, with nothing to go on to from here.
+    return (
+      <Shell>
+        <ApproveDesktop
+          ask={desktopAsk()}
+          account={session.user.id}
+          email={session.user.email}
+          providers={providers}
+          signInProblem={signInProblem}
+        />
+      </Shell>
+    );
+  }
+
   if (path === '/device') {
     const userCode = new URLSearchParams(location.search).get('user_code') ?? '';
     return (
@@ -250,6 +431,27 @@ export function App() {
           providers={providers}
           signInProblem={signInProblem}
         />
+      </Shell>
+    );
+  }
+
+  if (path === '/subscribe') {
+    return (
+      <Shell nav={nav}>
+        <Subscribe
+          account={session.user.id}
+          email={session.user.email}
+          legal={legal}
+          onSignedOut={forgetHere}
+        />
+      </Shell>
+    );
+  }
+
+  if (path === '/subscribe/done') {
+    return (
+      <Shell nav={nav}>
+        <Subscribed onSignedOut={forgetHere} />
       </Shell>
     );
   }
@@ -271,6 +473,14 @@ export function App() {
   }
 
   if (!keys || path === '/link') {
+    // Where sync is sold, linking waits for a first look at the account, which may not sync.
+    if (selling && !accessLooked) {
+      return (
+        <Shell nav={nav}>
+          <p className={page.hint}>Opening…</p>
+        </Shell>
+      );
+    }
     return (
       <Shell nav={nav}>
         <LinkBrowser
@@ -278,6 +488,7 @@ export function App() {
           email={session.user.email}
           // A browser that's linked already, back here from a QR code, doesn't ask again.
           canApprove={features.includes('approve') && !keys}
+          needsSync={access && !access.allowed ? (access.subscription ? 'again' : 'first') : null}
           code={linkCode}
           onSignedOut={forgetHere}
           onLinked={(linked) => {
@@ -298,6 +509,9 @@ export function App() {
         <p className={page.problem} role="alert">
           {problem}
         </p>
+      )}
+      {vault && !job && (
+        <SyncNote access={access} updatedAt={vault.updatedAt} onSignedOut={forgetHere} />
       )}
       {!vault ? (
         <p className={page.hint}>{problem ? '' : 'Unlocking your job hunt…'}</p>

@@ -40,6 +40,20 @@ const diskImage = JSON.parse(
 /** Each run builds for one kind of computer, as the dist scripts say. */
 const windows = process.argv.includes('--win');
 
+/**
+ * The helper the browsers start for Save to Factwright, so it can save to the app on this
+ * computer. It's in helper/out once scripts/build-helper.ts has built it, as `pnpm dist:mac` and
+ * `dist:win` do first. Without it, electron-builder would build the app anyway, with only a
+ * warning, and the extension could never reach that app: the build stops instead.
+ */
+const helpers = { mac: 'helper/out/factwright-save', win: 'helper/out/factwright-save.exe' };
+const helper = windows ? helpers.win : helpers.mac;
+if (!existsSync(new URL(helper, import.meta.url))) {
+  throw new Error(
+    `No helper at apps/desktop/${helper}: build it with pnpm --filter @factwright/desktop helper.`,
+  );
+}
+
 /** Whether the Mac build has a Developer ID certificate to sign with. */
 const macCertificate = Boolean(env.CSC_LINK || env.CSC_NAME);
 
@@ -129,6 +143,12 @@ export default {
     entitlementsInherit: 'build/entitlements.mac.plist',
     // node-pty's prebuilt files are the same in both halves of the universal app, kept as they are.
     x64ArchFiles: '**/node_modules/node-pty/prebuilds/**',
+    // The helper goes in Contents/Resources/helper, and is signed with the app, every program in
+    // it being signed. Signing goes deepest first, so it's signed before the app's own program,
+    // which won't be signed beside a program that isn't yet, as one in Contents/MacOS would be.
+    // node-pty's own helper is under Contents/Resources too. It's built for both kinds of Mac in
+    // one file, which the universal app keeps as it is.
+    extraFiles: [{ from: helpers.mac, to: 'Resources/helper/factwright-save' }],
     // "-" signs for this computer alone, when there's no Developer ID certificate.
     ...(macCertificate ? {} : { identity: '-' }),
     notarize: Boolean(macCertificate && env.APPLE_API_KEY),
@@ -152,6 +172,8 @@ export default {
     files: filesFor(['darwin-*', 'win32-arm64']),
     // Windows checks each module a program loads, so node-pty's are signed as well as the app.
     signExts: ['.node', '.dll'],
+    // The helper goes beside Factwright.exe, and is signed with it, as is every program there.
+    extraFiles: [{ from: helpers.win, to: 'factwright-save.exe' }],
     ...(azure ? { azureSignOptions: azure } : {}),
   },
   nsis: {

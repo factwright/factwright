@@ -1,5 +1,7 @@
+import { STORE_RETURNS } from '@factwright/sync';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { authOptions, deviceName } from '../src/auth-options.ts';
+import { APP, serverWith } from './github.ts';
 import { sessionCookie, startServer, type TestServer } from './server.ts';
 
 let server: TestServer;
@@ -173,7 +175,7 @@ describe('signing the desktop app in', () => {
 
   it('is only for the Factwright app and its browser extension', async () => {
     const other = await post('/api/auth/device/code', { client_id: 'something-else' });
-    expect(other.status).toBe(400);
+    expect(other).toMatchObject({ status: 400, body: { error: 'invalid_client' } });
   });
 
   it('can’t be approved without signing in, or by another account', async () => {
@@ -276,10 +278,11 @@ describe('signing in on the web', () => {
   });
 
   it('lets the web view name its own page to come back to, should it not work', async () => {
+    // With the code, and who asked for it, as the page's address has them.
     const started = await post('/api/auth/sign-in/social', {
       provider: 'github',
-      callbackURL: '/device?user_code=WDJBMJHT',
-      errorCallbackURL: '/device?user_code=WDJBMJHT',
+      callbackURL: '/device?user_code=WDJBMJHT&for=extension',
+      errorCallbackURL: '/device?user_code=WDJBMJHT&for=extension',
     });
     expect(started.status).toBe(200);
     expect(new URL(String(started.body.url)).origin).toBe('https://github.com');
@@ -289,7 +292,8 @@ describe('signing in on the web', () => {
     const response = await fetch(new URL('/api/sign-in-options', server.url));
     expect(await response.json()).toEqual({
       providers: ['github'],
-      features: ['approve'],
+      features: ['approve', 'loopback-sign-in'],
+      extensionRedirects: STORE_RETURNS,
       legal: { terms: 'https://factwright.com/terms', privacy: 'https://factwright.com/privacy' },
     });
   });
@@ -484,5 +488,50 @@ describe('signing the browser extension in', () => {
       'Save to Factwright in Chrome on Mac',
     );
     expect(deviceName('Save to Factwright in Firefox')).toBe('Save to Factwright in Firefox');
+  });
+});
+
+/** Asks for a device code for a client, of the Worker, or of sign-in on its own. */
+async function codeFor(
+  clientId: string,
+  origin: string,
+  handle: (request: Request) => Promise<Response>,
+) {
+  const response = await handle(
+    new Request(`${origin}/api/auth/device/code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.7' },
+      body: JSON.stringify({ client_id: clientId }),
+    }),
+  );
+  return { headers: response.headers, body: (await response.json()) as Record<string, unknown> };
+}
+
+describe('the page a device code opens', () => {
+  it('names who asked for the code, and the rest of the answer is sign-in’s own', async () => {
+    // Sign-in as the Worker sets it up, without the Worker around it.
+    const { auth } = serverWith(undefined);
+    for (const [clientId, asker] of [
+      ['factwright-desktop', 'desktop'],
+      ['factwright-extension', 'extension'],
+    ] as const) {
+      const own = await codeFor(clientId, APP, auth.handler);
+      expect(own.body.verification_uri_complete).toBe(
+        `${APP}/device?user_code=${String(own.body.user_code)}`,
+      );
+
+      const code = await codeFor(clientId, server.url.origin, fetch);
+      const page = `${server.url.origin}/device`;
+      expect(code.body).toEqual({
+        ...own.body,
+        device_code: expect.any(String),
+        user_code: expect.stringMatching(/^[A-Z0-9]{8}$/),
+        verification_uri: page,
+        verification_uri_complete: `${page}?user_code=${String(code.body.user_code)}&for=${asker}`,
+      });
+      for (const header of ['content-type', 'cache-control', 'pragma']) {
+        expect(code.headers.get(header), header).toBe(own.headers.get(header));
+      }
+    }
   });
 });

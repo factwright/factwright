@@ -1,12 +1,18 @@
+import { returnAddress, STORE_RETURNS } from '@factwright/sync';
 import { describe, expect, it } from 'vitest';
 import { FACTWRIGHT_SYNC, hostPattern, manifest } from '../src/manifest.ts';
 import {
+  askServer,
   checkServer,
+  codePage,
   DEFAULT_SERVER,
+  hostOf,
   isOwn,
   isSyncServer,
   readServer,
+  type ServerAnswer,
   serverName,
+  signInWay,
 } from '../src/server.ts';
 
 const OWN = 'https://factwright-sync.sam.workers.dev';
@@ -130,12 +136,115 @@ describe('checking a server', () => {
     expect(await checkServer(OWN, async () => new Response(cut))).toBe('unreachable');
   });
 
+  it('reads the return addresses the server knows for the sign-in window', async () => {
+    const redirects = ['https://gjhjddlohoonikgdbfcfnljeffilblai.chromiumapp.org/'];
+    expect(
+      await askServer(
+        OWN,
+        answering(200, JSON.stringify({ providers: [], extensionRedirects: [...redirects, 42] })),
+      ),
+    ).toEqual({ check: 'ok', redirects });
+    // A server from before the window knows none, so the extension signs in with a code there.
+    expect(await askServer(OWN, answering(200, '{"providers":[]}'))).toEqual({
+      check: 'ok',
+      redirects: [],
+    });
+    expect(
+      await askServer(
+        OWN,
+        answering(200, JSON.stringify({ providers: [], extensionRedirects: redirects[0] })),
+      ),
+    ).toEqual({ check: 'ok', redirects: [] });
+    // And one that isn't a sync server, none at all.
+    expect(
+      await askServer(OWN, answering(200, JSON.stringify({ extensionRedirects: redirects }))),
+    ).toEqual({ check: 'not-sync', redirects: [] });
+  });
+
   it('reads sign-in options as a Factwright sync server’s only with a list of ways to sign in', () => {
     expect(isSyncServer({ providers: ['github', 'google'] })).toBe(true);
     expect(isSyncServer({ providers: 'github' })).toBe(false);
     expect(isSyncServer([])).toBe(false);
     expect(isSyncServer('providers')).toBe(false);
     expect(isSyncServer(null)).toBe(false);
+  });
+});
+
+describe('how setup signs in', () => {
+  const ID = 'gjhjddlohoonikgdbfcfnljeffilblai';
+  const RETURN = STORE_RETURNS[0] as string;
+  /** A sync server's answer, knowing these return addresses. */
+  const knows = (...redirects: string[]): ServerAnswer => ({ check: 'ok', redirects });
+
+  it('signs in to the server it’s built for through the window, where that knows this copy', () => {
+    expect(signInWay(DEFAULT_SERVER, knows(...STORE_RETURNS), RETURN, ID)).toEqual({
+      by: 'window',
+      redirect: RETURN,
+    });
+  });
+
+  it('and with a code where it doesn’t, in a browser with no window, or when asked for one', () => {
+    // From before the window, or a copy it doesn't know, such as one built from the code.
+    expect(signInWay(DEFAULT_SERVER, knows(), RETURN, ID)).toEqual({ by: 'code' });
+    expect(signInWay(DEFAULT_SERVER, knows(STORE_RETURNS[1] as string), RETURN, ID)).toEqual({
+      by: 'code',
+    });
+    expect(signInWay(DEFAULT_SERVER, knows(RETURN), null, ID)).toEqual({ by: 'code' });
+    expect(signInWay(DEFAULT_SERVER, knows(RETURN), RETURN, ID, true)).toEqual({ by: 'code' });
+  });
+
+  it('signs in to a server of your own through the window alone, even when asked for a code', () => {
+    expect(signInWay(OWN, knows(...STORE_RETURNS), RETURN, ID)).toEqual({
+      by: 'window',
+      redirect: RETURN,
+    });
+    expect(signInWay(OWN, knows(RETURN), RETURN, ID, true)).toEqual({
+      by: 'window',
+      redirect: RETURN,
+    });
+  });
+
+  it('never with a code, which a server of your own could have from another server, such as Factwright’s', () => {
+    // One that offers no window, from before it or acting as if it were, to have setup show a
+    // code Factwright's sync gave it, for the person to allow there.
+    expect(signInWay(OWN, knows(), RETURN, ID)).toEqual({
+      problem:
+        'factwright-sync.sam.workers.dev needs an update for this version of Save to Factwright, which signs in to a server of your own through the browser’s window. Update it, then try again.',
+    });
+    // One that doesn't know this copy, as one built from the code, which it can add.
+    const built = 'abcdefghijklmnopabcdefghijklmnop';
+    expect(
+      signInWay(OWN, knows(...STORE_RETURNS), `https://${built}.chromiumapp.org/`, built),
+    ).toEqual({
+      problem: `factwright-sync.sam.workers.dev doesn’t know this copy of Save to Factwright, so it can’t sign it in. Add its ID, ${built}, to EXTENSION_IDS in the server’s settings, then try again.`,
+    });
+    // A browser with no window for extensions.
+    expect(signInWay(OWN, knows(...STORE_RETURNS), null, ID)).toEqual({
+      problem:
+        'This browser has no sign-in window for extensions, which Save to Factwright needs to sign in to a server of your own.',
+    });
+  });
+});
+
+describe('the page a code’s sign-in opens', () => {
+  const HOST = hostOf(DEFAULT_SERVER);
+
+  it('is the server’s own page', () => {
+    const url = `${DEFAULT_SERVER}/device?user_code=WDJBMJHT&for=extension`;
+    expect(codePage(url, DEFAULT_SERVER)).toEqual({ ok: true, url });
+  });
+
+  it('is never another address, or anything that isn’t a page on one', () => {
+    expect(codePage('https://sync.example.com/device?user_code=WDJBMJHT', DEFAULT_SERVER)).toEqual({
+      ok: false,
+      problem: `${HOST} sends its sign-in to another address, sync.example.com, so Save to Factwright didn’t open it.`,
+    });
+    for (const url of ['/device?user_code=WDJBMJHT', 'file:///etc/hosts', 'javascript:void 0']) {
+      expect(codePage(url, DEFAULT_SERVER)).toEqual({
+        ok: false,
+        problem: `${HOST} didn’t give a sign-in page Save to Factwright can open.`,
+      });
+    }
   });
 });
 
@@ -149,6 +258,38 @@ describe('the server it’s built for', () => {
   it('names a server of your own by its address', () => {
     expect(isOwn(OWN)).toBe(true);
     expect(serverName(OWN)).toBe('your sync server, factwright-sync.sam.workers.dev');
+  });
+});
+
+describe('the manifest’s permissions', () => {
+  it('asks for the browser’s own sign-in window, which shows no warning, and nothing more', () => {
+    for (const target of ['chrome', 'firefox'] as const) {
+      expect(manifest(target, '1.0.0').permissions).toEqual([
+        'activeTab',
+        'scripting',
+        'storage',
+        'contextMenus',
+        'identity',
+      ]);
+    }
+  });
+
+  it('gives Firefox the ID whose return address sync servers know', async () => {
+    const gecko = (
+      manifest('firefox', '1.0.0').browser_specific_settings as {
+        gecko: { id: string };
+      }
+    ).gecko;
+    expect(await returnAddress(gecko.id)).toBe(STORE_RETURNS[1]);
+  });
+
+  it('has no content scripts, and nothing a page can load or message', () => {
+    for (const target of ['chrome', 'firefox'] as const) {
+      const built = manifest(target, '1.0.0');
+      expect(built.content_scripts).toBeUndefined();
+      expect(built.web_accessible_resources).toBeUndefined();
+      expect(built.externally_connectable).toBeUndefined();
+    }
   });
 });
 

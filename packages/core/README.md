@@ -21,6 +21,7 @@ Shared logic for the desktop app, the web view and the sync server. It runs anyw
 | `markdown` | Reads the tables, sections and lists the skills write |
 | `pay` | Reads an annual pay range from posting text such as "$150-200k" or "$70-$85 an hour" |
 | `dates` | Checks `YYYY-MM-DD` calendar dates, and gives the user's own date |
+| `site` | What the app and the web view say alike about Factwright beyond them: the extension's page, the steps for a sync server of your own, what Factwright's sync costs, and where to ask for it free |
 
 It reads the workspace through a small interface, so the desktop app reads files on disk and tests use a few files in memory. Encryption and the sync protocol are in [`packages/sync`](../sync).
 

@@ -19,7 +19,35 @@ export {
 } from './bytes.ts';
 export { type ClientOptions, SyncClient, SyncError, type SyncErrorKind } from './client.ts';
 export { fromCode, toCode } from './code.ts';
+export {
+  DESKTOP_SIGN_IN,
+  type DesktopAsk,
+  desktopAskUrl,
+  desktopAskValues,
+  isLoopbackReturn,
+  LoopbackSignIn,
+  type LoopbackSignInDeps,
+  loopbackReturn,
+  readDesktopAsk,
+  readDesktopAskQuery,
+} from './desktop-sign-in.ts';
 export { CHECK_EMOJI, checkEmoji } from './emoji.ts';
+export {
+  askUrl,
+  askValues,
+  CODE,
+  challengeOf,
+  EXTENSION_IDS,
+  EXTENSION_SIGN_IN,
+  type ExtensionAsk,
+  readAsk,
+  readAskQuery,
+  returnAddress,
+  STORE_RETURNS,
+  VERIFIER,
+  WindowSignIn,
+  type WindowSignInDeps,
+} from './extension-sign-in.ts';
 export {
   ACCOUNT_KEY_BYTES,
   type AccountKeys,
@@ -66,6 +94,7 @@ export {
   type Legal,
   LIMITS,
   type LinkRequest,
+  type Period,
   type PushChange,
   type PushResponse,
   type PushResult,

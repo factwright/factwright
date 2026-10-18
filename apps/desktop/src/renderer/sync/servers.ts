@@ -2,9 +2,9 @@ import type { SyncStatus } from '../../shared/sync.ts';
 
 /**
  * The steps for running a sync server of your own, which "How to set one up" and "How to update"
- * open: the ready-to-deploy copy, with its Deploy to Cloudflare button.
+ * open, kept with the web view's in @factwright/core.
  */
-export const OWN_SERVER_GUIDE = 'https://github.com/factwright/sync-server';
+export { OWN_SERVER_GUIDE } from '@factwright/core';
 
 /** A server's address as people know it, such as factwright-sync.sam.workers.dev. */
 export const hostOf = (server: string): string => new URL(server).host;

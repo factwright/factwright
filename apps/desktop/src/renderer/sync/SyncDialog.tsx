@@ -6,6 +6,7 @@ import { LinkStep } from './LinkStep.tsx';
 import { ManageSync } from './ManageSync.tsx';
 import { RecoveryKeyStep } from './RecoveryKeyStep.tsx';
 import { SignInStep } from './SignInStep.tsx';
+import { SubscribeStep } from './SubscribeStep.tsx';
 
 /** The dialog's title and line for each step. */
 function heading(status: SyncStatus, connecting: boolean): { title: string; description?: string } {
@@ -25,6 +26,13 @@ function heading(status: SyncStatus, connecting: boolean): { title: string; desc
       return { title: 'Sign in with your browser' };
     case 'signed-out':
       return { title: 'Sign in to sync again' };
+    case 'subscribe':
+      return {
+        title: status.again ? 'Subscribe to sync again' : 'Subscribe to sync',
+        description: `Signed in as ${status.email}.`,
+      };
+    case 'paused':
+      return { title: 'Sync is paused', description: `Signed in as ${status.email}.` };
     case 'setting-up':
       return status.firstDevice
         ? {
@@ -45,8 +53,9 @@ function heading(status: SyncStatus, connecting: boolean): { title: string; desc
 
 /**
  * Sync, from turning it on to managing it: choosing Factwright's own sync or a server of your own,
- * signing in through the browser, saving the recovery key on the first device, linking the others,
- * and, once it's on, the account's devices.
+ * signing in through the browser, subscribing where sync is sold, saving the recovery key on the
+ * first device, linking the others, and, once it's on, the account's devices. A subscription
+ * that ended pauses it, until the account subscribes again.
  */
 export function SyncDialog({
   api,
@@ -89,6 +98,11 @@ export function SyncDialog({
             );
           case 'on':
             return <ManageSync api={api} status={status} approvals={approvals} close={close} />;
+          case 'subscribe':
+          case 'paused':
+            return (
+              <SubscribeStep api={api} status={status} onConnecting={setConnecting} close={close} />
+            );
           default:
             return (
               <SignInStep

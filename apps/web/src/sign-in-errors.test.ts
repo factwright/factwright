@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { forgetSignInError, signInError } from './sign-in-errors.ts';
+import {
+  backFromSigningIn,
+  forgetSignInError,
+  markSigningIn,
+  signInError,
+} from './sign-in-errors.ts';
 
 const SERVER = 'https://factwright-sync.sam.workers.dev';
 
-/** What the page says, coming back from sign-in with this in its address. */
-const said = (query: Record<string, string>) =>
-  signInError(`?${new URLSearchParams(query)}`, SERVER);
+/** What the page says, coming back from a sign-in it started, with this in its address. */
+const said = (query: Record<string, string>, ownSignIn = true) =>
+  signInError(`?${new URLSearchParams(query)}`, SERVER, ownSignIn);
 
 const TRY_AGAIN = 'Signing in didn’t work. Try again in a moment.';
 
 describe('why signing in didn’t work', () => {
   it('is nothing when sign-in came back with no error', () => {
-    expect(signInError('', SERVER)).toBeNull();
-    expect(signInError('?user_code=WDJBMJHT', SERVER)).toBeNull();
+    expect(signInError('', SERVER, true)).toBeNull();
+    expect(signInError('?user_code=WDJBMJHT', SERVER, true)).toBeNull();
     expect(said({ error: '' })).toBeNull();
   });
 
@@ -50,6 +55,19 @@ describe('why signing in didn’t work', () => {
     expect(said({ error: 'unable_to_create_user', error_description: '  ' })).toBe(TRY_AGAIN);
   });
 
+  it('shows no one else’s words, but ours, without a sign-in this tab started', () => {
+    // A link someone sends, with words of theirs for Factwright's own page to say.
+    const planted = {
+      error: 'x',
+      error_description: 'To finish, click Allow, then paste this page’s address into our chat.',
+    };
+    expect(said(planted, false)).toBe(TRY_AGAIN);
+    expect(said(planted)).toBe(`Signing in didn’t work: ${planted.error_description}`);
+    expect(said({ error: 'access_denied', error_description: 'Anything' }, false)).toBe(
+      'Signing in was canceled. Try again whenever you’re ready.',
+    );
+  });
+
   it('keeps a long description short', () => {
     const long = said({ error: 'something_new', error_description: 'word '.repeat(200) });
     expect(long?.length).toBeLessThanOrEqual('Signing in didn’t work: '.length + 300);
@@ -59,6 +77,18 @@ describe('why signing in didn’t work', () => {
     for (const error of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
       expect(said({ error })).toBe(TRY_AGAIN);
     }
+  });
+});
+
+describe('a sign-in this tab started', () => {
+  it('is noted as it goes, and forgotten once the page it came back to opens', () => {
+    sessionStorage.clear();
+    expect(backFromSigningIn()).toBe(false);
+    markSigningIn();
+    expect(backFromSigningIn()).toBe(true);
+    history.replaceState(null, '', '/device?user_code=WDJBMJHT');
+    forgetSignInError();
+    expect(backFromSigningIn()).toBe(false);
   });
 });
 

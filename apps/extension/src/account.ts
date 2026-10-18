@@ -1,7 +1,14 @@
-import { type AccountKeys, CLIENTS, DeviceSignIn, SyncClient } from '@factwright/sync';
+import {
+  type AccountKeys,
+  CLIENTS,
+  DeviceSignIn,
+  type SignInResult,
+  SyncClient,
+  WindowSignIn,
+} from '@factwright/sync';
 import { ext } from './ext.ts';
 import { hostPattern } from './manifest.ts';
-import { DEFAULT_SERVER } from './server.ts';
+import { DEFAULT_SERVER, isOwn } from './server.ts';
 
 /**
  * What the extension keeps once it's set up: its own sign-in to sync, and the account's keys. The
@@ -160,15 +167,60 @@ export const syncFetch: typeof fetch = (input, init) =>
 export const clientFor = (server: string, token: string) =>
   new SyncClient({ server, token: () => token, fetch: syncFetch });
 
-/** Signing the extension in to a server, with a code the person approves in their browser. */
-export const deviceSignIn = (server: string) =>
-  new DeviceSignIn({ server, clientId: CLIENTS.extension, fetch: syncFetch });
+/**
+ * Signing the extension in with a code the person approves in their browser: only ever with the
+ * server it was built for, since a server of your own could pass along another server's code
+ * (signInWay, in server.ts).
+ */
+export function deviceSignIn(server: string): DeviceSignIn {
+  if (isOwn(server)) {
+    throw new Error(
+      'Save to Factwright signs in to a server of your own through the browser’s window alone.',
+    );
+  }
+  return new DeviceSignIn({ server, clientId: CLIENTS.extension, fetch: syncFetch });
+}
+
+/**
+ * Where this copy's sign-in window returns to, as the browser names it for this extension alone,
+ * or null in a browser with no such window.
+ */
+export function returnAddress(): string | null {
+  try {
+    return ext.identity?.getRedirectURL() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** What each browser says when the person closes the window, which is canceling. */
+const CLOSED = new Set(['The user did not approve access.', 'User cancelled or denied access.']);
+
+/**
+ * Signs the extension in through the browser's own window (WindowSignIn): the server's page asks
+ * there, where the person signs in if they need to, and only this extension gets the answer.
+ */
+export async function windowSignIn(server: string, redirect: string): Promise<SignInResult> {
+  const flow = new WindowSignIn({ server, redirect, fetch: syncFetch });
+  const url = await flow.start();
+  let returned: string | undefined;
+  try {
+    returned = await ext.identity?.launchWebAuthFlow({ url, interactive: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return CLOSED.has(message)
+      ? { ok: false, reason: 'canceled', message: 'Signing in was canceled.' }
+      : { ok: false, reason: 'failed', message };
+  }
+  if (!returned) return { ok: false, reason: 'canceled', message: 'Signing in was canceled.' };
+  return flow.finish(returned);
+}
 
 /** How long signing out waits for the server, before forgetting the sign-in here anyway. */
 const SIGN_OUT_MS = 10_000;
 
 /** Ends the extension's session on the server, so its sign-in can't be used again. */
-export async function endSession(account: Account): Promise<void> {
+export async function endSession(account: Pick<Account, 'server' | 'token'>): Promise<void> {
   await syncFetch(new URL('/api/auth/sign-out', account.server), {
     method: 'POST',
     headers: { authorization: `Bearer ${account.token}`, 'content-type': 'application/json' },

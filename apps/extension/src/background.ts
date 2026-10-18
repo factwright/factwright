@@ -1,5 +1,6 @@
 import { LIGHT } from '@factwright/ui/tokens';
-import { browserName, canReachSync, clientFor, forgetAccount, loadAccount } from './account.ts';
+import { browserName, canReachSync, clientFor, forgetAccount } from './account.ts';
+import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
 import { isSave } from './messages.ts';
 import { isWebPage, readTab } from './read-tab.ts';
@@ -9,8 +10,9 @@ import { needsChecking, toSave } from './tab-job.ts';
 
 /**
  * The extension's background: it saves jobs, for the popup, the page's right-click menu and the
- * keyboard shortcut, and opens the setup page on install. It holds nothing between saves: the
- * sign-in and the keys stay in the extension's own storage.
+ * keyboard shortcut, and opens the setup page on install. It saves through sync, or straight to
+ * Factwright on this computer, as setup set it up. It holds nothing between saves: the sign-in,
+ * the keys and the settings stay in the extension's own storage.
  */
 
 const MENU = 'save-job';
@@ -27,20 +29,31 @@ function menus(): void {
   );
 }
 
-/** Opens the setup page, or brings it forward if it's open. */
+/**
+ * Opens the setup page, or brings it forward if it's open. The browser lists the extension's own
+ * pages that are open, which `tabs.query` can't see in Chrome without the tabs permission.
+ */
 async function openSetup(): Promise<void> {
   const url = ext.runtime.getURL('setup.html');
-  const [open] = await ext.tabs.query({ url });
-  if (open?.id !== undefined) await ext.tabs.update(open.id, { active: true });
-  else await ext.tabs.create({ url });
+  const contexts = ext.runtime.getContexts?.({ contextTypes: ['TAB'], documentUrls: [url] });
+  const [open] = (await contexts?.catch(() => [])) ?? [];
+  if (open && open.tabId >= 0) {
+    await ext.tabs.update(open.tabId, { active: true });
+    if (open.windowId >= 0) await ext.windows.update(open.windowId, { focused: true });
+  } else {
+    await ext.tabs.create({ url });
+  }
 }
 
-/** Saves a job with the extension's account, forgetting a sign-in the server has ended. */
+/**
+ * Saves a job where setup said: through sync with the extension's account, forgetting a sign-in
+ * the server has ended, or to Factwright on this computer.
+ */
 async function save(job: JobToSave): Promise<SaveResult> {
-  const account = await loadAccount();
-  if (!account?.keys) {
-    return { ok: false, reason: 'signed-out', message: 'Set up Save to Factwright first.' };
-  }
+  const to = await destination();
+  if (!to) return { ok: false, reason: 'signed-out', message: 'Set up Save to Factwright first.' };
+  if (to.to === 'computer') return saveOnComputer(job);
+  const { account } = to;
   if (!(await canReachSync(account.server))) {
     return {
       ok: false,
@@ -92,8 +105,15 @@ async function saveTab(tab: Tab): Promise<void> {
     await mark(tab, false, 'Open a job’s page, then save it.');
     return;
   }
-  if (!(await loadAccount())?.keys) {
+  const to = await destination();
+  if (!to) {
     await openSetup();
+    return;
+  }
+  // Allowed native messaging since this background started, Chrome lets it send only once it
+  // starts again, so the popup, which can, saves this job.
+  if (to.to === 'computer' && !canSendNow() && (await canReachComputer())) {
+    await checkFirst(tab, 'Save to Factwright is ready to save it.');
     return;
   }
   const { page, unread } = await readTab(tab);
@@ -110,7 +130,10 @@ async function saveTab(tab: Tab): Promise<void> {
     return;
   }
   const name = [job.role, job.company].filter(Boolean).join(' at ');
-  if (result.posting === 'failed') {
+  if ('later' in result) {
+    const when = result.open ? 'in a moment' : 'the next time it opens';
+    await mark(tab, true, `Saved ${name} for Factwright, which adds it ${when}.`);
+  } else if (result.posting === 'failed') {
     await mark(tab, false, `Saved ${name}, but not its posting. Save it again to add it.`);
   } else if (result.already) {
     const added = result.posting === 'saved' ? ' Its posting was added.' : '';

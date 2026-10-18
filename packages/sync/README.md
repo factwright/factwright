@@ -13,7 +13,9 @@ It uses only Web Crypto, so the same code runs in Node, browsers and Workers.
 | `record` | What a record says once opened: a file in the workspace, or a row in the tracker, with checks before anything acts on one |
 | `merge` | Merges two devices' changes to the same row: lists and notes keep both, and the later change wins a clash |
 | `protocol` | What devices and the server send each other, the IDs' formats, and the limits |
-| `client` | Talks to the sync server, and says why a request failed |
+| `client` | Talks to the sync server, and says why a request failed, such as sync that needs a subscription where it's sold. A browser's own sign-in also opens Stripe's checkout and portal through it |
+| `sign-in` | Signing an app in with a device code the person approves in their browser |
+| `extension-sign-in` | Save to Factwright's sign-in through the browser's own window: the page's address, its PKCE verifier and state, the return addresses of the stores' copies, and trading the answer's code for a session |
 | `code` | Writes keys and codes as characters people can type, without letters they'd misread |
 | `bytes` | URL-safe base64, UTF-8 and random bytes |
 

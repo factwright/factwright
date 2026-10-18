@@ -382,9 +382,9 @@ describe('approving a new device', () => {
 
   it('says the server can approve devices', async () => {
     const { pc } = await twoDevices();
-    expect(await pc.client.features()).toEqual(['approve']);
+    expect(await pc.client.features()).toEqual(['approve', 'loopback-sign-in']);
     const anyone = await fetch(new URL('/api/sign-in-options', server.url));
-    expect(await anyone.json()).toMatchObject({ features: ['approve'] });
+    expect(await anyone.json()).toMatchObject({ features: ['approve', 'loopback-sign-in'] });
   });
 });
 

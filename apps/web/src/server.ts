@@ -1,4 +1,19 @@
-import { CLIENTS, type Feature, isLegal, type Legal, SyncClient } from '@factwright/sync';
+import {
+  askValues,
+  CLIENTS,
+  DESKTOP_SIGN_IN,
+  type DesktopAsk,
+  desktopAskValues,
+  EXTENSION_SIGN_IN,
+  type ExtensionAsk,
+  type Feature,
+  isLegal,
+  knownFeatures,
+  type Legal,
+  SyncClient,
+  SyncError,
+} from '@factwright/sync';
+import { markSigningIn } from './sign-in-errors.ts';
 
 /** Who's signed in, as sign-in reports it. */
 export interface Session {
@@ -37,31 +52,38 @@ export async function getSession(): Promise<Session | null | undefined> {
 }
 
 /**
- * What the server offers: the ways to sign in it has set up, what more it can do, and the terms
- * and privacy policy signing in agrees to, which a server of your own doesn't have.
+ * What the server offers: the ways to sign in it has set up, what more it can do, the return
+ * addresses Save to Factwright's sign-in window may go back to, and the terms and privacy policy
+ * signing in agrees to, which a server of your own doesn't have.
  */
 export interface ServerOptions {
   providers: Provider[];
   features: Feature[];
+  extensionRedirects: string[];
   legal: Legal | null;
 }
 
 /** What the server offers. One that can't say offers nothing. */
 export async function signInOptions(): Promise<ServerOptions> {
   const response = await fetch('/api/sign-in-options').catch(() => null);
-  if (!response?.ok) return { providers: [], features: [], legal: null };
+  if (!response?.ok) return { providers: [], features: [], extensionRedirects: [], legal: null };
   const {
     providers = [],
     features = [],
+    extensionRedirects = [],
     legal,
   } = (await response.json().catch(() => ({}))) as {
     providers?: Provider[];
     features?: unknown;
+    extensionRedirects?: unknown;
     legal?: unknown;
   };
   return {
     providers,
-    features: Array.isArray(features) ? features.filter((each) => each === 'approve') : [],
+    features: knownFeatures(features),
+    extensionRedirects: Array.isArray(extensionRedirects)
+      ? extensionRedirects.filter((each) => typeof each === 'string')
+      : [],
     legal: isLegal(legal) ? legal : null,
   };
 }
@@ -86,6 +108,7 @@ export async function signIn(
     const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
     if (response.ok && typeof url === 'string') {
       await beforeGoing?.();
+      markSigningIn();
       location.assign(url);
       return null;
     }
@@ -99,6 +122,27 @@ export async function signIn(
 
 export async function signOut(): Promise<void> {
   await post('/api/auth/sign-out');
+}
+
+/**
+ * Why Stripe's checkout, or its page for managing a subscription (the portal), couldn't open, in
+ * plain words.
+ */
+export function payingProblem(error: unknown, page: 'checkout' | 'portal'): string {
+  if (error instanceof SyncError) {
+    if (error.kind === 'offline') return 'Can’t reach Factwright right now. Check your connection.';
+    if (error.kind === 'slow-down') {
+      return 'A checkout just started. Wait a few seconds, then try again.';
+    }
+    if (error.kind === 'not-found') {
+      return page === 'checkout'
+        ? 'Sync here doesn’t need a subscription.'
+        : 'There’s no subscription to manage on this account.';
+    }
+  }
+  return page === 'checkout'
+    ? 'Stripe’s checkout couldn’t open. Try again in a moment.'
+    : 'Stripe’s page for your subscription couldn’t open. Try again in a moment.';
 }
 
 /**
@@ -170,6 +214,79 @@ export async function answerDeviceCode(
 export async function releaseDeviceCode(userCode: string): Promise<void> {
   await post('/api/account/device-codes/release', { userCode });
 }
+
+/**
+ * What happened to an answer for an app, Save to Factwright or the desktop app: where to go with
+ * it, to its return address, or why it can't go. "sign-in" means this browser needs to sign in
+ * here first.
+ */
+export type AppAnswer =
+  | { ok: true; url: string }
+  | { ok: false; reason: 'sign-in' }
+  | { ok: false; reason: 'problem'; message: string };
+
+/**
+ * Lets an app sign in to `account`, the one the page names, or doesn't, by sending what it asked
+ * to `path`. The server gives the address the answer goes to, which must be the app's own return
+ * address, `back`, with the answer after it, and nothing else. `startAgain` says what to do when
+ * it doesn't go through.
+ */
+async function answerApp(
+  path: string,
+  values: Record<string, unknown>,
+  back: string,
+  startAgain: string,
+): Promise<AppAnswer> {
+  let response: Response;
+  try {
+    response = await post(path, values);
+  } catch {
+    return {
+      ok: false,
+      reason: 'problem',
+      message: 'Can’t reach Factwright right now. Check your connection, then try again.',
+    };
+  }
+  const { url } = (await response.json().catch(() => ({}))) as { url?: unknown };
+  if (response.ok && typeof url === 'string' && url.startsWith(back)) return { ok: true, url };
+  // Signed out since the page opened, or a session that can't let anything in.
+  if (response.status === 401 || response.status === 403) return { ok: false, reason: 'sign-in' };
+  return {
+    ok: false,
+    reason: 'problem',
+    message:
+      response.status === 429
+        ? 'That’s a lot of tries in a row. Wait a minute, then try again.'
+        : response.status === 409
+          ? 'This browser signed in to another account since this page opened. Reload the page to see which, then answer again.'
+          : `That didn’t go through. ${startAgain}`,
+  };
+}
+
+/**
+ * Lets Save to Factwright sign in to `account`, the one the page names, or doesn't. The answer
+ * goes to the return address it asked for, in its fragment, and nowhere else.
+ */
+export const answerExtension = (ask: ExtensionAsk, allow: boolean, account: string) =>
+  answerApp(
+    EXTENSION_SIGN_IN.answer,
+    { ...askValues(ask), allow, account },
+    `${ask.redirect}#`,
+    'Close this window, and sign in again from Save to Factwright’s setup.',
+  );
+
+/**
+ * Lets Factwright on the person's computer sign in to `account`, the one the page names, or
+ * doesn't. The answer goes to the app's address on the computer it asked for, in its query, and
+ * nowhere else.
+ */
+export const answerDesktop = (ask: DesktopAsk, allow: boolean, account: string) =>
+  answerApp(
+    DESKTOP_SIGN_IN.answer,
+    { ...desktopAskValues(ask), allow, account },
+    `${ask.redirect}?`,
+    'In Factwright, start signing in again.',
+  );
 
 /** Deletes the account and everything in it. "sign-in" means it needs a fresh sign-in first. */
 export async function deleteAccount(): Promise<'deleted' | 'sign-in' | 'failed'> {

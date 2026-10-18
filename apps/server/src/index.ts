@@ -1,4 +1,4 @@
-import { type Feature, isLegal, utf8 } from '@factwright/sync';
+import { CLIENTS, type Feature, isLegal, utf8 } from '@factwright/sync';
 import { forgetOldSignIns } from './accounts-upkeep.ts';
 import { failure, handleApi, json, NOT_FOUND } from './api.ts';
 import { authFor, deleteEverything, signedInVia } from './auth.ts';
@@ -13,6 +13,7 @@ import {
 } from './billing.ts';
 import { runAll } from './daily-job.ts';
 import type { Env } from './env.ts';
+import { extensionRedirects } from './extension-sign-in.ts';
 import { DELETED } from './store.ts';
 import { countSyncDaily } from './sync-totals.ts';
 
@@ -22,17 +23,49 @@ const STRIPE_WEBHOOK = '/api/billing/stripe';
 const SIGN_IN_OPTIONS = '/api/sign-in-options';
 const DELETE_ACCOUNT = '/api/auth/delete-user';
 const APPROVE_DEVICE = '/api/auth/device/approve';
+const DEVICE_CODE = '/api/auth/device/code';
 
 /** An email someone sent, as sign-in keeps emails, or null when it isn't one. */
 const emailIn = (value: unknown): string | null =>
   typeof value === 'string' && value.includes('@') && value.length <= 320 ? emailKey(value) : null;
 
-/** A request's JSON body as an object, or an empty one when it's missing or isn't one. */
-async function bodyOf(request: Request): Promise<Record<string, unknown>> {
-  const body: unknown = await request.json().catch(() => null);
+/** A JSON body as an object, or an empty one when it's missing or isn't one. */
+async function bodyOf(message: Request | Response): Promise<Record<string, unknown>> {
+  const body: unknown = await message.json().catch(() => null);
   return body && typeof body === 'object' && !Array.isArray(body)
     ? (body as Record<string, unknown>)
     : {};
+}
+
+/**
+ * Who asks for a device code, by their name in CLIENTS, such as "extension", from the request's
+ * JSON, as Factwright's apps send it. Any other request, such as a form, names no one.
+ */
+async function askerOf(request: Request): Promise<string | undefined> {
+  const { client_id } = await bodyOf(request.clone());
+  return Object.entries(CLIENTS).find(([, id]) => id === client_id)?.[0];
+}
+
+/**
+ * A new device code, with who asked for it added to the address of the page that approves it,
+ * such as "for=extension", so the web view's sign-in page can say who's asking before anyone signs
+ * in. Sign-in itself says so only to the account a code is tied to, once that account opens it.
+ * Anyone can change an address, so the web view only ever picks words with it: the page that lets
+ * a device in goes by sign-in's own word. The rest of the answer stays as sign-in gave it.
+ */
+async function withAsker(response: Response, asker: string | undefined): Promise<Response> {
+  if (!asker || response.status !== 200) return response;
+  const answer = await bodyOf(response.clone());
+  const page = answer.verification_uri_complete;
+  if (typeof page !== 'string' || !URL.canParse(page)) return response;
+  const named = new URL(page);
+  named.searchParams.set('for', asker);
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  return Response.json(
+    { ...answer, verification_uri_complete: named.toString() },
+    { status: response.status, headers },
+  );
 }
 
 /**
@@ -40,7 +73,8 @@ async function bodyOf(request: Request): Promise<Record<string, unknown>> {
  * Google may use: deleting the account, and approving a device's code. A session from a device
  * code can do neither, so one got by tricking someone into approving a code can't delete their
  * account, or approve codes of its own to stay fresh. Better Auth checks the rest, such as that
- * the session is from the last 15 minutes before it deletes anything.
+ * the session is from the last 15 minutes before it deletes anything. A new device code names who
+ * asked for it, for the web view's words (withAsker).
  */
 async function signIn(request: Request, env: Env, pathname: string): Promise<Response> {
   if (request.method === 'POST' && (pathname === DELETE_ACCOUNT || pathname === APPROVE_DEVICE)) {
@@ -59,23 +93,39 @@ async function signIn(request: Request, env: Env, pathname: string): Promise<Res
       return failure(403, 'refused', 'Approve a code from a browser signed in to Factwright.');
     }
   }
+  if (request.method === 'POST' && pathname === DEVICE_CODE) {
+    const asker = await askerOf(request);
+    return withAsker(await authFor(env, request).handler(request), asker);
+  }
   return authFor(env, request).handler(request);
 }
 
 /**
  * The ways to sign in this server has set up, for the web view's buttons; what it can do beyond
- * the basics, so devices offer only that, such as whether sync here is a subscription; and the
- * terms and privacy policy signing in agrees to, when it has them. Older servers list no
- * features, and a server of your own no legal pages.
+ * the basics, so devices offer only that, such as whether sync here is a subscription, and whether
+ * the desktop app can sign in with no code to compare (desktop-sign-in.ts); the return
+ * addresses Save to Factwright's sign-in window may go back to, for the extension to tell whether
+ * it can sign in that way here, and the page to check what it's asked; and the terms and privacy
+ * policy signing in agrees to, when it has them. Older servers list no features or return
+ * addresses, and a server of your own no legal pages.
  */
-function signInOptions(env: Env): Response {
+async function signInOptions(env: Env): Promise<Response> {
   const providers = [
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? ['github'] : []),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? ['google'] : []),
   ];
-  const features: Feature[] = ['approve', ...(sellsSync(env) ? (['subscription'] as const) : [])];
+  const features: Feature[] = [
+    'approve',
+    ...(sellsSync(env) ? (['subscription'] as const) : []),
+    'loopback-sign-in',
+  ];
   const legal = { terms: env.TERMS_URL, privacy: env.PRIVACY_URL };
-  return json({ providers, features, ...(isLegal(legal) && { legal }) });
+  return json({
+    providers,
+    features,
+    extensionRedirects: await extensionRedirects(env.EXTENSION_IDS),
+    ...(isLegal(legal) && { legal }),
+  });
 }
 
 /** Whether a request carries the operator's token. Without one set, nothing does. */
@@ -209,7 +259,7 @@ export default {
           : NOT_FOUND();
       }
       if (pathname === STRIPE_WEBHOOK) return await stripeWebhook(request, env);
-      if (pathname === SIGN_IN_OPTIONS) return signInOptions(env);
+      if (pathname === SIGN_IN_OPTIONS) return await signInOptions(env);
       if (pathname.startsWith('/api/')) {
         return await handleApi(request, env, authFor(env, request));
       }

@@ -1,6 +1,12 @@
 import { ext } from './ext.ts';
 import { DEFAULT_SERVER, readServer } from './server.ts';
 
+/**
+ * Where saved jobs go: straight to Factwright on this computer, through the browser's native
+ * messaging, or through sync, for Factwright on another computer.
+ */
+export type Where = 'computer' | 'sync';
+
 /** What you can choose about how the extension saves. */
 export interface Settings {
   /**
@@ -14,9 +20,15 @@ export interface Settings {
    * is what setup offers, before and after.
    */
   server: string;
+  /**
+   * Where saved jobs go, as you chose it in setup, or null before you've chosen. Saving to this
+   * computer needs nothing more. Through sync, the extension saves once it's signed in and linked
+   * (src/account.ts), and an account linked before you could choose is saving through sync.
+   */
+  where: Where | null;
 }
 
-const DEFAULTS: Settings = { linkedInText: true, server: DEFAULT_SERVER };
+const DEFAULTS: Settings = { linkedInText: true, server: DEFAULT_SERVER, where: null };
 
 /** A saved server, while it's still one this build takes: the stores' build takes https alone. */
 function savedServer(saved: unknown): string {
@@ -29,7 +41,8 @@ function savedServer(saved: unknown): string {
 export async function settings(): Promise<Settings> {
   const { settings: saved } = await ext.storage.local.get('settings');
   const chosen = saved && typeof saved === 'object' ? (saved as Partial<Settings>) : {};
-  return { ...DEFAULTS, ...chosen, server: savedServer(chosen.server) };
+  const where = chosen.where === 'computer' || chosen.where === 'sync' ? chosen.where : null;
+  return { ...DEFAULTS, ...chosen, server: savedServer(chosen.server), where };
 }
 
 /** Changes some of your settings. */

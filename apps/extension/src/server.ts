@@ -82,14 +82,26 @@ const CHECK_MS = 15_000;
 export type ServerCheck = 'ok' | 'unreachable' | 'not-sync';
 
 /**
- * Checks that a server of your own answers as a Factwright sync server, before setup signs in to
- * it. The answer must be its own: a redirect anywhere doesn't count. A server that's busy or
- * failing for now, as one can be while it's deployed, didn't answer, so trying again may work.
+ * What asking a server found: whether it answers as a Factwright sync server, and, when it does,
+ * the return addresses it knows for the extension's sign-in window. A server from before the
+ * window knows none, and signs the extension in with a code.
  */
-export async function checkServer(
+export interface ServerAnswer {
+  check: ServerCheck;
+  redirects: string[];
+}
+
+/**
+ * Asks a server for its sign-in options, before setup signs in to it, as Factwright's releases
+ * check their own server. The answer must be its own: a redirect anywhere doesn't count. A server
+ * that's busy or failing for now, as one can be while it's deployed, didn't answer, so trying
+ * again may work.
+ */
+export async function askServer(
   server: string,
   fetcher: typeof fetch = fetch,
-): Promise<ServerCheck> {
+): Promise<ServerAnswer> {
+  const none = (check: ServerCheck): ServerAnswer => ({ check, redirects: [] });
   let text: string;
   try {
     const response = await fetcher(new URL('/api/sign-in-options', server), {
@@ -97,17 +109,97 @@ export async function checkServer(
       redirect: 'manual',
       signal: AbortSignal.timeout(CHECK_MS),
     });
-    if (response.status === 429 || response.status >= 500) return 'unreachable';
-    if (!response.ok) return 'not-sync';
+    if (response.status === 429 || response.status >= 500) return none('unreachable');
+    if (!response.ok) return none('not-sync');
     text = await response.text();
   } catch {
-    return 'unreachable';
+    return none('unreachable');
   }
+  let answer: unknown;
   try {
-    return isSyncServer(JSON.parse(text)) ? 'ok' : 'not-sync';
+    answer = JSON.parse(text);
   } catch {
-    return 'not-sync';
+    return none('not-sync');
   }
+  if (!isSyncServer(answer)) return none('not-sync');
+  const { extensionRedirects } = answer as { extensionRedirects?: unknown };
+  return {
+    check: 'ok',
+    redirects: Array.isArray(extensionRedirects)
+      ? extensionRedirects.filter((each) => typeof each === 'string')
+      : [],
+  };
+}
+
+/** Checks that a server of your own answers as a Factwright sync server (see askServer). */
+export const checkServer = async (
+  server: string,
+  fetcher: typeof fetch = fetch,
+): Promise<ServerCheck> => (await askServer(server, fetcher)).check;
+
+/**
+ * How setup signs in to a server: through the browser's window, with this copy's return address,
+ * or with a code the person allows in a tab at the server. Or, when it can't sign in there, why.
+ */
+export type SignInWay = { by: 'window'; redirect: string } | { by: 'code' } | { problem: string };
+
+/**
+ * How setup signs in to a server, from what asking it found. The window, where the server knows
+ * this copy's return address. Otherwise a code, but only with the server this copy was built for.
+ * A server of your own could pass along a code another server gave it, such as Factwright's sync:
+ * setup would show that code, and the person, signed in there, would allow it on that server's
+ * own page, giving whoever runs yours a session on their account there. The window's answer names
+ * the server that gave it, which the extension checks, so a server of your own signs in through
+ * the window alone, even after it stops short, and one that can't says what to change.
+ */
+export function signInWay(
+  server: string,
+  answer: ServerAnswer,
+  /** This copy's return address, or null in a browser with no window for extensions. */
+  redirect: string | null,
+  /** This copy's ID, for a server of your own to add to the ones it knows. */
+  id: string,
+  /** Whether the person asked for a code, after the window stopped short. */
+  withCode = false,
+): SignInWay {
+  const known = redirect !== null && answer.redirects.includes(redirect) ? redirect : null;
+  if (!isOwn(server)) {
+    return known && !withCode ? { by: 'window', redirect: known } : { by: 'code' };
+  }
+  if (known) return { by: 'window', redirect: known };
+  const host = hostOf(server);
+  if (redirect === null) {
+    return {
+      problem:
+        'This browser has no sign-in window for extensions, which Save to Factwright needs to sign in to a server of your own.',
+    };
+  }
+  if (answer.redirects.length === 0) {
+    return {
+      problem: `${host} needs an update for this version of Save to Factwright, which signs in to a server of your own through the browser’s window. Update it, then try again.`,
+    };
+  }
+  return {
+    problem: `${host} doesn’t know this copy of Save to Factwright, so it can’t sign it in. Add its ID, ${id}, to EXTENSION_IDS in the server’s settings, then try again.`,
+  };
+}
+
+/**
+ * The page a code's sign-in opens, from the server's answer: the server's own sign-in page, never
+ * an address it could name elsewhere. Or what to say instead.
+ */
+export function codePage(
+  url: string,
+  server: string,
+): { ok: true; url: string } | { ok: false; problem: string } {
+  const at = URL.canParse(url) ? new URL(url) : null;
+  if (at?.origin === server) return { ok: true, url };
+  return {
+    ok: false,
+    problem: at?.host
+      ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so Save to Factwright didn’t open it.`
+      : `${hostOf(server)} didn’t give a sign-in page Save to Factwright can open.`,
+  };
 }
 
 /** Whether a server is one of your own, not the one the extension was built for. */

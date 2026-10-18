@@ -2,6 +2,7 @@ import { Button } from '@factwright/ui';
 import { CircleCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { forgetKeys } from './keys.ts';
+import { OtherAccount, SignedInAs } from './OtherAccount.tsx';
 import styles from './page.module.css';
 import {
   answerDeviceCode,
@@ -24,12 +25,19 @@ type Step =
   | 'sign-in'
   | { problem: string };
 
-/** What the page says, for the desktop app or for the browser extension, Save to Factwright. */
-const WORDS = {
+/**
+ * What the page says, for the desktop app or for the browser extension, Save to Factwright, on
+ * this server, `host`, such as app.factwright.com.
+ */
+const wordsFor = (host: string) => ({
   app: {
     title: 'Let your computer sign in?',
     check: 'Check that your computer shows this code:',
-    only: 'Only allow it if you just started signing in from Factwright. It lets that computer sync your job hunt.',
+    // The desktop app shows a code only for Factwright's sync, the server its copy was built for.
+    // To a server of your own, it signs in through the browser with no code (desktop-sign-in.ts).
+    // So a code here that the computer doesn't show is someone else's: a server of your own could
+    // get one from this server, and send the browser here for the person to allow.
+    only: 'Only allow it if you just started signing in from Factwright. It lets that computer sync your job hunt. If Factwright on your computer shows no code, don’t allow it.',
     account: 'Your computer signs in to this account.',
     switch:
       'Sign in with the account you want your computer to use. Then you’ll see this code again.',
@@ -41,7 +49,12 @@ const WORDS = {
   extension: {
     title: 'Let Save to Factwright sign in?',
     check: 'Check that the Set up Save to Factwright tab, the one you came from, shows this code:',
-    only: 'Only allow it if you just started setting up Save to Factwright, the browser extension. It lets the extension save jobs to your job hunt from this browser.',
+    // Setup shows a code only for the server its copy was built for, which its 0.2 versions name
+    // beside it. With a server of your own, it signs in through the browser's window, with no
+    // code. So a code here that the tab doesn't show is someone else's: a server of your own could
+    // get one from this server, and send the window, or a tab, here for the person to allow
+    // (signInWay, in apps/extension/src/server.ts).
+    only: `Only allow it if you just started setting up Save to Factwright, the browser extension. It lets the extension save jobs to your job hunt from this browser. If that tab shows no code, or names a server other than ${host}, don’t allow it.`,
     account:
       'Save to Factwright signs in to this account, so it needs to be the one Factwright on your computer uses.',
     switch:
@@ -51,7 +64,7 @@ const WORDS = {
     declined: 'Turned away. Save to Factwright won’t sign in with this code.',
     again: 'To let it in, sign in again here first. Then you’ll see the code again.',
   },
-} as const;
+});
 
 /** "WDJBMJHT" as "WDJB-MJHT", easier to compare with what the app shows. */
 const spaced = (code: string) =>
@@ -85,7 +98,7 @@ export function ApproveDevice({
   const [asker, setAsker] = useState<'app' | 'extension'>('app');
   const [busy, setBusy] = useState(false);
   const [signInSaid, setSignInSaid] = useState(signInProblem);
-  const words = WORDS[asker];
+  const words = wordsFor(location.host)[asker];
 
   useEffect(() => {
     let live = true;
@@ -160,25 +173,16 @@ export function ApproveDevice({
           <p className={styles.lead}>{words.check}</p>
           <p className={styles.code}>{spaced(userCode.toUpperCase())}</p>
           <p className={styles.hint}>{words.only}</p>
-          <p className={styles.account}>
-            Signed in as <strong>{email}</strong>. {words.account}
-            {providers.length > 0 && (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className={styles.linkButton}
-                  disabled={busy}
-                  onClick={() => {
-                    setSignInSaid(null);
-                    setStep('switching');
-                  }}
-                >
-                  Use another account
-                </button>
-              </>
-            )}
-          </p>
+          <SignedInAs
+            email={email}
+            about={words.account}
+            providers={providers}
+            busy={busy}
+            onSwitch={() => {
+              setSignInSaid(null);
+              setStep('switching');
+            }}
+          />
           <div className={styles.actions}>
             <Button disabled={busy} onClick={() => answer(false)}>
               Don’t allow
@@ -192,34 +196,17 @@ export function ApproveDevice({
       )}
       {step === 'switching' && (
         <>
-          <p className={styles.lead}>{words.switch}</p>
-          <p className={styles.hint}>
-            This signs {email} out of this browser. To use another{' '}
-            {providers.map((provider) => PROVIDER_NAMES[provider]).join(' or ')} account, switch to
-            it there first.
-          </p>
-          <div className={styles.actions}>
-            <Button
-              variant="quiet"
-              disabled={busy}
-              onClick={() => {
-                setSignInSaid(null);
-                setStep('asking');
-              }}
-            >
-              Back
-            </Button>
-            {providers.map((provider) => (
-              <Button
-                key={provider}
-                variant={provider === providers[0] ? 'primary' : 'secondary'}
-                disabled={busy}
-                onClick={() => void switchTo(provider)}
-              >
-                Sign in with {PROVIDER_NAMES[provider]}
-              </Button>
-            ))}
-          </div>
+          <OtherAccount
+            lead={words.switch}
+            email={email}
+            providers={providers}
+            busy={busy}
+            onBack={() => {
+              setSignInSaid(null);
+              setStep('asking');
+            }}
+            onPick={(provider) => void switchTo(provider)}
+          />
           {said}
         </>
       )}

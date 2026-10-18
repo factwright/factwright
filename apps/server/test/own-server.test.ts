@@ -1,3 +1,4 @@
+import { STORE_RETURNS } from '@factwright/sync';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NOT_LISTED } from '../src/auth-options.ts';
 import { sessionCookie, someId, startServer, type TestServer } from './server.ts';
@@ -69,11 +70,19 @@ describe('a server of your own', () => {
   it('has the app approve its code at its own address', async () => {
     const code = await post('/api/auth/device/code', { client_id: 'factwright-desktop' });
     expect(code.body.verification_uri).toBe(`${server.url.origin}/device`);
+    expect(code.body.verification_uri_complete).toBe(
+      `${server.url.origin}/device?user_code=${String(code.body.user_code)}&for=desktop`,
+    );
   });
 
   it('names no terms or privacy policy', async () => {
     const response = await fetch(new URL('/api/sign-in-options', server.url));
-    expect(await response.json()).toEqual({ providers: ['github'], features: ['approve'] });
+    // It knows the stores' copies of Save to Factwright, as Factwright's own server does.
+    expect(await response.json()).toEqual({
+      providers: ['github'],
+      features: ['approve', 'loopback-sign-in'],
+      extensionRedirects: STORE_RETURNS,
+    });
   });
 
   it('takes the web view’s changes only from its own pages', async () => {
