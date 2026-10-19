@@ -582,6 +582,10 @@ describe('the extension page', () => {
     expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
     expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('sync');
     expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
+    // Since Factwright 0.9.1, a Mac sets each browser up from the app's Save to Factwright window.
+    expect(said(doc.querySelector('.ext-steps .get-after'))).toContain(
+      'On a Mac, saving to Factwright on this computer needs one more step, in Factwright: choose Browser extension in its sidebar, then Set up beside your browser',
+    );
   });
 
   it('says what each way to sync costs where it says how to set it up, after saving with no account', () => {
