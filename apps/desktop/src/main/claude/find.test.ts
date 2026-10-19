@@ -127,6 +127,16 @@ describe('findClaude on Windows', () => {
     expect(await findClaude(computer('win32', [path], { env }))).toBe(path);
   });
 
+  it('skips the Claude.exe an older Claude Desktop puts among Windows’ app aliases', async () => {
+    // Running it opens the desktop app, not Claude Code.
+    const aliases = 'C:\\Users\\someone\\AppData\\Local\\Microsoft\\WindowsApps\\';
+    const native = 'C:\\Users\\someone\\.local\\bin\\claude.exe';
+    const env = { PATH: `C:\\Windows\\System32;${aliases}`, PATHEXT };
+    const deps = computer('win32', [`${aliases}Claude.exe`, native], { env });
+    expect(await findClaude(deps)).toBe(native);
+    expect(await findClaude(computer('win32', [`${aliases}Claude.exe`], { env }))).toBeNull();
+  });
+
   it("skips relative paths, such as npm's when APPDATA is missing", async () => {
     const env = { PATH: '.', PATHEXT };
     const deps = computer('win32', ['claude.exe', 'npm\\claude.cmd'], { env });
@@ -166,6 +176,16 @@ describe('what the user types to start claude in a new terminal window', () => {
       '& "$env:USERPROFILE\\.local\\bin\\claude.exe"',
     );
     expect(deps.runShell).not.toHaveBeenCalled();
+  });
+
+  it('is its whole path when claude in a new PowerShell window would open Claude Desktop', async () => {
+    const aliases = 'C:\\Users\\someone\\AppData\\Local\\Microsoft\\WindowsApps';
+    const env = { PATH: `${aliases};C:\\Users\\someone\\.local\\bin`, PATHEXT };
+    const deps = computer('win32', [`${aliases}\\Claude.exe`, NATIVE_WINDOWS], { env });
+    expect(await findClaude(deps)).toBe(NATIVE_WINDOWS);
+    expect(await claudeInTerminal(NATIVE_WINDOWS, deps)).toBe(
+      '& "$env:USERPROFILE\\.local\\bin\\claude.exe"',
+    );
   });
 
   it('is its whole path for npm’s claude.cmd off PATH', async () => {
