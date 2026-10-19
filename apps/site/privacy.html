@@ -54,6 +54,7 @@
             <li><a href="#updates">Updates</a></li>
             <li><a href="#site">Our websites</a></li>
             <li><a href="#sync">Sync and the web view</a></li>
+            <li><a href="#paying">Paying for sync</a></li>
             <li><a href="#extension">The browser extension</a></li>
             <li><a href="#email">Emails</a></li>
             <li><a href="#support">Supporting Factwright</a></li>
@@ -91,6 +92,11 @@
                 <b>We keep only what sync needs:</b> your name, email and account ID from the account
                 you sign in with, the devices you sign in on, and your encrypted job hunt with its
                 sizes and times.
+              </li>
+              <li>
+                <b>If you pay for sync, Stripe takes the payment,</b> and we never see your full card
+                number. Our server keeps only Stripe’s IDs for you and your subscription, with its
+                status and dates, and our Stripe account keeps your payments for our records.
               </li>
               <li>
                 <b>We never sell your data</b> or share it for advertising. You can download or delete
@@ -244,8 +250,9 @@
               <li>Counts of requests from your IP address: about a day.</li>
               <li>
                 What our servers note for themselves, such as a request that failed with its address,
-                or the account ID when we delete an account someone asked us to, but nothing from
-                your job hunt: up to 7 days, at Cloudflare.
+                the account ID when we delete an account someone asked us to, or Stripe’s IDs for a
+                payment that needs a look, but nothing from your job hunt: up to 7 days, at
+                Cloudflare.
               </li>
             </ul>
             <p>
@@ -261,6 +268,59 @@
               or tracking. Signing out forgets the keys in that browser, and so does finding it’s been
               signed out another way. Your browser may also keep locked copies of files in its cache,
               and files you download or open there are saved by your browser as they are, unlocked.
+            </p>
+          </section>
+
+          <section id="paying">
+            <h2>Paying for sync</h2>
+            <p>
+              Sync through our server is a subscription.
+              <!--
+                How it's sold, in one sentence, the same as the terms' (terms.html#paying), and the
+                way STRIPE_MANAGED_PAYMENTS in apps/server/wrangler.jsonc sells it, which the tests
+                check. With it "true", we sell it through Stripe Managed Payments, with Stripe's
+                affiliate as the merchant of record. If it's "false", Stripe is only our payment
+                processor, so the sentence is instead: "Stripe takes your payment for us, as our
+                payment processor, so what you give at checkout, such as your name, card and billing
+                address, goes to Stripe, which also handles it under its own privacy policy."
+              -->
+              Link, Stripe’s checkout, takes your payment, with Stripe’s affiliate Sold through Link,
+              LLC, as the merchant of record, so what you give at checkout, such as your name, card
+              and billing address, goes to Stripe, which handles it under its own
+              <a href="https://stripe.com/privacy">privacy policy</a>.
+              We never see your full card number.
+            </p>
+            <p>
+              When you first go to subscribe, we give Stripe your account’s email address and ID, so
+              your subscription stays with your account. On our server, we keep:
+            </p>
+            <ul>
+              <li>Stripe’s IDs for you as its customer, and for your subscription</li>
+              <li>
+                your subscription’s status, whether you’ve canceled it, and when the time you’ve paid
+                for ends
+              </li>
+              <li>
+                when we last checked it with Stripe, when you last started a checkout, and when any
+                of this last changed
+              </li>
+              <li>whether we gave you sync for free because you asked</li>
+            </ul>
+            <p>
+              We keep these until you delete your account. Deleting it deletes your customer record
+              at Stripe too, which ends your subscription at once.
+            </p>
+            <p>
+              If we give free sync to an email address with no account yet, we keep that address,
+              and when we gave it, until an account signs up with it, or until you ask us to forget
+              it.
+            </p>
+            <p>
+              Stripe also shows us, in our Stripe account, your name, email address and billing
+              address, the kind of card you used and its last four digits, and your payments and any
+              refunds. We use them only to run your subscription, to help with a payment, and for
+              the records tax law requires. Your payments stay there, and in Stripe’s own records,
+              for as long as that law requires, even after you delete your account.
             </p>
           </section>
 
@@ -301,7 +361,8 @@
             <h2>Emails</h2>
             <p>
               If you email us, we use what you send to answer you. We keep it as long as we need to
-              answer you, then up to 2 years for our records.
+              answer you, then up to 2 years for our records. If you ask for free sync, we also use
+              your email address to turn it on, as <a href="#paying">Paying for sync</a> explains.
             </p>
           </section>
 
@@ -313,8 +374,8 @@
               takes your payment and keeps its own records, under its own privacy policy, and may show
               your name and message on its pages unless you choose not to. Steve sees what it shares,
               such as your name or username, your email address, the amount and any message, and uses
-              it only to thank you and for tax records. None of it is linked to your Factwright
-              account. You can ask about it at
+              it only to thank you and for tax records. It’s separate from paying for sync, and none
+              of it is linked to your Factwright account. You can ask about it at
               <a href="mailto:privacy@factwright.com">privacy@factwright.com</a>.
             </p>
           </section>
@@ -338,6 +399,11 @@
               either: your Claude account is your own.
             </p>
             <p>
+              If you pay for sync, Stripe gets your email address and account ID from us and what
+              you give it at checkout, and keeps our records of your payments, both for us and under
+              its own privacy policy, as <a href="#paying">Paying for sync</a> explains.
+            </p>
+            <p>
               We may disclose information if the law requires it, such as a valid court order, or to
               protect someone’s safety or our rights. Even then, we can hand over only what we have,
               and we can’t unlock your encrypted job hunt. If Neatifai or Factwright is ever sold or
@@ -349,8 +415,9 @@
             <h2>Where it’s kept</h2>
             <p>
               We’re in the United States. Cloudflare runs our services on its network around the
-              world, so your information may be stored or handled in the United States and other
-              countries. Wherever it is, this policy applies.
+              world, and Stripe takes payments around the world too, so your information may be
+              stored or handled in the United States and other countries. Wherever we keep it, this
+              policy applies.
             </p>
           </section>
 
@@ -359,11 +426,13 @@
             <p>
               We use your account and device details to run the sync you asked for, which is our
               agreement with you, and to keep the service working and secure, which is in your
-              interest and ours. Once a day, the sync service also counts how many accounts it has,
-              how many are new and how many were used in the last week and month, and how many
-              devices are signed in, in the app and in browsers. It keeps only those totals, for three
-              months, so we can see how much it’s used, which is in our interest. If you email us, we
-              use what you send to answer you. We don’t use your information for
+              interest and ours. If you pay for sync, we use your payment details only to run your
+              subscription, help with a payment and keep the records the law requires, which is our
+              agreement with you and the law. Once a day, the sync service also counts how many
+              accounts it has, how many are new and how many were used in the last week and month,
+              and how many devices are signed in, in the app and in browsers. It keeps only those
+              totals, for three months, so we can see how much it’s used, which is in our interest.
+              If you email us, we use what you send to answer you. We don’t use your information for
               anything else, such as profiling or advertising.
             </p>
           </section>
@@ -445,6 +514,8 @@
       <div class="wrap">
         <nav class="footer-links" aria-label="Extension, policies, code and support">
           <a href="/extension">Browser extension</a>
+          <a href="/sync">Sync</a>
+          <a href="/own-server">Your own sync server</a>
           <a href="/privacy" aria-current="page">Privacy policy</a>
           <a href="/terms">Terms of service</a>
           <a href="https://github.com/factwright/factwright">Source code</a>

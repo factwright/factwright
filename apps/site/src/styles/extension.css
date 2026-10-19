@@ -75,11 +75,13 @@
   margin-top: 16px;
   color: var(--fw-muted);
   font-size: 14.5px;
+  text-wrap: pretty;
 }
 
 .ext-note a,
 .ext-more a,
-.ext-steps a {
+.ext-steps a,
+.ext-setup .lede a {
   color: var(--fw-accent-text);
   font-weight: 550;
   text-underline-offset: 3px;

@@ -57,6 +57,12 @@
   font-size: 16px;
 }
 
+.step-aside a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
 .step-visual {
   position: relative;
   padding: clamp(20px, 3.6vw, 44px);

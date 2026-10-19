@@ -26,7 +26,7 @@
     // How sync is sold, once it is: "true" through Stripe Managed Payments, only once Stripe has
     // approved it for Factwright's account, or "false" through Stripe's ordinary checkout. The
     // terms say which (factwright.com/terms#paying), so change them together.
-    "STRIPE_MANAGED_PAYMENTS": "false"
+    "STRIPE_MANAGED_PAYMENTS": "true"
   },
   // Accounts and sessions, for signing in.
   "d1_databases": [

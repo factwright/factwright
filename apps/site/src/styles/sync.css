@@ -1,0 +1,256 @@
+/*
+ * The sync page: what sync does, its two ways side by side, as the app's own sync screen shows
+ * them, the ways to have it for free, turning it on, and questions.
+ */
+
+.sync-hero {
+  position: relative;
+  padding-block: clamp(40px, 6vw, 80px) clamp(56px, 8vw, 96px);
+  overflow-x: clip;
+  isolation: isolate;
+  text-align: center;
+}
+
+/* Faint graph paper behind the headline, as on the home page. */
+.sync-hero::before {
+  position: absolute;
+  inset: calc(var(--header) * -1) 0 auto;
+  z-index: -1;
+  height: 620px;
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  content: "";
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
+}
+
+.sync-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sync-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 6.2vw, 76px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.sync-hero .lede {
+  max-width: 620px;
+}
+
+/* The page's sections, a little closer together than the home page's. */
+.sync .section {
+  padding-block: clamp(72px, 9vw, 120px);
+}
+
+/* What it does: three cards, side by side. */
+.tasks.sync-ways {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 980px;
+  margin-inline: auto;
+}
+
+.sync-ways a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 860px) {
+  .tasks.sync-ways {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+}
+
+/* The two ways to sync, as cards of the same height. */
+.sync-plans {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.sync-plan {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(24px, 3.4vw, 36px);
+  border: 1px solid var(--fw-border);
+  border-radius: 22px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* Factwright's own sync, marked as the one with nothing to set up. */
+.sync-plan-ours {
+  border-color: color-mix(in srgb, var(--fw-accent) 45%, var(--fw-border));
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 4px var(--glow);
+}
+
+.sync-plan h3 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.sync-price {
+  margin-top: 18px;
+  color: var(--fw-muted);
+  font-size: 17px;
+}
+
+.sync-amount {
+  margin-right: 4px;
+  color: var(--fw-text);
+  font-family: var(--font-display);
+  font-size: clamp(40px, 5vw, 52px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.sync-price-alt {
+  margin-top: 6px;
+  color: var(--fw-muted);
+  font-size: 15.5px;
+}
+
+.sync-plan-text {
+  margin-top: 18px;
+  font-size: 16px;
+  text-wrap: pretty;
+}
+
+.sync-list {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fw-border);
+  font-size: 15.5px;
+}
+
+.sync-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sync-list .icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  color: var(--fw-ok);
+  stroke-width: 2.25;
+}
+
+/* The button sits at the bottom of each card, so the two line up whatever's above them. */
+.sync-plan .button {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+.sync-fine {
+  margin-top: 16px;
+  color: var(--fw-muted);
+  font-size: 14px;
+  text-wrap: pretty;
+}
+
+/* The free ways to Factwright's sync, under the cards. */
+.sync-notes {
+  display: grid;
+  gap: 12px;
+  max-width: 880px;
+  margin: 28px auto 0;
+}
+
+.sync-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 22px;
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+  font-size: 16px;
+  text-wrap: pretty;
+}
+
+.sync-note-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.sync-note-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.sync-note p {
+  padding-top: 4px;
+}
+
+.sync-note b {
+  font-weight: 650;
+}
+
+.sync-note a,
+.sync-legal a,
+.sync-steps a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+.sync-note a {
+  overflow-wrap: anywhere;
+}
+
+.sync-legal {
+  max-width: 880px;
+  margin: 28px auto 0;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .sync-plans {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 520px;
+  }
+
+  .sync-notes,
+  .sync-legal {
+    max-width: 520px;
+  }
+}
+
+/* Turning it on: the steps, centered under their heading. */
+.sync-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sync-start .section-head {
+  margin-bottom: clamp(36px, 5vw, 56px);
+}
+
+.get-steps.sync-steps {
+  margin-top: 0;
+}

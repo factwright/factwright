@@ -73,6 +73,7 @@ More in [architecture](docs/architecture.md) and [security](docs/security.md).
 - **Mac:** [download Factwright](https://factwright.com/download/mac) for Apple silicon and Intel, on macOS 12 or later.
 - **Windows:** [download Factwright](https://factwright.com/download/windows) for 64-bit Windows 10 and 11.
 - **Your browser:** Save to Factwright, an extension for Chrome and Firefox, saves the job you're looking at, with its posting, to your job hunt, through sync. [Its page](https://factwright.com/extension) says where to get it.
+- **Sync, if you want it:** your other computers, your phone and Save to Factwright, end-to-end encrypted. [Factwright's sync](https://factwright.com/sync) is $5 a month or $50 a year. [A sync server of your own](https://factwright.com/own-server) is free.
 
 You also need [Claude Code](https://code.claude.com/docs/en/setup), signed in with a Claude plan or an API key. Factwright checks your setup when it opens, walks you through anything that's missing, and keeps itself up to date.
 
