@@ -223,17 +223,19 @@
               price in your own currency, at Stripe’s exchange rate, which includes a fee of a few
               percent, or you can pay in US dollars.
               <!--
-                How it's sold, in one sentence, the same as the privacy policy's (privacy.html#paying).
-                With Stripe Managed Payments, Stripe's affiliate is the merchant of record, and we're
-                still the seller. If we sell it with Stripe only as our payment processor, the
-                sentence is instead: "We sell it to you, and Stripe, our payment processor, takes your
-                payment for us, sends your receipts and shows on your card statement as FACTWRIGHT."
+                How it's sold, in one sentence, the same as the privacy policy's (privacy.html#paying),
+                and the way STRIPE_MANAGED_PAYMENTS in apps/server/wrangler.jsonc sells it, which the
+                tests check. With it "false", Stripe is only our payment processor. If we sell it
+                through Stripe Managed Payments ("true"), Stripe's affiliate is the merchant of
+                record, and we're still the seller, so the sentence is instead: "We sell it to you
+                through Link, Stripe’s checkout, with Stripe’s affiliate Sold through Link, LLC, as the
+                merchant of record: it takes your payment, handles the tax, sends your receipts and
+                shows on your card statement as LINK.COM* FACTWRIGHT, and its terms for the sale,
+                including its refund policy, apply too." Its "terms for the sale" link to
+                https://link.com/terms#sold-through-link-terms.
               -->
-              We sell it to you through Link, Stripe’s checkout, with Stripe’s affiliate Sold through
-              Link, LLC, as the merchant of record: it takes your payment, handles the tax, sends your
-              receipts and shows on your card statement as LINK.COM* FACTWRIGHT, and its
-              <a href="https://link.com/terms#sold-through-link-terms">terms for the sale</a>,
-              including its refund policy, apply too.
+              We sell it to you, and Stripe, our payment processor, takes your payment for us, sends
+              your receipts and shows on your card statement as FACTWRIGHT.
               We never see your full card number.
             </p>
             <ul>

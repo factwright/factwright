@@ -276,17 +276,18 @@
             <p>
               Sync through our server is a subscription.
               <!--
-                How it's sold, in one sentence, the same as the terms' (terms.html#paying). With Stripe
-                Managed Payments, Stripe's affiliate is the merchant of record. If we sell it with
-                Stripe only as our payment processor, the sentence is instead: "Stripe takes your
-                payment for us, as our payment processor, so what you give at checkout, such as your
-                name, card and billing address, goes to Stripe, which also handles it under its own
-                privacy policy."
+                How it's sold, in one sentence, the same as the terms' (terms.html#paying), and the
+                way STRIPE_MANAGED_PAYMENTS in apps/server/wrangler.jsonc sells it, which the tests
+                check. With it "false", Stripe is only our payment processor. If we sell it through
+                Stripe Managed Payments ("true"), with Stripe's affiliate as the merchant of record,
+                the sentence is instead: "Link, Stripe’s checkout, takes your payment, with Stripe’s
+                affiliate Sold through Link, LLC, as the merchant of record, so what you give at
+                checkout, such as your name, card and billing address, goes to Stripe, which handles
+                it under its own privacy policy."
               -->
-              Link, Stripe’s checkout, takes your payment, with Stripe’s affiliate Sold through Link,
-              LLC, as the merchant of record, so what you give at checkout, such as your name, card
-              and billing address, goes to Stripe, which handles it under its own
-              <a href="https://stripe.com/privacy">privacy policy</a>.
+              Stripe takes your payment for us, as our payment processor, so what you give at
+              checkout, such as your name, card and billing address, goes to Stripe, which also
+              handles it under its own <a href="https://stripe.com/privacy">privacy policy</a>.
               We never see your full card number.
             </p>
             <p>

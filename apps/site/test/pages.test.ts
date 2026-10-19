@@ -918,16 +918,25 @@ describe('the privacy policy', () => {
 });
 
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
+  /** How a page says sync is sold: through Link, as the merchant of record, or with Stripe as our processor. */
+  const sold = (each: string) => {
+    const text = said(open(each).getElementById('paying'));
+    if (text.includes('Sold through Link, LLC, as the merchant of record')) return 'Link';
+    if (text.includes('our payment processor')) return 'Stripe';
+    return null;
+  };
+
   it('says how sync is sold, the same way as the other does', () => {
-    /** How the page says sync is sold: through Link, as the merchant of record, or with Stripe as our processor. */
-    const sold = (each: string) => {
-      const text = said(open(each).getElementById('paying'));
-      if (text.includes('Sold through Link, LLC, as the merchant of record')) return 'Link';
-      if (text.includes('our payment processor')) return 'Stripe';
-      return null;
-    };
     expect(sold(page)).not.toBeNull();
     expect(sold(page)).toBe(sold(page === 'terms.html' ? 'privacy.html' : 'terms.html'));
+  });
+
+  it('says how sync is sold the way Factwright’s sync server sells it, as STRIPE_MANAGED_PAYMENTS says', () => {
+    const config = readFileSync(join(SITE, '..', 'server', 'wrangler.jsonc'), 'utf8');
+    // wrangler.jsonc may give it as text or as true or false, as the server takes either.
+    const managed = /"STRIPE_MANAGED_PAYMENTS":\s*"?\s*(true|false)\s*"?/i.exec(config)?.[1];
+    expect(managed?.toLowerCase()).toMatch(/^(true|false)$/);
+    expect(sold(page)).toBe(managed?.toLowerCase() === 'true' ? 'Link' : 'Stripe');
   });
 
   it('links to Link’s terms for the sale while Link is the merchant of record', () => {
