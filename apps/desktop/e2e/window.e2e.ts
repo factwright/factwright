@@ -80,16 +80,17 @@ async function opensAgain(open: () => Promise<unknown>): Promise<Page> {
   return window;
 }
 
-test('stays out of sight while the tests run it, never taking the keyboard', async () => {
+test('stays out of the way while the tests run it, never taking the keyboard', async () => {
   if (!opened) throw new Error('The app isn’t open.');
   await expect(opened.window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
+  // On a Mac the window stays hidden. Elsewhere it shows, without being brought forward.
   expect(
     await opened.app.evaluate(({ app, BrowserWindow }) => ({
       shown: BrowserWindow.getAllWindows().filter((each) => each.isVisible()).length,
       focused: BrowserWindow.getFocusedWindow() !== null,
       dock: app.dock?.isVisible() ?? false,
     })),
-  ).toEqual({ shown: 0, focused: false, dock: false });
+  ).toEqual({ shown: mac ? 0 : 1, focused: false, dock: false });
 });
 
 test.describe('on a Mac', () => {

@@ -54,9 +54,12 @@ export function createMainWindow(url: string, factwrightSync: boolean): BrowserW
   };
   nativeTheme.on('updated', followTheme);
   window.on('closed', () => nativeTheme.off('updated', followTheme));
-  // In quiet mode it stays hidden, so it never takes the keyboard from whoever is at the computer.
+  // In quiet mode it never takes the keyboard from whoever is at the computer. On a Mac it stays
+  // hidden. Elsewhere Chromium stops drawing a window that hasn't shown, and the tests read what
+  // Claude's panel draws, so it shows without being brought forward.
   window.once('ready-to-show', () => {
     if (!QUIET) window.show();
+    else if (!mac) window.showInactive();
   });
 
   void window.loadURL(url);
