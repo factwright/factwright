@@ -25,9 +25,19 @@ const execFileAsync = promisify(execFile);
  * shell. An app opened from Finder or the Start menu doesn't get the PATH a terminal has.
  */
 export async function findClaude(deps: FindDeps): Promise<string | null> {
-  const found = await firstFile([...onPath(deps), ...installSpots(deps)], deps);
+  const path = onPath(deps).filter((each) => !inAppAliases(each, deps));
+  const found = await firstFile([...path, ...installSpots(deps)], deps);
   if (found) return found;
   return deps.platform === 'win32' ? null : askLoginShell(deps);
+}
+
+/**
+ * Whether a path is among Windows' app aliases, in %LOCALAPPDATA%\Microsoft\WindowsApps. An older
+ * Claude Desktop puts a Claude.exe there, ahead of Claude Code on PATH, which opens the desktop
+ * app. Claude Code is never there.
+ */
+function inAppAliases(path: string, { platform }: FindDeps): boolean {
+  return platform === 'win32' && /\\microsoft\\windowsapps$/i.test(win32.dirname(path));
 }
 
 /**
