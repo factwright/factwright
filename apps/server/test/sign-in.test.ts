@@ -163,7 +163,8 @@ describe('signing the desktop app in', () => {
     expect((await pollForToken(denied.body.device_code)).body.error).toBe('access_denied');
   });
 
-  it('keeps answering the app for as long as a code lasts', async () => {
+  // 121 requests, one after another, take about 30 seconds on Windows.
+  it('keeps answering the app for as long as a code lasts', { timeout: 120_000 }, async () => {
     // Every 5 seconds for the code's 10 minutes, with no quiet minute in between.
     const waiting = await askForCode();
     const refused: number[] = [];

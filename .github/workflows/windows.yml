@@ -26,11 +26,19 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - id: install
+        run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+      # Each package's tests run even when another's fail, and the app's own run below goes ahead
+      # too, so one run shows every problem on Windows.
+      - run: pnpm --recursive --no-bail --if-present run test
       - name: Download Electron
+        id: electron
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node apps/desktop/node_modules/electron/install.js
-      - run: pnpm --filter @factwright/desktop build
+      - id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @factwright/desktop build
       # A stand-in Claude Code, claude.cmd, answers the app's runs.
-      - run: pnpm --filter @factwright/desktop e2e
+      - if: ${{ !cancelled() && steps.electron.outcome == 'success' && steps.build.outcome == 'success' }}
+        run: pnpm --filter @factwright/desktop e2e
