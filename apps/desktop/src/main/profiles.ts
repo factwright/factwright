@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { hostname } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import type { EditResult } from '../shared/api.ts';
 import {
   type AddProfileResult,
@@ -303,10 +303,12 @@ export type FirstRunMark = 'marked' | 'already' | 'left';
  * mark them. Only that one setting is added: everything else in the file stays as it was. It's
  * written whole or not at all, under Claude Code's own lock, so a Claude Code saving its config
  * at the same moment never loses its change, nor this one. Left alone: a config Claude Code
- * couldn't read either, one in its older place, which it reads instead, and one whose lock a
- * Claude Code holds, which waits for the next time.
+ * couldn't read either, one in its older place, which it reads instead, one whose lock a Claude
+ * Code holds, which waits for the next time, and one in a folder named from where Claude Code
+ * runs, which isn't where the app is.
  */
 export function markFirstRunDone(folder: string | null, home: string): FirstRunMark {
+  if (folder !== null && !isAbsolute(folder)) return 'left';
   const file = join(folder ?? home, '.claude.json');
   if (existsSync(join(folder ?? join(home, '.claude'), '.config.json'))) return 'left';
   const before = readConfig(file);

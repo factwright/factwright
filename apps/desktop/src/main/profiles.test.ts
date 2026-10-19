@@ -269,6 +269,11 @@ describe('Claude Code’s first-run screens', () => {
     }
   });
 
+  it('leaves a folder named from where Claude Code runs, which isn’t where the app is', () => {
+    expect(markFirstRunDone('claude-config', home)).toBe('left');
+    expect(existsSync(join(home, '.claude.json'))).toBe(false);
+  });
+
   it('leaves the config alone when Claude Code reads one from its older place instead', () => {
     mkdirSync(join(home, '.claude'));
     writeFileSync(join(home, '.claude', '.config.json'), '{"theme":"dark"}');
