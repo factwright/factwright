@@ -21,7 +21,7 @@
   "devDependencies": {
     "@factwright/engine": "workspace:*",
     "@types/node": "catalog:",
-    "docx": "9.8.1",
+    "docx": "9.10.0",
     "electron": "catalog:",
     "pdfjs-dist": "catalog:",
     "typescript": "catalog:",
