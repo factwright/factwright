@@ -18,6 +18,8 @@ import {
   registerSaveHelper,
   runProgram,
   type SaveHelperDeps,
+  saveHelperStatus,
+  setUpSaveHelper,
 } from './register.ts';
 
 /** Save to Factwright's Chrome Web Store item. */
@@ -80,12 +82,21 @@ let writes: string[];
 let runs: string[][];
 /** Which runs of reg.exe fail. */
 let refuse: (args: readonly string[]) => boolean;
+/** Each path registering looked at or wrote, on the computer stood in. */
+let touched: string[];
+/** The paths macOS keeps from Factwright, as it does another app's data, until the user allows it. */
+let guarded: (path: string) => boolean;
+/** How a guarded path refuses: macOS's own "Operation not permitted", unless a test says otherwise. */
+let refusal: 'EPERM' | 'EACCES';
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'factwright-register-'));
   writes = [];
   runs = [];
   refuse = () => false;
+  touched = [];
+  guarded = () => false;
+  refusal = 'EPERM';
 });
 
 afterEach(() => {
@@ -105,14 +116,55 @@ const onDisk = (path: string) =>
       .map((part) => part.replace(/:$/, '')),
   );
 
-/** The computer's files, stood in under the temporary folder, noting each write. */
+/** Notes a path registering reached, and refuses it as macOS does, if it's guarded. */
+function reach(path: string): void {
+  touched.push(path);
+  if (guarded(path)) {
+    throw Object.assign(new Error(`${refusal}: refused, open '${path}'`), { code: refusal });
+  }
+}
+
+/**
+ * The computer's files, stood in under the temporary folder, noting each path reached and each
+ * write. Like this computer's own, looking at what can't be reached finds nothing.
+ */
 const disk: Disk = {
-  list: (path) => localDisk.list(onDisk(path)),
-  isFile: (path) => localDisk.isFile(onDisk(path)),
-  read: (path) => localDisk.read(onDisk(path)),
-  write: (path, text) => {
+  list: (path) => {
+    try {
+      reach(path);
+    } catch {
+      return [];
+    }
+    return localDisk.list(onDisk(path));
+  },
+  isFile: (path) => {
+    try {
+      reach(path);
+    } catch {
+      return false;
+    }
+    return localDisk.isFile(onDisk(path));
+  },
+  isFolder: (path) => {
+    try {
+      reach(path);
+    } catch {
+      return false;
+    }
+    return localDisk.isFolder(onDisk(path));
+  },
+  read: (path) => {
+    try {
+      reach(path);
+    } catch {
+      return null;
+    }
+    return localDisk.read(onDisk(path));
+  },
+  write: async (path, text) => {
     writes.push(path);
-    localDisk.write(onDisk(path), text);
+    reach(path);
+    await localDisk.write(onDisk(path), text);
   },
 };
 
@@ -134,6 +186,23 @@ function install(helper: string): void {
   mkdirSync(dirname(onDisk(helper)), { recursive: true });
   writeFileSync(onDisk(helper), 'helper');
 }
+
+/** A Mac app, installed in Applications, or another folder of apps. */
+function installApp(name: string, folder = '/Applications'): void {
+  mkdirSync(onDisk(`${folder}/${name}/Contents`), { recursive: true });
+}
+
+/** The paths reached in the browsers' own folders: anywhere in Application Support but Factwright's. */
+const inBrowsers = () =>
+  touched.filter((path) => path.startsWith(`${SUPPORT}/`) && !path.startsWith(`${MAC_APP_HOME}/`));
+
+/** A record written as Factwright 0.9.0 wrote it, before there was a digest of the manifests. */
+function oldRecord(browsers: string[], helper = MAC_HELPER): void {
+  mkdirSync(dirname(onDisk(MAC_RECORD)), { recursive: true });
+  writeFileSync(onDisk(MAC_RECORD), JSON.stringify({ version: '0.9.0', helper, browsers }));
+}
+
+const DIGEST = expect.stringMatching(/^[0-9a-f]{64}$/);
 
 const onMac = (changes: Partial<SaveHelperDeps> = {}): SaveHelperDeps => ({
   platform: 'darwin',
@@ -159,7 +228,7 @@ const onWindows = (changes: Partial<SaveHelperDeps> = {}): SaveHelperDeps => ({
   ...changes,
 });
 
-/** Registers, and says what was written and run for it. */
+/** Registers, as the app starts, and says what was written and run for it. */
 async function register(deps: SaveHelperDeps) {
   writes = [];
   runs = [];
@@ -167,180 +236,272 @@ async function register(deps: SaveHelperDeps) {
   return { result, writes, runs };
 }
 
+/** Sets browsers up, as the Save to Factwright window asks, and says what was written and run. */
+async function setUp(deps: SaveHelperDeps, only?: string[]) {
+  writes = [];
+  runs = [];
+  const result = await setUpSaveHelper(deps, only);
+  return { result, writes, runs };
+}
+
 describe('registering on a Mac', () => {
   beforeEach(() => install(MAC_HELPER));
 
-  it('gives each browser found a manifest naming the helper and the extension, and no other', async () => {
-    ran(`${SUPPORT}/Google/Chrome`);
-    ran(`${SUPPORT}/Microsoft Edge`);
-    ran(`${SUPPORT}/Firefox`);
+  it('leaves every browser’s folders alone until one is set up, looking only for their apps', async () => {
+    // Browsers that have run, whose folders macOS keeps from other apps, and says so when one tries.
+    for (const folder of ['Google/Chrome', 'Firefox', 'Microsoft Edge'])
+      ran(`${SUPPORT}/${folder}`);
+    guarded = (path) => path.startsWith(`${SUPPORT}/`) && !path.startsWith(`${MAC_APP_HOME}/`);
+    installApp('Google Chrome.app');
+    installApp('Firefox.app');
     expect(await register(onMac())).toEqual({
-      result: { registered: ['chrome', 'edge', 'firefox'], failed: [] },
-      writes: [
-        manifestIn('Google/Chrome'),
-        manifestIn('Microsoft Edge'),
-        manifestIn('Mozilla'),
-        MAC_RECORD,
+      result: { skipped: 'not-set-up' },
+      writes: [],
+      runs: [],
+    });
+    expect(inBrowsers()).toEqual([]);
+    // Nor does the window, looking.
+    expect(saveHelperStatus(onMac())).toEqual({
+      unavailable: null,
+      onRequest: true,
+      browsers: [
+        { id: 'chrome', name: 'Google Chrome', state: 'not-set-up', allow: ['Google Chrome'] },
+        { id: 'firefox', name: 'Firefox', state: 'not-set-up', allow: ['Firefox'] },
       ],
+    });
+    expect(inBrowsers()).toEqual([]);
+  });
+
+  it('sets up the browsers asked for, found by their apps, with a manifest naming the helper and the extension', async () => {
+    installApp('Google Chrome.app');
+    installApp('Microsoft Edge.app');
+    installApp('Firefox Developer Edition.app', `${MAC_HOME}/Applications`);
+    expect(await setUp(onMac(), ['chrome', 'firefox', 'vivaldi'])).toEqual({
+      result: { registered: ['chrome', 'firefox'], failed: [] },
+      writes: [manifestIn('Google/Chrome'), manifestIn('Mozilla'), MAC_RECORD],
       runs: [],
     });
     expect(readJson(manifestIn('Google/Chrome'))).toStrictEqual(chromeManifest(MAC_HELPER));
-    expect(readJson(manifestIn('Microsoft Edge'))).toStrictEqual(chromeManifest(MAC_HELPER));
     expect(readJson(manifestIn('Mozilla'))).toStrictEqual(firefoxManifest(MAC_HELPER));
     expect(readJson(MAC_RECORD)).toStrictEqual({
       version: '0.9.0',
       helper: MAC_HELPER,
-      browsers: ['chrome', 'edge', 'firefox'],
+      browsers: ['chrome', 'firefox'],
+      blocked: [],
+      manifests: DIGEST,
     });
     // Written whole, with nothing left beside it.
     expect(readdirSync(onDisk(`${SUPPORT}/Google/Chrome/NativeMessagingHosts`))).toEqual([
       'com.factwright.save.json',
     ]);
-    // The browsers that aren't here get nothing.
-    for (const folder of ['Chromium', 'BraveSoftware', 'Vivaldi', 'Arc']) {
-      expect(existsSync(onDisk(`${SUPPORT}/${folder}`))).toBe(false);
-    }
+    // Edge waits to be asked for, and Vivaldi isn't installed.
+    expect(existsSync(onDisk(`${SUPPORT}/Microsoft Edge`))).toBe(false);
+    expect(existsSync(onDisk(`${SUPPORT}/Vivaldi`))).toBe(false);
+    expect(saveHelperStatus(onMac()).browsers).toEqual([
+      { id: 'chrome', name: 'Google Chrome', state: 'ready', allow: ['Google Chrome'] },
+      { id: 'edge', name: 'Microsoft Edge', state: 'not-set-up', allow: ['Microsoft Edge'] },
+      { id: 'firefox', name: 'Firefox', state: 'ready', allow: ['Firefox'] },
+    ]);
+    // Asked for none in particular, every browser found.
+    expect((await setUp(onMac())).result).toEqual({
+      registered: ['chrome', 'edge', 'firefox'],
+      failed: [],
+    });
+    expect(readJson(MAC_RECORD).browsers).toEqual(['chrome', 'edge', 'firefox']);
   });
 
-  it('registers Brave in Chrome’s folder too, even before Chrome has one', async () => {
-    ran(`${SUPPORT}/BraveSoftware/Brave-Browser`);
-    expect(await register(onMac())).toEqual({
+  it('registers Brave in Chrome’s folder too, as it reads that one', async () => {
+    installApp('Brave Browser.app');
+    expect(await setUp(onMac(), ['brave'])).toEqual({
       result: { registered: ['brave'], failed: [] },
       writes: [manifestIn('Google/Chrome'), manifestIn('BraveSoftware/Brave-Browser'), MAC_RECORD],
       runs: [],
     });
-    expect(readJson(manifestIn('Google/Chrome'))).toStrictEqual(chromeManifest(MAC_HELPER));
     expect(readJson(manifestIn('BraveSoftware/Brave-Browser'))).toStrictEqual(
       chromeManifest(MAC_HELPER),
     );
-    // Chrome's folder, with only the manifest made for Brave in it, and the Finder's file once
-    // it's been looked at, isn't Chrome.
-    writeFileSync(onDisk(`${SUPPORT}/Google/Chrome/.DS_Store`), '');
+    // Where macOS keeps Chrome's folder, Brave is blocked, and the steps name Chrome to allow too.
+    rmSync(onDisk(MAC_RECORD));
+    guarded = (path) => path.startsWith(`${SUPPORT}/Google/Chrome/`);
+    expect((await setUp(onMac(), ['brave'])).result).toMatchObject({
+      registered: [],
+      failed: [{ browser: 'brave', blocked: true }],
+    });
+    expect(saveHelperStatus(onMac()).browsers).toEqual([
+      { id: 'brave', name: 'Brave', state: 'blocked', allow: ['Google Chrome', 'Brave Browser'] },
+    ]);
+  });
+
+  it('notes a browser macOS refused, which the others don’t wait on, until the user allows it', async () => {
+    installApp('Google Chrome.app');
+    installApp('Firefox.app');
+    guarded = (path) => path.startsWith(`${SUPPORT}/Google/Chrome/`);
+    expect((await setUp(onMac())).result).toEqual({
+      registered: ['firefox'],
+      failed: [{ browser: 'chrome', message: expect.stringContaining('EPERM'), blocked: true }],
+    });
+    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: ['chrome'] });
+    expect(saveHelperStatus(onMac()).browsers.map(({ id, state }) => [id, state])).toEqual([
+      ['chrome', 'blocked'],
+      ['firefox', 'ready'],
+    ]);
+    // A start keeps Firefox current, and leaves Chrome to the user, so macOS isn't asked again.
+    touched = [];
     expect(await register(onMac())).toEqual({
       result: { skipped: 'unchanged' },
       writes: [],
       runs: [],
     });
-  });
+    expect(inBrowsers()).toEqual([]);
 
-  it('writes each manifest once, however many browsers read it', async () => {
-    for (const browser of BROWSERS) ran(`${SUPPORT}/${browser.mac.folder}`);
-    const { result, writes } = await register(onMac());
-    expect(result).toEqual({
-      registered: ['chrome', 'chromium', 'edge', 'brave', 'vivaldi', 'arc', 'firefox'],
+    // A folder's own permissions are a failure, but not macOS refusing: Files & Folders can't help.
+    refusal = 'EACCES';
+    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+      registered: [],
+      failed: [{ browser: 'chrome', message: expect.stringContaining('EACCES'), blocked: false }],
+    });
+    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
+
+    // Nor is something else in the way.
+    guarded = () => false;
+    mkdirSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
+    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+      registered: [],
+      failed: [{ browser: 'chrome', message: expect.any(String), blocked: false }],
+    });
+    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
+
+    // Once nothing's in the way and the user has allowed it, trying again works.
+    rmSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
+    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+      registered: ['chrome'],
       failed: [],
     });
-    expect(writes).toEqual([
-      manifestIn('Google/Chrome'),
-      manifestIn('Chromium'),
-      manifestIn('Microsoft Edge'),
-      manifestIn('BraveSoftware/Brave-Browser'),
-      manifestIn('Vivaldi'),
-      manifestIn('Arc/User Data'),
-      manifestIn('Mozilla'),
-      MAC_RECORD,
-    ]);
-    expect(readJson(manifestIn('Arc/User Data'))).toStrictEqual(chromeManifest(MAC_HELPER));
+    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['chrome', 'firefox'], blocked: [] });
   });
 
-  it('registers again only for a new version, a moved app, a new browser or a manifest gone or changed', async () => {
-    ran(`${SUPPORT}/Google/Chrome`);
-    ran(`${SUPPORT}/Firefox`);
-    await register(onMac());
+  it('keeps the browsers set up current, reaching their folders only when a manifest would change', async () => {
+    installApp('Google Chrome.app');
+    installApp('Firefox.app');
+    await setUp(onMac(), ['chrome']);
     const unchanged = { result: { skipped: 'unchanged' }, writes: [], runs: [] };
+    touched = [];
     expect(await register(onMac())).toEqual(unchanged);
+    expect(inBrowsers()).toEqual([]);
 
-    // A new version.
-    expect((await register(onMac({ version: '0.9.1' }))).writes).toHaveLength(3);
+    // A new version: the manifests read the same, so only the record learns it.
+    expect(await register(onMac({ version: '0.9.1' }))).toEqual({
+      result: { skipped: 'unchanged' },
+      writes: [MAC_RECORD],
+      runs: [],
+    });
     expect(readJson(MAC_RECORD).version).toBe('0.9.1');
+    expect(inBrowsers()).toEqual([]);
     expect(await register(onMac({ version: '0.9.1' }))).toEqual(unchanged);
 
-    // The app moved.
+    // The app moved: the browsers set up get theirs again, and only those.
     const moved =
       '/Users/alex/Applications/Factwright.app/Contents/Resources/helper/factwright-save';
     install(moved);
-    expect((await register(onMac({ version: '0.9.1', helper: moved }))).writes).toHaveLength(3);
-    expect(readJson(manifestIn('Mozilla')).path).toBe(moved);
-    expect(readJson(MAC_RECORD).helper).toBe(moved);
     const now = onMac({ version: '0.9.1', helper: moved });
+    expect(await register(now)).toEqual({
+      result: { registered: ['chrome'], failed: [] },
+      writes: [manifestIn('Google/Chrome'), MAC_RECORD],
+      runs: [],
+    });
+    expect(readJson(manifestIn('Google/Chrome')).path).toBe(moved);
+    expect(existsSync(onDisk(manifestIn('Mozilla')))).toBe(false);
     expect(await register(now)).toEqual(unchanged);
 
-    // A browser turned up.
-    ran(`${SUPPORT}/Vivaldi`);
-    expect((await register(now)).result).toEqual({
-      registered: ['chrome', 'vivaldi', 'firefox'],
+    // Setting up another browser brings any set up before up to date too.
+    const back = onMac({ version: '0.9.1' });
+    expect((await setUp(back, ['firefox'])).result).toEqual({
+      registered: ['chrome', 'firefox'],
       failed: [],
     });
-    expect(await register(now)).toEqual(unchanged);
-
-    // A manifest went, or changed.
-    rmSync(onDisk(manifestIn('Vivaldi')));
-    expect((await register(now)).writes).toContain(manifestIn('Vivaldi'));
-    writeFileSync(onDisk(manifestIn('Mozilla')), '{"name":"com.factwright.save"}');
-    expect((await register(now)).writes).toContain(manifestIn('Mozilla'));
-    expect(readJson(manifestIn('Mozilla'))).toStrictEqual(firefoxManifest(moved));
-    expect(await register(now)).toEqual(unchanged);
-
-    // A browser that's gone doesn't count.
-    rmSync(onDisk(`${SUPPORT}/Vivaldi`), { recursive: true });
-    expect(await register(now)).toEqual(unchanged);
+    expect(readJson(manifestIn('Google/Chrome')).path).toBe(MAC_HELPER);
   });
 
-  it('leaves a browser that fails out of the record, and tries it again next time', async () => {
-    ran(`${SUPPORT}/Google/Chrome`);
-    ran(`${SUPPORT}/Microsoft Edge`);
-    ran(`${SUPPORT}/Firefox`);
-    // Something in the way of Edge's manifest.
-    mkdirSync(onDisk(manifestIn('Microsoft Edge')), { recursive: true });
-    const { result } = await register(onMac());
-    expect(result).toMatchObject({
-      registered: ['chrome', 'firefox'],
-      failed: [{ browser: 'edge', message: expect.any(String) }],
+  it('takes over 0.9.0’s record without reaching the browsers, unless the app has moved since', async () => {
+    // 0.9.0 registered Chrome as it started, where macOS let it, and noted no digest. Its
+    // manifests read as 0.9.1's would for the same helper, so the record only gains the digest.
+    oldRecord(['chrome']);
+    expect(await register(onMac({ version: '0.9.1' }))).toEqual({
+      result: { skipped: 'unchanged' },
+      writes: [MAC_RECORD],
+      runs: [],
     });
-    expect(readJson(manifestIn('Google/Chrome'))).toStrictEqual(chromeManifest(MAC_HELPER));
-    expect(readJson(MAC_RECORD).browsers).toEqual(['chrome', 'firefox']);
-
-    rmSync(onDisk(manifestIn('Microsoft Edge')), { recursive: true });
-    expect((await register(onMac())).result).toEqual({
-      registered: ['chrome', 'edge', 'firefox'],
-      failed: [],
+    expect(inBrowsers()).toEqual([]);
+    expect(readJson(MAC_RECORD)).toStrictEqual({
+      version: '0.9.1',
+      helper: MAC_HELPER,
+      browsers: ['chrome'],
+      blocked: [],
+      manifests: DIGEST,
     });
-    expect(readJson(manifestIn('Microsoft Edge'))).toStrictEqual(chromeManifest(MAC_HELPER));
-    expect(readJson(MAC_RECORD).browsers).toEqual(['chrome', 'edge', 'firefox']);
+    // Registered for a helper somewhere else, Chrome's manifest is written again.
+    oldRecord(['chrome'], '/Volumes/Old/Factwright.app/Contents/Resources/helper/factwright-save');
+    expect(await register(onMac({ version: '0.9.1' }))).toEqual({
+      result: { registered: ['chrome'], failed: [] },
+      writes: [manifestIn('Google/Chrome'), MAC_RECORD],
+      runs: [],
+    });
+    expect(readJson(manifestIn('Google/Chrome')).path).toBe(MAC_HELPER);
+    // Where macOS kept it out of every browser, 0.9.0 noted none, and that's left as it is.
+    oldRecord([]);
+    touched = [];
+    expect(await register(onMac({ version: '0.9.1' }))).toEqual({
+      result: { skipped: 'not-set-up' },
+      writes: [],
+      runs: [],
+    });
+    expect(inBrowsers()).toEqual([]);
   });
 
   it('skips an app run from where it goes away, or without its helper', async () => {
-    ran(`${SUPPORT}/Google/Chrome`);
+    installApp('Google Chrome.app');
     const translocated =
       '/private/var/folders/xy/abc/T/AppTranslocation/6A1F0C2E/d/Factwright.app/Contents/Resources/helper/factwright-save';
     install(translocated);
-    expect(await register(onMac({ helper: translocated }))).toEqual({
+    expect(await setUp(onMac({ helper: translocated }))).toEqual({
       result: { skipped: 'translocated' },
       writes: [],
       runs: [],
     });
+    expect(saveHelperStatus(onMac({ helper: translocated }))).toEqual({
+      unavailable: 'translocated',
+      onRequest: true,
+      browsers: [],
+    });
     const diskImage =
       '/Volumes/Factwright 0.9.0/Factwright.app/Contents/Resources/helper/factwright-save';
     install(diskImage);
-    expect(await register(onMac({ helper: diskImage }))).toEqual({
+    expect(await setUp(onMac({ helper: diskImage }))).toEqual({
       result: { skipped: 'disk-image' },
       writes: [],
       runs: [],
     });
+    expect(saveHelperStatus(onMac({ helper: diskImage })).unavailable).toBe('disk-image');
     rmSync(onDisk(MAC_HELPER));
+    expect(await setUp(onMac())).toEqual({
+      result: { skipped: 'no-helper' },
+      writes: [],
+      runs: [],
+    });
     expect(await register(onMac())).toEqual({
       result: { skipped: 'no-helper' },
       writes: [],
       runs: [],
     });
+    expect(saveHelperStatus(onMac()).unavailable).toBe('no-helper');
     expect(existsSync(onDisk(`${SUPPORT}/Google/Chrome/NativeMessagingHosts`))).toBe(false);
   });
 
   it('lets an unpacked extension being developed reach the helper too, and refuses an ID that isn’t one', async () => {
-    ran(`${SUPPORT}/Google/Chrome`);
-    ran(`${SUPPORT}/Firefox`);
-    await register(onMac());
-    // A new ID changes the manifest, which registers again.
+    installApp('Google Chrome.app');
+    installApp('Firefox.app');
+    await setUp(onMac());
+    // A new ID changes the manifests, which a start writes again for the browsers set up.
     const developing = onMac({ extraChromeIds: [UNPACKED, STORE] });
     expect((await register(developing)).writes).toContain(manifestIn('Google/Chrome'));
     expect(readJson(manifestIn('Google/Chrome'))).toStrictEqual(
@@ -358,11 +519,15 @@ describe('registering on a Mac', () => {
       await expect(registerSaveHelper(onMac({ extraChromeIds: [id] }))).rejects.toThrow(
         'isn’t a Chrome extension’s ID',
       );
+      await expect(setUpSaveHelper(onMac({ extraChromeIds: [id] }))).rejects.toThrow(
+        'isn’t a Chrome extension’s ID',
+      );
       expect(writes).toEqual([]);
     }
     await expect(registerSaveHelper(onMac({ helper: 'factwright-save' }))).rejects.toThrow(
       'must be whole',
     );
+    expect(saveHelperStatus(onMac({ helper: 'factwright-save' })).unavailable).toBe('no-helper');
   });
 });
 
@@ -463,7 +628,7 @@ describe('registering on Windows', () => {
     refuse = (args) => String(args[1]).includes('Mozilla');
     expect((await register(onWindows())).result).toEqual({
       registered: ['chrome'],
-      failed: [{ browser: 'firefox', message: 'ERROR: Access is denied.' }],
+      failed: [{ browser: 'firefox', message: 'ERROR: Access is denied.', blocked: false }],
     });
     expect(readJson(WINDOWS_RECORD).browsers).toEqual(['chrome']);
 
@@ -514,6 +679,28 @@ describe('registering on Windows', () => {
       runs: [],
     });
   });
+  it('never counts a refusal on Windows as macOS’s, which only a Mac has', async () => {
+    ran(`${LOCAL}\\Google\\Chrome\\User Data`);
+    guarded = (path) => path === CHROME_JSON;
+    expect((await register(onWindows())).result).toEqual({
+      registered: [],
+      failed: [{ browser: 'chrome', message: expect.stringContaining('EPERM'), blocked: false }],
+    });
+  });
+
+  it('says each browser found is ready, and registers again when the window asks, even unchanged', async () => {
+    ran(`${LOCAL}\\Google\\Chrome\\User Data`);
+    await register(onWindows());
+    expect(saveHelperStatus(onWindows())).toEqual({
+      unavailable: null,
+      onRequest: false,
+      browsers: [{ id: 'chrome', name: 'Google Chrome', state: 'ready', allow: [] }],
+    });
+    expect((await register(onWindows())).result).toEqual({ skipped: 'unchanged' });
+    expect((await setUp(onWindows())).runs).toEqual([
+      setKey('Google\\Chrome\\NativeMessagingHosts', CHROME_JSON),
+    ]);
+  });
 });
 
 describe('registering anywhere else', () => {
@@ -524,6 +711,16 @@ describe('registering anywhere else', () => {
       result: { skipped: 'other-system' },
       writes: [],
       runs: [],
+    });
+    expect(await setUp(onMac({ platform: 'linux' }))).toEqual({
+      result: { skipped: 'other-system' },
+      writes: [],
+      runs: [],
+    });
+    expect(saveHelperStatus(onMac({ platform: 'linux' }))).toEqual({
+      unavailable: 'other-system',
+      onRequest: false,
+      browsers: [],
     });
   });
 });

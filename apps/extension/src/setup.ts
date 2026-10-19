@@ -311,7 +311,7 @@ function notFound(found: Extract<Found, { ok: false }>): void {
       h(
         'p',
         {},
-        'Check Factwright is installed and up to date, and open it once, then check again. On a Mac, open it from Applications.',
+        'Check Factwright is installed and up to date, and open it, then check again. On a Mac, open it from Applications, then choose Browser extension in its sidebar, and set up this browser there.',
       ),
       actions(again, back),
     );
@@ -342,14 +342,14 @@ function notFound(found: Extract<Found, { ok: false }>): void {
       h(
         'li',
         {},
-        'Open it once, so it can let your browsers reach it. On a Mac, open it from Applications.',
+        'Open it, so it can let your browsers reach it. On a Mac, open it from Applications, then choose Browser extension in its sidebar, and Set up beside this browser. If macOS asks, choose Allow.',
       ),
       h('li', {}, 'Come back here, and check again.'),
     ),
     h(
       'p',
       { class: 'small muted' },
-      'Installed already? Update it, then open it once: earlier versions can’t take jobs from the browser.',
+      'Installed already? Update it, then open it: earlier versions can’t take jobs from the browser.',
     ),
     actions(again, back),
   );

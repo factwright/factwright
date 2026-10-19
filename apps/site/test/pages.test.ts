@@ -626,7 +626,7 @@ describe('the extension page', () => {
 });
 
 describe('the own-server guide', () => {
-  it('says up front what Cloudflare may ask for, that updates aren’t automatic, and when connecting comes', () => {
+  it('says up front what Cloudflare may ask for, that updates aren’t automatic, and which Factwright connects', () => {
     const before = open('own-server.html')
       .getElementById('before')
       ?.textContent?.replace(/\s+/g, ' ');
@@ -634,7 +634,7 @@ describe('the own-server guide', () => {
       'Cloudflare may ask for a payment method before it turns on R2, its file storage, even on the free plan.',
     );
     expect(before).toContain('Updates to your server aren’t automatic yet.');
-    expect(before).toContain('Connecting comes with Factwright’s next release');
+    expect(before).toContain('Connecting needs Factwright 0.9 or later');
   });
 
   it('says it all again in the steps it’s about', () => {
@@ -643,7 +643,9 @@ describe('the own-server guide', () => {
     expect(order).toEqual(['before', 'address', 'github', 'deploy', 'connect']);
     const text = (id: string) => doc.getElementById(id)?.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(text('address')).toContain('Cloudflare may ask for a payment method');
-    expect(text('connect')).toContain('Connect your server… comes with Factwright’s next release.');
+    expect(text('connect')).toContain(
+      'Save to Factwright, the browser extension, can save through your server too, from its version 0.2',
+    );
     expect(text('updates')).toContain('Updates to your own server aren’t automatic yet');
   });
 

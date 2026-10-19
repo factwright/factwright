@@ -60,12 +60,20 @@ export async function destination(
 function unreachable(error: unknown): { missing: boolean; message: string } {
   const said = error instanceof Error ? error.message : String(error);
   // Chrome's words for a helper that isn't registered, isn't for this extension, or isn't where
-  // its registration says, as when Factwright was moved to the trash, and Firefox's.
-  if (/not found|forbidden|failed to start|no such native application/i.test(said)) {
+  // its registration says, as when Factwright was moved to the trash, and Firefox's for one that
+  // isn't registered or isn't for this extension. For one that isn't where its registration says,
+  // Firefox says only that something unexpected went wrong, as it does for a helper that stops
+  // without answering, which Factwright's never does unless it's broken: getting Factwright again
+  // is the way out of both.
+  if (
+    /not found|forbidden|failed to start|no such native application|^an unexpected error occurred$/i.test(
+      said,
+    )
+  ) {
     return {
       missing: true,
       message:
-        'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it once.',
+        'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it. On a Mac, then choose Browser extension in its sidebar, and set up this browser.',
     };
   }
   return { missing: false, message: 'Factwright on this computer didn’t answer. Try again.' };

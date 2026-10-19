@@ -208,6 +208,22 @@ describe('words with letters fonts draw as one, such as fi and fl', () => {
   });
 });
 
+describe('cover letters', () => {
+  // Chromium writes positioned elements after the rest, so a letter whose header was positioned
+  // and whose text wasn't read the header last. The engine positions both (html.ts).
+  for (const file of ['fi-letter.pdf', 'fi-letter-missing-font.pdf']) {
+    it(`reads the letter in ${file} from the top: name, headline and contact line, then the date`, async () => {
+      const lines = (await read(file)).lines.map((line) => line.text);
+      expect(lines.slice(0, 4)).toEqual([
+        'JORDAN AVERY',
+        'Certified Financial Planner',
+        expect.stringContaining('jordan.avery@example.com'),
+        'October 14, 2026',
+      ]);
+    });
+  }
+});
+
 describe('files with problems', () => {
   it('notes a sidebar, but reads each column whole, with the name first', async () => {
     const result = xray(await read('sidebar.pdf'));

@@ -23,6 +23,7 @@ import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
 import { JobInbox } from './extension/inbox.ts';
 import { helperName, registerSaveHelper, runProgram } from './extension/register.ts';
+import { createSaveHelper } from './extension/save-helper.ts';
 import { registerIpc } from './ipc.ts';
 import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
@@ -316,33 +317,43 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       // The inbox never keeps the app from opening: what's in it waits for the next start.
     }
     // Each browser on this computer may start the helper, for Save to Factwright alone, once the
-    // app has told it where the helper is: on the first start, and after each update. A copy
-    // another program drives, as the tests do, leaves the browsers as they are, and so does one
-    // run from the code, unless it's given an unpacked extension's ID to allow too.
+    // app has told it where the helper is. Windows tells each browser it finds as the app starts.
+    // On a Mac, the user sets each browser up in the Save to Factwright window, as macOS asks them
+    // first, and a start keeps the ones set up current. A copy another program drives, as the tests
+    // do, leaves the browsers as they are, and so does one run from the code, unless it's given an
+    // unpacked extension's ID to allow too.
     const unpacked = develop('FACTWRIGHT_EXTENSION_ID');
-    if (!driven && (app.isPackaged || unpacked)) {
-      void registerSaveHelper({
-        platform: process.platform,
-        userHome: app.getPath('home'),
-        env: {
-          APPDATA: app.getPath('appData'),
-          LOCALAPPDATA: process.env.LOCALAPPDATA,
-          SystemRoot: process.env.SystemRoot,
-        },
-        appHome: home,
-        helper: app.isPackaged
-          ? process.platform === 'darwin'
-            ? join(process.resourcesPath, 'helper', helperName(process.platform))
-            : join(dirname(process.execPath), helperName(process.platform))
-          : join(app.getAppPath(), 'helper', 'out', helperName(process.platform)),
-        version: app.getVersion(),
-        extraChromeIds: unpacked ? [unpacked] : [],
-        run: runProgram,
-      }).catch((error: unknown) => {
+    const helperDeps =
+      !driven && (app.isPackaged || unpacked)
+        ? {
+            platform: process.platform,
+            userHome: app.getPath('home'),
+            env: {
+              APPDATA: app.getPath('appData'),
+              LOCALAPPDATA: process.env.LOCALAPPDATA,
+              SystemRoot: process.env.SystemRoot,
+            },
+            appHome: home,
+            helper: app.isPackaged
+              ? process.platform === 'darwin'
+                ? join(process.resourcesPath, 'helper', helperName(process.platform))
+                : join(dirname(process.execPath), helperName(process.platform))
+              : join(app.getAppPath(), 'helper', 'out', helperName(process.platform)),
+            version: app.getVersion(),
+            extraChromeIds: unpacked ? [unpacked] : [],
+            run: runProgram,
+          }
+        : null;
+    if (helperDeps) {
+      void registerSaveHelper(helperDeps).catch((error: unknown) => {
         // The next start tries again. A copy run from the code says why, such as an ID mistyped.
         if (!app.isPackaged) console.error('Registering the helper with the browsers:', error);
       });
     }
+    const saveHelper = createSaveHelper(helperDeps, {
+      platform: process.platform,
+      openExternal: (url) => shell.openExternal(url),
+    });
     // Claude fills in the fact bank and builds resumes as it goes, and other devices sync theirs,
     // so the profile follows the workspace too.
     const stopWatchingProfile = watchWorkspace(
@@ -451,6 +462,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       profiles,
       reminders,
       opener,
+      saveHelper,
     });
     void sync.start();
     // Coming back to the app, or the computer waking, asks a paused computer's account whether it

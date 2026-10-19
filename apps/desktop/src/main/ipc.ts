@@ -42,6 +42,8 @@ import { parseReply } from './claude/rounds.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
+import { BROWSERS } from './extension/browsers.ts';
+import type { SaveHelper } from './extension/save-helper.ts';
 import {
   parseCallChanges,
   parseDate,
@@ -103,6 +105,12 @@ const isId = (value: unknown): value is string =>
 /** The most jobs the window may change at once: every job in a long list, but not a flood. */
 const MAX_JOBS_AT_ONCE = 5000;
 
+/** Browsers to set up, by the names the app knows them by, such as "chrome". */
+const isBrowsers = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length <= BROWSERS.length &&
+  value.every((each) => BROWSERS.some((browser) => browser.id === each));
+
 const isIds = (value: unknown): value is string[] =>
   Array.isArray(value) && value.length > 0 && value.length <= MAX_JOBS_AT_ONCE && value.every(isId);
 
@@ -147,6 +155,8 @@ export interface IpcDeps {
   reminders: CallReminders;
   /** Opens a job in the window, such as from a reminder's click. */
   opener: JobOpener;
+  /** Save to Factwright saving to this computer: where each browser stands, and setting it up. */
+  saveHelper: SaveHelper;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -186,6 +196,7 @@ export function registerIpc({
   profiles,
   reminders,
   opener,
+  saveHelper,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -589,6 +600,17 @@ export function registerIpc({
   answer('profiles:rename', (id, name) => profiles.rename(id, name));
   answer('profiles:remove', (id) => profiles.remove(id));
   answer('profiles:open', (id) => profiles.open(id));
+
+  // Save to Factwright saving to this computer, from its window: where each browser stands,
+  // setting browsers up, which macOS may ask the user about, and macOS's Files & Folders settings.
+  answer('helper:status', () => saveHelper.status());
+  answer('helper:set-up', (only) => {
+    // Refused with an error, which the window shows, as it expects where browsers stand.
+    if (only !== undefined && !isBrowsers(only))
+      throw new Error('Those aren’t browsers to set up.');
+    return saveHelper.setUp(only);
+  });
+  answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
   registerAboutIpc(answer, { about, previews, templates });
 }

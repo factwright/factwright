@@ -29,6 +29,7 @@ import { ClaudePanel } from './ClaudePanel.tsx';
 import { ClaudePermission } from './ClaudePermission.tsx';
 import { ClaudeQuestions } from './ClaudeQuestions.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
+import { ExtensionDialog } from './extension/ExtensionDialog.tsx';
 import { FactBankPage } from './facts/FactBankPage.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { FindJobsDialog } from './jobs/FindJobsDialog.tsx';
@@ -144,6 +145,7 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'journey'
     | 'sync'
     | 'claude-settings'
+    | 'extension'
     | 'add-profile'
     | 'profiles'
     | null
@@ -383,11 +385,11 @@ export function App({ api }: { api: FactwrightApi }) {
           terminal={api.platform === 'win32' ? 'PowerShell' : 'Terminal'}
           setup={setup}
           sync={sync}
-          factwrightSync={api.factwrightSync}
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
           onOpenClaudeSettings={() => setDialog('claude-settings')}
+          onOpenExtension={() => setDialog('extension')}
           levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
@@ -577,6 +579,7 @@ export function App({ api }: { api: FactwrightApi }) {
           onClose={() => setWithdraw(null)}
         />
       )}
+      {dialog === 'extension' && <ExtensionDialog api={api} onClose={() => setDialog(null)} />}
       {dialog === 'claude-settings' && (
         <ClaudeSettingsDialog
           api={api}

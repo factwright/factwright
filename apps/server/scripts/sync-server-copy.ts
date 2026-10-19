@@ -31,8 +31,11 @@ export const SECRETS = {
     'Your GitHub user name, such as `octocat`: only the accounts named here can sign in. To let in someone else, add their user name after a comma. Left empty, anyone with GitHub can.',
 } as const;
 
-/** Factwright's settings that only its own server has: its address and its legal pages. */
-const FACTWRIGHT_ONLY = new Set(['APP_URL', 'TERMS_URL', 'PRIVACY_URL']);
+/**
+ * Factwright's settings that only its own server has: its address, its legal pages, and how it
+ * sells sync.
+ */
+const FACTWRIGHT_ONLY = new Set(['APP_URL', 'TERMS_URL', 'PRIVACY_URL', 'STRIPE_MANAGED_PAYMENTS']);
 
 type Settings = Record<string, unknown>;
 

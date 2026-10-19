@@ -10,6 +10,21 @@ export const SECRET = 'test-only-secret-for-signing-sessions-0123456789';
 /** Where the app thinks it's served from, until the test server knows its own address. */
 const APP_URL = 'http://localhost';
 
+/**
+ * Sync isn't sold in the tests unless one sells it with settings of its own, whatever
+ * apps/server/.dev.vars has for `pnpm dev`, such as Stripe's test keys, as Wrangler reads that
+ * file here too.
+ */
+const NOT_SELLING = {
+  STRIPE_SECRET_KEY: '',
+  STRIPE_WEBHOOK_SECRET: '',
+  STRIPE_PRICE_MONTHLY: '',
+  STRIPE_PRICE_YEARLY: '',
+  STRIPE_API_URL: '',
+  STRIPE_MANAGED_PAYMENTS: 'false',
+  EARLY_BEFORE: '',
+};
+
 /** The bindings the tests reach into, typed as loosely as the harness hands them over. */
 interface Bindings {
   DB: {
@@ -48,7 +63,7 @@ export async function startServer(vars: Record<string, string> = {}) {
   const worker = (appUrl: string) => ({
     configPath: './wrangler.jsonc',
     // Tests sign in far more often than a person would.
-    vars: { APP_URL: appUrl, SIGN_INS_PER_MINUTE: '1000', ...vars },
+    vars: { APP_URL: appUrl, SIGN_INS_PER_MINUTE: '1000', ...NOT_SELLING, ...vars },
     secrets: { BETTER_AUTH_SECRET: SECRET, ADMIN_TOKEN: 'test-admin-token' },
   });
   const server = createTestHarness({

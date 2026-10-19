@@ -8,6 +8,7 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "e2e": "node scripts/e2e.ts",
+    "e2e:firefox": "node scripts/e2e-firefox.ts",
     "icons": "node scripts/icons.ts",
     "typecheck": "tsc",
     "test": "vitest run"

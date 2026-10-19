@@ -170,7 +170,7 @@
   vertical-align: -0.08em;
 }
 
-/* What's good to know before starting: the card, the updates and the next release. */
+/* What's good to know before starting: the card, the updates and the version that connects. */
 .own-before {
   padding: 22px 24px 24px;
   border: 1px solid color-mix(in srgb, var(--fw-need) 26%, var(--fw-border));
