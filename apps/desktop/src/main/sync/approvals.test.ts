@@ -7,8 +7,9 @@ import type { ApprovalsView, SyncStatus } from '../../shared/sync.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import { SyncAccount } from './account.ts';
 
-// Each test signs in, links and syncs for real, against the server running locally.
-vi.setConfig({ testTimeout: 30_000 });
+// Each test signs in, links and syncs for real, against the server running locally, which can take
+// most of a minute on a slow Windows runner.
+vi.setConfig({ testTimeout: 60_000 });
 
 let server: TestServer;
 

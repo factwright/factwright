@@ -31,10 +31,12 @@ jobs:
       - run: pnpm typecheck
       # Each package's tests run even when another's fail, and the app's own run below goes ahead
       # too, so one run shows every problem on Windows. Its runners are slower than GitHub's others,
-      # and vary from run to run, so the packages take turns and each test gets longer.
+      # and vary from run to run, so the packages take turns, each test gets longer, and a test that
+      # fails is tried twice more: a busy runner can run out of time, where a real problem on
+      # Windows fails every time.
       - run: >-
           pnpm --recursive --no-bail --workspace-concurrency=1 --if-present run test
-          --testTimeout=60000 --hookTimeout=120000
+          --testTimeout=60000 --hookTimeout=120000 --retry=2
       - name: Download Electron
         id: electron
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
