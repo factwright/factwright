@@ -115,6 +115,15 @@ export function useClaudeFolder(folder: string | null): void {
 }
 
 /**
+ * The folder Claude Code keeps its config in for the open profile: the profile's own, or for the
+ * first profile, the one CLAUDE_CONFIG_DIR names in `base`. Null for Claude Code's own default,
+ * the home folder.
+ */
+export function claudeConfigFolder(base: NodeJS.ProcessEnv): string | null {
+  return profileFolder ?? (base.CLAUDE_CONFIG_DIR || null);
+}
+
+/**
  * A copy of `base` with PATH replaced and only a parent session's variables removed. For a
  * profile with its own Claude Code folder, it points there, and leaves out any login in the
  * environment, which would be someone else's.

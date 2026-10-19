@@ -1,11 +1,11 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 // pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { type Opened, openApp, terminalText } from './app.ts';
 import { version } from './paths.ts';
-import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder } from './workspace.ts';
+import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder, usersClaude } from './workspace.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -734,5 +734,73 @@ test('suits Claude’s levels to a Pro plan, once Claude Code signs in on one', 
     .click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('sonnet · high effort');
+  await closeRun();
+});
+
+test('marks Claude Code’s first-run screens done for a Claude account, keeping its config', async () => {
+  await opened.app.close();
+  // Signed in with `claude auth login`, and never opened since, so its first-run screens show.
+  const claude = usersClaude(dataDir, 'new-claude');
+  writeFileSync(join(claude, '.claude.json'), JSON.stringify({ numStartups: 1, theme: 'light' }));
+  opened = await openApp(dataDir, { CLAUDE_CONFIG_DIR: claude, FAKE_CLAUDE_FIRST_RUN: 'show' });
+  const { window } = opened;
+  await expect
+    .poll(() => JSON.parse(readFileSync(join(claude, '.claude.json'), 'utf8')))
+    .toEqual({ numStartups: 1, theme: 'light', hasCompletedOnboarding: true });
+  expect(readdirSync(claude).sort()).toEqual(['.claude.json', 'signed-in']);
+  await expect(window.getByText('Signed in · Max plan')).toBeVisible();
+  // So a run goes straight to work.
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const panel = claudePanel();
+  await expect(panel.getByRole('status')).toHaveText('Done');
+  await expect(panel.getByRole('note')).toHaveCount(0);
+  await closeRun();
+});
+
+test('explains Claude Code’s first-run screens when the app leaves them, and checks again', async () => {
+  await opened.app.close();
+  // Signed in with a key in the environment, which those screens ask about, so they're left.
+  const claude = usersClaude(dataDir, 'key-claude');
+  // A new version of Claude Code, as far as the setup check knows, so it checks again.
+  rmSync(join(dataDir, 'setup-check.json'), { force: true });
+  opened = await openApp(dataDir, {
+    CLAUDE_CONFIG_DIR: claude,
+    FAKE_CLAUDE_FIRST_RUN: 'show',
+    FAKE_CLAUDE_METHOD: 'api_key',
+  });
+  const { window } = opened;
+  const card = window.getByRole('region', { name: 'Your Claude' });
+  // The setup check stops on them at once, and says what to do.
+  await expect(card.getByText('Claude Code’s first screens')).toBeVisible();
+  await expect(card).toContainText(
+    'In Claude’s panel, press Enter through them, then check again.',
+  );
+  await expect(card).not.toContainText('may need an update');
+  expect(existsSync(join(claude, '.claude.json'))).toBe(false);
+  await card.getByRole('button', { name: 'Open Claude’s panel' }).click();
+  const panel = claudePanel();
+  await expect(panel.getByRole('note')).toContainText('Press Enter on each one');
+  await expect(panel.getByRole('status')).toHaveText('Needs your answer');
+  await expect(panel.locator('[class*="attention"]')).toHaveCount(1);
+  // With the panel open, the card has nothing to open.
+  await expect(card.getByRole('button', { name: 'Open Claude’s panel' })).toHaveCount(0);
+  const terminal = panel.locator('.xterm-helper-textarea');
+  await terminal.press('Enter');
+  // The next screen says so too, until it's answered.
+  await expect.poll(() => terminalText(window)).toContain('Security notes:');
+  await expect(panel.getByRole('note')).toContainText('Press Enter on each one');
+  await terminal.press('Enter');
+  await expect(panel.getByRole('note')).toHaveCount(0);
+  await expect.poll(() => terminalText(window)).toContain("Factwright's tools");
+  // Claude Code noted them done itself, and the check passes now.
+  expect(JSON.parse(readFileSync(join(claude, '.claude.json'), 'utf8'))).toEqual({
+    hasCompletedOnboarding: true,
+  });
+  await card.getByRole('button', { name: 'Check again' }).click();
+  await expect(card.getByText('Signed in', { exact: true })).toBeVisible();
   await closeRun();
 });

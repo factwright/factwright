@@ -72,12 +72,14 @@ export type ClaudeStatus =
 /**
  * Whether Factwright's setup works with the user's Claude Code, from a check that starts it
  * hidden with no prompt, so it uses none of their plan. "untrusted" means Claude Code is still
- * waiting for the user to trust the workspace, which they do in their first run.
+ * waiting for the user to trust the workspace, which they do in their first run. "first-run"
+ * means it's showing the screens it shows until someone presses Enter through them once, which
+ * the user does in Claude's panel.
  */
 export interface SetupCheck {
   /** The Claude Code version checked. */
   version: string;
-  result: 'passed' | 'failed' | 'untrusted';
+  result: 'passed' | 'failed' | 'untrusted' | 'first-run';
   /** For a failure, what went wrong, in plain words. */
   problem?: string;
   /** When, as an ISO time. */
@@ -270,6 +272,11 @@ export interface FactwrightApi {
    * first run. Returns a function that stops listening.
    */
   onClaudeTrust(listener: () => void): () => void;
+  /**
+   * Listens for Claude Code showing its first-run screens, which it does until someone presses
+   * Enter through them once. Returns a function that stops listening.
+   */
+  onClaudeFirstRun(listener: () => void): () => void;
   /** The round of Claude's questions waiting on the user to answer in the window, or null. */
   claudeQuestion(): Promise<QuestionRound | null>;
   /**

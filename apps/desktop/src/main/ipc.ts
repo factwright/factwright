@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ASK_ID } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
@@ -14,6 +15,7 @@ import {
   shell,
 } from 'electron';
 import type {
+  ClaudeStatus,
   EditResult,
   PasteResult,
   PdfResult,
@@ -35,6 +37,7 @@ import type { TemplatePreviews } from './about/previews.ts';
 import type { AboutStore } from './about/store.ts';
 import type { Desk } from './claude/desk.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
+import { claudeConfigFolder } from './claude/launch.ts';
 import { loadModels, saveModels } from './claude/models.ts';
 import { parsePermissionAnswer } from './claude/permission-asks.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
@@ -67,7 +70,7 @@ import {
   runPrompt,
   saveableFileName,
 } from './policy.ts';
-import type { Profiles } from './profiles.ts';
+import { markFirstRunDone, type Profiles } from './profiles.ts';
 import type { CallReminders } from './reminders.ts';
 import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
@@ -209,10 +212,24 @@ export function registerIpc({
     });
   };
 
+  // Claude Code's first-run screens, which signing in with `claude auth login` leaves showing, are
+  // marked done as pressing Enter through them would. Only for a Claude account: one signed in
+  // with a key in the environment is asked on those screens whether to use it. And only while
+  // none of the app's own Claude Code is going. Once they're done, they stay done.
+  let firstRunDone = false;
+  const markFirstRun = (status: ClaudeStatus) => {
+    if (firstRunDone || status.state !== 'ready' || status.method !== 'subscription') return;
+    if (session.busy() || setup.busy()) return;
+    firstRunDone = markFirstRunDone(claudeConfigFolder(process.env), homedir()) !== 'left';
+  };
+
   // Each status check also notices a new version of Claude Code, which gets its setup checked.
   answer('claude:status', async () => {
     const status = await claudeStatus(nodeStatusDeps());
-    if (status.state === 'ready') setup.checkIfNeeded(status.version);
+    if (status.state === 'ready') {
+      markFirstRun(status);
+      setup.checkIfNeeded(status.version);
+    }
     return status;
   });
 
@@ -250,7 +267,9 @@ export function registerIpc({
 
   answer('setup:check', async () => {
     const status = await claudeStatus(nodeStatusDeps());
-    return status.state === 'ready' ? setup.check(status.version) : setup.current();
+    if (status.state !== 'ready') return setup.current();
+    markFirstRun(status);
+    return setup.check(status.version);
   });
 
   /**

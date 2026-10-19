@@ -47,6 +47,17 @@ const FILES: Readonly<Record<string, string | Uint8Array>> = {
   }),
 };
 
+/**
+ * The Claude Code folder the first profile runs with, standing in for the user's own, which no
+ * test reaches: one in its data folder, signed in, as `claude auth login` would sign it in.
+ */
+export function usersClaude(dataDir: string, name = 'users-claude'): string {
+  const folder = join(dataDir, name);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'signed-in'), '');
+  return folder;
+}
+
 /** A new app data folder, with the made-up job hunt in its workspace, or empty. */
 export function newDataFolder({ empty = false } = {}): string {
   const dataDir = mkdtempSync(join(tmpdir(), 'factwright-e2e-'));

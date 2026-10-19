@@ -17,7 +17,15 @@ export interface ClaudeRun {
   task: RunTask | null;
   /** Claude Code is asking whether to trust the workspace, and the user hasn't answered yet. */
   trustAsked: boolean;
-  /** The user typed into the run, which answers a question on screen, such as about trust. */
+  /**
+   * Claude Code is showing one of its first-run screens, which it shows until someone presses
+   * Enter through them once, and the user hasn't answered it yet.
+   */
+  firstRun: boolean;
+  /**
+   * The user typed into the run, which answers a question on screen, such as about trust, or a
+   * first-run screen.
+   */
   typed: (data: string) => void;
   /**
    * Starts Claude, maybe with a skill to run on a job. Claude that's open and done takes the task
@@ -49,6 +57,7 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
   const [runId, setRunId] = useState(0);
   const [task, setTask] = useState<RunTask | null>(null);
   const [trustAsked, setTrustAsked] = useState(false);
+  const [firstRun, setFirstRun] = useState(false);
   // A run waiting for the terminal's size, with its task. Cleared the moment it launches, so it
   // launches once.
   const pending = useRef<{ task: RunTask | undefined } | null>(null);
@@ -63,8 +72,9 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
           return;
         }
         setPhase(signal);
-        // Any signal means Claude Code is past the question about trust.
+        // Any signal means Claude Code is past its first-run screens and the question about trust.
         setTrustAsked(false);
+        setFirstRun(false);
         // The panel comes back whenever Claude needs the user.
         if (signal === 'needs-answer') setOpen(true);
       }),
@@ -76,6 +86,18 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
     () =>
       api.onClaudeTrust(() => {
         setTrustAsked(true);
+        // The question comes after the first-run screens.
+        setFirstRun(false);
+        setOpen(true);
+      }),
+    [api],
+  );
+
+  // And on its first-run screens, which the user presses Enter through.
+  useEffect(
+    () =>
+      api.onClaudeFirstRun(() => {
+        setFirstRun(true);
         setOpen(true);
       }),
     [api],
@@ -84,6 +106,7 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
   const startNew = useCallback((next?: RunTask) => {
     pending.current = { task: next };
     setTrustAsked(false);
+    setFirstRun(false);
     setPhase('starting');
     setRunId((id) => id + 1);
   }, []);
@@ -153,11 +176,16 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
       setPhase('idle');
       setProblem(undefined);
       setTrustAsked(false);
+      setFirstRun(false);
     }, []),
     trustAsked,
-    // Enter picks an answer, so the question about trust is behind the user.
+    firstRun,
+    // Enter picks an answer, so the question about trust, or a first-run screen, is behind the
+    // user. The next first-run screen, if there is one, says so again.
     typed: useCallback((data: string) => {
-      if (data.includes('\r')) setTrustAsked(false);
+      if (!data.includes('\r')) return;
+      setTrustAsked(false);
+      setFirstRun(false);
     }, []),
   };
 }

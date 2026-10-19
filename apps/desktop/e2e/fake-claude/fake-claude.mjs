@@ -2,7 +2,9 @@
 // sign-in checks, and in a run it talks to the app the way Claude Code does: it reaches
 // Factwright's tools with the run's token, and sends the prompt, Stop and session-end hooks. It
 // never reaches Anthropic. FAKE_CLAUDE_TRUST=ask makes it ask whether to trust the folder first,
-// and FAKE_CLAUDE_PLAN=pro signs it in on a Pro plan rather than Max.
+// FAKE_CLAUDE_PLAN=pro signs it in on a Pro plan rather than Max, FAKE_CLAUDE_METHOD=api_key
+// signs it in with a key instead, and FAKE_CLAUDE_FIRST_RUN=show has it show Claude Code's
+// first-run screens until someone presses Enter through them once, as Claude Code does.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -12,16 +14,24 @@ if (args[0] === '--version') {
   console.log('2.1.300 (Claude Code)');
   process.exit(0);
 }
+// Its folder, always one of the tests' own, never the user's: a profile's own, or the one the
+// tests give the first profile.
+const folder = process.env.CLAUDE_CONFIG_DIR;
+
 if (args[0] === 'auth' && args[1] === 'status') {
-  // A profile's own Claude Code folder is signed in only once a test signs it in, as
-  // `claude auth login` would. Without one, it's the user's own Claude Code, signed in.
-  const folder = process.env.CLAUDE_CONFIG_DIR;
-  if (folder && !existsSync(join(folder, 'signed-in'))) {
+  // It's signed in only once a test signs it in, as `claude auth login` would.
+  if (!folder || !existsSync(join(folder, 'signed-in'))) {
     console.log(JSON.stringify({ loggedIn: false, authMethod: 'none' }));
     process.exit(1);
   }
   const plan = process.env.FAKE_CLAUDE_PLAN ?? 'max';
-  console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: plan }));
+  console.log(
+    JSON.stringify(
+      process.env.FAKE_CLAUDE_METHOD === 'api_key'
+        ? { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' }
+        : { loggedIn: true, authMethod: 'claude.ai', subscriptionType: plan },
+    ),
+  );
   process.exit(0);
 }
 
@@ -396,6 +406,24 @@ async function begin() {
   else show('> ');
 }
 
+/** Its config, where Claude Code notes that someone pressed Enter through its first-run screens. */
+const config = join(folder ?? '.', '.claude.json');
+const readConfig = () => {
+  try {
+    return JSON.parse(readFileSync(config, 'utf8'));
+  } catch {
+    return {};
+  }
+};
+/** Claude Code's first-run screens, as it words them, each until Enter. */
+const FIRST_RUN = [
+  "Let's get started.\n\nChoose the text style that looks best with your terminal\n❯ 1. Dark mode ✔\n  2. Light mode\n",
+  'Security notes:\n\n1. Claude can make mistakes.\n2. Due to prompt injection risks, only use it with code you trust\n\nPress Enter to continue…\n',
+];
+let firstRunLeft =
+  process.env.FAKE_CLAUDE_FIRST_RUN === 'show' && readConfig().hasCompletedOnboarding !== true
+    ? FIRST_RUN.length
+    : 0;
 let askingTrust = process.env.FAKE_CLAUDE_TRUST === 'ask';
 /** The prompt it's working on, which the next one waits for. */
 let working = Promise.resolve();
@@ -418,6 +446,22 @@ process.stdin.on('data', async (chunk) => {
     typed += text;
     return;
   }
+  if (firstRunLeft > 0) {
+    typed = '';
+    firstRunLeft -= 1;
+    if (firstRunLeft > 0) {
+      show(`\x1b[H\x1b[2J${FIRST_RUN[FIRST_RUN.length - firstRunLeft]}`);
+      return;
+    }
+    // Through them once, which Claude Code notes in its config, keeping the rest.
+    writeFileSync(
+      config,
+      JSON.stringify({ ...readConfig(), hasCompletedOnboarding: true }, null, 2),
+    );
+    show('\x1b[H\x1b[2J');
+    await start();
+    return;
+  }
   if (askingTrust) {
     askingTrust = false;
     await begin();
@@ -431,9 +475,15 @@ process.stdin.on('data', async (chunk) => {
 process.on('SIGHUP', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));
 
-if (askingTrust) {
-  show('Quick safety check: Is this a project you created or one you trust?\n');
-  show('❯ 1. Yes, I trust this folder\n  2. No, exit\n');
-} else {
-  await begin();
+/** After the first-run screens: the question about trust, or the run. */
+async function start() {
+  if (askingTrust) {
+    show('Quick safety check: Is this a project you created or one you trust?\n');
+    show('❯ 1. Yes, I trust this folder\n  2. No, exit\n');
+  } else {
+    await begin();
+  }
 }
+
+if (firstRunLeft > 0) show(FIRST_RUN[0]);
+else await start();

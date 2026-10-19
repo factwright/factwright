@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Fixed
+- Factwright no longer gets stuck on a Claude Code that's never been opened. Signing in with `claude auth login`, as Factwright says to, leaves the screens Claude Code shows the first time it opens, such as its text style and its security notes. So the setup check waited a minute on them, said it failed and that Factwright might need an update, and Claude's panel opened on them. Now Factwright marks them done in your Claude Code's config, as pressing Enter through them would: it adds only that, keeps everything else as it was, and does it under Claude Code's own lock, only when you're signed in with a Claude account and none of Factwright's own Claude Code is going. If they show anyway, such as for Claude Code signed in with an API key, which they ask about, the setup check stops at once, and the Your Claude card says to press Enter through them in Claude's panel, then Check again, with a button that opens the panel. The panel explains them too, as it does the question about trusting the workspace.
+
 ## 0.9.1 - 2026-10-18
 
 ### Fixed
