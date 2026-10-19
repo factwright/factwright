@@ -30,8 +30,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       # Each package's tests run even when another's fail, and the app's own run below goes ahead
-      # too, so one run shows every problem on Windows.
-      - run: pnpm --recursive --no-bail --if-present run test
+      # too, so one run shows every problem on Windows. Its runners are slower than GitHub's others,
+      # and vary from run to run, so the packages take turns and each test gets longer.
+      - run: >-
+          pnpm --recursive --no-bail --workspace-concurrency=1 --if-present run test
+          --testTimeout=60000 --hookTimeout=120000
       - name: Download Electron
         id: electron
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
