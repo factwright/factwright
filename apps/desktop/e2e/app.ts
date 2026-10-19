@@ -39,6 +39,14 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
   let step = 'waiting for its window';
   try {
     const window = await app.firstWindow({ timeout: 20_000 });
+    // E2E_NARROW makes the window as small as the screen of GitHub's Windows runners, 1024 by 768,
+    // to see what the Windows workflow sees: a job's details cover the list, and Claude's panel
+    // wraps more of its lines, so a run's first lines scroll out of sight sooner.
+    if (process.env.E2E_NARROW) {
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0]?.setSize(1024, 768),
+      );
+    }
     step = 'waiting for its jobs, or getting started for a new user';
     await window
       .getByRole('heading', { name: 'Jobs' })
@@ -64,3 +72,20 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
 /** What Claude's panel shows in its terminal, as text. */
 export const terminalText = (window: Page) =>
   window.locator('section[aria-label="Claude"] .xterm-rows').innerText();
+
+/**
+ * The top of what Claude's panel holds, where a run says which model and effort it has. A run that
+ * prints more than the panel shows has scrolled it out of sight, so this scrolls back up to it, as
+ * a person does, then down again. The terminal draws its rows a moment later, so poll it.
+ */
+export async function terminalStart(window: Page): Promise<string> {
+  await window.locator('section[aria-label="Claude"] .xterm-screen').hover();
+  await window.mouse.wheel(0, -100_000);
+  const text = await terminalText(window);
+  await window.mouse.wheel(0, 100_000);
+  return text;
+}
+
+/** What Claude's panel shows, as one run of text, so a line too long for the panel reads whole. */
+export const terminalLines = async (window: Page) =>
+  (await terminalText(window)).replace(/\n/g, '');

@@ -39,6 +39,7 @@ jobs:
       - id: build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @factwright/desktop build
-      # A stand-in Claude Code, claude.cmd, answers the app's runs.
+      # A stand-in Claude Code, claude.cmd, answers the app's runs. The runner's screen is 1024 by
+      # 768, which keeps the app's window narrow: E2E_NARROW=1 shows the same on a Mac or Linux.
       - if: ${{ !cancelled() && steps.electron.outcome == 'success' && steps.build.outcome == 'success' }}
         run: pnpm --filter @factwright/desktop e2e

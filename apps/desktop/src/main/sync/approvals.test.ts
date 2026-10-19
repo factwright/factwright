@@ -27,6 +27,7 @@ const keychain = {
 let person: Account;
 const folders: string[] = [];
 const opened: SyncAccount[] = [];
+const trackers: Tracker[] = [];
 
 beforeEach(async () => {
   person = await server.signUp('Sam Rivera');
@@ -34,6 +35,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const sync of opened.splice(0)) await sync.stop();
+  // Windows can't delete a database that's still open.
+  for (const tracker of trackers.splice(0)) tracker.close();
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
 
@@ -59,12 +62,14 @@ function computer(name: string, fetchWith?: typeof fetch) {
     status: null,
     approvals: null,
   };
+  const tracker = new Tracker(join(dataDir, 'tracker.db'));
+  trackers.push(tracker);
   const sync = new SyncAccount({
     dataDir,
     server: server.url.toString(),
     version: '0.0.0',
     keychain,
-    tracker: new Tracker(join(dataDir, 'tracker.db')),
+    tracker,
     workspace,
     openUrl: approveSignIn,
     onStatus: (status) => {
