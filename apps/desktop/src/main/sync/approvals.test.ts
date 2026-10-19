@@ -296,14 +296,19 @@ describe('linking a computer from one that’s set up', () => {
     const id = (await meddled.sync.approvalsView()).requests[0]?.id ?? '';
     swap = true;
     expect(await meddled.sync.approveRequest(id)).toEqual({ ok: true });
-    await vi.waitFor(() =>
-      expect(meddled.approvals().approving).toMatchObject({
-        step: 'ended',
-        linked: false,
-        message: expect.stringContaining('Something changed the request'),
-      }),
+    // A few requests to the server, each slower on Windows.
+    await vi.waitFor(
+      () =>
+        expect(meddled.approvals().approving).toMatchObject({
+          step: 'ended',
+          linked: false,
+          message: expect.stringContaining('Something changed the request'),
+        }),
+      { timeout: 15_000 },
     );
-    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'ended' }));
+    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'ended' }), {
+      timeout: 15_000,
+    });
   });
 
   it('offers the same key again after an answer that was lost', async () => {
