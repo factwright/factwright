@@ -23,7 +23,7 @@ export const STORES: Readonly<Record<Store, Listing>> = {
   },
   firefox: {
     url: 'https://addons.mozilla.org/firefox/addon/save-to-factwright/',
-    live: false,
+    live: true,
   },
 };
 
