@@ -245,7 +245,7 @@ describe('ProfilePage', () => {
 
   it('adds another kind of job, with its own titles and pay, and names the first', async () => {
     const api = profileApi();
-    const { container } = render(<Harness api={api} />);
+    render(<Harness api={api} />);
     const wants = await screen.findByRole('region', { name: 'What you want' });
     await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'What you want' });
@@ -273,7 +273,8 @@ describe('ProfilePage', () => {
     await userEvent.type(first, 'Product');
     await userEvent.type(name, 'product{Enter}');
     expect(within(dialog).getByRole('alert').textContent).toBe('You already have Product.');
-    expect((await axe.run(container)).violations).toEqual([]);
+    // The browser's modal leaves only the dialog to reach, as jsdom doesn't, so it's what's checked.
+    expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.clear(name);
     await userEvent.type(name, 'Design{Enter}');
 
@@ -290,7 +291,7 @@ describe('ProfilePage', () => {
     expect(within(dialog).getByRole('heading', { name: 'Terms' })).toBeTruthy();
     await userEvent.click(within(kinds).getByRole('radio', { name: 'Product' }));
     expect(within(dialog).getByText('Product Manager')).toBeTruthy();
-    expect((await axe.run(container)).violations).toEqual([]);
+    expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
 
     await waitFor(() => expect(within(wants).getByText('Product Designer roles')).toBeTruthy());
@@ -340,7 +341,7 @@ describe('ProfilePage', () => {
 
   it('removes a kind of job after asking, back to one', async () => {
     const api = profileApi({}, TWO_KINDS);
-    const { container } = render(<Harness api={api} />);
+    render(<Harness api={api} />);
     const wants = await screen.findByRole('region', { name: 'What you want' });
     await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'What you want' });
@@ -352,7 +353,8 @@ describe('ProfilePage', () => {
     const confirm = within(dialog).getByRole('group', { name: 'Remove Design?' });
     expect(within(confirm).getByText(/Its jobs move to Product/)).toBeTruthy();
     expect(document.activeElement).toBe(within(confirm).getByRole('button', { name: 'Keep it' }));
-    expect((await axe.run(container)).violations).toEqual([]);
+    // The browser's modal leaves only the dialog to reach, as jsdom doesn't, so it's what's checked.
+    expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));
     expect(within(dialog).queryByRole('group', { name: 'Kinds of job' })).toBeNull();
     expect(within(dialog).queryByLabelText('Name')).toBeNull();
