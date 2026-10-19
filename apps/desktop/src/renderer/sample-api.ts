@@ -366,7 +366,9 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
 
 /**
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
- * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?plan picks the
+ * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. With
+ * ?path=off, a new terminal doesn't find Claude Code by name, as after its installer on Windows,
+ * so the steps start it by its whole path, as they do while it's missing. ?plan picks the
  * plan Claude is ready on: pro, team, or api for an API key. ?jobs picks the jobs: none, failed
  * or loading. ?profile picks how far the user's profile has come: new, started or done.
  * ?profiles picks how many profiles there are: two, three with an added one open (added), or two
@@ -470,10 +472,18 @@ export function sampleApi(): FactwrightApi {
   return {
     platform: query.get('platform') ?? 'darwin',
     version: query.get('version') ?? '0.1.0',
-    claudeStatus: () =>
-      claude === 'checking'
-        ? new Promise(() => {})
-        : Promise.resolve(claude === 'ready' ? ready : (SAMPLES[claude] ?? ready)),
+    claudeStatus: () => {
+      if (claude === 'checking') return new Promise(() => {});
+      const status = claude === 'ready' ? ready : (SAMPLES[claude] ?? ready);
+      // Where Claude Code's own installer puts it, as the app says it on each system.
+      const typed =
+        (query.get('platform') ?? 'darwin') === 'win32'
+          ? '& "$env:USERPROFILE\\.local\\bin\\claude.exe"'
+          : '~/.local/bin/claude';
+      const byPath =
+        status.state !== 'ready' && (status.state === 'missing' || query.get('path') === 'off');
+      return Promise.resolve(byPath ? { ...status, claude: typed } : status);
+    },
     setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
     // Checking again takes a moment, then passes, as it would once Factwright is updated.
     checkSetup: () =>

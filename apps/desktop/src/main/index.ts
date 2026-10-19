@@ -218,7 +218,6 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const profiles = new Profiles({
       home,
       open: profile,
-      platform: process.platform,
       ownName: () => about.answers().you.name,
       trash: (path) => shell.trashItem(path),
       busy: () => claude.busy(),

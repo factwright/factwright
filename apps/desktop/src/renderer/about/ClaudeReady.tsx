@@ -2,8 +2,9 @@ import { Button } from '@factwright/ui';
 import { CircleCheck, Copy, SquareTerminal } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { PATH_GUIDE } from '../../shared/claude-commands.ts';
 import { planName } from '../plan.ts';
-import type { ClaudeStatusView } from '../useClaudeStatus.ts';
+import { type ClaudeStatusView, typedClaude } from '../useClaudeStatus.ts';
 import styles from './ClaudeReady.module.css';
 
 const TERMINAL_GUIDE = 'https://code.claude.com/docs/en/terminal-guide';
@@ -18,12 +19,15 @@ const INSTALL: Readonly<Record<string, string>> = {
 function Command({
   text,
   api,
-  long = false,
+  long,
 }: {
   text: string;
   api: Pick<FactwrightApi, 'copyText'>;
-  /** A long command, such as a profile's own sign-in, which gets a line of its own. */
-  long?: boolean;
+  /**
+   * For a long command, such as a profile's own sign-in, what it does, as its button names it: it
+   * gets a line of its own.
+   */
+  long?: string | undefined;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -33,7 +37,7 @@ function Command({
         size="sm"
         variant="quiet"
         icon={<Copy size={14} aria-hidden="true" />}
-        aria-label={copied ? 'Copied' : long ? 'Copy the sign-in command' : `Copy ${text}`}
+        aria-label={copied ? 'Copied' : long ? `Copy the ${long} command` : `Copy ${text}`}
         onClick={() =>
           void api.copyText(text).then((result) => {
             if (result.ok) setCopied(true);
@@ -103,6 +107,10 @@ export function ClaudeReady({
     );
   }
 
+  // A terminal that doesn't find Claude Code by name starts it by its whole path, which is long,
+  // so the command comes after the step's words, on a line of its own, as a profile's sign-in does.
+  const claude = typedClaude(status);
+  const byPath = claude !== 'claude';
   const steps =
     status.state === 'missing'
       ? {
@@ -119,7 +127,12 @@ export function ClaudeReady({
             signIn ? (
               <>
                 When it’s done, run this, and sign in with this profile’s Claude account in the
-                browser it opens: <Command text={signIn} api={api} long />
+                browser it opens: <Command text={signIn} api={api} long="sign-in" />
+              </>
+            ) : byPath ? (
+              <>
+                When it’s done, run this once, and sign in with your Claude account in the browser
+                it opens: <Command text={claude} api={api} long="Claude Code" />
               </>
             ) : (
               <>
@@ -143,7 +156,12 @@ export function ClaudeReady({
               signIn ? (
                 <>
                   Run this, and sign in with this profile’s Claude account in the browser it opens:{' '}
-                  <Command text={signIn} api={api} long />
+                  <Command text={signIn} api={api} long="sign-in" />
+                </>
+              ) : byPath ? (
+                <>
+                  Run this, and sign in with your Claude account in the browser it opens:{' '}
+                  <Command text={`${claude} auth login`} api={api} long="sign-in" />
                 </>
               ) : (
                 <>
@@ -162,9 +180,15 @@ export function ClaudeReady({
                 <>
                   Open {terminal}. {openTerminal}
                 </>,
-                <>
-                  Run <Command text="claude update" api={api} />
-                </>,
+                byPath ? (
+                  <>
+                    Run this: <Command text={`${claude} update`} api={api} long="update" />
+                  </>
+                ) : (
+                  <>
+                    Run <Command text="claude update" api={api} />
+                  </>
+                ),
                 <>Come back here. {checkAgain}</>,
               ],
             }
@@ -175,10 +199,17 @@ export function ClaudeReady({
                 <>
                   Open {terminal}. {openTerminal}
                 </>,
-                <>
-                  Run <Command text="claude --version" api={api} />. It should print a version
-                  number.
-                </>,
+                byPath ? (
+                  <>
+                    Run this, which should print a version number:{' '}
+                    <Command text={`${claude} --version`} api={api} long="version" />
+                  </>
+                ) : (
+                  <>
+                    Run <Command text="claude --version" api={api} />. It should print a version
+                    number.
+                  </>
+                ),
                 <>Come back here. {checkAgain}</>,
               ],
             };
@@ -195,6 +226,18 @@ export function ClaudeReady({
             <li key={index}>{item}</li>
           ))}
         </ol>
+        {byPath && (
+          <p className={styles.quiet}>
+            {status.state === 'missing'
+              ? 'Claude Code’s installer doesn’t always add it to your PATH, so this starts it where the installer puts it.'
+              : `${terminal} doesn’t find Claude Code by its name, so this starts it where it’s installed.`}{' '}
+            To type just <code>claude</code>,{' '}
+            <a href={PATH_GUIDE} target="_blank" rel="noreferrer">
+              add it to your PATH
+            </a>
+            .
+          </p>
+        )}
         <p className={styles.quiet}>
           New to the terminal?{' '}
           <a href={TERMINAL_GUIDE} target="_blank" rel="noreferrer">

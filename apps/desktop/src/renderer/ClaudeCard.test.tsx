@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClaudeCard } from './ClaudeCard.tsx';
@@ -40,6 +40,52 @@ describe('ClaudeCard', () => {
       expect(onRecheck).toHaveBeenCalledOnce();
     },
   );
+
+  it('starts Claude Code by its whole path when the terminal doesn’t find it by name', async () => {
+    const claude = '& "$env:USERPROFILE\\.local\\bin\\claude.exe"';
+    const copy = vi.fn(async () => ({ ok: true as const }));
+    const { container, rerender } = render(
+      <ClaudeCard
+        status={{ state: 'signed-out', version: '2.1.303', claude }}
+        onRecheck={vi.fn()}
+        copy={copy}
+        terminal="PowerShell"
+      />,
+    );
+    expect(container.textContent).toContain(
+      `In PowerShell, run ${claude} auth login, then come back.`,
+    );
+    // It's long to type, so the card copies it.
+    screen.getByRole('button', { name: 'Copy the command' }).click();
+    await waitFor(() => expect(copy).toHaveBeenCalledWith(`${claude} auth login`));
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+
+    for (const [status, command] of [
+      [{ state: 'too-old', version: '2.0.12', minimum: '2.1.270', claude }, `${claude} update`],
+      [{ state: 'unknown', claude }, `${claude} --version`],
+    ] as [ClaudeStatusView, string][]) {
+      copy.mockClear();
+      rerender(
+        <ClaudeCard status={status} onRecheck={vi.fn()} copy={copy} terminal="PowerShell" />,
+      );
+      expect(container.textContent).toContain(command);
+      screen.getByRole('button', { name: 'Copy the command' }).click();
+      await waitFor(() => expect(copy).toHaveBeenCalledWith(command));
+    }
+  });
+
+  it('offers no copy for plain claude, which is short to type', () => {
+    render(
+      <ClaudeCard
+        status={{ state: 'signed-out', version: '2.1.303' }}
+        onRecheck={vi.fn()}
+        copy={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('claude auth login')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy the command' })).toBeNull();
+  });
 
   it('opens Claude’s settings, once Claude is ready', () => {
     const onSettings = vi.fn();

@@ -51,7 +51,13 @@ import type {
 } from './sync.ts';
 import type { UpdateStatus } from './updates.ts';
 
-/** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
+/**
+ * Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready.
+ * Until then, the window shows commands for the user to run in their terminal, and `claude` is
+ * what they type to start Claude Code there, when that isn't just `claude`: its whole path, such
+ * as `~/.local/bin/claude`. Its installer doesn't add its folder to PATH on Windows, nor always
+ * on a Mac. While it's missing, it's where its own installer puts it.
+ */
 export type ClaudeStatus =
   | {
       state: 'ready';
@@ -64,10 +70,10 @@ export type ClaudeStatus =
        */
       method?: string | undefined;
     }
-  | { state: 'signed-out'; version: string }
-  | { state: 'too-old'; version: string; minimum: string }
-  | { state: 'missing' }
-  | { state: 'unknown' };
+  | { state: 'signed-out'; version: string; claude?: string }
+  | { state: 'too-old'; version: string; minimum: string; claude?: string }
+  | { state: 'missing'; claude?: string }
+  | { state: 'unknown'; claude?: string };
 
 /**
  * Whether Factwright's setup works with the user's Claude Code, from a check that starts it

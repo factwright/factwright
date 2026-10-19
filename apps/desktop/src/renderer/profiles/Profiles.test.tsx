@@ -345,7 +345,8 @@ describe('ClaudeCard, for an added profile', () => {
       <ClaudeCard
         status={{ state: 'signed-out', version: '2.1.296' }}
         onRecheck={() => {}}
-        signIn={{ command, copy }}
+        signIn={command}
+        copy={copy}
         terminal="PowerShell"
       />,
     );
@@ -364,7 +365,12 @@ describe('ClaudeCard, for an added profile', () => {
     const copy = vi.fn(async () => ({ ok: true as const }));
     const command = "CLAUDE_CONFIG_DIR='/profiles/sam/claude' claude auth login";
     const { container } = render(
-      <ClaudeCard status={{ state: 'missing' }} onRecheck={() => {}} signIn={{ command, copy }} />,
+      <ClaudeCard
+        status={{ state: 'missing' }}
+        onRecheck={() => {}}
+        signIn={command}
+        copy={copy}
+      />,
     );
     // Signing in as the install guide says would sign in the first profile.
     expect(container.textContent).toContain(
