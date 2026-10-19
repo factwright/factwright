@@ -5,6 +5,14 @@ import type { ClaudeStatus, FactwrightApi } from '../shared/api.ts';
 export type ClaudeStatusView = ClaudeStatus | 'checking';
 
 /**
+ * What the user types to start their Claude Code in their terminal: `claude`, or its whole path
+ * when their terminal doesn't find it by name.
+ */
+export function typedClaude(status: ClaudeStatusView): string {
+  return (status !== 'checking' && 'claude' in status && status.claude) || 'claude';
+}
+
+/**
  * Checks the user's Claude Code when the window opens, quietly again whenever it comes back into
  * focus (say, after signing in from Terminal), and on request.
  */

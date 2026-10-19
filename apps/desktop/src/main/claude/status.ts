@@ -3,7 +3,7 @@ import { delimiter, dirname } from 'node:path';
 import type { ClaudeStatus } from '../../shared/api.ts';
 import { checkAuth } from './auth.ts';
 import { claudeCommand } from './command.ts';
-import { findClaude, nodeFindDeps } from './find.ts';
+import { claudeInTerminal, findClaude, installedClaude, nodeFindDeps } from './find.ts';
 import { launchEnv } from './launch.ts';
 import { checkVersion, MIN_VERSION } from './version.ts';
 
@@ -12,12 +12,31 @@ export interface StatusDeps {
   find: () => Promise<string | null>;
   /** Runs `claude` and resolves with what it printed, even when it exits with an error. */
   run: (claude: string, args: readonly string[]) => Promise<string>;
+  /**
+   * What the user types to start the claude found in a new terminal window: null when `claude`
+   * alone starts it, or else its whole path.
+   */
+  inTerminal: (claude: string) => Promise<string | null>;
+  /** What the user types to start Claude Code once its own installer has put it in place. */
+  installed: () => string;
 }
 
-/** Checks that the user's Claude Code is installed, new enough and signed in. Uses none of their plan. */
+/**
+ * Checks that the user's Claude Code is installed, new enough and signed in. Uses none of their
+ * plan. When it isn't ready, it says what the user types to start it in their terminal, for the
+ * commands the window shows them, when that isn't just `claude`.
+ */
 export async function claudeStatus(deps: StatusDeps): Promise<ClaudeStatus> {
   const claude = await deps.find();
-  if (!claude) return { state: 'missing' };
+  if (!claude) return { state: 'missing', claude: deps.installed() };
+  const status = await check(claude, deps);
+  if (status.state === 'ready') return status;
+  const typed = await deps.inTerminal(claude);
+  return typed ? { ...status, claude: typed } : status;
+}
+
+/** Whether the claude found is new enough and signed in. */
+async function check(claude: string, deps: StatusDeps): Promise<ClaudeStatus> {
   const version = checkVersion(await deps.run(claude, ['--version']));
   if (version.status === 'unreadable') return { state: 'unknown' };
   if (version.status === 'too-old') {
@@ -34,8 +53,11 @@ const RUN_TIMEOUT_MS = 15_000;
 
 /** StatusDeps for the computer the app runs on. */
 export function nodeStatusDeps(): StatusDeps {
+  const computer = nodeFindDeps();
   return {
-    find: () => findClaude(nodeFindDeps()),
+    find: () => findClaude(computer),
+    inTerminal: (claude) => claudeInTerminal(claude, computer),
+    installed: () => installedClaude(computer),
     run: (claude, args) =>
       new Promise((resolve) => {
         const command = claudeCommand(claude, args, process.platform);

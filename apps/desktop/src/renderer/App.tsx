@@ -9,6 +9,7 @@ import {
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import { signInCommand } from '../shared/claude-commands.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
@@ -69,7 +70,7 @@ import { useUpdates } from './updates/useUpdates.ts';
 import { useClaudePermission } from './useClaudePermission.ts';
 import { useClaudeQuestions } from './useClaudeQuestions.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
-import { useClaudeStatus } from './useClaudeStatus.ts';
+import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
 import { useLevelChoices } from './useLevelChoices.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
 
@@ -264,9 +265,12 @@ export function App({ api }: { api: FactwrightApi }) {
 
   const profileList = profiles.list?.profiles ?? [];
   const currentProfile = profileList.find((each) => each.open);
-  // An added profile has its own Claude login, which it signs in to with its own command.
-  const ownSignIn =
-    currentProfile && !currentProfile.first ? profiles.list?.claudeSignIn : undefined;
+  // An added profile has its own Claude login, which it signs in to with its own command, naming
+  // its own Claude Code folder.
+  const claudeFolder = currentProfile && !currentProfile.first && profiles.list?.claudeFolder;
+  const ownSignIn = claudeFolder
+    ? signInCommand(api.platform, claudeFolder, typedClaude(status))
+    : undefined;
   // Restarts the app on another profile, once what's waiting to save is saved.
   const switchTo = async (target: ProfileEntry) => {
     await about.flush();
@@ -381,7 +385,8 @@ export function App({ api }: { api: FactwrightApi }) {
           gettingStarted={gettingStarted}
           claude={status}
           onRecheckClaude={recheck}
-          claudeSignIn={ownSignIn ? { command: ownSignIn, copy: api.copyText } : undefined}
+          claudeSignIn={ownSignIn}
+          copyText={api.copyText}
           terminal={api.platform === 'win32' ? 'PowerShell' : 'Terminal'}
           setup={setup}
           sync={sync}

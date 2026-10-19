@@ -24,7 +24,6 @@ import {
   type ProfilesDeps,
   prepareClaudeFolder,
   profileToOpen,
-  signInCommand,
   stoppedStart,
 } from './profiles.ts';
 
@@ -201,20 +200,6 @@ describe('Claude Code for a profile', () => {
     prepareClaudeFolder(folder);
     expect(readFileSync(join(folder, '.claude.json'), 'utf8')).toBe('{"theme":"dark"}');
   });
-
-  it('gives each profile the command that signs it in, quoted for its terminal', () => {
-    expect(signInCommand('darwin', null)).toBe('claude auth login');
-    expect(signInCommand('win32', null)).toBe('claude auth login');
-    expect(
-      signInCommand('darwin', "/Users/o'neil/Library/Application Support/Factwright/claude"),
-    ).toBe(
-      "CLAUDE_CONFIG_DIR='/Users/o'\\''neil/Library/Application Support/Factwright/claude' claude auth login",
-    );
-    // PowerShell keeps the folder for the rest of the window, so the command puts it back.
-    expect(signInCommand('win32', 'C:\\Users\\O’Neil\\AppData\\Roaming\\Factwright\\claude')).toBe(
-      "$saved = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = 'C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $saved }",
-    );
-  });
 });
 
 /** The profiles as the open app sees them, with the restart and the trash stood in for. */
@@ -225,7 +210,6 @@ function profiles(open: ProfileFolder, deps: Partial<ProfilesDeps> = {}) {
   const opened = new Profiles({
     home,
     open,
-    platform: 'darwin',
     ownName: () => 'Alex Rivera',
     trash,
     busy,
@@ -236,7 +220,7 @@ function profiles(open: ProfileFolder, deps: Partial<ProfilesDeps> = {}) {
 }
 
 describe('Profiles, as the window uses them', () => {
-  it('lists each profile, which one is open, and how the open one signs in to Claude', () => {
+  it('lists each profile, which one is open, and where the open one keeps its Claude login', () => {
     const sam = addProfile(home, 'Sam');
     const { opened } = profiles(sam);
     expect(opened.list()).toEqual({
@@ -244,8 +228,10 @@ describe('Profiles, as the window uses them', () => {
         { id: FIRST_PROFILE, name: 'First profile', open: false, first: true, named: false },
         { id: sam.id, name: 'Sam', open: true, first: false, named: true },
       ],
-      claudeSignIn: `CLAUDE_CONFIG_DIR='${join(sam.dir, 'claude')}' claude auth login`,
+      claudeFolder: join(sam.dir, 'claude'),
     });
+    // The first profile uses the user's own Claude Code setup.
+    expect(profiles(profileToOpen(home)).opened.list().claudeFolder).toBeNull();
   });
 
   it('names the first profile when the second is added: as asked, or after its person', () => {

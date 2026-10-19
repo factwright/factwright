@@ -183,6 +183,51 @@ describe('GetStarted', () => {
     expect(api.openTerminal).toHaveBeenCalledOnce();
   });
 
+  it('starts Claude Code by its whole path after installing it, as PowerShell won’t find it by name', async () => {
+    const api = { ...profileApi(), platform: 'win32' };
+    const claude = '& "$env:USERPROFILE\\.local\\bin\\claude.exe"';
+    render(<Harness api={api} claude={{ state: 'missing', claude }} />);
+    expect(await screen.findByRole('heading', { name: 'Install Claude Code' })).toBeTruthy();
+    expect(screen.getByText('irm https://claude.ai/install.ps1 | iex')).toBeTruthy();
+    expect(screen.getByText(claude)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Copy the Claude Code command' }));
+    expect(api.copyText).toHaveBeenCalledWith(claude);
+    expect(screen.getByRole('link', { name: 'add it to your PATH' }).getAttribute('href')).toBe(
+      'https://code.claude.com/docs/en/troubleshoot-install#verify-your-path',
+    );
+  });
+
+  it.each([
+    [
+      { state: 'signed-out', version: '2.1.303' },
+      'Sign in to Claude Code',
+      'auth login',
+      'Copy the sign-in command',
+    ],
+    [
+      { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+      'Update Claude Code',
+      'update',
+      'Copy the update command',
+    ],
+    [{ state: 'unknown' }, 'Claude Code didn’t answer', '--version', 'Copy the version command'],
+  ] as const)(
+    'gives each step’s command by the whole path of a Claude Code off PATH (%o)',
+    async (status, heading, args, copy) => {
+      const api = { ...profileApi(), platform: 'win32' };
+      const claude = '& "$env:USERPROFILE\\.local\\bin\\claude.exe"';
+      const { container } = render(<Harness api={api} claude={{ ...status, claude }} />);
+      expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
+      expect(screen.getByText(`${claude} ${args}`)).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: copy }));
+      expect(api.copyText).toHaveBeenCalledWith(`${claude} ${args}`);
+      expect(container.textContent).toContain(
+        'PowerShell doesn’t find Claude Code by its name, so this starts it where it’s installed. To type just claude, add it to your PATH.',
+      );
+      expect((await axe.run(container)).violations).toEqual([]);
+    },
+  );
+
   it('saves the user’s answers as they type, and comes back to the step they were on', async () => {
     const api = profileApi();
     const { unmount } = render(<Harness api={api} />);
@@ -367,5 +412,7 @@ describe('GetStarted', () => {
     });
     expect(await screen.findByRole('heading', { name: 'Sign in to Claude Code' })).toBeTruthy();
     expect(screen.getByText('claude auth login')).toBeTruthy();
+    // Claude Code on PATH needs no word about it.
+    expect(screen.queryByRole('link', { name: 'add it to your PATH' })).toBeNull();
   });
 });

@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Fixed
+- The commands Factwright shows for Claude Code work in a new terminal window, even when your terminal doesn't find Claude Code by its name. On Windows, Claude Code's installer puts it in your user folder's `.local\bin` and never adds that to PATH. Factwright found it there, but said to run `claude auth login`, `claude update` or `claude --version`, and PowerShell said `claude` isn't recognized. Now each command starts Claude Code by its whole path, such as `& "$env:USERPROFILE\.local\bin\claude.exe" auth login`, and so does an added profile's own sign-in command. The steps say why, and link to Anthropic's guide to adding it to your PATH, so plain `claude` works too. On a Mac, where the installer may not add `~/.local/bin` to your PATH either, Factwright asks your login shell, which has the PATH a new Terminal window has, and uses `~/.local/bin/claude` when the shell doesn't find it. While Claude Code isn't installed, the step after its installer starts it where the installer puts it. The Your Claude card in the sidebar shows a command that long with a link that copies it.
+
 ## 0.9.1 - 2026-10-18
 
 ### Fixed

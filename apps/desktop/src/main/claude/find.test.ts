@@ -1,5 +1,6 @@
+import { posix, win32 } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { type FindDeps, findClaude } from './find.ts';
+import { claudeInTerminal, type FindDeps, findClaude, installedClaude } from './find.ts';
 
 /** A made-up computer where only `files` exist and the login shell finds nothing. */
 function computer(
@@ -7,11 +8,14 @@ function computer(
   files: string[],
   overrides: Partial<FindDeps> = {},
 ): FindDeps {
+  // A file is found as the system finds it, however its path is written: on Windows, in any case.
+  const key = (path: string) =>
+    platform === 'win32' ? win32.normalize(path).toLowerCase() : posix.normalize(path);
   return {
     platform,
     env: {},
     home: platform === 'win32' ? 'C:\\Users\\someone' : '/Users/someone',
-    isFile: async (path) => files.includes(path),
+    isFile: async (path) => files.some((file) => key(file) === key(path)),
     runShell: vi.fn(async () => {
       throw new Error('claude not found');
     }),
@@ -133,5 +137,82 @@ describe('findClaude on Windows', () => {
     const deps = computer('win32', [], { env: { PATHEXT } });
     expect(await findClaude(deps)).toBeNull();
     expect(deps.runShell).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the user types to start claude in a new terminal window', () => {
+  const PATHEXT = '.COM;.EXE;.BAT;.CMD';
+  const NATIVE_WINDOWS = 'C:\\Users\\someone\\.local\\bin\\claude.exe';
+  const NATIVE_MAC = '/Users/someone/.local/bin/claude';
+
+  it('is just claude on PATH, which a new PowerShell window has too', async () => {
+    const env = { PATH: 'C:\\Windows\\System32;C:\\Users\\someone\\.local\\bin', PATHEXT };
+    const deps = computer('win32', [NATIVE_WINDOWS], { env });
+    expect(await findClaude(deps)).toBe(NATIVE_WINDOWS);
+    expect(await claudeInTerminal(NATIVE_WINDOWS, deps)).toBeNull();
+    // PATH's folders, as Windows reads them, whatever their case or a last backslash.
+    const spelled = { PATH: 'c:\\users\\SOMEONE\\.local\\bin\\', PATHEXT };
+    expect(
+      await claudeInTerminal(NATIVE_WINDOWS, computer('win32', [NATIVE_WINDOWS], { env: spelled })),
+    ).toBeNull();
+  });
+
+  it('is its whole path for the native install on Windows, whose installer never adds it to PATH', async () => {
+    const deps = computer('win32', [NATIVE_WINDOWS], {
+      env: { PATH: 'C:\\Windows\\System32', PATHEXT },
+    });
+    expect(await findClaude(deps)).toBe(NATIVE_WINDOWS);
+    expect(await claudeInTerminal(NATIVE_WINDOWS, deps)).toBe(
+      '& "$env:USERPROFILE\\.local\\bin\\claude.exe"',
+    );
+    expect(deps.runShell).not.toHaveBeenCalled();
+  });
+
+  it('is its whole path for npm’s claude.cmd off PATH', async () => {
+    const npm = 'C:\\Users\\someone\\AppData\\Roaming\\npm\\claude.cmd';
+    const env = { PATH: '', PATHEXT, APPDATA: 'C:\\Users\\someone\\AppData\\Roaming' };
+    const deps = computer('win32', [npm], { env });
+    expect(await findClaude(deps)).toBe(npm);
+    expect(await claudeInTerminal(npm, deps)).toBe(
+      '& "$env:USERPROFILE\\AppData\\Roaming\\npm\\claude.cmd"',
+    );
+  });
+
+  it('is just claude on the PATH of a Mac app started from a terminal, without asking the shell', async () => {
+    const deps = computer('darwin', [NATIVE_MAC], {
+      env: { PATH: '/usr/bin:/Users/someone/.local/bin' },
+    });
+    expect(await claudeInTerminal(NATIVE_MAC, deps)).toBeNull();
+    expect(deps.runShell).not.toHaveBeenCalled();
+  });
+
+  it('asks the login shell on a Mac, as an app opened from Finder has a shorter PATH', async () => {
+    // A PATH folder written with a last slash still finds the same claude.
+    const runShell = vi.fn(async () => 'Welcome back!\n/Users/someone/.local/bin//claude\n');
+    const deps = computer('darwin', [NATIVE_MAC], { env: { PATH: '/usr/bin:/bin' }, runShell });
+    expect(await findClaude(deps)).toBe(NATIVE_MAC);
+    expect(await claudeInTerminal(NATIVE_MAC, deps)).toBeNull();
+    expect(runShell).toHaveBeenCalledWith('/bin/zsh', ['-ilc', 'command -v claude']);
+  });
+
+  it('is its whole path on a Mac whose Terminal doesn’t have ~/.local/bin on PATH', async () => {
+    const deps = computer('darwin', [NATIVE_MAC], { env: { PATH: '/usr/bin:/bin' } });
+    expect(await findClaude(deps)).toBe(NATIVE_MAC);
+    expect(await claudeInTerminal(NATIVE_MAC, deps)).toBe('~/.local/bin/claude');
+  });
+
+  it('is its whole path when a new terminal would start another claude', async () => {
+    const runShell = vi.fn(async () => '/opt/homebrew/bin/claude\n');
+    const files = [NATIVE_MAC, '/opt/homebrew/bin/claude'];
+    const deps = computer('darwin', files, { env: { PATH: '/usr/bin:/bin' }, runShell });
+    expect(await findClaude(deps)).toBe(NATIVE_MAC);
+    expect(await claudeInTerminal(NATIVE_MAC, deps)).toBe('~/.local/bin/claude');
+  });
+
+  it('is where the native installer puts it, while it isn’t installed', () => {
+    expect(installedClaude(computer('win32', []))).toBe(
+      '& "$env:USERPROFILE\\.local\\bin\\claude.exe"',
+    );
+    expect(installedClaude(computer('darwin', []))).toBe('~/.local/bin/claude');
   });
 });

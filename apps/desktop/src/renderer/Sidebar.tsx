@@ -1,10 +1,10 @@
 import { NavItem } from '@factwright/ui';
 import { BookCheck, Briefcase, Heart, Puzzle, UserRound } from 'lucide-react';
-import type { SetupCheck } from '../shared/api.ts';
+import type { EditResult, SetupCheck } from '../shared/api.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import type { AskingView, RequestView, SyncStatus } from '../shared/sync.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
-import { ClaudeCard, type OwnSignIn } from './ClaudeCard.tsx';
+import { ClaudeCard } from './ClaudeCard.tsx';
 import { LevelsChip } from './LevelsChip.tsx';
 import { ProfileSwitcher } from './profiles/ProfileSwitcher.tsx';
 import styles from './Sidebar.module.css';
@@ -32,6 +32,7 @@ export function Sidebar({
   claude,
   onRecheckClaude,
   claudeSignIn,
+  copyText,
   terminal,
   setup,
   sync,
@@ -61,8 +62,10 @@ export function Sidebar({
   gettingStarted: boolean;
   claude: ClaudeStatusView;
   onRecheckClaude: () => void;
-  /** An added profile's own Claude sign-in, for its card to copy when it's signed out. */
-  claudeSignIn?: OwnSignIn | undefined;
+  /** An added profile's own Claude sign-in command, for its card to copy when it's signed out. */
+  claudeSignIn?: string | undefined;
+  /** Copies a command for the user's terminal that's long to type. */
+  copyText?: ((text: string) => Promise<EditResult>) | undefined;
   /** Where the user runs Claude Code's commands: PowerShell on Windows, Terminal on a Mac. */
   terminal?: string;
   /** The latest check of Factwright's setup, and how to run it again. */
@@ -140,6 +143,7 @@ export function Sidebar({
             status={claude}
             onRecheck={onRecheckClaude}
             signIn={claudeSignIn}
+            copy={copyText}
             {...(terminal && { terminal })}
             setup={setup.check}
             checkingSetup={setup.checking}

@@ -287,32 +287,11 @@ export function prepareClaudeFolder(folder: string): void {
   }
 }
 
-/** Text in single quotes for a Mac or Linux shell, which take everything in them as it is. */
-const shellQuoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
-
-/** Text in single quotes for PowerShell, which takes curly single quotes as quotes too. */
-const powerShellQuoted = (text: string) => `'${text.replace(/['‘’‚‛]/g, '$&$&')}'`;
-
-/**
- * The command that signs a profile in to Claude Code, for the user to run in their terminal:
- * with the profile's own Claude Code folder, when it has one. On a Mac the folder holds for that
- * one command. PowerShell would keep it for the rest of the window, where someone signing in to
- * another profile next would sign in to this one, so the command puts it back as it was, even
- * when stopped with Ctrl+C.
- */
-export function signInCommand(platform: NodeJS.Platform, folder: string | null): string {
-  if (!folder) return 'claude auth login';
-  return platform === 'win32'
-    ? `$saved = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = ${powerShellQuoted(folder)}; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $saved }`
-    : `CLAUDE_CONFIG_DIR=${shellQuoted(folder)} claude auth login`;
-}
-
 export interface ProfilesDeps {
   /** The app's own data folder: the first profile's, which holds the others. */
   home: string;
   /** The profile that's open. */
   open: ProfileFolder;
-  platform: NodeJS.Platform;
   /** The open profile's own name, from About you, to name the first profile by. */
   ownName: () => string;
   /** Moves a folder to the trash, where it can be restored. */
@@ -339,7 +318,7 @@ export class Profiles {
   }
 
   list(): ProfileList {
-    const { home, open, platform } = this.deps;
+    const { home, open } = this.deps;
     return {
       profiles: listProfiles(home).map((profile) => ({
         id: profile.id,
@@ -348,7 +327,7 @@ export class Profiles {
         first: profile.id === FIRST_PROFILE,
         named: profile.named,
       })),
-      claudeSignIn: signInCommand(platform, claudeFolder(open)),
+      claudeFolder: claudeFolder(open),
       ...(this.deps.stopped && { stopped: this.deps.stopped.name }),
     };
   }
