@@ -66,6 +66,20 @@ describe('useClaudeRun', () => {
     expect(result.current.phase).toBe('working');
   });
 
+  it('gives Claude that’s open and ready, with nothing to do yet, the task too', async () => {
+    const { api, signal } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => result.current.requestStart());
+    await act(async () => result.current.onTerminalSize(SIZE));
+    const runId = result.current.runId;
+    act(() => signal('ready'));
+    expect(result.current.phase).toBe('ready');
+    await act(async () => result.current.requestStart(TASK));
+    expect(api.runTask).toHaveBeenCalledWith(TASK);
+    expect(result.current.runId).toBe(runId);
+    expect(result.current.phase).toBe('working');
+  });
+
   it('starts again when Claude closed before the task reached it', async () => {
     const { api, signal } = fakeApi({ ok: false, reason: 'not-running' });
     const { result } = renderHook(() => useClaudeRun(api));

@@ -28,8 +28,9 @@ export interface ClaudeRun {
    */
   typed: (data: string) => void;
   /**
-   * Starts Claude, maybe with a skill to run on a job. Claude that's open and done takes the task
-   * as its next message; otherwise a new run starts once the terminal knows its size.
+   * Starts Claude, maybe with a skill to run on a job. Claude that's open and done, or ready
+   * with nothing to do yet, takes the task as its next message; otherwise a new run starts once
+   * the terminal knows its size.
    */
   requestStart: (task?: RunTask) => void;
   /** Takes the terminal's size: the first report starts a requested run, later ones resize it. */
@@ -116,7 +117,7 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
       setProblem(undefined);
       setTask(next ?? null);
       setOpen(true);
-      if (!next || phase !== 'done') {
+      if (!next || (phase !== 'done' && phase !== 'ready')) {
         startNew(next);
         return;
       }

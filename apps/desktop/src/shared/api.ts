@@ -89,8 +89,11 @@ export interface SetupCheck {
 /** A PDF's bytes, for showing its pages in the window, or why there are none. */
 export type PdfResult = { ok: true; data: Uint8Array } | { ok: false; message: string };
 
-/** Where a run in Claude's panel stands. Claude Code's hooks report it, and so does its exit. */
-export type RunSignal = 'working' | 'needs-answer' | 'done' | 'stopped' | 'failed';
+/**
+ * Where a run in Claude's panel stands. Claude Code's hooks report it, and so does its exit.
+ * "ready" is a run started with nothing to do yet, open and waiting for what the user types.
+ */
+export type RunSignal = 'ready' | 'working' | 'needs-answer' | 'done' | 'stopped' | 'failed';
 
 /** The size of Claude's panel, in characters. */
 export interface TerminalSize {

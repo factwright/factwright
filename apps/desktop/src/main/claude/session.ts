@@ -240,15 +240,30 @@ export class ClaudeSession {
     const signals = new RunSignals(this.deps.onSignal);
     const trust = new ScreenWatch(TRUST_QUESTION);
     const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
+    let heard = false;
+    const pastScreens = () => {
+      heard = true;
+      trust.pastIt();
+      firstRun.pastIt();
+    };
     // Listening first, so no hook can arrive before the run is ready for it.
     const stopListening = this.deps.server.listen(
       launch.token,
       (event) => {
-        trust.pastIt();
-        firstRun.pastIt();
+        pastScreens();
         signals.hear(event);
       },
       {
+        // With no prompt, no hook comes until the user types. Claude Code reaches Factwright's
+        // tools once it's past its first-run screens and the question about trust, so then it's
+        // waiting for them.
+        ...(!prompt && {
+          tools: (method: string) => {
+            if (method !== 'tools/list' || heard) return;
+            pastScreens();
+            this.deps.onSignal('ready');
+          },
+        }),
         scope,
         onFiled: this.deps.onFiled,
         ask: this.deps.ask,

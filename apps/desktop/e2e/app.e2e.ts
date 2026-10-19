@@ -786,8 +786,10 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await expect(panel.getByRole('note')).toContainText('Press Enter on each one');
   await expect(panel.getByRole('status')).toHaveText('Needs your answer');
   await expect(panel.locator('[class*="attention"]')).toHaveCount(1);
-  // With the panel open, the card has nothing to open.
+  // With the panel open, the card has nothing to open, and other runs wait.
   await expect(card.getByRole('button', { name: 'Open Claude’s panel' })).toHaveCount(0);
+  const findJobs = window.getByRole('button', { name: 'Find jobs' });
+  await expect(findJobs).toBeDisabled();
   const terminal = panel.locator('.xterm-helper-textarea');
   await terminal.press('Enter');
   // The next screen says so too, until it's answered.
@@ -796,6 +798,9 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await terminal.press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
   await expect.poll(() => terminalText(window)).toContain("Factwright's tools");
+  // Past them, it waits for what the user types, and isn't in the way of another run.
+  await expect(panel.getByRole('status')).toHaveText('Ready');
+  await expect(findJobs).toBeEnabled();
   // Claude Code noted them done itself, and the check passes now.
   expect(JSON.parse(readFileSync(join(claude, '.claude.json'), 'utf8'))).toEqual({
     hasCompletedOnboarding: true,

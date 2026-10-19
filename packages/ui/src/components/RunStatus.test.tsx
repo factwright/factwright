@@ -5,6 +5,7 @@ import { RunStatus } from './RunStatus.tsx';
 describe('RunStatus', () => {
   it.each([
     ['starting', 'Starting'],
+    ['ready', 'Ready'],
     ['working', 'Working'],
     ['needs-answer', 'Needs your answer'],
     ['done', 'Done'],
