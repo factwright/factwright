@@ -112,7 +112,9 @@ beforeAll(() => {
     // PowerShell's first start can take half a minute on a busy computer, which would use up a
     // test's own time, so each one starts once first.
     for (const file of POWERSHELLS) {
-      spawnSync(file, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { timeout: 120_000 });
+      spawnSync(file, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], {
+        timeout: 120_000,
+      });
     }
   } else {
     // claude for the Mac's shells, and claude.exe for PowerShell's name for it.
