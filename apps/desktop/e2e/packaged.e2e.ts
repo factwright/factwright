@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
 import { desktop, fakeClaude, version } from './paths.ts';
-import { newDataFolder } from './workspace.ts';
+import { newDataFolder, usersClaude } from './workspace.ts';
 
 /** Where the installers leave the app, unpacked, for each kind of computer. */
 const BUILT: Readonly<Record<string, string>> = {
@@ -83,6 +83,8 @@ test.beforeAll(async () => {
     env: {
       ...process.env,
       PATH: [fakeClaude, process.env.PATH ?? ''].join(delimiter),
+      // A Claude Code folder of the tests' own, so the app never changes the user's.
+      CLAUDE_CONFIG_DIR: usersClaude(dataDir),
       FACTWRIGHT_SETUP_WAIT_MS: '500',
       FACTWRIGHT_UPDATES: 'off',
     },

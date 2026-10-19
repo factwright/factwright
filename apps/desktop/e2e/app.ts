@@ -2,6 +2,7 @@ import { delimiter } from 'node:path';
 import { _electron, type ElectronApplication, type Page } from '@playwright/test';
 import electronPath from 'electron';
 import { desktop, fakeClaude } from './paths.ts';
+import { usersClaude } from './workspace.ts';
 
 export interface Opened {
   app: ElectronApplication;
@@ -10,11 +11,12 @@ export interface Opened {
 
 /**
  * Opens the built app on a data folder, with the stand-in Claude Code first on PATH, so no run
- * reaches the user's own Claude Code or their plan. When the app doesn't reach its jobs, or
- * getting started for a new user, the error says how far it got, with what it printed.
+ * reaches the user's own Claude Code or their plan, and a Claude Code folder of the tests' own,
+ * so the app never changes the user's either. When the app doesn't reach its jobs, or getting
+ * started for a new user, the error says how far it got, with what it printed.
  */
 export async function openApp(dataDir: string, env: Record<string, string> = {}): Promise<Opened> {
-  // A Claude Code folder of the shell's own would stand in for the user's, which no test reaches.
+  // Not a Claude Code folder of the shell's own: the tests' own stands in for the user's.
   const { CLAUDE_CONFIG_DIR: _, ...shell } = process.env;
   const app = await _electron.launch({
     executablePath: electronPath as unknown as string,
@@ -22,6 +24,7 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
     env: {
       ...shell,
       PATH: [fakeClaude, process.env.PATH ?? ''].join(delimiter),
+      CLAUDE_CONFIG_DIR: usersClaude(dataDir),
       // A sync server only where a test starts one, never one from the shell running the tests.
       FACTWRIGHT_SERVER_URL: '',
       // The setup check waits less, so the tests see it finish.

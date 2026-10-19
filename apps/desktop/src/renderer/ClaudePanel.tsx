@@ -33,9 +33,9 @@ export function filedWords(filed: FiledFacts): { lead: string; more: string } {
  * away into a slim bar while Claude works, and comes back when Claude needs the user. Claude's
  * questions and Claude Code's permission prompts open in dialogs, and one the user puts aside
  * waits here, with a way back to it. What only the terminal can answer, such as Claude Code's
- * question about trusting the workspace, gets the terminal a pulsing outline and a note pointing
- * down to it. When the run saves the user's answers to their fact bank, it says so, with a way to
- * verify them.
+ * first-run screens and its question about trusting the workspace, gets the terminal a pulsing
+ * outline and a note pointing down to it. When the run saves the user's answers to their fact
+ * bank, it says so, with a way to verify them.
  */
 export function ClaudePanel({
   api,
@@ -74,15 +74,16 @@ export function ClaudePanel({
   const [explained, setExplained] = usePref('claude.terminal-explained', false, isBoolean);
   if (run.phase === 'idle' && !run.problem) return null;
   const hidden = !run.open && isRunning(run.phase);
-  // The question about trust waits on the user like any other.
-  const shown = run.trustAsked ? 'needs-answer' : run.phase;
+  // The first-run screens and the question about trust wait on the user like any other.
+  const shown = run.trustAsked || run.firstRun ? 'needs-answer' : run.phase;
   const filing = filed && (filed.facts.length > 0 || filed.gaps > 0) ? filed : null;
   const part = filing && filing.facts.length > 0 ? 'unverified' : 'gaps';
   const words = filing ? filedWords(filing) : null;
   const aside = asking && !asking.open ? asking : null;
-  // Claude Code waits on an answer only the terminal takes: its question about trust, or anything
-  // the app's dialogs leave to it, such as a question sent there.
-  const inTerminal = run.trustAsked || (run.phase === 'needs-answer' && asking === null);
+  // Claude Code waits on an answer only the terminal takes: its first-run screens, its question
+  // about trust, or anything the app's dialogs leave to it, such as a question sent there.
+  const screens = run.trustAsked || run.firstRun;
+  const inTerminal = screens || (run.phase === 'needs-answer' && asking === null);
   const review = (
     <Button size="sm" onClick={() => onReviewFiled?.(part)}>
       {part === 'unverified' ? 'Verify them' : 'Review'}
@@ -136,8 +137,17 @@ export function ClaudePanel({
             />
           </div>
         )}
+        {run.firstRun && !run.trustAsked && (
+          <div className={styles.note}>
+            <Notice title="Claude Code shows a few screens the first time it opens">
+              Press Enter on each one to go on. The text style it asks about only changes how Claude
+              Code looks in your own terminal. Then it asks whether to trust your workspace, which
+              needs the arrow keys first.
+            </Notice>
+          </div>
+        )}
         {run.trustAsked && (
-          <div className={styles.trust}>
+          <div className={styles.note}>
             <Notice title="Claude Code asks once whether to trust your workspace">
               Use the arrow keys to pick “Yes, I trust this folder”, then press Enter. Its note
               about running files doesn’t apply here: in Factwright, Claude Code has no shell, so it
@@ -146,7 +156,7 @@ export function ClaudePanel({
             </Notice>
           </div>
         )}
-        {inTerminal && !run.trustAsked && (
+        {inTerminal && !screens && (
           <div className={styles.terminalAsks}>
             <ArrowDown size={15} aria-hidden="true" className={styles.terminalAsksIcon} />
             <p className={styles.terminalAsksText}>

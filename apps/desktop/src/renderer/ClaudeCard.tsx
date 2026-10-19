@@ -45,13 +45,37 @@ function describe(
   setup: SetupCheck | null,
   signIn: OwnSignIn | undefined,
   terminal: string,
+  onOpenClaude: (() => void) | undefined,
 ): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: null };
   switch (status.state) {
     case 'ready': {
       const plan = planName(status.plan);
       // Only a check of the version installed now counts. An older one ran before an update.
-      if (setup?.result === 'failed' && setup.version === status.version) {
+      const current = setup?.version === status.version;
+      // Claude Code waits on screens the user goes through once, which aren't Factwright's to fix.
+      if (setup?.result === 'first-run' && current) {
+        return {
+          tone: 'need',
+          line: 'Claude Code’s first screens',
+          help: (
+            <>
+              Claude Code shows a few screens the first time it opens. In Claude’s panel, press
+              Enter through them, then check again.
+              {onOpenClaude && (
+                <>
+                  {' '}
+                  <button type="button" className={styles.link} onClick={onOpenClaude}>
+                    Open Claude’s panel
+                  </button>
+                </>
+              )}
+            </>
+          ),
+          recheck: 'setup',
+        };
+      }
+      if (setup?.result === 'failed' && current) {
         return {
           tone: 'bad',
           line: 'Setup check failed',
@@ -140,6 +164,7 @@ export function ClaudeCard({
   setup = null,
   checkingSetup = false,
   onCheckSetup,
+  onOpenClaude,
   onSettings,
 }: {
   status: ClaudeStatusView;
@@ -151,10 +176,15 @@ export function ClaudeCard({
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
+  /**
+   * Opens Claude's panel, for the user to go through Claude Code's first-run screens, when it
+   * isn't open already.
+   */
+  onOpenClaude?: (() => void) | undefined;
   /** Opens Claude's settings, once Claude is ready to run. */
   onSettings?: () => void;
 }) {
-  const view = describe(status, setup, signIn, terminal);
+  const view = describe(status, setup, signIn, terminal, onOpenClaude);
   const checking = view.recheck === 'setup' && checkingSetup;
   const ready = status !== 'checking' && status.state === 'ready' && !view.recheck;
   return (

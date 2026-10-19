@@ -385,6 +385,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         window.send('claude:trust');
         notifyIfAway(window, 'needs-answer');
       },
+      onFirstRun: () => {
+        window.send('claude:first-run');
+        notifyIfAway(window, 'needs-answer');
+      },
       onFiled: (filed) => window.send('facts:filed', filed),
       ask: (round, signal) => questions.ask(round, signal),
       permit: (ask, signal) => permissionAsks.ask(ask, signal),

@@ -1,11 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -18,6 +21,7 @@ import {
   claudeFolder,
   FIRST_PROFILE,
   listProfiles,
+  markFirstRunDone,
   noteStarting,
   type ProfileFolder,
   Profiles,
@@ -214,6 +218,103 @@ describe('Claude Code for a profile', () => {
     expect(signInCommand('win32', 'C:\\Users\\O’Neil\\AppData\\Roaming\\Factwright\\claude')).toBe(
       "$saved = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = 'C:\\Users\\O’’Neil\\AppData\\Roaming\\Factwright\\claude'; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $saved }",
     );
+  });
+});
+
+describe('Claude Code’s first-run screens', () => {
+  // `home` stands in for the user's home folder, and the folder Claude Code runs with.
+  const POSIX = process.platform !== 'win32';
+
+  /** A config as Claude Code writes it, with a sign-in, a trusted folder and its own settings. */
+  const CONFIG = {
+    numStartups: 3,
+    oauthAccount: { emailAddress: 'alex@example.com', organizationUuid: 'org-1' },
+    projects: { '/Users/alex/work': { hasTrustDialogAccepted: true, allowedTools: [] } },
+    theme: 'light',
+    tipsHistory: { 'new-user-warmup': 1 },
+    userID: 'é…✓',
+  };
+
+  it('marks them done in the home folder’s config, keeping everything else as it was', () => {
+    const file = join(home, '.claude.json');
+    writeFileSync(file, JSON.stringify(CONFIG, null, 2), { mode: 0o600 });
+    expect(markFirstRunDone(null, home)).toBe('marked');
+    const written = readJson(file);
+    expect(written).toEqual({ ...CONFIG, hasCompletedOnboarding: true });
+    expect(Object.keys(written)).toEqual([...Object.keys(CONFIG), 'hasCompletedOnboarding']);
+    // Still only its owner's to read, with no draft or lock left behind.
+    if (POSIX) expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(readdirSync(home)).toEqual(['.claude.json']);
+    // Once they're done, there's nothing to write.
+    const text = readFileSync(file, 'utf8');
+    expect(markFirstRunDone(null, home)).toBe('already');
+    expect(readFileSync(file, 'utf8')).toBe(text);
+  });
+
+  it('marks them in the folder Claude Code runs with, making its config when there’s none', () => {
+    const folder = join(home, 'claude');
+    mkdirSync(folder);
+    expect(markFirstRunDone(folder, home)).toBe('marked');
+    expect(readJson(join(folder, '.claude.json'))).toEqual({ hasCompletedOnboarding: true });
+    if (POSIX) expect(statSync(join(folder, '.claude.json')).mode & 0o777).toBe(0o600);
+    expect(existsSync(join(home, '.claude.json'))).toBe(false);
+  });
+
+  it('leaves a config alone that Claude Code couldn’t read either', () => {
+    const file = join(home, '.claude.json');
+    for (const text of ['{"theme": "dark",', '[]', '"done"', '']) {
+      writeFileSync(file, text);
+      expect(markFirstRunDone(null, home)).toBe('left');
+      expect(readFileSync(file, 'utf8')).toBe(text);
+    }
+  });
+
+  it('leaves a folder named from where Claude Code runs, which isn’t where the app is', () => {
+    expect(markFirstRunDone('claude-config', home)).toBe('left');
+    expect(existsSync(join(home, '.claude.json'))).toBe(false);
+  });
+
+  it('leaves the config alone when Claude Code reads one from its older place instead', () => {
+    mkdirSync(join(home, '.claude'));
+    writeFileSync(join(home, '.claude', '.config.json'), '{"theme":"dark"}');
+    expect(markFirstRunDone(null, home)).toBe('left');
+    expect(existsSync(join(home, '.claude.json'))).toBe(false);
+    const folder = join(home, 'claude');
+    mkdirSync(folder);
+    writeFileSync(join(folder, '.config.json'), '{"theme":"dark"}');
+    expect(markFirstRunDone(folder, home)).toBe('left');
+    expect(existsSync(join(folder, '.claude.json'))).toBe(false);
+  });
+
+  it('waits while a Claude Code holds the lock on its config, and leaves its lock be', () => {
+    const file = join(home, '.claude.json');
+    writeFileSync(file, '{"theme":"dark"}');
+    mkdirSync(`${file}.lock`);
+    expect(markFirstRunDone(null, home)).toBe('left');
+    expect(readFileSync(file, 'utf8')).toBe('{"theme":"dark"}');
+    expect(existsSync(`${file}.lock`)).toBe(true);
+    // Once Claude Code has saved and let go, the next time marks them.
+    rmdirSync(`${file}.lock`);
+    expect(markFirstRunDone(null, home)).toBe('marked');
+    expect(readJson(file)).toEqual({ theme: 'dark', hasCompletedOnboarding: true });
+  });
+
+  it.skipIf(!POSIX)('writes through a link to a config kept elsewhere, which stays a link', () => {
+    const file = join(home, '.claude.json');
+    mkdirSync(join(home, 'dotfiles'));
+    const kept = join(home, 'dotfiles', 'claude.json');
+    writeFileSync(kept, '{"theme":"dark"}', { mode: 0o644 });
+    symlinkSync(kept, file);
+    expect(markFirstRunDone(null, home)).toBe('marked');
+    expect(lstatSync(file).isSymbolicLink()).toBe(true);
+    expect(readJson(kept)).toEqual({ theme: 'dark', hasCompletedOnboarding: true });
+    expect(statSync(kept).mode & 0o777).toBe(0o644);
+    expect(readdirSync(join(home, 'dotfiles'))).toEqual(['claude.json']);
+    // A link to a config that's gone is left as it is.
+    rmSync(kept);
+    expect(markFirstRunDone(null, home)).toBe('left');
+    expect(lstatSync(file).isSymbolicLink()).toBe(true);
+    expect(existsSync(kept)).toBe(false);
   });
 });
 

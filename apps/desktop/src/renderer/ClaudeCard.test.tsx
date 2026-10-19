@@ -116,4 +116,57 @@ describe('ClaudeCard', () => {
       expect(screen.getByText('Signed in · Max plan')).toBeTruthy();
     }
   });
+  it('says what to do when the setup check stops on Claude Code’s first-run screens', async () => {
+    const ready = { state: 'ready', version: '2.1.303', plan: 'pro' } as const;
+    const firstRun = {
+      version: '2.1.303',
+      result: 'first-run',
+      at: '2026-10-19T15:00:00.000Z',
+    } as const;
+    const onCheckSetup = vi.fn();
+    const onOpenClaude = vi.fn();
+    const { container, rerender } = render(
+      <ClaudeCard
+        status={ready}
+        onRecheck={vi.fn()}
+        setup={firstRun}
+        onCheckSetup={onCheckSetup}
+        onOpenClaude={onOpenClaude}
+      />,
+    );
+    expect(screen.getByText('Claude Code’s first screens')).toBeTruthy();
+    const help = screen.getByText(/Claude Code shows a few screens the first time it opens/);
+    expect(help.textContent).toBe(
+      'Claude Code shows a few screens the first time it opens. In Claude’s panel, press Enter through them, then check again. Open Claude’s panel',
+    );
+    // It isn't Factwright's to fix, so there's no word of an update.
+    expect(screen.queryByText(/may need an update/)).toBeNull();
+    screen.getByRole('button', { name: 'Open Claude’s panel' }).click();
+    expect(onOpenClaude).toHaveBeenCalledOnce();
+    screen.getByRole('button', { name: 'Check again' }).click();
+    expect(onCheckSetup).toHaveBeenCalledOnce();
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations.map((violation) => violation.id)).toEqual([]);
+    // With Claude's panel open already, it has nothing to open.
+    rerender(
+      <ClaudeCard
+        status={ready}
+        onRecheck={vi.fn()}
+        setup={firstRun}
+        onCheckSetup={onCheckSetup}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Open Claude’s panel' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
+    // A check of the version before an update says nothing.
+    rerender(
+      <ClaudeCard
+        status={ready}
+        onRecheck={vi.fn()}
+        setup={{ ...firstRun, version: '2.1.302' }}
+        onCheckSetup={onCheckSetup}
+      />,
+    );
+    expect(screen.getByText('Signed in · Pro plan')).toBeTruthy();
+  });
 });
