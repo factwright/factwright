@@ -41,7 +41,7 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 - **No shell:** Claude Code starts in restricted mode, so it can't run commands.
 - **Only Factwright's extras:** it loads only Factwright's plugin, tools and settings.
 - **No outside reach:** your claude.ai connectors are off, and there's no browser automation.
-- **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. While a permission prompt or question is open, it keeps reading "Needs your answer", even as tools running alongside finish. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file. The same server answers Claude's calls to Factwright's tools.
+- **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. While a permission prompt or question is open, it keeps reading "Needs your answer", even as tools running alongside finish. A run started with nothing to do sends no hook until you type, so it reads "Ready" once Claude Code reaches Factwright's tools, which it does only past its first-run screens and the question about trust. Like a run that's done, it takes the next task you start. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file. The same server answers Claude's calls to Factwright's tools.
 - **Matching colors:** Claude Code uses its ANSI theme, so the panel's colors come from the design system.
 
 You can tuck the panel away while Claude works, and it comes back whenever Claude needs you. If you're in another app, a notification tells you.
@@ -72,6 +72,11 @@ The first run asks a question of its own: Claude Code wants to know whether to t
 - The note also explains that the warning doesn't apply: Claude Code has no shell here, so it can't run programs.
 - The panel grows to fit the note rather than shrinking the terminal, because Claude Code can drop a line of its screen when it redraws for a resize.
 
+Before that question, a Claude Code that's never been opened shows its first-run screens: its text style, whether to use an API key it found in the environment, its security notes, and its terminal setup. Signing in with `claude auth login` doesn't mark them done. The app marks them done itself, as [the setup check](#the-setup-check) says, so they rarely show. When they do ([`src/main/claude/screen.ts`](src/main/claude/screen.ts)):
+- The run reads "Needs your answer", the panel comes back, and the terminal gets the same outline.
+- A note says to press Enter on each one, that the text style only changes how Claude Code looks in your own terminal, and that the question about trust comes next and needs the arrow keys first.
+- Enter clears the note, and the next screen, if there is one, brings it back.
+
 Anything else only the terminal can answer, such as a question or permission prompt sent there, or one the dialogs leave to it, gets the same outline, with a note pointing down to the terminal: "Claude Code is asking you something in the terminal below", and how to answer. The first time, the note also says that this is your own Claude Code, until you choose Got it. The terminal takes the keyboard, so you can answer straight away.
 
 ## The setup check
@@ -84,6 +89,14 @@ That covers the launch flags, the tools and their token, the settings, and the h
 - **Passed:** nothing shows.
 - **Failed:** the sidebar's Your Claude card says what went wrong, in Claude Code's own words where it can, with Check again.
 - **Waiting at the trust question:** a workspace Claude Code doesn't trust yet stops at that question. The check waits for your first run, and tries again at the next launch.
+- **Waiting at Claude Code's first-run screens:** the check stops at once. The Your Claude card says to press Enter through them in Claude's panel, then Check again, with Open Claude's panel while the panel isn't open.
+
+Signing in with `claude auth login` doesn't mark those screens done, so the app does, as pressing Enter through them would ([`markFirstRunDone`](src/main/profiles.ts)). It adds `hasCompletedOnboarding: true` to the config Claude Code reads: an added profile's own, or for the first profile, `$CLAUDE_CONFIG_DIR/.claude.json`, or else `~/.claude.json`. Every other setting stays as it was. It does this when it checks Claude Code, as the window opens or comes back and on Check again, and only:
+- When `claude auth status` says you're signed in with a Claude account. With an API key in the environment, those screens ask whether to use it, so they're left for you.
+- While none of the app's own Claude Code is going: no run in the panel, and no setup check.
+- Under Claude Code's own lock on its config, `.claude.json.lock`, so it never races a Claude Code saving its settings. It skips this time when a Claude Code holds it.
+
+It writes the config whole or not at all, through a link if the config is one, and leaves alone a config Claude Code couldn't read either, and one in Claude Code's older place, `.config.json` in its folder, which Claude Code reads instead.
 
 ## Claude's tools
 Each run gets Factwright's own tools over MCP ([`src/main/tools`](src/main/tools)), in place of a shell. The server that hears the run's hooks answers them, only for that run's token, and refuses anything a web page sends.

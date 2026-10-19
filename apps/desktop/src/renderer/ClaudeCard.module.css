@@ -1,4 +1,7 @@
-/* Copying an added profile's sign-in command, read as a link in the card's line of help. */
+/*
+ * Copying an added profile's sign-in command, or opening Claude's panel, read as a link in the
+ * card's line of help.
+ */
 .link {
   padding: 0;
   border: 0;

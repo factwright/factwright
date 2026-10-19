@@ -39,6 +39,7 @@ export function Sidebar({
   linkRequests = [],
   linkAsking = null,
   onOpenSync,
+  onOpenClaude,
   onOpenClaudeSettings,
   onOpenExtension,
   levels,
@@ -76,6 +77,8 @@ export function Sidebar({
   /** This computer, asking to be linked. */
   linkAsking?: AskingView | null;
   onOpenSync: () => void;
+  /** Opens Claude's panel, when it isn't open, for Claude Code's first-run screens. */
+  onOpenClaude?: (() => void) | undefined;
   /** Opens Claude's settings: its model, and what it may do without asking. */
   onOpenClaudeSettings: () => void;
   /**
@@ -148,6 +151,7 @@ export function Sidebar({
             setup={setup.check}
             checkingSetup={setup.checking}
             onCheckSetup={setup.checkAgain}
+            onOpenClaude={onOpenClaude}
             onSettings={onOpenClaudeSettings}
           />
           {claude !== 'checking' && claude.state === 'ready' && levels && (

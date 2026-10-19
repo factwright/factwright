@@ -32,8 +32,12 @@ const PLANS: Readonly<Record<string, ClaudeStatus>> = {
   api: { state: 'ready', version: READY.version, method: 'api_key' },
 };
 
-/** Setup checks for ?setup=: the one a new version of Claude Code could fail, or a pass. */
+/**
+ * Setup checks for ?setup=: the one a new version of Claude Code could fail, one that stopped on
+ * Claude Code's first-run screens, or a pass.
+ */
 const SETUP_CHECKS: Readonly<Record<string, SetupCheck>> = {
+  'first-run': { version: READY.version, result: 'first-run', at: '2026-10-11T18:00:00.000Z' },
   failed: {
     version: READY.version,
     result: 'failed',
@@ -60,6 +64,24 @@ function sampleRun(dark: boolean) {
   const [main, secondary, bar] = dark ? ['97', '37', '100'] : ['30', '90', '47'];
   const color = (code: string, text: string) => `\x1b[${code}m${text}\x1b[0m`;
   return {
+    /** Claude Code's first-run screens, each until Enter, for ?first-run=show. */
+    firstRun: [
+      [
+        '\x1b[H\x1b[2J',
+        ` ${color(main, 'Let’s get started.')}\r\n\r\n`,
+        ` ${color(`1;${main}`, 'Choose the text style that looks best with your terminal')}\r\n`,
+        ` ${color(secondary, 'To change this later, run /theme')}\r\n\r\n`,
+        ` ${color('34', '❯ 1. Dark mode ✔')}\r\n`,
+        `   ${color(main, '2. Light mode')}\r\n`,
+      ],
+      [
+        '\x1b[H\x1b[2J',
+        ` ${color(`1;${main}`, 'Security notes:')}\r\n\r\n`,
+        ` ${color(secondary, '1.')} ${color(main, 'Claude can make mistakes.')}\r\n`,
+        ` ${color(secondary, '2.')} ${color(main, 'Due to prompt injection risks, only use it with code you trust')}\r\n\r\n`,
+        ` ${color(secondary, 'Press Enter to continue…')}\r\n`,
+      ],
+    ],
     /** Claude Code's question, the first time it opens a folder, for ?trust=ask. */
     trust: [
       ` ${color(`1;${main}`, 'Do you trust the files in this folder?')}\r\n\r\n`,
@@ -376,6 +398,10 @@ export function sampleApi(): FactwrightApi {
   // permission prompt, with ?permit=.
   let afterAnswer: 'opening' | 'round' | 'permission' = 'opening';
   const asks = query.get('run') === 'asks';
+  // ?first-run=show starts with Claude Code's first-run screens, once, each until Enter.
+  let firstRunLeft = query.get('first-run') === 'show' ? 2 : 0;
+  let afterFirstRun: () => void = () => {};
+  const firstRunListeners = new Set<() => void>();
   // ?trust=ask starts with Claude Code's question about trusting the folder, once.
   let waitingForTrust = false;
   let trusted = query.get('trust') !== 'ask';
@@ -481,15 +507,29 @@ export function sampleApi(): FactwrightApi {
           else askRound(openingRound(roundAsked), 'opening');
         }, 1800);
       };
-      if (trusted) {
-        play();
+      const askTrust = () => {
+        if (trusted) {
+          play();
+          return;
+        }
+        afterTrust = play;
+        setTimeout(() => {
+          print(run.trust);
+          waitingForTrust = true;
+          for (const listener of trustListeners) listener();
+        }, 300);
+      };
+      if (firstRunLeft === 0) {
+        askTrust();
         return { ok: true };
       }
-      afterTrust = play;
+      afterFirstRun = () => {
+        print(['\x1b[H\x1b[2J']);
+        askTrust();
+      };
       setTimeout(() => {
-        print(run.trust);
-        waitingForTrust = true;
-        for (const listener of trustListeners) listener();
+        print(run.firstRun[0] ?? []);
+        for (const listener of firstRunListeners) listener();
       }, 300);
       return { ok: true };
     },
@@ -509,6 +549,20 @@ export function sampleApi(): FactwrightApi {
       signal('stopped');
     },
     writeToClaude: (data) => {
+      if (firstRunLeft > 0 && data.includes('\r')) {
+        firstRunLeft -= 1;
+        if (firstRunLeft === 0) {
+          afterFirstRun();
+          return;
+        }
+        // A moment later, as Claude Code draws it, the next screen says so too, as in the app.
+        const next = run.firstRun[run.firstRun.length - firstRunLeft] ?? [];
+        setTimeout(() => {
+          print(next);
+          for (const listener of firstRunListeners) listener();
+        }, 150);
+        return;
+      }
       if (waitingForTrust && data.includes('\r')) {
         waitingForTrust = false;
         trusted = true;
@@ -548,6 +602,10 @@ export function sampleApi(): FactwrightApi {
     onClaudeTrust: (listener) => {
       trustListeners.add(listener);
       return () => trustListeners.delete(listener);
+    },
+    onClaudeFirstRun: (listener) => {
+      firstRunListeners.add(listener);
+      return () => firstRunListeners.delete(listener);
     },
     // Claude's questions, in their dialog: answered there, or sent to the terminal.
     claudeQuestion: async () => asking?.round ?? null,

@@ -393,6 +393,12 @@ export function App({ api }: { api: FactwrightApi }) {
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
+          // Claude's panel, for Claude Code's first-run screens: the run that's open, or a new one.
+          onOpenClaude={
+            run.open && isRunning(run.phase)
+              ? undefined
+              : () => (isRunning(run.phase) ? run.show() : run.requestStart())
+          }
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           onOpenExtension={() => setDialog('extension')}
           levels={levels.choices}

@@ -4,6 +4,7 @@ import styles from './RunStatus.module.css';
 /** Where a Claude run can stand, as the app's panel shows it. */
 export const RUN_STATES = [
   'starting',
+  'ready',
   'working',
   'needs-answer',
   'done',
@@ -15,6 +16,7 @@ export type RunState = (typeof RUN_STATES)[number];
 
 const LABELS: Readonly<Record<RunState, string>> = {
   starting: 'Starting',
+  ready: 'Ready',
   working: 'Working',
   'needs-answer': 'Needs your answer',
   done: 'Done',

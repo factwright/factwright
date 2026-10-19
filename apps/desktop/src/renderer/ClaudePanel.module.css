@@ -186,8 +186,8 @@
   }
 }
 
-/* The note about Claude Code's trust question, above the terminal while it's asked. */
-.trust {
+/* The note about Claude Code's first-run screens or its trust question, above the terminal. */
+.note {
   padding: var(--fw-space-2) var(--fw-space-3) 0;
 }
 

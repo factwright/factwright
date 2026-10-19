@@ -15,7 +15,7 @@ import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
 import { loadPermissions } from './permissions.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
-import { TrustWatch } from './screen.ts';
+import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
 import { RunSignals } from './signals.ts';
 import { claudeStatus, nodeStatusDeps } from './status.ts';
@@ -142,6 +142,11 @@ export interface SessionDeps {
   onSignal: (signal: RunSignal) => void;
   /** Claude Code is asking whether to trust the workspace, which it does once. */
   onTrust: () => void;
+  /**
+   * Claude Code is showing its first-run screens, which it does until someone presses Enter
+   * through them once.
+   */
+  onFirstRun: () => void;
   /** The run filed facts from the user's answers, which wait for the user to verify them. */
   onFiled?: (filed: FiledFacts) => void;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
@@ -162,6 +167,8 @@ interface Run {
   effort: Effort | undefined;
   levels: PlanLevels;
   scope: RunScope;
+  /** Watches for Claude Code's first-run screens, which the user answers one after another. */
+  firstRun: ScreenWatch;
   /** Settles once it has exited. */
   exited: Promise<void>;
 }
@@ -231,15 +238,32 @@ export class ClaudeSession {
     if (!launch) return { ok: false, reason: 'not-ready' };
 
     const signals = new RunSignals(this.deps.onSignal);
-    const trust = new TrustWatch();
+    const trust = new ScreenWatch(TRUST_QUESTION);
+    const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
+    let heard = false;
+    const pastScreens = () => {
+      heard = true;
+      trust.pastIt();
+      firstRun.pastIt();
+    };
     // Listening first, so no hook can arrive before the run is ready for it.
     const stopListening = this.deps.server.listen(
       launch.token,
       (event) => {
-        trust.pastIt();
+        pastScreens();
         signals.hear(event);
       },
       {
+        // With no prompt, no hook comes until the user types. Claude Code reaches Factwright's
+        // tools once it's past its first-run screens and the question about trust, so then it's
+        // waiting for them.
+        ...(!prompt && {
+          tools: (method: string) => {
+            if (method !== 'tools/list' || heard) return;
+            pastScreens();
+            this.deps.onSignal('ready');
+          },
+        }),
         scope,
         onFiled: this.deps.onFiled,
         ask: this.deps.ask,
@@ -273,6 +297,7 @@ export class ClaudeSession {
       effort: launch.effort,
       levels: launch.levels,
       scope,
+      firstRun,
       exited: new Promise((resolve) => {
         exited = resolve;
       }),
@@ -280,6 +305,7 @@ export class ClaudeSession {
     this.run = run;
     terminal.onData((data) => {
       this.deps.onOutput(data);
+      if (firstRun.saw(data)) this.deps.onFirstRun();
       if (trust.saw(data)) this.deps.onTrust();
     });
     terminal.onExit(({ exitCode }) => {
@@ -288,13 +314,15 @@ export class ClaudeSession {
       this.deps.onSignal(run.stopping || exitCode === 0 ? 'stopped' : 'failed');
       exited();
     });
-    // Claude Code may first ask whether to trust the workspace, which the window explains, so
-    // the run stays "starting" until a hook says otherwise.
+    // Claude Code may first show its first-run screens and ask whether to trust the workspace,
+    // which the window explains, so the run stays "starting" until a hook says otherwise.
     return { ok: true };
   }
 
   write(data: string): void {
     this.run?.terminal.write(data);
+    // Enter answers a first-run screen, which may bring the next.
+    if (data.includes('\r')) this.run?.firstRun.answered();
   }
 
   /** Types a prompt into the run that's open, and sends it, as the user would. */

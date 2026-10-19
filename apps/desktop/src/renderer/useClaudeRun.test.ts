@@ -11,6 +11,7 @@ const TASK: RunTask = { skill: 'fit-check', jobId: 'acme--staff-engineer' };
 function fakeApi(task: StartResult = { ok: true }) {
   let signal: (value: RunSignal) => void = () => {};
   let trust: () => void = () => {};
+  let firstRun: () => void = () => {};
   const api = {
     startClaude: vi.fn(async () => ({ ok: true }) as StartResult),
     runTask: vi.fn(async () => task),
@@ -24,11 +25,16 @@ function fakeApi(task: StartResult = { ok: true }) {
       trust = listener;
       return () => {};
     },
+    onClaudeFirstRun: (listener: () => void) => {
+      firstRun = listener;
+      return () => {};
+    },
   };
   return {
     api: api as unknown as FactwrightApi & typeof api,
     signal: (value: RunSignal) => signal(value),
     trust: () => trust(),
+    firstRun: () => firstRun(),
   };
 }
 
@@ -54,6 +60,20 @@ describe('useClaudeRun', () => {
     expect(api.startClaude).toHaveBeenCalledWith(SIZE, undefined);
     const runId = result.current.runId;
     act(() => signal('done'));
+    await act(async () => result.current.requestStart(TASK));
+    expect(api.runTask).toHaveBeenCalledWith(TASK);
+    expect(result.current.runId).toBe(runId);
+    expect(result.current.phase).toBe('working');
+  });
+
+  it('gives Claude that’s open and ready, with nothing to do yet, the task too', async () => {
+    const { api, signal } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => result.current.requestStart());
+    await act(async () => result.current.onTerminalSize(SIZE));
+    const runId = result.current.runId;
+    act(() => signal('ready'));
+    expect(result.current.phase).toBe('ready');
     await act(async () => result.current.requestStart(TASK));
     expect(api.runTask).toHaveBeenCalledWith(TASK);
     expect(result.current.runId).toBe(runId);
@@ -112,5 +132,34 @@ describe('useClaudeRun', () => {
     act(() => trust());
     act(() => result.current.close());
     expect(result.current.trustAsked).toBe(false);
+  });
+
+  it('explains each of Claude Code’s first-run screens until the user answers it', async () => {
+    const { api, signal, trust, firstRun } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => result.current.requestStart());
+    await act(async () => result.current.onTerminalSize(SIZE));
+    act(() => result.current.hide());
+    act(() => firstRun());
+    expect(result.current.firstRun).toBe(true);
+    expect(result.current.open).toBe(true);
+    // Moving through a screen's choices isn't an answer yet; Enter is. The next screen says so.
+    act(() => result.current.typed('\x1b[B'));
+    expect(result.current.firstRun).toBe(true);
+    act(() => result.current.typed('\r'));
+    expect(result.current.firstRun).toBe(false);
+    act(() => firstRun());
+    expect(result.current.firstRun).toBe(true);
+    // The question about trust comes after them.
+    act(() => trust());
+    expect(result.current.firstRun).toBe(false);
+    expect(result.current.trustAsked).toBe(true);
+    // A hook also means Claude Code is past them, as does closing the panel.
+    act(() => firstRun());
+    act(() => signal('working'));
+    expect(result.current.firstRun).toBe(false);
+    act(() => firstRun());
+    act(() => result.current.close());
+    expect(result.current.firstRun).toBe(false);
   });
 });

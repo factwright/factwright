@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import type { SetupCheck } from '../../shared/api.ts';
 import type { RunServer } from './run-server.ts';
-import { plainText, TRUST_QUESTION } from './screen.ts';
+import { FIRST_RUN_SCREENS, plainText, TRUST_QUESTION } from './screen.ts';
 import type { Launch } from './session.ts';
 
 /** What one check found, before it's dated and tied to a version. */
@@ -116,11 +116,16 @@ export async function checkSetup(deps: CheckDeps): Promise<SetupFinding | null> 
       return;
     }
     child.onData((data) => {
-      // Checked before trimming, so a big chunk can't push the question out unseen.
+      // Checked before trimming, so a big chunk can't push a screen out unseen.
       const seen = screen + data;
       screen = seen.slice(-8000);
+      if (connected) return;
+      const text = plainText(seen);
+      // Until someone presses Enter through them once, which the user does in Claude's panel,
+      // Claude Code waits on its first-run screens.
+      if (FIRST_RUN_SCREENS.test(text)) finish({ result: 'first-run' });
       // Until the user trusts the workspace once, in a run, Claude Code waits on this question.
-      if (!connected && TRUST_QUESTION.test(plainText(seen))) finish({ result: 'untrusted' });
+      else if (TRUST_QUESTION.test(text)) finish({ result: 'untrusted' });
     });
     child.onExit(() => {
       // A hook that's on its way gets a moment to land.
@@ -204,6 +209,11 @@ export class SetupChecker {
     return this.latest;
   }
 
+  /** Whether a check is going, with a Claude Code of its own. */
+  busy(): boolean {
+    return this.running !== null;
+  }
+
   /**
    * Plans a check of this version of Claude Code, unless a check of it passed, or already ran
    * since the app opened. So a check that didn't pass runs once a launch, not each time the
@@ -282,13 +292,15 @@ export class SetupChecker {
   }
 }
 
+const RESULTS: readonly SetupCheck['result'][] = ['passed', 'failed', 'untrusted', 'first-run'];
+
 function isSetupCheck(value: unknown): value is SetupCheck {
   if (typeof value !== 'object' || value === null) return false;
   const check = value as Record<string, unknown>;
   return (
     typeof check.version === 'string' &&
     typeof check.at === 'string' &&
-    (check.result === 'passed' || check.result === 'failed' || check.result === 'untrusted') &&
+    RESULTS.includes(check.result as SetupCheck['result']) &&
     (check.problem === undefined || typeof check.problem === 'string')
   );
 }
