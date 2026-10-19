@@ -59,12 +59,10 @@ async function printPreview({ window }: Opened, name: string): Promise<void> {
   expect(done).toBe(true);
 }
 
-/** Closes the app's window, as its close button does. */
+/** Closes the app's window, as its close button does. In quiet mode it's hidden, as print's is. */
 async function closeWindow({ app, window }: Opened): Promise<void> {
   const closed = window.waitForEvent('close');
-  await app.evaluate(({ BrowserWindow }) => {
-    for (const each of BrowserWindow.getAllWindows()) if (each.isVisible()) each.close();
-  });
+  await (await app.browserWindow(window)).evaluate((each) => each.close());
   await closed;
 }
 
@@ -81,6 +79,18 @@ async function opensAgain(open: () => Promise<unknown>): Promise<Page> {
   opened = { ...opened, window };
   return window;
 }
+
+test('stays out of sight while the tests run it, never taking the keyboard', async () => {
+  if (!opened) throw new Error('The app isn’t open.');
+  await expect(opened.window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
+  expect(
+    await opened.app.evaluate(({ app, BrowserWindow }) => ({
+      shown: BrowserWindow.getAllWindows().filter((each) => each.isVisible()).length,
+      focused: BrowserWindow.getFocusedWindow() !== null,
+      dock: app.dock?.isVisible() ?? false,
+    })),
+  ).toEqual({ shown: 0, focused: false, dock: false });
+});
 
 test.describe('on a Mac', () => {
   test.skip(!mac, 'Only a Mac app keeps running with its window closed.');
@@ -123,14 +133,15 @@ test.describe('on a Mac', () => {
   test('opens its window again from a notification about a run, after it was closed', async () => {
     if (!opened) throw new Error('The app isn’t open.');
     const { app, window } = opened;
-    // The user is looking elsewhere, and notifications are kept here, not shown.
-    await app.evaluate(({ BrowserWindow, Notification }) => {
+    // The user is looking elsewhere. In quiet mode, notifications are only asked for, and kept here.
+    await app.evaluate(({ app, BrowserWindow }) => {
       const shown: unknown[] = [];
       Object.assign(globalThis, { shown });
       BrowserWindow.prototype.isFocused = () => false;
-      Notification.prototype.show = function (this: unknown) {
-        shown.push(this);
-      };
+      // An event of the app's own, which Electron's types don't list.
+      (app as unknown as NodeJS.EventEmitter).on('quiet-notification', (notification: unknown) =>
+        shown.push(notification),
+      );
     });
     await window.getByRole('button', { name: 'Find jobs' }).click();
     await window

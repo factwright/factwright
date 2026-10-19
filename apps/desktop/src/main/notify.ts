@@ -2,6 +2,7 @@ import { app, Notification } from 'electron';
 import type { RunSignal } from '../shared/api.ts';
 import type { RequestView } from '../shared/sync.ts';
 import type { MainWindow, WindowLike } from './main-window.ts';
+import { present, QUIET } from './quiet.ts';
 import type { CallReminder } from './reminders.ts';
 
 const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
@@ -36,7 +37,7 @@ export function notifyOfRequests(
     body: `${first.device} asked to sync your job hunt. Open Factwright to check it’s yours.`,
   });
   notification.on('click', () => window.show());
-  notification.show();
+  present(notification);
 }
 
 /**
@@ -53,8 +54,8 @@ export function notifyIfAway(
   if (!message || !window.current() || window.focused()) return;
   const notification = new Notification({ ...message, silent: signal !== 'needs-answer' });
   notification.on('click', () => window.show());
-  notification.show();
-  if (signal === 'needs-answer') app.dock?.bounce('informational');
+  present(notification);
+  if (signal === 'needs-answer' && !QUIET) app.dock?.bounce('informational');
 }
 
 /**
@@ -82,5 +83,5 @@ export function remindOfCall(reminder: CallReminder, open: (jobId: string) => vo
     if (reminding.size <= 20) break;
     reminding.delete(held);
   }
-  notification.show();
+  present(notification);
 }

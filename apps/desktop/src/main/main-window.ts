@@ -14,6 +14,8 @@ export interface MainWindowDeps<W extends WindowLike> {
   open: () => W;
   /** Once the window that's open closes, whether by the user or as the app quits. */
   closed: () => void;
+  /** In quiet mode, for the app's tests, a window is opened but never brought forward. */
+  quiet?: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ export class MainWindow<W extends WindowLike> {
       this.open();
       return;
     }
+    if (this.deps.quiet) return;
     if (open.isMinimized()) open.restore();
     open.focus();
   }

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { DARK, LIGHT } from '@factwright/ui/tokens';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import { SYNC_ARGUMENT, VERSION_ARGUMENT } from '../shared/api.ts';
+import { QUIET } from './quiet.ts';
 
 /** The height of the window's top bar, which the title bar buttons sit in. */
 const TOP_BAR_HEIGHT = 52;
@@ -42,6 +43,8 @@ export function createMainWindow(url: string, factwrightSync: boolean): BrowserW
         `${VERSION_ARGUMENT}${app.getVersion()}`,
         ...(factwrightSync ? [SYNC_ARGUMENT] : []),
       ],
+      // Hidden in quiet mode, the window keeps its timers and drawing going, as the tests need.
+      backgroundThrottling: !QUIET,
     },
   });
 
@@ -51,7 +54,10 @@ export function createMainWindow(url: string, factwrightSync: boolean): BrowserW
   };
   nativeTheme.on('updated', followTheme);
   window.on('closed', () => nativeTheme.off('updated', followTheme));
-  window.once('ready-to-show', () => window.show());
+  // In quiet mode it stays hidden, so it never takes the keyboard from whoever is at the computer.
+  window.once('ready-to-show', () => {
+    if (!QUIET) window.show();
+  });
 
   void window.loadURL(url);
   return window;
