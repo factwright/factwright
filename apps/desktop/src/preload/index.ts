@@ -20,6 +20,7 @@ const api: FactwrightApi = {
   onClaudeOutput: (listener) => subscribe('claude:output', listener),
   onClaudeSignal: (listener) => subscribe('claude:signal', listener),
   onClaudeTrust: (listener) => subscribe('claude:trust', listener),
+  onClaudeFirstRun: (listener) => subscribe('claude:first-run', listener),
   claudeQuestion: () => ipcRenderer.invoke('claude:question'),
   onClaudeQuestion: (listener) => subscribe('claude:question', listener),
   answerClaude: (id, reply) => ipcRenderer.invoke('claude:answer', id, reply),

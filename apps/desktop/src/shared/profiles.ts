@@ -13,11 +13,14 @@ export interface ProfileEntry {
   named: boolean;
 }
 
-/** The profiles on this computer, and how the open one signs in to Claude Code. */
+/** The profiles on this computer, and where the open one keeps its Claude login. */
 export interface ProfileList {
   profiles: ProfileEntry[];
-  /** The command that signs the open profile in to Claude Code, which the user runs themselves. */
-  claudeSignIn: string;
+  /**
+   * The open profile's own Claude Code folder, which the command the user runs to sign it in
+   * names, or null for the first profile, which uses their own setup.
+   */
+  claudeFolder: string | null;
   /** The profile whose last start stopped short, so the first profile opened in its place. */
   stopped?: string;
 }

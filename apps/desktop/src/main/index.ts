@@ -218,7 +218,6 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const profiles = new Profiles({
       home,
       open: profile,
-      platform: process.platform,
       ownName: () => about.answers().you.name,
       trash: (path) => shell.trashItem(path),
       busy: () => claude.busy(),
@@ -383,6 +382,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       onTrust: () => {
         window.send('claude:trust');
+        notifyIfAway(window, 'needs-answer');
+      },
+      onFirstRun: () => {
+        window.send('claude:first-run');
         notifyIfAway(window, 'needs-answer');
       },
       onFiled: (filed) => window.send('facts:filed', filed),

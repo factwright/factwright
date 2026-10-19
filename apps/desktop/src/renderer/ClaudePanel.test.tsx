@@ -20,7 +20,7 @@ afterEach(() => {
 /** Whether the terminal was last drawn outlined, as waiting on the user. */
 const outlined = () => terminal.mock.lastCall?.[0]?.attention === true;
 
-const run = (open: boolean, trustAsked = false) =>
+const run = (open: boolean, trustAsked = false, firstRun = false) =>
   ({
     phase: 'needs-answer',
     open,
@@ -28,6 +28,7 @@ const run = (open: boolean, trustAsked = false) =>
     runId: 1,
     task: null,
     trustAsked,
+    firstRun,
     typed: vi.fn(),
     requestStart: vi.fn(),
     onTerminalSize: vi.fn(),
@@ -140,5 +141,31 @@ describe('ClaudePanel', () => {
     );
     expect(panel.textContent).not.toContain('asking you something in the terminal below');
     expect(outlined()).toBe(false);
+  });
+
+  it('explains Claude Code’s first-run screens while they show, waiting on the user', () => {
+    const starting = { ...run(true, false, true), phase: 'starting' } satisfies ClaudeRun;
+    const { rerender } = render(
+      <ClaudePanel api={{} as FactwrightApi} run={starting} plan="Max" />,
+    );
+    const panel = screen.getByRole('region', { name: 'Claude' });
+    expect(screen.getByRole('note').textContent).toBe(
+      'Claude Code shows a few screens the first time it opensPress Enter on each one to go on. The text style it asks about only changes how Claude Code looks in your own terminal. Then it asks whether to trust your workspace, which needs the arrow keys first.',
+    );
+    expect(panel.textContent).toContain('Needs your answer');
+    expect(panel.textContent).not.toContain('asking you something in the terminal below');
+    expect(outlined()).toBe(true);
+    // Then the question about trust, with its own note.
+    rerender(
+      <ClaudePanel
+        api={{} as FactwrightApi}
+        run={{ ...starting, trustAsked: true, firstRun: false }}
+        plan="Max"
+      />,
+    );
+    expect(screen.getAllByRole('note')).toHaveLength(1);
+    expect(screen.getByRole('note').textContent).toContain(
+      'Claude Code asks once whether to trust your workspace',
+    );
   });
 });

@@ -37,10 +37,7 @@ export function sampleProfiles(choice: string | null): ProfilesApi {
       const open = profiles.find((profile) => profile.open);
       return {
         profiles,
-        claudeSignIn:
-          open && !open.first
-            ? `CLAUDE_CONFIG_DIR='${folder(open.id)}' claude auth login`
-            : 'claude auth login',
+        claudeFolder: open && !open.first ? folder(open.id) : null,
         ...(choice === 'stopped' && { stopped: 'Sam' }),
       };
     },

@@ -51,7 +51,13 @@ import type {
 } from './sync.ts';
 import type { UpdateStatus } from './updates.ts';
 
-/** Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready. */
+/**
+ * Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready.
+ * Until then, the window shows commands for the user to run in their terminal, and `claude` is
+ * what they type to start Claude Code there, when that isn't just `claude`: its whole path, such
+ * as `~/.local/bin/claude`. Its installer doesn't add its folder to PATH on Windows, nor always
+ * on a Mac. While it's missing, it's where its own installer puts it.
+ */
 export type ClaudeStatus =
   | {
       state: 'ready';
@@ -64,20 +70,22 @@ export type ClaudeStatus =
        */
       method?: string | undefined;
     }
-  | { state: 'signed-out'; version: string }
-  | { state: 'too-old'; version: string; minimum: string }
-  | { state: 'missing' }
-  | { state: 'unknown' };
+  | { state: 'signed-out'; version: string; claude?: string }
+  | { state: 'too-old'; version: string; minimum: string; claude?: string }
+  | { state: 'missing'; claude?: string }
+  | { state: 'unknown'; claude?: string };
 
 /**
  * Whether Factwright's setup works with the user's Claude Code, from a check that starts it
  * hidden with no prompt, so it uses none of their plan. "untrusted" means Claude Code is still
- * waiting for the user to trust the workspace, which they do in their first run.
+ * waiting for the user to trust the workspace, which they do in their first run. "first-run"
+ * means it's showing the screens it shows until someone presses Enter through them once, which
+ * the user does in Claude's panel.
  */
 export interface SetupCheck {
   /** The Claude Code version checked. */
   version: string;
-  result: 'passed' | 'failed' | 'untrusted';
+  result: 'passed' | 'failed' | 'untrusted' | 'first-run';
   /** For a failure, what went wrong, in plain words. */
   problem?: string;
   /** When, as an ISO time. */
@@ -87,8 +95,11 @@ export interface SetupCheck {
 /** A PDF's bytes, for showing its pages in the window, or why there are none. */
 export type PdfResult = { ok: true; data: Uint8Array } | { ok: false; message: string };
 
-/** Where a run in Claude's panel stands. Claude Code's hooks report it, and so does its exit. */
-export type RunSignal = 'working' | 'needs-answer' | 'done' | 'stopped' | 'failed';
+/**
+ * Where a run in Claude's panel stands. Claude Code's hooks report it, and so does its exit.
+ * "ready" is a run started with nothing to do yet, open and waiting for what the user types.
+ */
+export type RunSignal = 'ready' | 'working' | 'needs-answer' | 'done' | 'stopped' | 'failed';
 
 /** The size of Claude's panel, in characters. */
 export interface TerminalSize {
@@ -270,6 +281,11 @@ export interface FactwrightApi {
    * first run. Returns a function that stops listening.
    */
   onClaudeTrust(listener: () => void): () => void;
+  /**
+   * Listens for Claude Code showing its first-run screens, which it does until someone presses
+   * Enter through them once. Returns a function that stops listening.
+   */
+  onClaudeFirstRun(listener: () => void): () => void;
   /** The round of Claude's questions waiting on the user to answer in the window, or null. */
   claudeQuestion(): Promise<QuestionRound | null>;
   /**

@@ -64,6 +64,8 @@
   color: var(--fw-text);
   font-family: var(--fw-font-mono);
   font-size: var(--fw-text-xs);
+  /* A command with a whole path in it is longer than the card is wide. */
+  overflow-wrap: anywhere;
 }
 
 .help a {

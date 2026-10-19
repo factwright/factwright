@@ -115,6 +115,22 @@ describe('checkSetup', () => {
     await expect(big.found).resolves.toEqual({ result: 'untrusted' });
   });
 
+  it('stops at Claude Code’s first-run screens, which the user goes through in Claude’s panel', async () => {
+    const { claude, found } = await begin();
+    // As Claude Code 2.1.302 draws its first screen, in pieces, moving the cursor between words.
+    claude.show("\x1b[2GLet's\x1b[8Gget\x1b[12Gstarted.\r\r\n\r\r\n\x1b[2G\x1b[1mChoose\x1b[9Gthe");
+    claude.show('\x1b[13Gtext\x1b[18Gstyle\x1b[24Gthat\x1b[29Glooks\x1b[35Gbest');
+    // At once, not after a minute.
+    await expect(found).resolves.toEqual({ result: 'first-run' });
+    expect(claude.killed).toBe(true);
+    // Its security notes say to use it with code you trust, which isn't the question about trust.
+    const notes = await begin();
+    notes.claude.show(
+      `\x1b[1mSecurity notes:\x1b[22m 1. Claude can make mistakes. 2. Due to prompt injection risks, only use it with code you trust${' '.repeat(20_000)}`,
+    );
+    await expect(notes.found).resolves.toEqual({ result: 'first-run' });
+  });
+
   it('says what Claude Code showed when it closes before reaching the tools', async () => {
     const { claude, found } = await begin();
     claude.show("error: unknown option '--restricted'\r\n");
@@ -301,6 +317,22 @@ describe('SetupChecker', () => {
     setup.checkIfNeeded('2.1.301');
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(check).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a check that stopped on Claude Code’s first-run screens, and is busy while one runs', async () => {
+    const kept = { version: '2.1.300', result: 'first-run', at: '2026-10-10T18:00:00.000Z' };
+    writeFileSync(file, JSON.stringify(kept));
+    let finish: (finding: SetupFinding | null) => void = () => {};
+    check.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    const setup = checker();
+    await setup.load();
+    expect(setup.current()).toEqual(kept);
+    expect(setup.busy()).toBe(false);
+    const going = setup.check('2.1.300');
+    expect(setup.busy()).toBe(true);
+    finish({ result: 'passed' });
+    await going;
+    expect(setup.busy()).toBe(false);
   });
 
   it('ignores a kept file that isn’t a check', async () => {

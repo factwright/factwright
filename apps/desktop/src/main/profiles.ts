@@ -6,12 +6,15 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { hostname } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import type { EditResult } from '../shared/api.ts';
 import {
   type AddProfileResult,
@@ -287,24 +290,99 @@ export function prepareClaudeFolder(folder: string): void {
   }
 }
 
-/** Text in single quotes for a Mac or Linux shell, which take everything in them as it is. */
-const shellQuoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+/** The setting Claude Code saves once someone presses Enter through its first-run screens. */
+const FIRST_RUN_DONE = 'hasCompletedOnboarding';
 
-/** Text in single quotes for PowerShell, which takes curly single quotes as quotes too. */
-const powerShellQuoted = (text: string) => `'${text.replace(/['‘’‚‛]/g, '$&$&')}'`;
+/** Whether Claude Code's first-run screens were marked done, already were, or were left alone. */
+export type FirstRunMark = 'marked' | 'already' | 'left';
 
 /**
- * The command that signs a profile in to Claude Code, for the user to run in their terminal:
- * with the profile's own Claude Code folder, when it has one. On a Mac the folder holds for that
- * one command. PowerShell would keep it for the rest of the window, where someone signing in to
- * another profile next would sign in to this one, so the command puts it back as it was, even
- * when stopped with Ctrl+C.
+ * Marks Claude Code's first-run screens done in the config it reads, as pressing Enter through
+ * them does, so they never stop a run or the setup check: in `folder`, the one Claude Code runs
+ * with as CLAUDE_CONFIG_DIR, or else the home folder. Signing in with `claude auth login` doesn't
+ * mark them. Only that one setting is added: everything else in the file stays as it was. It's
+ * written whole or not at all, under Claude Code's own lock, so a Claude Code saving its config
+ * at the same moment never loses its change, nor this one. Left alone: a config Claude Code
+ * couldn't read either, one in its older place, which it reads instead, one whose lock a Claude
+ * Code holds, which waits for the next time, and one in a folder named from where Claude Code
+ * runs, which isn't where the app is.
  */
-export function signInCommand(platform: NodeJS.Platform, folder: string | null): string {
-  if (!folder) return 'claude auth login';
-  return platform === 'win32'
-    ? `$saved = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = ${powerShellQuoted(folder)}; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $saved }`
-    : `CLAUDE_CONFIG_DIR=${shellQuoted(folder)} claude auth login`;
+export function markFirstRunDone(folder: string | null, home: string): FirstRunMark {
+  if (folder !== null && !isAbsolute(folder)) return 'left';
+  const file = join(folder ?? home, '.claude.json');
+  if (existsSync(join(folder ?? join(home, '.claude'), '.config.json'))) return 'left';
+  const before = readConfig(file);
+  if (before?.[FIRST_RUN_DONE] === true) return 'already';
+  if (!before) return 'left';
+  // Claude Code's lock: a folder beside its config, made before it saves and removed after.
+  const lock = `${file}.lock`;
+  try {
+    mkdirSync(lock);
+  } catch {
+    return 'left';
+  }
+  try {
+    // As it is now, under the lock.
+    const config = readConfig(file);
+    if (config?.[FIRST_RUN_DONE] === true) return 'already';
+    if (!config) return 'left';
+    writeConfig(file, { ...config, [FIRST_RUN_DONE]: true });
+    return 'marked';
+  } catch {
+    return 'left';
+  } finally {
+    try {
+      rmdirSync(lock);
+    } catch {
+      // Left to go stale, as Claude Code's own are when it can't remove them.
+    }
+  }
+}
+
+/**
+ * Claude Code's config: empty when there's none yet, or null when there's something else there,
+ * such as a file it couldn't read either, or a link to a config that's gone.
+ */
+function readConfig(file: string): Record<string, unknown> | null {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' && !isLink(file) ? {} : null;
+  }
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Writes Claude Code's config whole, the way it does: through a link to it, so a config kept
+ * elsewhere stays there, and readable only by its owner, unless it was readable by more.
+ */
+function writeConfig(file: string, config: object): void {
+  const target = existsSync(file) ? realpathSync(file) : file;
+  const mode = existsSync(target) ? statSync(target).mode & 0o777 : 0o600;
+  const draft = `${target}.${randomBytes(4).toString('hex')}.tmp`;
+  try {
+    writeFileSync(draft, JSON.stringify(config, null, 2), { mode, flag: 'wx' });
+    renameSync(draft, target);
+  } catch (error) {
+    rmSync(draft, { force: true });
+    throw error;
+  }
 }
 
 export interface ProfilesDeps {
@@ -312,7 +390,6 @@ export interface ProfilesDeps {
   home: string;
   /** The profile that's open. */
   open: ProfileFolder;
-  platform: NodeJS.Platform;
   /** The open profile's own name, from About you, to name the first profile by. */
   ownName: () => string;
   /** Moves a folder to the trash, where it can be restored. */
@@ -339,7 +416,7 @@ export class Profiles {
   }
 
   list(): ProfileList {
-    const { home, open, platform } = this.deps;
+    const { home, open } = this.deps;
     return {
       profiles: listProfiles(home).map((profile) => ({
         id: profile.id,
@@ -348,7 +425,7 @@ export class Profiles {
         first: profile.id === FIRST_PROFILE,
         named: profile.named,
       })),
-      claudeSignIn: signInCommand(platform, claudeFolder(open)),
+      claudeFolder: claudeFolder(open),
       ...(this.deps.stopped && { stopped: this.deps.stopped.name }),
     };
   }

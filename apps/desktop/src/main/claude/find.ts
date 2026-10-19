@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
+import { claudeByPath } from '../../shared/claude-commands.ts';
 
 /** What findClaude needs from the computer, passed in so tests run the same on any OS. */
 export interface FindDeps {
@@ -24,12 +25,35 @@ const execFileAsync = promisify(execFile);
  * shell. An app opened from Finder or the Start menu doesn't get the PATH a terminal has.
  */
 export async function findClaude(deps: FindDeps): Promise<string | null> {
-  const { isAbsolute } = deps.platform === 'win32' ? win32 : posix;
-  for (const path of candidates(deps)) {
-    // A relative path would depend on the current folder, so only absolute ones count.
-    if (isAbsolute(path) && (await deps.isFile(path))) return path;
-  }
+  const found = await firstFile([...onPath(deps), ...installSpots(deps)], deps);
+  if (found) return found;
   return deps.platform === 'win32' ? null : askLoginShell(deps);
+}
+
+/**
+ * What the user types to start the claude at `path` in a new terminal window: null when `claude`
+ * alone starts it, or else its whole path. Claude Code's installer doesn't add its folder to PATH
+ * on Windows, nor always on a Mac. A new PowerShell window has the PATH the app has. A new
+ * Terminal window on a Mac has the login shell's, which an app opened from Finder doesn't, so the
+ * shell is asked.
+ */
+export async function claudeInTerminal(path: string, deps: FindDeps): Promise<string | null> {
+  const windows = deps.platform === 'win32';
+  const { normalize } = windows ? win32 : posix;
+  // Windows' paths ignore case.
+  const key = (each: string) => (windows ? normalize(each).toLowerCase() : normalize(each));
+  const same = (found: string | null) => found !== null && key(found) === key(path);
+  if (same(await firstFile(onPath(deps), deps))) return null;
+  if (!windows && same(await askLoginShell(deps))) return null;
+  return claudeByPath(deps.platform, path, deps.home);
+}
+
+/**
+ * What the user types to start Claude Code once its own installer has put it in place: its whole
+ * path, as a new terminal window may not find it by name.
+ */
+export function installedClaude(deps: FindDeps): string {
+  return claudeByPath(deps.platform, nativeSpot(deps), deps.home);
 }
 
 /** FindDeps for the computer the app runs on, from Node's own modules. */
@@ -54,29 +78,46 @@ export function nodeFindDeps(): FindDeps {
   };
 }
 
-/** Each PATH folder, then where Claude Code's installers put it. */
-function candidates({ platform, env, home }: FindDeps): string[] {
+/** The first of `paths` that's a file. */
+async function firstFile(paths: string[], { platform, isFile }: FindDeps): Promise<string | null> {
+  const { isAbsolute } = platform === 'win32' ? win32 : posix;
+  for (const path of paths) {
+    // A relative path would depend on the current folder, so only absolute ones count.
+    if (isAbsolute(path) && (await isFile(path))) return path;
+  }
+  return null;
+}
+
+/** `claude` in each PATH folder, in the order the system looks. */
+function onPath({ platform, env }: FindDeps): string[] {
   if (platform === 'win32') {
     // Windows finds `claude` by trying each PATHEXT extension: claude.exe, claude.cmd and so on.
     const names = (env.PATHEXT || DEFAULT_PATHEXT)
       .split(';')
       .filter(Boolean)
       .map((extension) => `claude${extension.toLowerCase()}`);
-    const onPath = (env.PATH ?? '')
+    return (env.PATH ?? '')
       .split(win32.delimiter)
       .flatMap((folder) => names.map((name) => win32.join(folder, name)));
-    return [
-      ...onPath,
-      win32.join(home, '.local', 'bin', 'claude.exe'),
-      win32.join(env.APPDATA ?? '', 'npm', 'claude.cmd'),
-    ];
   }
-  const onPath = (env.PATH ?? '')
-    .split(posix.delimiter)
-    .map((folder) => posix.join(folder, 'claude'));
+  return (env.PATH ?? '').split(posix.delimiter).map((folder) => posix.join(folder, 'claude'));
+}
+
+/** Where Claude Code's own installer puts it. */
+function nativeSpot({ platform, home }: FindDeps): string {
+  return platform === 'win32'
+    ? win32.join(home, '.local', 'bin', 'claude.exe')
+    : posix.join(home, '.local/bin/claude');
+}
+
+/** Where Claude Code's installers put it, its own installer's first. */
+function installSpots(deps: FindDeps): string[] {
+  const { platform, env, home } = deps;
+  if (platform === 'win32') {
+    return [nativeSpot(deps), win32.join(env.APPDATA ?? '', 'npm', 'claude.cmd')];
+  }
   return [
-    ...onPath,
-    posix.join(home, '.local/bin/claude'),
+    nativeSpot(deps),
     posix.join(home, '.claude/local/claude'),
     '/opt/homebrew/bin/claude',
     '/usr/local/bin/claude',

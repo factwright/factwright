@@ -3,31 +3,35 @@ import type { EditResult, SetupCheck } from '../shared/api.ts';
 import styles from './ClaudeCard.module.css';
 import { planName } from './plan.ts';
 import { type CardTone, SidebarCard } from './SidebarCard.tsx';
-import type { ClaudeStatusView } from './useClaudeStatus.ts';
+import { type ClaudeStatusView, typedClaude } from './useClaudeStatus.ts';
 
 const INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 
-/** An added profile's own Claude sign-in: its command, too long for the card, and copying it. */
-export interface OwnSignIn {
-  command: string;
-  copy: (text: string) => Promise<EditResult>;
-}
+/** Copies text to the clipboard, saying when it couldn't. */
+type Copy = (text: string) => Promise<EditResult>;
 
-/** Copies an added profile's sign-in command, read as a link in the card's help. */
-function CopySignIn({ signIn }: { signIn: OwnSignIn }) {
+/**
+ * Copies a command the user runs in their terminal, read as a link in the card's help. Each
+ * command gets its own, keyed by the command, so a new one never shows as copied.
+ */
+function CopyCommand({ command, copy }: { command: string; copy: Copy | undefined }) {
   const [copied, setCopied] = useState(false);
+  if (!copy) return null;
   return (
-    <button
-      type="button"
-      className={styles.link}
-      onClick={() =>
-        void signIn.copy(signIn.command).then((result) => {
-          if (result.ok) setCopied(true);
-        })
-      }
-    >
-      {copied ? 'Copied' : 'Copy the command'}
-    </button>
+    <>
+      {' '}
+      <button
+        type="button"
+        className={styles.link}
+        onClick={() =>
+          void copy(command).then((result) => {
+            if (result.ok) setCopied(true);
+          })
+        }
+      >
+        {copied ? 'Copied' : 'Copy the command'}
+      </button>
+    </>
   );
 }
 
@@ -39,19 +43,52 @@ interface CardView {
   recheck: 'status' | 'setup' | null;
 }
 
-/** How each status reads, in plain words, with the fix when there is one. */
+/**
+ * How each status reads, in plain words, with the fix when there is one. A command that starts
+ * Claude Code by its whole path, as one for a terminal that doesn't find `claude` by name, is
+ * long to type, so the card offers to copy it.
+ */
 function describe(
   status: ClaudeStatusView,
   setup: SetupCheck | null,
-  signIn: OwnSignIn | undefined,
+  { signIn, copy }: { signIn: string | undefined; copy: Copy | undefined },
   terminal: string,
+  onOpenClaude: (() => void) | undefined,
 ): CardView {
   if (status === 'checking') return { tone: 'checking', line: 'Checking…', recheck: null };
+  const claude = typedClaude(status);
+  const byPath = claude !== 'claude';
+  /** A link that copies a command shown in the card, when it starts Claude Code by its path. */
+  const copyLong = (command: string) =>
+    byPath && <CopyCommand key={command} command={command} copy={copy} />;
   switch (status.state) {
     case 'ready': {
       const plan = planName(status.plan);
       // Only a check of the version installed now counts. An older one ran before an update.
-      if (setup?.result === 'failed' && setup.version === status.version) {
+      const current = setup?.version === status.version;
+      // Claude Code waits on screens the user goes through once, which aren't Factwright's to fix.
+      if (setup?.result === 'first-run' && current) {
+        return {
+          tone: 'need',
+          line: 'Claude Code’s first screens',
+          help: (
+            <>
+              Claude Code shows a few screens the first time it opens. In Claude’s panel, press
+              Enter through them, then check again.
+              {onOpenClaude && (
+                <>
+                  {' '}
+                  <button type="button" className={styles.link} onClick={onOpenClaude}>
+                    Open Claude’s panel
+                  </button>
+                </>
+              )}
+            </>
+          ),
+          recheck: 'setup',
+        };
+      }
+      if (setup?.result === 'failed' && current) {
         return {
           tone: 'bad',
           line: 'Setup check failed',
@@ -73,11 +110,13 @@ function describe(
         help: signIn ? (
           <>
             This profile has its own Claude login. In {terminal}, run its sign-in command, then come
-            back. <CopySignIn signIn={signIn} />
+            back.
+            <CopyCommand key={signIn} command={signIn} copy={copy} />
           </>
         ) : (
           <>
-            In {terminal}, run <code>claude auth login</code>, then come back.
+            In {terminal}, run <code>{claude} auth login</code>, then come back.
+            {copyLong(`${claude} auth login`)}
           </>
         ),
         recheck: 'status',
@@ -89,7 +128,7 @@ function describe(
         help: (
           <>
             Version {status.version} is older than Factwright needs. In {terminal}, run{' '}
-            <code>claude update</code>.
+            <code>{claude} update</code>.{copyLong(`${claude} update`)}
           </>
         ),
         recheck: 'status',
@@ -106,7 +145,8 @@ function describe(
               How to install it
             </a>
             . Then, in {terminal}, sign in with this profile’s own command, not plain{' '}
-            <code>claude</code>. <CopySignIn signIn={signIn} />
+            <code>claude</code>.
+            <CopyCommand key={signIn} command={signIn} copy={copy} />
           </>
         ) : (
           <>
@@ -122,7 +162,14 @@ function describe(
       return {
         tone: 'bad',
         line: 'Couldn’t check Claude Code',
-        help: `Make sure it opens in ${terminal}, then check again.`,
+        help: byPath ? (
+          <>
+            Make sure <code>{claude} --version</code> prints its version in {terminal}, then check
+            again.{copyLong(`${claude} --version`)}
+          </>
+        ) : (
+          `Make sure it opens in ${terminal}, then check again.`
+        ),
         recheck: 'status',
       };
   }
@@ -136,25 +183,34 @@ export function ClaudeCard({
   status,
   onRecheck,
   signIn,
+  copy,
   terminal = 'Terminal',
   setup = null,
   checkingSetup = false,
   onCheckSetup,
+  onOpenClaude,
   onSettings,
 }: {
   status: ClaudeStatusView;
   onRecheck: () => void;
-  /** An added profile's own sign-in, which its signed-out help copies. */
-  signIn?: OwnSignIn | undefined;
+  /** An added profile's own sign-in command, too long for the card, which its help copies. */
+  signIn?: string | undefined;
+  /** Copies a command that's long to type: that one, or one with Claude Code's whole path. */
+  copy?: Copy | undefined;
   /** Where the user runs Claude Code's commands: PowerShell on Windows, Terminal on a Mac. */
   terminal?: string;
   setup?: SetupCheck | null;
   checkingSetup?: boolean;
   onCheckSetup?: () => void;
+  /**
+   * Opens Claude's panel, for the user to go through Claude Code's first-run screens, when it
+   * isn't open already.
+   */
+  onOpenClaude?: (() => void) | undefined;
   /** Opens Claude's settings, once Claude is ready to run. */
   onSettings?: () => void;
 }) {
-  const view = describe(status, setup, signIn, terminal);
+  const view = describe(status, setup, { signIn, copy }, terminal, onOpenClaude);
   const checking = view.recheck === 'setup' && checkingSetup;
   const ready = status !== 'checking' && status.state === 'ready' && !view.recheck;
   return (

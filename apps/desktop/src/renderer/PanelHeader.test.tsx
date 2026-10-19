@@ -22,6 +22,7 @@ describe('PanelHeader', () => {
   });
 
   it.each([
+    ['ready', 'Ready', 'Claude Code is ready. Type what you’d like.'],
     ['working', 'Working', 'Keep working. You’ll hear when Claude needs you.'],
     ['needs-answer', 'Needs your answer', 'Claude has a question. Answer it in the panel below.'],
     ['done', 'Done', 'Claude is done. Type to keep going, or close the panel.'],

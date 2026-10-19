@@ -5,6 +5,7 @@ import type { RunPhase } from './useClaudeRun.ts';
 const HINTS: Readonly<Record<RunPhase, string>> = {
   idle: '',
   starting: 'Claude Code is starting. Then type what you’d like.',
+  ready: 'Claude Code is ready. Type what you’d like.',
   working: 'Keep working. You’ll hear when Claude needs you.',
   'needs-answer': 'Claude has a question. Answer it in the panel below.',
   done: 'Claude is done. Type to keep going, or close the panel.',
@@ -27,7 +28,11 @@ export function chipState(phase: RunPhase, problem: string | undefined): RunStat
 /** Whether Claude Code is still open, and so can be stopped or tucked away. */
 export function isRunning(phase: RunPhase): boolean {
   return (
-    phase === 'starting' || phase === 'working' || phase === 'needs-answer' || phase === 'done'
+    phase === 'starting' ||
+    phase === 'ready' ||
+    phase === 'working' ||
+    phase === 'needs-answer' ||
+    phase === 'done'
   );
 }
 

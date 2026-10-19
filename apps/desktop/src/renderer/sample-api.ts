@@ -32,8 +32,12 @@ const PLANS: Readonly<Record<string, ClaudeStatus>> = {
   api: { state: 'ready', version: READY.version, method: 'api_key' },
 };
 
-/** Setup checks for ?setup=: the one a new version of Claude Code could fail, or a pass. */
+/**
+ * Setup checks for ?setup=: the one a new version of Claude Code could fail, one that stopped on
+ * Claude Code's first-run screens, or a pass.
+ */
 const SETUP_CHECKS: Readonly<Record<string, SetupCheck>> = {
+  'first-run': { version: READY.version, result: 'first-run', at: '2026-10-11T18:00:00.000Z' },
   failed: {
     version: READY.version,
     result: 'failed',
@@ -60,6 +64,24 @@ function sampleRun(dark: boolean) {
   const [main, secondary, bar] = dark ? ['97', '37', '100'] : ['30', '90', '47'];
   const color = (code: string, text: string) => `\x1b[${code}m${text}\x1b[0m`;
   return {
+    /** Claude Code's first-run screens, each until Enter, for ?first-run=show. */
+    firstRun: [
+      [
+        '\x1b[H\x1b[2J',
+        ` ${color(main, 'Let’s get started.')}\r\n\r\n`,
+        ` ${color(`1;${main}`, 'Choose the text style that looks best with your terminal')}\r\n`,
+        ` ${color(secondary, 'To change this later, run /theme')}\r\n\r\n`,
+        ` ${color('34', '❯ 1. Dark mode ✔')}\r\n`,
+        `   ${color(main, '2. Light mode')}\r\n`,
+      ],
+      [
+        '\x1b[H\x1b[2J',
+        ` ${color(`1;${main}`, 'Security notes:')}\r\n\r\n`,
+        ` ${color(secondary, '1.')} ${color(main, 'Claude can make mistakes.')}\r\n`,
+        ` ${color(secondary, '2.')} ${color(main, 'Due to prompt injection risks, only use it with code you trust')}\r\n\r\n`,
+        ` ${color(secondary, 'Press Enter to continue…')}\r\n`,
+      ],
+    ],
     /** Claude Code's question, the first time it opens a folder, for ?trust=ask. */
     trust: [
       ` ${color(`1;${main}`, 'Do you trust the files in this folder?')}\r\n\r\n`,
@@ -344,7 +366,9 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
 
 /**
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
- * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. ?plan picks the
+ * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. With
+ * ?path=off, a new terminal doesn't find Claude Code by name, as after its installer on Windows,
+ * so the steps start it by its whole path, as they do while it's missing. ?plan picks the
  * plan Claude is ready on: pro, team, or api for an API key. ?jobs picks the jobs: none, failed
  * or loading. ?profile picks how far the user's profile has come: new, started or done.
  * ?profiles picks how many profiles there are: two, three with an added one open (added), or two
@@ -374,6 +398,10 @@ export function sampleApi(): FactwrightApi {
   // permission prompt, with ?permit=.
   let afterAnswer: 'opening' | 'round' | 'permission' = 'opening';
   const asks = query.get('run') === 'asks';
+  // ?first-run=show starts with Claude Code's first-run screens, once, each until Enter.
+  let firstRunLeft = query.get('first-run') === 'show' ? 2 : 0;
+  let afterFirstRun: () => void = () => {};
+  const firstRunListeners = new Set<() => void>();
   // ?trust=ask starts with Claude Code's question about trusting the folder, once.
   let waitingForTrust = false;
   let trusted = query.get('trust') !== 'ask';
@@ -444,10 +472,18 @@ export function sampleApi(): FactwrightApi {
   return {
     platform: query.get('platform') ?? 'darwin',
     version: query.get('version') ?? '0.1.0',
-    claudeStatus: () =>
-      claude === 'checking'
-        ? new Promise(() => {})
-        : Promise.resolve(claude === 'ready' ? ready : (SAMPLES[claude] ?? ready)),
+    claudeStatus: () => {
+      if (claude === 'checking') return new Promise(() => {});
+      const status = claude === 'ready' ? ready : (SAMPLES[claude] ?? ready);
+      // Where Claude Code's own installer puts it, as the app says it on each system.
+      const typed =
+        (query.get('platform') ?? 'darwin') === 'win32'
+          ? '& "$env:USERPROFILE\\.local\\bin\\claude.exe"'
+          : '~/.local/bin/claude';
+      const byPath =
+        status.state !== 'ready' && (status.state === 'missing' || query.get('path') === 'off');
+      return Promise.resolve(byPath ? { ...status, claude: typed } : status);
+    },
     setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
     // Checking again takes a moment, then passes, as it would once Factwright is updated.
     checkSetup: () =>
@@ -471,15 +507,29 @@ export function sampleApi(): FactwrightApi {
           else askRound(openingRound(roundAsked), 'opening');
         }, 1800);
       };
-      if (trusted) {
-        play();
+      const askTrust = () => {
+        if (trusted) {
+          play();
+          return;
+        }
+        afterTrust = play;
+        setTimeout(() => {
+          print(run.trust);
+          waitingForTrust = true;
+          for (const listener of trustListeners) listener();
+        }, 300);
+      };
+      if (firstRunLeft === 0) {
+        askTrust();
         return { ok: true };
       }
-      afterTrust = play;
+      afterFirstRun = () => {
+        print(['\x1b[H\x1b[2J']);
+        askTrust();
+      };
       setTimeout(() => {
-        print(run.trust);
-        waitingForTrust = true;
-        for (const listener of trustListeners) listener();
+        print(run.firstRun[0] ?? []);
+        for (const listener of firstRunListeners) listener();
       }, 300);
       return { ok: true };
     },
@@ -499,6 +549,20 @@ export function sampleApi(): FactwrightApi {
       signal('stopped');
     },
     writeToClaude: (data) => {
+      if (firstRunLeft > 0 && data.includes('\r')) {
+        firstRunLeft -= 1;
+        if (firstRunLeft === 0) {
+          afterFirstRun();
+          return;
+        }
+        // A moment later, as Claude Code draws it, the next screen says so too, as in the app.
+        const next = run.firstRun[run.firstRun.length - firstRunLeft] ?? [];
+        setTimeout(() => {
+          print(next);
+          for (const listener of firstRunListeners) listener();
+        }, 150);
+        return;
+      }
       if (waitingForTrust && data.includes('\r')) {
         waitingForTrust = false;
         trusted = true;
@@ -538,6 +602,10 @@ export function sampleApi(): FactwrightApi {
     onClaudeTrust: (listener) => {
       trustListeners.add(listener);
       return () => trustListeners.delete(listener);
+    },
+    onClaudeFirstRun: (listener) => {
+      firstRunListeners.add(listener);
+      return () => firstRunListeners.delete(listener);
     },
     // Claude's questions, in their dialog: answered there, or sent to the terminal.
     claudeQuestion: async () => asking?.round ?? null,
