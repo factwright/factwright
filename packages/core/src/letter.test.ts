@@ -31,6 +31,8 @@ describe('isProjectsPageFile', () => {
     }
     for (const name of [
       'AlexRiveraResume10202026_Projects.pdf',
+      'AlexRiveraResume10202026_ProjectPage.pdf',
+      'AlexRiveraResume10202026_ProjectsPageInc.pdf',
       'Projects resume.pdf',
       'AlexRiveraCoverLetter10202026_Acme.pdf',
       'cover letter about projects page.pdf',

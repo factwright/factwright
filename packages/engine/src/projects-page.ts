@@ -108,5 +108,19 @@ export function readProjectsPage(
   }
   return problems.length > 0
     ? { ok: false, problems }
-    : { ok: true, page: value as unknown as ProjectsPage };
+    : { ok: true, page: withoutNulls(value) as unknown as ProjectsPage };
+}
+
+/**
+ * A page's fields with the ones that are null left out, at every depth, as the checks take a null
+ * as no value: so printing it never meets one.
+ */
+function withoutNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutNulls);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, each]) => each !== null)
+      .map(([key, each]) => [key, withoutNulls(each)]),
+  );
 }

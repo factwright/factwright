@@ -1,6 +1,13 @@
-import { writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isProjectsPageFile, JOB_DOCS, WORKSPACE_PATHS } from '@factwright/core';
+import {
+  isProjectsPageFile,
+  JOB_DOCS,
+  type Job,
+  localDate,
+  resumeSent,
+  WORKSPACE_PATHS,
+} from '@factwright/core';
 import {
   DEFAULT_TEMPLATE,
   FORMATS,
@@ -17,11 +24,28 @@ import {
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import { resumeIn } from './letter.ts';
 import { FOLDER_NAME } from './posting.ts';
-import { type BuildResumeDeps, keptAsSent, readText, rulesIn } from './resume.ts';
+import { privateProblems, privateProjects } from './private.ts';
+import { type BuildResumeDeps, readText, rulesIn } from './resume.ts';
 import { headerDifferences, listed } from './set.ts';
 
 /** Where a job's Projects page's data is, beside its files. */
 const PAGE_DATA = JOB_DOCS.projects;
+
+/**
+ * Which of a Projects page's files could have gone out with the application: those there by the
+ * day the user applied, which stay as they were. One made since, such as for an interview, can
+ * be built again. With a status past applying but no day on file, every one there stays, as a
+ * resume does.
+ */
+async function pagesSent(job: Job | undefined, dir: string, files: readonly string[]) {
+  if (!job || !resumeSent(job)) return [];
+  const sent: string[] = [];
+  for (const file of files) {
+    const made = await stat(join(dir, file)).catch(() => null);
+    if (made && (!job.appliedOn || localDate(made.mtime) <= job.appliedOn)) sent.push(file);
+  }
+  return sent;
+}
 
 /**
  * Builds a job's Projects page from its projects-page.json, as a PDF, a Word file or both, named
@@ -73,9 +97,9 @@ export async function buildProjectsPage(
     ...(make === 'docx' || make === 'both' ? [`${name}.docx`] : []),
   ];
   const job = deps.jobs().find((each) => each.folder === folder);
-  const sent = await keptAsSent(job, dir, files);
+  const sent = await pagesSent(job, dir, files);
   if (sent.length > 0) {
-    return `Not built: ${sent.join(' and ')} went out with the application, so it stays as sent. Give ${PAGE_DATA} a new output_name to build another.`;
+    return `Not built: ${sent.join(' and ')} was made by the day the user applied, so it may have gone out with the application, and it stays as it was. Give ${PAGE_DATA} a new output_name to build another.`;
   }
 
   const { rules, problem: rulesProblem } = await rulesIn(deps.workspace);
@@ -86,6 +110,7 @@ export async function buildProjectsPage(
   const problems = [
     ...(rulesProblem ? [rulesProblem] : []),
     ...lintProjectsPage(page, rules, confidential),
+    ...privateProblems(page, await privateProjects(deps.workspace), 'Projects page'),
     ...(differs.length > 0
       ? [
           `The page’s ${listed(differs)} ${differs.length === 1 ? 'doesn’t' : 'don’t'} match resume.json’s. Copy ${differs.length === 1 ? 'it' : 'them'} from there, so the two look like a set.`,

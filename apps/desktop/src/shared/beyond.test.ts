@@ -91,7 +91,7 @@ describe('Beyond work in the answers', () => {
     ).toEqual({ ...DEFAULT_PROJECT_PREFS, heading: 'Selected Work', links: false });
     expect(readProjectPrefs({ heading: 'x'.repeat(61) })).toEqual(DEFAULT_PROJECT_PREFS);
     expect(readProjectPrefs('section')).toBeUndefined();
-    expect(readProjectPrefs({ page: 'slides' })).toBeUndefined();
+    expect(readProjectPrefs({ page: 'slides' })).toEqual(DEFAULT_PROJECT_PREFS);
   });
 
   it('offers the Projects page shapes the engine lays out', () => {

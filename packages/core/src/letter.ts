@@ -12,7 +12,9 @@ export const isCoverLetterFile = (name: string): boolean => /cover[\s_-]?letter/
  * so, such as "Acme projects page.pdf". So the app keeps them apart from the job's resumes.
  */
 export const isProjectsPageFile = (name: string): boolean =>
-  /Projects\d{8}|projects?[\s_-]?page/i.test(name) && !isCoverLetterFile(name);
+  (/Projects\d{8}/.test(name) || /(?:^|[^a-z])projects?[\s_-]+page(?:[^a-z]|$)/i.test(name)) &&
+  !/Resume\d{8}/.test(name) &&
+  !isCoverLetterFile(name);
 
 /** A cover letter as the app shows it, from the job's cover-letter.json. */
 export interface LetterText {

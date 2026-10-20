@@ -49,7 +49,7 @@ describe('readPageOutline', () => {
       shape: 'cards',
       projects: ['Trailhead', 'Code Club'],
     });
-    expect(readPageOutline('{"projects":[{"name":"One"}],"shape":"slides"}')).toEqual({
+    expect(readPageOutline('{"projects":[{"name":"One"}],"shape":"constructor"}')).toEqual({
       heading: 'Projects',
       shape: 'list',
       projects: ['One'],

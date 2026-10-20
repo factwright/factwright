@@ -108,12 +108,15 @@ export function renderLetterBody(template: Template, letter: CoverLetter): strin
 }
 
 /**
- * Whether a template's Projects page can use its own header, which needs its header and contact
- * parts, as the app's templates have. Otherwise the page has a plain header in its fonts and
- * colors, as a letter without a layout of its own does.
+ * Whether a template's Projects page can use its own header: only one with a letter layout of its
+ * own, which says its header stands on a page without its resume around it, and with the header
+ * and contact parts the app's templates show it with. Otherwise the page has a plain header in
+ * its fonts and colors, as a letter without a layout of its own does.
  */
 const ownHeader = (template: Template) =>
-  Object.hasOwn(template.parts, 'header') && Object.hasOwn(template.parts, 'contact');
+  template.letter !== undefined &&
+  Object.hasOwn(template.parts, 'header') &&
+  Object.hasOwn(template.parts, 'contact');
 
 const pages = new WeakMap<Template, Node[]>();
 

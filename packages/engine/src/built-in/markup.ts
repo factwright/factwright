@@ -94,15 +94,15 @@ export function letterCss({
  * the same pieces out their own way.
  */
 const PROJECTS_TEXT = `
-<section class="pp pp-{{shape}}"><h2>{{heading}}</h2>
+<section class="pp pp-{{shape}}"><h2>{{heading}}</h2><div class="blk">
 {{#intro}}<div class="pp-intro">{{intro}}</div>{{/intro}}
-<div class="blk pp-items">{{#projects}}<div class="job pp-item">
+<div class="pp-items">{{#projects}}<div class="job pp-item">
 <div class="row"><div class="title">{{name}}</div>{{#when}}<div class="when">{{when}}</div>{{/when}}</div>
 {{#about}}<div class="row"><div class="co">{{line}}</div><div class="co">{{link}}</div></div>{{/about}}
 {{#what}}<div class="intro">{{what}}</div>{{/what}}
 {{#points}}{{#heading}}<div class="grp">{{heading}}</div>{{/heading}}<ul class="b">{{#items}}<li>{{.}}</li>{{/items}}</ul>{{/points}}
 {{#skills_line}}<div class="pp-skills">{{skills_line}}</div>{{/skills_line}}
-</div>{{/projects}}</div></section>`;
+</div>{{/projects}}</div></div></section>`;
 
 /** A Projects page under the template's own header, so it matches the resume. */
 export const PROJECTS = `<div class="hdr">{{> header}}{{> contact}}</div>${PROJECTS_TEXT}`;

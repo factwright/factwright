@@ -356,7 +356,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'build_projects_page',
       description:
-        'Builds a job’s Projects page from its folder’s projects-page.json, as a PDF, a Word file or both beside it, named after its output_name: the user’s projects in more depth than a resume has room for, on one page, as a list, cards or short case studies. It’s in the job’s resume’s template, with the same header, so the two look like a set. Says whether it fits one page, how full it is, which lines end on a word or two, and what breaks the user’s rules or their confidential terms. Build again after each change. A job the user applied to keeps the files that were sent.',
+        'Builds a job’s Projects page from its folder’s projects-page.json, as a PDF, a Word file or both beside it, named after its output_name: the user’s projects in more depth than a resume has room for, on one page, as a list, cards or short case studies. It’s in the job’s resume’s template, with the same header, so the two look like a set. Says whether it fits one page, how full it is, which lines end on a word or two, and what breaks the user’s rules or their confidential terms. Build again after each change. A page made by the day the user applied stays as it was, since it may have gone out with the application.',
       inputSchema: {
         type: 'object',
         properties: {

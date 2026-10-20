@@ -88,6 +88,29 @@ describe('renderProjectsHtml', () => {
     expect(html).toContain('<section class="pp pp-list"><h2>Projects</h2>');
   });
 
+  it('puts the intro in the section’s block, with the projects, as a template lays sections out', () => {
+    const html = renderProjectsHtml({ ...page, intro: 'Things I built and ran.' }, classic());
+    expect(html).toContain(
+      '<h2>Selected Projects</h2><div class="blk">\n<div class="pp-intro">Things I built and ran.</div>',
+    );
+  });
+
+  it('uses a template’s own header only when it has a letter of its own, as a header that stands alone', () => {
+    const noLetter: Template = { ...classic(), id: 'own', letter: undefined };
+    expect(renderProjectsHtml(page, noLetter)).not.toContain('--rule:#2b2f36');
+    expect(renderProjectsHtml(page, { ...noLetter, letter: classic().letter })).toContain(
+      '--rule:#2b2f36',
+    );
+  });
+
+  it('takes a null as no value, and prints the page', async () => {
+    const read = readProjectsPage({ ...page, contact: null, headline: null, intro: null });
+    if (!read.ok) throw new Error(read.problems.join(' '));
+    expect(read.page).not.toHaveProperty('contact');
+    expect(renderProjectsHtml(read.page, classic())).toContain('Trailhead');
+    expect(new Uint8Array(await projectsDocxFile(read.page, classic())).length).toBeGreaterThan(0);
+  });
+
   it('gives a template without header parts a plain header, in its fonts and colors', () => {
     const own: Template = { ...classic(), id: 'own', parts: {}, body: '<p>{{name}}</p>' };
     const html = renderProjectsHtml(page, own);

@@ -1680,6 +1680,36 @@ describe('build_projects_page', () => {
     );
   });
 
+  it('builds a page again after the user applied, unless it was there by the day they did', async () => {
+    write('resume.json', resume);
+    write('projects-page.json', page);
+    pages(1);
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'applied', statusOn: '2026-10-09' });
+    // Made for an interview, after applying: it builds again.
+    writeFileSync(folder('AlexRiveraProjects10112026_Acme.pdf'), 'for the interview');
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toContain('Built');
+    // There by the day they applied: it may have gone out, so it stays.
+    const before = new Date('2026-10-08T12:00:00');
+    utimesSync(folder('AlexRiveraProjects10112026_Acme.pdf'), before, before);
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toBe(
+      'Not built: AlexRiveraProjects10112026_Acme.pdf was made by the day the user applied, so it may have gone out with the application, and it stays as it was. Give projects-page.json a new output_name to build another.',
+    );
+  });
+
+  it('turns away a project the user keeps private', async () => {
+    write('resume.json', resume);
+    write('projects-page.json', page);
+    mkdirSync(join(root, 'about-me'), { recursive: true });
+    writeFileSync(
+      join(root, 'about-me', 'beyond-work.json'),
+      JSON.stringify({ projects: [{ id: 'trailhead', name: 'Trailhead', showing: 'private' }] }),
+    );
+    pages(1);
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toContain(
+      '- “Trailhead” is a project the user keeps private, and it’s in the Projects page.',
+    );
+  });
+
   it('refuses a page that doesn’t hold up, or files that wouldn’t read as a Projects page', async () => {
     write('projects-page.json', { ...page, projects: [] });
     expect(await tool('build_projects_page').run({ folder: FOLDER })).toBe(

@@ -44,7 +44,8 @@ export function readPageOutline(json: string | null | undefined): PageOutline | 
   return {
     heading:
       typeof page.heading === 'string' && page.heading.trim() ? page.heading.trim() : 'Projects',
-    shape: typeof page.shape === 'string' && page.shape in SHAPES ? page.shape : 'list',
+    shape:
+      typeof page.shape === 'string' && Object.hasOwn(SHAPES, page.shape) ? page.shape : 'list',
     projects,
   };
 }
