@@ -1,3 +1,4 @@
+import { localDate } from '@factwright/core';
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
 import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import type { FiledFacts } from '../shared/facts.ts';
@@ -537,6 +538,13 @@ export function sampleApi(): FactwrightApi {
       playTask(task);
       return { ok: true };
     },
+    // A focus kept in memory until the page reloads, by an ID like the app's.
+    saveSearchFocus: async () => ({
+      ok: true,
+      id: `${localDate()}-${Math.floor(Math.random() * 0xffff)
+        .toString(16)
+        .padStart(4, '0')}`,
+    }),
     stopClaude: () => {
       if (asking) {
         asking = null;

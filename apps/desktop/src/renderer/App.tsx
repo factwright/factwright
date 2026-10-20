@@ -564,6 +564,7 @@ export function App({ api }: { api: FactwrightApi }) {
       )}
       {dialog === 'find-jobs' && (
         <FindJobsDialog
+          api={api}
           today={today}
           kinds={kinds}
           onStart={(sources) => run.requestStart({ skill: SEARCH_SKILL, sources })}

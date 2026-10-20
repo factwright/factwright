@@ -1,20 +1,18 @@
-import { ChipGroup, Field, Input, Select, TagInput, TextArea } from '@factwright/ui';
-import { ChevronRight } from 'lucide-react';
-import { useState } from 'react';
-import { WORKPLACES } from '../../shared/about.ts';
 import {
+  FOCUS_LIMITS,
   FOCUS_POSTED,
   FOCUS_STAGES,
+  FOCUS_WORKPLACES,
   type FocusPosted,
   focusName,
   isFocused,
   payAmount,
   type SearchFocus,
-} from '../../shared/focus.ts';
+} from '@factwright/core';
+import { ChipGroup, Field, Input, Select, TagInput, TextArea } from '@factwright/ui';
+import { ChevronRight } from 'lucide-react';
+import { useState } from 'react';
 import styles from './SearchFocus.module.css';
-
-/** The longest note for one search, in characters. */
-const MOST_NOTES = 500;
 
 /** A dollar amount as the box shows it: "150,000". */
 const shown = (dollars: number | null) => (dollars === null ? '' : dollars.toLocaleString('en-US'));
@@ -30,19 +28,27 @@ export function FocusSection({
   place,
 }: {
   focus: SearchFocus;
-  onChange: (focus: SearchFocus) => void;
+  /** Called with the focus as it is now, and whether it can be searched: its pay reads. */
+  onChange: (focus: SearchFocus, ok: boolean) => void;
   /** How Found by will name the search's place, such as "LinkedIn Oct 20". */
   place: string;
 }) {
   const [open, setOpen] = useState(false);
   // What's typed for pay, kept as typed until it reads as an amount.
   const [pay, setPay] = useState({ min: shown(focus.payMin), max: shown(focus.payMax) });
-  const set = (changes: Partial<SearchFocus>) => onChange({ ...focus, ...changes });
+  // Pay that's typed reads as a yearly amount, with the lower one first.
+  const payOk = (typed: typeof pay, next: SearchFocus) =>
+    !(
+      (typed.min.trim() !== '' && next.payMin === null) ||
+      (typed.max.trim() !== '' && next.payMax === null) ||
+      (next.payMin !== null && next.payMax !== null && next.payMin > next.payMax)
+    );
+  const set = (changes: Partial<SearchFocus>, typed = pay) => {
+    const next = { ...focus, ...changes };
+    onChange(next, payOk(typed, next));
+  };
   const name = focusName(focus);
-  const badPay =
-    (pay.min.trim() !== '' && focus.payMin === null) ||
-    (pay.max.trim() !== '' && focus.payMax === null) ||
-    (focus.payMin !== null && focus.payMax !== null && focus.payMin > focus.payMax);
+  const badPay = !payOk(pay, focus);
   return (
     <div className={`${styles.focus} ${open ? styles.open : ''}`}>
       <button
@@ -83,8 +89,9 @@ export function FocusSection({
                   maxLength={20}
                   aria-invalid={badPay}
                   onChange={(event) => {
-                    setPay({ ...pay, min: event.target.value });
-                    set({ payMin: payAmount(event.target.value) });
+                    const typed = { ...pay, min: event.target.value };
+                    setPay(typed);
+                    set({ payMin: payAmount(typed.min) }, typed);
                   }}
                 />
               )}
@@ -99,8 +106,9 @@ export function FocusSection({
                   maxLength={20}
                   aria-invalid={badPay}
                   onChange={(event) => {
-                    setPay({ ...pay, max: event.target.value });
-                    set({ payMax: payAmount(event.target.value) });
+                    const typed = { ...pay, max: event.target.value };
+                    setPay(typed);
+                    set({ payMax: payAmount(typed.max) }, typed);
                   }}
                 />
               )}
@@ -113,7 +121,7 @@ export function FocusSection({
           )}
           <ChipGroup
             label="Where"
-            options={WORKPLACES.map(([value, label]) => ({ value, label }))}
+            options={FOCUS_WORKPLACES.map(([value, label]) => ({ value, label }))}
             value={focus.workplaces}
             onChange={(workplaces) => set({ workplaces })}
           />
@@ -124,8 +132,8 @@ export function FocusSection({
                   {...control}
                   value={focus.industries}
                   placeholder="Such as healthcare, climate"
-                  max={10}
-                  maxLength={60}
+                  max={FOCUS_LIMITS.industries}
+                  maxLength={FOCUS_LIMITS.industry}
                   onChange={(industries) => set({ industries })}
                 />
               )}
@@ -136,8 +144,8 @@ export function FocusSection({
                   {...control}
                   value={focus.avoid}
                   placeholder="Such as crypto, gambling"
-                  max={10}
-                  maxLength={60}
+                  max={FOCUS_LIMITS.industries}
+                  maxLength={FOCUS_LIMITS.industry}
                   onChange={(avoid) => set({ avoid })}
                 />
               )}
@@ -167,7 +175,7 @@ export function FocusSection({
               <TextArea
                 {...control}
                 rows={2}
-                maxLength={MOST_NOTES}
+                maxLength={FOCUS_LIMITS.notes}
                 placeholder="Such as: teams that ship every week, and no on-call."
                 value={focus.notes}
                 onChange={(event) => set({ notes: event.target.value })}

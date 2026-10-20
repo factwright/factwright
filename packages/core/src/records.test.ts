@@ -339,6 +339,48 @@ describe('readRecords', () => {
     ]);
   });
 
+  it('names a focused search from the focus the app kept for it', () => {
+    const focus = {
+      stages: ['early'],
+      payMin: 150_000,
+      payMax: 200_000,
+      workplaces: ['remote'],
+      industries: [],
+      avoid: [],
+      posted: 0,
+      notes: 'Founding roles.',
+    };
+    const sourceOf = (meta: Record<string, unknown>, files: Record<string, string> = {}) =>
+      of(
+        readRecords(
+          memoryWorkspace({
+            'searches/focus/2026-10-20-a3f9.json': JSON.stringify(focus),
+            'searches/2026-10-20-linkedin-focus-a3f9/jobs.json': JSON.stringify({
+              meta: { source: 'LinkedIn Oct 20', ...meta },
+              jobs: [{ company: 'Acme Robotics', role: 'Staff Engineer' }],
+            }),
+            ...files,
+          }),
+        ),
+        'search',
+      )[0]?.source;
+    expect(sourceOf({ focus: '2026-10-20-a3f9' })).toBe(
+      'LinkedIn Oct 20 · early startups, $150k–$200k, remote',
+    );
+    // Named so already, or with a focus that's gone or doesn't read, it's left as it is.
+    expect(
+      sourceOf({
+        focus: '2026-10-20-a3f9',
+        source: 'LinkedIn Oct 20 · early startups, $150k–$200k, remote',
+      }),
+    ).toBe('LinkedIn Oct 20 · early startups, $150k–$200k, remote');
+    expect(sourceOf({ focus: '2026-10-20-b4e0' })).toBe('LinkedIn Oct 20');
+    expect(sourceOf({ focus: '../criteria' })).toBe('LinkedIn Oct 20');
+    expect(
+      sourceOf({ focus: '2026-10-20-a3f9' }, { 'searches/focus/2026-10-20-a3f9.json': '{ broken' }),
+    ).toBe('LinkedIn Oct 20');
+  });
+
   it('reads the kind of job a search or fit check gave each job', () => {
     const records = readRecords(
       memoryWorkspace({
