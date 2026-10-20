@@ -46,8 +46,16 @@ const MONTH_DAY = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
-/** How Found by names a search of a place, as the job search names it: "LinkedIn Oct 20". */
-function placeName(site: SearchSite | undefined, month: string, today: string): string {
+/**
+ * How Found by names the first place's search, as the job search names it: "LinkedIn Oct 20",
+ * "HN October 2026", or a company's name and the day.
+ */
+function placeName(
+  site: SearchSite | undefined,
+  month: string,
+  company: string | null,
+  today: string,
+): string {
   const day = MONTH_DAY.format(new Date(`${today}T12:00:00Z`));
   if (site === 'hn') {
     const thread = month || today.slice(0, 7);
@@ -58,7 +66,8 @@ function placeName(site: SearchSite | undefined, month: string, today: string): 
     indeed: 'Indeed',
     boards: 'Company job boards',
   };
-  return `${site ? names[site] : 'Company'} ${day}`;
+  const name = site ? names[site] : company && !/^https:/i.test(company) ? company : 'The company';
+  return `${name} ${day}`;
 }
 
 /** This month's thread and the three before, by YYYY-MM, newest first. */
@@ -251,7 +260,7 @@ export function FindJobsDialog({
               setFocusOk(ok);
               setProblem(null);
             }}
-            place={placeName(sites[0], month, today)}
+            place={placeName(sites[0], month, named, today)}
           />
           <p className={styles.hint}>
             Each place is a search of its own, so you can see its jobs together later, under Found
