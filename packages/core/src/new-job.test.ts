@@ -69,6 +69,7 @@ describe('a new job', () => {
       back_on: null,
       pass_reason: null,
       kind: null,
+      merged_into: null,
     });
     expect(rows.status).toEqual({
       id: 'status-1',

@@ -18,17 +18,16 @@ import {
   type JobFile,
   type JobShot,
   type JobStatus,
+  jobLikeness,
   jobProgress,
   type KindName,
   kindNamed,
   localDate,
-  normalizeUrl,
   PASS_REASON_LABELS,
   PASS_REASONS,
   type PassReason,
   readApplySteps,
   readJobExtras,
-  roleKey,
   WORKSPACE_PATHS,
 } from '@factwright/core';
 import { diskWorkspace } from '../jobs/workspace.ts';
@@ -40,32 +39,35 @@ export interface JobQuery {
   link?: string;
 }
 
-/** The same company, even when one name contains the other: "Acme" and "Acme Robotics". */
-function sameCompany(a: string, b: string): boolean {
-  return Boolean(a && b) && (a === b || `-${a}-`.includes(`-${b}-`) || `-${b}-`.includes(`-${a}-`));
+/**
+ * How a job on file matches what a skill asked about, as the app tells one job from another: by
+ * a link to the same posting, at any company; by the same role, at the same company or one whose
+ * name holds the other's; or as another job at the company.
+ */
+type Match = 'posting' | 'role' | 'company';
+
+const MATCH_ORDER: Readonly<Record<Match, number>> = { posting: 0, role: 1, company: 2 };
+
+/** The jobs that match a company, or a link, best match first, with how each matches. */
+export function matchJobs(jobs: readonly Job[], query: JobQuery): { job: Job; match: Match }[] {
+  const asked = {
+    company: query.company,
+    companyKey: companyKey(query.company),
+    role: query.role ?? '',
+    links: query.link ? [{ url: query.link }] : [],
+  };
+  return jobs
+    .flatMap((job) => {
+      const known = { ...job, companyKey: job.companyKey || companyKey(job.company) };
+      const match = jobLikeness(known, asked);
+      return match ? [{ job, match }] : [];
+    })
+    .sort((a, b) => MATCH_ORDER[a.match] - MATCH_ORDER[b.match]);
 }
 
-/**
- * The jobs that match a company, or a link, best match first: the same link counts most, then
- * the same role.
- */
-export function findJobs(jobs: readonly Job[], query: JobQuery): Job[] {
-  const company = companyKey(query.company);
-  const role = query.role ? roleKey(query.role) : '';
-  const link = query.link ? normalizeUrl(query.link) : null;
-  const sameLink = (job: Job) =>
-    link !== null &&
-    [job.link, ...job.links.map((each) => each.url)].some(
-      (url) => url && normalizeUrl(url) === link,
-    );
-  const score = (job: Job) =>
-    (role && roleKey(job.role) === role ? 2 : 0) + (sameLink(job) ? 3 : 0);
-  return jobs
-    .filter(
-      (job) => sameCompany(job.companyKey || companyKey(job.company), company) || sameLink(job),
-    )
-    .sort((a, b) => score(b) - score(a));
-}
+/** The jobs that match a company, or a link, best match first. */
+export const findJobs = (jobs: readonly Job[], query: JobQuery): Job[] =>
+  matchJobs(jobs, query).map(({ job }) => job);
 
 const name = (job: Job) => `${job.company}, ${job.role || 'the company itself'}`;
 
@@ -147,9 +149,10 @@ function summary(job: Job, today: string, kinds: readonly KindName[]): string {
 }
 
 /**
- * Whether the user has seen a job before, for a skill to say so up front, and why they passed on
- * jobs, when they've given the same reason more than once. With more than one kind of job, each
- * job says which it's under.
+ * Whether the user has seen a job before, for a skill to say so up front: the job itself, by its
+ * posting's link or its role, apart from the user's other jobs at the company. And why they
+ * passed on jobs, when they've given the same reason more than once. With more than one kind of
+ * job, each job says which it's under.
  */
 export function findJob(
   jobs: readonly Job[],
@@ -157,17 +160,38 @@ export function findJob(
   today: string,
   kinds: readonly KindName[] = [],
 ): string {
-  const found = findJobs(jobs, query);
+  const found = matchJobs(jobs, query);
   const asked = query.company
     ? `${query.company}${query.role ? `, ${query.role}` : ''}`
     : (query.link ?? '');
   const reasons = passReasons(jobs);
   const passes = reasons ? [`Why the user passed on jobs before: ${reasons}.`] : [];
-  if (found.length === 0) return [`Not seen before: ${asked}.`, ...passes].join('\n');
+  const same = found.filter(({ match }) => match !== 'company');
+  const others = found.filter(({ match }) => match === 'company').map(({ job }) => job);
+  const by: Readonly<Record<Match, string>> = {
+    posting: 'the same posting',
+    role: 'the same role',
+    company: '',
+  };
   return [
-    'Seen before:',
-    ...found.map((job) => summary(job, today, kinds)),
-    'For everything on file, call job_details with the job’s id.',
+    ...(same.length > 0
+      ? [
+          'Seen before, this job:',
+          ...same.map(({ job, match }) => `${summary(job, today, kinds)} [${by[match]}]`),
+        ]
+      : [`Not seen before: ${asked}.`]),
+    ...(others.length > 0
+      ? [
+          `The user’s other jobs at ${query.company || 'the company'}:`,
+          ...others.map((job) => summary(job, today, kinds)),
+        ]
+      : []),
+    ...(found.length > 0
+      ? [
+          'For everything on file, call job_details with the job’s id.',
+          'When one of these is the job you found in a job search, give its id as "job" in jobs.json, so the app adds what you found to that job.',
+        ]
+      : []),
     ...passes,
   ].join('\n');
 }

@@ -101,6 +101,7 @@ export function newJobRows(job: {
       back_on: null,
       pass_reason: null,
       kind: null,
+      merged_into: null,
     },
     status: { id: job.statusId, job_id: job.id, status: job.status, at: job.today },
   };

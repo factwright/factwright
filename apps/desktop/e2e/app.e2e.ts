@@ -457,16 +457,21 @@ test('finds jobs where the user picks, and keeps each search’s jobs together',
   expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();
   // The LinkedIn search's job is new, saying which search found it now there are two, and the
-  // search can be picked on its own.
+  // search can be picked on its own. Tidewater, which HN found first, is one job still, found
+  // again.
   await pickView(/^New/);
   await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toContainText(
     'LinkedIn Oct 12',
   );
+  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toHaveCount(1);
+  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toContainText(
+    'Found again · LinkedIn Oct 12',
+  );
   await window
     .getByRole('combobox', { name: 'Found by' })
-    .selectOption({ label: 'LinkedIn Oct 12 (1)' });
+    .selectOption({ label: 'LinkedIn Oct 12 (2)' });
   await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toBeVisible();
-  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toHaveCount(0);
+  await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toHaveCount(0);
   await window
     .getByRole('combobox', { name: 'Found by' })
     .selectOption({ label: 'Found anywhere' });
@@ -509,6 +514,60 @@ test('passes on several new jobs at once, saying why, and keeps why for the job 
   await pickView(/^Closed/);
   await expect(window.getByRole('button', { name: /^Tidewater Analytics.*Passed/ })).toBeVisible();
   await expect(window.getByRole('button', { name: /^Lakeside Data.*Passed/ })).toBeVisible();
+});
+
+test('keeps a job passed on as it was when the same search finds it again', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  await closeRun();
+  // The earlier run's file stays beside this run's, so its jobs stay listed, and the stand-in
+  // gave the job find_job named, under a title the app alone wouldn't take for it.
+  const folder = join(dataDir, 'workspace', 'searches', '2026-10-12-linkedin');
+  expect(readdirSync(folder).sort()).toEqual(['jobs-2.json', 'jobs.json']);
+  expect(JSON.parse(readFileSync(join(folder, 'jobs-2.json'), 'utf8')).jobs[0].job).toBe(
+    'tidewater-analytics--senior-backend-engineer',
+  );
+  await pickView(/^New/);
+  await expect(window.getByRole('button', { name: /^Tidewater Analytics/ })).toHaveCount(0);
+  await pickView(/^Closed/);
+  const tidewater = window.getByRole('button', { name: /^Tidewater Analytics/ });
+  await expect(tidewater).toContainText('Passed');
+  await expect(tidewater).toContainText('Found again · LinkedIn Oct 12');
+  await expect(window.getByRole('button', { name: /^Lakeside Data.*Passed/ })).toBeVisible();
+  await tidewater.click();
+  await expect(jobPanel()).toContainText('Found again in LinkedIn Oct 12');
+  await window.getByRole('button', { name: 'Close details' }).click();
+});
+
+test('merges a job found twice into one, keeping the user’s decision', async () => {
+  const { window } = opened;
+  // The same job as the search's, added by hand with another link, so the app can't tell.
+  await window.getByRole('button', { name: 'Add job' }).click();
+  const add = window.getByRole('dialog', { name: 'Add a job' });
+  await add.getByRole('textbox', { name: 'Company' }).fill('Lakeside Data');
+  await add.getByRole('textbox', { name: 'Role' }).fill('Senior Platform Engineer');
+  await add.getByRole('button', { name: 'Add job' }).click();
+  await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toHaveCount(1);
+  await jobPanel().getByRole('button', { name: 'Merge with…' }).click();
+  const merge = window.getByRole('dialog', { name: 'Merge with another job' });
+  const other = merge.getByRole('radio', { name: /^Lakeside Data.*Likely the same/ });
+  await other.check();
+  await merge.getByRole('button', { name: 'Merge' }).click();
+  await expect(merge).toHaveCount(0);
+  // One job now, passed on as the user left the one the search found.
+  await expect(jobPanel().getByRole('combobox', { name: 'Status for Lakeside Data' })).toHaveValue(
+    'passed',
+  );
+  await window.getByRole('button', { name: 'Close details' }).click();
+  await pickView(/^Closed/);
+  await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toHaveCount(1);
+  await pickView(/^New/);
+  await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toHaveCount(0);
 });
 
 test('reads and changes the fact bank: a fact’s words, verifying one, and a new fact', async () => {

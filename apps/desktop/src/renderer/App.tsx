@@ -37,6 +37,7 @@ import { FindJobsDialog } from './jobs/FindJobsDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
+import { MergeDialog } from './jobs/MergeDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
   filterForAdded,
@@ -148,6 +149,7 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'extension'
     | 'add-profile'
     | 'profiles'
+    | 'merge'
     | null
   >(null);
   // Once the user accepts an offer, the company and the other jobs still in play, to withdraw from.
@@ -512,6 +514,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 related={related}
                 me={me}
                 reminders={reminders ?? undefined}
+                onMerge={() => setDialog('merge')}
               />
             )}
           </div>
@@ -579,6 +582,9 @@ export function App({ api }: { api: FactwrightApi }) {
       )}
       {dialog === 'sync' && sync !== 'checking' && (
         <SyncDialog api={api} status={sync} approvals={approvals} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'merge' && selected && (
+        <MergeDialog job={selected.job} rows={rows} api={api} onClose={() => setDialog(null)} />
       )}
       {withdraw && (
         <WithdrawDialog

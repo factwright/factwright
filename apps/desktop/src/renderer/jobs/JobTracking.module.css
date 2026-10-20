@@ -139,3 +139,7 @@
 .archiveRow .hint {
   margin: 0;
 }
+
+.archiveRow + .archiveRow {
+  margin-top: var(--fw-space-3);
+}

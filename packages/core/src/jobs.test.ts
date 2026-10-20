@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { collectJobs } from './jobs.ts';
+import { collectJobs, type KnownJob } from './jobs.ts';
+import { companyKey } from './keys.ts';
 import { normalizeUrl } from './links.ts';
 import { jobIdFor, shortCode } from './new-job.ts';
 import type {
@@ -40,6 +41,8 @@ function search(company: string, role: string, extra: Partial<SearchRecord> = {}
     links: [],
     source: 'HN October 2026',
     folder: '2026-10-hn',
+    run: 1,
+    job: null,
     pay: null,
     location: null,
     tier: 'good',
@@ -122,6 +125,16 @@ const outreach = (slug: string, company: string): OutreachRecord => ({
   links: [],
 });
 
+/** Later runs of a search, a month on. */
+const NOVEMBER = { folder: '2026-11-hn', source: 'HN November 2026', date: '2026-11-03' };
+const LATER_NOVEMBER = {
+  folder: '2026-11-20-linkedin',
+  source: 'LinkedIn Nov 20',
+  date: '2026-11-20',
+};
+
+const posting = (url: string) => ({ links: [{ url, label: 'Posting' }] });
+
 const RESUME = {
   path: 'applications/acme/resume.pdf',
   name: 'resume.pdf',
@@ -131,7 +144,7 @@ const RESUME = {
 };
 
 describe('collectJobs', () => {
-  it('keeps every search run that found a job, once each, oldest first', () => {
+  it('keeps every search run that found a job, once each, oldest first, and says the newest', () => {
     const later = { folder: '2026-11-hn', source: 'HN November 2026', date: '2026-11-03' };
     const [job] = collectJobs([
       search('Acme Robotics', 'Staff Engineer', { ...later, key: 'nov:acme', score: 60 }),
@@ -142,8 +155,8 @@ describe('collectJobs', () => {
       { folder: '2026-10-hn', source: 'HN October 2026', date: '2026-10-05' },
       later,
     ]);
-    // The best-rated run is the one the job's score comes from.
-    expect(job?.search).toMatchObject({ source: 'HN October 2026', score: 80 });
+    // The newest run is what's true of the job now, and it found the job again.
+    expect(job?.search).toMatchObject({ source: 'HN November 2026', score: 60, again: true });
   });
 
   it('names a job at a company with no Latin letters by its link, as Add job does', () => {
@@ -226,11 +239,16 @@ describe('collectJobs', () => {
     expect(copied?.events.find((event) => event.tool === 'letter')?.date).toBe('2026-10-07');
   });
 
-  it('takes a job’s kind from its fit check, or else the search that rated it highest', () => {
+  it('takes a job’s kind from its fit check, or else the newest search that gave one', () => {
     const [found] = collectJobs([
-      search('Acme Robotics', 'Program Manager', { key: 'a', score: 60, kind: 'developer' }),
-      search('Acme Robotics', 'Program Manager', { key: 'b', score: 80, kind: 'project-manager' }),
-      search('Acme Robotics', 'Program Manager', { key: 'c', score: 90 }),
+      search('Acme Robotics', 'Program Manager', { key: 'a', score: 90, kind: 'developer' }),
+      search('Acme Robotics', 'Program Manager', {
+        ...NOVEMBER,
+        key: 'b',
+        score: 60,
+        kind: 'project-manager',
+      }),
+      search('Acme Robotics', 'Program Manager', { ...LATER_NOVEMBER, key: 'c', score: 70 }),
     ]);
     expect(found?.kindFound).toBe('project-manager');
     const [checked] = collectJobs([
@@ -292,7 +310,7 @@ describe('collectJobs', () => {
           id: 'lumen-health--senior-engineer',
           company: 'Lumen Health Partners',
           companyKey: 'lumen-health-partners',
-          role: 'Senior Engineer',
+          role: 'Engineering Manager',
           links: [],
         },
         {
@@ -401,5 +419,303 @@ describe('collectJobs', () => {
       'Found the real employer behind the Bluewave Staffing listing',
       'Fit check: Strong 82',
     ]);
+  });
+});
+
+/** A job the tracker knows, at a company, with links to its posting. */
+function known(
+  id: string,
+  company: string,
+  role: string,
+  links: string[] = [],
+  extra: Partial<KnownJob> = {},
+): KnownJob {
+  const posted = links.map((url) => ({ url, label: 'Posting' }));
+  return { id, company, companyKey: companyKey(company), role, links: posted, ...extra };
+}
+
+/** How many jobs some records make. */
+const count = (...records: ToolRecord[]) => collectJobs(records).length;
+
+describe('collectJobs, for a job found again', () => {
+  it('joins the same posting at any company, however its name is written', () => {
+    expect(
+      count(
+        search('Acme', 'Staff Engineer', posting(ASHBY)),
+        fitCheck('Acme Robotics', 'Staff Engineer, Tools', posting(`${ASHBY}?utm_source=hn`)),
+      ),
+    ).toBe(1);
+  });
+
+  it('knows a posting by its ID, wherever its link points', () => {
+    // Greenhouse's two hosts, and a company's own site with its board inside it.
+    expect(
+      count(
+        search('Lakeside Data', 'Senior Platform Engineer', {
+          ...posting('https://boards.greenhouse.io/lakeside/jobs/4012345'),
+        }),
+        search('Lakeside Data', 'Platform Engineer III', {
+          ...NOVEMBER,
+          ...posting('https://job-boards.greenhouse.io/lakeside/jobs/4012345?gh_src=x'),
+        }),
+        fitCheck(
+          'Lakeside',
+          'Platform',
+          posting('https://lakeside.example/careers?gh_jid=4012345'),
+        ),
+      ),
+    ).toBe(1);
+    // LinkedIn's job page, with or without its title in the link, and its tracking.
+    expect(
+      count(
+        search('Tidewater Analytics', 'Senior Backend Engineer', {
+          ...posting('https://www.linkedin.com/jobs/view/4012345678/?refId=a1&trackingId=b2'),
+        }),
+        search('Tidewater', 'Backend Engineer', {
+          ...NOVEMBER,
+          ...posting('https://uk.linkedin.com/jobs/view/backend-engineer-at-tidewater-4012345678'),
+        }),
+      ),
+    ).toBe(1);
+    // The same link, with LinkedIn's tracking left on.
+    expect(
+      count(
+        search('Tidewater Analytics', 'Senior Backend Engineer', {
+          ...posting('https://www.linkedin.com/comm/jobs/view/4012345678?refId=a1&trackingId=b2'),
+        }),
+        search('Tidewater Analytics', 'Data Engineer', {
+          ...NOVEMBER,
+          ...posting('https://www.linkedin.com/comm/jobs/view/4012345678?refId=c3&trackingId=d4'),
+        }),
+      ),
+    ).toBe(1);
+  });
+
+  it('joins a role written another way: short forms, word order, and a title that says more', () => {
+    const jobs = collectJobs([
+      search('Acme Robotics', 'Staff Engineer'),
+      search('Acme Robotics', 'Staff Software Engineer', NOVEMBER),
+      search('Northwind Labs', 'Sr. SWE (Remote)'),
+      search('Northwind Labs', 'Senior Software Engineer', NOVEMBER),
+      search('Harbor & Pine', 'Engineering Mgr, Payments'),
+      search('Harbor and Pine', 'Payments Engineering Manager', NOVEMBER),
+      search('Copperleaf Energy', 'Front-End Developer II'),
+      search('Copperleaf Energy', 'Frontend Developer 2 (Hybrid)', NOVEMBER),
+    ]);
+    expect(jobs.map((job) => job.id)).toEqual([
+      'acme-robotics--staff-engineer',
+      'northwind-labs--sr-swe',
+      'harbor-and-pine--engineering-mgr-payments',
+      'copperleaf-energy--front-end-developer-ii',
+    ]);
+  });
+
+  it('keeps apart roles at another level, in another specialty, or on another posting', () => {
+    // Another level, however close the words.
+    expect(
+      count(
+        search('Acme Robotics', 'Software Engineer'),
+        search('Acme Robotics', 'Senior Software Engineer', NOVEMBER),
+      ),
+    ).toBe(2);
+    expect(
+      count(
+        search('Acme Robotics', 'Software Engineer II'),
+        search('Acme Robotics', 'Software Engineer III', NOVEMBER),
+      ),
+    ).toBe(2);
+    // Another specialty, even in parentheses.
+    expect(
+      count(
+        search('Acme Robotics', 'Software Engineer (Backend)'),
+        search('Acme Robotics', 'Software Engineer (Frontend)', NOVEMBER),
+      ),
+    ).toBe(2);
+    // Two postings on the same board, however alike their titles.
+    expect(
+      count(
+        search(
+          'Acme Robotics',
+          'Software Engineer',
+          posting('https://boards.greenhouse.io/acme/jobs/1'),
+        ),
+        search('Acme Robotics', 'Software Engineer', {
+          ...NOVEMBER,
+          ...posting('https://boards.greenhouse.io/acme/jobs/2'),
+        }),
+      ),
+    ).toBe(2);
+    expect(
+      count(
+        search('Acme Robotics', 'Senior Engineer', posting('https://jobs.lever.co/acme/a1')),
+        search('Acme Robotics', 'Senior Engineer, Platform', {
+          ...NOVEMBER,
+          ...posting('https://jobs.lever.co/acme/b2'),
+        }),
+      ),
+    ).toBe(2);
+    // A title that says more joins only the one job it could be.
+    expect(
+      count(
+        search('Acme Robotics', 'Software Engineer, Platform'),
+        search('Acme Robotics', 'Software Engineer, Payments'),
+        search('Acme Robotics', 'Software Engineer', NOVEMBER),
+      ),
+    ).toBe(3);
+  });
+
+  it('joins a company written longer or shorter only for the same role', () => {
+    expect(
+      count(search('Acme', 'Staff Engineer'), search('Acme Robotics', 'Staff Engineer', NOVEMBER)),
+    ).toBe(1);
+    expect(
+      count(
+        search('Acme', 'Staff Engineer'),
+        search('Acme Robotics', 'Staff Engineer, Platform', NOVEMBER),
+      ),
+    ).toBe(2);
+    // A word any company might have isn't the company.
+    expect(
+      count(search('Scale AI', 'Data Engineer'), search('AI', 'Data Engineer', NOVEMBER)),
+    ).toBe(2);
+  });
+
+  it('files a find under the job find_job named, at the same company or with the same link', () => {
+    const tidewater = 'tidewater-analytics--senior-backend-engineer';
+    const jobs = collectJobs(
+      [
+        search('Tidewater', 'Data Platform Engineer', { ...NOVEMBER, job: tidewater }),
+        // A job at another company, with no link in common, isn't the one it named.
+        search('Lumen Health', 'Senior Engineer', { ...NOVEMBER, job: tidewater }),
+        search('Bluewave Staffing', 'Backend Engineer', {
+          ...NOVEMBER,
+          ...posting('https://jobs.lever.co/tidewater/1'),
+          job: tidewater,
+        }),
+      ],
+      [
+        known(tidewater, 'Tidewater Analytics', 'Senior Backend Engineer', [
+          'https://jobs.lever.co/tidewater/1',
+        ]),
+      ],
+    );
+    expect(jobs.map((job) => [job.id, job.searches.length])).toEqual([
+      [tidewater, 1],
+      ['lumen-health--senior-engineer', 1],
+    ]);
+    expect(jobs[0]?.events).toHaveLength(2);
+  });
+
+  it('says what the newest search found: where, the pay, its notes, and that it’s found again', () => {
+    const [job] = collectJobs([
+      search('Acme Robotics', 'Staff Engineer', {
+        pay: '$180k–$200k',
+        location: 'Remote (US)',
+        score: 85,
+        detail: { ...NO_DETAIL, pick: 'Builds the tools' },
+      }),
+      search('Acme Robotics', 'Staff Engineer', {
+        ...LATER_NOVEMBER,
+        pay: '$190k–$220k',
+        location: 'Hybrid, Denver',
+        score: 72,
+        detail: { ...NO_DETAIL, pick: 'Now hybrid' },
+      }),
+    ]);
+    expect(job).toMatchObject({
+      // Where it turned up first.
+      source: 'HN October 2026',
+      location: 'Hybrid, Denver',
+      pay: { text: '$190k–$220k', source: 'listed' },
+      summary: 'Now hybrid',
+      search: { source: 'LinkedIn Nov 20', score: 72, again: true },
+    });
+    expect(job?.events.map((event) => event.title)).toEqual([
+      'Found in HN October 2026: Good 85',
+      'Found again in LinkedIn Nov 20: Good 72',
+    ]);
+  });
+
+  it('says a search found a job again when it was on file from other work first', () => {
+    const again = (...records: ToolRecord[]) => collectJobs(records)[0]?.search?.again;
+    expect(
+      again(
+        fitCheck('Acme Robotics', 'Staff Engineer'),
+        search('Acme Robotics', 'Staff Engineer', NOVEMBER),
+      ),
+    ).toBe(true);
+    expect(
+      again(search('Acme Robotics', 'Staff Engineer'), fitCheck('Acme Robotics', 'Staff Engineer')),
+    ).toBe(false);
+    // Messages drafted for its company join every job there, so they aren't the job.
+    expect(
+      again(
+        outreach('acme-robotics', 'Acme Robotics'),
+        search('Acme Robotics', 'Staff Engineer', NOVEMBER),
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps each run of a search in the same folder, the later run newest', () => {
+    const [job] = collectJobs([
+      search('Acme Robotics', 'Staff Engineer', { key: 'one', score: 70 }),
+      search('Acme Robotics', 'Staff Engineer', { key: 'two', run: 2, score: 78 }),
+      search('Lumen Health', 'Senior Engineer', { key: 'three' }),
+    ]);
+    expect(job?.searches).toEqual([
+      { folder: '2026-10-hn', source: 'HN October 2026', date: '2026-10-05' },
+    ]);
+    expect(job?.search).toMatchObject({ score: 78, again: true });
+  });
+
+  it('passes what a merged job went by on to the job it went into', () => {
+    const kept = 'tidewater-analytics--senior-backend-engineer';
+    const jobs = collectJobs(
+      [
+        search('Tidewater Analytics', 'Data Pipelines Engineer', NOVEMBER),
+        search(
+          'Tidewater Analytics',
+          'Platform Engineer',
+          posting('https://jobs.lever.co/tidewater/9'),
+        ),
+        search('Tidewater Analytics', 'Senior Backend Engineer'),
+      ],
+      [
+        known(kept, 'Tidewater Analytics', 'Senior Backend Engineer'),
+        known(
+          'tidewater-analytics--data-pipelines-engineer',
+          'Tidewater',
+          'Data Pipelines Engineer',
+          [],
+          {
+            mergedInto: 'tidewater-analytics--platform-engineer',
+          },
+        ),
+        known(
+          'tidewater-analytics--platform-engineer',
+          'Tidewater',
+          'Platform Engineer',
+          ['https://jobs.lever.co/tidewater/9'],
+          { mergedInto: kept },
+        ),
+      ],
+    );
+    expect(jobs.map((job) => [job.id, job.searches.length, job.events.length])).toEqual([
+      [kept, 2, 3],
+    ]);
+    // With the job it went into gone, it's a job of its own again.
+    const [alone] = collectJobs(
+      [search('Tidewater Analytics', 'Data Pipelines Engineer')],
+      [
+        known(
+          'tidewater-analytics--data-pipelines-engineer',
+          'Tidewater',
+          'Data Pipelines Engineer',
+          [],
+          { mergedInto: 'gone' },
+        ),
+      ],
+    );
+    expect(alone?.id).toBe('tidewater-analytics--data-pipelines-engineer');
   });
 });

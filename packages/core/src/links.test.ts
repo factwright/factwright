@@ -15,6 +15,14 @@ describe('normalizeUrl', () => {
     );
   });
 
+  it('drops LinkedIn’s tracking, which differs on every copy of a link to the same job', () => {
+    expect(
+      normalizeUrl(
+        'https://www.linkedin.com/comm/jobs/view/4012345678/?refId=a1%3D%3D&trackingId=b2&lipi=c3&midToken=d4&midSig=e5&eBP=f6&trk=g7',
+      ),
+    ).toBe('linkedin.com/comm/jobs/view/4012345678');
+  });
+
   it('lowercases text that isn’t a full address', () => {
     expect(normalizeUrl('Acme.com/Jobs')).toBe('acme.com/jobs');
   });

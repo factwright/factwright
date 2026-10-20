@@ -11,6 +11,7 @@ import {
   KINDS_FILE,
   type KindName,
   kindNamesIn,
+  knownJobsOf,
   noteOrder,
   readAllCallDocs,
   readJobExtras,
@@ -85,7 +86,7 @@ const PAGE_CODE_LENGTH = 16;
  * for the job's calls.
  */
 const READ_FOR_JOBS =
-  /^(applications\/[^/]+\/(?:[^/]+\.md|cover-letter\.json)|searches\/[^/]+\.md|searches\/[^/]+\/jobs\.json|asked\/[^/]+\/[^/]+\.md|calls\/[^/]+\/[^/]+\/(?:prep|thank-you)\.md)$/;
+  /^(applications\/[^/]+\/(?:[^/]+\.md|cover-letter\.json)|searches\/[^/]+\.md|searches\/[^/]+\/jobs(?:-\d+)?\.json|asked\/[^/]+\/[^/]+\.md|calls\/[^/]+\/[^/]+\/(?:prep|thank-you)\.md)$/;
 
 /** The kinds of job the user wants, as the desktop app reads them, or none from a broken file. */
 function readKinds(text: string | null): KindName[] {
@@ -159,6 +160,7 @@ function untracked(job: CollectedJob): TrackedRow {
     manual: false,
     payText: null,
     firstSeen: job.firstSeen,
+    mergedInto: null,
     status: null,
     statusOn: null,
     backOn: null,
@@ -218,15 +220,8 @@ export async function openVault(client: SyncClient, keys: AccountKeys): Promise<
   }
 
   const tracked = (rows.jobs ?? []).map(trackedRow);
-  const known = tracked.map(({ id, company, companyKey, role, links }) => ({
-    id,
-    company,
-    companyKey,
-    role,
-    links,
-  }));
   const reader = readerOf(files, texts);
-  const collected = collectJobs(readRecords(reader), known);
+  const collected = collectJobs(readRecords(reader), knownJobsOf(tracked));
   const found = new Map(collected.map((job) => [job.id, job]));
   const ids = new Set(tracked.map((row) => row.id));
   const all = [...tracked, ...collected.filter((job) => !ids.has(job.id)).map(untracked)];

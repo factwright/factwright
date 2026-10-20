@@ -310,6 +310,11 @@ export interface FactwrightApi {
   updateJob(jobId: string, changes: JobChanges): Promise<EditResult>;
   /** Makes the same change to several jobs at once, such as moving them all to To review. */
   updateJobs(jobIds: string[], changes: JobChanges): Promise<EditResult>;
+  /**
+   * Merges another job into one, for a job the skills' work found twice: its status, notes, calls
+   * and links move to the job kept, and it leaves the list.
+   */
+  mergeJobs(keepId: string, otherId: string): Promise<EditResult>;
   addJob(job: NewJob): Promise<AddJobResult>;
   addCall(jobId: string, call: NewCall): Promise<EditResult>;
   updateCall(callId: string, changes: CallChanges): Promise<EditResult>;

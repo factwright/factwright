@@ -126,7 +126,13 @@ it('marks the tools that stay on this computer, which Claude may call without as
 });
 
 describe('find_job', () => {
-  it('says what’s on file for a job seen before, matching the company loosely', async () => {
+  const CLOSING = [
+    'For everything on file, call job_details with the job’s id.',
+    'When one of these is the job you found in a job search, give its id as "job" in jobs.json, so the app adds what you found to that job.',
+  ];
+  const ACME = `- Acme Robotics, Staff Engineer (job acme-robotics--staff-engineer): fit check Strong 82 on 2026-10-07; folder applications/${FOLDER}; status`;
+
+  it('says what’s on file for a job seen before, however its company and title are written', async () => {
     jobs.updateJob('acme-robotics--staff-engineer', { status: 'applied', statusOn: '2026-10-08' });
     const answer = await tool('find_job').run({
       company: 'Acme Robotics, Inc.',
@@ -134,19 +140,46 @@ describe('find_job', () => {
     });
     expect(answer).toBe(
       [
-        'Seen before:',
-        `- Acme Robotics, Staff Engineer (job acme-robotics--staff-engineer): fit check Strong 82 on 2026-10-07; folder applications/${FOLDER}; status Applied since 2026-10-08; applied 2026-10-08`,
-        'For everything on file, call job_details with the job’s id.',
+        'Seen before, this job:',
+        `${ACME} Applied since 2026-10-08; applied 2026-10-08 [the same role]`,
+        ...CLOSING,
       ].join('\n'),
+    );
+    // As the app joins them: the company written shorter, and a title saying more.
+    for (const query of [
+      { company: 'Acme', role: 'Staff Engineer' },
+      { company: 'Acme Robotics', role: 'Staff Software Engineer (Remote)' },
+    ]) {
+      expect(await tool('find_job').run(query)).toMatch(
+        /^Seen before, this job:\n.+\[the same role\]$/m,
+      );
+    }
+  });
+
+  it('keeps the user’s other jobs at the company apart from the job itself', async () => {
+    for (const role of ['Senior Staff Engineer', 'Engineering Manager']) {
+      expect(await tool('find_job').run({ company: 'Acme', role })).toBe(
+        [
+          `Not seen before: Acme, ${role}.`,
+          'The user’s other jobs at Acme:',
+          `${ACME} To review`,
+          ...CLOSING,
+        ].join('\n'),
+      );
+    }
+    // A word any company might have isn't the company.
+    expect(await tool('find_job').run({ company: 'Robotics', role: 'Staff Engineer' })).toBe(
+      'Not seen before: Robotics, Staff Engineer.',
     );
   });
 
-  it('finds a job by its link, and says when a job is new', async () => {
+  it('finds a job by its link, at any company, and says when a job is new', async () => {
     const byLink = await tool('find_job').run({
       company: 'Someone Else',
-      link: 'https://jobs.ashbyhq.com/acme/0b7a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d?utm_source=hn',
+      link: 'https://jobs.ashbyhq.com/acme/0b7a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d/application?utm_source=hn',
     });
     expect(byLink).toContain('job acme-robotics--staff-engineer');
+    expect(byLink).toContain('[the same posting]');
     expect(await tool('find_job').run({ company: 'Tidewater Analytics' })).toBe(
       'Not seen before: Tidewater Analytics.',
     );

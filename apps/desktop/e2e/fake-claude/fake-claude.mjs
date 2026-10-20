@@ -314,23 +314,57 @@ async function work(text) {
       show(`${built.split('\n')[0]}\n`);
     }
   }
-  // As Claude would for a search of LinkedIn: write the run's report in a folder of its own,
-  // in the workspace it runs in.
+  // As Claude would for a search of LinkedIn: write the run's report in a folder of its own, in
+  // the workspace it runs in. Its listing repeats the HN search's Tidewater job, which find_job
+  // names, so it gives that job's id. Run again, it keeps the first run's file and writes the
+  // next beside it, for the same search today, finding Tidewater under another title.
   if (/^\/factwright:job-search .*\bLinkedIn\b/.test(text)) {
     const folder = join(process.cwd(), 'searches', '2026-10-12-linkedin');
     mkdirSync(folder, { recursive: true });
+    const again = existsSync(join(folder, 'jobs.json'));
+    const tidewater = again
+      ? { company: 'Tidewater Analytics', role: 'Backend Engineer, Data Pipelines' }
+      : {
+          company: 'Tidewater Analytics',
+          role: 'Sr. Backend Engineer',
+          posting:
+            'https://www.linkedin.com/jobs/view/sr-backend-engineer-at-tidewater-analytics-4012345678/?refId=a1&trackingId=b2',
+        };
+    const seen = await call('find_job', {
+      company: tidewater.company,
+      role: tidewater.role,
+      ...(tidewater.posting && { link: tidewater.posting }),
+    });
+    const job = seen.match(/\(job ([a-z0-9-]+)\)/)?.[1];
+    const today = new Date();
+    const checked = again
+      ? [today.getFullYear(), today.getMonth() + 1, today.getDate()]
+          .map((part) => String(part).padStart(2, '0'))
+          .join('-')
+      : '2026-10-12';
     writeFileSync(
-      join(folder, 'jobs.json'),
+      join(folder, again ? 'jobs-2.json' : 'jobs.json'),
       JSON.stringify({
-        meta: { source: 'LinkedIn Oct 12', checked: '2026-10-12' },
+        meta: { source: 'LinkedIn Oct 12', checked },
         jobs: [
+          ...(again
+            ? []
+            : [
+                {
+                  company: 'Lakeside Data',
+                  role: 'Senior Platform Engineer',
+                  posting: 'https://boards.greenhouse.io/lakeside/jobs/1',
+                  tier: 'strong',
+                  score: 81,
+                  why: ['Platform work, from the stand-in Claude'],
+                },
+              ]),
           {
-            company: 'Lakeside Data',
-            role: 'Senior Platform Engineer',
-            posting: 'https://boards.greenhouse.io/lakeside/jobs/1',
-            tier: 'strong',
-            score: 81,
-            why: ['Platform work, from the stand-in Claude'],
+            ...tidewater,
+            ...(job && { job }),
+            tier: 'good',
+            score: 70,
+            flags: [job ? `Seen before: ${job}` : 'New'],
           },
         ],
       }),

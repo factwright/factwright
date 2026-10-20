@@ -564,6 +564,7 @@ export function sampleJobs(): Job[] {
           stage: 'Series B',
           parts: { work: 29, role: 18, stack: 12, reqs: 12 },
         },
+        again: false,
       },
       firstSeen: day(-2),
       lastActivity: day(-2),
@@ -582,6 +583,7 @@ export function sampleJobs(): Job[] {
         tier: 'worth',
         score: 58,
         detail: { ...NO_DETAIL, pick: 'A patient-records platform moving to Go' },
+        again: false,
       },
       firstSeen: day(-3),
       lastActivity: day(-3),
@@ -623,12 +625,36 @@ export function sampleJobs(): Job[] {
         ['ghosted', -5],
       ]),
     }),
+    // Passed on, then found again by a later search: it stays passed.
     sampleJob({
       id: 'orchard-health--backend-engineer',
       company: 'Orchard Health',
       role: 'Backend Engineer',
       stage: 'review',
       fit: { verdict: 'Long shot', score: 44, date: day(-8) },
+      searches: [HN_RUN, LINKEDIN_RUN],
+      search: {
+        source: LINKEDIN_RUN.source,
+        date: LINKEDIN_RUN.date,
+        tier: 'long',
+        score: null,
+        detail: NO_DETAIL,
+        again: true,
+      },
+      events: [
+        {
+          id: 'orchard-hn',
+          tool: 'search',
+          date: HN_RUN.date,
+          title: `Found in ${HN_RUN.source}: Long shot`,
+        },
+        {
+          id: 'orchard-linkedin',
+          tool: 'search',
+          date: LINKEDIN_RUN.date,
+          title: `Found again in ${LINKEDIN_RUN.source}: Long shot`,
+        },
+      ],
       status: 'passed',
       statusOn: day(-8),
       passReason: 'work',
@@ -652,6 +678,32 @@ export function sampleJobs(): Job[] {
       ],
     }),
   ];
+}
+
+/**
+ * The same job as the Quarry Labs sample's, which a search found under a shorter name and another
+ * title, for Merge with…: ?jobs=twice.
+ */
+export function sampleDuplicate(): Job {
+  return sampleJob({
+    id: 'quarry--senior-platform-engineer',
+    company: 'Quarry',
+    role: 'Senior Platform Engineer',
+    pay: listed(165, 195),
+    source: LINKEDIN_RUN.source,
+    searches: [LINKEDIN_RUN],
+    search: {
+      source: LINKEDIN_RUN.source,
+      date: LINKEDIN_RUN.date,
+      tier: 'strong',
+      score: 80,
+      detail: { ...NO_DETAIL, pick: 'Platform work on a small team' },
+      again: false,
+    },
+    firstSeen: LINKEDIN_RUN.date,
+    lastActivity: LINKEDIN_RUN.date,
+    docKinds: ['posting'],
+  });
 }
 
 /** The documents behind the samples' Open buttons. */
