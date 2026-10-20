@@ -229,18 +229,6 @@ describe('AddJobDialog', () => {
     expect(link.getAttribute('rel')).toBe('noreferrer');
   });
 
-  it('leaves the extension out where it can’t save through the sync here', () => {
-    render(
-      <AddJobDialog
-        api={{} as FactwrightApi}
-        onAdded={() => {}}
-        onClose={() => {}}
-        extension={false}
-      />,
-    );
-    expect(screen.queryByRole('link', { name: 'Save to Factwright' })).toBeNull();
-  });
-
   it('says why a job couldn’t be added, and stays open', async () => {
     const addJob = vi.fn(async () => ({
       ok: false as const,

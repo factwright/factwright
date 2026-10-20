@@ -5,6 +5,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Changed
+- Factwright points to Save to Factwright, the browser extension, whatever sync you use. Its version 0.2, now in both the Chrome Web Store and Firefox Add-ons, saves straight to Factwright on the same computer, with no account and no sync, and syncs through a server of your own as well as Factwright's. So the Add job dialog's link to it shows with a server of your own, and in a copy built without Factwright's sync, as the sidebar's does, and the Sync screen's Saving jobs from your browser shows with a server of your own too. It says the extension saves straight to Factwright on this computer, or through sync from another.
+- How to set one up, for a sync server of your own, opens factwright.com/own-server, the guide to running one for free in your own Cloudflare account, instead of the ready-to-deploy copy on GitHub. How to update, for a server that needs it, opens the guide's part on updates. The web view and Save to Factwright link to the guide too: the web view once the sync server is next deployed, and the extension from its next version.
 - Factwright runs on Electron 44, with Chromium 152, up from Electron 43 and Chromium 150, and the same Node.js 24. On a Mac it now needs macOS 13 Ventura or later, as Electron 44 does. A Mac on macOS 12 keeps the version it has, which goes on working: the Mac update feed now names the oldest macOS each version opens on, so a Mac too old for an update passes over it, instead of installing a version that won't open. factwright.com's download pages say macOS 13 or later from the site's next update. Windows is unchanged: 64-bit Windows 10 and 11.
 
 ## 0.9.2 - 2026-10-19

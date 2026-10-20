@@ -9,7 +9,7 @@ import { RequestsPanel } from './Approve.tsx';
 import { Groups } from './Groups.tsx';
 import { QrCode } from './QrCode.tsx';
 import styles from './SyncDialog.module.css';
-import { extensionWorks, hostOf, whose } from './servers.ts';
+import { hostOf, whose } from './servers.ts';
 import { timeAgo, useServerTerms } from './useSync.ts';
 
 type On = Extract<SyncStatus, { state: 'on' }>;
@@ -272,20 +272,19 @@ export function ManageSync({
         <LinkPanel api={api} />
       </section>
 
-      {extensionWorks(status, api.factwrightSync) && (
-        <section className={styles.section} aria-labelledby="sync-extension">
-          <h3 id="sync-extension" className={styles.heading}>
-            Saving jobs from your browser
-          </h3>
-          <p className={styles.hint}>
-            Save to Factwright, an extension for Chrome and Firefox, saves the job you’re looking at
-            to your job hunt, with its posting, through sync.{' '}
-            <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-              About the extension
-            </a>
-          </p>
-        </section>
-      )}
+      <section className={styles.section} aria-labelledby="sync-extension">
+        <h3 id="sync-extension" className={styles.heading}>
+          Saving jobs from your browser
+        </h3>
+        <p className={styles.hint}>
+          Save to Factwright, an extension for Chrome and Firefox, saves the job you’re looking at
+          to your job hunt, with its posting: straight to Factwright on this computer, or through
+          sync from another.{' '}
+          <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+            About the extension
+          </a>
+        </p>
+      </section>
 
       {problem && (
         <p className={styles.problem} role="alert">

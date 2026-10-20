@@ -1,8 +1,9 @@
 import type { SyncStatus } from '../../shared/sync.ts';
 
 /**
- * The steps for running a sync server of your own, which "How to set one up" and "How to update"
- * open, kept with the web view's in @factwright/core.
+ * The guide to running a sync server of your own, on Factwright's website, which "How to set one
+ * up" and "How to update" open, kept with the web view's and Save to Factwright's in
+ * @factwright/core.
  */
 export { OWN_SERVER_GUIDE } from '@factwright/core';
 
@@ -15,14 +16,4 @@ export const whose = (own: string | null): string => (own ? `${hostOf(own)}’s`
 /** The server of your own a status is with, if it's one, by its address. */
 export function ownServerOf(status: SyncStatus): string | null {
   return 'ownServer' in status ? (status.ownServer ?? null) : null;
-}
-
-/**
- * Whether Save to Factwright can save through the sync here. For now that's Factwright's own sync
- * only, as the stores' extension reaches app.factwright.com alone. So it can't with a server of
- * your own, or in a copy without Factwright's sync.
- */
-export function extensionWorks(status: SyncStatus | 'checking', factwrightSync: boolean): boolean {
-  if (status === 'checking' || status.state === 'no-server') return false;
-  return factwrightSync && ownServerOf(status) === null;
 }

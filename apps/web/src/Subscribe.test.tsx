@@ -110,7 +110,7 @@ describe('the subscribe page', () => {
     const ask = await screen.findByRole('link', { name: 'steve@factwright.com' });
     expect(ask.getAttribute('href')).toBe('mailto:steve@factwright.com');
     expect(screen.getByRole('link', { name: 'How to set one up' }).getAttribute('href')).toBe(
-      'https://github.com/factwright/sync-server',
+      'https://factwright.com/own-server',
     );
   });
 
