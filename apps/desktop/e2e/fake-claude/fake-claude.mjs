@@ -356,7 +356,33 @@ async function work(text) {
   // the workspace it runs in. Its listing repeats the HN search's Tidewater job, which find_job
   // names, so it gives that job's id. Run again, it keeps the first run's file and writes the
   // next beside it, for the same search today, finding Tidewater under another title.
-  if (/^\/factwright:job-search .*\bLinkedIn\b/.test(text)) {
+  // As Claude would for a search the user focused: read the focus with search_focus, say what it
+  // is, and keep the search in a folder of its own, named for the focus, with its ID in meta.
+  const focused = text.match(/^\/factwright:job-search (?:for [a-z0-9-]+, )?focus ([0-9a-f-]+): /);
+  if (focused) {
+    const id = focused[1];
+    const focus = await call('search_focus', { focus: id });
+    show(`${focus.split('\n')[0]}\n`);
+    const folder = join(process.cwd(), 'searches', `2026-10-12-linkedin-focus-${id.slice(11)}`);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'jobs.json'),
+      JSON.stringify({
+        meta: { source: 'LinkedIn Oct 12', checked: '2026-10-12', focus: id },
+        jobs: [
+          {
+            company: 'Brightline Health',
+            role: 'Founding Engineer',
+            posting: 'https://jobs.ashbyhq.com/brightline/9c1e',
+            tier: 'strong',
+            score: 84,
+            why: ['A seed-stage team, from the stand-in Claude'],
+          },
+        ],
+      }),
+    );
+  }
+  if (!focused && /^\/factwright:job-search .*\bLinkedIn\b/.test(text)) {
     const folder = join(process.cwd(), 'searches', '2026-10-12-linkedin');
     mkdirSync(folder, { recursive: true });
     const again = existsSync(join(folder, 'jobs.json'));

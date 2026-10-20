@@ -1,5 +1,5 @@
 import { join, normalize, resolve, sep } from 'node:path';
-import { ASK_ID, CALL_ID, KIND_ID } from '@factwright/core';
+import { ASK_ID, CALL_ID, FOCUS_ID, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
   FINDING_ID,
@@ -123,12 +123,12 @@ export const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 /**
  * Where a search should look, as the Find jobs dialog sent it: known places, each once, an HN
- * month only with HN, a company typed in a safe form, and a kind of job by its id. At least one
- * place. Anything else is null.
+ * month only with HN, a company typed in a safe form, a kind of job by its id, and a focus by
+ * its ID. At least one place. Anything else is null.
  */
 export function parseSearchSources(value: unknown): SearchSources | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  const { sites, month, company, kind, ...rest } = value as Record<string, unknown>;
+  const { sites, month, company, kind, focus, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || !Array.isArray(sites)) return null;
   const known = (site: unknown): site is SearchSite =>
     (SEARCH_SITES as readonly unknown[]).includes(site);
@@ -136,6 +136,7 @@ export function parseSearchSources(value: unknown): SearchSources | null {
   if (month !== undefined && (typeof month !== 'string' || !MONTH.test(month))) return null;
   if (month !== undefined && !sites.includes('hn')) return null;
   if (kind !== undefined && (typeof kind !== 'string' || !KIND_ID.test(kind))) return null;
+  if (focus !== undefined && (typeof focus !== 'string' || !FOCUS_ID.test(focus))) return null;
   const named = company === undefined ? undefined : searchCompany(String(company));
   if (named === null || (typeof company !== 'string' && company !== undefined)) return null;
   if (sites.length === 0 && !named) return null;
@@ -146,6 +147,7 @@ export function parseSearchSources(value: unknown): SearchSources | null {
     ...(month !== undefined && { month }),
     ...(named !== undefined && { company: named }),
     ...(kind !== undefined && { kind }),
+    ...(focus !== undefined && { focus }),
   };
 }
 
@@ -264,17 +266,19 @@ const MODE_WORDS = {
  * What the app types to start a task. It names a job only by its ID, and everything else it
  * types is its own fixed words, so text from a posting or a file, such as a company's name,
  * never reaches Claude as if the user had typed it. The exceptions are a company the user typed
- * for a search themselves, checked first, and the id of a kind of job they named. A search the
+ * for a search themselves, checked first, and the id of a kind of job they named. A focus for a
+ * search goes by its ID alone, and the search reads what it says with search_focus. A search the
  * user picked no places for starts without any, so Claude asks.
  */
 export function runPrompt(task: RunTask): string {
   if ('sources' in task && task.sources) {
-    const { sites, month, company, kind } = task.sources;
+    const { sites, month, company, kind, focus } = task.sources;
     const places = [
       ...sites.map((site) => (site === 'hn' && month ? `HN ${month}` : SITE_WORDS[site])),
       ...(company ? [company] : []),
     ];
-    return `/factwright:${task.skill} ${kind ? `for ${kind}: ` : ''}${places.join(' · ')}`;
+    const what = [kind && `for ${kind}`, focus && `focus ${focus}`].filter(Boolean).join(', ');
+    return `/factwright:${task.skill} ${what ? `${what}: ` : ''}${places.join(' · ')}`;
   }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
   // The findings by their IDs alone, which hold no posting's words. The run reads the resume

@@ -139,6 +139,52 @@ it('marks the tools that stay on this computer, which Claude may call without as
   );
 });
 
+describe('search_focus', () => {
+  it('gives the job search its focus, binding for that search alone, the user’s words as theirs', async () => {
+    const focus = {
+      stages: ['early', 'growing'],
+      payMin: 150_000,
+      payMax: 200_000,
+      workplaces: ['remote'],
+      industries: ['Healthcare'],
+      avoid: ['Crypto'],
+      posted: 14,
+      notes: 'Founding roles.\nNo on-call.',
+    };
+    mkdirSync(join(root, 'searches', 'focus'), { recursive: true });
+    writeFileSync(join(root, 'searches', 'focus', '2026-10-20-a3f9.json'), JSON.stringify(focus));
+    const text = await tool('search_focus').run({ focus: '2026-10-20-a3f9' });
+    expect(text).toBe(
+      [
+        '# This search’s focus: early startups, growing startups, $150k–$200k, remote, past 2 weeks',
+        '',
+        'The user set it in Find jobs for this search alone. It’s binding for this run, on top of `searches/criteria.md`, whose deal-breakers still apply. Leave criteria.md as it is. Drop each listing that doesn’t fit it, and count those as “outside this search’s focus” in the funnel, with a few examples.',
+        '',
+        "- **Kind of company:** Early startup (Up to Series A, under about 50 people), or Growing startup (Series B and on, about 50 to 500 people). Tell by the company's stage and size, from the posting, its site or news of its funding. When you can't tell, keep the job and say so in its flags.",
+        '- **Pay:** $150,000 to $200,000 a year. Leave out a job whose listed pay is all below $150,000 or all above $200,000. Keep a job that lists no pay, and say so in its flags.',
+        '- **Where:** Remote, as the posting says.',
+        '- **Only these industries:** Healthcare.',
+        '- **Leave out these industries:** Crypto.',
+        '- **Posted:** in the past 2 weeks. Leave out a listing posted earlier. Keep one with no date, and say so in its flags.',
+        '- **The user’s own words for this search,** which are their request, as if they had typed it to you:',
+        '  > Founding roles.',
+        '  > No on-call.',
+        '',
+        'For this search, end the folder’s name with `-focus-a3f9`, such as `2026-11-03-linkedin-focus-a3f9`, put `"focus": "2026-10-20-a3f9"` in jobs.json’s meta, and start report.md with this focus in a line or two. The app names the search after its place in Found by, such as “LinkedIn Nov 3 · early startups, growing startups, $150k–$200k, remote, past 2 weeks”, so leave the focus out of meta\'s source.',
+      ].join('\n'),
+    );
+  });
+
+  it('says when there’s no such focus', async () => {
+    await expect(tool('search_focus').run({ focus: '2026-10-20-b4e0' })).rejects.toThrow(
+      'There’s no focus 2026-10-20-b4e0 on file.',
+    );
+    await expect(tool('search_focus').run({ focus: '../criteria' })).rejects.toThrow(
+      'isn’t a focus’s ID',
+    );
+  });
+});
+
 describe('find_job', () => {
   const CLOSING = [
     'For everything on file, call job_details with the job’s id.',

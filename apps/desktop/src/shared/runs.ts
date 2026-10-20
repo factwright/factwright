@@ -36,7 +36,7 @@ export type SearchSite = (typeof SEARCH_SITES)[number];
 
 /**
  * Where a job search looks, and for what: the places picked, a company the user has in mind,
- * and one kind of job, when the user wants more than one.
+ * one kind of job, when the user wants more than one, and a focus for this search alone.
  */
 export interface SearchSources {
   sites: SearchSite[];
@@ -46,6 +46,11 @@ export interface SearchSources {
   company?: string;
   /** The kind of job to look for, by its id. Without one, every kind. */
   kind?: string;
+  /**
+   * What this search alone looks for, on top of what the user wants in Profile, by the ID the
+   * app kept it under: searches/focus/<id>.json, which the search reads with search_focus.
+   */
+  focus?: string;
 }
 
 /** A month as YYYY-MM. */

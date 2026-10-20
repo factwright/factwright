@@ -1,6 +1,7 @@
 import { firstDate } from './dates.ts';
 import type { FitTier } from './fit.ts';
 import { SCORE_PARTS, type ScorePartKey } from './fit-report.ts';
+import { FOCUS_ID, focusFile, focusName, focusOf } from './focus.ts';
 import { companyKey, roleKey } from './keys.ts';
 import { isCoverLetterFile, isProjectsPageFile } from './letter.ts';
 import { type Link, linksFrom } from './links.ts';
@@ -388,6 +389,18 @@ function searchSource(source: string): string {
   return month ? `HN ${month}` : short;
 }
 
+/**
+ * A search's name with its focus, when the user gave the search one: "LinkedIn Oct 20 · early
+ * startups, $150k–$200k". The app names it from the focus it kept, by its ID, unless the search
+ * named it so itself.
+ */
+function withFocus(workspace: WorkspaceReader, source: string, id: string | null): string {
+  if (!id || !FOCUS_ID.test(id)) return source;
+  const focus = focusOf(workspace.readText(focusFile(id)));
+  const name = focus && focusName(focus);
+  return name && !source.includes(name) ? `${source} · ${name}` : source;
+}
+
 /** Each run's file of jobs in a search's folder, first run first. */
 function runFiles(workspace: WorkspaceReader, folder: string): { name: string; run: number }[] {
   return workspace
@@ -430,7 +443,11 @@ function runRecords(
   const { meta, jobs, longShots } = data as Record<string, unknown>;
   const about = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {};
   const date = firstDate(text(about.checked)) ?? firstDate(`${folder.slice(0, 7)}-01`);
-  const source = searchSource(text(about.source) ?? text(about.title) ?? folder);
+  const source = withFocus(
+    workspace,
+    searchSource(text(about.source) ?? text(about.title) ?? folder),
+    text(about.focus),
+  );
   const report = text(about.artifactUrl);
   // A search for one kind of job says so once. One for every kind says it on each job.
   const searchKind = text(about.kind);
