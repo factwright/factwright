@@ -20,6 +20,7 @@ import {
   type BeyondWork,
   beyondFileWith,
   beyondOf,
+  localTime,
 } from '../../shared/beyond.ts';
 import { criteriaMarkdown } from '../../shared/criteria.ts';
 import { templatesMarkdown } from '../../shared/looks.ts';
@@ -181,7 +182,7 @@ export class AboutStore {
     const text = this.read(BEYOND_FILE);
     const raw = text === null ? {} : jsonObject(text);
     const before = beyondOf(this.answers());
-    const file = beyondFileWith(raw ?? {}, before, beyond, this.now().toISOString());
+    const file = beyondFileWith(raw ?? {}, before, beyond, localTime(this.now()));
     if (file === null) return;
     if (raw === null) this.keepOld(BEYOND_FILE, text as string);
     this.write(BEYOND_FILE, `${JSON.stringify(file, null, 2)}\n`);

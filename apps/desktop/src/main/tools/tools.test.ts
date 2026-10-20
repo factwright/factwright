@@ -1181,6 +1181,35 @@ describe('build_resume', () => {
     expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
   });
 
+  it('turns away a project the user keeps private, by its name, but not one they show', async () => {
+    mkdirSync(join(root, 'about-me'), { recursive: true });
+    writeFileSync(
+      join(root, 'about-me', 'beyond-work.json'),
+      JSON.stringify({
+        projects: [
+          { id: 'woodworks', name: 'Rivera Woodworks', showing: 'private' },
+          { id: 'trailhead', name: 'Trailhead', showing: 'feature' },
+        ],
+      }),
+    );
+    writeResume({
+      ...resume,
+      projects: [
+        { name: 'Trailhead', text: 'A trail conditions app.' },
+        { name: 'RIVERA WOODWORKS', text: 'Cutting boards, made to order.' },
+      ],
+      // What the resume never shows doesn't count.
+      notes: ['Rivera Woodworks left out: it’s private.'],
+    });
+    const answer = await tool('build_resume').run({ folder: FOLDER });
+    expect(answer).toContain(
+      '- “Rivera Woodworks” is a project the user keeps private, and it’s in the resume. Take it out: they keep it off everything they send.',
+    );
+    expect(answer).not.toContain('“Trailhead”');
+    writeResume({ ...resume, projects: [{ name: 'Trailhead', text: 'A trail conditions app.' }] });
+    expect(await tool('build_resume').run({ folder: FOLDER })).not.toContain('keeps private');
+  });
+
   it('says when the template would leave out the projects or a section', async () => {
     mkdirSync(join(root, 'templates'), { recursive: true });
     const classic = builtInTemplate('classic') as Template;

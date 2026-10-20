@@ -21,9 +21,10 @@ export const STEPS = [
   'About you',
   'Your files',
   'In your words',
-  'Beyond work',
   'What you want',
   'Templates',
+  // Last before Ready, so a step saved before it was added still opens the same one.
+  'Beyond work',
   'Ready',
 ] as const;
 
@@ -139,9 +140,8 @@ export function GetStarted({
             onConfidential={(names) => void state.saveConfidential(names)}
           />
         )}
-        {step === 4 && <BeyondWorkStep answers={answers} update={update} later />}
-        {step === 5 && <WantsStep answers={answers} update={update} />}
-        {step === 6 && (
+        {step === 4 && <WantsStep answers={answers} update={update} />}
+        {step === 5 && (
           <TemplatesStep
             answers={answers}
             templates={profile.templates}
@@ -152,6 +152,7 @@ export function GetStarted({
             pickSuggested
           />
         )}
+        {step === 6 && <BeyondWorkStep answers={answers} update={update} later />}
         {step === 7 && (
           <ReadyStep
             answers={answers}

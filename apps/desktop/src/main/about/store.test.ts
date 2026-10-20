@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { KINDS_FILE } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { NO_ANSWERS } from '../../shared/about.ts';
-import { BEYOND_FILE, newProject } from '../../shared/beyond.ts';
+import { BEYOND_FILE, localTime, newProject } from '../../shared/beyond.ts';
 import { addKind, changeKind, removeKind } from '../../shared/kinds.ts';
 import { AboutStore } from './store.ts';
 import type { CheckedUpload } from './uploads.ts';
@@ -49,6 +49,9 @@ beforeEach(() => {
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+/** When the store says the projects changed: now, on this computer's calendar. */
+const NOW = localTime(new Date('2026-10-12T15:00:00.000Z'));
 
 describe('AboutStore', () => {
   it('saves the answers, and nothing built from them until Claude has them', () => {
@@ -234,7 +237,7 @@ describe('AboutStore', () => {
         { ...newProject('trailhead'), name: 'Trailhead', kind: 'product', showing: 'feature' },
       ],
       interests: ['Trail running'],
-      projectsChanged: '2026-10-12T15:00:00.000Z',
+      projectsChanged: NOW,
     });
     const saved = json('about-me/answers.json');
     expect(saved).not.toHaveProperty('projects');
@@ -292,7 +295,7 @@ describe('AboutStore', () => {
         { id: 'club', name: 'Code Club' },
         { id: 'Bad Id', name: 'Broken' },
       ],
-      projectsChanged: '2026-10-12T15:00:00.000Z',
+      projectsChanged: NOW,
     });
     // Removing a project it read takes it out, and leaves the one it couldn't read.
     store.saveAnswers({ removedProjects: ['club'] });

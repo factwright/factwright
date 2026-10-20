@@ -10,6 +10,8 @@ import {
   BEYOND_LIMITS,
   beyondFileWith,
   DEFAULT_PROJECT_PREFS,
+  freshProjectId,
+  localTime,
   NO_BEYOND,
   newProject,
   type Project,
@@ -59,19 +61,32 @@ describe('Beyond work in the answers', () => {
     expect(answers.interestsOnResumes).toBe('never');
   });
 
+  it('keeps a project private when how much to show it doesn’t read, as a later version’s', () => {
+    for (const showing of ['Private', 'hidden', ' private', null, 42]) {
+      expect(readAnswers({ projects: [{ id: 'club', showing }] }).projects[0]?.showing).toBe(
+        'private',
+      );
+    }
+    // Saying nothing about it is a project just told, shown when it fits.
+    expect(readAnswers({ projects: [{ id: 'club' }] }).projects[0]?.showing).toBe('fit');
+  });
+
   it('keeps no more projects than the app holds', () => {
     const many = Array.from({ length: 40 }, (_, n) => ({ id: `p-${n}`, name: `P ${n}` }));
     expect(readAnswers({ projects: many }).projects).toHaveLength(BEYOND_LIMITS.projects);
   });
 
-  it('reads how projects look on resumes, with a choice it leaves out as it’s always been', () => {
+  it('reads how projects look on resumes a choice at a time, as it’s always been where it can’t', () => {
     expect(readProjectPrefs({ resumes: 'experience', tools: true })).toEqual({
       ...DEFAULT_PROJECT_PREFS,
       resumes: 'experience',
       tools: true,
     });
-    expect(readProjectPrefs({ resumes: 'sidebar' })).toBeUndefined();
-    expect(readProjectPrefs({ heading: 'x'.repeat(61) })).toBeUndefined();
+    // One choice it can't read, such as a later version's, leaves the rest as they are.
+    expect(
+      readProjectPrefs({ resumes: 'sidebar', heading: 'Selected Work', links: false }),
+    ).toEqual({ ...DEFAULT_PROJECT_PREFS, heading: 'Selected Work', links: false });
+    expect(readProjectPrefs({ heading: 'x'.repeat(61) })).toEqual(DEFAULT_PROJECT_PREFS);
     expect(readProjectPrefs('section')).toBeUndefined();
   });
 });
@@ -152,7 +167,13 @@ describe('changing projects', () => {
     });
   });
 
-  it('gives each new project an id none of the others has', () => {
+  it('gives each new project an id none of the others has, and never one just removed', () => {
+    const rolls = [0.5, 0.5, 0.25];
+    const random = () => rolls.shift() ?? 0.75;
+    // The same roll twice: the second, already taken, is passed over.
+    const first = freshProjectId([], random);
+    expect(first).toMatch(/^project-[a-z0-9]+$/);
+    expect(freshProjectId([first], random)).not.toBe(first);
     expect(projectIdFor('Trailhead', [])).toBe('trailhead');
     expect(projectIdFor('Trailhead', ['trailhead', 'trailhead-2'])).toBe('trailhead-3');
     expect(projectIdFor('株式会社', [])).toBe('project');
@@ -162,6 +183,29 @@ describe('changing projects', () => {
 describe('beyondFileWith', () => {
   it('writes nothing when nothing changed', () => {
     expect(beyondFileWith({ pets: ['A dog'] }, NO_BEYOND, NO_BEYOND, 'now')).toBeNull();
+  });
+
+  it('writes how projects look a choice at a time, over choices it doesn’t know', () => {
+    const raw = { projectPrefs: { resumes: 'experience', page: 'timeline', order: 'newest' } };
+    const prefs = readProjectPrefs(raw.projectPrefs) ?? DEFAULT_PROJECT_PREFS;
+    const before = { ...NO_BEYOND, projectPrefs: prefs };
+    const after = { ...before, projectPrefs: { ...prefs, heading: 'Selected Work' } };
+    expect(beyondFileWith(raw, before, after, 'now')).toEqual({
+      projectPrefs: {
+        resumes: 'experience',
+        page: 'timeline',
+        order: 'newest',
+        heading: 'Selected Work',
+      },
+    });
+  });
+
+  it('keeps the time the projects changed on the user’s own calendar, with its offset', () => {
+    expect(localTime(new Date(2026, 9, 21, 8, 5, 9))).toMatch(
+      /^2026-10-21T08:05:09[+-]\d{2}:\d{2}$/,
+    );
+    const time = localTime(new Date('2026-10-20T23:00:00Z'));
+    expect(new Date(time).toISOString()).toBe('2026-10-20T23:00:00.000Z');
   });
 
   it('notes when the projects changed, and only then', () => {

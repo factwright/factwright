@@ -28,7 +28,7 @@ Read these, all at once:
 
 Then start where things stand, and say where in one line:
 - No claims in `facts/` yet: step 1.
-- Files that `read.md` doesn't list, or projects in `beyond-work.json` whose `projectsChanged` is later than its line there: step 1 for those alone, then step 2 for what they add.
+- Files that `read.md` doesn't list, or projects in `beyond-work.json` whose `projectsChanged` is on or after the date of its line there, or that has none: step 1 for those alone, then step 2 for what they add.
 - Claims tagged `unconfirmed`: step 3.
 - Everything confirmed, but no starting resumes in `base/`, or none yet for a kind of job: step 5.
 

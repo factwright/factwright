@@ -134,6 +134,7 @@ Start **one** subagent with this prompt (fill in the folder):
 > - Is every number present in facts, with its "~", and every title and date exact?
 > - Is each thing it says about the company in the posting, job.md or fit-check.md, rather than made up?
 > - Does it name a colleague, a customer or a confidential term, or break any rules.md rule?
+> - Does it name a project the user keeps private in `about-me/beyond-work.json`?
 > - Does it contradict `resume.json` or what the user sent on the application?
 > - Does it use a cliché or a phrase that sounds machine-written?
 >
