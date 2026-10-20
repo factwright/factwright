@@ -810,7 +810,7 @@ try {
     );
     check(
       (await setup.getByRole('link', { name: 'How to set one up' }).getAttribute('href')) ===
-        'https://github.com/factwright/sync-server',
+        'https://factwright.com/own-server',
       'pointing to a sync server of your own, which is free',
     );
     await shoot(setup, '7-subscription');

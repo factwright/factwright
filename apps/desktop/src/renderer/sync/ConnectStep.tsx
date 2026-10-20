@@ -8,10 +8,13 @@ import { OWN_SERVER_GUIDE } from './servers.ts';
 /** What a server of your own's address looks like, as the guide's steps make one. */
 const EXAMPLE = 'https://factwright-sync.yourname.workers.dev';
 
-/** The link that helps with a server that won't do, after what's wrong with it. */
-const HELP: Readonly<Record<ServerHelp, string>> = {
-  'set-up': 'How to set one up',
-  update: 'How to update',
+/**
+ * The link that helps with a server that won't do, after what's wrong with it: the guide, or the
+ * guide's part on keeping a server up to date.
+ */
+const HELP: Readonly<Record<ServerHelp, { words: string; href: string }>> = {
+  'set-up': { words: 'How to set one up', href: OWN_SERVER_GUIDE },
+  update: { words: 'How to update', href: `${OWN_SERVER_GUIDE}#updates` },
 };
 
 /**
@@ -78,11 +81,11 @@ export function ConnectStep({
               {' '}
               <a
                 className={styles.outLink}
-                href={OWN_SERVER_GUIDE}
+                href={HELP[problem.help].href}
                 target="_blank"
                 rel="noreferrer"
               >
-                {HELP[problem.help]}
+                {HELP[problem.help].words}
                 <ArrowUpRight size={13} aria-hidden="true" />
               </a>
             </>

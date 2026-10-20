@@ -1,6 +1,12 @@
 import { type AccountInfo, readLinkCode, readRecoveryKey, type SyncAccess } from '@factwright/sync';
 import type { FactwrightApi } from '../../shared/api.ts';
-import type { ApprovalsView, RequestView, ServerTerms, SyncStatus } from '../../shared/sync.ts';
+import type {
+  ApprovalsView,
+  RequestView,
+  ServerHelp,
+  ServerTerms,
+  SyncStatus,
+} from '../../shared/sync.ts';
 
 type SyncApi = Pick<
   FactwrightApi,
@@ -186,7 +192,7 @@ const signingInTo = (own: string): SyncStatus =>
   );
 
 /** What a server of your own's address in the preview says, as the app would check it. */
-function readSample(typed: string): { server: string } | { message: string; help?: 'update' } {
+function readSample(typed: string): { server: string } | { message: string; help?: ServerHelp } {
   const text = typed.trim();
   if (!text) return { message: 'Type your server’s address.' };
   let url: URL;
@@ -204,6 +210,13 @@ function readSample(typed: string): { server: string } | { message: string; help
     return {
       message: 'Your server needs an update for this version of Factwright.',
       help: 'update',
+    };
+  }
+  // And one starting "new." has no sign-in set up yet.
+  if (url.hostname.startsWith('new.')) {
+    return {
+      message: 'Your server has no way to sign in yet. Set up its GitHub sign-in, then try again.',
+      help: 'set-up',
     };
   }
   return { server: url.origin };

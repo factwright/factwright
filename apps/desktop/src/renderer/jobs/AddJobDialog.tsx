@@ -27,7 +27,6 @@ export function AddJobDialog({
   kind: startingKind = null,
   onAdded,
   onClose,
-  extension = true,
 }: {
   api: FactwrightApi;
   /** The kinds of job the user wants, when there's more than one. */
@@ -37,8 +36,6 @@ export function AddJobDialog({
   /** Called with the new job's ID, status and kind, so it can be shown. */
   onAdded: (jobId: string, status: JobStatus, kind: string | null) => void;
   onClose: () => void;
-  /** Whether to point to Save to Factwright, which saves through Factwright's own sync, for now. */
-  extension?: boolean;
 }) {
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
@@ -171,15 +168,13 @@ export function AddJobDialog({
           <p className={`${styles.hint} ${styles.wide}`}>
             Only the company is needed. Pick Applied if you’ve already sent your application.
           </p>
-          {extension && (
-            <p className={`${styles.hint} ${styles.wide}`}>
-              <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-                Save to Factwright
-              </a>
-              , our extension for Chrome and Firefox, saves jobs straight from your browser, with
-              their postings.
-            </p>
-          )}
+          <p className={`${styles.hint} ${styles.wide}`}>
+            <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+              Save to Factwright
+            </a>
+            , our extension for Chrome and Firefox, saves jobs straight from your browser, with
+            their postings.
+          </p>
           {problem && (
             <p className={`${styles.problem} ${styles.wide}`} role="alert">
               {problem}

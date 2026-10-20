@@ -221,6 +221,10 @@ test('connects a server of your own, in a copy without Factwright’s sync', asy
     await window.getByRole('button', { name: 'Turn on sync' }).click();
     await expect(window.getByRole('heading', { name: 'Sync' })).toBeVisible();
     await expect(window.getByText(/^Sync server:/)).toContainText(own.url.host);
+    // Save to Factwright syncs through a server of your own too, since its version 0.2.
+    await expect(
+      window.getByRole('region', { name: 'Saving jobs from your browser' }),
+    ).toBeVisible();
     await expect(window.getByText(/Up to date/).first()).toBeVisible({ timeout: 20_000 });
     // The account key went to that server, locked with the recovery key.
     expect(await sam.client.keys()).not.toBeNull();
