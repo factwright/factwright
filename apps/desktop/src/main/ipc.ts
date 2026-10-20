@@ -540,9 +540,10 @@ export function registerIpc({
     if (fromApp(event)) opener.listen(event.sender);
   });
 
-  answer('clipboard:write', (text): EditResult => {
+  // The clipboard takes the text in its own time, so it's copied once that's done.
+  answer('clipboard:write', async (text): Promise<EditResult> => {
     if (!isText(text)) return REFUSED;
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
     return { ok: true };
   });
 

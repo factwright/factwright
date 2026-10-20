@@ -128,7 +128,9 @@ export default {
     grantFileProtocolExtraPrivileges: false,
   },
   mac: {
-    // One app for every Mac, Apple silicon and Intel. The zip is what updates download.
+    // One app for every Mac, Apple silicon and Intel. The zip is what updates download. It opens on
+    // the oldest macOS Electron does, 13 since Electron 44, which `dist:mac` then names in the update
+    // feed with scripts/mac-feed.ts, so a Mac on an older one keeps the version it has.
     target: [
       { target: 'dmg', arch: ['universal'] },
       { target: 'zip', arch: ['universal'] },
