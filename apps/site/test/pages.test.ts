@@ -602,6 +602,32 @@ describe('the extension page', () => {
     );
   });
 
+  it('says saving to this computer needs no account or sync, only the helper Factwright comes with', () => {
+    const doc = open('extension.html');
+    expect(said(doc.querySelector('.ext-copy .lede'))).toContain(
+      'straight to Factwright on the same computer, with no account, or through end-to-end encrypted sync from any computer.',
+    );
+    expect(said(doc.querySelector('#private .lede'))).toContain(
+      'a job goes straight to the app, through a small helper that comes with it, and never to a server.',
+    );
+    // Linking is for sync alone since 0.2.0, so setting it up isn't called linking.
+    expect(said(doc.getElementById('setup-title'))).toBe('Set it up once, then save with a click.');
+    expect(said(doc.querySelector('.ext-steps ol'))).toContain(
+      'Factwright on this computer, with no account and no sync, or through sync, for Factwright on another computer.',
+    );
+    expect(said(doc.querySelector('.ext-steps .get-after'))).toContain(
+      'For Factwright on this computer, the browser asks once to let Save to Factwright talk to apps on your computer, and it talks only to a small helper that comes with Factwright.',
+    );
+    // The download pages say so too, with nothing left from when it saved only through sync.
+    for (const page of ['download/mac.html', 'download/windows.html']) {
+      const after = said(open(page).querySelector('.get-after'));
+      expect(after, page).toContain(
+        'saves jobs from Chrome or Firefox straight to Factwright, with no account, and sync takes your job hunt to your other computers and your phone.',
+      );
+      expect(after, page).not.toMatch(/with sync on/i);
+    }
+  });
+
   it('links to the part of the privacy policy about the extension', () => {
     expect(open('extension.html').querySelector(`a[href="${EXTENSION_PRIVACY}"]`)).not.toBeNull();
     expect(open('privacy.html').getElementById('extension')?.tagName).toBe('SECTION');

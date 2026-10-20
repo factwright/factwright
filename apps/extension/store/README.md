@@ -26,7 +26,9 @@ Version 0.2.0 signs in through the browser's own window wherever the server know
 >
 > Save to Factwright costs nothing to add. It needs Factwright, the free desktop app for Mac and Windows: factwright.com. It saves straight to Factwright on the same computer, with no account, or through sync from any computer, with Factwright's sync or a server of your own. Factwright's sync is $5 a month or $50 a year, and a server of your own is free: factwright.com/sync. Factwright is open source: github.com/factwright/factwright
 
-The price goes into both listings when Factwright starts selling sync, with the factwright.com deploy that adds /sync, and not before: until then, leave out "Factwright's sync is $5 a month or $50 a year, and a server of your own is free: factwright.com/sync." Both stores ask a listing to say when any of what an extension does needs something paid.
+Both stores ask a listing to say when any of what an extension does needs something paid, so both carry the price: "Factwright's sync is $5 a month or $50 a year, and a server of your own is free: factwright.com/sync." If the price changes, change it here, on factwright.com and in both listings together.
+
+Firefox Add-ons reads the description as Markdown, and an edit there goes live as soon as it's saved. Paste it with a blank line after "Private by design:", and each point starting with "- " instead of "• ". Chrome's description is plain text, as above, and a change to it waits for the store's review.
 
 Don't list other companies' names in it. The Chrome Web Store rejected the first submission for keyword spam (violation Yellow Argon) over "LinkedIn, Indeed, Greenhouse, Lever, Workday and other job sites". One mention of LinkedIn, for its setting, is the most it should carry.
 
