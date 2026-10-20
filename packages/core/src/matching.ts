@@ -41,9 +41,9 @@ export function postingKey(address: string): string | null {
     return `${board.kind}:${id.toLowerCase()}`;
   }
   if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
-    const id =
-      url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)(\/|$)/)?.[1] ??
-      url.searchParams.get('currentJobId');
+    // jobs/view/<id>, or jobs/view/<its title>-<id>.
+    const view = url.pathname.match(/^\/jobs\/view\/([^/]+)/)?.[1];
+    const id = view?.match(/(?:^|-)(\d+)$/)?.[1] ?? url.searchParams.get('currentJobId');
     return id && /^\d{1,20}$/.test(id) ? `linkedin:${id}` : null;
   }
   if (/(^|\.)indeed\.com$/.test(host)) {
@@ -256,8 +256,12 @@ function singular(word: string): string {
     : word;
 }
 
-/** Where a title's parts meet: "Staff Engineer, Developer Tools (Remote) | Berlin". */
-const PARTS = /\s*(?:[,()|/:;]|\s[-–—]\s|[–—])\s*/;
+/**
+ * Where a title's parts meet: "Staff Engineer, Developer Tools (Remote) | Berlin - EU". Each part
+ * is trimmed as its words are read, so the marks take no spaces with them, which would read a
+ * long run of spaces again from each space in it.
+ */
+const PARTS = /[,()|/:;–—]|\s-\s/;
 
 /** A part of a title's words: short forms written out, and words written apart joined. */
 function partWords(part: string): string[] {

@@ -84,6 +84,18 @@ describe('readTitle', () => {
       heads: ['developer'],
     });
   });
+
+  it('reads a long title in one pass', () => {
+    const spaces = ' '.repeat(50_000);
+    const started = performance.now();
+    expect(readTitle(`Senior${spaces}Engineer${'\t'.repeat(50_000)}x`).levels).toEqual(['senior']);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(readTitle('Staff Engineer - Platform – Berlin').heads).toEqual([
+      'berlin',
+      'engineer',
+      'platform',
+    ]);
+  });
 });
 
 describe('titleFit', () => {
