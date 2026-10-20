@@ -592,6 +592,19 @@
   color: var(--fw-text);
 }
 
+/* What the resume's ATS X-ray found. */
+.badge-ats {
+  top: calc(18% + 88px);
+  border: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+}
+
+.badge-ats .icon {
+  color: var(--fw-accent-text);
+  stroke-width: 2;
+}
+
 .phone {
   position: absolute;
   right: 0;
@@ -814,6 +827,10 @@
 
   .badge-fit {
     top: calc(4% + 36px);
+  }
+
+  .badge-ats {
+    top: calc(4% + 72px);
   }
 
   .phone {
