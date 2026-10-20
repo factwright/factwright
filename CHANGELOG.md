@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.9.3 - 2026-10-20
+
 ### Changed
 - Factwright points to Save to Factwright, the browser extension, whatever sync you use. Its version 0.2, now in both the Chrome Web Store and Firefox Add-ons, saves straight to Factwright on the same computer, with no account and no sync, and syncs through a server of your own as well as Factwright's. So the Add job dialog's link to it shows with a server of your own, and in a copy built without Factwright's sync, as the sidebar's does, and the Sync screen's Saving jobs from your browser shows with a server of your own too. It says the extension saves straight to Factwright on this computer, or through sync from another.
 - How to set one up, for a sync server of your own, opens factwright.com/own-server, the guide to running one for free in your own Cloudflare account, instead of the ready-to-deploy copy on GitHub. How to update, for a server that needs it, opens the guide's part on updates. The web view and Save to Factwright link to the guide too: the web view once the sync server is next deployed, and the extension from its next version.
