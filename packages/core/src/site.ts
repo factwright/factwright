@@ -5,10 +5,11 @@
 export const EXTENSION_URL = 'https://factwright.com/extension';
 
 /**
- * The steps for running a sync server of your own, which "How to set one up" opens in the app and
- * the web view: the ready-to-deploy copy, with its Deploy to Cloudflare button.
+ * The guide to running a sync server of your own, on Factwright's website, which "How to set one
+ * up" opens in the app, the web view and Save to Factwright: what's good to know first, then the
+ * steps, with the Deploy to Cloudflare button for the ready-to-deploy copy.
  */
-export const OWN_SERVER_GUIDE = 'https://github.com/factwright/sync-server';
+export const OWN_SERVER_GUIDE = 'https://factwright.com/own-server';
 
 /**
  * What sync on Factwright's own server costs, in whole US dollars, as its two Stripe prices are

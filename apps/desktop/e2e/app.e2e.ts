@@ -476,6 +476,12 @@ test('adds a job by hand', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: 'Add job' }).click();
   const dialog = window.getByRole('dialog', { name: 'Add a job' });
+  // Saving to this computer needs no sync, so even a copy without Factwright's sync points to the
+  // extension, for a job found in the browser.
+  await expect(dialog.getByRole('link', { name: 'Save to Factwright' })).toHaveAttribute(
+    'href',
+    'https://factwright.com/extension',
+  );
   await dialog.getByRole('textbox', { name: 'Company' }).fill('Northwind Labs');
   await dialog.getByRole('button', { name: 'Add job' }).click();
   await expect(window.getByRole('button', { name: /^Northwind Labs/ })).toBeVisible();

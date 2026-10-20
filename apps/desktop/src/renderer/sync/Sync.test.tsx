@@ -376,6 +376,9 @@ describe('SyncDialog', () => {
   it('points to the browser extension once sync is on, since it saves through sync', async () => {
     await openDialog(apiFor('on'));
     const section = await screen.findByRole('region', { name: 'Saving jobs from your browser' });
+    expect(section.textContent?.replace(/\s+/g, ' ')).toContain(
+      'with its posting: straight to Factwright on this computer, or through sync from another.',
+    );
     const link = within(section).getByRole('link', { name: 'About the extension' });
     expect(link.getAttribute('href')).toBe('https://factwright.com/extension');
     // The window opens links in the browser, so it doesn't leave the app.
@@ -425,7 +428,7 @@ describe('choosing a server', () => {
     ).toBeTruthy();
     expect(within(own).getByText('Free')).toBeTruthy();
     const guide = within(own).getByRole('link', { name: 'How to set one up' });
-    expect(guide.getAttribute('href')).toBe('https://github.com/factwright/sync-server');
+    expect(guide.getAttribute('href')).toBe('https://factwright.com/own-server');
     expect(guide.getAttribute('target')).toBe('_blank');
     expect(within(own).getByRole('button', { name: 'Connect your server…' })).toBeTruthy();
     // No price until Factwright's server says sync there is a subscription.
@@ -478,13 +481,13 @@ describe('choosing a server', () => {
     expect(screen.getByText(OWN).parentElement?.textContent).toMatch(
       new RegExp(`^Sync server: ${OWN}\\. To use another, turn off sync on this computer first\\.`),
     );
-    // The browser extension can't sync through it yet, and it has no terms of its own.
-    expect(screen.queryByRole('region', { name: 'Saving jobs from your browser' })).toBeNull();
+    // The browser extension syncs through it too, and it has no terms of its own.
+    expect(screen.getByRole('region', { name: 'Saving jobs from your browser' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'terms of service' })).toBeNull();
     vi.useRealTimers();
   });
 
-  it('says what’s wrong with a server, with the page that helps', async () => {
+  it('says what’s wrong with a server, with the part of the guide that helps', async () => {
     const user = userEvent.setup();
     await openDialog(apiFor('off'));
     await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
@@ -496,8 +499,22 @@ describe('choosing a server', () => {
       'Your server needs an update for this version of Factwright.',
     );
     expect(within(alert).getByRole('link', { name: 'How to update' }).getAttribute('href')).toBe(
-      'https://github.com/factwright/sync-server',
+      'https://factwright.com/own-server#updates',
     );
+
+    await user.clear(field);
+    await user.type(field, 'new.example.com');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain(
+        'Your server has no way to sign in yet.',
+      ),
+    );
+    const setUp = within(screen.getByRole('alert')).getByRole('link', {
+      name: 'How to set one up',
+    });
+    expect(setUp.getAttribute('href')).toBe('https://factwright.com/own-server');
+    expect(setUp.getAttribute('target')).toBe('_blank');
   });
 
   it('goes back to the first screen, and keeps what was typed', async () => {
@@ -875,7 +892,7 @@ describe('subscribing, where sync is sold', () => {
       'Money’s tight? Email steve@factwright.com and I’ll turn on sync for free. No questions asked.',
     );
     const guide = screen.getByRole('link', { name: 'How to set one up' });
-    expect(guide.getAttribute('href')).toBe('https://github.com/factwright/sync-server');
+    expect(guide.getAttribute('href')).toBe('https://factwright.com/own-server');
     // Choosing a server of your own instead ends this sign-in, and connects one.
     await user.click(screen.getByRole('button', { name: 'Connect your server…' }));
     expect(await screen.findByRole('heading', { name: 'Connect your own server' })).toBeTruthy();
