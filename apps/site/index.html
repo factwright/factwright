@@ -6,7 +6,7 @@
     <title>Factwright · Your job hunt and resumes, run by your own Claude</title>
     <meta
       name="description"
-      content="Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes and answers from facts you confirmed, and gets you ready for the interview."
+      content="Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes, cover letters and answers from facts you confirmed, and gets you ready for the interview."
     />
     <link rel="canonical" href="https://factwright.com/" />
     <meta name="color-scheme" content="light dark" />
@@ -20,7 +20,7 @@
     <meta property="og:title" content="Factwright: tailored to the job, true to the facts" />
     <meta
       property="og:description"
-      content="Your job hunt, run by your own Claude. Tailored resumes and answers where every line is backed by a fact, plus interview prep."
+      content="Your job hunt, run by your own Claude. Tailored resumes, cover letters and answers where every line is backed by a fact, plus interview prep."
     />
     <meta property="og:image" content="https://factwright.com/social.png" />
     <meta property="og:image:width" content="1200" />
@@ -37,7 +37,7 @@
         "@type": "SoftwareApplication",
         "name": "Factwright",
         "url": "https://factwright.com/",
-        "description": "Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes and answers from facts you confirmed, and gets you ready for the interview.",
+        "description": "Factwright is a desktop app for Mac and Windows that runs your job hunt with your own Claude. It finds jobs that fit, writes tailored resumes, cover letters and answers from facts you confirmed, and gets you ready for the interview.",
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "macOS, Windows",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -70,6 +70,10 @@
       <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="7" rx="6.5" ry="2.75" /><path d="M5.5 7v5c0 1.5 2.9 2.75 6.5 2.75s6.5-1.25 6.5-2.75V7M5.5 12v5c0 1.5 2.9 2.75 6.5 2.75s6.5-1.25 6.5-2.75v-5" /></symbol>
       <symbol id="i-pen" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L9 19H5v-4z" /><path d="M13 7l4 4" /></symbol>
       <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3" /><path d="M3.5 19c.8-2.9 3-4.5 5.5-4.5s4.7 1.6 5.5 4.5M15.5 6.2a3 3 0 0 1 0 5.6M17 14.8c1.7.6 3 2 3.5 4.2" /></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5" /><path d="M4 7.5l7 4.8a1.8 1.8 0 0 0 2 0l7-4.8" /></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" /></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M19.5 11V7.5a2 2 0 0 0-2-2h-11a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H11M4.5 10h15M8.5 3.5V7M15.5 3.5V7" /><circle cx="16.5" cy="16.5" r="4" /><path d="M16.5 14.6v2l1.3.9" /></symbol>
+      <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16" /><path d="M8 9h7M8 12h8M8 15h5" /></symbol>
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5a2 2 0 0 1-2-2z" /><path d="M8.5 9.5h7M8.5 12.5h4.5" /></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5L10 14M20.5 3.5l-6.5 17-4-6.5-6.5-4z" /></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4.5M7 9l5-5 5 5M5 19.5h14" /></symbol>
@@ -127,8 +131,8 @@
           <h1 id="hero-title">Tailored to the job.<br /><span class="soft">True to the facts.</span></h1>
           <p class="lede hero-lede">
             A job hunt app for people putting their real experience forward. Your own Claude finds
-            jobs that fit, tailors each resume to the job from facts you’ve confirmed, and gets you
-            ready for the interview.
+            jobs that fit, tailors each resume and cover letter to the job from facts you’ve
+            confirmed, and gets you ready for the interview.
           </p>
           <div class="hero-actions" data-downloads>
             <div class="downloads">
@@ -512,8 +516,9 @@
                 <h3>Tell it about you</h3>
                 <p>
                   Share your old resumes, your LinkedIn profile saved as a PDF, screenshots of your
-                  work, and everything you’d say about yourself in your own words. Then say what
-                  you’re after: titles, pay, where, the kinds of company, and your deal-breakers.
+                  work, and everything you’d say about yourself in your own words, from projects
+                  outside work to what you do for fun. Then say what you’re after: titles, pay,
+                  where, the kinds of company, and your deal-breakers.
                 </p>
                 <p class="step-aside">About 20 minutes, saved as you go, so you can stop any time.</p>
               </div>
@@ -621,8 +626,8 @@
                 <span class="step-number">3</span>
                 <h3>Find jobs that fit</h3>
                 <p>
-                  Point it at Hacker News’s monthly “Who is hiring?” thread, a company’s job board or
-                  a careers page, or paste any posting. Our <a href="/extension">browser extension</a><span data-soon>,
+                  Point it at Hacker News’s monthly “Who is hiring?” thread, LinkedIn’s and Indeed’s
+                  listings, a company’s job board or a careers page, or paste any posting. Our <a href="/extension">browser extension</a><span data-soon>,
                   coming soon,</span> saves the one you’re looking at. Every job gets scored against your
                   facts, and a fit check adds what people say about working there. Then decide on each
                   with a click: apply, later or pass.
@@ -764,20 +769,24 @@
                 <h3>Apply, and keep track</h3>
                 <p>
                   Resumes come out as PDF or Word in your templates, filling the pages you chose and
-                  fact-checked line by line. You send them yourself. Then track every status,
-                  call and interview, and see what needs you next.
+                  fact-checked line by line. An ATS X-ray shows what an applicant tracking system
+                  reads in each one. You send them yourself. Then track every status, call and
+                  interview, and see what needs you next. Add a call to your calendar, and Factwright
+                  reminds you an hour before, while it’s open.
                 </p>
                 <p class="step-aside">Turn on <a href="/sync">sync</a> to see it all on your phone.</p>
               </div>
               <figure class="step-visual">
                 <figcaption class="visually-hidden">
-                  A finished resume that passed its fact check, and the job list on a phone.
+                  A finished resume that passed its fact check and reads cleanly in its ATS X-ray,
+                  and the job list on a phone.
                 </figcaption>
                 <div class="send" aria-hidden="true" data-nosnippet>
                   <div class="paper">
                     <img src="/templates/classic.webp" width="612" height="792" alt="" loading="lazy" decoding="async" />
                     <span class="paper-badge badge-check"><svg aria-hidden="true" class="icon"><use href="#i-check" /></svg>Every line fact-checked</span>
                     <span class="paper-badge badge-fit">Fills the pages you chose</span>
+                    <span class="paper-badge badge-ats"><svg aria-hidden="true" class="icon"><use href="#i-scan" /></svg>Clean ATS X-ray</span>
                   </div>
                   <div class="phone">
                     <div class="phone-screen">
@@ -947,7 +956,7 @@
             <li class="task reveal">
               <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-find" /></svg></span>
               <h3>Find jobs</h3>
-              <p>Reads a hiring thread, a job board or a careers page, and ranks what fits your criteria.</p>
+              <p>Reads a hiring thread, job boards and careers pages, and ranks what fits. Give one search its own focus, such as early startups.</p>
             </li>
             <li class="task reveal">
               <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg></span>
@@ -970,6 +979,21 @@
               <p>A resume for the job in your templates, with every line traced to a fact.</p>
             </li>
             <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-scan" /></svg></span>
+              <h3>ATS X-ray</h3>
+              <p>Reads your resume the way an applicant tracking system does, and checks the job’s key terms. Claude fixes what you pick.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-mail" /></svg></span>
+              <h3>Cover letter</h3>
+              <p>A letter in your own voice, fact-checked like your resume and made to match it.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-grid" /></svg></span>
+              <h3>Projects page</h3>
+              <p>Your projects in depth, on one page, for the jobs where they help.</p>
+            </li>
+            <li class="task reveal">
               <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-pen" /></svg></span>
               <h3>Application questions</h3>
               <p>Answers to the form in your own voice, short and ready to paste.</p>
@@ -983,6 +1007,11 @@
               <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-chat" /></svg></span>
               <h3>Interview prep</h3>
               <p>Likely questions answered from your facts, stories to tell, and questions to ask.</p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg aria-hidden="true" class="icon"><use href="#i-calendar" /></svg></span>
+              <h3>Call prep</h3>
+              <p>A prep sheet for each call that builds on the rounds before. Practice in a mock interview, then get thank-you notes to send.</p>
             </li>
           </ul>
           <p class="tasks-note reveal">
@@ -1025,7 +1054,7 @@
               <p>Its layout, fonts, colors and spacing, never its words. Private, on your computer.</p>
             </li>
           </ul>
-          <p class="templates-note reveal">Every resume comes as a PDF or a Word file. One-column looks read best in applicant systems.</p>
+          <p class="templates-note reveal">Every resume comes as a PDF or a Word file, with a cover letter to match when you want one. One-column looks read best in applicant systems.</p>
         </div>
       </section>
 
@@ -1281,8 +1310,8 @@
             <details>
               <summary>Does it apply to jobs for me?</summary>
               <p>
-                No. Factwright gets everything ready: the resume, the answers, the messages. You read
-                them, change what you like, and send them yourself.
+                No. Factwright gets everything ready: the resume, the cover letter, the answers, the
+                messages. You read them, change what you like, and send them yourself.
               </p>
             </details>
             <details>
@@ -1308,9 +1337,11 @@
             <details>
               <summary>Where does it look for jobs?</summary>
               <p>
-                Hacker News’s monthly “Who is hiring?” thread, company job boards on Greenhouse,
-                Lever, Ashby and Gem, careers pages, and public listings such as Y Combinator’s Work
-                at a Startup and Wellfound. You can also paste any posting, or add a job by hand. Our
+                Hacker News’s monthly “Who is hiring?” thread, LinkedIn’s and Indeed’s listings,
+                company job boards on Greenhouse, Lever, Ashby and Gem, careers pages, and public
+                listings such as Y Combinator’s Work at a Startup and Wellfound. It finds LinkedIn’s and
+                Indeed’s listings through web search, then reads each job on the employer’s own site.
+                You can also paste any posting, or add a job by hand. Our
                 browser extension, <a href="/extension">Save to Factwright</a>,<span data-soon> coming soon,</span>
                 saves the one you’re looking at in Chrome or Firefox.
               </p>

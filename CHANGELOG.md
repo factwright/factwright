@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- factwright.com says what Factwright does now. Run with your Claude has a card each for the ATS X-ray, cover letters, Projects pages and call prep, with the mock interview and thank-you notes, and Find jobs says one search can have its own focus. How it works mentions projects outside work and what you do for fun, LinkedIn's and Indeed's listings, the ATS X-ray, and adding a call to your calendar, with a reminder an hour before. The questions say Factwright finds LinkedIn's and Indeed's listings through web search and reads each job on the employer's own site, and gets the cover letter ready too, and the home page's descriptions for search results and link previews mention cover letters. factwright.com/download/windows says what to do when Edge holds the download because it isn't commonly downloaded: Keep, then Keep anyway. It goes live with the site's next update.
+
 ## 0.11.0 - 2026-10-20
 
 ### Added

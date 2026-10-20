@@ -399,6 +399,17 @@ describe('the home page', () => {
     for (const name of MADE_UP) expect(text, name).toContain(name);
   });
 
+  it('has a card for each Run button on a job in the app, by the name the app gives it', () => {
+    const source = appSources().find((text) => text.includes('export const RUN_ACTIONS')) ?? '';
+    const actions = source.slice(source.indexOf('export const RUN_ACTIONS'));
+    const runs = [...actions.slice(0, actions.indexOf('];')).matchAll(/label: '([^']+)'/g)].map(
+      ([, label]) => label,
+    );
+    expect(runs.length).toBeGreaterThan(5);
+    const cards = [...open('index.html').querySelectorAll('#tasks .task h3')].map(said);
+    expect(cards).toEqual(expect.arrayContaining(runs));
+  });
+
   it('shows the fact behind each resume line it offers', () => {
     const doc = open('index.html');
     const lines = [...doc.querySelectorAll<HTMLElement>('[data-fact]')];
@@ -450,6 +461,14 @@ describe('the download pages', () => {
     expect(
       [...doc.querySelectorAll('.get-choice a')].map((link) => link.getAttribute('href')),
     ).toEqual(['/download/mac', '/download/windows']);
+  });
+
+  it('say on Windows how to keep a download Edge holds back, just before SmartScreen’s box', () => {
+    const steps = [...open('download/windows.html').querySelectorAll('.get-steps li')].map(said);
+    const edge = steps.findIndex((step) => step.startsWith('If Edge says it isn’t commonly'));
+    expect(steps[edge]).toContain('open Edge’s Downloads (Ctrl+J)');
+    expect(steps[edge]).toContain('Keep anyway');
+    expect(steps[edge + 1]).toMatch(/^If Windows SmartScreen stops it,/);
   });
 
   it('are where the home page’s download buttons go', () => {
