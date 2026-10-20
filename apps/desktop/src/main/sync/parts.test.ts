@@ -122,7 +122,8 @@ describe('workspace files', () => {
     expect(skipped).toEqual([]);
   });
 
-  it('skip names another computer can’t hold', () => {
+  // Windows can't make a file with this name in the first place.
+  it.skipIf(process.platform === 'win32')('skip names another computer can’t hold', () => {
     write('facts/what?.md');
     expect(listSyncFiles(folder).skipped).toEqual([{ path: 'facts/what?.md', reason: 'name' }]);
   });

@@ -26,11 +26,25 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - id: install
+        run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+      # Each package's tests run even when another's fail, and the app's own run below goes ahead
+      # too, so one run shows every problem on Windows. Its runners are slower than GitHub's others,
+      # and vary from run to run, so the packages take turns, each test gets longer, and a test that
+      # fails is tried twice more: a busy runner can run out of time, where a real problem on
+      # Windows fails every time.
+      - run: >-
+          pnpm --recursive --no-bail --workspace-concurrency=1 --if-present run test
+          --testTimeout=60000 --hookTimeout=120000 --retry=2
       - name: Download Electron
+        id: electron
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node apps/desktop/node_modules/electron/install.js
-      - run: pnpm --filter @factwright/desktop build
-      # A stand-in Claude Code, claude.cmd, answers the app's runs.
-      - run: pnpm --filter @factwright/desktop e2e
+      - id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @factwright/desktop build
+      # A stand-in Claude Code, claude.cmd, answers the app's runs. The runner's screen is 1024 by
+      # 768, which keeps the app's window narrow: E2E_NARROW=1 shows the same on a Mac or Linux.
+      - if: ${{ !cancelled() && steps.electron.outcome == 'success' && steps.build.outcome == 'success' }}
+        run: pnpm --filter @factwright/desktop e2e

@@ -400,26 +400,46 @@ describe('Profiles, as the window uses them', () => {
     expect(trash).toHaveBeenCalledWith(testing.dir);
   });
 
-  it('won’t remove a profile another copy of the app has open', async () => {
-    const testing = addProfile(home, 'Testing');
-    const { opened, trash } = profiles(profileToOpen(home));
-    const lock = (holder: string) => {
-      rmSync(join(testing.dir, 'SingletonLock'), { force: true });
-      symlinkSync(holder, join(testing.dir, 'SingletonLock'));
-    };
-    // Chromium's lock names the computer and process that hold the folder.
-    lock(`${hostname()}-${process.pid}`);
-    expect(await opened.remove(testing.id)).toEqual({
-      ok: false,
-      message: 'That profile is open in another copy of Factwright. Quit that copy first.',
-    });
-    expect(trash).not.toHaveBeenCalled();
-    // A lock left by a copy that's no longer running, or by another computer, doesn't count.
-    lock(`other-computer-${process.pid}`);
-    expect(await opened.remove(testing.id)).toEqual({ ok: true });
-    lock(`${hostname()}-${spawnSync(process.execPath, ['-e', '']).pid}`);
-    expect(await opened.remove(testing.id)).toEqual({ ok: true });
-  });
+  it.runIf(process.platform === 'win32')(
+    'won’t remove a profile another copy of the app has open, on Windows',
+    async () => {
+      const testing = addProfile(home, 'Testing');
+      const { opened, trash } = profiles(profileToOpen(home));
+      // On Windows, Chromium's lock is a file that goes when the copy that holds it closes.
+      writeFileSync(join(testing.dir, 'lockfile'), '');
+      expect(await opened.remove(testing.id)).toEqual({
+        ok: false,
+        message: 'That profile is open in another copy of Factwright. Quit that copy first.',
+      });
+      expect(trash).not.toHaveBeenCalled();
+      rmSync(join(testing.dir, 'lockfile'));
+      expect(await opened.remove(testing.id)).toEqual({ ok: true });
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'won’t remove a profile another copy of the app has open',
+    async () => {
+      const testing = addProfile(home, 'Testing');
+      const { opened, trash } = profiles(profileToOpen(home));
+      const lock = (holder: string) => {
+        rmSync(join(testing.dir, 'SingletonLock'), { force: true });
+        symlinkSync(holder, join(testing.dir, 'SingletonLock'));
+      };
+      // Chromium's lock names the computer and process that hold the folder.
+      lock(`${hostname()}-${process.pid}`);
+      expect(await opened.remove(testing.id)).toEqual({
+        ok: false,
+        message: 'That profile is open in another copy of Factwright. Quit that copy first.',
+      });
+      expect(trash).not.toHaveBeenCalled();
+      // A lock left by a copy that's no longer running, or by another computer, doesn't count.
+      lock(`other-computer-${process.pid}`);
+      expect(await opened.remove(testing.id)).toEqual({ ok: true });
+      lock(`${hostname()}-${spawnSync(process.execPath, ['-e', '']).pid}`);
+      expect(await opened.remove(testing.id)).toEqual({ ok: true });
+    },
+  );
 
   it('says so when the trash won’t take a profile', async () => {
     const sam = addProfile(home, 'Sam');

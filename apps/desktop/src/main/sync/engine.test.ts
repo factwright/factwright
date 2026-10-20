@@ -580,16 +580,20 @@ describe('two computers on one account', () => {
     expect(pc.read('facts/skills.md')).toBe('changed on the PC');
   });
 
-  it('leave files another computer can’t hold where they are, and don’t delete them elsewhere', async () => {
-    mac.write('facts/what?.md', 'A name Windows can’t hold');
-    mac.write('.hidden/state.json', '{}');
-    const report = await mac.sync();
-    expect(report.skipped).toEqual([{ path: 'facts/what?.md', reason: 'name' }]);
-    expect(report.pushed).toBe(0);
-    await pc.sync();
-    expect(pc.has('facts/what?.md')).toBe(false);
-    expect(pc.has('.hidden/state.json')).toBe(false);
-  });
+  // Windows can't make a file with this name in the first place.
+  it.skipIf(process.platform === 'win32')(
+    'leave files another computer can’t hold where they are, and don’t delete them elsewhere',
+    async () => {
+      mac.write('facts/what?.md', 'A name Windows can’t hold');
+      mac.write('.hidden/state.json', '{}');
+      const report = await mac.sync();
+      expect(report.skipped).toEqual([{ path: 'facts/what?.md', reason: 'name' }]);
+      expect(report.pushed).toBe(0);
+      await pc.sync();
+      expect(pc.has('facts/what?.md')).toBe(false);
+      expect(pc.has('.hidden/state.json')).toBe(false);
+    },
+  );
 
   it('pass over a file that can never land on a computer, and keep syncing the rest', async () => {
     mac.write('saved/acme--staff/posting.md', 'Saved from the browser');

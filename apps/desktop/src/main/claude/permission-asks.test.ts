@@ -13,6 +13,11 @@ const workspace = mkdtempSync(join(tmpdir(), 'factwright-permissions-'));
 writeFileSync(join(workspace, 'kept.md'), 'Already here');
 afterAll(() => rmSync(workspace, { recursive: true, force: true }));
 
+// Files outside the job hunt, by their whole paths as Claude Code gives them on this system.
+const WINDOWS = process.platform === 'win32';
+const HOSTS = WINDOWS ? 'C:\\Windows\\System32\\drivers\\etc\\hosts' : '/etc/hosts';
+const SSH_KEY = WINDOWS ? 'C:\\Users\\alex\\.ssh\\id_rsa' : '/Users/alex/.ssh/id_rsa';
+
 const asks = (tool_name: string, tool_input: unknown, fields: Record<string, unknown> = {}) => ({
   hook_event_name: 'PermissionRequest',
   tool_name,
@@ -47,12 +52,12 @@ describe('permissionAskFrom', () => {
     });
     expect(
       described('Edit', {
-        file_path: '/etc/hosts',
+        file_path: HOSTS,
         old_string: 'a',
         new_string: 'b',
         replace_all: true,
       }),
-    ).toMatchObject({ file: '/etc/hosts', outside: true, everywhere: true });
+    ).toMatchObject({ file: HOSTS, outside: true, everywhere: true });
   });
 
   it('says whether writing a file makes a new one or replaces one there', () => {
@@ -71,9 +76,9 @@ describe('permissionAskFrom', () => {
   });
 
   it('shows reading a file outside the job hunt in full', () => {
-    expect(described('Read', { file_path: '/Users/alex/.ssh/id_rsa' })).toEqual({
+    expect(described('Read', { file_path: SSH_KEY })).toEqual({
       kind: 'read',
-      file: '/Users/alex/.ssh/id_rsa',
+      file: SSH_KEY,
       outside: true,
     });
   });

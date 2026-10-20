@@ -406,8 +406,9 @@ describe('a server that sells sync', () => {
       .bind(new Date(Date.now() - 3 * 86_400_000).toISOString(), sam.id)
       .run();
     paid.status = 'canceled';
-    server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date() });
-    await expect.poll(async () => (await rowOf(sam))?.status).toBe('canceled');
+    // The run ends once every part of the daily job has, which can take seconds on Windows.
+    await server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date() });
+    expect((await rowOf(sam))?.status).toBe('canceled');
   });
 
   it('deletes the account’s Stripe customer before the account, or doesn’t delete it', async () => {

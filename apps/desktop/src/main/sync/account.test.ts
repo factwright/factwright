@@ -50,6 +50,7 @@ let selling: TestServer | undefined;
 let seller: Account;
 const folders: string[] = [];
 const opened: SyncAccount[] = [];
+const trackers: Tracker[] = [];
 
 beforeEach(async () => {
   person = await server.signUp('Sam Rivera');
@@ -57,8 +58,17 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const sync of opened.splice(0)) await sync.stop();
+  // Windows can't delete a database that's still open.
+  for (const tracker of trackers.splice(0)) tracker.close();
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
+
+/** The job tracker in a data folder, closed after each test. */
+function trackerIn(dataDir: string): Tracker {
+  const tracker = new Tracker(join(dataDir, 'tracker.db'));
+  trackers.push(tracker);
+  return tracker;
+}
 
 /** Who's signed in to a server in the person's browser. */
 const signedInAt = (origin: string) =>
@@ -118,7 +128,7 @@ function computer(
   folders.push(dataDir);
   const workspace = join(dataDir, 'workspace');
   mkdirSync(workspace, { recursive: true });
-  const tracker = new Tracker(join(dataDir, 'tracker.db'));
+  const tracker = trackerIn(dataDir);
   const statuses: SyncStatus[] = [];
   const applied = vi.fn();
   // The pages the app opens in the browser: the person signs it in there.
@@ -321,7 +331,7 @@ describe('a copy built without Factwright’s sync', () => {
       server: null,
       version: '0.0.0',
       keychain,
-      tracker: new Tracker(join(dataDir, 'tracker.db')),
+      tracker: trackerIn(dataDir),
       workspace: join(dataDir, 'workspace'),
       openUrl,
       onStatus: () => {},
@@ -401,7 +411,7 @@ describe('a copy without the keychain', () => {
       server: server.url.toString(),
       version: '0.0.0',
       keychain: NO_KEYCHAIN,
-      tracker: new Tracker(join(dataDir, 'tracker.db')),
+      tracker: trackerIn(dataDir),
       workspace: join(dataDir, 'workspace'),
       openUrl,
       onStatus: () => {},

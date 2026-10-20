@@ -7,8 +7,9 @@ import type { ApprovalsView, SyncStatus } from '../../shared/sync.ts';
 import { Tracker } from '../jobs/tracker.ts';
 import { SyncAccount } from './account.ts';
 
-// Each test signs in, links and syncs for real, against the server running locally.
-vi.setConfig({ testTimeout: 30_000 });
+// Each test signs in, links and syncs for real, against the server running locally, which can take
+// most of a minute on a slow Windows runner.
+vi.setConfig({ testTimeout: 60_000 });
 
 let server: TestServer;
 
@@ -17,6 +18,12 @@ beforeAll(async () => {
 });
 
 afterAll(() => server?.close());
+
+/**
+ * Waits for a check to pass. Each step of linking takes a few requests to the server, which can take
+ * seconds on GitHub's Windows runners, so it waits longer than vi.waitFor's 1 second.
+ */
+const waitFor = <T>(check: () => T | Promise<T>) => vi.waitFor(check, { timeout: 15_000 });
 
 const keychain = {
   isEncryptionAvailable: () => true,
@@ -27,6 +34,7 @@ const keychain = {
 let person: Account;
 const folders: string[] = [];
 const opened: SyncAccount[] = [];
+const trackers: Tracker[] = [];
 
 beforeEach(async () => {
   person = await server.signUp('Sam Rivera');
@@ -34,6 +42,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const sync of opened.splice(0)) await sync.stop();
+  // Windows can't delete a database that's still open.
+  for (const tracker of trackers.splice(0)) tracker.close();
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
 
@@ -59,12 +69,14 @@ function computer(name: string, fetchWith?: typeof fetch) {
     status: null,
     approvals: null,
   };
+  const tracker = new Tracker(join(dataDir, 'tracker.db'));
+  trackers.push(tracker);
   const sync = new SyncAccount({
     dataDir,
     server: server.url.toString(),
     version: '0.0.0',
     keychain,
-    tracker: new Tracker(join(dataDir, 'tracker.db')),
+    tracker,
     workspace,
     openUrl: approveSignIn,
     onStatus: (status) => {
@@ -119,18 +131,18 @@ async function newComputer(name = 'SAM-PC', fetchWith?: typeof fetch) {
 async function upToTheCheck() {
   const mac = await firstComputer();
   const pc = await newComputer();
-  await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+  await waitFor(() => expect(pc.approvals().supported).toBe(true));
   expect(await pc.sync.askToLink()).toEqual({ ok: true });
   await mac.sync.approvalsView();
-  await vi.waitFor(() =>
+  await waitFor(() =>
     expect(mac.approvals().requests).toMatchObject([
       { device: 'Factwright on SAM-PC', elsewhere: false },
     ]),
   );
   const id = mac.approvals().requests[0]?.id ?? '';
   expect(await mac.sync.approveRequest(id)).toEqual({ ok: true });
-  await vi.waitFor(() => expect(mac.approvals().approving).toMatchObject({ step: 'check' }));
-  await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'check' }));
+  await waitFor(() => expect(mac.approvals().approving).toMatchObject({ step: 'check' }));
+  await waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'check' }));
   return { mac, pc, id };
 }
 
@@ -143,14 +155,12 @@ describe('linking a computer from one that’s set up', () => {
     expect(onMac?.step === 'check' && onMac.check).toEqual(onPc?.step === 'check' && onPc.check);
 
     pc.sync.confirmLinkCheck(true);
-    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ confirmed: true }));
+    await waitFor(() => expect(pc.approvals().asking).toMatchObject({ confirmed: true }));
     // Nothing is handed over until the computer that's set up approves too.
     expect(pc.sync.status()).toMatchObject({ state: 'setting-up' });
     expect(await mac.sync.answerApproval(true)).toEqual({ ok: true });
-    await vi.waitFor(() => expect(pc.sync.status()).toMatchObject({ state: 'on' }), {
-      timeout: 10_000,
-    });
-    await vi.waitFor(() =>
+    await waitFor(() => expect(pc.sync.status()).toMatchObject({ state: 'on' }));
+    await waitFor(() =>
       expect(mac.approvals().approving).toMatchObject({
         step: 'ended',
         linked: true,
@@ -162,7 +172,7 @@ describe('linking a computer from one that’s set up', () => {
     // They sync as one account from here.
     mac.write('note.md', 'From the Mac');
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(pc.read('note.md')).toBe('From the Mac'), { timeout: 15_000 });
+    await waitFor(() => expect(pc.read('note.md')).toBe('From the Mac'));
     mac.sync.dismissApproval();
     expect(mac.approvals().approving).toBeNull();
   });
@@ -174,7 +184,7 @@ describe('linking a computer from one that’s set up', () => {
       step: 'ended',
       message: expect.stringContaining('Nothing was linked'),
     });
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(mac.approvals().approving).toMatchObject({ step: 'ended', linked: false }),
     );
     expect(pc.sync.status()).toMatchObject({ state: 'setting-up' });
@@ -184,7 +194,7 @@ describe('linking a computer from one that’s set up', () => {
     const { mac, pc } = await upToTheCheck();
     pc.sync.confirmLinkCheck(true);
     expect(await mac.sync.answerApproval(false)).toEqual({ ok: true });
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(pc.approvals().asking).toMatchObject({
         step: 'ended',
         message: expect.stringContaining('turned this down'),
@@ -196,7 +206,7 @@ describe('linking a computer from one that’s set up', () => {
   it('turns down a request that isn’t the person’s, and signs that device out', async () => {
     const mac = await firstComputer();
     const pc = await newComputer();
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     const view = await mac.sync.approvalsView();
     expect(view.requests[0]).toMatchObject({ device: 'Factwright on SAM-PC' });
@@ -207,7 +217,7 @@ describe('linking a computer from one that’s set up', () => {
       requests: [],
       turnedDown: { device: 'Factwright on SAM-PC' },
     });
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(pc.approvals().asking).toMatchObject({
         step: 'ended',
         message: expect.stringContaining('turned this down'),
@@ -221,15 +231,15 @@ describe('linking a computer from one that’s set up', () => {
     const devices = (await mac.sync.account()) as { ok: true; account: { devices: unknown[] } };
     expect(devices.account.devices).toHaveLength(2);
     await pc.sync.askToLink();
-    await vi.waitFor(() => expect(pc.sync.status()).toMatchObject({ state: 'signed-out' }));
+    await waitFor(() => expect(pc.sync.status()).toMatchObject({ state: 'signed-out' }));
   });
 
   it('won’t approve while another device is asking too', async () => {
     const mac = await firstComputer();
     const pc = await newComputer();
     const laptop = await newComputer('SAM-LAPTOP');
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
-    await vi.waitFor(() => expect(laptop.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(laptop.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     await laptop.sync.askToLink();
     const { requests } = await mac.sync.approvalsView();
@@ -251,7 +261,7 @@ describe('linking a computer from one that’s set up', () => {
   it('won’t seal the key while another device asks meanwhile', async () => {
     const { mac } = await upToTheCheck();
     const laptop = await newComputer('SAM-LAPTOP');
-    await vi.waitFor(() => expect(laptop.approvals().supported).toBe(true));
+    await waitFor(() => expect(laptop.approvals().supported).toBe(true));
     await laptop.sync.askToLink();
     expect(await mac.sync.answerApproval(true)).toEqual({
       ok: false,
@@ -280,7 +290,7 @@ describe('linking a computer from one that’s set up', () => {
     };
     const mac = await firstComputer();
     const pc = await newComputer();
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     const meddled = computer('Sam’s other Mac', meddling);
     await meddled.sync.start();
@@ -291,14 +301,14 @@ describe('linking a computer from one that’s set up', () => {
     const id = (await meddled.sync.approvalsView()).requests[0]?.id ?? '';
     swap = true;
     expect(await meddled.sync.approveRequest(id)).toEqual({ ok: true });
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(meddled.approvals().approving).toMatchObject({
         step: 'ended',
         linked: false,
         message: expect.stringContaining('Something changed the request'),
       }),
     );
-    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'ended' }));
+    await waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'ended' }));
   });
 
   it('offers the same key again after an answer that was lost', async () => {
@@ -318,14 +328,14 @@ describe('linking a computer from one that’s set up', () => {
     await mac.sync.newRecoveryKey();
     expect(await mac.sync.turnOn()).toEqual({ ok: true });
     const pc = await newComputer();
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     const id = (await mac.sync.approvalsView()).requests[0]?.id ?? '';
     expect(await mac.sync.approveRequest(id)).toMatchObject({ ok: false });
     // The new device has seen the offer and shown its key by now.
-    await vi.waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'check' }));
+    await waitFor(() => expect(pc.approvals().asking).toMatchObject({ step: 'check' }));
     expect(await mac.sync.approveRequest(id)).toEqual({ ok: true });
-    await vi.waitFor(() => expect(mac.approvals().approving).toMatchObject({ step: 'check' }));
+    await waitFor(() => expect(mac.approvals().approving).toMatchObject({ step: 'check' }));
     const onMac = mac.approvals().approving;
     const onPc = pc.approvals().asking;
     expect(onMac?.step === 'check' && onMac.check).toEqual(onPc?.step === 'check' && onPc.check);
@@ -334,7 +344,7 @@ describe('linking a computer from one that’s set up', () => {
   it('calls its request off as the app quits', async () => {
     const mac = await firstComputer();
     const pc = await newComputer();
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     expect((await mac.sync.approvalsView()).requests).toHaveLength(1);
     await pc.sync.stop();
@@ -344,21 +354,21 @@ describe('linking a computer from one that’s set up', () => {
   it('calls its request off once it links with a code instead', async () => {
     const mac = await firstComputer();
     const pc = await newComputer();
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     expect((await mac.sync.approvalsView()).requests).toHaveLength(1);
     const made = await mac.sync.makeLinkCode();
     if (!made.ok) throw new Error(made.message);
     expect(await pc.sync.linkWithCode(made.link.code)).toEqual({ ok: true });
     expect(pc.approvals().asking).toBeNull();
-    await vi.waitFor(async () => expect((await mac.sync.approvalsView()).requests).toEqual([]));
+    await waitFor(async () => expect((await mac.sync.approvalsView()).requests).toEqual([]));
   });
 
   it('lets only a computer that isn’t linked yet ask, and only one with sync on approve', async () => {
     const mac = await firstComputer();
     expect(await mac.sync.askToLink()).toMatchObject({ ok: false });
     const pc = await newComputer();
-    await vi.waitFor(() => expect(pc.approvals().supported).toBe(true));
+    await waitFor(() => expect(pc.approvals().supported).toBe(true));
     await pc.sync.askToLink();
     // The computer that isn't linked has no key to approve anything with, and sees nothing.
     expect((await pc.sync.approvalsView()).requests).toEqual([]);
@@ -376,7 +386,7 @@ describe('linking a computer from one that’s set up', () => {
     };
     await firstComputer();
     const pc = await newComputer('SAM-PC', older);
-    await vi.waitFor(() => expect(pc.seen.approvals).not.toBeNull());
+    await waitFor(() => expect(pc.seen.approvals).not.toBeNull());
     expect(pc.approvals().supported).toBe(false);
     expect(await pc.sync.askToLink()).toEqual({
       ok: false,

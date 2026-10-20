@@ -332,53 +332,58 @@ describe('registering on a Mac', () => {
     ]);
   });
 
-  it('notes a browser macOS refused, which the others don’t wait on, until the user allows it', async () => {
-    installApp('Google Chrome.app');
-    installApp('Firefox.app');
-    guarded = (path) => path.startsWith(`${SUPPORT}/Google/Chrome/`);
-    expect((await setUp(onMac())).result).toEqual({
-      registered: ['firefox'],
-      failed: [{ browser: 'chrome', message: expect.stringContaining('EPERM'), blocked: true }],
-    });
-    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: ['chrome'] });
-    expect(saveHelperStatus(onMac()).browsers.map(({ id, state }) => [id, state])).toEqual([
-      ['chrome', 'blocked'],
-      ['firefox', 'ready'],
-    ]);
-    // A start keeps Firefox current, and leaves Chrome to the user, so macOS isn't asked again.
-    touched = [];
-    expect(await register(onMac())).toEqual({
-      result: { skipped: 'unchanged' },
-      writes: [],
-      runs: [],
-    });
-    expect(inBrowsers()).toEqual([]);
+  // Windows refuses to put a file where a folder is with EPERM, the error macOS refuses with, so
+  // what's in the way below would read as macOS refusing.
+  it.skipIf(process.platform === 'win32')(
+    'notes a browser macOS refused, which the others don’t wait on, until the user allows it',
+    async () => {
+      installApp('Google Chrome.app');
+      installApp('Firefox.app');
+      guarded = (path) => path.startsWith(`${SUPPORT}/Google/Chrome/`);
+      expect((await setUp(onMac())).result).toEqual({
+        registered: ['firefox'],
+        failed: [{ browser: 'chrome', message: expect.stringContaining('EPERM'), blocked: true }],
+      });
+      expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: ['chrome'] });
+      expect(saveHelperStatus(onMac()).browsers.map(({ id, state }) => [id, state])).toEqual([
+        ['chrome', 'blocked'],
+        ['firefox', 'ready'],
+      ]);
+      // A start keeps Firefox current, and leaves Chrome to the user, so macOS isn't asked again.
+      touched = [];
+      expect(await register(onMac())).toEqual({
+        result: { skipped: 'unchanged' },
+        writes: [],
+        runs: [],
+      });
+      expect(inBrowsers()).toEqual([]);
 
-    // A folder's own permissions are a failure, but not macOS refusing: Files & Folders can't help.
-    refusal = 'EACCES';
-    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
-      registered: [],
-      failed: [{ browser: 'chrome', message: expect.stringContaining('EACCES'), blocked: false }],
-    });
-    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
+      // A folder's own permissions are a failure, but not macOS refusing: Files & Folders can't help.
+      refusal = 'EACCES';
+      expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+        registered: [],
+        failed: [{ browser: 'chrome', message: expect.stringContaining('EACCES'), blocked: false }],
+      });
+      expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
 
-    // Nor is something else in the way.
-    guarded = () => false;
-    mkdirSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
-    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
-      registered: [],
-      failed: [{ browser: 'chrome', message: expect.any(String), blocked: false }],
-    });
-    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
+      // Nor is something else in the way.
+      guarded = () => false;
+      mkdirSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
+      expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+        registered: [],
+        failed: [{ browser: 'chrome', message: expect.any(String), blocked: false }],
+      });
+      expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['firefox'], blocked: [] });
 
-    // Once nothing's in the way and the user has allowed it, trying again works.
-    rmSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
-    expect((await setUp(onMac(), ['chrome'])).result).toEqual({
-      registered: ['chrome'],
-      failed: [],
-    });
-    expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['chrome', 'firefox'], blocked: [] });
-  });
+      // Once nothing's in the way and the user has allowed it, trying again works.
+      rmSync(onDisk(manifestIn('Google/Chrome')), { recursive: true });
+      expect((await setUp(onMac(), ['chrome'])).result).toEqual({
+        registered: ['chrome'],
+        failed: [],
+      });
+      expect(readJson(MAC_RECORD)).toMatchObject({ browsers: ['chrome', 'firefox'], blocked: [] });
+    },
+  );
 
   it('keeps the browsers set up current, reaching their folders only when a manifest would change', async () => {
     installApp('Google Chrome.app');
