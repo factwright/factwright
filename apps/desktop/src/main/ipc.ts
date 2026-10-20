@@ -2,7 +2,7 @@ import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { ASK_ID } from '@factwright/core';
+import { ASK_ID, localDate } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
 import {
   app,
@@ -20,6 +20,7 @@ import type {
   PasteResult,
   PdfResult,
   SaveFileResult,
+  SaveFocusResult,
   ShotFor,
   StartResult,
 } from '../shared/api.ts';
@@ -47,6 +48,7 @@ import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
 import { BROWSERS } from './extension/browsers.ts';
 import type { SaveHelper } from './extension/save-helper.ts';
+import { hasFocus, parseFocus, saveFocus } from './jobs/focus.ts';
 import {
   parseCallChanges,
   parseDate,
@@ -279,6 +281,9 @@ export function registerIpc({
   const knownTask = (value: unknown) => {
     const task = parseRunTask(value);
     if (task && 'source' in task) return templates.hasSource(task.source) ? task : null;
+    // A focus for a search, by the ID the app kept it under.
+    const focus = task && 'sources' in task ? task.sources?.focus : undefined;
+    if (focus !== undefined) return hasFocus(workspace, focus) ? task : null;
     if (!task || !('jobId' in task)) return task;
     const job = jobs.list().jobs.find((each) => each.id === task.jobId);
     if (!job) return null;
@@ -397,6 +402,13 @@ export function registerIpc({
     const answer = parsePermissionAnswer(value);
     if (!answer) throw new Error('Refused an answer that isn’t allow, or don’t allow with a note.');
     return permissionAsks.answer(ask.id, answer) ? { ok: true } : PERMISSION_GONE;
+  });
+
+  // A focus for one search, kept in the workspace for the search to read, by an ID it types.
+  answer('search:focus', (value): SaveFocusResult => {
+    const focus = parseFocus(value);
+    if (!focus) return REFUSED;
+    return { ok: true, id: saveFocus(workspace, focus, localDate()) };
   });
 
   answer('jobs:list', () => jobs.list());

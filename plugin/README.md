@@ -29,6 +29,7 @@ The skills work on plain files in your workspace, in the formats the app reads, 
 The app passes the rest with each run:
 - **Tools:** the ones Claude uses instead of a shell. The app serves them over MCP on this computer ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)), and the skills call them by name:
   - `find_job` and `job_details`: what's on file for a job, with a line on what each file holds, your notes, each call with who it's with and how it went, the application's questions with what you actually sent, your questions about it, and your other jobs at the company
+  - `search_focus`: what a job search you focused in Find jobs looks for, on top of what you want in Profile, for that search alone: kinds of company, a pay range, where it's worked, industries, how recently it was posted, and your own words
   - `revision_findings`: what you picked in a resume's ATS X-ray for a revision to fix, as information about the resume. Only a run started with Send for revision has them
   - `about_you`: what you told Factwright about yourself, such as your work authorization, when you can start, and each kind of job you want
   - `past_answers`: what you sent on your applications, in your own words, to reuse and to sound like you

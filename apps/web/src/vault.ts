@@ -81,12 +81,12 @@ export interface Vault {
 const PAGE_CODE_LENGTH = 16;
 
 /**
- * The files the job list is read from: each job's notes and cover letter, the logs, job searches,
- * Claude's answers to the user's questions about a job, and its prep sheets and thank-you notes
- * for the job's calls.
+ * The files the job list is read from: each job's notes and cover letter, the logs, job searches
+ * and the focuses they're named by, Claude's answers to the user's questions about a job, and its
+ * prep sheets and thank-you notes for the job's calls.
  */
 const READ_FOR_JOBS =
-  /^(applications\/[^/]+\/(?:[^/]+\.md|cover-letter\.json)|searches\/[^/]+\.md|searches\/[^/]+\/jobs(?:-\d+)?\.json|asked\/[^/]+\/[^/]+\.md|calls\/[^/]+\/[^/]+\/(?:prep|thank-you)\.md)$/;
+  /^(applications\/[^/]+\/(?:[^/]+\.md|cover-letter\.json)|searches\/[^/]+\.md|searches\/[^/]+\/jobs(?:-\d+)?\.json|searches\/focus\/[^/]+\.json|asked\/[^/]+\/[^/]+\.md|calls\/[^/]+\/[^/]+\/(?:prep|thank-you)\.md)$/;
 
 /** The kinds of job the user wants, as the desktop app reads them, or none from a broken file. */
 function readKinds(text: string | null): KindName[] {
