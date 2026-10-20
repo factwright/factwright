@@ -482,7 +482,7 @@ describe('runPrompt', () => {
       '/factwright:add-facts interview me',
     );
     expect(runPrompt({ skill: 'add-facts', mode: 'new' })).toBe(
-      '/factwright:add-facts read the new files and notes',
+      '/factwright:add-facts read the new files, notes and projects',
     );
   });
 });

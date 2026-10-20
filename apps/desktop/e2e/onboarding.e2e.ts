@@ -56,22 +56,6 @@ test('takes their name, their resume and their own words', async () => {
   await window.getByRole('textbox', { name: 'Names to keep private' }).press('Enter');
 });
 
-test('takes a project of theirs, and who they are outside work', async () => {
-  const { window } = opened;
-  await next();
-  await expect(window.getByRole('heading', { name: 'Beyond work' })).toBeVisible();
-  await window.getByRole('button', { name: 'Add a project' }).click();
-  await window.getByRole('textbox', { name: 'Name' }).fill('Trailhead');
-  await window.getByRole('combobox', { name: 'What kind' }).selectOption('product');
-  // As a person picks it: by its label, which the radio sits under.
-  await window
-    .locator('label')
-    .filter({ has: window.getByRole('radio', { name: 'Feature it' }) })
-    .click();
-  await window.getByRole('textbox', { name: 'Interests and hobbies' }).fill('Trail running');
-  await window.getByRole('textbox', { name: 'Interests and hobbies' }).press('Enter');
-});
-
 test('asks what they want, and shows the templates printed for real', async () => {
   const { window } = opened;
   await next();
@@ -87,6 +71,22 @@ test('asks what they want, and shows the templates printed for real', async () =
   await expect(minimal.getByText('Suggested', { exact: true })).toBeVisible();
   await expect(minimal.getByRole('checkbox', { name: 'Use this template' })).toBeChecked();
   await expect(minimal.locator('img')).toBeVisible({ timeout: 20_000 });
+});
+
+test('takes a project of theirs, and who they are outside work', async () => {
+  const { window } = opened;
+  await next();
+  await expect(window.getByRole('heading', { name: 'Beyond work' })).toBeVisible();
+  await window.getByRole('button', { name: 'Add a project' }).click();
+  await window.getByRole('textbox', { name: 'Name' }).fill('Trailhead');
+  await window.getByRole('combobox', { name: 'What kind' }).selectOption('product');
+  // As a person picks it: by its label, which the radio sits under.
+  await window
+    .locator('label')
+    .filter({ has: window.getByRole('radio', { name: 'Feature it' }) })
+    .click();
+  await window.getByRole('textbox', { name: 'Interests and hobbies' }).fill('Trail running');
+  await window.getByRole('textbox', { name: 'Interests and hobbies' }).press('Enter');
 });
 
 test('hands it all to their Claude, with the workspace ready for it', async () => {

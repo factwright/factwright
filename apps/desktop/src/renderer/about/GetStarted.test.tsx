@@ -302,7 +302,7 @@ describe('GetStarted', () => {
   });
 
   it('takes the user’s projects and who they are outside work, all of it optional', async () => {
-    const api = profileApi({ step: 4, reached: 4 });
+    const api = profileApi({ step: 6, reached: 6 });
     const { container } = render(<Harness api={api} />);
     await screen.findByRole('heading', { name: 'Beyond work' });
     expect(screen.getByText(/Skip anything that doesn’t apply/)).toBeTruthy();
@@ -353,7 +353,7 @@ describe('GetStarted', () => {
   });
 
   it('asks what the user wants, thoroughly', async () => {
-    const api = profileApi({ step: 5, reached: 5 });
+    const api = profileApi({ step: 4, reached: 4 });
     const { container } = render(<Harness api={api} />);
     await screen.findByRole('heading', { name: 'What you want' });
     await userEvent.type(
@@ -384,8 +384,8 @@ describe('GetStarted', () => {
 
   it('starts with the suggested templates picked, and lets the user pick for each kind of company', async () => {
     const api = profileApi({
-      step: 6,
-      reached: 6,
+      step: 5,
+      reached: 5,
       companies: ['startup', 'established'],
       fields: ['software'],
       levels: ['senior'],
@@ -421,7 +421,7 @@ describe('GetStarted', () => {
   });
 
   it('has Claude make a template from a resume the user likes, while they carry on', async () => {
-    const api = profileApi({ step: 6, reached: 6 });
+    const api = profileApi({ step: 5, reached: 5 });
     const onMakeTemplate = vi.fn();
     render(<Harness api={api} onMakeTemplate={onMakeTemplate} />);
     await screen.findByRole('heading', { name: 'Pick your resume templates' });
@@ -452,7 +452,7 @@ describe('GetStarted', () => {
       await screen.findByRole('textbox', { name: 'About you, in your own words' }),
       'I have run the support team at a regional bank for six years, and I trained every new hire on the systems we use there.',
     );
-    // Through Beyond work, what they want and their templates, back to the end.
+    // Through what they want, their templates and Beyond work, back to the end.
     await next();
     await next();
     await next();

@@ -14,6 +14,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { type AboutYou, ANSWER_LIMITS, type AnswerChanges } from '../../../shared/about.ts';
 import {
   BEYOND_LIMITS,
+  freshProjectId,
   INTERESTS_ON_RESUMES,
   labelIn,
   newProject,
@@ -26,7 +27,6 @@ import {
   type ProjectChange,
   type ProjectPrefs,
   type ProjectShowing,
-  projectIdFor,
   RESUME_PLACES,
 } from '../../../shared/beyond.ts';
 import beyond from './BeyondWorkStep.module.css';
@@ -543,10 +543,7 @@ export function BeyondWorkStep({
   const addedFirst = useRef(false);
 
   const add = () => {
-    const id = projectIdFor(
-      `project-${answers.projects.length + 1}`,
-      answers.projects.map((project) => project.id),
-    );
+    const id = freshProjectId(answers.projects.map((project) => project.id));
     update({ addedProjects: [newProject(id)] });
     setOpen(id);
     setFresh(id);

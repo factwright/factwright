@@ -19,6 +19,14 @@ describe('leftOut', () => {
     expect(leftOut(page, resume)).toEqual([]);
   });
 
+  it('finds a name marked up as the page shows it, and never in a page’s other text', () => {
+    const bold = { projects: [{ name: '**Go** club', text: 'A club.' }] };
+    expect(leftOut('<div><strong>Go</strong> club</div>', bold)).toEqual([]);
+    // A short name is often somewhere in a page's fonts or styles: only the body counts.
+    const short = { projects: [{ name: 'Go', text: 'A language.' }] };
+    expect(leftOut('<section><h2>Skills</h2></section>', short)).toEqual(['the projects']);
+  });
+
   it('names what a page leaves out', () => {
     expect(leftOut('<h2>Interests</h2>', resume)).toEqual([
       'the projects',

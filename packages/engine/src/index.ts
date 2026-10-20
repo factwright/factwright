@@ -35,6 +35,7 @@ export {
   lintProjectsPage,
   lintResume,
   readConfidentialTerms,
+  shownText,
 } from './lint.ts';
 export {
   DEFAULT_PAGE_HEADING,
@@ -57,7 +58,7 @@ export {
   type ResumeFormat,
   readResume,
 } from './schema.ts';
-export { leftOut, templateLeavesOut } from './shown.ts';
+export { leftOut, resumeLeavesOut, templateLeavesOut } from './shown.ts';
 export { MAX_TEMPLATE_BYTES, readTemplate, TEMPLATE_FILE, templateFile } from './template/file.ts';
 export { sectionTitles } from './template/render.ts';
 export {

@@ -20,6 +20,7 @@ import {
 } from '@factwright/engine';
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import { FOLDER_NAME } from './posting.ts';
+import { privateProblems, privateProjects } from './private.ts';
 import { type BuildResumeDeps, keptAsSent, readText, rulesIn } from './resume.ts';
 import { headerDifferences, listed } from './set.ts';
 
@@ -106,6 +107,7 @@ export async function buildCoverLetter(
   const problems = [
     ...(rulesProblem ? [rulesProblem] : []),
     ...lintLetter(letter, rules, confidential),
+    ...privateProblems(letter, await privateProjects(deps.workspace), 'letter'),
     ...(differs.length > 0
       ? [
           `The letter’s ${listed(differs)} ${differs.length === 1 ? 'doesn’t' : 'don’t'} match resume.json’s. Copy ${differs.length === 1 ? 'it' : 'them'} from there, so the two look like a set.`,

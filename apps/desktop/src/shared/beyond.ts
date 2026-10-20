@@ -188,6 +188,17 @@ export function projectIdFor(name: string, taken: readonly string[]): string {
   return id;
 }
 
+/**
+ * An id for a project just added in the window, made up afresh, so it's never one a project
+ * removed a moment ago had, whose fields another version kept could otherwise come back with it.
+ */
+export function freshProjectId(taken: readonly string[], random: () => number = Math.random) {
+  let id: string;
+  do id = `project-${random().toString(36).slice(2, 10) || '0'}`;
+  while (taken.includes(id));
+  return id;
+}
+
 const isText = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length <= max;
 
@@ -238,6 +249,8 @@ const PROJECT_READERS: {
 /**
  * A project as a file or the window holds it. Without an id it isn't one. Each other field that
  * doesn't hold up falls back to nothing told, or when it's strict, the project doesn't hold up.
+ * How much to show it is the exception: one that doesn't read, such as a later version's, keeps
+ * the project private, so a project the user hid never goes out by mistake.
  */
 export function readProject(value: unknown, strict: boolean): Project | undefined {
   const fields = fieldsOf(value);
@@ -248,6 +261,7 @@ export function readProject(value: unknown, strict: boolean): Project | undefine
     const valid = (read as (value: unknown) => unknown)(fields[key]);
     if (valid === undefined && strict) return undefined;
     if (valid !== undefined) project[key] = valid;
+    else if (key === 'showing') project[key] = 'private';
   }
   return project as unknown as Project;
 }
@@ -280,9 +294,9 @@ const PREFS_READERS: {
 };
 
 /**
- * How projects look on resumes, as a file or the window holds it. What it leaves out is as it's
- * always been, as for a file from before a choice was added. A choice that doesn't hold up makes
- * the whole of it not hold up.
+ * How projects look on resumes, as a file or the window holds it, a choice at a time: one it
+ * leaves out, or one that doesn't hold up, such as a later version's, is as it's always been, and
+ * the rest stand.
  */
 export function readProjectPrefs(value: unknown): ProjectPrefs | undefined {
   const fields = fieldsOf(value);
@@ -291,8 +305,7 @@ export function readProjectPrefs(value: unknown): ProjectPrefs | undefined {
   for (const [key, read] of Object.entries(PREFS_READERS)) {
     if (!(key in fields)) continue;
     const valid = (read as (value: unknown) => unknown)(fields[key]);
-    if (valid === undefined) return undefined;
-    prefs[key] = valid;
+    if (valid !== undefined) prefs[key] = valid;
   }
   return prefs as unknown as ProjectPrefs;
 }
@@ -451,6 +464,17 @@ export const beyondOf = (answers: BeyondWork): BeyondWork =>
 /** When the projects last changed, which the file keeps so the app knows when Claude last read them. */
 export const PROJECTS_CHANGED = 'projectsChanged';
 
+/**
+ * A time as the file keeps it: on the user's own calendar, with its offset from UTC, such as
+ * "2026-10-21T08:00:00+09:00", so its date is the one Claude writes in read.md that day.
+ */
+export function localTime(date: Date): string {
+  const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${sign}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`;
+}
+
 /** Whether two values say the same, as JSON. */
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -469,7 +493,18 @@ export function beyondFileWith(
   if (same(before, after)) return null;
   const file: Record<string, unknown> = { ...raw };
   for (const key of BEYOND_KEYS) {
-    if (key !== 'projects' && !same(before[key], after[key])) file[key] = after[key];
+    if (key === 'projects' || key === 'projectPrefs' || same(before[key], after[key])) continue;
+    file[key] = after[key];
+  }
+  // A choice at a time, so the choices this version doesn't know, or reads differently, stay.
+  if (!same(before.projectPrefs, after.projectPrefs)) {
+    const was = before.projectPrefs as unknown as Record<string, unknown>;
+    file.projectPrefs = {
+      ...fieldsOf(raw.projectPrefs),
+      ...Object.fromEntries(
+        Object.entries(after.projectPrefs).filter(([key, value]) => !same(value, was[key])),
+      ),
+    };
   }
   if (!same(before.projects, after.projects)) {
     const rawProjects = Array.isArray(raw.projects) ? (raw.projects as unknown[]) : [];
