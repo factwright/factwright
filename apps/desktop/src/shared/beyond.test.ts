@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyChanges, mergeChanges, NO_ANSWERS, parseAnswerChanges, readAnswers } from './about.ts';
+import {
+  applyChanges,
+  mergeChanges,
+  NO_ANSWERS,
+  parseAnswerChanges,
+  readAnswers,
+} from './about.ts';
 import {
   BEYOND_LIMITS,
   beyondFileWith,

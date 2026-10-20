@@ -5,7 +5,12 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { type AboutYou, type AnswerChanges, applyChanges, readAnswers } from '../../shared/about.ts';
+import {
+  type AboutYou,
+  type AnswerChanges,
+  applyChanges,
+  readAnswers,
+} from '../../shared/about.ts';
 import type { ClaudeStatus, FactwrightApi } from '../../shared/api.ts';
 import type { Profile } from '../../shared/profile.ts';
 import type { ClaudeStatusView } from '../useClaudeStatus.ts';
@@ -308,7 +313,10 @@ describe('GetStarted', () => {
     const name = screen.getByRole('textbox', { name: 'Name' });
     expect(document.activeElement).toBe(name);
     await userEvent.type(name, 'Riverside Reading Club');
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'What kind' }), 'volunteering');
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'What kind' }),
+      'volunteering',
+    );
     await userEvent.click(screen.getByRole('radio', { name: 'Feature it' }));
     await userEvent.type(
       screen.getByRole('textbox', { name: 'Interests and hobbies' }),

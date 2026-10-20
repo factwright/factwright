@@ -284,7 +284,10 @@ describe('ProfilePage', () => {
       expect(api.saveAnswers).toHaveBeenCalledWith(
         expect.objectContaining({
           addedProjects: [expect.objectContaining({ name: 'Denver Devs' })],
-          projectPrefs: expect.objectContaining({ resumes: 'experience', heading: 'Selected Work' }),
+          projectPrefs: expect.objectContaining({
+            resumes: 'experience',
+            heading: 'Selected Work',
+          }),
         }),
       ),
     );
