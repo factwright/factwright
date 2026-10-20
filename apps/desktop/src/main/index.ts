@@ -45,6 +45,7 @@ import {
   stoppedStart,
 } from './profiles.ts';
 import { APP_ORIGIN, registerAppScheme, serveApp } from './protocol.ts';
+import { QUIET } from './quiet.ts';
 import { CallReminders } from './reminders.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
@@ -182,7 +183,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
   app.on('web-contents-created', (_event, contents) => hardenContents(contents));
 
   app.whenReady().then(async () => {
-    if (!app.isPackaged) app.dock?.setIcon(DEV_ICON);
+    // In quiet mode, for the app's tests, it has no Dock icon to show or bounce.
+    if (QUIET) app.dock?.hide();
+    else if (!app.isPackaged) app.dock?.setIcon(DEV_ICON);
     const policy = contentSecurityPolicy(devUrl);
     if (devUrl) applyDevPolicy(session.defaultSession, policy);
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
@@ -207,6 +210,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         if (process.platform !== 'darwin') printer.close();
         claude.stop();
       },
+      quiet: QUIET,
     });
 
     // The open profile's folder, which holds its job hunt, its sync and its settings.

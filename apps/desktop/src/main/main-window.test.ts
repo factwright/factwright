@@ -48,6 +48,18 @@ describe('MainWindow', () => {
     expect(opened).toHaveLength(1);
   });
 
+  it('in quiet mode, for the app’s tests, opens a window but never brings it forward', () => {
+    const { window, opened } = fakeMainWindow({ quiet: true });
+    window.show();
+    const first = opened[0];
+    if (!first) throw new Error('No window opened.');
+    first.minimized = true;
+    window.show();
+    expect(first.minimized).toBe(true);
+    expect(window.focused()).toBe(false);
+    expect(opened).toHaveLength(1);
+  });
+
   it('keeps a new window, and what it runs, however late an old one says it closed', () => {
     const { window, opened, closed } = fakeMainWindow();
     const first = window.open();

@@ -29,6 +29,9 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
       FACTWRIGHT_SERVER_URL: '',
       // The setup check waits less, so the tests see it finish.
       FACTWRIGHT_SETUP_WAIT_MS: '500',
+      // Quiet mode: the window stays hidden and never takes the keyboard, with no Dock icon or
+      // notifications, so whoever is at the computer can keep using it while the tests run.
+      FACTWRIGHT_QUIET: 'on',
       ...env,
     },
     timeout: 30_000,

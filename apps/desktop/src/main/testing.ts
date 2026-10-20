@@ -64,7 +64,7 @@ export class FakeWindow extends EventEmitter implements WindowLike {
  * The app's window, as the main process keeps it, opening stand-ins: with every window it opened,
  * in order, and how many have closed.
  */
-export function fakeMainWindow() {
+export function fakeMainWindow({ quiet = false } = {}) {
   const opened: FakeWindow[] = [];
   const closed = { count: 0 };
   const window = new MainWindow({
@@ -76,6 +76,7 @@ export function fakeMainWindow() {
     closed: () => {
       closed.count += 1;
     },
+    quiet,
   });
   return { window, opened, closed };
 }
