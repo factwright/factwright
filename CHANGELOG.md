@@ -13,6 +13,13 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A job found again shows what the newest search found: its pay, where it is, its score and notes, and "Found again in LinkedIn Oct 20" at the top of its panel. The list says "Found again" too, in every view for a job you'd decided on, such as one you passed on, and the job's history says when each search found it. Before, a job showed the oldest search's name and pay, and the best-scored search's notes.
 - Searching the same place again the same day, or HN's same month, keeps the earlier run's jobs. The job search used to write its new list over the earlier one, so jobs you hadn't sorted yet vanished. Now it writes the next run beside it, and Factwright reads both.
 
+## 0.10.0 - 2026-10-20
+
+### Changed
+- Factwright runs on Electron 44, with Chromium 152, up from Electron 43 and Chromium 150, and the same Node.js 24. On a Mac it now needs macOS 13 Ventura or later, as Electron 44 does. A Mac on macOS 12 keeps the version it has, which goes on working: the Mac update feed now names the oldest macOS each version opens on, so a Mac too old for an update passes over it, instead of installing a version that won't open. factwright.com's download pages say macOS 13 or later from the site's next update. Windows is unchanged: 64-bit Windows 10 and 11.
+
+## 0.9.3 - 2026-10-20
+
 ### Changed
 - Factwright points to Save to Factwright, the browser extension, whatever sync you use. Its version 0.2, now in both the Chrome Web Store and Firefox Add-ons, saves straight to Factwright on the same computer, with no account and no sync, and syncs through a server of your own as well as Factwright's. So the Add job dialog's link to it shows with a server of your own, and in a copy built without Factwright's sync, as the sidebar's does, and the Sync screen's Saving jobs from your browser shows with a server of your own too. It says the extension saves straight to Factwright on this computer, or through sync from another.
 - How to set one up, for a sync server of your own, opens factwright.com/own-server, the guide to running one for free in your own Cloudflare account, instead of the ready-to-deploy copy on GitHub. How to update, for a server that needs it, opens the guide's part on updates. The web view and Save to Factwright link to the guide too: the web view once the sync server is next deployed, and the extension from its next version.
