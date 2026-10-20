@@ -87,9 +87,9 @@ describe('readTitle', () => {
 
   it('reads a long title in one pass', () => {
     const spaces = ' '.repeat(50_000);
-    const started = performance.now();
+    const started = Date.now();
     expect(readTitle(`Senior${spaces}Engineer${'\t'.repeat(50_000)}x`).levels).toEqual(['senior']);
-    expect(performance.now() - started).toBeLessThan(1000);
+    expect(Date.now() - started).toBeLessThan(1000);
     expect(readTitle('Staff Engineer - Platform – Berlin').heads).toEqual([
       'berlin',
       'engineer',
