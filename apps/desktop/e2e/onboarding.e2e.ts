@@ -56,6 +56,18 @@ test('takes their name, their resume and their own words', async () => {
   await window.getByRole('textbox', { name: 'Names to keep private' }).press('Enter');
 });
 
+test('takes a project of theirs, and who they are outside work', async () => {
+  const { window } = opened;
+  await next();
+  await expect(window.getByRole('heading', { name: 'Beyond work' })).toBeVisible();
+  await window.getByRole('button', { name: 'Add a project' }).click();
+  await window.getByRole('textbox', { name: 'Name' }).fill('Trailhead');
+  await window.getByRole('combobox', { name: 'What kind' }).selectOption('product');
+  await window.getByRole('radio', { name: 'Feature it' }).check();
+  await window.getByRole('textbox', { name: 'Interests and hobbies' }).fill('Trail running');
+  await window.getByRole('textbox', { name: 'Interests and hobbies' }).press('Enter');
+});
+
 test('asks what they want, and shows the templates printed for real', async () => {
   const { window } = opened;
   await next();
@@ -94,6 +106,12 @@ test('hands it all to their Claude, with the workspace ready for it', async () =
     looks: [{ layout: 'minimal', for: 'startup' }],
   });
   expect(answers.startedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  // Beyond work is in a file of its own, which apps from before it never rewrite.
+  expect(answers).not.toHaveProperty('projects');
+  expect(JSON.parse(read('about-me/beyond-work.json'))).toMatchObject({
+    projects: [{ name: 'Trailhead', kind: 'product', showing: 'feature' }],
+    interests: ['Trail running'],
+  });
   expect(answers.files[0]).toMatchObject({ name: 'Alex Rivera resume.pdf', kind: 'resume' });
   expect(existsSync(workspace(answers.files[0].path))).toBe(true);
   // pdf.js read the resume's text in the window, for Claude to read as text.

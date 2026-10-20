@@ -175,6 +175,36 @@ describe('profileStatus', () => {
     });
   });
 
+  it('notices projects changed since Claude read them, but not the rest of Beyond work', () => {
+    const day = (hour: number) => new Date(2026, 9, 12, hour);
+    const beyond = (projectsChanged: Date) =>
+      write(
+        'about-me/beyond-work.json',
+        JSON.stringify({
+          projects: [{ id: 'club' }],
+          projectsChanged: projectsChanged.toISOString(),
+        }),
+      );
+    const withProjects = {
+      ...answers,
+      projects: readAnswers({ projects: [{ id: 'club' }] }).projects,
+    };
+    // Nothing told: nothing to read.
+    expect(profileStatus(workspace, answers).beyondChanged).toBe(false);
+    beyond(day(9));
+    // Never read.
+    expect(profileStatus(workspace, withProjects).beyondChanged).toBe(true);
+    write('about-me/read.md', '- about-me/beyond-work.json · 2026-10-12\n');
+    utimesSync(join(workspace, 'about-me/read.md'), day(10), day(10));
+    expect(profileStatus(workspace, withProjects).beyondChanged).toBe(false);
+    // Interests changed later: the file is newer, but the projects aren't.
+    utimesSync(join(workspace, 'about-me/beyond-work.json'), day(11), day(11));
+    expect(profileStatus(workspace, withProjects).beyondChanged).toBe(false);
+    // A project changed after Claude read them, the same day.
+    beyond(day(11));
+    expect(profileStatus(workspace, withProjects).beyondChanged).toBe(true);
+  });
+
   it('counts the LinkedIn connections, below the export’s notes', () => {
     write(
       'linkedin/Connections.csv',

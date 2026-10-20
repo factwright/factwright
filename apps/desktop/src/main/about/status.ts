@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path';
 import { factBlocks, localDate, UNCONFIRMED } from '@factwright/core';
 import { DEFAULT_TEMPLATE } from '@factwright/engine';
 import type { AboutYou } from '../../shared/about.ts';
+import { BEYOND_FILE, PROJECTS_CHANGED } from '../../shared/beyond.ts';
 import { FACT_LIMITS, factFileKind } from '../../shared/facts.ts';
 import type { ProfileStatus, StartingResume } from '../../shared/profile.ts';
 import { untouched } from '../../shared/stamp.ts';
@@ -167,6 +168,22 @@ function statOf(file: string): { day: string; ms: number; size: number } | null 
   }
 }
 
+/** When Beyond work's file says its projects last changed, or null when it doesn't say. */
+function projectsNoted(text: string | null): Date | null {
+  if (text === null) return null;
+  try {
+    const value: unknown = JSON.parse(text);
+    const noted =
+      typeof value === 'object' && value !== null
+        ? (value as Record<string, unknown>)[PROJECTS_CHANGED]
+        : null;
+    const date = typeof noted === 'string' ? new Date(noted) : null;
+    return date && !Number.isNaN(date.getTime()) ? date : null;
+  } catch {
+    return null;
+  }
+}
+
 /** How far the profile has come, read from the workspace. */
 export function profileStatus(workspace: string, answers: AboutYou): ProfileStatus {
   const log = join(workspace, ABOUT.read);
@@ -180,6 +197,15 @@ export function profileStatus(workspace: string, answers: AboutYou): ProfileStat
     const readOn = read.get(path);
     return !readOn || file.day > readOn || (file.day === readOn && file.ms > logged);
   };
+  // The projects changed since Claude read them, by when the app noted they changed, so a change
+  // to the rest of Beyond work, which isn't a fact, doesn't count.
+  const projectsChangedSince = () => {
+    const noted = projectsNoted(readText(join(workspace, ...BEYOND_FILE.split('/'))));
+    if (noted === null) return changedSince(BEYOND_FILE);
+    const readOn = read.get(BEYOND_FILE);
+    const day = localDate(noted);
+    return !readOn || day > readOn || (day === readOn && noted.getTime() > logged);
+  };
   const notes = statOf(join(workspace, ABOUT.notes));
   const criteria = readText(join(workspace, ABOUT.criteria));
   const connections = readText(join(workspace, ABOUT.connections));
@@ -192,6 +218,7 @@ export function profileStatus(workspace: string, answers: AboutYou): ProfileStat
     ),
     unread: answers.files.map((file) => file.path).filter(changedSince),
     notesChanged: notes !== null && notes.size > 0 && changedSince(ABOUT.notes),
+    beyondChanged: answers.projects.length > 0 && projectsChangedSince(),
     criteria: criteria === null ? 'none' : untouched(criteria) ? 'app' : 'own',
     connections: connections === null ? null : { count: connectionsIn(connections), added },
   };

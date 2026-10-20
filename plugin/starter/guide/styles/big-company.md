@@ -22,6 +22,7 @@ The look comes from `templates.md`, for established companies.
 - **Working across the company:** with other teams, leaders, customers and partners.
 - **People leadership:** teams built, hired, trained and grown.
 - **Decisions and their trade-offs.**
+- **Projects, briefly:** a line each, and only those the posting's skills or domain call for.
 
 ## Avoid
 - Startup slang: "scrappy", "hustle", "move fast and break things".

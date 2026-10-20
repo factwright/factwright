@@ -8,14 +8,26 @@ import {
   unnamedFirstKind,
 } from '@factwright/core';
 import { TEMPLATE_ID } from '@factwright/engine/templates';
+import {
+  applyProjectEdits,
+  type BeyondWork,
+  INTERESTS_ON_RESUMES,
+  mergeProjectEdits,
+  NO_BEYOND,
+  PROJECT_EDITS,
+  type ProjectEdits,
+  readProjectPrefs,
+  readProjects,
+} from './beyond.ts';
 
 /**
  * What the user tells Factwright about themselves when they start, and can change later in
- * Profile: who they are, what they're looking for, how their resumes should look, and the files
- * they shared. It's kept in the workspace as about-me/answers.json, so Claude reads it, and so
- * it syncs to the user's other computers.
+ * Profile: who they are, what they're looking for, how their resumes should look, the files
+ * they shared, and Beyond work: their projects and who they are outside work. It's kept in the
+ * workspace as about-me/answers.json, with the kinds of job and Beyond work in files of their own
+ * beside it, so Claude reads it, and so it syncs to the user's other computers.
  */
-export interface AboutYou {
+export interface AboutYou extends BeyondWork {
   /** Who they are, as their resumes should show it. */
   you: Contact;
   /**
@@ -266,6 +278,7 @@ export const NO_ANSWERS: AboutYou = {
   skipped: false,
   firstKind: null,
   otherKinds: [],
+  ...NO_BEYOND,
 };
 
 /** The longest text each answer takes, so a stray paste can't swell the file. */
@@ -510,6 +523,13 @@ const READERS: { [K in keyof AboutYou]: (value: unknown) => AboutYou[K] | undefi
   skipped: (value) => (typeof value === 'boolean' ? value : undefined),
   firstKind: (value) => (value === null ? null : kindName(value)),
   otherKinds: kinds,
+  projects: readProjects,
+  projectPrefs: readProjectPrefs,
+  interests: entries,
+  learning: entries,
+  communities: entries,
+  cares: (value) => text(value, ANSWER_LIMITS.text),
+  interestsOnResumes: (value) => choice(value, INTERESTS_ON_RESUMES),
 };
 
 /**
@@ -551,11 +571,16 @@ function withKinds(answers: AboutYou): AboutYou {
  * or adding or removing one, never undoes a change made to another meanwhile, such as by Claude
  * or on another computer. The files list changes only as files are added or removed.
  */
-export type AnswerChanges = Partial<Omit<AboutYou, 'files' | 'startedOn' | 'otherKinds'>> & {
+export type AnswerChanges = Partial<
+  Omit<AboutYou, 'files' | 'startedOn' | 'otherKinds' | 'projects'>
+> & {
   addedKinds?: JobKind[];
   removedKinds?: string[];
   kindChanges?: KindChange[];
-};
+} & ProjectEdits;
+
+/** The answers the window never sends whole, but only as they're added to and changed. */
+const NOT_WHOLE = ['files', 'startedOn', 'otherKinds', 'projects'];
 
 /** What the window sends about the kinds of job after the first, and how each is read. */
 const KIND_CHANGES: Readonly<Record<string, (value: unknown) => unknown>> = {
@@ -574,9 +599,11 @@ export function parseAnswerChanges(value: unknown): AnswerChanges | null {
   for (const [key, change] of Object.entries(value)) {
     const read = Object.hasOwn(KIND_CHANGES, key)
       ? KIND_CHANGES[key]
-      : ['files', 'startedOn', 'otherKinds'].includes(key) || !Object.hasOwn(READERS, key)
-        ? null
-        : READERS[key as keyof AboutYou];
+      : Object.hasOwn(PROJECT_EDITS, key)
+        ? PROJECT_EDITS[key as keyof ProjectEdits]
+        : NOT_WHOLE.includes(key) || !Object.hasOwn(READERS, key)
+          ? null
+          : READERS[key as keyof AboutYou];
     const valid = read?.(change);
     if (valid === undefined) return null;
     changes[key] = valid;
@@ -597,6 +624,9 @@ export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYo
     removedKinds: removed = [],
     kindChanges: changed = [],
     firstKind,
+    addedProjects,
+    removedProjects,
+    projectChanges,
     ...rest
   } = changes;
   let first = answers.firstKind;
@@ -637,7 +667,12 @@ export function applyChanges(answers: AboutYou, changes: AnswerChanges): AboutYo
     const at = others.findIndex((kind) => kind.id === id);
     if (at >= 0) others[at] = { ...(others[at] as JobKind), ...own };
   }
-  return { ...answers, ...rest, firstKind: first, otherKinds: others };
+  const projects = applyProjectEdits(answers.projects, {
+    ...(addedProjects && { addedProjects }),
+    ...(removedProjects && { removedProjects }),
+    ...(projectChanges && { projectChanges }),
+  });
+  return { ...answers, ...rest, firstKind: first, otherKinds: others, projects };
 }
 
 /**
@@ -662,13 +697,16 @@ export function mergeChanges(earlier: AnswerChanges, later: AnswerChanges): Answ
     else changed[at] = { ...changed[at], ...change };
   }
   const rest = Object.fromEntries(
-    Object.entries({ ...earlier, ...later }).filter(([key]) => !Object.hasOwn(KIND_CHANGES, key)),
+    Object.entries({ ...earlier, ...later }).filter(
+      ([key]) => !Object.hasOwn(KIND_CHANGES, key) && !Object.hasOwn(PROJECT_EDITS, key),
+    ),
   ) as AnswerChanges;
   return {
     ...rest,
     ...(added.length > 0 && { addedKinds: added }),
     ...(gone.length > 0 && { removedKinds: gone }),
     ...(changed.length > 0 && { kindChanges: changed }),
+    ...mergeProjectEdits(earlier, later),
   };
 }
 

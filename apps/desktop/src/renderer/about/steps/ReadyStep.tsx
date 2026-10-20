@@ -13,6 +13,7 @@ import {
 import { hasKinds, kindsOf } from '../../../shared/kinds.ts';
 import { livePicks, templateName } from '../../../shared/looks.ts';
 import type { TemplateInfo } from '../../../shared/profile.ts';
+import { beyondSummary } from './BeyondWorkStep.tsx';
 import ready from './ReadyStep.module.css';
 import styles from './steps.module.css';
 
@@ -134,8 +135,9 @@ export function ReadyStep({
     ['About you', answers.you.name || null, 1],
     ['What you shared', sharedSummary(answers), 2],
     ['In your words', words > 0 ? `${words.toLocaleString()} words about yourself` : null, 3],
-    ['What you want', wantsSummary(answers), 4],
-    ['Templates', looksSummary(answers, templates), 5],
+    ['Beyond work', beyondSummary(answers), 4],
+    ['What you want', wantsSummary(answers), 5],
+    ['Templates', looksSummary(answers, templates), 6],
   ];
   return (
     <section className={styles.step} aria-labelledby={titleId}>

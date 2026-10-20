@@ -20,7 +20,7 @@ Before starting, read:
 - `facts/README.md`, if there is one, then **all** of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 - `about-me/notes.md`, if there is one: the user's own words about their work and what they want next. Read it for how they talk and what they care about. It's raw and unchecked, so no claim comes from it: claims come only from `facts/`.
 - `past_answers`: what the user actually sent on applications, in their own words. It shows how they sound when they write to an employer, and why they wanted other jobs.
-- `about_you`: their contact details, what they want, and when they can start.
+- `about_you`: their contact details, what they want, and when they can start, and Beyond work: their projects, with how much to show each, and who they are outside work.
 
 ## 1. Load everything on file
 - For a job from the app (`job <id>`), call `job_details` with the id. Otherwise call `find_job` with what you have (the link alone is fine), then `job_details` if it's on file. It gives the status, the user's notes and calls, the application's questions with what they sent, their questions about the job, and every file in its folder with what it holds.
@@ -48,7 +48,8 @@ Before starting, read:
 - **The reader:** pick the style as the resume did (`job.md`'s `Style / track` line, or by `guide/styles/README.md`), and read that style's **Reader** and **Tone**. The letter speaks to that reader.
 
 ## 3. Pick what the letter says
-- **Two or three matches:** compare the posting's must-haves, and what the user's notes and calls say the team cares about most, with the facts. Pick the two or three that matter most to this employer, each with a number when `facts/` has one. Prefer what the resume can only list: the problem, what the user did, and what changed.
+- **Two or three matches:** compare the posting's must-haves, and what the user's notes and calls say the team cares about most, with the facts. Pick the two or three that matter most to this employer, each with a number when `facts/` has one. Prefer what the resume can only list: the problem, what the user did, and what changed. A featured project, or one that fits the job, can be one of them, from its claims in `facts/projects.md`. Never a private one.
+- **A human line, when it's true and fits:** an interest, a community or what they care about, from `about_you`, can say why this company, such as volunteering that matches its mission. Never one that could reveal their age, health, religion, politics or family.
 - **Respect the tags:** status decides the verbs, ownership decides who did it, and medium confidence gets a hedge. A claim tagged `unconfirmed` is unverified: offer it in step 4 before the letter uses it. In `facts/gaps.md`, **Doesn't have** is settled.
 - **Why this company:** one concrete, true reason the user wants this job: something real about the company's product, users, stage, or a problem the posting names, from the posting, its site or the fit check's research. It has to be the user's reason. Take it from their notes, calls, `about_you` (what they want) or what they sent on applications. When nothing on file says why they want it, ask in step 4. Never flattery, and never a pitch about the company's market.
 - Write the plan to `notes.md`, under `## Cover letter`: who it's to and where that came from, the matches with their facts (`facts/<file>#<claim>`), and the reason for the company with its source.

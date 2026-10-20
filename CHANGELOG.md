@@ -4,9 +4,18 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Beyond work, in Profile and in getting started: a place for your projects and the rest of you, in any field. A project is anything you've made, led or kept going outside a job: an app, open source, research, creative work, volunteering, a club you run, a small business, a course project. Each one takes its name and kind, what it is, your part in it, what it's part of, where it stands and when, its links, its numbers and results, and its skills, and how much to show it: feature it, when it fits, or keep it private. Your Claude turns each one into facts with you, unverified until you check them, and Profile says when your projects changed since it last read them. The Fact bank says a fact drafted from one came from Beyond work in your Profile.
+- You choose how projects look on your resumes: left off, in a section under your own heading, or listed as experience, such as products under a company you run, with a line, two lines or a short paragraph each, and their links, numbers and tools on or off. Each tailored resume says in a line how it placed them, and you can ask for something else for one job. A project you keep private never goes on anything you send.
+- You, outside work, in Beyond work: your interests, what you're learning, your communities and what you care about. Your Claude uses them for "tell us about yourself" and questions about hobbies, a true line in a cover letter, small talk before an interview, and people who share a community with you, and saves what you tell it there, so it asks once. A line of your interests goes on resumes only if you say so. It never brings up anything that could reveal your age, health, religion, politics or family.
+- Beyond work is kept in `about-me/beyond-work.json`, beside your answers, so an older Factwright on another computer never drops it.
+
 ### Changed
 - Factwright points to Save to Factwright, the browser extension, whatever sync you use. Its version 0.2, now in both the Chrome Web Store and Firefox Add-ons, saves straight to Factwright on the same computer, with no account and no sync, and syncs through a server of your own as well as Factwright's. So the Add job dialog's link to it shows with a server of your own, and in a copy built without Factwright's sync, as the sidebar's does, and the Sync screen's Saving jobs from your browser shows with a server of your own too. It says the extension saves straight to Factwright on this computer, or through sync from another.
 - How to set one up, for a sync server of your own, opens factwright.com/own-server, the guide to running one for free in your own Cloudflare account, instead of the ready-to-deploy copy on GitHub. How to update, for a server that needs it, opens the guide's part on updates. The web view and Save to Factwright link to the guide too: the web view once the sync server is next deployed, and the extension from its next version.
+
+### Fixed
+- A resume template of your own that leaves out projects or extra sections, such as a line of your interests, no longer drops them without a word. Building a resume in it says so, so your Claude picks another template or tells you, the list of templates Claude reads says which ones drop them, and Claude can't save a new template that does. Word files always showed them.
 
 ## 0.9.2 - 2026-10-19
 

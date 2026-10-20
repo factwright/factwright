@@ -517,7 +517,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'about_you',
       description:
-        'What the user told Factwright about themselves, when they started and in Profile since: their contact details, the roles, places and companies they want, pay, work authorization, when they can start, must-haves and deal-breakers. Check it before asking the user anything an application or a recruiter asks.',
+        'What the user told Factwright about themselves, when they started and in Profile since: their contact details, the roles, places and companies they want, pay, work authorization, when they can start, must-haves and deal-breakers, and Beyond work: their projects with how much to show each and how projects look on their resumes, their interests, what they’re learning, their communities and what they care about. Check it before asking the user anything an application or a recruiter asks.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READS,
       run: async () => aboutYouText(deps.about.answers()),
@@ -703,7 +703,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_about_you',
       description:
-        'Saves something the user told you that applications and recruiters ask for, so nobody asks again: their work authorization, when they can start (with any notice period), whether they’d relocate, their target or lowest base pay, or a contact detail. Save only what they said, in their words, and only what holds for every job, never one job’s pay. When they want more than one kind of job, pay is each kind’s own: name the kind it’s for.',
+        'Saves something the user told you that applications and recruiters ask for, so nobody asks again: their work authorization, when they can start (with any notice period), whether they’d relocate, their target or lowest base pay, a contact detail, or who they are outside work: interests and hobbies, what they’re learning, communities they’re part of, and what they care about. Save only what they said, in their words, and only what holds for every job, never one job’s pay. When they want more than one kind of job, pay is each kind’s own: name the kind it’s for.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -736,6 +736,28 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           location: { type: 'string', description: 'Where they live, such as “Denver, CO”.' },
           linkedin: { type: 'string', description: 'Their LinkedIn profile’s link.' },
           website: { type: 'string' },
+          interests: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Interests and hobbies to add, a few words each, such as “Trail running”.',
+          },
+          learning: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'What they’re learning or working on in themselves, to add, such as “Spanish”.',
+          },
+          communities: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Communities they’re part of, to add, such as “Denver Devs meetup (organizer)”.',
+          },
+          cares: {
+            type: 'string',
+            description:
+              'What they care about, in their words, in place of what’s there: keep what’s there when it still holds.',
+          },
         },
         additionalProperties: false,
       },
@@ -748,7 +770,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           const ids = hasKinds(current) ? kindsOf(current).map((kind) => kind.id) : [];
           throw new Error(
             [
-              `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text. relocate is no, maybe or yes.`,
+              `Give one or more of ${SAVABLE_ANSWERS.join(', ')}, as short text, with interests, learning and communities each a list. relocate is no, maybe or yes.`,
               ids.length > 0
                 ? `With pay, give kind too, the kind of job it’s for: ${ids.join(', ')}.`
                 : '',

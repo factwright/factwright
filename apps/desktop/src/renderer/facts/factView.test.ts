@@ -144,6 +144,9 @@ describe('originOf', () => {
     expect(originOf(blockWith(['- **Source:** LinkedIn 2026-10-12']), '2026-10-15')?.text).toBe(
       'From your LinkedIn, Oct 12',
     );
+    expect(originOf(blockWith(['- **Source:** profile 2026-10-14']), '2026-10-15')?.text).toBe(
+      'From Beyond work in your Profile, Oct 14',
+    );
     expect(originOf(blockWith(['- **Source:** a call with Sam']), '2026-10-15')?.text).toBe(
       'Source: a call with Sam',
     );

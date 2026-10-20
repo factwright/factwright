@@ -5,7 +5,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { type AboutYou, readAnswers } from '../../shared/about.ts';
+import { type AboutYou, type AnswerChanges, applyChanges, readAnswers } from '../../shared/about.ts';
 import type { ClaudeStatus, FactwrightApi } from '../../shared/api.ts';
 import type { Profile } from '../../shared/profile.ts';
 import type { ClaudeStatusView } from '../useClaudeStatus.ts';
@@ -42,6 +42,7 @@ function profileApi(start: Partial<AboutYou> = {}) {
       starting: [],
       unread: [],
       notesChanged: false,
+      beyondChanged: false,
       criteria: 'none',
       connections: null,
     },
@@ -50,8 +51,8 @@ function profileApi(start: Partial<AboutYou> = {}) {
   return {
     platform: 'darwin',
     profile: vi.fn(async () => profile()),
-    saveAnswers: vi.fn(async (changes: Partial<AboutYou>) => {
-      answers = { ...answers, ...changes };
+    saveAnswers: vi.fn(async (changes: AnswerChanges) => {
+      answers = applyChanges(answers, changes);
       return answers;
     }),
     saveNotes: vi.fn(async (text: string) => {
@@ -295,8 +296,48 @@ describe('GetStarted', () => {
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
-  it('asks what the user wants, thoroughly', async () => {
+  it('takes the user’s projects and who they are outside work, all of it optional', async () => {
     const api = profileApi({ step: 4, reached: 4 });
+    const { container } = render(<Harness api={api} />);
+    await screen.findByRole('heading', { name: 'Beyond work' });
+    expect(screen.getByText(/Skip anything that doesn’t apply/)).toBeTruthy();
+    // How projects look on resumes waits for Profile, so getting started stays short.
+    expect(screen.queryByRole('heading', { name: 'On your resumes' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Add a project' }));
+    // The new project opens, ready for its name.
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    expect(document.activeElement).toBe(name);
+    await userEvent.type(name, 'Riverside Reading Club');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'What kind' }), 'volunteering');
+    await userEvent.click(screen.getByRole('radio', { name: 'Feature it' }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Interests and hobbies' }),
+      'Trail running{Enter}',
+    );
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ interests: ['Trail running'] }),
+        ),
+      SAVED,
+    );
+    const saved = await api.profile();
+    expect(saved.answers.projects).toEqual([
+      expect.objectContaining({
+        name: 'Riverside Reading Club',
+        kind: 'volunteering',
+        showing: 'feature',
+      }),
+    ]);
+    expect(screen.getByRole('button', { name: 'Done with Riverside Reading Club' })).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    // Removing it takes it out.
+    await userEvent.click(screen.getByRole('button', { name: 'Remove this project' }));
+    await waitFor(async () => expect((await api.profile()).answers.projects).toEqual([]), SAVED);
+  });
+
+  it('asks what the user wants, thoroughly', async () => {
+    const api = profileApi({ step: 5, reached: 5 });
     const { container } = render(<Harness api={api} />);
     await screen.findByRole('heading', { name: 'What you want' });
     await userEvent.type(
@@ -327,8 +368,8 @@ describe('GetStarted', () => {
 
   it('starts with the suggested templates picked, and lets the user pick for each kind of company', async () => {
     const api = profileApi({
-      step: 5,
-      reached: 5,
+      step: 6,
+      reached: 6,
       companies: ['startup', 'established'],
       fields: ['software'],
       levels: ['senior'],
@@ -364,7 +405,7 @@ describe('GetStarted', () => {
   });
 
   it('has Claude make a template from a resume the user likes, while they carry on', async () => {
-    const api = profileApi({ step: 5, reached: 5 });
+    const api = profileApi({ step: 6, reached: 6 });
     const onMakeTemplate = vi.fn();
     render(<Harness api={api} onMakeTemplate={onMakeTemplate} />);
     await screen.findByRole('heading', { name: 'Pick your resume templates' });
@@ -379,7 +420,7 @@ describe('GetStarted', () => {
   });
 
   it('hands everything to Claude once there’s something to start from', async () => {
-    const api = profileApi({ step: 6, reached: 6 });
+    const api = profileApi({ step: 7, reached: 7 });
     const onStart = vi.fn();
     const { container } = render(<Harness api={api} onStart={onStart} />);
     await screen.findByRole('heading', { name: 'Ready for your Claude' });
@@ -395,6 +436,8 @@ describe('GetStarted', () => {
       await screen.findByRole('textbox', { name: 'About you, in your own words' }),
       'I have run the support team at a regional bank for six years, and I trained every new hire on the systems we use there.',
     );
+    // Through Beyond work, what they want and their templates, back to the end.
+    await next();
     await next();
     await next();
     await next();
@@ -406,7 +449,7 @@ describe('GetStarted', () => {
   });
 
   it('waits for Claude to be ready before starting', async () => {
-    const api = profileApi({ step: 6, reached: 6, files: [] });
+    const api = profileApi({ step: 7, reached: 7, files: [] });
     await act(async () => {
       render(<Harness api={api} claude={{ state: 'signed-out', version: '2.1.300' }} />);
     });

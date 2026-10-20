@@ -9,6 +9,7 @@ import {
   fitReport,
   isRunt,
   type LintConfig,
+  leftOut,
   lintResume,
   outputName,
   type Resume,
@@ -186,6 +187,14 @@ export async function buildResume(
 
   const html = renderHtml(resume, template, RESUME_FONTS);
   if (files.some((file) => file.endsWith('.pdf'))) {
+    // A template of the user's own can drop a part of the resume without anyone seeing. The
+    // Word file shows every part, whatever the template.
+    const dropped = leftOut(html, resume);
+    if (dropped.length > 0) {
+      problems.push(
+        `The ${template.name} template leaves out ${listed(dropped)}, so the PDF wouldn’t show all of ${at.data}. Use a template that shows everything in it, or take out what this one drops, and tell the user their template drops it.`,
+      );
+    }
     const printed = await deps.printer.print(html);
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);
     const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;

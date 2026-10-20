@@ -1,6 +1,6 @@
 import type { JobFile } from '@factwright/core';
 import { Button, Dialog, DialogActions, VisuallyHidden } from '@factwright/ui';
-import { Check, Circle, FileText, LoaderCircle } from 'lucide-react';
+import { Check, Circle, FileText, LoaderCircle, Plus } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { labelOf, pagesFor, RESUME_FILES } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
@@ -17,6 +17,13 @@ import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
+import {
+  BeyondWorkStep,
+  outsideLines,
+  placementSummary,
+  projectLine,
+  ShowingPill,
+} from './steps/BeyondWorkStep.tsx';
 import { FilesStep } from './steps/FilesStep.tsx';
 import {
   looksSummary,
@@ -30,7 +37,13 @@ import { WantsStep } from './steps/WantsStep.tsx';
 import { WordsStep } from './steps/WordsStep.tsx';
 import type { ProfileState } from './useProfile.ts';
 
-type Editing = 'about' | 'files' | 'words' | 'wants' | 'templates' | null;
+type Editing = 'about' | 'files' | 'words' | 'wants' | 'templates' | 'beyond' | null;
+
+/** How the projects are ordered on the card: featured first, then as the user added them. */
+const SHOWN_FIRST = { feature: 0, fit: 1, private: 2 } as const;
+
+/** "In a section" as it reads after a colon: "in a section". */
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 const plural = (count: number, word: string) =>
   `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
@@ -68,13 +81,19 @@ function Card({
   title,
   children,
   actions,
+  wide = false,
 }: {
   title: string;
   children: ReactNode;
   actions?: ReactNode;
+  /** Whether it takes the grid's whole width. */
+  wide?: boolean;
 }) {
   return (
-    <section className={styles.card} aria-label={title}>
+    <section
+      className={wide ? `${styles.card} ${styles.wideCard}` : styles.card}
+      aria-label={title}
+    >
       <h2 className={styles.cardTitle}>{title}</h2>
       <div className={styles.cardBody}>{children}</div>
       {actions && <div className={styles.cardActions}>{actions}</div>}
@@ -178,6 +197,8 @@ export function ProfilePage({
   const { profile } = state;
   const { answers, status } = profile;
   const [editing, setEditing] = useState<Editing>(null);
+  // The Beyond work dialog opened to add a project, which starts with a new one open.
+  const [addingProject, setAddingProject] = useState(false);
   const [preview, setPreview] = useState<JobFile | null>(null);
   const [xray, setXray] = useState<StartingResume | null>(null);
   const busy = BUSY.includes(phase);
@@ -201,7 +222,12 @@ export function ProfilePage({
     </Button>
   );
 
-  const fresh = status.unread.length + (status.notesChanged ? 1 : 0);
+  const fresh =
+    status.unread.length + (status.notesChanged ? 1 : 0) + (status.beyondChanged ? 1 : 0);
+  const projects = [...answers.projects].sort(
+    (a, b) => SHOWN_FIRST[a.showing] - SHOWN_FIRST[b.showing],
+  );
+  const outside = outsideLines(answers);
   // With more than one kind of job, each has its own work and starting resumes.
   const kinds = hasKinds(answers) ? kindsOf(answers) : null;
   const firstKind = kinds?.[0]?.id ?? '';
@@ -291,7 +317,8 @@ export function ProfilePage({
                 <p className={styles.need}>
                   {status.unread.length > 0 &&
                     `${plural(status.unread.length, 'file')} not read yet. `}
-                  {status.notesChanged && 'Your notes changed since Claude last read them.'}
+                  {status.notesChanged && 'Your notes changed since Claude last read them. '}
+                  {status.beyondChanged && 'Your projects changed since Claude last read them.'}
                 </p>
               )}
               <div>
@@ -432,6 +459,74 @@ export function ProfilePage({
               .join(' · ') || 'No contact details yet.'}
           </p>
         </Card>
+
+        <Card
+          title="Beyond work"
+          wide
+          actions={
+            <>
+              {status.beyondChanged &&
+                claims > 0 &&
+                runButton('Add to your fact bank', { skill: 'add-facts', mode: 'new' })}
+              <Button size="sm" onClick={() => setEditing('beyond')}>
+                Change
+              </Button>
+              <Button
+                size="sm"
+                variant="quiet"
+                icon={<Plus size={14} aria-hidden="true" />}
+                onClick={() => {
+                  setAddingProject(true);
+                  setEditing('beyond');
+                }}
+              >
+                Add a project
+              </Button>
+            </>
+          }
+        >
+          {projects.length > 0 && <h3 className={styles.cardSubtitle}>Projects and other work</h3>}
+          {projects.length > 0 ? (
+            <ul className={styles.projects}>
+              {projects.map((project) => (
+                <li key={project.id} className={styles.project}>
+                  <span className={styles.projectName}>
+                    {project.name.trim() || 'New project'}
+                    <span className={styles.projectLine}>{projectLine(project)}</span>
+                  </span>
+                  <span className={styles.projectWhat}>{project.what}</span>
+                  <ShowingPill showing={project.showing} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {projects.length > 0 ? (
+            <p className={styles.quiet}>
+              On resumes: {lowerFirst(placementSummary(answers.projectPrefs))}.
+            </p>
+          ) : (
+            <p className={styles.quiet}>
+              Projects, volunteering and other work outside a job, in any field, and who you are
+              outside work. Your Claude turns each project into facts with you.
+            </p>
+          )}
+          {outside.length > 0 && (
+            <>
+              <h3 className={styles.cardSubtitle}>You, outside work</h3>
+              <dl className={styles.outside}>
+                {outside.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          )}
+          {status.beyondChanged && claims > 0 && (
+            <p className={styles.need}>Changed since your Claude last read it.</p>
+          )}
+        </Card>
       </div>
 
       {profiles && (
@@ -451,12 +546,14 @@ export function ProfilePage({
               words: 'In your words',
               wants: 'What you want',
               templates: 'Resume templates',
+              beyond: 'Beyond work',
             }[editing]
           }
           size="lg"
           onClose={() => {
             void state.flush();
             setEditing(null);
+            setAddingProject(false);
           }}
         >
           {(close) => (
@@ -479,6 +576,9 @@ export function ProfilePage({
                 />
               )}
               {editing === 'wants' && <WantsStep answers={answers} update={state.update} />}
+              {editing === 'beyond' && (
+                <BeyondWorkStep answers={answers} update={state.update} addFirst={addingProject} />
+              )}
               {editing === 'templates' && (
                 <TemplatesStep
                   answers={answers}

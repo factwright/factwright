@@ -28,7 +28,7 @@ Before starting, read:
   - The resume they actually sent: the PDF (or Word file) that `job_details` marks as most likely sent with the application. Read the PDF: `resume.json` may have changed since it went out. Answers must match what was sent.
 - What they actually sent on the application: `job_details` gives each question with their answer, in their own words. Interviewers ask about these, so the stories must match them. Where nothing was recorded, Claude's suggestion in `answers.md` is the closest guess, and say so.
 - Their earlier questions about the job, with your answers (`job_details` lists them): reuse what's there, and don't research it twice.
-- `about_you` for the logistics a recruiter asks about: their target pay (the job's kind's, when they want more than one kind of job), when they can start, work authorization and relocation.
+- `about_you` for the logistics a recruiter asks about: their target pay (the job's kind's, when they want more than one kind of job), when they can start, work authorization and relocation. Its Beyond work has their projects, with how much to show each, and who they are outside work, for "tell me about yourself" and small talk.
 - If the job came from a job search, read its entry in `searches/*/jobs.json` (why, gaps, flags).
 - If `outreach/<YYYY-MM-DD>-<company>.md` exists, read it for context.
 - If the folder has no posting but `job_details` names one saved from the user's browser, `save_posting` with the job's link and its id copies it in. If nothing is saved and the link still works, save the posting first: read it with `read_posting` or `read_page`, then `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
@@ -56,7 +56,8 @@ Sections, short and scannable, in this order:
 - **So far:** from earlier calls: what they asked, what landed, concerns raised, promises made, and what to follow up on. Skip it for a first call.
 - **30-second pitch:** tailored to this job, fact-checked.
 - **Likely questions:** 6–10, each with a short answer outline that cites `facts/<file>#<claim>`. Respect the status tags: built ≠ live, led-team ≠ solo. Mark any outline that leans on a claim tagged `unconfirmed` (unverified), so the user checks it before saying it. For a later round, go deeper than the last one, and expect follow-ups to what the user said then.
-- **Stories to have ready:** 3–5 STAR outlines from the fact bank, each mapped to a requirement. On a panel, say which story suits whom, so no story is told twice.
+- **Stories to have ready:** 3–5 STAR outlines from the fact bank, each mapped to a requirement. A featured project, or one that fits the job, makes a story too: what it is, their part, and what came of it, from its claims in `facts/projects.md`, never a private one. On a panel, say which story suits whom, so no story is told twice.
+- **Small talk:** an interest or a community from `about_you` that the people or the company share, when there is one. Never one that could reveal their age, health, religion, politics or family.
 - **Gaps and how to handle them:** from the fit check and resume notes. Honest framing and adjacent proof, never a stretch.
 - **What's on the resume you sent:** the claims they're most likely to ask about, so answers match it.
 - **Questions to ask them:** 5–8, specific to this company, this role and this round, with whom to ask each when people are named.
