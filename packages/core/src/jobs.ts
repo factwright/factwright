@@ -10,6 +10,17 @@ import {
 } from './fit-report.ts';
 import { companyKey, roleKey, slug } from './keys.ts';
 import { isJobLink, type Link, normalizeUrl } from './links.ts';
+import {
+  type CompanyName,
+  companyMatch,
+  isTitled,
+  otherPostings,
+  postingKey,
+  readTitle,
+  type TitleWords,
+  titleFit,
+  titlesFit,
+} from './matching.ts';
 import { idPart, shortCode } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import {
@@ -64,6 +75,11 @@ export interface KnownJob {
   companyKey: string;
   role: string;
   links: Link[];
+  /**
+   * For a job the user merged into another, that job's ID: what it was known by now names the
+   * other, so work that would have joined it joins that one.
+   */
+  mergedInto?: string | null;
 }
 
 /** Everything the workspace says about one job. */
@@ -80,13 +96,18 @@ export interface CollectedJob {
   /** Where the job turned up first, such as "HN October 2026" or "Fit check". */
   source: string;
   fit: { verdict: string | null; score: number | null; date: string | null } | null;
-  /** The job search that rated it highest. */
+  /** The newest job search that found it, with what it said. */
   search: {
     source: string;
     date: string | null;
     tier: FitTier | null;
     score: number | null;
     detail: SearchDetail;
+    /**
+     * Whether the job was on file before this search found it: found by an earlier search, or
+     * known from other work, such as a fit check, or added by hand.
+     */
+    again: boolean;
   } | null;
   /** Every job search that found it, oldest first. */
   searches: SearchRun[];
@@ -175,64 +196,181 @@ const TIER_LABELS: Readonly<Record<FitTier, string>> = {
 const SPECIAL_APPLY =
   /@|\bsubject\b|\bphrase\b|\bmention\b|\binclude\b|\basks for\b|cover letter|AI-generated|\bonly\b|\bnot the\b/i;
 
-const FILLER_WORDS = new Set(['and', 'the', 'of', 'for', 'also', 'a']);
-
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const byDate = (a: { date: string | null }, b: { date: string | null }) =>
   compare(a.date ?? '', b.date ?? '');
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-function roleWords(key: string): Set<string> {
-  return new Set(key.split('-').filter((word) => word && !FILLER_WORDS.has(word)));
-}
-
-/** How alike two role keys are, from 0 to 1, by the words they share. */
-function similarity(a: string, b: string): number {
-  const first = roleWords(a);
-  const second = roleWords(b);
-  const shared = [...first].filter((word) => second.has(word)).length;
-  return shared / (new Set([...first, ...second]).size || 1);
-}
-
-/** Whether one role key contains the other, word for word. */
-const contains = (a: string, b: string) =>
-  `-${a}-`.includes(`-${b}-`) || `-${b}-`.includes(`-${a}-`);
-
+/** One job as its records come in: every way it goes by, and the records it has so far. */
 interface Draft {
   id: string;
   company: string;
   companyKey: string;
-  roleKey: string;
+  /** Every company it goes by: the tracker's, each of its records', and each job merged into it. */
+  names: CompanyName[];
+  /** Every title it goes by, read for matching. */
+  titles: TitleWords[];
   links: Link[];
+  /** Each of its links, written one way, to keep each once and to match by. */
   urls: Set<string>;
+  /** The postings its links are to, by their keys, such as "greenhouse:4567890". */
+  postings: Set<string>;
   records: ToolRecord[];
 }
 
-/** Finds the job a record belongs to: by its own link, then by role, within the same company. */
-function findDraft(drafts: Draft[], record: ToolRecord, company: string, role: string) {
-  const same = drafts.filter((draft) => draft.companyKey === company);
-  if (same.length === 0) return null;
-  const links = record.links
-    .map((link) => link.url)
-    .filter(isJobLink)
-    .map(normalizeUrl);
-  const byLink = same.find((draft) => links.some((url) => draft.urls.has(url)));
-  if (byLink) return byLink;
-  if (!role) return same.length === 1 ? (same[0] ?? null) : null;
-  const exact = same.find((draft) => draft.roleKey === role);
-  if (exact) return exact;
-  const containing = same.filter((draft) => draft.roleKey && contains(draft.roleKey, role));
-  if (containing.length === 1) return containing[0] ?? null;
-  const [best, next] = same
-    .filter((draft) => draft.roleKey)
-    .map((draft) => ({ draft, score: similarity(draft.roleKey, role) }))
-    .sort((a, b) => b.score - a.score);
-  return best && best.score >= 0.75 && next?.score !== best.score ? best.draft : null;
+/** What a record says about the job it's from, to tell which job that is. */
+interface Clues {
+  name: CompanyName;
+  title: TitleWords;
+  /** Its links that name one job, written one way. */
+  urls: string[];
+  /** The postings its links are to, by their keys. */
+  postings: string[];
 }
 
-function eventsOf(record: ToolRecord, jobId: string): JobEvent[] {
+function cluesOf(record: ToolRecord): Clues {
+  return {
+    name: { company: record.company, companyKey: companyKey(record.company) },
+    title: readTitle(record.role),
+    urls: record.links
+      .map((link) => link.url)
+      .filter(isJobLink)
+      .map(normalizeUrl),
+    postings: record.links.flatMap((link) => postingKey(link.url) ?? []),
+  };
+}
+
+function draftOf(job: { id: string; company: string; companyKey: string }): Draft {
+  return {
+    id: job.id,
+    company: job.company,
+    companyKey: job.companyKey,
+    names: [],
+    titles: [],
+    links: [],
+    urls: new Set(),
+    postings: new Set(),
+    records: [],
+  };
+}
+
+const same = (a: CompanyName, b: CompanyName) => companyMatch(a, b) === 'same';
+
+/** Adds a company, a title and links to what a job goes by, each once. */
+function learn(draft: Draft, name: CompanyName, role: string, links: readonly Link[]): void {
+  if ((name.company || name.companyKey) && !draft.names.some((each) => same(each, name))) {
+    draft.names.push(name);
+  }
+  const title = readTitle(role);
+  if (isTitled(title) && !draft.titles.some((each) => titleFit(each, title) === 'same')) {
+    draft.titles.push(title);
+  }
+  for (const link of links) {
+    const posting = postingKey(link.url);
+    if (posting) draft.postings.add(posting);
+    const url = normalizeUrl(link.url);
+    if (draft.urls.has(url)) continue;
+    draft.urls.add(url);
+    draft.links.push(link);
+  }
+}
+
+/** How a company compares with every company a job goes by: the same, related or different. */
+function companyOf(draft: Draft, name: CompanyName): 'same' | 'related' | 'different' {
+  const matches = draft.names.map((each) => companyMatch(each, name));
+  return matches.includes('same') ? 'same' : matches.includes('related') ? 'related' : 'different';
+}
+
+/**
+ * Finds the job a record belongs to:
+ * 1. the job a job search said it is, by its ID from find_job, when that job is at the same
+ *    company, or one whose name holds the other's, or shares a link with it;
+ * 2. the job with the same link, or a link to the same posting, at any company, since "Acme" and
+ *    "Acme Robotics" can both list it;
+ * 3. the job with the same role at the same company, however it's written ("Sr." is "Senior"),
+ *    or else the one job there whose title says more or less about the same work ("Staff
+ *    Engineer" and "Staff Software Engineer"), or else the one job with the same role at a
+ *    company whose name holds the other's.
+ *
+ * A job never takes a record by its role alone when they have different postings on the same
+ * site, or a different level ("Software Engineer" and "Senior Software Engineer"), or different
+ * specialties ("(Backend)" and "(Frontend)").
+ */
+function findDraft(
+  drafts: readonly Draft[],
+  byId: ReadonlyMap<string, Draft>,
+  record: ToolRecord,
+  clues: Clues,
+): Draft | null {
+  const shares = (draft: Draft) =>
+    clues.urls.some((url) => draft.urls.has(url)) ||
+    clues.postings.some((key) => draft.postings.has(key));
+  const named = record.tool === 'search' && record.job ? byId.get(record.job) : undefined;
+  if (named && (shares(named) || companyOf(named, clues.name) !== 'different')) return named;
+  const byLink = drafts.find(shares);
+  if (byLink) return byLink;
+  const there = drafts.filter((draft) => companyOf(draft, clues.name) === 'same');
+  if (!isTitled(clues.title)) return there.length === 1 ? (there[0] ?? null) : null;
+  const fits = (draft: Draft) => !otherPostings(draft.postings, clues.postings);
+  const usable = there.filter(fits);
+  const exact = usable.find((draft) => titlesFit(draft.titles, clues.title) === 'same');
+  if (exact) return exact;
+  const more = usable.filter((draft) => titlesFit(draft.titles, clues.title) === 'more');
+  if (more.length === 1) return more[0] ?? null;
+  const related = drafts.filter(
+    (draft) =>
+      companyOf(draft, clues.name) === 'related' &&
+      fits(draft) &&
+      titlesFit(draft.titles, clues.title) === 'same',
+  );
+  return related.length === 1 ? (related[0] ?? null) : null;
+}
+
+/**
+ * Where each job the user merged into another went: that job's ID, following merges of merges,
+ * or null when that job is gone, so the merged one stands on its own again.
+ */
+export function mergedTargets(
+  jobs: readonly { id: string; mergedInto?: string | null }[],
+): Map<string, string | null> {
+  const into = new Map(jobs.flatMap((job) => (job.mergedInto ? [[job.id, job.mergedInto]] : [])));
+  const ids = new Set(jobs.map((job) => job.id));
+  const targets = new Map<string, string | null>();
+  for (const id of into.keys()) {
+    let at = id;
+    const seen = new Set<string>();
+    while (into.has(at) && !seen.has(at)) {
+      seen.add(at);
+      at = into.get(at) as string;
+    }
+    targets.set(id, into.has(at) || !ids.has(at) ? null : at);
+  }
+  return targets;
+}
+
+/**
+ * Whether a job was on file before a search found it: from an earlier run of a search, or from
+ * earlier work on it, such as a fit check. Drafted messages join every job at a company, so they
+ * don't count.
+ */
+function foundBefore(records: readonly ToolRecord[], search: SearchRecord): boolean {
+  return records.some(
+    (other) =>
+      other !== search &&
+      other.tool !== 'outreach' &&
+      (byDate(other, search) < 0 ||
+        (other.tool === 'search' && byDate(other, search) === 0 && byRun(other, search) < 0)),
+  );
+}
+
+/** Job searches' records oldest first: by date, then by folder, then by run within a folder. */
+const byRun = (a: SearchRecord, b: SearchRecord) =>
+  byDate(a, b) || compare(a.folder, b.folder) || a.run - b.run;
+
+/** A record's steps in a job's history. A search that found a job on file says it found it again. */
+function eventsOf(record: ToolRecord, jobId: string, again: boolean): JobEvent[] {
   if (record.tool !== 'folder') {
-    const event = eventOf(record, jobId);
+    const event = eventOf(record, jobId, again);
     return event ? [event] : [];
   }
   const events: JobEvent[] = [];
@@ -260,7 +398,7 @@ function firstModified(files: readonly JobFile[]): string | null {
   return [...files].map((file) => localDate(new Date(file.modified))).sort(compare)[0] ?? null;
 }
 
-function eventOf(record: ToolRecord, jobId: string): JobEvent | null {
+function eventOf(record: ToolRecord, jobId: string, again: boolean): JobEvent | null {
   const id = `${record.tool}:${record.key}`;
   const date = record.date;
   switch (record.tool) {
@@ -275,7 +413,8 @@ function eventOf(record: ToolRecord, jobId: string): JobEvent | null {
     case 'search': {
       const tier = record.tier ? `: ${TIER_LABELS[record.tier]}` : '';
       const score = record.score !== null ? ` ${record.score}` : '';
-      return { id, tool: 'search', date, title: `Found in ${record.source}${tier}${score}` };
+      const found = again ? 'Found again in' : 'Found in';
+      return { id, tool: 'search', date, title: `${found} ${record.source}${tier}${score}` };
     }
     case 'salary': {
       const confidence = record.confidence ? ` (${record.confidence} confidence)` : '';
@@ -330,12 +469,17 @@ function build(draft: Draft): CollectedJob {
   const { records } = draft;
   const fits = records.filter((record) => record.tool === 'fit-check');
   const folders = records.filter((record): record is FolderRecord => record.tool === 'folder');
-  const searches = records.filter((record): record is SearchRecord => record.tool === 'search');
+  const searches = records
+    .filter((record): record is SearchRecord => record.tool === 'search')
+    .sort(byRun);
   const salaries = records.filter((record) => record.tool === 'salary');
   const outreach = records.filter((record) => record.tool === 'outreach');
   const folder = folders.at(-1);
   const fit = fits.at(-1);
-  const bestSearch = [...searches].sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
+  // The newest search says what's true of the job now: its pay, whether it's still open, how
+  // well it fits the facts as they are.
+  const latest = searches.at(-1);
+  const newestFirst = [...searches].reverse();
 
   const byPriority = [...records].sort(
     (a, b) => PRIORITY[a.tool] - PRIORITY[b.tool] || compare(b.date ?? '', a.date ?? ''),
@@ -343,11 +487,11 @@ function build(draft: Draft): CollectedJob {
   const named = byPriority.find((record) => record.role) ?? byPriority[0];
 
   const fallbackFit = !fit && folder ? parseVerdict(folder.fit) : null;
-  // The folder's pay first, then the newest fit check's, then the job searches'.
+  // The folder's pay first, then the newest fit check's, then the newest job search's.
   const listedPay = [
     folder?.pay,
     ...fits.map((record) => record.pay).reverse(),
-    ...searches.map((record) => record.pay),
+    ...newestFirst.map((record) => record.pay),
   ].filter((pay): pay is string => Boolean(pay));
   const listed = listedPay.find((pay) => parsePay(pay)) ?? listedPay[0] ?? null;
   const estimate = salaries.at(-1)?.estimate ?? null;
@@ -382,7 +526,7 @@ function build(draft: Draft): CollectedJob {
   // A fit check judges the one job, so its kind wins over a search's.
   const kindFound =
     [...folders].reverse().find((record) => record.kind)?.kind ??
-    [bestSearch, ...[...searches].reverse()].find((record) => record?.kind)?.kind ??
+    newestFirst.find((record) => record.kind)?.kind ??
     null;
 
   const docs = folder?.docs ?? {};
@@ -390,14 +534,16 @@ function build(draft: Draft): CollectedJob {
   const sentiment = fitReport?.sentiment ?? jobNotesSentiment(docs.job);
   if (sentiment && !sentiment.date) sentiment.date = folder?.date ?? null;
 
+  const company = named?.company ?? draft.company;
   return {
     id: draft.id,
-    company: named?.company ?? draft.company,
-    companyKey: draft.companyKey,
+    company,
+    // Its key follows the name it goes by, as the tracker keeps it.
+    companyKey: companyKey(company) || draft.companyKey,
     role: named?.role ?? '',
     link: primary?.url ?? null,
     links,
-    location: folder?.location ?? bestSearch?.location ?? null,
+    location: folder?.location ?? latest?.location ?? null,
     pay: payText
       ? {
           text: payText,
@@ -412,13 +558,14 @@ function build(draft: Draft): CollectedJob {
       : fallbackFit
         ? { verdict: fallbackFit.verdict, score: fallbackFit.score, date: folder?.date ?? null }
         : null,
-    search: bestSearch
+    search: latest
       ? {
-          source: bestSearch.source,
-          date: bestSearch.date,
-          tier: bestSearch.tier,
-          score: bestSearch.score,
-          detail: bestSearch.detail,
+          source: latest.source,
+          date: latest.date,
+          tier: latest.tier,
+          score: latest.score,
+          detail: latest.detail,
+          again: foundBefore(records, latest),
         }
       : null,
     searches: searchRuns(searches),
@@ -427,8 +574,10 @@ function build(draft: Draft): CollectedJob {
     stage,
     firstSeen: dates[0] ?? null,
     lastActivity: dates.at(-1) ?? null,
-    summary: fit?.note ?? bestSearch?.detail.pick ?? bestSearch?.detail.note ?? null,
-    events: records.flatMap((record) => eventsOf(record, draft.id)),
+    summary: fit?.note ?? latest?.detail.pick ?? latest?.detail.note ?? null,
+    events: records.flatMap((record) =>
+      eventsOf(record, draft.id, record.tool === 'search' && foundBefore(records, record)),
+    ),
     docs,
     outreach: outreach.map((record) => `${WORKSPACE_PATHS.outreach}/${record.key}`),
     apply: docs.apply ?? searchApplySteps(searches),
@@ -440,75 +589,72 @@ function build(draft: Draft): CollectedJob {
 }
 
 /**
- * Folds the skills' records into one job each. A record joins a job at the same company when
- * it shares the job's own link, or names the same role. Jobs the app already knows keep their
- * IDs, and new ones get an ID from the company and role, such as "acme--staff-engineer".
- * Returns only jobs that have records.
+ * Folds the skills' records into one job each. A record joins the job a job search said it is,
+ * or the job with the same posting, at any company, or the job with the same role at the same
+ * company, as findDraft tells. Jobs the app already knows keep their IDs, and new ones get an ID
+ * from the company and role, such as "acme--staff-engineer". A job the user merged into another
+ * passes what it went by on to that one. Returns only jobs that have records.
  */
 export function collectJobs(
   records: readonly ToolRecord[],
   known: readonly KnownJob[] = [],
 ): CollectedJob[] {
-  const drafts: Draft[] = known.map((job) => ({
-    id: job.id,
-    company: job.company,
-    companyKey: job.companyKey || companyKey(job.company),
-    roleKey: roleKey(job.role),
-    links: [...job.links],
-    urls: new Set(job.links.map((link) => normalizeUrl(link.url))),
-    records: [],
-  }));
-  const ids = new Set(drafts.map((draft) => draft.id));
+  const drafts: Draft[] = [];
+  const byId = new Map<string, Draft>();
+  const ids = new Set(known.map((job) => job.id));
+  const targets = mergedTargets(known);
+  const start = (job: KnownJob) => {
+    const draft = draftOf({ ...job, companyKey: job.companyKey || companyKey(job.company) });
+    drafts.push(draft);
+    return draft;
+  };
+  for (const job of known) {
+    if (targets.get(job.id)) continue;
+    byId.set(job.id, start(job));
+  }
+  for (const job of known) {
+    const name = { company: job.company, companyKey: job.companyKey || companyKey(job.company) };
+    const draft = byId.get(targets.get(job.id) ?? job.id) ?? start(job);
+    byId.set(job.id, draft);
+    learn(draft, name, job.role, job.links);
+  }
 
-  const add = (draft: Draft, record: ToolRecord) => {
-    for (const link of record.links) {
-      const url = normalizeUrl(link.url);
-      if (draft.urls.has(url)) continue;
-      draft.urls.add(url);
-      draft.links.push(link);
-    }
+  const add = (draft: Draft, record: ToolRecord, clues: Clues) => {
+    learn(draft, clues.name, record.role, record.links);
     draft.records.push(record);
   };
-  const create = (company: string, key: string, role: string, link?: string) => {
+  const create = (record: ToolRecord, key: string, link?: string) => {
     // Made as Add job and Save to Factwright make them, so the ID fits a folder's name and both
     // find the job: a company with no Latin letters by the job's link.
-    const named = idPart(key || slug(company), 'company');
+    const named = idPart(key || slug(record.company), 'company');
     const code = link ? `job-${shortCode(normalizeUrl(link))}` : 'unknown';
-    const base = `${named || code}--${idPart(role, 'role') || 'general'}`;
+    const base = `${named || code}--${idPart(roleKey(record.role), 'role') || 'general'}`;
     let id = base;
     for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
     ids.add(id);
-    const draft: Draft = {
-      id,
-      company,
-      companyKey: key,
-      roleKey: role,
-      links: [],
-      urls: new Set(),
-      records: [],
-    };
+    const draft = draftOf({ id, company: record.company, companyKey: key });
     drafts.push(draft);
+    byId.set(id, draft);
     return draft;
   };
 
   const ordered = [...records].sort((a, b) => byDate(a, b) || PRIORITY[a.tool] - PRIORITY[b.tool]);
   for (const record of ordered) {
     if (record.tool === 'outreach') continue;
-    const company = companyKey(record.company);
-    const role = roleKey(record.role);
+    const clues = cluesOf(record);
     const link = record.links.map((each) => each.url).find(isJobLink);
-    add(
-      findDraft(drafts, record, company, role) ?? create(record.company, company, role, link),
-      record,
-    );
+    const draft =
+      findDraft(drafts, byId, record, clues) ?? create(record, clues.name.companyKey, link);
+    add(draft, record, clues);
   }
   // Messages are about a company, so they join every job there.
   for (const record of ordered) {
     if (record.tool !== 'outreach') continue;
-    const company = companyKey(record.companySlug);
-    const targets = drafts.filter((draft) => draft.companyKey === company);
-    for (const draft of targets.length > 0 ? targets : [create(record.company, company, '')]) {
-      add(draft, record);
+    const name = { company: record.company, companyKey: companyKey(record.companySlug) };
+    const clues = { ...cluesOf(record), name };
+    const there = drafts.filter((draft) => draft.names.some((each) => same(each, name)));
+    for (const draft of there.length > 0 ? there : [create(record, name.companyKey)]) {
+      add(draft, record, clues);
     }
   }
   return drafts.filter((draft) => draft.records.length > 0).map(build);

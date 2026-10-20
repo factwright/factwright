@@ -250,7 +250,16 @@ export function HistorySection({
 }
 
 /** Archiving takes a job out of the lists without losing anything. */
-export function ArchiveFooter({ job, api }: { job: Job; api: FactwrightApi }) {
+export function ArchiveFooter({
+  job,
+  api,
+  onMerge,
+}: {
+  job: Job;
+  api: FactwrightApi;
+  /** Opens Merge with…, for a job found twice. */
+  onMerge?: (() => void) | undefined;
+}) {
   const { problem, run } = useEdit();
   return (
     <div className={styles.archive}>
@@ -267,6 +276,14 @@ export function ArchiveFooter({ job, api }: { job: Job; api: FactwrightApi }) {
             : 'It leaves your lists but keeps everything. Show it again from Filters.'}
         </span>
       </div>
+      {onMerge && (
+        <div className={styles.archiveRow}>
+          <Button size="sm" onClick={onMerge}>
+            Merge with…
+          </Button>
+          <span className={styles.hint}>The same job found twice? Keep it as one.</span>
+        </div>
+      )}
       <Problem message={problem} />
     </div>
   );

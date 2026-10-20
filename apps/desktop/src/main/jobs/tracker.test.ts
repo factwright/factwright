@@ -65,6 +65,7 @@ describe('saveCollected', () => {
         companyKey: 'acme-robotics',
         role: 'Staff Engineer',
         links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
+        mergedInto: null,
       },
     ]);
     expect(row()).toMatchObject({ manual: false, firstSeen: '2026-10-07', status: null });
@@ -399,6 +400,122 @@ describe('addSavedJob', () => {
   });
 });
 
+describe('mergeJobs', () => {
+  const LATER: EditContext = { today: '2026-10-14', now: '2026-10-14T18:00:00.000Z' };
+  // The ID a save from the browser gives the job.
+  const other = 'acme--staff-software-engineer';
+  beforeEach(() => {
+    tracker.saveCollected(
+      [
+        collected(other, {
+          company: 'Acme',
+          companyKey: 'acme',
+          role: 'Staff Software Engineer',
+          links: [{ url: 'https://www.linkedin.com/jobs/view/4012345678', label: 'Posting' }],
+          firstSeen: '2026-10-05',
+        }),
+      ],
+      NOW,
+    );
+  });
+
+  it('moves the other’s history, calls, notes and links to the job kept, and hides it', () => {
+    tracker.updateJob(other, { status: 'passed', passReason: 'pay' }, LATER);
+    tracker.addCall(other, { kind: 'other', onDate: '2026-10-20' }, AT);
+    tracker.addNote(other, { text: 'Recruiter: Sam' }, AT);
+    tracker.updateJob('acme--staff', { status: 'review' }, AT);
+    expect(tracker.mergeJobs('acme--staff', other, AT)).toEqual({ ok: true, asks: [] });
+    expect(row()).toMatchObject({
+      // The later decision.
+      status: 'passed',
+      statusOn: '2026-10-14',
+      passReason: 'pay',
+      firstSeen: '2026-10-05',
+      links: [
+        { url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' },
+        { url: 'https://www.linkedin.com/jobs/view/4012345678', label: 'Posting' },
+      ],
+    });
+    expect(history()).toEqual([
+      ['review', TODAY],
+      ['passed', '2026-10-14'],
+    ]);
+    expect(tracker.calls().get('acme--staff')).toHaveLength(1);
+    expect(
+      tracker
+        .notes()
+        .get('acme--staff')
+        ?.map((note) => note.text),
+    ).toEqual(['Recruiter: Sam']);
+    expect(row(other)?.mergedInto).toBe('acme--staff');
+    expect(tracker.knownJobs().find((job) => job.id === other)?.mergedInto).toBe('acme--staff');
+    expect(tracker.resolve(other)).toBe('acme--staff');
+    expect(tracker.resolve('missing')).toBeNull();
+  });
+
+  it('keeps the job kept’s decision when it’s later, or made the same day over New', () => {
+    tracker.updateJob(other, { status: 'new' }, AT);
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    tracker.mergeJobs(other, 'acme--staff', AT);
+    expect(row(other)).toMatchObject({ status: 'applied', appliedOn: TODAY });
+  });
+
+  it('keeps an archived job archived when its decision stands', () => {
+    tracker.updateJob(other, { status: 'passed', archived: true }, AT);
+    tracker.mergeJobs('acme--staff', other, AT);
+    expect(row()).toMatchObject({ status: 'passed', archived: true });
+  });
+
+  it('keeps each question and answer once, giving a question asked of both a new ID', () => {
+    for (const id of ['acme--staff', other]) {
+      tracker.addAsk(id, 'What should I expect?', AT);
+      tracker.recordAnswer(id, 'Why Acme?', 0, `Sent for ${id}`, AT);
+      tracker.updateJob(id, { questions: ['Why Acme?', `Only ${id}?`] }, AT);
+    }
+    expect(tracker.mergeJobs('acme--staff', other, AT)).toEqual({
+      ok: true,
+      asks: [['2026-10-10-what-should-i-expect', '2026-10-10-what-should-i-expect-2']],
+    });
+    expect(row()).toMatchObject({
+      questions: ['Why Acme?', 'Only acme--staff?', `Only ${other}?`],
+      sent: [expect.objectContaining({ text: 'Sent for acme--staff' })],
+      asks: [
+        expect.objectContaining({ id: '2026-10-10-what-should-i-expect' }),
+        expect.objectContaining({ id: '2026-10-10-what-should-i-expect-2' }),
+      ],
+    });
+  });
+
+  it('merges only two jobs still listed', () => {
+    expect(tracker.mergeJobs('acme--staff', 'acme--staff', AT)).toMatchObject({ ok: false });
+    expect(tracker.mergeJobs('acme--staff', 'missing', AT)).toMatchObject({ ok: false });
+    tracker.mergeJobs('acme--staff', other, AT);
+    expect(tracker.mergeJobs(other, 'acme--staff', AT)).toMatchObject({ ok: false });
+  });
+
+  it('points jobs merged into the other at the job kept', () => {
+    tracker.saveCollected([collected('acme--staff-3', { role: 'Staff Engineer III' })], NOW);
+    tracker.mergeJobs(other, 'acme--staff-3', AT);
+    tracker.mergeJobs('acme--staff', other, AT);
+    expect(row('acme--staff-3')?.mergedInto).toBe('acme--staff');
+  });
+
+  it('finds the job kept when a save from the browser names the merged one', () => {
+    tracker.mergeJobs('acme--staff', other, AT);
+    expect(
+      tracker.addSavedJob(
+        {
+          company: 'Acme',
+          role: 'Staff Software Engineer',
+          link: 'https://www.linkedin.com/jobs/view/4012345678/',
+          pay: '',
+        },
+        AT,
+      ),
+    ).toEqual({ ok: true, id: 'acme--staff', already: true });
+  });
+});
+
 describe('a job another device adds through sync', () => {
   const added = () =>
     newJobRows({
@@ -664,7 +781,7 @@ describe('the database file', () => {
     // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind']],
+        ['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind', 'merged_into']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -683,7 +800,7 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['kind']],
+        ['jobs', ['kind', 'merged_into']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -711,7 +828,7 @@ describe('the database file', () => {
     ).toEqual(['Screen went well']);
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind']],
+        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -741,7 +858,7 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind']],
+        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );

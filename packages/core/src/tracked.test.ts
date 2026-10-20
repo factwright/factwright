@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { CollectedJob } from './jobs.ts';
+import { type CollectedJob, collectJobs } from './jobs.ts';
+import type { SearchRecord } from './records.ts';
 import {
   byJob,
   callOrder,
   changeOrder,
   jobList,
+  knownJobsOf,
   noteOrder,
   type TrackedItems,
   trackedCall,
@@ -12,7 +14,7 @@ import {
   trackedNote,
   trackedRow,
 } from './tracked.ts';
-import type { Note } from './tracker.ts';
+import { effectiveStatus, type Note } from './tracker.ts';
 
 const NOTHING_KEPT: TrackedItems = { calls: new Map(), history: new Map(), notes: new Map() };
 
@@ -345,5 +347,116 @@ describe('jobList', () => {
     const typed = trackedRow({ ...STORED_JOB, manual: 1, pay_text: '$150k–$180k' });
     const [job] = jobList([typed], new Map(), NOTHING_KEPT);
     expect(job).toMatchObject({ source: 'Added by hand', pay: { min: 150000, max: 180000 } });
+  });
+});
+
+/** A job search's find, as a later search writes it. */
+function found(company: string, role: string, extra: Partial<SearchRecord> = {}): SearchRecord {
+  return {
+    tool: 'search',
+    key: `2026-11-20-linkedin:${company}:${role}`,
+    date: '2026-11-20',
+    company,
+    role,
+    links: [],
+    source: 'LinkedIn Nov 20',
+    folder: '2026-11-20-linkedin',
+    run: 1,
+    job: null,
+    pay: null,
+    location: null,
+    tier: 'good',
+    score: 70,
+    kind: null,
+    detail: {
+      why: [],
+      gaps: [],
+      flags: [],
+      pick: null,
+      what: null,
+      stage: null,
+      apply: null,
+      note: null,
+      parts: {},
+      partsWhy: {},
+      tags: [],
+      report: null,
+    },
+    ...extra,
+  };
+}
+
+describe('a job found again', () => {
+  /**
+   * The jobs the app shows, from the tracker's rows and the workspace's records, as it reads them:
+   * each job it found is kept in the tracker first.
+   */
+  function shown(rows: Record<string, unknown>[], records: SearchRecord[]) {
+    const tracked = rows.map(trackedRow);
+    const collected = collectJobs(records, knownJobsOf(tracked));
+    const kept = collected
+      .filter((job) => !tracked.some((row) => row.id === job.id))
+      .map((job) => trackedRow({ id: job.id, company: job.company, role: job.role }));
+    return jobList(
+      [...tracked, ...kept],
+      new Map(collected.map((job) => [job.id, job])),
+      NOTHING_KEPT,
+    );
+  }
+
+  it('never comes back as New once the user decided on it, under another title too', () => {
+    const decided = [
+      { status: 'passed', status_on: '2026-10-14' },
+      { status: 'applied', status_on: '2026-10-10' },
+      { status: 'later', status_on: '2026-10-14', back_on: '2026-12-01' },
+      { status: null, archived: 1 },
+    ];
+    for (const decision of decided) {
+      const row = {
+        ...STORED_JOB,
+        id: 'acme-robotics--staff-engineer',
+        questions: '[]',
+        asks: '[]',
+        ...decision,
+      };
+      const jobs = shown(
+        [row],
+        [
+          found('Acme Robotics', 'Staff Software Engineer'),
+          found('Acme Robotics', 'Sr. Staff Engineer', { key: 'senior', run: 2 }),
+        ],
+      );
+      // The same job, while a Senior Staff role is another, and new.
+      expect(jobs.map((job) => [job.id, effectiveStatus(job.status, job.stage)])).toEqual([
+        ['acme-robotics--staff-engineer', decision.status ?? 'new'],
+        ['acme-robotics--sr-staff-engineer', 'new'],
+      ]);
+      expect(jobs[0]).toMatchObject({
+        archived: Boolean(decision.archived),
+        search: { source: 'LinkedIn Nov 20', again: true },
+      });
+    }
+  });
+
+  it('is on file from the day it was added by hand, before a search found it', () => {
+    const [job] = shown(
+      [{ ...STORED_JOB, manual: 1, first_seen: '2026-10-07' }],
+      [found('Acme Robotics', 'Staff Engineer')],
+    );
+    expect(job).toMatchObject({
+      source: 'Added by hand',
+      firstSeen: '2026-10-07',
+      search: { again: true },
+    });
+  });
+
+  it('leaves a job merged into another out of the list, until that job is gone', () => {
+    const merged = { ...STORED_JOB, id: 'acme--staff-2', merged_into: 'acme--staff' };
+    expect(trackedRow(merged).mergedInto).toBe('acme--staff');
+    expect(trackedRow({ ...merged, merged_into: '../elsewhere' }).mergedInto).toBeNull();
+    const ids = (rows: Record<string, unknown>[]) =>
+      jobList(rows.map(trackedRow), new Map(), NOTHING_KEPT).map((job) => job.id);
+    expect(ids([STORED_JOB, merged])).toEqual(['acme--staff']);
+    expect(ids([merged])).toEqual(['acme--staff-2']);
   });
 });

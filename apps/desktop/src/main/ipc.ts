@@ -457,6 +457,10 @@ export function registerIpc({
     return isIds(jobIds) && valid && !redates ? jobs.updateJobs(jobIds, valid) : REFUSED;
   });
 
+  answer('jobs:merge', (keepId, otherId) =>
+    isId(keepId) && isId(otherId) && keepId !== otherId ? jobs.mergeJobs(keepId, otherId) : REFUSED,
+  );
+
   answer('jobs:add', (job) => {
     const valid = parseNewJob(job);
     return valid ? jobs.addJob(valid) : REFUSED;

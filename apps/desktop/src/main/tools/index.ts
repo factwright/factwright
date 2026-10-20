@@ -161,7 +161,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
   // Saves a prep sheet or thank-you notes for one of a job's calls, given as Markdown in `field`.
   const saveForCall = (input: Record<string, unknown>, kind: CallDocKind, field: string) => {
     const id = textInput(input, 'job', true) ?? '';
-    const job = deps.jobs.list().jobs.find((each) => each.id === id);
+    const job = deps.jobs.job(id);
     if (!job) throw new Error(`Nothing on file for ${id}.`);
     const markdown = input[field];
     if (typeof markdown !== 'string') throw new Error(`Give the ${field} as Markdown text.`);
@@ -206,9 +206,9 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       run: async (input) => {
         const { jobs } = deps.jobs.list();
         const id = textInput(input, 'job', false);
-        const found = id
-          ? jobs.filter((job) => job.id === id)
-          : findJobs(jobs, queryFrom(input)).slice(0, 3);
+        // A job merged into another is the one kept.
+        const named = id ? deps.jobs.job(id) : null;
+        const found = named ? [named] : id ? [] : findJobs(jobs, queryFrom(input)).slice(0, 3);
         if (found.length === 0) {
           const query = id ? null : queryFrom(input);
           return `Nothing on file for ${id ?? (query?.company || query?.link)}.`;
@@ -566,7 +566,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input) => {
         const id = textInput(input, 'job', true) ?? '';
-        const job = deps.jobs.list().jobs.find((each) => each.id === id);
+        const job = deps.jobs.job(id);
         if (!job) throw new Error(`Nothing on file for ${id}.`);
         const answer = input.answer;
         if (typeof answer !== 'string' || answer.length > MAX_ANSWER) {

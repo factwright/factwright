@@ -63,12 +63,13 @@ describe('visibleRows', () => {
     expect(companies(visibleRows(rows, { ...ALL, query: 'cost-tooling' }))).toEqual([
       'Northwind Labs',
     ]);
-    // Acme's How to apply mentions LinkedIn too.
+    // Acme's How to apply mentions LinkedIn too, and a LinkedIn search found Orchard again.
     expect(companies(visibleRows(rows, { ...ALL, query: 'linkedin' }))).toEqual([
       'Acme Robotics',
       'Bluewave Staffing',
       'Brightpath Learning',
       'Granite Health',
+      'Orchard Health',
     ]);
     expect(companies(visibleRows(rows, { ...ALL, query: 'role closed' }))).toEqual([
       'Kestrel Robotics',
@@ -140,6 +141,8 @@ describe('visibleRows', () => {
       'Bluewave Staffing',
       'Brightpath Learning',
       'Granite Health',
+      // Passed on, then found again.
+      'Orchard Health',
     ]);
     expect(visibleRows(rows, { ...ALL, found: 'search:2026-10-hn-whos-hiring' })).toHaveLength(16);
     expect(visibleRows(rows, { ...ALL, found: 'from:Added by hand' })).toEqual([]);
@@ -240,7 +243,7 @@ describe('filterCount and foundOptions', () => {
     expect(
       searches.map(({ label, count }) => [label.replace(/^LinkedIn .+/, 'LinkedIn'), count]),
     ).toEqual([
-      ['LinkedIn', 3],
+      ['LinkedIn', 4],
       ['HN October 2026', 16],
     ]);
     expect(others).toEqual([]);
