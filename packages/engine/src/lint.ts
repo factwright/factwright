@@ -27,8 +27,8 @@ export const DEFAULT_MAX_PAGES = 2;
 /** Fields kept for the user's history, which the resume never shows. */
 const HISTORY_KEYS = new Set(['change_log', 'notes']);
 
-/** Every piece of text a resume shows. */
-function shownText(value: unknown, out: string[] = []): string[] {
+/** Every piece of text a resume or a letter shows, leaving out its history and notes. */
+export function shownText(value: unknown, out: string[] = []): string[] {
   if (typeof value === 'string') out.push(value);
   else if (Array.isArray(value)) for (const each of value) shownText(each, out);
   else if (value && typeof value === 'object') {

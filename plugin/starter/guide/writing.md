@@ -16,7 +16,7 @@ A reader skims the top third of the first page before deciding to read on.
 4. **Group and order the bullets** under headings that echo the job's themes, strongest matches first.
 5. **Mirror the posting's exact words** where they're true, such as "patient education" rather than "teaching patients". Applicant systems match words.
 6. **Skills:** the job's must-haves first, and only what `facts/skills.md` proves. Name the section for the field with `skills_heading`, such as "Clinical Skills" or "Tools".
-7. **Projects, education and certifications:** keep what the job values, and drop the rest when space is tight. Early in a career, education goes first (`education_first`).
+7. **Projects, education and certifications:** keep what the job values, and drop the rest when space is tight. Early in a career, education goes first (`education_first`). Projects go where the user's choice in `about_you` puts them: in a section under their heading (`projects`, `projects_heading`), listed as experience, or left off, with as much detail as they chose. Featured projects come first, and private ones never show.
 
 ## Bullets
 - Open with a strong verb: built, led, cut, grew, launched, designed, resolved, trained, negotiated.

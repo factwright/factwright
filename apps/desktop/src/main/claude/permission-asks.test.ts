@@ -139,6 +139,25 @@ describe('permissionAskFrom', () => {
     expect(described('mcp__factwright__save_about_you', { relocate: 'sometimes' })).toBeNull();
   });
 
+  it('shows who the user is outside work as a line of what it adds', () => {
+    expect(
+      described('mcp__factwright__save_about_you', {
+        cares: 'Getting kids into programming',
+        interests: [' Trail running ', 'Chess'],
+      }),
+    ).toEqual({
+      kind: 'profile',
+      changes: [
+        { label: 'Interests and hobbies to add', value: 'Trail running, Chess' },
+        { label: 'What you care about', value: 'Getting kids into programming' },
+      ],
+    });
+    // An empty list, a blank in one, or one that isn't words asks in the terminal.
+    for (const interests of [[], ['Chess', '  '], 'Chess', [42]]) {
+      expect(described('mcp__factwright__save_about_you', { interests })).toBeNull();
+    }
+  });
+
   it('leaves to the terminal a field or value only a lookup past an object’s own would find', () => {
     const save = 'mcp__factwright__save_about_you';
     expect(described(save, JSON.parse('{"__proto__": "x"}'))).toBeNull();

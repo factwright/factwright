@@ -86,18 +86,22 @@ export function answeredClaimText(claim: AnsweredClaim): string {
 export type ClaimOrigin =
   /** The user's answer to Claude, in a run on a job or any other. */
   | { kind: 'answer'; date: string; context: string | null; asked: Asked[] }
-  /** Drafted from what the user shared: a resume, their notes, LinkedIn or a screenshot. */
+  /**
+   * Drafted from what the user shared: a resume, their notes, LinkedIn, a screenshot, or a
+   * project they told about in their Profile's Beyond work.
+   */
   | { kind: 'shared'; what: SharedKind; file: string | null; date: string | null }
   /** Anything else, such as "Alex 2026-10-12", as written. */
   | { kind: 'other'; text: string };
 
-export type SharedKind = 'resume' | 'notes' | 'linkedin' | 'screenshot';
+export type SharedKind = 'resume' | 'notes' | 'linkedin' | 'screenshot' | 'profile';
 
 const SHARED: Readonly<Record<string, SharedKind>> = {
   resume: 'resume',
   notes: 'notes',
   linkedin: 'linkedin',
   screenshot: 'screenshot',
+  profile: 'profile',
 };
 
 // A list item's label, such as "- **Source:** ", then the rest of its line. Each pattern takes

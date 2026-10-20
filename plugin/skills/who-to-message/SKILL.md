@@ -30,7 +30,7 @@ Search first. `read_page` reads a team or about page, but the user may have to O
 
 ## 3. Warm paths (best first)
 1. **1st-degree connections at the company**, from the user's own LinkedIn export at `linkedin/Connections.csv` in the workspace. Search it for the company's name (and its other names) with Grep rather than reading it all: it can run to thousands of rows. The app keeps it there when the user adds their LinkedIn data: in LinkedIn's Settings & Privacy → Data privacy → Get a copy of your data, then in the app, Profile → What you've shared → Add files. If it's missing or more than ~2 months old, tell them that in one line.
-2. **Shared background:** past employers and schools in `facts/`, shared domains, shared communities.
+2. **Shared background:** past employers and schools in `facts/`, shared domains, and shared communities: those in `about_you`, such as a meetup or a volunteer group, and the user's projects the person might know, such as an open-source library their team uses. Never a private project.
 3. **Signs they'll answer:** they posted "we're hiring" or "DM me", they write publicly, or they recently joined and are building a team.
 
 ## 4. Pick 3–5 people

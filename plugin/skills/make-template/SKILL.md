@@ -78,7 +78,7 @@ Only elements for text, each with its attributes in double quotes:
 - **Values:** between tags, or inside an attribute's quotes, where they show as plain text.
 - **No words of its own:** the markup's own text holds only marks such as ·, | or —. Every word comes from the resume, or from `{{titles.highlights}}` and the other titles. No HTML comments either: write a note as `{{! note }}`.
 
-What a resume gives the markup. Every part is optional except the name, headline, summary and experience, so wrap each in a section that shows only when it's there:
+What a resume gives the markup. Every part is optional except the name, headline, summary and experience, so wrap each in a section that shows only when it's there. Show every one, even when the resume it's made from has none: the user's projects and extra sections, such as a line of interests, come from their Profile, and `save_template` turns away a template that leaves them out:
 - `{{name}}`, `{{headline}}` and `{{tagline}}`.
 - `{{#contact}}`: `{{text}}`, and `{{kind}}` (phone, email, linkedin, location or website), in that order.
 - `{{summary}}`.

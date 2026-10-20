@@ -218,3 +218,97 @@
   padding-top: var(--fw-space-2);
   border-top: 1px solid var(--fw-border);
 }
+
+/* A card that takes the grid's whole width, such as Beyond work's list of projects. */
+.wideCard {
+  grid-column: 1 / -1;
+  container-type: inline-size;
+}
+
+.projects {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--fw-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+/* A project in a row: its name over its kind and dates, what it is, and how much it shows. */
+.project {
+  display: grid;
+  /* The last column fits the widest pill, so every row's columns line up. */
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr) 7.5rem;
+  align-items: center;
+  gap: var(--fw-space-1) var(--fw-space-4);
+  padding: var(--fw-space-2) 0;
+}
+
+.project > :last-child {
+  justify-self: end;
+}
+
+.project + .project {
+  border-top: 1px solid var(--fw-border);
+}
+
+.projectName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.projectLine {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 400;
+}
+
+.projectWhat {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fw-muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* Too narrow for a row: what it is goes under its name. */
+@container (max-width: 560px) {
+  .project {
+    grid-template-columns: minmax(0, 1fr) 7.5rem;
+  }
+
+  .projectWhat {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* A heading within a card, such as Beyond work's two parts. */
+.cardSubtitle {
+  margin: var(--fw-space-1) 0 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+}
+
+/* The user outside work: what each part is, then what they said. */
+.outside {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--fw-space-1) var(--fw-space-4);
+  margin: 0 0 var(--fw-space-2);
+}
+
+.outside div {
+  display: contents;
+}
+
+.outside dt {
+  color: var(--fw-muted);
+}
+
+.outside dd {
+  margin: 0;
+}

@@ -17,11 +17,13 @@ import {
   readLetter,
   readResume,
   renderHtml,
+  resumeLeavesOut,
 } from '@factwright/engine';
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import { FOLDER_NAME } from './posting.ts';
+import { privateProblems, privateProjects } from './private.ts';
 import { headerDifferences, listed } from './set.ts';
 
 export interface BuildResumeDeps {
@@ -180,12 +182,21 @@ export async function buildResume(
   const problems = [
     ...(rulesProblem ? [rulesProblem] : []),
     ...lintResume(resume, rules, confidential),
+    ...privateProblems(resume, await privateProjects(deps.workspace), 'resume'),
   ];
   const maxPages = rules.maxPages ?? DEFAULT_MAX_PAGES;
   const report: string[] = [];
 
   const html = renderHtml(resume, template, RESUME_FONTS);
   if (files.some((file) => file.endsWith('.pdf'))) {
+    // A template of the user's own can drop a part of the resume without anyone seeing. The
+    // Word file shows every part, whatever the template.
+    const dropped = resumeLeavesOut(template, resume);
+    if (dropped.length > 0) {
+      problems.push(
+        `The ${template.name} template leaves out ${listed(dropped)}, so the PDF wouldn’t show all of ${at.data}. Use a template that shows everything in it, or take out what this one drops, and tell the user their template drops it.`,
+      );
+    }
     const printed = await deps.printer.print(html);
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);
     const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;

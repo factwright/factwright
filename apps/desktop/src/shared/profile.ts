@@ -71,6 +71,8 @@ export interface ProfileStatus {
   unread: string[];
   /** The notes changed since Claude last read them. */
   notesChanged: boolean;
+  /** Beyond work's projects changed since Claude last read them. */
+  beyondChanged: boolean;
   /** Who wrote searches/criteria.md as it is now: the app, from the answers, or someone by hand. */
   criteria: 'app' | 'own' | 'none';
   /** The LinkedIn connections on file, and when the export was added. */

@@ -21,6 +21,7 @@ The look comes from `templates.md`, for government, nonprofits and schools.
 - **Who the work served:** students, patients, residents, members, donors.
 - **Accountability:** compliance, audits, reporting, policy followed or written.
 - **Credentials,** exactly as held, with license numbers left out.
+- **Volunteering and projects** that show a listed qualification or the mission, under service and volunteering. They never push a resume past two pages.
 
 ## Avoid
 - Sales language: "crushed", "hustled", "disrupted".

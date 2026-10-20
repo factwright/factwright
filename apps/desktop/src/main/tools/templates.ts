@@ -6,10 +6,12 @@ import {
   previewResume,
   type Resume,
   readResume,
+  readTemplate,
   renderHtml,
   renderLetterHtml,
   type Template,
   templateFile,
+  templateLeavesOut,
 } from '@factwright/engine';
 import { RESUME_FONTS } from '../resume/fonts.ts';
 import type { ResumePrinter } from '../resume/printer.ts';
@@ -34,13 +36,15 @@ export function listTemplates(templates: TemplateLibrary): string {
   const rows = templates.list().map((info) => {
     const found = templates.find(info.id);
     const competencies = found.ok && showsCompetencies(found.template) ? 'yes' : 'no';
-    return `| \`${info.id}\` | ${info.name} | ${info.look} | ${info.own ? 'the user’s own' : 'built in'} | ${competencies} |`;
+    const dropped = found.ok ? templateLeavesOut(found.template) : [];
+    const rest = dropped.length > 0 ? `no: leaves out ${dropped.join(' and ')}` : 'yes';
+    return `| \`${info.id}\` | ${info.name} | ${info.look} | ${info.own ? 'the user’s own' : 'built in'} | ${competencies} | ${rest} |`;
   });
   return [
     'The templates the user can pick. Set a resume’s `layout` to one’s ID. guide/templates.md says which the user picked for each kind of company.',
     '',
-    '| ID | Name | Look | Whose | Shows `competencies` |',
-    '|---|---|---|---|---|',
+    '| ID | Name | Look | Whose | Shows `competencies` | Shows `projects` and `extra_sections` |',
+    '|---|---|---|---|---|---|',
     ...rows,
   ].join('\n');
 }
@@ -95,6 +99,13 @@ export async function saveTemplate(
     } catch {
       return 'Not saved: the template isn’t valid JSON. Give it as an object.';
     }
+  }
+  // A template that drops the projects or the extra sections would print resumes without them,
+  // and nobody would see it.
+  const read = readTemplate(given, input.id);
+  const dropped = read.ok ? templateLeavesOut(read.template) : [];
+  if (dropped.length > 0) {
+    return `Not saved: it leaves out ${dropped.join(' and ')}. Show {{#projects}} and {{#extra_sections}} as the app’s own templates do, so a resume with them prints them.`;
   }
   const before = deps.templates.has(input.id) && !call.templates.has(input.id);
   if (input.replace && before && call.scope === 'template') {

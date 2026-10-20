@@ -14,7 +14,7 @@ Before starting, read:
 - `guide/rules.md`, if there is one. Every claim traces to `facts/`, with the same status, ownership and confidentiality limits as a resume.
 - `guide/preferences.md`, if there is one. Its application-answer nudges set the voice.
 - all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` are unverified: offer one in step 3 before an answer uses it.
-- `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation and pay.
+- `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation and pay, and Beyond work: their projects, and their interests, what they're learning, their communities and what they care about.
 
 ## 1. Load everything on file
 - Call `job_details` with the job's id, or its company and role. It gives the status, the user's notes, calls and history, and lists everything on file with what each holds. It also gives the application's questions, with what the user actually sent for any they've answered already. Use the notes for context only.
@@ -33,7 +33,8 @@ Before starting, read:
 - **Why us / why this job:** why they want it, tied to their real day-to-day work and specifics in the posting. Never a pitch about the company's market.
 - **No names:** never name the user's colleagues or customers, and nothing confidential: those limits are the same as a resume's.
 - **Choice questions** (checkboxes, dropdowns, yes/no): give the pick plus a one-line why. Never pick something `facts/gaps.md` says they don't have.
-- **Only the user knows:** hobbies, salary number, start date, notice period, work authorization, relocation, references. Take what `about_you` has; ask for the rest, and never invent.
+- **Only the user knows:** hobbies, salary number, start date, notice period, work authorization, relocation, references. Take what `about_you` has: its interests, learning and communities answer "tell us about yourself" and questions about life outside work. Ask for the rest, and never invent. Never bring up anything that could reveal their age, health, religion, politics or family.
+- **Something you built or led:** a question like "tell us about a project you're proud of" can take a featured project, or one that fits the job, from its claims in `facts/projects.md`. Never a private one.
 - Numbers only where they come up naturally, worded the way `facts/` approves.
 
 ## 3. Ask (when it's worth it)
@@ -46,7 +47,7 @@ Give easy, neutral options, with "No" one of them. Save what they tell you befor
 - **New experience:** `save_fact`, in the file of the job where they did it, or `facts/projects.md` for work outside a job. Its tags and wording say what they said, and never more, with the terms you asked about as its keywords and only their numbers. It's saved unverified, and these answers can use it.
 - **"No, I haven't":** `save_gap`, so nobody asks again.
 - **Use and verify:** `verify_fact`. **Use this once:** use it here only. **Don't use:** leave it out.
-- **What applications ask again:** their work authorization, when they can start, whether they'd relocate, their target pay or a contact detail. Save it with `save_about_you`, in their words, when it holds for every job. One job's pay stays with that job. With more than one kind of job, pay is each kind's own: save it with the kind it's for, the job's kind from `job_details`.
+- **What applications ask again:** their work authorization, when they can start, whether they'd relocate, their target pay, a contact detail, or their interests, what they're learning, their communities and what they care about. Save it with `save_about_you`, in their words, when it holds for every job. One job's pay stays with that job. With more than one kind of job, pay is each kind's own: save it with the kind it's for, the job's kind from `job_details`.
 
 ## 4. Save
 Write `applications/<folder>/answers.md`, or append to it if it exists. Each run's answers go together, under their own title, so the app knows a later answer replaces an earlier one:

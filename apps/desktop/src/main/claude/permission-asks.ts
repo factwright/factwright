@@ -38,7 +38,14 @@ const PROFILE_LABELS: Readonly<Record<string, string>> = {
   location: 'Where you live',
   linkedin: 'LinkedIn',
   website: 'Website',
+  interests: 'Interests and hobbies to add',
+  learning: 'What you’re learning, to add',
+  communities: 'Communities to add',
+  cares: 'What you care about',
 };
+
+/** What save_about_you adds to a list each, which the dialog shows in a line. */
+const PROFILE_LISTS = ['interests', 'learning', 'communities'];
 
 const RELOCATE: Readonly<Record<string, string>> = {
   no: 'No',
@@ -139,6 +146,15 @@ function describe(
     for (const [key, value] of Object.entries(input)) {
       // Only the fields it saves, never anything a name like "__proto__" could reach.
       const label = Object.hasOwn(PROFILE_LABELS, key) ? PROFILE_LABELS[key] : undefined;
+      if (label && PROFILE_LISTS.includes(key)) {
+        // A list to add to, shown in a line: one with nothing in it, or not all words, asks there.
+        const items = Array.isArray(value) ? value.map((each) => textUpTo(each, MAX_VALUE)) : [];
+        if (items.length === 0 || items.some((each) => !each?.trim())) return null;
+        const shown = items.map((each) => (each as string).trim()).join(', ');
+        if (shown.length > MAX_VALUE) return null;
+        changes.push({ label, value: shown });
+        continue;
+      }
       const text = textUpTo(value, MAX_VALUE);
       if (!label || text === null) return null;
       // A blank clears what's there, which the user sees too.

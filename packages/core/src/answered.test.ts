@@ -98,6 +98,12 @@ describe('claimOrigin', () => {
       date: '2026-10-12',
     });
     expect(origin(['- **Source:** LinkedIn 2026-10-12'])).toMatchObject({ what: 'linkedin' });
+    expect(origin(['- **Source:** profile 2026-10-20'])).toEqual({
+      kind: 'shared',
+      what: 'profile',
+      file: null,
+      date: '2026-10-20',
+    });
     expect(origin(['- **Source:** screenshot shots/one.png'])).toEqual({
       kind: 'shared',
       what: 'screenshot',

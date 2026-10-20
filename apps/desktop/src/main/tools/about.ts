@@ -12,10 +12,83 @@ import {
   RELOCATE,
   WORKPLACES,
 } from '../../shared/about.ts';
+import {
+  INTERESTS_ON_RESUMES,
+  labelIn,
+  PROJECT_DETAIL,
+  PROJECT_KINDS,
+  PROJECT_SHOWING,
+  PROJECT_STATUSES,
+  type ProjectPrefs,
+} from '../../shared/beyond.ts';
 import { changeKind, hasKinds, kindsOf } from '../../shared/kinds.ts';
 
 /** Indents a text's later lines under its first, to keep a list item whole. */
 const indented = (text: string) => text.trim().split(/\r?\n/).join('\n    ');
+
+/** How projects show on resumes, in words, as the skills read it. */
+function placementText(prefs: ProjectPrefs): string {
+  if (prefs.resumes === 'off') return 'left off';
+  const where =
+    prefs.resumes === 'experience'
+      ? 'listed as experience, like jobs (projects with one “part of” name show as one job under it)'
+      : `in a section of their own${prefs.heading.trim() ? `, headed “${prefs.heading.trim()}”` : ', headed as fits the field'}`;
+  const shown = [
+    prefs.links && 'its link',
+    prefs.numbers && 'its numbers',
+    prefs.tools && 'its tools',
+  ].filter((each): each is string => Boolean(each));
+  return `${where}; each gets ${labelIn(PROJECT_DETAIL, prefs.detail).toLowerCase()}${shown.length > 0 ? ` and shows ${shown.join(', ')}` : ''}`;
+}
+
+/**
+ * Beyond work in words: each project in a line, how projects show on resumes, and the user
+ * outside work. A project's own overview, with its numbers and tools, is in its file.
+ */
+function beyondText(answers: AboutYou): string[] {
+  const lines: string[] = [];
+  if (answers.projects.length > 0) {
+    lines.push(
+      '- Projects and other work outside a job, from Beyond work in their Profile. Their own overview of each, with its numbers and tools, is in about-me/beyond-work.json; what goes out comes only from facts/projects.md:',
+    );
+    for (const project of answers.projects) {
+      const about = [
+        labelIn(PROJECT_KINDS, project.kind),
+        project.under.trim() && `part of ${project.under.trim()}`,
+        project.status && labelIn(PROJECT_STATUSES, project.status).toLowerCase(),
+        project.when.trim(),
+      ].filter(Boolean);
+      const show =
+        project.showing === 'private'
+          ? 'private: never in anything that goes out'
+          : `${labelIn(PROJECT_SHOWING, project.showing).toLowerCase()}`;
+      const extra = [
+        project.role.trim() && `Their part: ${project.role.trim()}`,
+        project.links.length > 0 && `Links: ${project.links.join(', ')}`,
+      ].filter(Boolean);
+      lines.push(
+        `    - ${project.name.trim() || 'A project with no name yet'} (\`${project.id}\`): ${about.join(', ')}. Show it: ${show}.${extra.length > 0 ? ` ${extra.join('. ')}.` : ''}`,
+      );
+    }
+    lines.push(
+      `- How projects show on their resumes: ${placementText(answers.projectPrefs)}. A job’s own choice, in its job.md, wins.`,
+    );
+  }
+  const item = (label: string, value: string) => {
+    if (value.trim()) lines.push(`- ${label}: ${indented(value)}`);
+  };
+  item('Interests and hobbies', answers.interests.join('; '));
+  item('What they’re learning', answers.learning.join('; '));
+  item('Communities they’re part of', answers.communities.join('; '));
+  item('What they care about', answers.cares);
+  if (answers.interests.length > 0) {
+    item(
+      'A line of their interests on resumes',
+      labelIn(INTERESTS_ON_RESUMES, answers.interestsOnResumes).toLowerCase(),
+    );
+  }
+  return lines;
+}
 
 /**
  * What the user told Factwright about themselves, when they started and in Profile since, in
@@ -83,6 +156,7 @@ export function aboutYouText(answers: AboutYou): string {
       '- Their search is quiet: they’re employed, and their employer mustn’t find out they’re looking.',
     );
   }
+  lines.push(...beyondText(answers));
   if (lines.length === 0) {
     return [
       'The user hasn’t told Factwright about themselves yet.',
@@ -99,7 +173,10 @@ export function aboutYouText(answers: AboutYou): string {
 /** The contact details save_about_you takes, beside the answers below. */
 const CONTACT_FIELDS = ['email', 'phone', 'location', 'linkedin', 'website'] as const;
 
-/** The answers save_about_you takes: the ones application forms ask for. */
+/** The parts of the user outside work save_about_you adds to, a list each. */
+const LIST_ANSWERS = ['interests', 'learning', 'communities'] as const;
+
+/** The answers save_about_you takes: the ones application forms and people ask about. */
 export const SAVABLE_ANSWERS = [
   'authorization',
   'start',
@@ -107,6 +184,8 @@ export const SAVABLE_ANSWERS = [
   'targetPay',
   'minPay',
   ...CONTACT_FIELDS,
+  ...LIST_ANSWERS,
+  'cares',
 ] as const;
 
 /** The labels of the answers save_about_you saved, for its reply. */
@@ -121,6 +200,10 @@ const LABELS: Readonly<Record<(typeof SAVABLE_ANSWERS)[number], string>> = {
   location: 'Location',
   linkedin: 'LinkedIn',
   website: 'Website',
+  interests: 'Interests and hobbies, added',
+  learning: 'What they’re learning, added',
+  communities: 'Communities they’re part of, added',
+  cares: 'What they care about',
 };
 
 /** The answers each kind of job has its own of, which save_about_you saves for one kind. */
@@ -150,6 +233,13 @@ export function aboutYouChanges(
   const contact: Partial<Contact> = {};
   for (const key of keys) {
     const value = given[key];
+    if ((LIST_ANSWERS as readonly string[]).includes(key)) {
+      // Added to what's there, so nothing told before is lost.
+      if (!Array.isArray(value) || value.length === 0) return null;
+      if (value.some((each) => typeof each !== 'string')) return null;
+      raw[key] = [...current[key as (typeof LIST_ANSWERS)[number]], ...(value as string[])];
+      continue;
+    }
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     if ((CONTACT_FIELDS as readonly string[]).includes(key)) {
@@ -165,6 +255,9 @@ export function aboutYouChanges(
   const named = hasKinds(current) ? ` for ${kind.name}` : '';
   const saved = keys.map((key) => {
     const label = LABELS[key as (typeof SAVABLE_ANSWERS)[number]];
+    if ((LIST_ANSWERS as readonly string[]).includes(key)) {
+      return `${label}: ${(given[key] as string[]).map((each) => each.trim()).join(', ')}`;
+    }
     const value = (given[key] as string).trim();
     if (key === 'relocate') {
       return `${label}: ${labelOf(RELOCATE, value as AboutYou['relocate'])}`;

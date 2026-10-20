@@ -1,0 +1,102 @@
+/* The projects, each a line that opens to everything about it. */
+.projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2) var(--fw-space-3);
+  padding: var(--fw-space-3) var(--fw-space-4);
+}
+
+.name {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+}
+
+.meta {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 400;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-4);
+  padding: var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+}
+
+/* How much a project, or the interests, show: a label over the choices, and what the pick means. */
+.showing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--fw-space-2);
+}
+
+.showingLabel {
+  font-size: var(--fw-text-md);
+  font-weight: 600;
+}
+
+/* What each project shows on a resume: a row of checkboxes under a label. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2) var(--fw-space-5);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choices legend {
+  width: 100%;
+  margin-bottom: var(--fw-space-2);
+  padding: 0;
+}
+
+.heading {
+  max-width: 320px;
+}
+
+/* Asking before a project is removed, as a kind of job is. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-sunken);
+}
+
+.confirmText {
+  max-width: 64ch;
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--fw-space-2);
+}

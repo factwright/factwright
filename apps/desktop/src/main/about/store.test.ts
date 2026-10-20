@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { KINDS_FILE } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { NO_ANSWERS } from '../../shared/about.ts';
+import { BEYOND_FILE, localTime, newProject } from '../../shared/beyond.ts';
 import { addKind, changeKind, removeKind } from '../../shared/kinds.ts';
 import { AboutStore } from './store.ts';
 import type { CheckedUpload } from './uploads.ts';
@@ -38,10 +39,19 @@ beforeEach(() => {
   trash = vi.fn(async (path: string) => {
     rmSync(path);
   });
-  store = new AboutStore({ workspace: workspace(), starterDir, trash, today: () => '2026-10-12' });
+  store = new AboutStore({
+    workspace: workspace(),
+    starterDir,
+    trash,
+    today: () => '2026-10-12',
+    now: () => new Date('2026-10-12T15:00:00.000Z'),
+  });
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+/** When the store says the projects changed: now, on this computer's calendar. */
+const NOW = localTime(new Date('2026-10-12T15:00:00.000Z'));
 
 describe('AboutStore', () => {
   it('saves the answers, and nothing built from them until Claude has them', () => {
@@ -211,6 +221,98 @@ describe('AboutStore', () => {
     store.saveAnswers(added.changes);
     expect(read('about-me/kinds-of-job-before-2026-10-12.json')).toBe('{ "first": oops');
     expect(json(KINDS_FILE).first).toEqual({ id: 'developer', name: 'Developer' });
+  });
+
+  it('keeps Beyond work in its own file, which an older app’s answers never drop', () => {
+    store.saveAnswers({ roles: ['Staff Engineer'] });
+    // With nothing told, there's no file.
+    expect(existsSync(join(workspace(), BEYOND_FILE))).toBe(false);
+    store.saveAnswers({
+      addedProjects: [{ ...newProject('trailhead'), name: 'Trailhead', kind: 'product' }],
+      interests: ['Trail running'],
+    });
+    store.saveAnswers({ projectChanges: [{ id: 'trailhead', showing: 'feature' }] });
+    expect(json(BEYOND_FILE)).toEqual({
+      projects: [
+        { ...newProject('trailhead'), name: 'Trailhead', kind: 'product', showing: 'feature' },
+      ],
+      interests: ['Trail running'],
+      projectsChanged: NOW,
+    });
+    const saved = json('about-me/answers.json');
+    expect(saved).not.toHaveProperty('projects');
+    expect(saved).not.toHaveProperty('interests');
+    // An older app rewrites answers.json with only what it knows, and Beyond work stays.
+    writeFileSync(
+      join(workspace(), 'about-me', 'answers.json'),
+      JSON.stringify({ ...saved, roles: ['Principal Engineer'] }),
+    );
+    expect(store.answers()).toMatchObject({
+      roles: ['Principal Engineer'],
+      projects: [{ id: 'trailhead', name: 'Trailhead', showing: 'feature' }],
+      interests: ['Trail running'],
+    });
+    // What answers.json says about Beyond work, as after a hand edit, doesn't count.
+    writeFileSync(
+      join(workspace(), 'about-me', 'answers.json'),
+      JSON.stringify({ ...saved, interests: ['Chess'], projects: [] }),
+    );
+    expect(store.answers().interests).toEqual(['Trail running']);
+    expect(store.answers().projects).toHaveLength(1);
+  });
+
+  it('keeps what it doesn’t know in Beyond work’s file, and notes only when the projects change', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    const file = {
+      projects: [
+        { id: 'trailhead', name: 'Trailhead', stars: 5, kind: 'a-later-kind' },
+        { id: 'Bad Id', name: 'Broken' },
+        { id: 'club', name: 'Code Club' },
+      ],
+      interests: ['Chess'],
+      pets: ['A dog'],
+      projectsChanged: '2026-10-01T09:00:00.000Z',
+    };
+    writeFileSync(join(workspace(), BEYOND_FILE), JSON.stringify(file));
+    expect(store.answers().projects.map((project) => [project.id, project.kind])).toEqual([
+      ['trailhead', 'side'],
+      ['club', 'side'],
+    ]);
+    // Saving another answer leaves the file as it was.
+    const before = read(BEYOND_FILE);
+    store.saveAnswers({ quiet: true });
+    expect(read(BEYOND_FILE)).toBe(before);
+    // A change to what isn't a project goes over the file, and the projects' date stays.
+    store.saveAnswers({ learning: ['Spanish'] });
+    expect(json(BEYOND_FILE)).toEqual({ ...file, learning: ['Spanish'] });
+    // Changing one project writes only what changed, over what was there.
+    store.saveAnswers({ projectChanges: [{ id: 'trailhead', when: '2023 to now' }] });
+    expect(json(BEYOND_FILE)).toEqual({
+      ...file,
+      learning: ['Spanish'],
+      projects: [
+        { id: 'trailhead', name: 'Trailhead', stars: 5, kind: 'a-later-kind', when: '2023 to now' },
+        { id: 'club', name: 'Code Club' },
+        { id: 'Bad Id', name: 'Broken' },
+      ],
+      projectsChanged: NOW,
+    });
+    // Removing a project it read takes it out, and leaves the one it couldn't read.
+    store.saveAnswers({ removedProjects: ['club'] });
+    expect(json(BEYOND_FILE).projects).toEqual([
+      { id: 'trailhead', name: 'Trailhead', stars: 5, kind: 'a-later-kind', when: '2023 to now' },
+      { id: 'Bad Id', name: 'Broken' },
+    ]);
+  });
+
+  it('keeps a Beyond work file that doesn’t read, and puts it aside only once there’s a change', () => {
+    mkdirSync(join(workspace(), 'about-me'), { recursive: true });
+    writeFileSync(join(workspace(), BEYOND_FILE), '{ "projects": oops');
+    store.saveAnswers({ roles: ['Staff Engineer'] });
+    expect(read(BEYOND_FILE)).toBe('{ "projects": oops');
+    store.saveAnswers({ interests: ['Chess'] });
+    expect(read('about-me/beyond-work-before-2026-10-12.json')).toBe('{ "projects": oops');
+    expect(json(BEYOND_FILE)).toEqual({ interests: ['Chess'] });
   });
 
   it('sets the page count by every kind of job’s levels', () => {

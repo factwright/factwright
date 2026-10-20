@@ -173,6 +173,7 @@ const SHARED_WORDS = {
   notes: 'your notes',
   linkedin: 'your LinkedIn',
   screenshot: 'a screenshot',
+  profile: 'Beyond work in your Profile',
 } as const;
 
 /**

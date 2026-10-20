@@ -7,7 +7,7 @@ The single source of truth for every resume, answer and message. If a claim isn'
 |---|---|
 | `profile.md` | Name and contact details, education, certifications and licenses, languages, the roles they want, and their story in a few lines |
 | one file per job, such as `acme-health.md` | An **Overview** (titles exactly as held, dates, place, what the company does, scope), then that job's claims |
-| `projects.md` | Work outside a job: side projects, volunteering, school projects |
+| `projects.md` | Work outside a job, in any field: apps and products, side projects, open source, research, creative work, volunteering, community work, a small business, school projects. A `##` section for each, starting with its **Overview** (what it is, their part in it, what it's part of, when, where it stands, its links), then its claims |
 | `skills.md` | Each skill and tool, how deep it goes, and which file proves it |
 | `gaps.md` | **Doesn't have** (settled: don't claim it, don't ask again), a table with the columns Topic, Their answer and Date, then **Needs confirmation** and **Open questions** |
 
@@ -49,7 +49,7 @@ Each claim gets its own `###` heading, so it can be cited as `file.md#claim-titl
 
 ## Sources
 - `<first name> <YYYY-MM-DD>`: the user said so, or verified it.
-- `resume <file> <YYYY-MM-DD>`, `notes <YYYY-MM-DD>`, `LinkedIn <YYYY-MM-DD>`, `screenshot <file> <YYYY-MM-DD>`: drafted from what they shared, and `unconfirmed` until they verify it.
+- `resume <file> <YYYY-MM-DD>`, `notes <YYYY-MM-DD>`, `LinkedIn <YYYY-MM-DD>`, `screenshot <file> <YYYY-MM-DD>`, `profile <YYYY-MM-DD>`: drafted from what they shared, `profile` being a project they told about in their Profile's Beyond work, and `unconfirmed` until they verify it.
 - `answer <YYYY-MM-DD>, <what Claude was doing>`, such as `answer 2026-10-14, tailoring a resume for Acme Health`: the user's answer to Claude's question, `unconfirmed` until they verify it. Under it, a `- **Question:**` and `- **Answer:**` line for each question it rests on, word for word, written by the app from its own record of what the user answered.
 
 ## Adding facts

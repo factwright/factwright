@@ -259,7 +259,7 @@ const SITE_WORDS: Readonly<Record<SearchSite, string>> = {
 const MODE_WORDS = {
   resumes: 'starting resumes',
   interview: 'interview me',
-  new: 'read the new files and notes',
+  new: 'read the new files, notes and projects',
 } as const;
 
 /**

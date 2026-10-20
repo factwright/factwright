@@ -26,6 +26,7 @@ export {
   lintMessage,
   lintResume,
   readConfidentialTerms,
+  shownText,
 } from './lint.ts';
 export { previewLetter, previewResume } from './sample.ts';
 export {
@@ -39,6 +40,7 @@ export {
   type ResumeFormat,
   readResume,
 } from './schema.ts';
+export { leftOut, resumeLeavesOut, templateLeavesOut } from './shown.ts';
 export { MAX_TEMPLATE_BYTES, readTemplate, TEMPLATE_FILE, templateFile } from './template/file.ts';
 export { sectionTitles } from './template/render.ts';
 export {

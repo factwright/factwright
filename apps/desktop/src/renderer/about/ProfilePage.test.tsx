@@ -57,6 +57,7 @@ const STATUS: ProfileStatus = {
   starting: [],
   unread: [],
   notesChanged: false,
+  beyondChanged: false,
   criteria: 'app',
   connections: null,
 };
@@ -223,6 +224,73 @@ describe('ProfilePage', () => {
     ).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Add what’s new' }));
     expect(onRun).toHaveBeenLastCalledWith({ skill: 'add-facts', mode: 'new' });
+  });
+
+  it('shows Beyond work with featured projects first, and adds a project from its card', async () => {
+    const onRun = vi.fn();
+    const answers = readAnswers({
+      ...ANSWERS,
+      projects: [
+        { id: 'club', name: 'Code Club', kind: 'volunteering', what: 'Free coding classes.' },
+        {
+          id: 'trailhead',
+          name: 'Trailhead',
+          kind: 'product',
+          status: 'live',
+          when: '2023 to now',
+          showing: 'feature',
+        },
+        { id: 'woodworks', name: 'Rivera Woodworks', kind: 'business', showing: 'private' },
+      ],
+      interests: ['Trail running', 'Chess'],
+      projectPrefs: { heading: 'Selected Work' },
+    });
+    const api = profileApi({ beyondChanged: true }, answers);
+    const { container } = render(<Harness api={api} onRun={onRun} />);
+    const card = await screen.findByRole('region', { name: 'Beyond work' });
+    const rows = within(card)
+      .getAllByRole('listitem')
+      .map((row) => row.textContent);
+    expect(rows).toEqual([
+      'TrailheadApp or product · Live or ongoing · 2023 to nowFeatured',
+      'Code ClubVolunteeringFree coding classes.When it fits',
+      'Rivera WoodworksSmall businessPrivate',
+    ]);
+    expect(
+      within(card).getByText(
+        'On resumes: in a section called “Selected Work”, a line each, with links and numbers.',
+      ),
+    ).toBeTruthy();
+    expect(within(card).getByText('Trail running, Chess')).toBeTruthy();
+    expect(within(card).getByText('Changed since your Claude last read it.')).toBeTruthy();
+    expect((await axe.run(container)).violations).toEqual([]);
+    // The projects changed since Claude read them: it adds them to the fact bank.
+    await userEvent.click(within(card).getByRole('button', { name: 'Add to your fact bank' }));
+    expect(onRun).toHaveBeenLastCalledWith({ skill: 'add-facts', mode: 'new' });
+
+    // Adding a project opens one, ready for its name.
+    await userEvent.click(within(card).getByRole('button', { name: 'Add a project' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Beyond work' });
+    const name = within(dialog).getByRole('textbox', { name: 'Name' });
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    await userEvent.type(name, 'Denver Devs');
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'As experience' }));
+    // A heading is only for a section of their own.
+    expect(within(dialog).queryByRole('textbox', { name: 'The section’s heading' })).toBeNull();
+    // The browser's modal leaves only the dialog to reach, as jsdom doesn't, so it's what's checked.
+    expect((await axe.run(dialog)).violations).toEqual([]);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    await waitFor(() =>
+      expect(api.saveAnswers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          addedProjects: [expect.objectContaining({ name: 'Denver Devs' })],
+          projectPrefs: expect.objectContaining({
+            resumes: 'experience',
+            heading: 'Selected Work',
+          }),
+        }),
+      ),
+    );
   });
 
   it('opens each part to change it, saving as the user goes', async () => {

@@ -7,6 +7,7 @@ import type { ClaudeStatusView } from '../useClaudeStatus.ts';
 import { ClaudeReady } from './ClaudeReady.tsx';
 import styles from './GetStarted.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
+import { BeyondWorkStep } from './steps/BeyondWorkStep.tsx';
 import { FilesStep } from './steps/FilesStep.tsx';
 import { ReadyStep } from './steps/ReadyStep.tsx';
 import { TemplatesStep } from './steps/TemplatesStep.tsx';
@@ -22,6 +23,8 @@ export const STEPS = [
   'In your words',
   'What you want',
   'Templates',
+  // Last before Ready, so a step saved before it was added still opens the same one.
+  'Beyond work',
   'Ready',
 ] as const;
 
@@ -149,7 +152,8 @@ export function GetStarted({
             pickSuggested
           />
         )}
-        {step === 6 && (
+        {step === 6 && <BeyondWorkStep answers={answers} update={update} later />}
+        {step === 7 && (
           <ReadyStep
             answers={answers}
             templates={profile.templates}

@@ -1,10 +1,24 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { savedPostingFile, savedPostingMarkdown } from '@factwright/core';
 import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { type AboutYou, type AnswerChanges, applyChanges, NO_ANSWERS } from '../../shared/about.ts';
+import {
+  type AboutYou,
+  type AnswerChanges,
+  applyChanges,
+  NO_ANSWERS,
+  readAnswers,
+} from '../../shared/about.ts';
 import { FactBankFiles } from '../about/facts.ts';
 import { JobsService } from '../jobs/service.ts';
 import { Tracker } from '../jobs/tracker.ts';
@@ -718,6 +732,42 @@ describe('about_you', () => {
     );
   });
 
+  it('says what Beyond work holds: each project, how they show, and the user outside work', async () => {
+    answers = readAnswers({
+      projects: [
+        {
+          id: 'trailhead',
+          name: 'Trailhead',
+          kind: 'product',
+          under: 'Neatifai LLC',
+          status: 'live',
+          when: '2023 to now',
+          role: 'Built it alone',
+          links: ['trailhead.example.com'],
+          showing: 'feature',
+        },
+        { id: 'woodworks', name: 'Rivera Woodworks', kind: 'business', showing: 'private' },
+      ],
+      projectPrefs: { resumes: 'experience', detail: 'lines', tools: true },
+      interests: ['Trail running', 'Chess'],
+      cares: 'Getting kids into programming',
+      interestsOnResumes: 'fit',
+    });
+    const answer = await tool('about_you').run({});
+    for (const line of [
+      '    - Trailhead (`trailhead`): App or product, part of Neatifai LLC, live or ongoing, 2023 to now. Show it: feature it. Their part: Built it alone. Links: trailhead.example.com.',
+      '    - Rivera Woodworks (`woodworks`): Small business. Show it: private: never in anything that goes out.',
+      '- How projects show on their resumes: listed as experience, like jobs (projects with one “part of” name show as one job under it); each gets two lines and shows its link, its numbers, its tools. A job’s own choice, in its job.md, wins.',
+      '- Interests and hobbies: Trail running; Chess',
+      '- What they care about: Getting kids into programming',
+      '- A line of their interests on resumes: when it fits the job',
+    ]) {
+      expect(answer).toContain(line);
+    }
+    // Beyond work alone is enough to say something.
+    expect(answer).not.toContain('hasn’t told Factwright');
+  });
+
   it('says where else to look when the user hasn’t told it anything', async () => {
     expect(await tool('about_you').run({})).toContain(
       'The user hasn’t told Factwright about themselves yet.',
@@ -787,6 +837,27 @@ describe('save_about_you', () => {
       { kind: 'designer', targetPay: '$1' },
       { kind: 'project-manager', start: 'Now' },
     ]) {
+      await expect(tool('save_about_you').run(input)).rejects.toThrow('Give one or more of');
+    }
+  });
+
+  it('adds who the user is outside work to what’s there, and keeps what they care about whole', async () => {
+    answers = readAnswers({ interests: ['Chess'] });
+    expect(
+      await tool('save_about_you').run({
+        interests: ['Trail running', 'chess'],
+        communities: ['Denver Devs meetup (organizer)'],
+        cares: 'Getting kids into programming',
+      }),
+    ).toBe(
+      'Saved to the user’s profile: Interests and hobbies, added: Trail running, chess; Communities they’re part of, added: Denver Devs meetup (organizer); What they care about: Getting kids into programming.',
+    );
+    expect(answers).toMatchObject({
+      interests: ['Chess', 'Trail running'],
+      communities: ['Denver Devs meetup (organizer)'],
+      cares: 'Getting kids into programming',
+    });
+    for (const input of [{ interests: 'Chess' }, { learning: [] }, { learning: [42] }]) {
       await expect(tool('save_about_you').run(input)).rejects.toThrow('Give one or more of');
     }
   });
@@ -1108,6 +1179,61 @@ describe('build_resume', () => {
     expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
     expect(printed).not.toContain('"Caladea"');
     expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
+  });
+
+  it('turns away a project the user keeps private, by its name, but not one they show', async () => {
+    mkdirSync(join(root, 'about-me'), { recursive: true });
+    writeFileSync(
+      join(root, 'about-me', 'beyond-work.json'),
+      JSON.stringify({
+        projects: [
+          { id: 'woodworks', name: 'Rivera Woodworks', showing: 'private' },
+          { id: 'trailhead', name: 'Trailhead', showing: 'feature' },
+        ],
+      }),
+    );
+    writeResume({
+      ...resume,
+      projects: [
+        { name: 'Trailhead', text: 'A trail conditions app.' },
+        { name: 'RIVERA WOODWORKS', text: 'Cutting boards, made to order.' },
+      ],
+      // What the resume never shows doesn't count.
+      notes: ['Rivera Woodworks left out: it’s private.'],
+    });
+    const answer = await tool('build_resume').run({ folder: FOLDER });
+    expect(answer).toContain(
+      '- “Rivera Woodworks” is a project the user keeps private, and it’s in the resume. Take it out: they keep it off everything they send.',
+    );
+    expect(answer).not.toContain('“Trailhead”');
+    writeResume({ ...resume, projects: [{ name: 'Trailhead', text: 'A trail conditions app.' }] });
+    expect(await tool('build_resume').run({ folder: FOLDER })).not.toContain('keeps private');
+  });
+
+  it('says when the template would leave out the projects or a section', async () => {
+    mkdirSync(join(root, 'templates'), { recursive: true });
+    const classic = builtInTemplate('classic') as Template;
+    const body = classic.body.replace(
+      /\{\{#projects\.length\}\}[\s\S]*?\{\{\/projects\.length\}\}/,
+      '',
+    );
+    writeFileSync(
+      join(root, 'templates', 'plain.json'),
+      JSON.stringify({ ...JSON.parse(templateFile(classic)), name: 'Plain', body }),
+    );
+    writeResume({
+      ...resume,
+      layout: 'plain',
+      projects: [{ name: 'Trailhead', text: 'A trail conditions app.' }],
+      extra_sections: [{ heading: 'Interests', items: ['Chess'] }],
+    });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
+      'Problems to fix, then build again:\n- The Plain template leaves out the projects, so the PDF wouldn’t show all of resume.json. Use a template that shows everything in it, or take out what this one drops, and tell the user their template drops it.',
+    );
+    // The Word file shows every part, whatever the template.
+    expect(await tool('build_resume').run({ folder: FOLDER, format: 'docx' })).toContain(
+      'Checks: clean.',
+    );
   });
 
   it('builds a Word file too, in the format asked for', async () => {
@@ -1494,13 +1620,24 @@ describe('the template tools', () => {
       [
         'The templates the user can pick. Set a resume’s `layout` to one’s ID. guide/templates.md says which the user picked for each kind of company.',
         '',
-        '| ID | Name | Look | Whose | Shows `competencies` |',
-        '|---|---|---|---|---|',
-        '| `classic` | Classic | Traditional and all serif, in black and white. The safest choice for formal fields. | built in | yes |',
-        '| `minimal` | Minimal | Quiet and airy: lots of white space, gray headings and no color. | built in | yes |',
-        '| `navy-sidebar` | Navy Sidebar | A navy column down the left. | the user’s own | no |',
+        '| ID | Name | Look | Whose | Shows `competencies` | Shows `projects` and `extra_sections` |',
+        '|---|---|---|---|---|---|',
+        '| `classic` | Classic | Traditional and all serif, in black and white. The safest choice for formal fields. | built in | yes | yes |',
+        '| `minimal` | Minimal | Quiet and airy: lots of white space, gray headings and no color. | built in | yes | yes |',
+        '| `navy-sidebar` | Navy Sidebar | A navy column down the left. | the user’s own | no | no: leaves out the projects and the Interests section |',
       ].join('\n'),
     );
+  });
+
+  it('turns away a template that leaves out the projects or the extra sections', async () => {
+    const body = (classic().body as string).replace(
+      /\{\{#projects\.length\}\}[\s\S]*?\{\{\/projects\.length\}\}/,
+      '',
+    );
+    expect(await tool('save_template').run({ id: 'navy', template: file({ body }) })).toBe(
+      'Not saved: it leaves out the projects. Show {{#projects}} and {{#extra_sections}} as the app’s own templates do, so a resume with them prints them.',
+    );
+    expect(existsSync(join(root, 'templates', 'navy.json'))).toBe(false);
   });
 
   it('reads a template’s file, to start one from or to change it', async () => {

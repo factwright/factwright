@@ -14,6 +14,14 @@ import {
   readAnswers,
   type SharedFile,
 } from '../../shared/about.ts';
+import {
+  BEYOND_FILE,
+  BEYOND_KEYS,
+  type BeyondWork,
+  beyondFileWith,
+  beyondOf,
+  localTime,
+} from '../../shared/beyond.ts';
 import { criteriaMarkdown } from '../../shared/criteria.ts';
 import { templatesMarkdown } from '../../shared/looks.ts';
 import {
@@ -37,6 +45,8 @@ export interface AboutStoreDeps {
   /** Moves a file the user removed to the system's trash. Tests delete it instead. */
   trash?: (path: string) => Promise<void>;
   today?: () => string;
+  /** Now, for noting when the projects changed. Tests pass their own. */
+  now?: () => Date;
   /** The templates the user can pick, built in and their own. Without it, the built-in ones. */
   templates?: () => TemplateInfo[];
 }
@@ -80,6 +90,7 @@ export class AboutStore {
   private readonly starterDir: string;
   private readonly trash: (path: string) => Promise<void>;
   private readonly today: () => string;
+  private readonly now: () => Date;
   private readonly templates: () => TemplateInfo[];
   /** The fact bank's files, which the user reads and changes on its own page. */
   readonly facts: FactBankFiles;
@@ -89,6 +100,7 @@ export class AboutStore {
     this.starterDir = deps.starterDir;
     this.trash = deps.trash ?? (async (path) => rmSync(path, { force: true }));
     this.today = deps.today ?? (() => localDate());
+    this.now = deps.now ?? (() => new Date());
     this.templates = deps.templates ?? BUILT_IN;
     this.facts = new FactBankFiles({
       workspace: this.workspace,
@@ -136,22 +148,44 @@ export class AboutStore {
     this.write(name, contents);
   }
 
-  /** The answers, with the kinds of job from their own file. */
+  /** The answers, with the kinds of job and Beyond work from their own files. */
   answers(): AboutYou {
     const { first, others } = this.readJson(KINDS_FILE);
+    const beyond = this.readJson(BEYOND_FILE);
     return readAnswers({
       ...this.readJson(ABOUT.answers),
       firstKind: first ?? null,
       otherKinds: others ?? [],
+      // Only what Beyond work's file holds: none of it is kept in answers.json.
+      ...Object.fromEntries(BEYOND_KEYS.map((key) => [key, beyond[key]])),
     });
   }
 
   private saveAll(answers: AboutYou): AboutYou {
     const { firstKind, otherKinds, ...rest } = answers;
-    this.write(ABOUT.answers, `${JSON.stringify(rest, null, 2)}\n`);
+    const kept = Object.fromEntries(
+      Object.entries(rest).filter(([key]) => !(BEYOND_KEYS as readonly string[]).includes(key)),
+    );
+    this.write(ABOUT.answers, `${JSON.stringify(kept, null, 2)}\n`);
     this.saveKinds(firstKind, otherKinds);
+    this.saveBeyond(beyondOf(answers));
     if (this.inUse(answers)) this.writeDerived(answers);
     return answers;
+  }
+
+  /**
+   * Writes Beyond work to its file once there's something in it, and only when it changes, and
+   * then only what changed goes over the file, so what this version doesn't know stays. A file
+   * that doesn't read stays as it is until there's a change to save, and then it's kept beside it.
+   */
+  private saveBeyond(beyond: BeyondWork): void {
+    const text = this.read(BEYOND_FILE);
+    const raw = text === null ? {} : jsonObject(text);
+    const before = beyondOf(this.answers());
+    const file = beyondFileWith(raw ?? {}, before, beyond, localTime(this.now()));
+    if (file === null) return;
+    if (raw === null) this.keepOld(BEYOND_FILE, text as string);
+    this.write(BEYOND_FILE, `${JSON.stringify(file, null, 2)}\n`);
   }
 
   /**
