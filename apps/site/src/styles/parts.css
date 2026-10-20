@@ -263,7 +263,7 @@
   font-size: 13px;
 }
 
-/* A checkbox, as the system draws one, and a menu, as the app's own controls draw it. */
+/* A checkbox, as the system draws one, and a menu and a text box, as the app's own controls draw them. */
 .box {
   display: inline-block;
   flex: none;
@@ -300,6 +300,20 @@
   width: 14px;
   height: 14px;
   color: var(--fw-muted);
+}
+
+.ui-input {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-surface);
+  color: var(--fw-muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .claude-head {

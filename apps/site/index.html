@@ -74,6 +74,11 @@
       <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" /></symbol>
       <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M19.5 11V7.5a2 2 0 0 0-2-2h-11a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H11M4.5 10h15M8.5 3.5V7M15.5 3.5V7" /><circle cx="16.5" cy="16.5" r="4" /><path d="M16.5 14.6v2l1.3.9" /></symbol>
       <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16" /><path d="M8 9h7M8 12h8M8 15h5" /></symbol>
+      <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" /></symbol>
+      <symbol id="i-notebook" viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" /><path d="M2 6h4M2 10h4M2 14h4M2 18h4" /><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z" /></symbol>
+      <symbol id="i-messages" viewBox="0 0 24 24"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1" /></symbol>
+      <symbol id="i-calendar-plus" viewBox="0 0 24 24"><path d="M16 18h6M19 15v6M16 2v3M8 2v3M3 9h18" /><path d="M21 11.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8.3" /></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></symbol>
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5a2 2 0 0 1-2-2z" /><path d="M8.5 9.5h7M8.5 12.5h4.5" /></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5L10 14M20.5 3.5l-6.5 17-4-6.5-6.5-4z" /></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4.5M7 9l5-5 5 5M5 19.5h14" /></symbol>
@@ -194,9 +199,10 @@
           <figcaption class="visually-hidden">
             <span data-nosnippet>
               The Factwright app: your jobs in seven views, from New to All, each job with its
-              status, fit and pay. The Lumen Health job is open, with a Run button for each task,
-              and Claude’s panel at the bottom, where your own Claude Code writes an interview prep
-              sheet and asks you one question along the way.
+              status, fit, pay and next step. The Lumen Health job is open at its calls and
+              interviews, with Friday’s panel interview next, and Claude’s panel at the bottom,
+              where your own Claude Code writes a prep sheet for that call and asks you one
+              question along the way.
             </span>
           </figcaption>
           <div class="window" aria-hidden="true" data-demo data-nosnippet>
@@ -253,8 +259,9 @@
                     </div>
                   </div>
                   <div class="side-foot">
-                    <span class="side-support"><svg aria-hidden="true" class="icon"><use href="#i-heart" /></svg>Support Factwright</span>
-                    <span class="side-version">Factwright 0.2.0</span>
+                    <span class="side-link"><svg aria-hidden="true" class="icon"><use href="#i-puzzle" /></svg>Browser extension</span>
+                    <span class="side-link side-support"><svg aria-hidden="true" class="icon"><use href="#i-heart" /></svg>Support Factwright</span>
+                    <span class="side-version">Factwright 0.11.0</span>
                   </div>
                 </div>
               </div>
@@ -276,7 +283,7 @@
                       <div class="stat"><p class="stat-label">In play</p><p class="stat-value">7</p><p class="stat-detail">3 interviewing · 2 calls ahead</p></div>
                       <div class="stat"><p class="stat-label">Applied</p><p class="stat-value">9</p><p class="stat-detail">2 this week</p></div>
                       <div class="stat"><p class="stat-label">Heard back</p><p class="stat-value">44%</p><p class="stat-detail">4 of 9 applications</p></div>
-                      <div class="stat"><p class="stat-label">Needs you</p><p class="stat-value is-need">2</p><p class="stat-detail">Nothing overdue</p></div>
+                      <div class="stat"><p class="stat-label">Needs you</p><p class="stat-value is-need" data-demo-then="1">2</p><p class="stat-detail">Nothing overdue</p></div>
                     </div>
                     <div class="toolbar">
                       <div class="views">
@@ -308,7 +315,7 @@
                           <span class="pill tone-purple t-status">Interview</span>
                           <span class="pill tone-green t-fit">86 · Strong</span>
                           <span class="t-pay">$165k–$190k</span>
-                          <span class="t-next">Panel interview Friday</span>
+                          <span class="t-next is-need" data-demo-then="Panel interview Friday at 2:00 PM" data-demo-then-class="t-next">Prep for the panel interview Friday at 2:00 PM</span>
                         </span>
                       </div>
                       <div class="t-row">
@@ -338,7 +345,7 @@
                           <span class="pill tone-violet t-status">To apply</span>
                           <span class="pill tone-blue t-fit">72 · Good</span>
                           <span class="t-pay">$170k–$195k est.</span>
-                          <span class="t-next">Tailor a resume</span>
+                          <span class="t-next">Tailor a resume and a cover letter</span>
                         </span>
                       </div>
                       <div class="t-row">
@@ -348,7 +355,7 @@
                           <span class="pill tone-teal t-status">Screen</span>
                           <span class="pill tone-blue t-fit">74 · Good</span>
                           <span class="t-pay">$150k–$175k</span>
-                          <span class="t-next">Recruiter screen Wednesday</span>
+                          <span class="t-next">Recruiter screen tomorrow at 10:00 AM</span>
                         </span>
                       </div>
                     </div>
@@ -372,94 +379,94 @@
                         <span class="pill tone-green">86 · Strong</span>
                       </div>
                     </div>
-                    <!-- The job's sections, scrolled to Your Claude. The script keeps the run in view, then shows where the prep sheet lands. -->
+                    <!-- The job's sections. The script scrolls them to its calls, where the run starts and its prep sheet lands. -->
                     <div class="panel-body" data-demo-scroll>
-                      <div class="job-section">
-                        <p class="job-section-head">
-                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
-                          <svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg>
-                          <b>Your Claude</b><span class="job-section-sum">Fit checked · Resume ready</span>
-                        </p>
-                        <div class="job-section-body">
-                          <div class="runs" data-demo-runs>
-                            <div class="run">
-                              <span class="run-text"><b>Tailored resume</b><span>A resume for this job, every line traced to a fact</span></span>
-                              <span class="run-state is-ok" data-demo-before>Done</span>
-                            </div>
-                            <div class="run extra">
-                              <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
-                              <span class="run-state is-quiet">Ran</span>
-                            </div>
-                            <div class="run extra">
-                              <span class="run-text"><b>Salary check</b><span>Estimate the pay when the posting doesn’t say</span></span>
-                              <span class="run-state">Run</span>
-                            </div>
-                            <div class="run extra">
-                              <span class="run-text"><b>Who to message</b><span>People worth contacting, with drafts you send</span></span>
-                              <span class="run-state">Run</span>
-                            </div>
-                            <div class="run" data-demo-run>
-                              <span class="run-text"><b>Interview prep</b><span>A prep sheet for a call or an interview</span></span>
-                              <span class="run-state" data-demo-run-state>Run</span>
-                            </div>
-                            <div class="run extra">
-                              <span class="run-text"><b>Application questions</b><span>Answers to the form, in your own voice</span></span>
-                              <span class="run-state">Run</span>
-                            </div>
-                          </div>
-                          <div class="ask">
-                            <p class="ask-head"><span class="subheading">Ask Claude</span><span class="ui-button ui-secondary ui-sm" data-demo-wait>Ask a question</span></p>
-                            <p class="quiet">Ask anything about this job, such as what to expect from a call. The answers stay here.</p>
-                          </div>
+                      <div class="panel-start">
+                        <p class="panel-next is-action" data-demo-then="Panel interview Friday at 2:00 PM" data-demo-then-class="panel-next is-info">Prep for the panel interview Friday at 2:00 PM</p>
+                        <div class="next-box extra">
+                          <p class="next-box-title">Next step</p>
+                          <p class="next-box-row"><span class="ui-input">What happens next?</span><span class="ui-input next-box-date">mm/dd/yyyy</span></p>
                         </div>
                       </div>
-                      <div class="job-section is-closed">
+                      <div class="job-section is-closed extra">
                         <p class="job-section-head">
                           <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
-                          <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
-                          <b>Fit</b><span class="job-section-sum">Strong 86</span>
+                          <svg aria-hidden="true" class="icon"><use href="#i-route" /></svg>
+                          <b>Progress</b><span class="job-section-sum">Panel interview Friday</span>
                         </p>
                       </div>
-                      <div class="job-section" data-demo-files>
+                      <div class="job-section" data-demo-calls>
                         <p class="job-section-head">
                           <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
-                          <svg aria-hidden="true" class="icon"><use href="#i-folder" /></svg>
-                          <b>Files</b><span class="job-section-sum extra" data-demo-files-count="1 resume · 4 documents">1 resume · 3 documents</span>
+                          <svg aria-hidden="true" class="icon"><use href="#i-calendar" /></svg>
+                          <b>Calls and interviews</b><span class="job-section-sum" data-demo-then="Panel interview Friday at 2:00 PM · prep ready">Panel interview Friday at 2:00 PM</span>
                         </p>
-                        <div class="job-section-body job-files">
-                          <div class="job-file">
-                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="job-file-text"><b>Resume - Lumen Health.pdf</b><span>PDF · 52 KB · Oct&nbsp;12</span></span>
-                            <span class="ui-button ui-quiet ui-sm">Preview</span>
-                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                        <div class="job-section-body calls">
+                          <div class="call extra">
+                            <p class="call-head"><b>Recruiter screen</b><span class="call-tools"><svg aria-hidden="true" class="icon"><use href="#i-pen" /></svg><svg aria-hidden="true" class="icon"><use href="#i-x" /></svg></span></p>
+                            <p class="call-when">Thu, Oct 8 at 10:00 AM · 30 min · Phone</p>
+                            <div class="call-actions">
+                              <span class="ui-select ui-sm">Moved forward<svg aria-hidden="true" class="icon"><use href="#i-chevron" /></svg></span>
+                              <span class="ui-button ui-secondary ui-sm"><svg aria-hidden="true" class="icon"><use href="#i-mail" /></svg>Thank-you notes</span>
+                              <span class="ui-button ui-quiet ui-sm"><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Prep sheet</span>
+                            </div>
                           </div>
-                          <div class="job-file is-new" data-demo-doc>
-                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="job-file-text"><b>Interview prep</b><span>For your calls and interviews</span></span>
-                            <span class="ui-button ui-quiet ui-sm">Open</span>
-                          </div>
-                          <div class="job-file extra">
-                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="job-file-text"><b>Posting</b><span>Saved word for word</span></span>
-                            <span class="ui-button ui-quiet ui-sm">Open</span>
-                          </div>
-                          <div class="job-file extra">
-                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="job-file-text"><b>Fit check report</b><span>The full write-up</span></span>
-                            <span class="ui-button ui-quiet ui-sm">Open</span>
-                          </div>
-                          <div class="job-file extra">
-                            <svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>
-                            <span class="job-file-text"><b>Job notes</b><span>What Claude noted about the job</span></span>
-                            <span class="ui-button ui-quiet ui-sm">Open</span>
+                          <div class="call is-next" data-demo-call>
+                            <p class="call-head"><b>Panel interview<span class="call-tag">Next</span></b><span class="call-tools"><svg aria-hidden="true" class="icon"><use href="#i-pen" /></svg><svg aria-hidden="true" class="icon"><use href="#i-x" /></svg></span></p>
+                            <p class="call-when">Friday at 2:00 PM · 1 hour · Video</p>
+                            <p class="call-join"><span>Join at meet.example.com/lumen-panel</span><svg aria-hidden="true" class="icon"><use href="#i-arrow-up-right" /></svg></p>
+                            <p class="call-with">With Elena Ruiz (Hiring manager) and Sam Patel (Engineering lead)</p>
+                            <div class="call-actions">
+                              <span class="ui-button ui-primary ui-sm is-new" data-demo-doc><svg aria-hidden="true" class="icon"><use href="#i-file" /></svg>Prep sheet</span>
+                              <span class="ui-button ui-primary ui-sm" data-demo-run><svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg><span data-demo-run-state>Call prep</span></span>
+                              <span class="ui-button ui-quiet ui-sm" data-demo-wait><svg aria-hidden="true" class="icon"><use href="#i-messages" /></svg>Practice</span>
+                              <span class="ui-button ui-quiet ui-sm"><svg aria-hidden="true" class="icon"><use href="#i-calendar-plus" /></svg>Add to calendar</span>
+                              <span class="call-date is-new" data-demo-doc>Prep from Oct 14</span>
+                            </div>
+                            <p class="call-reminder"><svg aria-hidden="true" class="icon"><use href="#i-bell" /></svg><span>Factwright reminds you an hour before, while it’s open.</span><span class="ui-button ui-quiet ui-sm">Turn off</span></p>
                           </div>
                         </div>
                       </div>
                       <div class="job-section is-closed extra">
                         <p class="job-section-head">
                           <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-notebook" /></svg>
+                          <b>Notes</b><span class="job-section-sum">2 notes</span>
+                        </p>
+                      </div>
+                      <div class="job-section is-closed">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-sparkles" /></svg>
+                          <b>Your Claude</b><span class="job-section-sum">Fit checked · Resume ready · Cover letter ready</span>
+                        </p>
+                      </div>
+                      <div class="job-section is-closed extra">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-gauge" /></svg>
+                          <b>Fit</b><span class="job-section-sum">Strong 86</span>
+                        </p>
+                      </div>
+                      <div class="job-section is-closed extra">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-mail" /></svg>
+                          <b>Cover letter</b><span class="job-section-sum">312 words</span>
+                        </p>
+                      </div>
+                      <div class="job-section is-closed extra">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
+                          <svg aria-hidden="true" class="icon"><use href="#i-folder" /></svg>
+                          <b>Files</b><span class="job-section-sum">1 resume · 1 cover letter · 3 documents</span>
+                        </p>
+                      </div>
+                      <div class="job-section is-closed extra">
+                        <p class="job-section-head">
+                          <svg aria-hidden="true" class="icon job-section-chevron"><use href="#i-chevron" /></svg>
                           <svg aria-hidden="true" class="icon"><use href="#i-history" /></svg>
-                          <b>Activity</b><span class="job-section-sum">9 things so far</span>
+                          <b>History</b><span class="job-section-sum">9 things · 1 person met</span>
                         </p>
                       </div>
                     </div>
@@ -469,24 +476,24 @@
                 <div class="claude-panel" data-demo-claude>
                   <div class="claude-head">
                     <span class="run-status is-done" data-demo-status><i class="status-dot"></i><span data-demo-status-label>Done</span></span>
-                    <span class="claude-title" data-demo-title>Tailored resume · Lumen Health</span>
+                    <span class="claude-title" data-demo-title>Thank-you notes · Lumen Health</span>
                     <span class="claude-hint" data-demo-hint>Claude is done. Type to keep going, or close the panel.</span>
                     <span class="claude-plan"><i class="dot dot-ok"></i>Runs on your own Claude · Max plan</span>
                     <span class="ui-button ui-quiet ui-sm claude-stop">Stop</span>
                     <span class="ui-button ui-secondary ui-sm" data-demo-toggle>Show Claude</span>
                   </div>
                   <div class="term">
-                    <p class="t-line t-user" data-at="1">❯ /factwright:interview-prep job lumen-health--senior-product-manager-growth</p>
-                    <p class="t-line" data-at="2" data-until="3"><span class="t-spin">✻</span> <span class="t-dim">Reading everything on file for the job…</span></p>
-                    <p class="t-line" data-at="3"><span class="t-ok">⏺</span> Read the posting, your fit check, the resume you sent and your notes.</p>
-                    <p class="t-line t-gap t-bold" data-at="4" data-until="5">Which round is Friday’s interview?</p>
-                    <p class="t-line t-pick" data-at="4" data-until="5">❯ 1. Panel with the product team</p>
-                    <p class="t-line t-indent" data-at="4" data-until="5">2. Hiring manager, one on one</p>
+                    <p class="t-line t-user" data-at="1">❯ /factwright:interview-prep job lumen-health--senior-product-manager-growth call c41e7b2a-5d9f-4e8a-b3c6-2f0a91d7e584</p>
+                    <p class="t-line" data-at="2" data-until="3"><span class="t-spin">✻</span> <span class="t-dim">Reading everything on file for the job and its calls…</span></p>
+                    <p class="t-line" data-at="3"><span class="t-ok">⏺</span> Read the posting, your fit check, the resume you sent, and how the recruiter screen went.</p>
+                    <p class="t-line t-gap t-bold" data-at="4" data-until="5">They’ll likely ask about HIPAA. Have you worked under it?</p>
+                    <p class="t-line t-pick" data-at="4" data-until="5">❯ 1. No, so help me handle the gap</p>
+                    <p class="t-line t-indent" data-at="4" data-until="5">2. Yes, I’ll tell you about it</p>
                     <p class="t-line t-indent" data-at="4" data-until="5">3. Type something else</p>
                     <p class="t-line t-gap t-dim" data-at="5">⏺ User answered Claude’s questions:</p>
-                    <p class="t-line t-dim t-indent" data-at="5">⎿&nbsp; · Which round is Friday’s interview? → Panel with the product team</p>
-                    <p class="t-line" data-at="6" data-until="7"><span class="t-spin">✻</span> <span class="t-dim">Checking company news and writing your prep sheet…</span></p>
-                    <p class="t-line t-gap" data-at="7"><span class="t-ok">⏺</span> Your prep sheet is ready: likely questions answered from your facts, your best stories, and questions to ask them.</p>
+                    <p class="t-line t-dim t-indent" data-at="5">⎿&nbsp; · They’ll likely ask about HIPAA. Have you worked under it? → No, so help me handle the gap</p>
+                    <p class="t-line" data-at="6" data-until="7"><span class="t-spin">✻</span> <span class="t-dim">Looking up who you’re meeting and writing your prep sheet…</span></p>
+                    <p class="t-line t-gap" data-at="7"><span class="t-ok">⏺</span> Your prep sheet for Friday’s panel is ready: what to land, who you’re meeting, likely questions answered from your facts, how to handle the HIPAA gap, and questions for each person.</p>
                     <p class="t-line t-gap t-dim" data-at="7">❯ <span class="t-caret"></span></p>
                   </div>
                 </div>
@@ -737,12 +744,16 @@
                         <span class="run-state">Running</span>
                       </div>
                       <div class="run">
-                        <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
-                        <span class="run-state is-quiet">Ran</span>
+                        <span class="run-text"><b>Cover letter</b><span>A letter for this job, from your facts, in your voice</span></span>
+                        <span class="run-state">Run</span>
                       </div>
                       <div class="run">
-                        <span class="run-text"><b>Salary check</b><span>Estimate the pay when the posting doesn’t say</span></span>
+                        <span class="run-text"><b>Projects page</b><span>Your projects in depth, on one page, for jobs where they help</span></span>
                         <span class="run-state">Run</span>
+                      </div>
+                      <div class="run">
+                        <span class="run-text"><b>Fit check</b><span>Score the job against your fact bank</span></span>
+                        <span class="run-state is-quiet">Ran</span>
                       </div>
                     </div>
                   </div>

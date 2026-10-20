@@ -51,9 +51,10 @@ const PHASES: Readonly<Record<RunPhase, { label: string; hint: string }>> = {
 const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
 
 /**
- * The app drawing at the top: Interview prep runs in Claude's panel, asks one question, and the
- * prep sheet lands in the job's files. Its Run buttons change the way the app's do, and the job's
- * other runs wait while Claude works. With reduced motion, it shows the finished run.
+ * The app drawing at the top: Call prep runs for the job's next call in Claude's panel, asks one
+ * question, and the prep sheet lands on the call. Its buttons change the way the app's do, what
+ * would start Claude waits while it works, and what the job needs next moves on once it's done.
+ * With reduced motion, it shows the finished run.
  */
 function heroRun(root: HTMLElement): void {
   const find = (selector: string) => root.querySelector<HTMLElement>(selector);
@@ -65,16 +66,15 @@ function heroRun(root: HTMLElement): void {
   const toggle = find('[data-demo-toggle]');
   const run = find('[data-demo-run]');
   const runState = find('[data-demo-run-state]');
-  const runs = find('[data-demo-runs]');
-  const before = find('[data-demo-before]');
-  const doc = find('[data-demo-doc]');
-  const files = find('[data-demo-files]');
-  const filesCount = find('[data-demo-files-count]');
+  const calls = find('[data-demo-calls]');
+  const call = find('[data-demo-call]');
   const sections = find('[data-demo-scroll]');
   if (!claude || !status || !statusLabel || !title || !hint || !toggle || !run || !runState) return;
   const lines = [...root.querySelectorAll<HTMLElement>('[data-at]')];
   const spinners = [...root.querySelectorAll<HTMLElement>('.t-spin')];
   const waiting = [...root.querySelectorAll<HTMLElement>('[data-demo-wait]')];
+  const made = [...root.querySelectorAll<HTMLElement>('[data-demo-doc]')];
+  const after = [...root.querySelectorAll<HTMLElement>('[data-demo-then]')];
   const term = claude.querySelector<HTMLElement>('.term');
 
   const show = (stage: number) => {
@@ -93,52 +93,52 @@ function heroRun(root: HTMLElement): void {
     hint.textContent = PHASES[next].hint;
   };
   // The job's sections scroll to a part of them, with a little room above it, the way you would.
-  const scrollSections = (part: HTMLElement | null, room: number) => {
+  const scrollSections = (part: HTMLElement | null, room: number, smooth = !still) => {
     if (!sections || !part) return;
     const top = part.getBoundingClientRect().top - sections.getBoundingClientRect().top;
     sections.scrollTo({
       top: Math.max(0, sections.scrollTop + top - room),
-      behavior: still ? 'auto' : 'smooth',
+      behavior: smooth ? 'smooth' : 'auto',
     });
   };
+  // Until the run starts, the sections show the job's calls, once laid out and whenever their
+  // size changes, such as when a tablet turns.
+  const settle = new ResizeObserver(() => scrollSections(calls, 0, false));
+  if (sections) settle.observe(sections);
   const open = () => {
     claude.classList.add('is-open');
     toggle.textContent = 'Hide';
-    title.textContent = 'Interview prep · Lumen Health';
+    title.textContent = 'Call prep · Lumen Health';
   };
-  // While Claude works, the job's other runs and anything else that would start Claude wait.
+  // While Claude works, anything else that would start it waits.
   const busy = (on: boolean) => {
-    runs?.classList.toggle('is-busy', on);
     for (const part of waiting) part.classList.toggle('is-waiting', on);
   };
-  const runIs = (label: string, done: boolean) => {
-    runState.textContent = label;
-    runState.classList.toggle('is-ok', done);
-    // The app highlights a Run button while its run goes.
-    run.classList.toggle('is-suggested', !done);
-  };
   const start = () => {
-    // The last run's "Done" becomes what's on file once another run starts.
-    if (before) before.textContent = 'Ready';
-    runIs('Running', false);
+    settle.disconnect();
+    runState.textContent = 'Preparing…';
     busy(true);
     open();
     phase('working');
-    // Claude's panel takes room from the job's, so the run it's doing stays in view.
-    scrollSections(run, 120);
+    // Claude's panel takes room from the job's, so the call it's prepping for stays in view.
+    scrollSections(call, 12);
   };
   const finish = () => {
     show(7);
     phase('done');
-    runIs('Done', true);
     busy(false);
-    doc?.classList.add('is-shown');
-    // The files' count, which the page keeps beside it, takes in the prep sheet.
-    const count = filesCount?.dataset.demoFilesCount;
-    if (filesCount && count) filesCount.textContent = count;
-    // The prep sheet is in the job's files, further down its sections. They scroll there once laid
-    // out, and again whenever their size changes, such as when a tablet turns.
-    if (sections) new ResizeObserver(() => scrollSections(files, 0)).observe(sections);
+    // The call has its prep sheet, so its button preps again, as the app's does.
+    runState.textContent = 'Prep again';
+    run.classList.replace('ui-primary', 'ui-quiet');
+    for (const part of made) part.classList.add('is-shown');
+    // What the job needs next moves on: the panel is prepped for, so it no longer needs you.
+    for (const part of after) {
+      part.textContent = part.dataset.demoThen ?? part.textContent;
+      if (part.dataset.demoThenClass) part.className = part.dataset.demoThenClass;
+    }
+    // The prep sheet is on the call. The sections keep it in view once laid out, and again
+    // whenever their size changes.
+    if (sections) new ResizeObserver(() => scrollSections(call, 12)).observe(sections);
   };
 
   show(0);

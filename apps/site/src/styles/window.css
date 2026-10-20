@@ -284,7 +284,7 @@
   gap: 2px;
 }
 
-.side-support {
+.side-link {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -295,9 +295,12 @@
   font-weight: 550;
 }
 
-.side-support .icon {
+.side-link .icon {
   width: 14px;
   height: 14px;
+}
+
+.side-support .icon {
   color: var(--fw-tone-purple-fg);
 }
 
@@ -675,75 +678,202 @@
   overflow: hidden;
 }
 
-/* The first section starts right under the job's name, so it needs no line of its own. */
-.panel-body > .job-section:first-child {
-  border-top: 0;
+/* Above the sections: what the job needs next, in the list's words, and the user's own next step. */
+.panel-start {
+  padding: 16px 0 20px;
 }
 
-.ask {
-  margin-top: 20px;
+.panel-next {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    background-color 240ms ease,
+    color 240ms ease;
 }
 
-.ask-head {
+.panel-next.is-action {
+  background: var(--fw-need-soft);
+  color: var(--fw-need);
+}
+
+.panel-next.is-info {
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.next-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bar);
+}
+
+.next-box-title {
+  font-weight: 650;
+}
+
+.next-box-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-.ask .quiet {
-  margin-top: 4px;
+.next-box-row .ui-input {
+  flex: 1 1 140px;
 }
 
-.job-files {
+.next-box-row .next-box-date {
+  flex: 0 0 112px;
+}
+
+/* The job's calls, one card each. The next one booked stands out, as the one to get ready for. */
+.calls {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.job-file {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 6px 6px 10px;
+.call {
+  padding: 10px 12px 12px;
   border: 1px solid var(--fw-border);
   border-radius: 10px;
+  background: var(--fw-surface);
 }
 
-.job-file > .icon {
-  width: 16px;
-  height: 16px;
+.call.is-next {
+  border-color: var(--fw-accent);
+  box-shadow: inset 3px 0 0 var(--fw-accent);
+}
+
+.call-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.call-head b {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.call-tag {
+  padding: 1px 7px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.call-tools {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  margin-top: 2px;
   color: var(--fw-muted);
 }
 
-.job-file-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
+.call-tools .icon {
+  width: 13px;
+  height: 13px;
 }
 
-.job-file-text b {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-file-text span {
+.call-when,
+.call-date {
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
 }
 
-/* The prep sheet lands in the job's files once the drawing's run is done. */
-[data-demo] .job-file.is-new {
+/* A meeting's link, in one line, cut short where the card is narrow. */
+.call-join {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  color: var(--fw-accent-text);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.call-join span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-join .icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.call-with {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+/* Claude's work for the call, and adding it to a calendar. */
+.call-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.call-actions .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* That a reminder comes an hour before the next call, with the switch for reminders. */
+.call-reminder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.call-reminder > .icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.call-reminder .ui-button {
+  margin-left: auto;
+}
+
+/* The call's prep sheet, and the day it's from, show once the drawing's run is done. */
+[data-demo] .is-new:not(.is-shown) {
   display: none;
 }
 
-[data-demo] .job-file.is-new.is-shown {
-  display: flex;
+[data-demo] .is-new.is-shown {
   animation: pop 420ms var(--ease-out);
+}
+
+/* The button the drawing presses gives a little, as a real one does. */
+[data-demo-run] {
+  transition: transform 160ms ease;
+}
+
+[data-demo-run].is-pressed {
+  transform: scale(0.96);
 }
 
 [data-demo-wait] {
@@ -899,7 +1029,7 @@
 
 /*
  * Once it's down to the job's panel, the drawing grows to fit the job instead of keeping the
- * window's height, so it keeps to the runs this one is about, and the files they made.
+ * window's height, so it keeps to the call this one is about, and the prep sheet made for it.
  */
 @container shot (max-width: 940px) {
   .window {
@@ -910,7 +1040,6 @@
     flex: none;
   }
 
-  .ask,
   .extra {
     display: none;
   }
