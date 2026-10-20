@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- Factwright runs on Electron 44, with Chromium 152, up from Electron 43 and Chromium 150, and the same Node.js 24. On a Mac it now needs macOS 13 Ventura or later, as Electron 44 does. A Mac on macOS 12 keeps the version it has, which goes on working: the Mac update feed now names the oldest macOS each version opens on, so a Mac too old for an update passes over it, instead of installing a version that won't open. factwright.com's download pages say macOS 13 or later from the site's next update. Windows is unchanged: 64-bit Windows 10 and 11.
+
 ## 0.9.2 - 2026-10-19
 
 ### Added

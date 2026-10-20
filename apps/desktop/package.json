@@ -18,7 +18,7 @@
     "helper": "node scripts/build-helper.ts",
     "release-check": "node scripts/release-check.ts",
     "check-package": "node scripts/check-package.ts",
-    "dist:mac": "node scripts/build-helper.ts && electron-builder --config electron-builder.config.mjs --mac --publish never",
+    "dist:mac": "node scripts/build-helper.ts && electron-builder --config electron-builder.config.mjs --mac --publish never && node scripts/mac-feed.ts",
     "dist:win": "node scripts/installer-art.ts --win && node scripts/build-helper.ts && electron-builder --config electron-builder.config.mjs --win --publish never",
     "start": "electron .",
     "screens": "vite -c vite.renderer.config.ts",
