@@ -177,7 +177,9 @@ export {
 export { PRIVACY_URL, TERMS_URL } from './legal.ts';
 export {
   asksForCoverLetter,
+  asksForWorkSamples,
   isCoverLetterFile,
+  isProjectsPageFile,
   type LetterText,
   letterPlainText,
   letterWordCount,

@@ -1,4 +1,11 @@
-export { docxFile, letterDocument, letterDocxFile, resumeDocument } from './docx.ts';
+export {
+  docxFile,
+  letterDocument,
+  letterDocxFile,
+  projectsDocument,
+  projectsDocxFile,
+  resumeDocument,
+} from './docx.ts';
 export { outputName, pdfPageCount } from './files.ts';
 export {
   type FitRow,
@@ -16,6 +23,7 @@ export {
   escapeHtml,
   renderHtml,
   renderLetterHtml,
+  renderProjectsHtml,
 } from './html.ts';
 export { type CoverLetter, LETTER_FIELDS, letterWords, readLetter } from './letter.ts';
 export {
@@ -24,9 +32,19 @@ export {
   type LintConfig,
   lintLetter,
   lintMessage,
+  lintProjectsPage,
   lintResume,
   readConfidentialTerms,
 } from './lint.ts';
+export {
+  DEFAULT_PAGE_HEADING,
+  PAGE_FIELDS,
+  PAGE_SHAPES,
+  type PageProject,
+  type PageShape,
+  type ProjectsPage,
+  readProjectsPage,
+} from './projects-page.ts';
 export { previewLetter, previewResume } from './sample.ts';
 export {
   type Bullet,

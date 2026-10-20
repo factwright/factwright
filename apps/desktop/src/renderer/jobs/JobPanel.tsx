@@ -42,6 +42,7 @@ import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
 import { ArchiveFooter, HistorySection, NextStep, ProgressSection } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
+import { ProjectsPageSection } from './ProjectsPageSection.tsx';
 import { BUSY, RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
 import type { ReminderSwitch } from './useCallReminders.ts';
@@ -95,6 +96,7 @@ function claudeSummary(job: Job): string {
       job.fit && 'Fit checked',
       job.files.length > 0 && 'Resume ready',
       job.letters.length > 0 && 'Cover letter ready',
+      job.projectPages.length > 0 && 'Projects page ready',
       job.asks.length > 0 && plural(job.asks.length, 'question'),
     ]
       .filter(Boolean)
@@ -317,6 +319,17 @@ export function JobPanel({
       today={today}
       writing={
         run?.task?.skill === 'cover-letter' &&
+        taskJob(run.task) === job.id &&
+        BUSY.includes(run.phase)
+      }
+    />,
+    <ProjectsPageSection
+      key={`projects-${job.id}`}
+      job={job}
+      api={api}
+      today={today}
+      making={
+        run?.task?.skill === 'projects-page' &&
         taskJob(run.task) === job.id &&
         BUSY.includes(run.phase)
       }

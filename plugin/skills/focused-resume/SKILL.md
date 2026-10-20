@@ -169,7 +169,7 @@ Apply the fixes and build again. Skip this step only if the user asks for speed.
   - the lines that rest on today's answers, and on unverified facts the user said to use once
   - anything the user should double-check before sending
 - The app shows the resume in the job's panel, ready to open, and the facts you saved at the top of the Fact bank, to verify.
-- Reply in 7 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, how you placed projects in a line ("Projects: a Selected Work section with Trailhead and pg-queue, a line each"), the facts you saved and the lines that rest on them, and anything to check. When the posting or `apply.md` asks for a cover letter, add that `/factwright:cover-letter` writes one to match.
+- Reply in 7 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, how you placed projects in a line ("Projects: a Selected Work section with Trailhead and pg-queue, a line each"), the facts you saved and the lines that rest on them, and anything to check. When the posting or `apply.md` asks for a cover letter, add that `/factwright:cover-letter` writes one to match. When it asks for a portfolio or work samples, or the company is a startup or run by its founders, and the user has projects worth showing, add that `/factwright:projects-page` makes a one-page Projects page to go with it.
 
 ## 10. Feedback (now or in a later session)
 When the user reacts to the resume:

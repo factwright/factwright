@@ -17,6 +17,7 @@ import {
   INTERESTS_ON_RESUMES,
   labelIn,
   newProject,
+  PAGE_SHAPE_CHOICES,
   PROJECT_DETAIL,
   PROJECT_KINDS,
   PROJECT_SHOWING,
@@ -436,6 +437,40 @@ function ResumePlacement({
 }
 
 /**
+ * How a Projects page lays the projects out, when the user has their Claude make one for a job.
+ * It's made only when they ask, and goes only where they send it.
+ */
+function PagePlacement({
+  prefs,
+  change,
+}: {
+  prefs: ProjectPrefs;
+  change: (prefs: ProjectPrefs) => void;
+}) {
+  const shape = PAGE_SHAPE_CHOICES.find(([value]) => value === prefs.page);
+  return (
+    <div className={styles.section}>
+      <h3 className={styles.sectionTitle}>Projects page</h3>
+      <p className={styles.sectionLead}>
+        For a job your projects help with, your Claude can make a one-page Projects page in your
+        resume’s look, from the job’s Projects page button. It goes only where you send it, such as
+        an application’s portfolio upload, an email or an interview.
+      </p>
+      <div className={beyond.showing}>
+        <span className={beyond.showingLabel}>How it lays them out</span>
+        <SegmentedControl
+          label="How a Projects page lays out your projects"
+          options={options(PAGE_SHAPE_CHOICES)}
+          value={prefs.page}
+          onChange={(page) => change({ ...prefs, page })}
+        />
+        <p className={styles.note}>{shape?.[2]}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Work outside a job, and the user outside work. Projects are anything they made, led or kept
  * going outside a job, in any field, each an overview Claude turns into facts with them. The rest
  * is who they are outside work, which answers to "tell us about yourself" and their cover
@@ -531,6 +566,12 @@ export function BeyondWorkStep({
 
       {!later && (
         <ResumePlacement
+          prefs={answers.projectPrefs}
+          change={(projectPrefs) => update({ projectPrefs })}
+        />
+      )}
+      {!later && (
+        <PagePlacement
           prefs={answers.projectPrefs}
           change={(projectPrefs) => update({ projectPrefs })}
         />

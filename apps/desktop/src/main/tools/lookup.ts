@@ -221,6 +221,7 @@ const ABOUT_DOCS: Readonly<Record<JobDocKind, string>> = {
   prep: 'interview prep: the pitch, likely questions, stories and questions to ask',
   apply: 'special steps for applying',
   letter: 'the cover letter’s data, which builds its PDF and Word files',
+  projects: 'the Projects page’s data, which builds its PDF and Word files',
 };
 
 const DOC_KIND_BY_FILE = new Map(

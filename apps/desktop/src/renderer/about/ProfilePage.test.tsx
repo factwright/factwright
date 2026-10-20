@@ -258,7 +258,7 @@ describe('ProfilePage', () => {
     ]);
     expect(
       within(card).getByText(
-        'On resumes: in a section called “Selected Work”, a line each, with links and numbers.',
+        'On resumes: in a section called “Selected Work”, a line each, with links and numbers. Projects page: a list.',
       ),
     ).toBeTruthy();
     expect(within(card).getByText('Trail running, Chess')).toBeTruthy();

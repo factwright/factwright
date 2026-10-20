@@ -50,6 +50,7 @@ const job = (id: string): CollectedJob => ({
   sentiment: null,
   files: [],
   letters: [],
+  projectPages: [],
 });
 
 /** A computer with its own workspace, tracker and sync notes, signed in to the account. */

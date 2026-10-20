@@ -222,6 +222,44 @@ async function work(text) {
       show('\n');
     }
   }
+  // As Claude would for a Projects page: read what's on file, write the page in the job's folder,
+  // and build it with the tool that checks it.
+  const paged = text.match(/^\/factwright:projects-page job (\S+)$/);
+  if (paged) {
+    const details = await call('job_details', { job: paged[1] });
+    const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
+    if (folder) {
+      writeFileSync(
+        join(process.cwd(), 'applications', folder, 'projects-page.json'),
+        JSON.stringify({
+          format: 'both',
+          output_name: 'AlexRiveraProjects10142026_Acme',
+          name: 'Alex Rivera',
+          headline: 'Staff Platform Engineer',
+          contact: { email: 'alex@example.com', location: 'Remote, US' },
+          heading: 'Selected Projects',
+          shape: 'cards',
+          projects: [
+            {
+              name: 'Trailhead',
+              line: 'App for iPhone and Android · built it alone',
+              when: '2023 – Present',
+              what: 'A free app that maps trail conditions, from the stand-in Claude.',
+              points: [{ items: ['About **4,000** people use it each month.'] }],
+              skills: ['React Native', 'PostgreSQL'],
+            },
+            {
+              name: 'pg-queue',
+              line: 'Open source · wrote it',
+              what: 'A small job queue that runs on Postgres.',
+            },
+          ],
+        }),
+      );
+      show(await call('build_projects_page', { folder }));
+      show('\n');
+    }
+  }
   // As Claude would while tailoring a resume: ask about what the posting wants that the facts
   // don't show, then save the user's answers to the fact bank.
   const tailoring = text.match(/^\/factwright:focused-resume job (\S+)/);

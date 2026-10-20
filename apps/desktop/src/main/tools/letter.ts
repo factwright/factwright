@@ -26,8 +26,11 @@ import { headerDifferences, listed } from './set.ts';
 /** Where a job's cover letter's data is, beside its files. */
 const LETTER_DATA = JOB_DOCS.letter;
 
-/** The job's tailored resume, when its folder has one that reads, which the letter matches. */
-async function resumeIn(dir: string): Promise<Resume | null> {
+/**
+ * The job's tailored resume, when its folder has one that reads, which its letter and its
+ * Projects page match.
+ */
+export async function resumeIn(dir: string): Promise<Resume | null> {
   const text = await readText(join(dir, 'resume.json'));
   if (text === null) return null;
   try {

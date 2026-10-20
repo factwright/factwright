@@ -156,11 +156,12 @@ export function FilesSection({
   // A resume or letter built as a PDF and a Word file is one, by its name.
   const named = (files: readonly JobFile[]) =>
     new Set(files.map((file) => file.name.replace(/\.[^.]+$/, ''))).size;
-  const built = [...job.files, ...job.letters];
+  const built = [...job.files, ...job.letters, ...job.projectPages];
   const summary =
     [
       job.files.length > 0 && count(named(job.files), 'resume'),
       job.letters.length > 0 && count(named(job.letters), 'cover letter'),
+      job.projectPages.length > 0 && count(named(job.projectPages), 'Projects page'),
       documents.length + (browserPosting ? 1 : 0) > 0 &&
         count(documents.length + (browserPosting ? 1 : 0), 'document'),
     ]
@@ -183,8 +184,8 @@ export function FilesSection({
               onXRay={setXray}
             />
           ))}
-          {/* Cover letters have no X-ray: it reads resumes. */}
-          {job.letters.map((file) => (
+          {/* Cover letters and Projects pages have no X-ray: it reads resumes. */}
+          {[...job.letters, ...job.projectPages].map((file) => (
             <FileRow
               key={file.path}
               file={file}

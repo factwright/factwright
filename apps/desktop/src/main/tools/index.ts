@@ -13,6 +13,7 @@ import { buildCoverLetter } from './letter.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
+import { buildProjectsPage } from './projects.ts';
 import { buildResume } from './resume.ts';
 import { revisionFindings } from './revision.ts';
 import { hnJobs, jobBoard } from './search.ts';
@@ -52,6 +53,7 @@ export const LOCAL_TOOLS = [
   'revision_findings',
   'build_resume',
   'build_cover_letter',
+  'build_projects_page',
   'about_you',
   'past_answers',
   'save_answer',
@@ -320,6 +322,42 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input) =>
         buildCoverLetter(
+          textInput(input, 'folder', true) ?? '',
+          textInput(input, 'format', false),
+          {
+            workspace: deps.workspace,
+            printer: deps.printer,
+            templates: deps.templates,
+            jobs: () => deps.jobs.list().jobs,
+            ...(deps.now && { now: deps.now }),
+          },
+        ),
+    },
+    {
+      name: 'build_projects_page',
+      description:
+        'Builds a job’s Projects page from its folder’s projects-page.json, as a PDF, a Word file or both beside it, named after its output_name: the user’s projects in more depth than a resume has room for, on one page, as a list, cards or short case studies. It’s in the job’s resume’s template, with the same header, so the two look like a set. Says whether it fits one page, how full it is, which lines end on a word or two, and what breaks the user’s rules or their confidential terms. Build again after each change. A job the user applied to keeps the files that were sent.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description:
+              'The job’s folder name under applications/, such as 2026-10-11-acme-staff-engineer.',
+          },
+          format: {
+            type: 'string',
+            enum: ['pdf', 'docx', 'both'],
+            description: 'Which files to build. Without it, projects-page.json’s format, or a PDF.',
+          },
+        },
+        required: ['folder'],
+        additionalProperties: false,
+      },
+      // It writes only Projects page files, beside their data, from what's on this computer.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) =>
+        buildProjectsPage(
           textInput(input, 'folder', true) ?? '',
           textInput(input, 'format', false),
           {

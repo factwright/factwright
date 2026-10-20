@@ -88,6 +88,7 @@ function folder(company: string, role: string, extra: Partial<FolderRecord> = {}
     kind: null,
     files: [],
     letters: [],
+    projectPages: [],
     docs: {},
     ...extra,
   };

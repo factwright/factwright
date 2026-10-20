@@ -56,6 +56,7 @@ describe('the plugin’s skills', () => {
       'interview-prep',
       'job-search',
       'make-template',
+      'projects-page',
       'revise-resume',
       'salary-check',
       'thank-you',
@@ -116,6 +117,7 @@ describe('the plugin’s skills', () => {
       'focused-resume': 'resume',
       'revise-resume': 'resume',
       'cover-letter': 'cover-letter',
+      'projects-page': 'projects-page',
       'answer-questions': 'answers',
       'interview-prep': 'interview-prep',
     };

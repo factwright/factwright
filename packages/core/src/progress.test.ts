@@ -48,6 +48,7 @@ function job(extra: Partial<Job> = {}): Job {
     sentiment: null,
     files: [],
     letters: [],
+    projectPages: [],
     outreach: [],
     status: null,
     statusOn: null,

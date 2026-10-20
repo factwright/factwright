@@ -16,6 +16,7 @@ import {
 } from 'docx';
 import type { CoverLetter } from './letter.ts';
 import { BOLD, PLACEHOLDER, plainLetters } from './markup.ts';
+import { DEFAULT_PAGE_HEADING, type ProjectsPage } from './projects-page.ts';
 import type { Bullet, Contact, Resume } from './schema.ts';
 import { sectionTitles } from './template/render.ts';
 import type { Template, WordTheme } from './templates.ts';
@@ -223,6 +224,29 @@ function header(person: Person, t: WordTheme): Paragraph[] {
   return kids;
 }
 
+/** The bullets a resume and a Projects page share: a dot in the template's accent color. */
+function dots(t: WordTheme) {
+  return {
+    config: [
+      {
+        reference: 'dot',
+        levels: [
+          {
+            level: 0,
+            format: LevelFormat.BULLET,
+            text: '•',
+            alignment: AlignmentType.LEFT,
+            style: {
+              paragraph: { indent: { left: 300, hanging: 220 } },
+              run: { color: t.accent },
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /**
  * A resume as a single-column Word document that applicant systems read well, in the colors and
  * fonts of its template.
@@ -366,25 +390,7 @@ export function resumeDocument(r: Resume, template: Template): Document {
     title: `${r.name} — Resume`,
     // noProof hides spell-check squiggles under tech terms.
     styles: { default: { document: { run: { font: t.body, size: t.size, noProof: true } } } },
-    numbering: {
-      config: [
-        {
-          reference: 'dot',
-          levels: [
-            {
-              level: 0,
-              format: LevelFormat.BULLET,
-              text: '•',
-              alignment: AlignmentType.LEFT,
-              style: {
-                paragraph: { indent: { left: 300, hanging: 220 } },
-                run: { color: t.accent },
-              },
-            },
-          ],
-        },
-      ],
-    },
+    numbering: dots(t),
     sections: [
       {
         properties: {
@@ -461,4 +467,72 @@ export function letterDocument(l: CoverLetter, template: Template): Document {
 /** The cover letter as a Word file's bytes, ready to save. */
 export function letterDocxFile(letter: CoverLetter, template: Template): Promise<ArrayBuffer> {
   return Packer.toArrayBuffer(letterDocument(letter, template));
+}
+
+/**
+ * A Projects page as a single-column Word document, under the same header as its resume, in the
+ * template's fonts and colors: each project like a job, with its kind and the user's part, its
+ * link, what it is, what came of it, and its tools. Cards and case studies read as the list does,
+ * as Word lays the page out itself.
+ */
+export function projectsDocument(p: ProjectsPage, template: Template): Document {
+  const t = template.word;
+  const kids: Paragraph[] = [...header(p, t), heading(p.heading || DEFAULT_PAGE_HEADING, t)];
+  if (p.intro) kids.push(new Paragraph({ spacing: { after: 80 }, children: runs(p.intro, t) }));
+  for (const project of p.projects) {
+    kids.push(twoSide(project.name, project.when ?? '', t, { bold: true }));
+    if (project.line || project.link) {
+      kids.push(
+        twoSide(project.line ?? '', project.link ?? '', t, { italics: true, color: t.muted }),
+      );
+    }
+    if (project.what) {
+      kids.push(
+        new Paragraph({ spacing: { before: 40, after: 40 }, children: runs(project.what, t) }),
+      );
+    }
+    for (const group of project.points ?? []) {
+      if (group.heading) {
+        kids.push(
+          new Paragraph({
+            keepNext: true,
+            spacing: { before: 60, after: 20 },
+            children: runs(group.heading, t, { bold: true, color: t.accent }),
+          }),
+        );
+      }
+      for (const item of group.items) kids.push(bullet({ text: item }, t));
+    }
+    if (project.skills?.length) {
+      kids.push(
+        new Paragraph({
+          spacing: { before: 30 },
+          children: runs(project.skills.join(' · '), t, { color: t.muted, size: t.size - 1 }),
+        }),
+      );
+    }
+    kids.push(new Paragraph({ spacing: { after: 100 }, children: [] }));
+  }
+  return new Document({
+    creator: p.name,
+    title: `${p.name} — Projects`,
+    styles: { default: { document: { run: { font: t.body, size: t.size, noProof: true } } } },
+    numbering: dots(t),
+    sections: [
+      {
+        properties: {
+          page: {
+            size: { width: PAGE_W, height: 15840 },
+            margin: { top: 720, bottom: 720, left: MARGIN, right: MARGIN },
+          },
+        },
+        children: kids,
+      },
+    ],
+  });
+}
+
+/** The Projects page as a Word file's bytes, ready to save. */
+export function projectsDocxFile(page: ProjectsPage, template: Template): Promise<ArrayBuffer> {
+  return Packer.toArrayBuffer(projectsDocument(page, template));
 }

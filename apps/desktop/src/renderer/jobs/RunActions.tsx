@@ -1,4 +1,4 @@
-import { asksForCoverLetter, type Job, type JobStatus } from '@factwright/core';
+import { asksForCoverLetter, asksForWorkSamples, type Job, type JobStatus } from '@factwright/core';
 import { useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunSkill, type RunTask, taskCall, taskJob } from '../../shared/runs.ts';
@@ -17,6 +17,11 @@ export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string
     skill: 'cover-letter',
     label: 'Cover letter',
     why: 'A letter for this job, from your facts, in your voice',
+  },
+  {
+    skill: 'projects-page',
+    label: 'Projects page',
+    why: 'Your projects in depth, on one page, for jobs where they help',
   },
   { skill: 'fit-check', label: 'Fit check', why: 'Score the job against your fact bank' },
   {
@@ -62,6 +67,7 @@ function stateOf(job: Job, skill: RunSkill, running: boolean, done: boolean): [s
   if (skill === 'answer-questions' && job.docKinds.includes('answers')) return ['Ran', 'quiet'];
   if (skill === 'focused-resume' && job.files.length > 0) return ['Ready', 'ok'];
   if (skill === 'cover-letter' && job.letters.length > 0) return ['Ready', 'ok'];
+  if (skill === 'projects-page' && job.projectPages.length > 0) return ['Ready', 'ok'];
   return ['Run', 'run'];
 }
 
@@ -108,7 +114,13 @@ export function RunActions({
                   status === 'apply' &&
                   job.files.length > 0 &&
                   job.letters.length === 0 &&
-                  asksForCoverLetter(job))));
+                  asksForCoverLetter(job)) ||
+                // A Projects page when the posting asks for samples of the user's work.
+                (skill === 'projects-page' &&
+                  status === 'apply' &&
+                  job.files.length > 0 &&
+                  job.projectPages.length === 0 &&
+                  asksForWorkSamples(job))));
           return (
             <button
               key={skill}

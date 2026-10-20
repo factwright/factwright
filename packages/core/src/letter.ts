@@ -6,6 +6,14 @@
  */
 export const isCoverLetterFile = (name: string): boolean => /cover[\s_-]?letter/i.test(name);
 
+/**
+ * A Projects page's files, by their name: the projects-page skill names them like the resume's,
+ * such as "AlexRiveraProjects10202026_Acme.pdf", and one the user made themselves usually says
+ * so, such as "Acme projects page.pdf". So the app keeps them apart from the job's resumes.
+ */
+export const isProjectsPageFile = (name: string): boolean =>
+  /Projects\d{8}|projects?[\s_-]?page/i.test(name) && !isCoverLetterFile(name);
+
 /** A cover letter as the app shows it, from the job's cover-letter.json. */
 export interface LetterText {
   date: string | null;
@@ -93,4 +101,14 @@ const WAIVERS = new RegExp(
 export function asksForCoverLetter(job: { apply: string | null }): boolean {
   const apply = (job.apply ?? '').replace(WAIVERS, ' ');
   return new RegExp(String.raw`\b${LETTER}\b`, 'i').test(apply);
+}
+
+/**
+ * Whether a job asks for samples of the user's work, by how to apply: a portfolio, work or
+ * writing samples, case studies, or links to what they've built. A Projects page can go with it.
+ */
+export function asksForWorkSamples(job: { apply: string | null }): boolean {
+  return /\b(?:portfolios?|(?:work|writing) samples?|samples? of (?:your )?work|case stud(?:y|ies)|links? to (?:your )?(?:projects|work)|projects you(?:'|’)?ve (?:built|worked on))\b/i.test(
+    job.apply ?? '',
+  );
 }

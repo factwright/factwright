@@ -1,5 +1,6 @@
 import type { CoverLetter } from '../letter.ts';
 import { escapeHtml, md } from '../markup.ts';
+import { DEFAULT_PAGE_HEADING, type ProjectsPage } from '../projects-page.ts';
 import type { Bullet, Contact, Resume } from '../schema.ts';
 import { Html, type Value } from './syntax.ts';
 
@@ -118,6 +119,37 @@ export function letterView(l: CoverLetter, titles: ResumeTitles): Value {
     paragraphs: l.paragraphs.map(marked),
     closing: marked(l.closing),
     signature: marked(l.signature || l.name),
+    titles: { contact: text(titles.contact) },
+  };
+}
+
+/**
+ * A Projects page as its markup sees it: the header a resume has, so a template's header parts
+ * show it the same, then each project, with its kind and the user's part, and its link, on a line
+ * of their own when it has either. Its text is marked up as a resume's is.
+ */
+export function projectsView(p: ProjectsPage, titles: ResumeTitles): Value {
+  return {
+    name: text(p.name),
+    headline: text(p.headline),
+    tagline: text(p.tagline),
+    contact: contactView(p.contact),
+    heading: text(p.heading || DEFAULT_PAGE_HEADING),
+    intro: marked(p.intro),
+    shape: text(p.shape ?? 'list'),
+    projects: p.projects.map((project) => ({
+      name: marked(project.name),
+      when: text(project.when),
+      about: Boolean(project.line || project.link),
+      line: marked(project.line),
+      link: text(project.link),
+      what: marked(project.what),
+      points: (project.points ?? []).map((group) => ({
+        heading: text(group.heading),
+        items: group.items.map(marked),
+      })),
+      skills_line: new Html((project.skills ?? []).map(escapeHtml).join(' · ')),
+    })),
     titles: { contact: text(titles.contact) },
   };
 }

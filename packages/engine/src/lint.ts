@@ -1,5 +1,6 @@
 import type { CoverLetter } from './letter.ts';
 import { PLACEHOLDER } from './markup.ts';
+import type { ProjectsPage } from './projects-page.ts';
 import type { Resume } from './schema.ts';
 
 /**
@@ -175,6 +176,23 @@ export function lintLetter(
     shownText(letter).join('\n'),
     'letter',
     [...(config.banned ?? []), ...LETTER_CLICHES],
+    confidential,
+  );
+}
+
+/**
+ * Checks what a Projects page shows against the user's banned wording and confidential terms,
+ * and for placeholders left in, as a resume is. Returns each problem in plain words.
+ */
+export function lintProjectsPage(
+  page: ProjectsPage,
+  config: LintConfig = {},
+  confidential: readonly string[] = [],
+): string[] {
+  return textProblems(
+    shownText(page).join('\n'),
+    'Projects page',
+    config.banned ?? [],
     confidential,
   );
 }

@@ -28,6 +28,7 @@ export function job(base: Partial<Job> & Pick<Job, 'id' | 'company'>): Job {
     sentiment: null,
     files: [],
     letters: [],
+    projectPages: [],
     outreach: [],
     status: null,
     statusOn: null,

@@ -39,6 +39,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     sentiment: null,
     files: [],
     letters: [],
+    projectPages: [],
     ...extra,
   };
 }

@@ -28,7 +28,14 @@ export interface FactToolDeps {
 }
 
 /** What Claude was doing when it asked, which a fact's source says. */
-export const FACT_TASKS = ['resume', 'cover-letter', 'answers', 'interview-prep', 'other'] as const;
+export const FACT_TASKS = [
+  'resume',
+  'cover-letter',
+  'projects-page',
+  'answers',
+  'interview-prep',
+  'other',
+] as const;
 
 export type FactTask = (typeof FACT_TASKS)[number];
 
@@ -137,6 +144,8 @@ function contextOf(task: FactTask | null, company: string | null): string | null
       return `tailoring a resume${at}`;
     case 'cover-letter':
       return `writing a cover letter${at}`;
+    case 'projects-page':
+      return `making a Projects page${at}`;
     case 'answers':
       return `answering application questions${at}`;
     case 'interview-prep':

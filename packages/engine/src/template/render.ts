@@ -1,10 +1,12 @@
+import { PLAIN_PROJECTS, PROJECTS, PROJECTS_BASE_CSS, PROJECTS_CSS } from '../built-in/markup.ts';
 import { plainLetter } from '../built-in/plain-letter.ts';
 import type { CoverLetter } from '../letter.ts';
+import type { ProjectsPage } from '../projects-page.ts';
 import type { Resume } from '../schema.ts';
 import type { LetterLayout, Template } from '../templates.ts';
 import { markAttributeValues } from './check.ts';
 import { type Node, parseTemplate, renderNodes } from './syntax.ts';
-import { letterView, type ResumeTitles, resumeView } from './view.ts';
+import { letterView, projectsView, type ResumeTitles, resumeView } from './view.ts';
 
 /** The heading over the systems cards, unless the resume names its own. */
 export const DEFAULT_SYSTEMS_HEADING = 'Key Systems';
@@ -103,4 +105,41 @@ export function renderLetterBody(template: Template, letter: CoverLetter): strin
   const { body, own } = letterOf(template);
   const parts = own ? parsedOf(template).parts : new Map<string, Node[]>();
   return renderNodes(body, [letterView(letter, sectionTitles(template, {}))], parts);
+}
+
+/**
+ * Whether a template's Projects page can use its own header, which needs its header and contact
+ * parts, as the app's templates have. Otherwise the page has a plain header in its fonts and
+ * colors, as a letter without a layout of its own does.
+ */
+const ownHeader = (template: Template) =>
+  Object.hasOwn(template.parts, 'header') && Object.hasOwn(template.parts, 'contact');
+
+const pages = new WeakMap<Template, Node[]>();
+
+/** The markup a template's Projects page prints with, parsed once. */
+function pageOf(template: Template): Node[] {
+  let done = pages.get(template);
+  if (!done) {
+    const own = ownHeader(template);
+    done = parse(own ? PROJECTS : PLAIN_PROJECTS, `The ${template.name} template’s Projects page`);
+    pages.set(template, done);
+  }
+  return done;
+}
+
+/**
+ * The stylesheets a template's Projects page prints with, each on its own: how its pieces sit,
+ * for a template that doesn't style them, then the template's own styles, or its plain ones
+ * without its own header, then how each shape lays the projects out.
+ */
+export function projectsStyles(template: Template): string[] {
+  const looks = ownHeader(template) ? template.css : plainLetter(template).css;
+  return [PROJECTS_BASE_CSS, looks, PROJECTS_CSS];
+}
+
+/** A Projects page in a template: the header its resume has, then the projects. */
+export function renderProjectsBody(template: Template, page: ProjectsPage): string {
+  const parts = ownHeader(template) ? parsedOf(template).parts : new Map<string, Node[]>();
+  return renderNodes(pageOf(template), [projectsView(page, sectionTitles(template, {}))], parts);
 }

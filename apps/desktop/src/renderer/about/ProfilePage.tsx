@@ -4,6 +4,7 @@ import { Check, Circle, FileText, LoaderCircle, Plus } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { labelOf, pagesFor, RESUME_FILES } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
+import { labelIn, PAGE_SHAPE_CHOICES } from '../../shared/beyond.ts';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import { templateName } from '../../shared/looks.ts';
 import type { StartingResume, TemplateInfo } from '../../shared/profile.ts';
@@ -502,7 +503,8 @@ export function ProfilePage({
           ) : null}
           {projects.length > 0 ? (
             <p className={styles.quiet}>
-              On resumes: {lowerFirst(placementSummary(answers.projectPrefs))}.
+              On resumes: {lowerFirst(placementSummary(answers.projectPrefs))}. Projects page:{' '}
+              {labelIn(PAGE_SHAPE_CHOICES, answers.projectPrefs.page).toLowerCase()}.
             </p>
           ) : (
             <p className={styles.quiet}>

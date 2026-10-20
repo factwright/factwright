@@ -25,6 +25,7 @@ export type ModelTask = (typeof MODEL_TASKS)[number];
 export const RECOMMENDED_MODELS: Readonly<Record<ModelTask, Model>> = {
   'focused-resume': 'opus',
   'cover-letter': 'opus',
+  'projects-page': 'opus',
   'fit-check': 'opus',
   'salary-check': 'opus',
   'who-to-message': 'opus',
@@ -44,6 +45,7 @@ export const RECOMMENDED_MODELS: Readonly<Record<ModelTask, Model>> = {
 export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'focused-resume': 'opus',
   'cover-letter': 'opus',
+  'projects-page': 'opus',
   'fit-check': 'sonnet',
   'salary-check': 'sonnet',
   'who-to-message': 'sonnet',
