@@ -29,7 +29,7 @@ Before starting, read:
 - What they actually sent on the application: `job_details` gives each question with their answer, in their own words. Interviewers ask about these, so the stories must match them. Where nothing was recorded, Claude's suggestion in `answers.md` is the closest guess, and say so.
 - Their earlier questions about the job, with your answers (`job_details` lists them): reuse what's there, and don't research it twice.
 - `about_you` for the logistics a recruiter asks about: their target pay (the job's kind's, when they want more than one kind of job), when they can start, work authorization and relocation. Its Beyond work has their projects, with how much to show each, and who they are outside work, for "tell me about yourself" and small talk.
-- If the job came from a job search, read its entry in `searches/*/jobs.json` (why, gaps, flags).
+- If the job came from a job search, read its entry in `searches/*/jobs.json`, or a later run's `jobs-2.json` (why, gaps, flags).
 - If `outreach/<YYYY-MM-DD>-<company>.md` exists, read it for context.
 - If the folder has no posting but `job_details` names one saved from the user's browser, `save_posting` with the job's link and its id copies it in. If nothing is saved and the link still works, save the posting first: read it with `read_posting` or `read_page`, then `save_posting` with the link and the job's folder. If the link is dead and nothing is saved, say so in one line and work from what the user remembers.
 

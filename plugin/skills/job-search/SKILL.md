@@ -19,7 +19,7 @@ If there's no input, ask for the places in one round of AskUserQuestion, with th
 - **A company's job board:** the user pastes a link to it.
 - **A careers page or job site:** the user pastes the link.
 
-Each place is a search of its own, with its own folder, so the app can show which jobs each one found. With several places, search them in turn, in the order given, and finish one before starting the next. A job one place already found is the same job when another finds it too: `find_job` says so. Note it in its flags ("also on HN") rather than ranking it twice.
+Each place is a search of its own, with its own folder, so the app can show which jobs each one found. With several places, search them in turn, in the order given, and finish one before starting the next. A job one place already found is the same job when another finds it too: `find_job` says so. Note it in its flags ("also on HN") rather than ranking it twice, and give its id as `job`.
 
 Before starting, read:
 - `searches/criteria.md`: the user's filters, preferences, pay rule, scoring and tiers. It's binding for searches. The app writes it from what the user told it (Profile → What you want); if the user asks to change it, edit it here, and the app leaves it as edited.
@@ -29,13 +29,14 @@ Before starting, read:
   - If neither is there, ask the user in one round of AskUserQuestion: where they can work (remote from where, or which cities), the levels they want, and the kinds of role.
   - Save their answers as `searches/criteria.md`, with **Filters**, **Preferences** and the scoring below, then go on.
 - all of `facts/`. Fit is judged against facts only, the same bar as resumes. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
-- the newest `searches/*/jobs.json` and `report.md`, if there are any. Keep their shape.
+- the newest `searches/*/jobs.json` and `report.md`, if there are any. Keep their shape. A folder can hold more than one run: `jobs-2.json` and `report-2.md` are the run after `jobs.json`.
 
 ## 1. Collect
 - Folder, lowercase with hyphens, which the tools save into:
   - **HN:** `searches/<YYYY-MM>-hn-whos-hiring/`, by the thread's month, such as `2026-11-hn-whos-hiring`. Searching the same thread again refreshes its folder.
   - **Everywhere else:** `searches/<YYYY-MM-DD>-<place>/`, by today's date, such as `2026-11-03-linkedin`, `2026-11-03-company-job-boards` or `2026-11-03-acme-robotics`.
   - **For one kind of job:** add its id to the folder's name, such as `2026-11-hn-whos-hiring-project-manager` or `2026-11-03-linkedin-project-manager`, so a search for each kind keeps its own.
+  - **The folder has a `jobs.json` already,** from an earlier run the same day, or of HN's same month: keep it, and every file the earlier run wrote. Name this run's files with the next number free: `jobs-2.json`, `report-2.md` and `listings-2.md`, then `jobs-3.json` and on. The app reads every run, so the jobs the earlier run found stay listed.
 - Save every listing in the source, word for word:
   - **HN "Who is hiring?":** call `hn_jobs`, with the month if one was named. It saves every post as `hn-thread.md`, and lists each post's first line and HN id, plus the lines each run of 50 posts spans in the file.
     - The thread goes up on the first weekday of each month and fills in over the next few days. A search in the first days misses late posts, so say so.
@@ -63,7 +64,9 @@ Before starting, read:
 
 ## 3. Verify and score
 For each listing that passed:
-- Call `find_job` with its company, plus the posting's link if there is one. If the user has seen the job before (checked it, set it aside, applied, passed), say so first in its flags, with why they passed when it gives a reason ("passed Oct 14: pay"), and don't pitch it as new.
+- Call `find_job` with its company and role, plus the posting's link if there is one.
+  - When it names this job (by its posting or its role), the user has seen it before: give that job's id as `job` in jobs.json, so the app adds this find to the job they have, and say so first in its flags, with where it stands and why they passed when it gives a reason ("passed Oct 14: pay"). Don't pitch it as new.
+  - A job it lists only among the user's other jobs at the company is another job, unless you can tell it's the same posting, such as by its link or a title written another way. Then give its id too.
 - Confirm it's still open, and get the remote fine print, pay, stage and size:
   - **A posting on Greenhouse, Lever, Ashby or Gem:** call `job_board` with the posting's link. It says whether the posting is still open, and saves its full text along with the company's other openings. Note related roles as "also: <role>".
   - **Anywhere else:** a web search often finds the posting on an applicant system. Otherwise, read the posting with `read_page`.
@@ -76,7 +79,7 @@ For each listing that passed:
 - With more than ~15 jobs to verify, split this step across subagents, ~8 jobs each, all at once. Give each one:
   - `searches/criteria.md`, all of `facts/`, and the search's folder
   - its jobs: company, role, link and HN id, and with more than one kind of job, each job's kind, to score its role against
-  - to call `find_job` for each job first, and flag the ones the user has seen before
+  - to call `find_job` for each job first, flag the ones the user has seen before, and return the id it names for each as `job`
   - the jobs.json fields to return for each one, `kind` included
   - Pages read with `read_page` may ask the user, so tell the user how many to expect.
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.
@@ -96,6 +99,7 @@ Write `jobs.json` in the search's folder. The app reads it and lists each ranked
   },
   "jobs": [{
     "company": "", "role": "", "posting": "", "site": "", "hnId": 0,
+    "job": "",                              // the user has seen it before: the job's id, as find_job named it
     "remote": "", "pay": "", "stage": "", "what": "",
     "score": 0, "tier": "strong", "rank": 1,  // tier: strong, good or look
     "kind": "",                             // a search for every kind of job: the job's kind, by its id
@@ -105,13 +109,14 @@ Write `jobs.json` in the search's folder. The app reads it and lists each ranked
     "tags": [{ "label": "Founding engineer", "pref": true }],
     "apply": "", "pick": ""
   }],
-  "longShots": [{ "company": "", "role": "", "posting": "", "hnId": 0, "pay": "", "note": "" }],
+  "longShots": [{ "company": "", "role": "", "posting": "", "hnId": 0, "job": "", "pay": "", "note": "" }],
   "nearMisses": [{ "company": "", "role": "", "why": "", "hnId": 0 }],
   "skipped": [{ "reason": "", "count": 0, "examples": "" }],
   "method": ""
 }
 ```
 - **posting:** the exact posting link. The app also matches the job by it later. **site:** the company's site. **hnId:** the HN post, for HN searches.
+- **job:** for a job the user has seen before, its id as `find_job` named it. The app adds the find to that job, which keeps the status the user gave it, so a job they passed on never comes back as new. Leave it out for a new job.
 - **remote** and **pay:** as the posting says them. Pay is "Not listed" when it isn't.
 - **stage:** funding, size, and anything telling, in one line. **what:** what the company does, in one or two sentences.
 - **partsWhy:** one short line per part on where its points came from.

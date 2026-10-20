@@ -355,7 +355,7 @@ jobs:
           cat >> "$notes" <<NOTES
 
           ## Download
-          - **Mac:** [Factwright-$version.dmg](https://downloads.factwright.com/Factwright-$version.dmg), for Apple silicon and Intel, on macOS 12 or later
+          - **Mac:** [Factwright-$version.dmg](https://downloads.factwright.com/Factwright-$version.dmg), for Apple silicon and Intel, on macOS 13 or later
           - **Windows:** [Factwright-Setup-$version.exe](https://downloads.factwright.com/Factwright-Setup-$version.exe), for 64-bit Windows 10 and 11
 
           Copies already installed update on their own.

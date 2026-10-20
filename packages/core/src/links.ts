@@ -13,9 +13,12 @@ function trimEndOf(text: string, characters: string): string {
   return text.slice(0, end);
 }
 
-/** Query parameters that only track where a click came from. */
+/**
+ * Query parameters that only track where a click came from, such as LinkedIn's refId and
+ * trackingId, which differ on every copy of a link to the same job.
+ */
 const TRACKING_PARAM =
-  /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
+  /^(utm_|ref$|refid$|src$|source$|from$|tk$|trk|trackingid$|ebp$|lipi$|midtoken$|midsig$|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
 
 /**
  * A page's route after "#/" or "#!/", where some careers sites keep each job, without its own

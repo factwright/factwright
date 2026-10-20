@@ -1,5 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   ASK_ID,
@@ -10,6 +18,7 @@ import {
   collectJobs,
   type InboxAnswer,
   JOB_EXTRAS,
+  type Job,
   type JobDocs,
   jobList,
   localDate,
@@ -52,6 +61,23 @@ function writeWhole(file: string, text: string): void {
   } finally {
     rmSync(draft, { force: true });
   }
+}
+
+/**
+ * A file's name, free in a folder: as it is, or with the number before its extension counted on,
+ * as screenshots are numbered: "form-2026-10-12-1.png" is "form-2026-10-12-2.png" when that's
+ * taken.
+ */
+function freeName(dir: string, name: string): string {
+  if (!existsSync(join(dir, name))) return name;
+  const numbered = name.match(/^(.*)-(\d+)(\.[^.]+)$/);
+  const extension = name.match(/\.[^.]+$/)?.[0] ?? '';
+  const stem = numbered?.[1] ?? name.slice(0, name.length - extension.length);
+  for (let n = Number(numbered?.[2] ?? 1) + 1; n < 1000; n++) {
+    const next = `${stem}-${n}${extension}`;
+    if (!existsSync(join(dir, next))) return next;
+  }
+  return name;
 }
 
 export interface JobsDeps {
@@ -130,6 +156,15 @@ export class JobsService {
    */
   extras(jobId: string): JobExtras {
     return readJobExtras(diskWorkspace(this.deps.workspace), jobId);
+  }
+
+  /**
+   * A job, by its ID as of the last read: the one kept, for a job the user merged into another,
+   * so a skill that names the merged one reaches it. Null for no such job.
+   */
+  job(jobId: string): Job | null {
+    const id = this.deps.tracker.resolve(jobId) ?? jobId;
+    return this.list().jobs.find((job) => job.id === id) ?? null;
   }
 
   /** Whether the tracker has a job, by its ID. */
@@ -211,6 +246,75 @@ export class JobsService {
       return 'saved';
     } catch {
       return 'failed';
+    }
+  }
+
+  /**
+   * Merges another job into one, for a job the skills' work found twice, as the tracker merges
+   * them, then moves what the app keeps for the other by its ID onto the one kept, and reads the
+   * workspace again, so what the other was found by joins the one kept.
+   */
+  async mergeJobs(keepId: string, otherId: string): Promise<EditResult> {
+    const result = this.deps.tracker.mergeJobs(keepId, otherId, this.context());
+    if (!result.ok) return result;
+    await this.moveExtras(otherId, keepId, new Map(result.asks));
+    this.deps.onChange(this.read());
+    return { ok: true };
+  }
+
+  /**
+   * Moves what the app keeps for a job by its ID onto another: Claude's answers to the user's
+   * questions, each under the ID its question has now, the user's screenshots, Claude's work for
+   * each call, and the posting saved from the browser, unless the job kept has one, when it goes
+   * in the trash. A file that won't move stays where it is.
+   */
+  private async moveExtras(from: string, to: string, asks: ReadonlyMap<string, string>) {
+    const { workspace } = this.deps;
+    const folder = (kind: keyof typeof JOB_EXTRAS, jobId: string) =>
+      join(workspace, JOB_EXTRAS[kind], jobId);
+    const names = (dir: string) => {
+      try {
+        return readdirSync(dir);
+      } catch {
+        return [];
+      }
+    };
+    const move = (source: string, target: string) => {
+      try {
+        if (existsSync(target)) return;
+        mkdirSync(dirname(target), { recursive: true });
+        renameSync(source, target);
+      } catch {
+        // It stays with the merged job's ID, where nothing shows it, and nothing is lost.
+      }
+    };
+    const askOf = (id: string) => asks.get(id) ?? id;
+    for (const name of names(folder('asked', from))) {
+      const id = name.match(/^(.+)\.md$/)?.[1];
+      const target = id ? `${askOf(id)}.md` : name;
+      move(join(folder('asked', from), name), join(folder('asked', to), target));
+    }
+    for (const name of names(folder('screenshots', from))) {
+      const ask = name.match(/^ask-(.+)-(\d+)(\.[a-z]+)$/i);
+      const renamed = ask ? `ask-${askOf(ask[1] ?? '')}-${ask[2]}${ask[3]}` : name;
+      const target = freeName(folder('screenshots', to), renamed);
+      move(join(folder('screenshots', from), name), join(folder('screenshots', to), target));
+    }
+    for (const call of names(folder('calls', from))) {
+      move(join(folder('calls', from), call), join(folder('calls', to), call));
+    }
+    const posting = join(workspace, ...savedPostingFile(from).split('/'));
+    if (existsSync(posting)) {
+      const kept = join(workspace, ...savedPostingFile(to).split('/'));
+      if (existsSync(kept)) await this.deps.trash?.(posting).catch(() => {});
+      else move(posting, kept);
+    }
+    for (const kind of ['asked', 'screenshots', 'calls', 'saved'] as const) {
+      try {
+        rmdirSync(folder(kind, from));
+      } catch {
+        // Not empty, or not there.
+      }
     }
   }
 

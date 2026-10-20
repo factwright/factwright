@@ -129,6 +129,13 @@ export interface SearchRecord extends RecordBase {
   /** Where the search looked, such as "HN October 2026". */
   source: string;
   folder: string;
+  /**
+   * Which run of the search found it, in its folder: 1 for jobs.json, and 2 for jobs-2.json, the
+   * next run of the same place on the same day, or in HN's same month.
+   */
+  run: number;
+  /** The job it is, by the ID find_job gave for it, when the user had seen it before. */
+  job: string | null;
   pay: string | null;
   location: string | null;
   tier: FitTier | null;
@@ -167,6 +174,15 @@ export type ToolRecord =
   | OutreachRecord;
 
 export type Tool = ToolRecord['tool'];
+
+/**
+ * A run's jobs in a search's folder: jobs.json for its first run, and jobs-2.json, jobs-3.json
+ * and on for the runs after, so a run never writes over an earlier one's jobs.
+ */
+const RUN_FILE = /^jobs(?:-([1-9]\d{0,2}))?\.json$/;
+
+/** A job's ID, as the app makes them. */
+const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 /** Job search tiers as jobs.json writes them. A Map, because the names come from a file. */
 const SEARCH_TIERS: ReadonlyMap<string, FitTier> = new Map([
@@ -367,79 +383,109 @@ function searchSource(source: string): string {
   return month ? `HN ${month}` : short;
 }
 
+/** Each run's file of jobs in a search's folder, first run first. */
+function runFiles(workspace: WorkspaceReader, folder: string): { name: string; run: number }[] {
+  return workspace
+    .list(`${WORKSPACE_PATHS.searches}/${folder}`)
+    .flatMap((entry) => {
+      const match = entry.folder ? null : entry.name.match(RUN_FILE);
+      return match ? [{ name: entry.name, run: match[1] ? Number(match[1]) : 1 }] : [];
+    })
+    .sort((a, b) => a.run - b.run);
+}
+
 function searchRecords(workspace: WorkspaceReader): ToolRecord[] {
   const records: ToolRecord[] = [];
   for (const entry of workspace.list(WORKSPACE_PATHS.searches).sort(byName)) {
     if (!entry.folder) continue;
     const folder = entry.name;
-    const raw = workspace.readText(`${WORKSPACE_PATHS.searches}/${folder}/jobs.json`);
-    if (!raw) continue;
-    let data: unknown;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      continue;
+    for (const { name, run } of runFiles(workspace, folder)) {
+      records.push(...runRecords(workspace, folder, name, run));
     }
-    if (!data || typeof data !== 'object') continue;
-    const { meta, jobs, longShots } = data as Record<string, unknown>;
-    const about = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {};
-    const date = firstDate(text(about.checked)) ?? firstDate(`${folder.slice(0, 7)}-01`);
-    const source = searchSource(text(about.source) ?? text(about.title) ?? folder);
-    const report = text(about.artifactUrl);
-    // A search for one kind of job says so once. One for every kind says it on each job.
-    const searchKind = text(about.kind);
-
-    const found = (item: Record<string, unknown>, longShot: boolean): SearchRecord => {
-      const company = text(item.company) ?? '';
-      const role = text(item.role) ?? '';
-      const posting = text(item.posting);
-      const site = text(item.site);
-      const hnId = number(item.hnId);
-      return {
-        tool: 'search',
-        key: `${folder}:${companyKey(company)}:${roleKey(role)}`,
-        date,
-        source,
-        folder,
-        company,
-        role,
-        links: [
-          ...(posting ? [{ url: posting, label: 'Posting' }] : []),
-          ...(hnId
-            ? [{ url: `https://news.ycombinator.com/item?id=${hnId}`, label: 'HN post' }]
-            : []),
-          ...(site ? [{ url: site, label: 'Company site' }] : []),
-        ],
-        pay: text(item.pay),
-        location: longShot ? null : text(item.remote),
-        tier: longShot ? 'long' : (SEARCH_TIERS.get(text(item.tier) ?? '') ?? null),
-        score: longShot ? null : number(item.score),
-        kind: text(item.kind) ?? searchKind,
-        detail: {
-          why: longShot ? [] : texts(item.why),
-          gaps: longShot ? [] : texts(item.gaps),
-          flags: longShot ? [] : texts(item.flags),
-          pick: longShot ? null : text(item.pick),
-          what: longShot ? null : text(item.what),
-          stage: longShot ? null : text(item.stage),
-          apply: longShot ? null : text(item.apply),
-          note: longShot ? text(item.note) : null,
-          parts: longShot ? {} : partsOf(item.parts, number),
-          partsWhy: longShot ? {} : partsOf(item.partsWhy, text),
-          tags: longShot
-            ? []
-            : objects(item.tags).flatMap((tag) => {
-                const label = text(tag.label);
-                return label ? [label] : [];
-              }),
-          report,
-        },
-      };
-    };
-    for (const item of objects(jobs)) records.push(found(item, false));
-    for (const item of objects(longShots)) records.push(found(item, true));
   }
   return records;
+}
+
+/** The jobs one run of a search found, from its file. */
+function runRecords(
+  workspace: WorkspaceReader,
+  folder: string,
+  file: string,
+  run: number,
+): SearchRecord[] {
+  const raw = workspace.readText(`${WORKSPACE_PATHS.searches}/${folder}/${file}`);
+  if (!raw) return [];
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!data || typeof data !== 'object') return [];
+  const { meta, jobs, longShots } = data as Record<string, unknown>;
+  const about = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {};
+  const date = firstDate(text(about.checked)) ?? firstDate(`${folder.slice(0, 7)}-01`);
+  const source = searchSource(text(about.source) ?? text(about.title) ?? folder);
+  const report = text(about.artifactUrl);
+  // A search for one kind of job says so once. One for every kind says it on each job.
+  const searchKind = text(about.kind);
+  // The first run's keys stay as they were before a folder could hold more than one.
+  const runKey = run === 1 ? folder : `${folder}#${run}`;
+
+  const found = (item: Record<string, unknown>, longShot: boolean): SearchRecord => {
+    const company = text(item.company) ?? '';
+    const role = text(item.role) ?? '';
+    const posting = text(item.posting);
+    const site = text(item.site);
+    const hnId = number(item.hnId);
+    const job = text(item.job)?.trim().toLowerCase() ?? null;
+    return {
+      tool: 'search',
+      key: `${runKey}:${companyKey(company)}:${roleKey(role)}`,
+      date,
+      source,
+      folder,
+      run,
+      job: job && JOB_ID.test(job) ? job : null,
+      company,
+      role,
+      links: [
+        ...(posting ? [{ url: posting, label: 'Posting' }] : []),
+        ...(hnId
+          ? [{ url: `https://news.ycombinator.com/item?id=${hnId}`, label: 'HN post' }]
+          : []),
+        ...(site ? [{ url: site, label: 'Company site' }] : []),
+      ],
+      pay: text(item.pay),
+      location: longShot ? null : text(item.remote),
+      tier: longShot ? 'long' : (SEARCH_TIERS.get(text(item.tier) ?? '') ?? null),
+      score: longShot ? null : number(item.score),
+      kind: text(item.kind) ?? searchKind,
+      detail: {
+        why: longShot ? [] : texts(item.why),
+        gaps: longShot ? [] : texts(item.gaps),
+        flags: longShot ? [] : texts(item.flags),
+        pick: longShot ? null : text(item.pick),
+        what: longShot ? null : text(item.what),
+        stage: longShot ? null : text(item.stage),
+        apply: longShot ? null : text(item.apply),
+        note: longShot ? text(item.note) : null,
+        parts: longShot ? {} : partsOf(item.parts, number),
+        partsWhy: longShot ? {} : partsOf(item.partsWhy, text),
+        tags: longShot
+          ? []
+          : objects(item.tags).flatMap((tag) => {
+              const label = text(tag.label);
+              return label ? [label] : [];
+            }),
+        report,
+      },
+    };
+  };
+  return [
+    ...objects(jobs).map((item) => found(item, false)),
+    ...objects(longShots).map((item) => found(item, true)),
+  ];
 }
 
 function outreachRecords(workspace: WorkspaceReader): ToolRecord[] {

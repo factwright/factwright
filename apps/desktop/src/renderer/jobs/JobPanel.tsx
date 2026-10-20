@@ -132,6 +132,8 @@ export interface JobPanelProps {
   me?: InviteMe;
   /** Reminders before calls, and the switch to turn them off. */
   reminders?: ReminderSwitch | undefined;
+  /** Opens Merge with…, for a job found twice. */
+  onMerge?: (() => void) | undefined;
 }
 
 /** Everything on file for the job picked in the list, in sections that open and close. */
@@ -149,6 +151,7 @@ export function JobPanel({
   related = [],
   me,
   reminders,
+  onMerge,
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
@@ -183,8 +186,10 @@ export function JobPanel({
   }
   const { job, progress, next } = row;
   const pay = payLabel(job.pay) ?? job.pay?.text;
-  const found = job.searches[0]?.source;
-  const meta = [job.location, pay, found && `Found in ${found}`].filter(Boolean).join(' · ');
+  // The newest search that found it, and whether the job was on file before it.
+  const newest = job.search?.source ?? job.searches.at(-1)?.source;
+  const found = newest && `${job.search?.again ? 'Found again in' : 'Found in'} ${newest}`;
+  const meta = [job.location, pay, found].filter(Boolean).join(' · ');
   const attention = progress.attention;
   const fit = progress.tier
     ? `${FIT_TIER_DISPLAY[progress.tier].label}${progress.score !== null ? ` ${progress.score}` : ''}`
@@ -434,7 +439,7 @@ export function JobPanel({
           </div>
           <div className={styles.column}>{about}</div>
         </div>
-        <ArchiveFooter job={job} api={api} />
+        <ArchiveFooter job={job} api={api} onMerge={onMerge} />
       </div>
     </aside>
   );
