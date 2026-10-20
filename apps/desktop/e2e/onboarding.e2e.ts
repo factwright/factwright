@@ -63,7 +63,11 @@ test('takes a project of theirs, and who they are outside work', async () => {
   await window.getByRole('button', { name: 'Add a project' }).click();
   await window.getByRole('textbox', { name: 'Name' }).fill('Trailhead');
   await window.getByRole('combobox', { name: 'What kind' }).selectOption('product');
-  await window.getByRole('radio', { name: 'Feature it' }).check();
+  // As a person picks it: by its label, which the radio sits under.
+  await window
+    .locator('label')
+    .filter({ has: window.getByRole('radio', { name: 'Feature it' }) })
+    .click();
   await window.getByRole('textbox', { name: 'Interests and hobbies' }).fill('Trail running');
   await window.getByRole('textbox', { name: 'Interests and hobbies' }).press('Enter');
 });
