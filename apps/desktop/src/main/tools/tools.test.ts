@@ -503,12 +503,15 @@ describe('job_details', () => {
     const id = 'acme-robotics--staff-engineer';
     const folder = join(root, 'applications', FOLDER);
     writeFileSync(join(folder, 'cover-letter.json'), '{}');
+    writeFileSync(join(folder, 'projects-page.json'), '{}');
     writeFileSync(join(folder, 'AlexRiveraResume10082026_Acme.pdf'), '%PDF-1.7');
     writeFileSync(join(folder, 'AlexRiveraCoverLetter10082026_Acme.pdf'), '%PDF-1.7');
+    writeFileSync(join(folder, 'AlexRiveraProjects10082026_Acme.pdf'), '%PDF-1.7');
     const at = new Date('2026-10-08T12:00:00');
     for (const file of [
       'AlexRiveraResume10082026_Acme.pdf',
       'AlexRiveraCoverLetter10082026_Acme.pdf',
+      'AlexRiveraProjects10082026_Acme.pdf',
     ])
       utimesSync(join(folder, file), at, at);
     jobs.read();
@@ -518,6 +521,9 @@ describe('job_details', () => {
       `- applications/${FOLDER}/cover-letter.json: the cover letter’s data, which builds its PDF and Word files`,
       `- applications/${FOLDER}/AlexRiveraCoverLetter10082026_Acme.pdf: a built cover letter (2026-10-08), most likely the one sent with the application`,
       `- applications/${FOLDER}/AlexRiveraResume10082026_Acme.pdf: a built resume (2026-10-08), most likely the one sent with the application`,
+      `- applications/${FOLDER}/projects-page.json: the Projects page’s data, which builds its PDF and Word files`,
+      // Only the user knows whether a Projects page went with the application.
+      `- applications/${FOLDER}/AlexRiveraProjects10082026_Acme.pdf: a built Projects page (2026-10-08)\n`,
     ]) {
       expect(answer).toContain(line);
     }

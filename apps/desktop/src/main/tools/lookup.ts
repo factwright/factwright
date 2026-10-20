@@ -273,6 +273,7 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
       const kind = DOC_KIND_BY_FILE.get(name);
       const resume = job.files.find((file) => file.name === name);
       const letter = job.letters.find((file) => file.name === name);
+      const page = job.projectPages.find((file) => file.name === name);
       const about = kind
         ? ABOUT_DOCS[kind]
         : name === 'resume.json'
@@ -281,7 +282,10 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
             ? aboutBuilt('resume', resume, sentResume)
             : letter
               ? aboutBuilt('cover letter', letter, sentLetter)
-              : null;
+              : page
+                ? // Only the user knows whether a Projects page went with the application.
+                  aboutBuilt('Projects page', page, null)
+                : null;
       lines.push(`- ${folder}/${name}${about ? `: ${about}` : ''}`);
     }
   }
