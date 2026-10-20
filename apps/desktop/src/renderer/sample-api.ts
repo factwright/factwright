@@ -125,14 +125,14 @@ function sampleRun(dark: boolean) {
     denied: (note: string) => [
       `\r\n${color('32', '⏺')} ${color(main, note.trim() ? `Understood: “${note.trim()}”. I’ll carry on without it.` : 'Understood. I’ll carry on without it.')}\r\n`,
     ],
-    /** Interview prep stopping to ask which round it's for, with ?run=asks. */
+    /** Interview prep stopping to ask about a gap the call will likely probe, with ?run=asks. */
     roundIntro: [
-      `\r\n${color('32', '⏺')} ${color(main, 'Read the posting, your fit check, the resume you sent and your notes.')}\r\n\r\n`,
+      `\r\n${color('32', '⏺')} ${color(main, 'Read the posting, your fit check, the resume you sent, and how the recruiter screen went.')}\r\n\r\n`,
     ],
     round: [
-      ` ${color(`1;${main}`, 'Which round is the interview?')}\r\n\r\n`,
-      ` ${color('34', '❯ 1. Panel with the platform team')}\r\n`,
-      `   ${color(main, '2. Hiring manager, one on one')}\r\n`,
+      ` ${color(`1;${main}`, PREP_QUESTION)}\r\n\r\n`,
+      ` ${color('34', `❯ 1. ${PREP_ANSWER}`)}\r\n`,
+      `   ${color(main, '2. Yes, I’ll tell you about it')}\r\n`,
       `   ${color(main, '3. Type something else')}\r\n`,
     ],
     finished: [
@@ -148,7 +148,7 @@ function sampleRun(dark: boolean) {
           ]
         : 'jobId' in task
           ? [
-              `${color(main, `/factwright:${task.skill} job ${task.jobId}`)}\r\n\r\n`,
+              `${color(main, `/factwright:${task.skill} job ${task.jobId}${taskTail(task)}`)}\r\n\r\n`,
               `${color('34', '✻')} ${color(secondary, 'Reading everything on file for the job…')}\r\n`,
             ]
           : [
@@ -244,8 +244,19 @@ const SAMPLE_PERMITS: Readonly<Record<string, PermissionAsk>> = {
 /** What Claude does once a round is answered. */
 const NEXT = {
   opening: 'Reading the posting and your facts…',
-  round: 'Checking company news and writing your prep sheet…',
+  round: 'Looking up who you’re meeting and writing your prep sheet…',
 } as const;
+
+/** What interview prep asks with ?run=asks, and the answer the screenshots pick. */
+const PREP_QUESTION = 'They’ll likely probe multi-region failover. Have you run it?';
+const PREP_ANSWER = 'No, so help me handle the gap';
+
+/** The rest of a run's command after the job, as the app types it: the call, or the question. */
+function taskTail(task: RunTask): string {
+  if ('askId' in task) return ` question ${task.askId}`;
+  if (!('callId' in task)) return '';
+  return ` call ${task.callId}${'practice' in task && task.practice ? ' practice' : ''}`;
+}
 
 /** A question to pick an answer for, with nothing about words or numbers. */
 const choice = (
@@ -333,23 +344,26 @@ function openingRound(ask: string | null): QuestionRound {
   };
 }
 
-/** Interview prep's round, with ?run=asks: which round the interview is. */
+/**
+ * Interview prep's round, with ?run=asks: a gap the call will likely probe, which the facts
+ * don't show, as the skill asks before it writes the prep sheet.
+ */
 const PREP_ROUND: QuestionRound = {
   id: 'toolu_sample_round',
   questions: [
     choice({
-      question: 'Which round is the interview?',
-      header: 'Round',
+      question: PREP_QUESTION,
+      header: 'Failover',
       multiSelect: false,
       options: [
         {
-          label: 'Panel with the platform team',
-          description: 'Thursday at 2:00 PM, with four people.',
+          label: PREP_ANSWER,
+          description: 'Noted as a gap, with a way to frame it on the call.',
           preview: null,
         },
         {
-          label: 'Hiring manager, one on one',
-          description: 'Booked for next week.',
+          label: 'Yes, I’ll tell you about it',
+          description: 'Saved as a fact for you to verify, and used in the prep.',
           preview: null,
         },
       ],
@@ -586,10 +600,7 @@ export function sampleApi(): FactwrightApi {
       }
       print(
         afterAnswer === 'round'
-          ? run.answered(
-              [['Which round is the interview?', 'Panel with the platform team']],
-              NEXT.round,
-            )
+          ? run.answered([[PREP_QUESTION, PREP_ANSWER]], NEXT.round)
           : run.answered([['Which role is the call about?', 'Tidewater Analytics']], NEXT.opening),
       );
       signal('working');
