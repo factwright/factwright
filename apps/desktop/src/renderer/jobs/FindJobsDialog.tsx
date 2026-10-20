@@ -1,6 +1,7 @@
 import type { KindName } from '@factwright/core';
 import { Button, Dialog, DialogActions, Input, SegmentedControl, Select } from '@factwright/ui';
 import { type FormEvent, useId, useState } from 'react';
+import { NO_FOCUS, type SearchFocus } from '../../shared/focus.ts';
 import {
   COMMAND_LINE_MARKS,
   SEARCH_SITES,
@@ -10,6 +11,7 @@ import {
 } from '../../shared/runs.ts';
 import { usePref } from '../prefs.ts';
 import styles from './FindJobsDialog.module.css';
+import { FocusSection } from './SearchFocus.tsx';
 
 /** Each place to look, as the dialog offers it. */
 const PLACES: Readonly<Record<SearchSite, { name: string; about: string }>> = {
@@ -37,6 +39,27 @@ const MONTH_NAME = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
   timeZone: 'UTC',
 });
+
+const MONTH_DAY = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** How Found by names a search of a place, as the job search names it: "LinkedIn Oct 20". */
+function placeName(site: SearchSite | undefined, month: string, today: string): string {
+  const day = MONTH_DAY.format(new Date(`${today}T12:00:00Z`));
+  if (site === 'hn') {
+    const thread = month || today.slice(0, 7);
+    return `HN ${MONTH_NAME.format(new Date(`${thread}-01T12:00:00Z`))}`;
+  }
+  const names: Record<Exclude<SearchSite, 'hn'>, string> = {
+    linkedin: 'LinkedIn',
+    indeed: 'Indeed',
+    boards: 'Company job boards',
+  };
+  return `${site ? names[site] : 'Company'} ${day}`;
+}
 
 /** This month's thread and the three before, by YYYY-MM, newest first. */
 function recentMonths(today: string): { value: string; label: string }[] {
@@ -79,6 +102,7 @@ export function FindJobsDialog({
   const [month, setMonth] = useState('');
   const [naming, setNaming] = useState(false);
   const [company, setCompany] = useState('');
+  const [focus, setFocus] = useState<SearchFocus>(NO_FOCUS);
   const companyId = useId();
   const hintId = useId();
   const named = naming ? searchCompany(company) : null;
@@ -201,6 +225,11 @@ export function FindJobsDialog({
               )}
             </div>
           </fieldset>
+          <FocusSection
+            focus={focus}
+            onChange={setFocus}
+            place={placeName(sites[0], month, today)}
+          />
           <p className={styles.hint}>
             Each place is a search of its own, so you can see its jobs together later, under Found
             by. The more places, the longer it takes.

@@ -1,0 +1,102 @@
+/* A card like the places', folded until opened. */
+.focus {
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-surface);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: var(--fw-radius-lg);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 2px;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: var(--fw-muted);
+  transition: transform 120ms ease;
+}
+
+.open .chevron {
+  transform: rotate(90deg);
+}
+
+.title {
+  flex: 0 0 auto;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* What it's set to, or that it's optional: quiet, and the first to give way. */
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-3);
+  padding: 0 14px 14px 37px;
+}
+
+.pay,
+.industries {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--fw-space-3);
+}
+
+@media (max-width: 560px) {
+  .pay,
+  .industries {
+    grid-template-columns: 1fr;
+  }
+}
+
+.posted {
+  max-width: 220px;
+}
+
+.hint,
+.problem {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.hint {
+  color: var(--fw-muted);
+}
+
+.problem {
+  color: var(--fw-bad);
+}
+
+/* How Found by will name the search, as its menu shows it. */
+.label {
+  padding: 0 7px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  color: var(--fw-text);
+  font-weight: 550;
+  white-space: nowrap;
+}
