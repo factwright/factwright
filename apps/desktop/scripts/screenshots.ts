@@ -33,9 +33,12 @@ const SHOTS: Shot[] = [
     path: '/?profile=done&run=asks',
     show: async (page) => {
       await page.getByRole('button', { name: /^Northwind Labs/ }).click();
-      await page.getByRole('button', { name: /^Interview prep/ }).click();
-      // Claude's question opens in its dialog. The picture shows it in the terminal, behind it.
+      // Prep for its panel interview, from the call's card under Calls and interviews.
+      await page.getByRole('button', { name: /^Prep again for / }).click();
+      // Claude's question opens in its dialog. The picture shows it in the terminal, behind it,
+      // under the line that says it's waiting there.
       await page.getByRole('button', { name: 'Answer in the terminal' }).click();
+      await page.getByRole('button', { name: 'Got it' }).click();
       await page.getByText('Needs your answer').first().waitFor();
     },
   },
@@ -45,8 +48,9 @@ const SHOTS: Shot[] = [
     height: 820,
     path: '/?profile=done',
     show: async (page) => {
+      // As it opens: the facts to verify first, each with where it came from.
       await page.getByRole('button', { name: /^Fact bank/ }).click();
-      await page.getByRole('button', { name: /^Tidewater Analytics/ }).click();
+      await page.getByRole('heading', { name: /^Unverified/ }).waitFor();
     },
   },
   {

@@ -20,7 +20,7 @@ Every resume line and application answer traces back to a fact you've confirmed.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/jobs-dark.webp">
-  <img src="docs/images/jobs-light.webp" alt="Factwright on a Mac: the job hunt's numbers and jobs, one job open with a Run button for each task, and Claude's panel underneath, where your own Claude Code is writing an interview prep sheet and has stopped to ask which round the interview is.">
+  <img src="docs/images/jobs-light.webp" alt="Factwright on a Mac: the job hunt's numbers and its jobs in interviews, one job open at its next call, a panel interview, and Claude's panel underneath, where your own Claude Code is writing a prep sheet for that call and has stopped to ask about a gap the facts don't cover.">
 </picture>
 
 Factwright is a desktop app that runs your job hunt on top of Claude Code, using your own Claude account. At its center is a **fact bank**: everything you've done, written as claims you can check. Every resume, answer and prep sheet is built from it, so what you send is tailored to the job and still true.
@@ -46,18 +46,18 @@ Factwright is a desktop app that runs your job hunt on top of Claude Code, using
     <td width="50%">
       <a href="docs/images/fact-bank-light.webp"><picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/fact-bank-dark.webp">
-        <img src="docs/images/fact-bank-light.webp" alt="The fact bank: a company's facts, each with its status, ownership and confidence, the numbers behind it, and what to say and never say. One is waiting to be confirmed.">
+        <img src="docs/images/fact-bank-light.webp" alt="The fact bank: the facts waiting for you to verify them, each with its status, ownership and confidence, the numbers behind it, and where it came from, such as an answer you gave while a resume was tailored.">
       </picture></a>
     </td>
     <td width="50%">
       <a href="docs/images/journey-light.webp"><picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/journey-dark.webp">
-        <img src="docs/images/journey-light.webp" alt="Your journey: a flow chart of twelve jobs, from found and checked through applied, screens and interviews, to an offer, and how the rest ended.">
+        <img src="docs/images/journey-light.webp" alt="Your journey: a flow chart of every job, from found and checked through applied, screens and interviews, to an offer, and how the rest ended.">
       </picture></a>
     </td>
   </tr>
   <tr>
-    <td align="center"><b>The fact bank:</b> what's true, and how to say it</td>
+    <td align="center"><b>The fact bank:</b> what's true, and where it came from</td>
     <td align="center"><b>Your journey:</b> how far your jobs got, and how they ended</td>
   </tr>
 </table>
