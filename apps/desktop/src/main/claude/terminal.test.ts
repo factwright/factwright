@@ -109,6 +109,13 @@ beforeAll(() => {
     copyFileSync(process.execPath, join(bin, 'claude.exe'));
     const system = process.env.SystemRoot ?? 'C:\\Windows';
     path = [join(root, 'empty'), join(system, 'System32'), system].join(delimiter);
+    // PowerShell's first start can take half a minute on a busy computer, which would use up a
+    // test's own time, so each one starts once first.
+    for (const file of POWERSHELLS) {
+      spawnSync(file, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], {
+        timeout: 120_000,
+      });
+    }
   } else {
     // claude for the Mac's shells, and claude.exe for PowerShell's name for it.
     for (const name of ['claude', 'claude.exe']) {
@@ -117,7 +124,7 @@ beforeAll(() => {
     }
     path = join(root, 'empty');
   }
-});
+}, 300_000);
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
@@ -131,7 +138,7 @@ function run(terminal: Terminal, command: string): SpawnSyncReturns<string> {
   return spawnSync(terminal.file, terminal.args(command), {
     cwd: root,
     encoding: 'utf8',
-    timeout: 30_000,
+    timeout: 60_000,
     env: {
       ...(WINDOWS ? Object.fromEntries(kept) : {}),
       PATH: path,

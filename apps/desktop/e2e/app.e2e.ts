@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 // pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { type Opened, openApp, terminalText } from './app.ts';
+import { type Opened, openApp, terminalLines, terminalStart, terminalText } from './app.ts';
 import { version } from './paths.ts';
 import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder, usersClaude } from './workspace.ts';
 
@@ -185,8 +185,8 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   // The app types only the skill and the job. A letter is writing, so it gets Opus at extra high.
   expect(await terminalText(window)).toContain(`/factwright:cover-letter job ${ACME_ID}`);
-  expect(await terminalText(window)).toContain('opus · xhigh effort');
-  expect(await terminalText(window)).toContain('in the Classic template: 1 page');
+  await expect.poll(() => terminalStart(window)).toContain('opus · xhigh effort');
+  expect(await terminalLines(window)).toContain('in the Classic template: 1 page');
   await closeRun();
 
   const letter = jobPanel().getByRole('region', { name: 'Cover letter' });
@@ -324,7 +324,7 @@ test('adds a call with who it’s with, preps for it, and keeps the prep sheet w
   await calls.getByRole('button', { name: 'Call prep for the recruiter screen' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   // The app types only the job's and the call's IDs; who it's with reaches Claude through its tools.
-  const typed = await terminalText(window);
+  const typed = await terminalLines(window);
   expect(typed).toMatch(new RegExp(`/factwright:interview-prep job ${ACME_ID} call [0-9a-f-]{36}`));
   expect(typed).not.toContain('Dana Lee');
   await calls.getByRole('button', { name: 'Open the prep sheet for the recruiter screen' }).click();
@@ -408,6 +408,8 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
 
 test('asks the user’s OK in a dialog, and saves to their profile only once they allow it', async () => {
   const { window } = opened;
+  // Done with Acme. In a narrow window, a job's details cover the page's buttons.
+  await window.getByRole('button', { name: 'Close details' }).click();
   await window.getByRole('button', { name: 'Find jobs' }).click();
   await window
     .getByRole('dialog', { name: 'Find jobs' })
@@ -444,8 +446,6 @@ test('asks the user’s OK in a dialog, and saves to their profile only once the
 
 test('finds jobs where the user picks, and keeps each search’s jobs together', async () => {
   const { window } = opened;
-  // Done with Acme. In a narrow window, a job's details cover the page's buttons.
-  await window.getByRole('button', { name: 'Close details' }).click();
   await window.getByRole('button', { name: 'Find jobs' }).click();
   const dialog = window.getByRole('dialog', { name: 'Find jobs' });
   await dialog.getByRole('checkbox', { name: /^LinkedIn/ }).check();
@@ -483,6 +483,8 @@ test('adds a job by hand', async () => {
 
 test('passes on several new jobs at once, saying why, and keeps why for the job search', async () => {
   const { window } = opened;
+  // Northwind, just added, is open. In a narrow window, a job's details cover the list.
+  await window.getByRole('button', { name: 'Close details' }).click();
   await pickView(/^New/);
   await window.getByRole('checkbox', { name: /^Select Tidewater Analytics/ }).click();
   await window.getByRole('checkbox', { name: /^Select Lakeside Data/ }).click();
@@ -684,7 +686,8 @@ test('keeps everything tracked after a restart', async () => {
   await expect(jobPanel().getByRole('textbox', { name: /What you sent/ })).toHaveValue(
     'Deploys, mostly.',
   );
-  // Why the user passed stays with the job.
+  // Why the user passed stays with the job. In a narrow window, Acme's details cover the list.
+  await window.getByRole('button', { name: 'Close details' }).click();
   await window.getByRole('button', { name: /^Tidewater Analytics/ }).click();
   await expect(
     jobPanel()

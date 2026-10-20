@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JobList } from '../../shared/api.ts';
 import { JobsService } from './service.ts';
@@ -13,6 +13,9 @@ let tracker: Tracker;
 let changes: JobList[];
 let jobs: JobsService;
 let trashed: string[];
+
+/** What went in the trash, by each file's path in the workspace. */
+const trashedHere = () => trashed.map((file) => relative(root, file).split(sep).join('/'));
 
 function write(path: string, text: string) {
   const file = join(root, path);
@@ -227,7 +230,7 @@ describe('screenshots and questions for Claude', () => {
     await jobs.addShot(id, { name: 'a.png', bytes: PNG }, { kind: 'ask', ask: asked.askId });
     await jobs.addShot(id, { name: 'b.png', bytes: PNG }, { kind: 'form' });
     expect(await jobs.removeAsk(id, asked.askId)).toEqual({ ok: true });
-    expect(trashed.map((file) => file.slice(root.length + 1))).toEqual([
+    expect(trashedHere()).toEqual([
       `asked/${id}/${asked.askId}.md`,
       `screenshots/${id}/ask-${asked.askId}-1.png`,
     ]);
@@ -245,7 +248,7 @@ describe('screenshots and questions for Claude', () => {
     write(`calls/${id}/${first.id}/thank-you.md`, '## Dana Lee');
     write(`calls/${id}/${second.id}/prep.md`, '# Prep');
     expect(await jobs.deleteCall(first.id)).toEqual({ ok: true });
-    expect(trashed.map((file) => file.slice(root.length + 1))).toEqual([`calls/${id}/${first.id}`]);
+    expect(trashedHere()).toEqual([`calls/${id}/${first.id}`]);
     expect(existsSync(join(root, 'calls', id, second.id, 'prep.md'))).toBe(true);
     expect(jobs.list().jobs[0]?.calls.map((call) => call.id)).toEqual([second.id]);
     // A call that's gone already has nothing left to trash.

@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.9.2 - 2026-10-19
+
 ### Added
 - factwright.com/sync, about sync and what it costs: your other computers, your phone and Save to Factwright, end-to-end encrypted, for $5 a month or $50 a year on Factwright's own server, or free on a server of your own, side by side as the app shows them. It says how to turn it on, what happens if you cancel, that accounts from before sync had a price keep it free for good, and "Money's tight? Email steve@factwright.com and I'll turn on sync for free. No questions asked." The home page says "Sync $5 a month, or free on your own server" under its download buttons, and every page's footer links to it.
 
