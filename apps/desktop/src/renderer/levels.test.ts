@@ -63,8 +63,8 @@ describe('the levels Claude runs at', () => {
             'fit-check': 'sonnet',
             'salary-check': 'sonnet',
             'who-to-message': 'sonnet',
-            'job-search': 'sonnet',
             'focused-resume': 'opus',
+            'projects-page': 'opus',
             'interview-prep': 'opus',
             'answer-questions': 'opus',
             ask: 'opus',
@@ -74,7 +74,7 @@ describe('the levels Claude runs at', () => {
         'best',
       ),
     );
-    // Four each on Sonnet, on Opus with tailored resumes, and on Haiku.
+    // Five each on Opus, with tailored resumes, and on Haiku, and three on Sonnet.
     expect(levelName(most)).toBe('Opus · Low');
     expect(others).toBe('Lighter for 8 tasks');
   });

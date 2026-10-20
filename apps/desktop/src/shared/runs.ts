@@ -7,6 +7,7 @@ import { REVISE_SKILL, type TemplateChoice } from './revision.ts';
 export const RUN_SKILLS = [
   'focused-resume',
   'cover-letter',
+  'projects-page',
   'fit-check',
   'salary-check',
   'who-to-message',

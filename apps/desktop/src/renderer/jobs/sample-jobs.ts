@@ -141,6 +141,21 @@ function resume(company: string, modified: string, format: 'pdf' | 'docx' = 'pdf
 }
 
 /** A cover letter's files, as the cover-letter skill names them: a PDF, or a Word file too. */
+/** A Projects page's files for one of the made-up jobs. */
+function projectPages(company: string, modified: string) {
+  const short = company.replace(/\W+/g, '');
+  const name = `AlexRiveraProjects10172026_${short}.pdf`;
+  return [
+    {
+      path: `applications/${company.toLowerCase().replace(/\W+/g, '-')}/${name}`,
+      name,
+      format: 'pdf' as const,
+      size: 41_200,
+      modified: `${modified}T16:30:00.000Z`,
+    },
+  ];
+}
+
 function letters(company: string, modified: string, formats: readonly ('pdf' | 'docx')[]) {
   const short = company.replace(/\W+/g, '');
   return formats.map((format) => {
@@ -179,6 +194,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     sentiment: null,
     files: [],
     letters: [],
+    projectPages: [],
     outreach: [],
     status: null,
     statusOn: null,
@@ -421,7 +437,8 @@ export function sampleJobs(): Job[] {
       statusLog: changes('lumen', [['applied', -3]]),
       files: [resume('Lumen Health', day(-4))],
       letters: letters('Lumen Health', day(-4), ['pdf', 'docx']),
-      docKinds: ['posting', 'answers', 'letter'],
+      projectPages: projectPages('Lumen Health', day(-4)),
+      docKinds: ['posting', 'answers', 'letter', 'projects'],
     }),
     sampleJob({
       id: 'brightpath-learning--software-engineer-iii',
@@ -779,9 +796,27 @@ export function sampleDocs(job: Job): JobDocs {
           ? SAMPLE_ANSWERS
           : kind === 'letter'
             ? sampleLetter(job)
-            : `# ${job.company}\n\nA sample ${kind} document.`,
+            : kind === 'projects'
+              ? sampleProjectsPage(job)
+              : `# ${job.company}\n\nA sample ${kind} document.`,
     ]),
   );
+}
+
+/** A job's Projects page's data, as the projects-page skill writes it. */
+function sampleProjectsPage(job: Job): string {
+  return JSON.stringify({
+    output_name: `AlexRiveraProjects10172026_${job.company.replace(/\W+/g, '')}`,
+    name: 'Alex Rivera',
+    headline: 'Staff Platform Engineer',
+    heading: 'Selected Projects',
+    shape: 'cards',
+    projects: [
+      { name: 'Trailhead', what: 'A free app that maps trail conditions from hikers’ reports.' },
+      { name: 'Code Club at Lincoln Library', what: 'Free Saturday coding classes.' },
+      { name: 'pg-queue', what: 'A small job queue that runs on Postgres.' },
+    ],
+  });
 }
 
 /** The panel's prep sheet, as the interview prep skill writes one for a call. */

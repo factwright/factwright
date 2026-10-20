@@ -246,6 +246,48 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
   );
 });
 
+test('makes a Projects page, printed as cards in the resume’s template, to preview and open', async () => {
+  const { window } = opened;
+  await jobPanel()
+    .getByRole('button', { name: /^Projects page/ })
+    .click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  expect(await terminalText(window)).toContain(`/factwright:projects-page job ${ACME_ID}`);
+  expect(await terminalLines(window)).toContain('in the Classic template, as cards: 1 page');
+  await closeRun();
+
+  const page = jobPanel().getByRole('region', { name: 'Projects page' });
+  await expect(page).toContainText('Selected Projects: Trailhead · pg-queue');
+  await page.getByRole('button', { name: 'Preview AlexRiveraProjects10142026_Acme.pdf' }).click();
+  const dialog = window.getByRole('dialog', { name: 'AlexRiveraProjects10142026_Acme.pdf' });
+  await expect(dialog.getByRole('img', { name: 'Page 1 of 1' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  // The PDF reads from the top: the name, then the page's heading and its projects.
+  const loading = getDocument({
+    data: new Uint8Array(
+      readFileSync(join(dataDir, 'workspace', ACME_FOLDER, 'AlexRiveraProjects10142026_Acme.pdf')),
+    ),
+    disableFontFace: true,
+    verbosity: 0,
+  });
+  try {
+    const pdf = await (await loading.promise).getPage(1);
+    const { items } = await pdf.getTextContent({ disableNormalization: true });
+    const text = items
+      .map((item) => ('str' in item ? item.str : ''))
+      .join(' ')
+      .toLowerCase();
+    expect(text.indexOf('alex rivera')).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf('alex rivera')).toBeLessThan(text.indexOf('selected projects'));
+    expect(text.indexOf('selected projects')).toBeLessThan(text.indexOf('trailhead'));
+  } finally {
+    await loading.destroy();
+  }
+  // It's neither a resume nor a letter.
+  const files = jobPanel().getByRole('region', { name: 'Files' });
+  await expect(files).toContainText('1 resume · 1 cover letter · 1 Projects page');
+});
+
 test('asks for an application’s questions, then runs them in Claude’s panel', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: /^Application questions/ }).click();

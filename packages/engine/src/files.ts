@@ -1,12 +1,13 @@
 /**
- * The files' name, without an extension: the resume's or letter's output_name, or the person's
- * name with what it is and the date, such as "AlexRiveraResume10112026" or
- * "AlexRiveraCoverLetter10112026". Characters files can't hold become hyphens.
+ * The files' name, without an extension: the resume's, letter's or Projects page's output_name,
+ * or the person's name with what it is and the date, such as "AlexRiveraResume10112026",
+ * "AlexRiveraCoverLetter10112026" or "AlexRiveraProjects10112026". Characters files can't hold
+ * become hyphens.
  */
 export function outputName(
   doc: { name: string; output_name?: string },
   today: Date,
-  what: 'Resume' | 'CoverLetter' = 'Resume',
+  what: 'Resume' | 'CoverLetter' | 'Projects' = 'Resume',
 ): string {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');

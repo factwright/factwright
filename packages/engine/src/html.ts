@@ -1,8 +1,15 @@
 import { type FontUrls, fontFaceCss } from './fonts.ts';
 import type { CoverLetter } from './letter.ts';
 import { escapeHtml } from './markup.ts';
+import type { ProjectsPage } from './projects-page.ts';
 import type { Resume } from './schema.ts';
-import { letterStyles, renderBody, renderLetterBody } from './template/render.ts';
+import {
+  letterStyles,
+  projectsStyles,
+  renderBody,
+  renderLetterBody,
+  renderProjectsBody,
+} from './template/render.ts';
 import type { Template } from './templates.ts';
 
 export { DEFAULT_PROJECTS_HEADING, DEFAULT_SYSTEMS_HEADING } from './template/render.ts';
@@ -65,5 +72,22 @@ export function renderLetterHtml(
     fontFaceCss(template.fonts, fonts),
     letterStyles(template),
     renderLetterBody(template, letter),
+  );
+}
+
+/**
+ * A Projects page as a Letter-size page in a template, ready to print to PDF: under the same
+ * header as the resume, so the two look like a set, with the projects laid out in its shape.
+ */
+export function renderProjectsHtml(
+  projects: ProjectsPage,
+  template: Template,
+  fonts: FontUrls = {},
+): string {
+  return page(
+    `${projects.name} — Projects`,
+    fontFaceCss(template.fonts, fonts),
+    projectsStyles(template),
+    renderProjectsBody(template, projects),
   );
 }

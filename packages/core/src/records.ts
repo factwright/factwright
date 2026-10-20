@@ -3,7 +3,7 @@ import type { FitTier } from './fit.ts';
 import { SCORE_PARTS, type ScorePartKey } from './fit-report.ts';
 import { FOCUS_ID, focusFile, focusName, focusOf } from './focus.ts';
 import { companyKey, roleKey } from './keys.ts';
-import { isCoverLetterFile } from './letter.ts';
+import { isCoverLetterFile, isProjectsPageFile } from './letter.ts';
 import { type Link, linksFrom } from './links.ts';
 import { markdownTable } from './markdown.ts';
 
@@ -52,6 +52,7 @@ export const JOB_DOCS = {
   prep: 'prep.md',
   apply: 'apply.md',
   letter: 'cover-letter.json',
+  projects: 'projects-page.json',
 } as const;
 
 export type JobDocKind = keyof typeof JOB_DOCS;
@@ -118,6 +119,8 @@ export interface FolderRecord extends RecordBase {
   files: JobFile[];
   /** Its cover letters' files. */
   letters: JobFile[];
+  /** Its Projects pages' files. */
+  projectPages: JobFile[];
   docs: JobDocs;
 }
 
@@ -337,8 +340,9 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
         const { name, size, modified } = file;
         return [{ path: `${path}/${name}`, name, format, size, modified }];
       });
-    const files = built.filter((file) => !isCoverLetterFile(file.name));
     const letters = built.filter((file) => isCoverLetterFile(file.name));
+    const projectPages = built.filter((file) => isProjectsPageFile(file.name));
+    const files = built.filter((file) => !letters.includes(file) && !projectPages.includes(file));
     const date = firstDate(notes.date) ?? firstDate(folder);
     records.push({
       tool: 'folder',
@@ -357,6 +361,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       kind: notes.kind,
       files,
       letters,
+      projectPages,
       docs,
     });
     if (docs.prep) {

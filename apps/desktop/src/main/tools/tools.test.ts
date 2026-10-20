@@ -549,12 +549,15 @@ describe('job_details', () => {
     const id = 'acme-robotics--staff-engineer';
     const folder = join(root, 'applications', FOLDER);
     writeFileSync(join(folder, 'cover-letter.json'), '{}');
+    writeFileSync(join(folder, 'projects-page.json'), '{}');
     writeFileSync(join(folder, 'AlexRiveraResume10082026_Acme.pdf'), '%PDF-1.7');
     writeFileSync(join(folder, 'AlexRiveraCoverLetter10082026_Acme.pdf'), '%PDF-1.7');
+    writeFileSync(join(folder, 'AlexRiveraProjects10082026_Acme.pdf'), '%PDF-1.7');
     const at = new Date('2026-10-08T12:00:00');
     for (const file of [
       'AlexRiveraResume10082026_Acme.pdf',
       'AlexRiveraCoverLetter10082026_Acme.pdf',
+      'AlexRiveraProjects10082026_Acme.pdf',
     ])
       utimesSync(join(folder, file), at, at);
     jobs.read();
@@ -564,6 +567,9 @@ describe('job_details', () => {
       `- applications/${FOLDER}/cover-letter.json: the cover letter’s data, which builds its PDF and Word files`,
       `- applications/${FOLDER}/AlexRiveraCoverLetter10082026_Acme.pdf: a built cover letter (2026-10-08), most likely the one sent with the application`,
       `- applications/${FOLDER}/AlexRiveraResume10082026_Acme.pdf: a built resume (2026-10-08), most likely the one sent with the application`,
+      `- applications/${FOLDER}/projects-page.json: the Projects page’s data, which builds its PDF and Word files`,
+      // Only the user knows whether a Projects page went with the application.
+      `- applications/${FOLDER}/AlexRiveraProjects10082026_Acme.pdf: a built Projects page (2026-10-08)\n`,
     ]) {
       expect(answer).toContain(line);
     }
@@ -761,6 +767,7 @@ describe('about_you', () => {
       '- Interests and hobbies: Trail running; Chess',
       '- What they care about: Getting kids into programming',
       '- A line of their interests on resumes: when it fits the job',
+      '- A Projects page, when they make one for a job: a list (`list`).',
     ]) {
       expect(answer).toContain(line);
     }
@@ -1597,6 +1604,124 @@ describe('build_cover_letter', () => {
       'Not built: AlexRiveraCoverLetter10112026_Acme.pdf went out with the application, so it stays as sent. Give cover-letter.json a new output_name to build another.',
     );
     expect(readFileSync(folder('AlexRiveraCoverLetter10112026_Acme.pdf'), 'utf8')).toBe('as sent');
+  });
+});
+
+describe('build_projects_page', () => {
+  const folder = (file: string) => join(root, 'applications', FOLDER, file);
+  const resume = {
+    layout: 'minimal',
+    name: 'Alex Rivera',
+    headline: 'Staff Engineer',
+    contact: { email: 'alex@example.com' },
+    summary: 'Builds platforms.',
+    experience: [{ title: 'Staff Engineer', company: 'Tidewater', start: '2022', end: 'Present' }],
+  };
+  const page = {
+    output_name: 'AlexRiveraProjects10112026_Acme',
+    name: 'Alex Rivera',
+    headline: 'Staff Engineer',
+    contact: { email: 'alex@example.com' },
+    heading: 'Selected Projects',
+    shape: 'case-studies',
+    projects: [
+      {
+        name: 'Trailhead',
+        line: 'App for iPhone and Android · built it alone',
+        when: '2023 – Present',
+        what: 'A free app that maps trail conditions.',
+        points: [{ heading: 'What came of it', items: ['About **4,000** monthly users.'] }],
+      },
+    ],
+  };
+  const write = (file: string, value: unknown) =>
+    writeFileSync(folder(file), typeof value === 'string' ? value : JSON.stringify(value));
+  const pages = (count: number) =>
+    printer.print.mockResolvedValue({
+      pdf: Buffer.from('%PDF-1.7 projects'),
+      pages: count,
+      lastFill: 81,
+    });
+
+  it('builds the PDF in the resume’s template, in its shape, and says how it fits', async () => {
+    write('resume.json', resume);
+    write('projects-page.json', page);
+    pages(1);
+    const answer = await tool('build_projects_page').run({ folder: FOLDER });
+    expect(answer).toContain(
+      `Built applications/${FOLDER}/AlexRiveraProjects10112026_Acme.pdf in the Minimal template, as case-studies: 1 page, 81% full.`,
+    );
+    expect(answer).toContain('Checks: clean.');
+    expect(readFileSync(folder('AlexRiveraProjects10112026_Acme.pdf'), 'utf8')).toBe(
+      '%PDF-1.7 projects',
+    );
+    const printed = printer.print.mock.calls[0]?.[0] ?? '';
+    expect(printed).toContain('<title>Alex Rivera — Projects</title>');
+    expect(printed).toContain('<section class="pp pp-case-studies"><h2>Selected Projects</h2>');
+    expect(printed).toContain('<div class="grp">What came of it</div>');
+    expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
+  });
+
+  it('says what to fix: more than a page, a header unlike the resume’s, a confidential name', async () => {
+    write('resume.json', resume);
+    write('projects-page.json', { ...page, headline: 'Engineer', intro: 'Built for Bluebird.' });
+    mkdirSync(join(root, 'guide'), { recursive: true });
+    writeFileSync(join(root, 'guide', 'confidential-terms.txt'), 'Bluebird\n');
+    pages(2);
+    const answer = await tool('build_projects_page').run({ folder: FOLDER, format: 'both' });
+    expect(answer).toContain(`Built applications/${FOLDER}/AlexRiveraProjects10112026_Acme.docx.`);
+    expect(answer).toContain(
+      [
+        'Problems to fix, then build again:',
+        '- A confidential term matching "Bluebird" is in the Projects page.',
+        '- The page’s headline doesn’t match resume.json’s. Copy it from there, so the two look like a set.',
+        '- The page runs to 2 pages; a Projects page fits on one. Trim it, or show fewer projects.',
+      ].join('\n'),
+    );
+  });
+
+  it('builds a page again after the user applied, unless it was there by the day they did', async () => {
+    write('resume.json', resume);
+    write('projects-page.json', page);
+    pages(1);
+    jobs.updateJob('acme-robotics--staff-engineer', { status: 'applied', statusOn: '2026-10-09' });
+    // Made for an interview, after applying: it builds again.
+    writeFileSync(folder('AlexRiveraProjects10112026_Acme.pdf'), 'for the interview');
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toContain('Built');
+    // There by the day they applied: it may have gone out, so it stays.
+    const before = new Date('2026-10-08T12:00:00');
+    utimesSync(folder('AlexRiveraProjects10112026_Acme.pdf'), before, before);
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toBe(
+      'Not built: AlexRiveraProjects10112026_Acme.pdf was made by the day the user applied, so it may have gone out with the application, and it stays as it was. Give projects-page.json a new output_name to build another.',
+    );
+  });
+
+  it('turns away a project the user keeps private', async () => {
+    write('resume.json', resume);
+    write('projects-page.json', page);
+    mkdirSync(join(root, 'about-me'), { recursive: true });
+    writeFileSync(
+      join(root, 'about-me', 'beyond-work.json'),
+      JSON.stringify({ projects: [{ id: 'trailhead', name: 'Trailhead', showing: 'private' }] }),
+    );
+    pages(1);
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toContain(
+      '- “Trailhead” is a project the user keeps private, and it’s in the Projects page.',
+    );
+  });
+
+  it('refuses a page that doesn’t hold up, or files that wouldn’t read as a Projects page', async () => {
+    write('projects-page.json', { ...page, projects: [] });
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toBe(
+      'Not built. Fix projects-page.json first:\n- page.projects should hold the projects, one each.',
+    );
+    write('projects-page.json', { ...page, output_name: 'AlexRiveraResume_Acme' });
+    expect(await tool('build_projects_page').run({ folder: FOLDER })).toContain(
+      'Not built: the files’ name, AlexRiveraResume_Acme, has to say Projects and the date',
+    );
+    expect(await tool('build_projects_page').run({ folder: '../escape' })).toContain(
+      'isn’t a job folder',
+    );
   });
 });
 

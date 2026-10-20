@@ -87,3 +87,51 @@ export function letterCss({
       .lsig{margin-top:34px;font-weight:${sign}}
     `;
 }
+
+/**
+ * A Projects page's projects, under its header: each like a job on the resume, in the classes a
+ * template styles its jobs with, so the page looks like the resume. Cards and case studies lay
+ * the same pieces out their own way.
+ */
+const PROJECTS_TEXT = `
+<section class="pp pp-{{shape}}"><h2>{{heading}}</h2><div class="blk">
+{{#intro}}<div class="pp-intro">{{intro}}</div>{{/intro}}
+<div class="pp-items">{{#projects}}<div class="job pp-item">
+<div class="row"><div class="title">{{name}}</div>{{#when}}<div class="when">{{when}}</div>{{/when}}</div>
+{{#about}}<div class="row"><div class="co">{{line}}</div><div class="co">{{link}}</div></div>{{/about}}
+{{#what}}<div class="intro">{{what}}</div>{{/what}}
+{{#points}}{{#heading}}<div class="grp">{{heading}}</div>{{/heading}}<ul class="b">{{#items}}<li>{{.}}</li>{{/items}}</ul>{{/points}}
+{{#skills_line}}<div class="pp-skills">{{skills_line}}</div>{{/skills_line}}
+</div>{{/projects}}</div></div></section>`;
+
+/** A Projects page under the template's own header, so it matches the resume. */
+export const PROJECTS = `<div class="hdr">{{> header}}{{> contact}}</div>${PROJECTS_TEXT}`;
+
+/** A Projects page for a template without header parts: a plain header over the same projects. */
+export const PLAIN_PROJECTS = `<div class="hdr"><div class="name">{{name}}</div>{{#headline}}<div class="headline">{{headline}}</div>{{/headline}}<div class="contact">{{#contact}}<span>{{text}}</span>{{/contact}}</div></div>${PROJECTS_TEXT}`;
+
+/**
+ * How a Projects page's pieces sit, for a template that doesn't style them itself. It goes
+ * before the template's own styles, which win.
+ */
+export const PROJECTS_BASE_CSS = `
+      .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+      .title{font-weight:700}
+      .co{font-style:italic}
+      .job{margin-bottom:8px}
+      .intro{margin:2px 0}
+      .grp{font-weight:700;margin:5px 0 1px}
+      ul.b{margin:2px 0 0;padding-left:17px}
+      ul.b li{margin:1.6px 0}`;
+
+/** Each shape's own layout, after the template's styles: list, cards and case studies. */
+export const PROJECTS_CSS = `
+      .pp{margin-top:10px}
+      .pp-intro{margin:0 0 6px;color:var(--muted,#4a4f57)}
+      .pp-item{break-inside:avoid}
+      .pp-skills{margin-top:3px;color:var(--muted,#4a4f57);font-size:0.94em}
+      .pp-cards .pp-items{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+      .pp-cards .pp-item{margin:0;padding:8px 10px;border:1px solid var(--soft,#d4d6da);border-radius:4px}
+      .pp-cards .pp-item .row{flex-wrap:wrap;gap:0 8px}
+      .pp-case-studies .pp-item{margin-bottom:12px}
+      .pp-case-studies .pp-item+.pp-item{padding-top:8px;border-top:1px solid var(--soft,#d4d6da)}`;

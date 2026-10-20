@@ -82,7 +82,7 @@ export function JobView({
   const documents = DOCUMENTS.filter(({ kind }) => docs[kind]);
   const answers = applicationAnswers(job.questions, readSuggestedAnswers(docs.answers), job.sent);
   const letter = readLetterText(docs.letter);
-  const built = [...job.files, ...job.letters];
+  const built = [...job.files, ...job.letters, ...job.projectPages];
   const asked = vault.asked.get(job.id) ?? {};
   const callTexts = vault.calls.get(job.id) ?? {};
   const kind =

@@ -27,6 +27,7 @@ export const EFFORT_NAMES: Readonly<Record<Effort, string>> = {
 export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'focused-resume': 'xhigh',
   'cover-letter': 'xhigh',
+  'projects-page': 'xhigh',
   'fit-check': 'xhigh',
   'salary-check': 'xhigh',
   'who-to-message': 'xhigh',
@@ -47,6 +48,7 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
 export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'focused-resume': 'high',
   'cover-letter': 'high',
+  'projects-page': 'high',
   'fit-check': 'high',
   'salary-check': 'medium',
   'who-to-message': 'high',

@@ -15,6 +15,7 @@ import {
 import {
   INTERESTS_ON_RESUMES,
   labelIn,
+  PAGE_SHAPE_CHOICES,
   PROJECT_DETAIL,
   PROJECT_KINDS,
   PROJECT_SHOWING,
@@ -72,6 +73,7 @@ function beyondText(answers: AboutYou): string[] {
     }
     lines.push(
       `- How projects show on their resumes: ${placementText(answers.projectPrefs)}. A job’s own choice, in its job.md, wins.`,
+      `- A Projects page, when they make one for a job: ${labelIn(PAGE_SHAPE_CHOICES, answers.projectPrefs.page).toLowerCase()} (\`${answers.projectPrefs.page}\`).`,
     );
   }
   const item = (label: string, value: string) => {

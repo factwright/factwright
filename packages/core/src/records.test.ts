@@ -211,6 +211,29 @@ describe('readRecords', () => {
     expect(folder?.docs.letter).toBe(letter);
   });
 
+  it('keeps a job’s Projects page apart from its resumes and letters', () => {
+    const [folder] = of(
+      readRecords(
+        memoryWorkspace({
+          [`${ACME}/job.md`]: '# Acme Robotics: Staff Engineer',
+          [`${ACME}/AlexRiveraResume10072026_Acme.pdf`]: 'pdf',
+          [`${ACME}/AlexRiveraProjects10202026_Acme.pdf`]: 'pdf',
+          [`${ACME}/AlexRiveraCoverLetter10142026_Acme.pdf`]: 'pdf',
+          [`${ACME}/projects-page.json`]: '{"projects":[]}',
+        }),
+      ),
+      'folder',
+    );
+    expect(folder?.files.map((file) => file.name)).toEqual(['AlexRiveraResume10072026_Acme.pdf']);
+    expect(folder?.letters.map((file) => file.name)).toEqual([
+      'AlexRiveraCoverLetter10142026_Acme.pdf',
+    ]);
+    expect(folder?.projectPages.map((file) => file.name)).toEqual([
+      'AlexRiveraProjects10202026_Acme.pdf',
+    ]);
+    expect(folder?.docs.projects).toBe('{"projects":[]}');
+  });
+
   it('reads job searches, checking each value’s type', () => {
     const [acme, weird, lumen] = of(records, 'search');
     expect(acme).toMatchObject({

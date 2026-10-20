@@ -21,7 +21,7 @@ The look comes from `templates.md`, for startups.
 - **Speed and range:** short timelines, small teams, many hats, as far as the facts show.
 - **Ownership:** from the first idea to running it day to day.
 - **Results people felt:** customers, users, revenue, time saved.
-- **Projects,** when they show initiative or the skills the job wants: things they built, launched or run on their own. Featured ones lead, and work at the scale of a job can read as experience when the user chose that.
+- **Projects,** when they show initiative or the skills the job wants: things they built, launched or run on their own. Featured ones lead, and work at the scale of a job can read as experience when the user chose that. A Projects page can go with the application, when the user wants one.
 
 ## Avoid
 - Process-heavy language: "governance framework", "stakeholder alignment", "cross-functional synergy".

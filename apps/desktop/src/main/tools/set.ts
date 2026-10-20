@@ -6,7 +6,10 @@ const CONTACT = ['phone', 'email', 'linkedin', 'location', 'website'] as const;
  * Where a cover letter's header differs from its resume's, so the two wouldn't look like a set:
  * its name, headline or contact details.
  */
-export function headerDifferences(letter: CoverLetter, resume: Resume): string[] {
+export function headerDifferences(
+  letter: Pick<CoverLetter, 'name' | 'headline' | 'contact'>,
+  resume: Resume,
+): string[] {
   return [
     ...(letter.name !== resume.name ? ['name'] : []),
     ...((letter.headline ?? '') !== resume.headline ? ['headline'] : []),

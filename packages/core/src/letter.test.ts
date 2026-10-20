@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   asksForCoverLetter,
+  asksForWorkSamples,
   isCoverLetterFile,
+  isProjectsPageFile,
   letterPlainText,
   letterWordCount,
   readLetterText,
@@ -15,6 +17,46 @@ const LETTER = JSON.stringify({
   greeting: 'Dear Sam Lee,',
   paragraphs: ['I cut deploy time by **~40%** at Tidewater.', 'I would bring the same to Acme.'],
   closing: 'Best regards,',
+});
+
+describe('isProjectsPageFile', () => {
+  it('knows a Projects page’s files by their name, and never a resume’s or a letter’s', () => {
+    for (const name of [
+      'AlexRiveraProjects10202026_Acme.pdf',
+      'AlexRiveraProjects10202026.docx',
+      'Acme projects page.pdf',
+      'projects-page.pdf',
+    ]) {
+      expect(isProjectsPageFile(name)).toBe(true);
+    }
+    for (const name of [
+      'AlexRiveraResume10202026_Projects.pdf',
+      'AlexRiveraResume10202026_ProjectPage.pdf',
+      'AlexRiveraResume10202026_ProjectsPageInc.pdf',
+      'Projects resume.pdf',
+      'AlexRiveraCoverLetter10202026_Acme.pdf',
+      'cover letter about projects page.pdf',
+    ]) {
+      expect(isProjectsPageFile(name)).toBe(false);
+    }
+  });
+});
+
+describe('asksForWorkSamples', () => {
+  it('hears a posting ask for a portfolio or samples of the user’s work', () => {
+    for (const apply of [
+      'Include a link to your portfolio.',
+      'Attach two writing samples.',
+      'Send samples of your work with your resume.',
+      'Share a case study you led.',
+      'Links to projects you’ve built are welcome.',
+    ]) {
+      expect(asksForWorkSamples({ apply })).toBe(true);
+    }
+    for (const apply of [null, 'Apply with your resume.', 'No cover letter needed.']) {
+      expect(asksForWorkSamples({ apply })).toBe(false);
+    }
+  });
 });
 
 describe('isCoverLetterFile', () => {

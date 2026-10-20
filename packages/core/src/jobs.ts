@@ -48,7 +48,7 @@ export interface JobPay {
  * What a step in a job's history came from. A job's folder counts once it has a resume, and
  * again once it has a cover letter.
  */
-export type EventTool = Exclude<Tool, 'folder'> | 'resume' | 'letter';
+export type EventTool = Exclude<Tool, 'folder'> | 'resume' | 'letter' | 'projects';
 
 /** A dated step in a job's history, such as "Fit check: Strong 82". */
 export interface JobEvent {
@@ -137,6 +137,8 @@ export interface CollectedJob {
   files: JobFile[];
   /** Its cover letters' files. */
   letters: JobFile[];
+  /** Its Projects pages' files. */
+  projectPages: JobFile[];
 }
 
 /** A job as the app shows it: what the workspace says about it, plus what the user tracks. */
@@ -390,6 +392,16 @@ function eventsOf(record: ToolRecord, jobId: string, again: boolean): JobEvent[]
       title: 'Cover letter written',
     });
   }
+  // A Projects page is dated by its own file too, as a letter is.
+  if (record.projectPages.length > 0) {
+    const dates = [firstModified(record.projectPages), record.date].filter((each) => each !== null);
+    events.push({
+      id: `projects:${record.key}`,
+      tool: 'projects',
+      date: dates.sort(compare).at(-1) ?? null,
+      title: 'Projects page made',
+    });
+  }
   return events;
 }
 
@@ -513,6 +525,7 @@ function build(draft: Draft): CollectedJob {
   const dates = records.flatMap((record) => (record.date ? [record.date] : [])).sort(compare);
   const files = folders.flatMap((record) => record.files);
   const letters = folders.flatMap((record) => record.letters);
+  const projectPages = folders.flatMap((record) => record.projectPages);
   const onlyOutreach = outreach.length === records.length;
   // Claude's work takes a job out of New: anything but finding it, or messages drafted for its
   // company, which join every job there, even one found long after.
@@ -585,6 +598,7 @@ function build(draft: Draft): CollectedJob {
     sentiment,
     files,
     letters,
+    projectPages,
   };
 }
 

@@ -74,8 +74,23 @@ export const PROJECT_DETAIL = [
 export type ProjectDetail = (typeof PROJECT_DETAIL)[number][0];
 
 /**
- * How the user wants their projects to look on resumes. It's what every job starts from, and
- * one job can differ when they ask Claude, which notes it in that job's job.md.
+ * How a Projects page lays its projects out, as the engine's page shapes name them: a list,
+ * each like a job; cards, two across; or short case studies.
+ */
+export const PAGE_SHAPE_CHOICES = [
+  ['list', 'A list', 'Each like a job on your resume: what it is, your part, and what came of it.'],
+  ['cards', 'Cards', 'Two across, shorter, for more projects at a glance.'],
+  [
+    'case-studies',
+    'Short case studies',
+    'Fewer projects in depth: the problem, what you did, and what came of it.',
+  ],
+] as const;
+export type PageShapeChoice = (typeof PAGE_SHAPE_CHOICES)[number][0];
+
+/**
+ * How the user wants their projects to look on resumes, and on a Projects page. It's what every
+ * job starts from, and one job can differ when they ask Claude, which notes it in its job.md.
  */
 export interface ProjectPrefs {
   resumes: ResumePlace;
@@ -86,9 +101,14 @@ export interface ProjectPrefs {
   links: boolean;
   numbers: boolean;
   tools: boolean;
+  /** How a Projects page lays the projects out, when the user makes one for a job. */
+  page: PageShapeChoice;
 }
 
-/** As resumes have always shown projects: a section, a line each, with links and numbers. */
+/**
+ * As resumes have always shown projects: a section, a line each, with links and numbers. A
+ * Projects page is a list.
+ */
 export const DEFAULT_PROJECT_PREFS: ProjectPrefs = {
   resumes: 'section',
   heading: '',
@@ -96,6 +116,7 @@ export const DEFAULT_PROJECT_PREFS: ProjectPrefs = {
   links: true,
   numbers: true,
   tools: false,
+  page: 'list',
 };
 
 /** One project, as the user tells it. */
@@ -269,6 +290,7 @@ const PREFS_READERS: {
   links: yesOrNo,
   numbers: yesOrNo,
   tools: yesOrNo,
+  page: (value) => pick(value, PAGE_SHAPE_CHOICES),
 };
 
 /**

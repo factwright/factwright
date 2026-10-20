@@ -1,3 +1,4 @@
+import { PAGE_SHAPES } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
 import {
   applyChanges,
@@ -14,6 +15,7 @@ import {
   localTime,
   NO_BEYOND,
   newProject,
+  PAGE_SHAPE_CHOICES,
   type Project,
   projectIdFor,
   readProjectPrefs,
@@ -38,6 +40,7 @@ describe('Beyond work in the answers', () => {
       links: true,
       numbers: true,
       tools: false,
+      page: 'list',
     });
   });
 
@@ -88,6 +91,11 @@ describe('Beyond work in the answers', () => {
     ).toEqual({ ...DEFAULT_PROJECT_PREFS, heading: 'Selected Work', links: false });
     expect(readProjectPrefs({ heading: 'x'.repeat(61) })).toEqual(DEFAULT_PROJECT_PREFS);
     expect(readProjectPrefs('section')).toBeUndefined();
+    expect(readProjectPrefs({ page: 'slides' })).toEqual(DEFAULT_PROJECT_PREFS);
+  });
+
+  it('offers the Projects page shapes the engine lays out', () => {
+    expect(PAGE_SHAPE_CHOICES.map(([value]) => value)).toEqual([...PAGE_SHAPES]);
   });
 });
 

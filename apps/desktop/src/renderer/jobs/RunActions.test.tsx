@@ -87,6 +87,7 @@ describe('RunActions', () => {
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Tailored resumeA resume for this job, every line traced to a factRun',
       'Cover letterA letter for this job, from your facts, in your voiceRun',
+      'Projects pageYour projects in depth, on one page, for jobs where they helpRun',
       'Fit checkScore the job against your fact bankRun',
       'Salary checkEstimate the pay when the posting doesn’t sayRun',
       'Who to messagePeople worth contacting, with drafts you sendRun',
@@ -97,6 +98,42 @@ describe('RunActions', () => {
     expect(action(/Tailored resume/).className).not.toMatch(/suggested/);
     expect(action(/Cover letter/).className).not.toMatch(/suggested/);
     expect((await axe.run(container)).violations).toEqual([]);
+  });
+
+  it('suggests a Projects page once the user will apply, when the posting asks for samples', () => {
+    const resume = {
+      path: 'applications/a/r.pdf',
+      name: 'r.pdf',
+      format: 'pdf' as const,
+      size: 1,
+      modified: '',
+    };
+    const asks = {
+      ...job,
+      apply: '- **Alert:** Include a link to your portfolio.',
+      files: [resume],
+    };
+    render(<RunActions job={asks} status="apply" run={controls()} api={apiStub()} />);
+    expect(action(/Projects page/).className).toMatch(/suggested/);
+    cleanup();
+    // Once there's one, it's ready, and nothing more is suggested for it.
+    const page = { ...resume, name: 'AlexRiveraProjects10202026_Acme.pdf' };
+    render(
+      <RunActions
+        job={{ ...asks, projectPages: [page] }}
+        status="apply"
+        run={controls()}
+        api={apiStub()}
+      />,
+    );
+    expect(action(/Projects page/).className).not.toMatch(/suggested/);
+    expect(action(/Projects page/).textContent).toMatch(/Ready$/);
+    cleanup();
+    // Without samples asked for, it waits to be asked for.
+    render(
+      <RunActions job={{ ...asks, apply: null }} status="apply" run={controls()} api={apiStub()} />,
+    );
+    expect(action(/Projects page/).className).not.toMatch(/suggested/);
   });
 
   it('suggests a cover letter once the user will apply, when the posting asks for one', async () => {

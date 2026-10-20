@@ -221,6 +221,7 @@ const ABOUT_DOCS: Readonly<Record<JobDocKind, string>> = {
   prep: 'interview prep: the pitch, likely questions, stories and questions to ask',
   apply: 'special steps for applying',
   letter: 'the cover letter’s data, which builds its PDF and Word files',
+  projects: 'the Projects page’s data, which builds its PDF and Word files',
 };
 
 const DOC_KIND_BY_FILE = new Map(
@@ -272,6 +273,7 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
       const kind = DOC_KIND_BY_FILE.get(name);
       const resume = job.files.find((file) => file.name === name);
       const letter = job.letters.find((file) => file.name === name);
+      const page = job.projectPages.find((file) => file.name === name);
       const about = kind
         ? ABOUT_DOCS[kind]
         : name === 'resume.json'
@@ -280,7 +282,10 @@ async function catalog(job: Job, workspace: string, shots: readonly JobShot[]): 
             ? aboutBuilt('resume', resume, sentResume)
             : letter
               ? aboutBuilt('cover letter', letter, sentLetter)
-              : null;
+              : page
+                ? // Only the user knows whether a Projects page went with the application.
+                  aboutBuilt('Projects page', page, null)
+                : null;
       lines.push(`- ${folder}/${name}${about ? `: ${about}` : ''}`);
     }
   }
