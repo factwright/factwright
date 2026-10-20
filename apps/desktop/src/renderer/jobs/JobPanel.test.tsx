@@ -343,6 +343,22 @@ describe('JobPanel', () => {
     expect(screen.getByText('Grid software with a small, senior team')).toBeTruthy();
   });
 
+  it('says which search found a job last, and when it found the job again', async () => {
+    panel(byCompany('Copperleaf Energy'));
+    expect(screen.getByText(/Found in HN October 2026/)).toBeTruthy();
+    cleanup();
+    const onMerge = vi.fn();
+    panel(byCompany('Orchard Health'), {}, { onMerge });
+    // Up top, and in its history.
+    expect(screen.getAllByText(/Found again in LinkedIn/).map((each) => each.textContent)).toEqual([
+      expect.stringMatching(/^Remote, US · Found again in LinkedIn \w{3} \d+ · Posting$/),
+      expect.stringMatching(/^Found again in LinkedIn \w{3} \d+: Long shot$/),
+    ]);
+    // For a job found twice the app didn't tell was the same.
+    await userEvent.click(screen.getByRole('button', { name: 'Merge with…' }));
+    expect(onMerge).toHaveBeenCalled();
+  });
+
   it('says when a job isn’t scored yet', () => {
     panel(byCompany('Bluewave Staffing'));
     expect(screen.getByRole('heading', { name: 'Not scored yet' })).toBeTruthy();

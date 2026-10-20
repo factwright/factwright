@@ -138,6 +138,7 @@ export {
   type JobEvent,
   type JobPay,
   type KnownJob,
+  mergedTargets,
   type SearchRun,
 } from './jobs.ts';
 export {
@@ -190,6 +191,21 @@ export {
   markdownTable,
   type Section,
 } from './markdown.ts';
+export {
+  type CompanyName,
+  companyMatch,
+  isTitled,
+  type JobIdentity,
+  jobLikeness,
+  otherPostings,
+  postingKey,
+  postingSite,
+  readTitle,
+  type TitleFit,
+  type TitleWords,
+  titleFit,
+  titlesFit,
+} from './matching.ts';
 export {
   JOB_LIMITS,
   jobIdFor,
@@ -271,6 +287,7 @@ export {
   callOrder,
   changeOrder,
   jobList,
+  knownJobsOf,
   noteOrder,
   type StoredRow,
   type TrackedItems,

@@ -4,6 +4,15 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Merge with…, at the foot of a job's panel, for the rare job found twice that Factwright doesn't tell is the same. Pick the other job, with the ones likely the same first and a search for any other, and its status, history, notes, calls and links move to the job you're looking at, with its application questions, what you sent, your questions for Claude and their answers, your screenshots, the posting you saved from your browser and the prep sheets for its calls. It leaves your list. The job keeps the later of your two decisions, such as passing on it, and whatever a search found the other by now finds the job kept, so it doesn't come back. A computer still on an earlier version shows both until it updates, and so does the phone until the sync server is next deployed.
+
+### Fixed
+- A job a later search finds again is the job you already have, so one you passed on, applied to, set aside or archived never comes back as New. Before, Factwright made a second job when the find's company, title or link was written another way. Now the same posting is the same job at any company, however its link is written: Greenhouse's two sites and a company's own page with its board inside it, LinkedIn's job pages with or without their tracking, and Lever, Ashby, Gem and Indeed postings, each by its ID. A role written another way is the same job too: "Sr." and "Senior", "SWE" and "Software Engineer", "Mgr" and "Manager", another word order or "(Remote)", and a title that says more, such as "Staff Engineer" and "Staff Software Engineer", when it's the only job there it could be. So is the same role at a company written longer or shorter, such as "Acme" and "Acme Robotics". It's never the same job at another level, such as "Software Engineer" and "Senior Software Engineer", in another specialty, such as "(Backend)" and "(Frontend)", which Factwright used to drop, or on another posting on the same board, however alike the titles.
+- The job search tells Factwright which job a find is. find_job says which job is this one, by its posting or its role, apart from your other jobs at the company, and matches companies as Factwright does. The search gives that job's id with the find, and Factwright adds the find to it.
+- A job found again shows what the newest search found: its pay, where it is, its score and notes, and "Found again in LinkedIn Oct 20" at the top of its panel. The list says "Found again" too, in every view for a job you'd decided on, such as one you passed on, and the job's history says when each search found it. Before, a job showed the oldest search's name and pay, and the best-scored search's notes.
+- Searching the same place again the same day, or HN's same month, keeps the earlier run's jobs. The job search used to write its new list over the earlier one, so jobs you hadn't sorted yet vanished. Now it writes the next run beside it, and Factwright reads both.
+
 ## 0.10.0 - 2026-10-20
 
 ### Changed

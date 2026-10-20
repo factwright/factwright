@@ -319,3 +319,70 @@ describe('a job Save to Factwright saved on this computer', () => {
     expect(tracker.rows().some((each) => each.id === id)).toBe(true);
   });
 });
+
+describe('merging a job found twice', () => {
+  const kept = 'acme-robotics--staff-engineer';
+  const twice = 'acme--staff-software-engineer-tools';
+  beforeEach(() => {
+    // A later search found the same job under a shorter name and another title.
+    write(
+      'searches/2026-10-12-linkedin/jobs.json',
+      JSON.stringify({
+        meta: { source: 'LinkedIn Oct 12', checked: '2026-10-12' },
+        jobs: [{ company: 'Acme', role: 'Staff Software Engineer, Tools', tier: 'good' }],
+      }),
+    );
+    jobs.read();
+  });
+
+  it('moves the other’s status and extras to the job kept, and files its finds there', async () => {
+    expect(jobs.list().jobs.map((job) => job.id)).toEqual([kept, twice]);
+    jobs.updateJob(twice, { status: 'passed' });
+    const ask = jobs.addAsk(twice, 'What should I expect?');
+    jobs.addAsk(kept, 'What should I expect?');
+    const askId = ask.ok ? ask.askId : '';
+    write(`asked/${twice}/${askId}.md`, 'Expect a panel.');
+    write(`screenshots/${twice}/ask-${askId}-1.png`, 'png');
+    write(`screenshots/${twice}/form-2026-10-10-1.png`, 'png');
+    write(`screenshots/${kept}/form-2026-10-10-1.png`, 'png');
+    write(`calls/${twice}/c-1/prep.md`, '# Prep');
+    write(`saved/${twice}/posting.md`, '# Job posting');
+
+    expect(await jobs.mergeJobs(kept, twice)).toEqual({ ok: true });
+    const [job, ...rest] = changes.at(-1)?.jobs ?? [];
+    expect(rest).toEqual([]);
+    expect(job).toMatchObject({
+      id: kept,
+      status: 'passed',
+      searches: [{ folder: '2026-10-12-linkedin' }],
+      search: { source: 'LinkedIn Oct 12', again: true },
+    });
+    const renamed = `${askId}-2`;
+    expect(job?.asks.map((each) => each.id)).toEqual([askId, renamed]);
+    expect(readFileSync(join(root, `asked/${kept}/${renamed}.md`), 'utf8')).toBe('Expect a panel.');
+    for (const file of [
+      `screenshots/${kept}/ask-${renamed}-1.png`,
+      `screenshots/${kept}/form-2026-10-10-1.png`,
+      `screenshots/${kept}/form-2026-10-10-2.png`,
+      `calls/${kept}/c-1/prep.md`,
+      `saved/${kept}/posting.md`,
+    ]) {
+      expect(existsSync(join(root, file))).toBe(true);
+    }
+    for (const folder of ['asked', 'screenshots', 'calls', 'saved']) {
+      expect(existsSync(join(root, folder, twice))).toBe(false);
+    }
+  });
+
+  it('puts the other’s saved posting in the trash when the job kept has one', async () => {
+    write(`saved/${twice}/posting.md`, '# Job posting, again');
+    write(`saved/${kept}/posting.md`, '# Job posting');
+    await jobs.mergeJobs(kept, twice);
+    expect(trashedHere()).toEqual([`saved/${twice}/posting.md`]);
+    expect(readFileSync(join(root, `saved/${kept}/posting.md`), 'utf8')).toBe('# Job posting');
+  });
+
+  it('says why not when it can’t merge them', async () => {
+    expect(await jobs.mergeJobs(kept, 'missing')).toMatchObject({ ok: false });
+  });
+});

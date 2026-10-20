@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
+  AUTO_STATUSES,
   askId,
   byJob,
   CALL_STAGE,
@@ -11,6 +12,8 @@ import {
   type JobStatus,
   jobIdFor,
   type KnownJob,
+  knownJobsOf,
+  mergedTargets,
   type Note,
   newJobRows,
   normalizeUrl,
@@ -135,6 +138,9 @@ const MIGRATIONS = [
   ALTER TABLE calls ADD COLUMN place TEXT;
   ALTER TABLE calls ADD COLUMN people TEXT;
   ALTER TABLE calls ADD COLUMN debrief TEXT;`,
+  // For a job the user merged into another, that job's ID. The row stays, so what the job went
+  // by finds the one kept, and an earlier version on another device still shows it.
+  `ALTER TABLE jobs ADD COLUMN merged_into TEXT;`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -150,6 +156,12 @@ const DONE: EditResult = { ok: true };
 
 /** How many jobs with the same company and role a saved job tries IDs for: "-2" up to this. */
 const MAX_SAME = 50;
+
+/**
+ * What merging two jobs did: which of the merged job's questions for Claude took a new ID, as
+ * [old, new], since the job kept had one by the same ID, so their answers move with them.
+ */
+export type MergeResult = { ok: true; asks: [string, string][] } | { ok: false; message: string };
 
 /**
  * What adding a job saved on this computer did: the job's ID, and whether the job hunt had it
@@ -310,13 +322,17 @@ export class Tracker {
 
   /** Every job the tracker knows, so the skills' records keep joining the same job. */
   knownJobs(): KnownJob[] {
-    return this.rows().map(({ id, company, companyKey, role, links }) => ({
-      id,
-      company,
-      companyKey,
-      role,
-      links,
-    }));
+    return knownJobsOf(this.rows());
+  }
+
+  /**
+   * The job a job's ID names now: itself, or for one the user merged into another, the job kept,
+   * so a run or a save that names the merged one reaches it. Null for no such job.
+   */
+  resolve(id: string): string | null {
+    const rows = this.rows();
+    if (!rows.some((row) => row.id === id)) return null;
+    return mergedTargets(rows).get(id) ?? id;
   }
 
   /** Every job's row, oldest first. */
@@ -584,7 +600,7 @@ export class Tracker {
    * job, by its link, is added once: when the ID it would take is held by a job with the same
    * link, that's the job, and nothing is added. When another job holds it, the next ID, "-2" on, is
    * tried. A job with a long company or title that the app knows by its whole ID, from before IDs
-   * were cut short, counts too.
+   * were cut short, counts too, and a job the user merged into another is the one they kept.
    */
   addSavedJob(
     job: { company: string; role: string; link: string; pay: string },
@@ -594,12 +610,17 @@ export class Tracker {
     const base = jobIdFor(job.company, job.role, code);
     const whole = wholeJobId(job.company, job.role);
     const known = whole && whole !== base ? this.row(whole) : null;
-    if (whole && known && hasLink(known, job.link)) return { ok: true, id: whole, already: true };
+    const already = (id: string): SavedJobResult => ({
+      ok: true,
+      id: this.resolve(id) ?? id,
+      already: true,
+    });
+    if (whole && known && hasLink(known, job.link)) return already(whole);
     for (let n = 1; n <= MAX_SAME; n++) {
       const id = n === 1 ? base : `${base}-${n}`;
       const held = this.row(id);
       if (held) {
-        if (hasLink(held, job.link)) return { ok: true, id, already: true };
+        if (hasLink(held, job.link)) return already(id);
         continue;
       }
       const rows = newJobRows({
@@ -617,6 +638,92 @@ export class Tracker {
       return { ok: true, id, already: false };
     }
     return failed('Too many jobs with that company and title.');
+  }
+
+  /**
+   * Merges another job into one, for a job the skills' work found twice: the other's changes of
+   * status, calls and notes move to the job kept, with its links, the application's questions,
+   * what the user sent for them and the questions they asked Claude, each kept once. The job kept
+   * takes the later of the two decisions the user made, such as passing on it, with its day, a
+   * reason or a day to come back, and whether it's archived; on the same day, a decision over New
+   * or To review. It keeps the earlier applied date, and takes from the other what it lacks: a
+   * next step, a kind of job, typed pay, the notes kept before notes were dated. The other job's
+   * row stays, pointing at the one kept, so whatever it went by finds that one.
+   */
+  mergeJobs(keepId: string, otherId: string, context: EditContext): MergeResult {
+    const keep = this.row(keepId);
+    const other = this.row(otherId);
+    if (!keep || !other || keep.mergedInto || other.mergedInto) return NOT_FOUND;
+    if (keep.id === other.id) return failed('Pick another job to merge with this one.');
+    const decided = (row: TrackedRow) =>
+      row.status ? { on: row.statusOn ?? '', mine: !AUTO_STATUSES.includes(row.status) } : null;
+    const kept = decided(keep);
+    const theirs = decided(other);
+    const latest =
+      !theirs ||
+      (kept && (kept.on > theirs.on || (kept.on === theirs.on && (kept.mine || !theirs.mine))))
+        ? keep
+        : other;
+    const earliest = (a: string | null, b: string | null) =>
+      [a, b].filter((each): each is string => Boolean(each)).sort()[0] ?? null;
+    const links = [...keep.links, ...other.links.filter((link) => !hasLink(keep, link.url))];
+    const asked = new Set(keep.questions.map(questionKey));
+    const questions = [
+      ...keep.questions,
+      ...other.questions.filter((q) => !asked.has(questionKey(q))),
+    ];
+    const answered = (each: SentAnswer) => `${questionKey(each.question)}#${each.nth}`;
+    const sentHere = new Set(keep.sent.map(answered));
+    const sent = [...keep.sent, ...other.sent.filter((each) => !sentHere.has(answered(each)))];
+    // A question asked of both by the same words on the same day takes the next ID free.
+    const renamed: [string, string][] = [];
+    const asks = [...keep.asks];
+    for (const ask of other.asks) {
+      const taken = asks.map((each) => each.id);
+      const id = taken.includes(ask.id) ? askId(ask.question, ask.on, taken) : ask.id;
+      if (id !== ask.id) renamed.push([ask.id, id]);
+      asks.push({ ...ask, id });
+    }
+    const notes = [keep.earlierNotes, other.earlierNotes].filter(Boolean).join('\n\n') || null;
+    const nextFrom = keep.nextAction || keep.nextOn ? keep : other;
+    const archived = kept || theirs ? latest.archived : keep.archived && other.archived;
+    this.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE jobs SET links = ?, status = ?, status_on = ?, back_on = ?, pass_reason = ?,
+             applied_on = ?, next_action = ?, next_on = ?, notes = ?, questions = ?, sent = ?,
+             asks = ?, kind = ?, pay_text = ?, first_seen = ?, archived = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(
+          JSON.stringify(links),
+          latest.status,
+          latest.statusOn,
+          latest.backOn,
+          latest.passReason,
+          earliest(keep.appliedOn, other.appliedOn),
+          nextFrom.nextAction,
+          nextFrom.nextOn,
+          notes,
+          JSON.stringify(questions),
+          JSON.stringify(sent),
+          JSON.stringify(asks),
+          keep.kind ?? other.kind,
+          keep.payText ?? other.payText,
+          earliest(keep.firstSeen, other.firstSeen),
+          archived ? 1 : 0,
+          context.now,
+          keep.id,
+        );
+      for (const table of ['status_log', 'calls', 'notes']) {
+        this.db.prepare(`UPDATE ${table} SET job_id = ? WHERE job_id = ?`).run(keep.id, other.id);
+      }
+      // Jobs merged into the other before now point at the one kept.
+      this.db
+        .prepare('UPDATE jobs SET merged_into = ?, updated_at = ? WHERE id = ? OR merged_into = ?')
+        .run(keep.id, context.now, other.id, other.id);
+    });
+    return { ok: true, asks: renamed };
   }
 
   /**

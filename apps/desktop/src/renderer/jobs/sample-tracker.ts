@@ -25,7 +25,13 @@ import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import type { Revision } from '../../shared/revision.ts';
-import { sampleCallDocs, sampleDocs, sampleJob, sampleJobs } from './sample-jobs.ts';
+import {
+  sampleCallDocs,
+  sampleDocs,
+  sampleDuplicate,
+  sampleJob,
+  sampleJobs,
+} from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
 
 /** A file the screens preview serves, as bytes. */
@@ -52,6 +58,7 @@ type TrackerApi = Pick<
   | 'jobDocs'
   | 'updateJob'
   | 'updateJobs'
+  | 'mergeJobs'
   | 'addJob'
   | 'addCall'
   | 'updateCall'
@@ -144,7 +151,8 @@ const SAVED: EditResult = { ok: true };
 /**
  * The tracker for the sample screens, kept in memory until the page reloads. It follows the
  * real tracker's main rules (a call moves a job forward, Undo puts it back) closely enough to
- * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading.
+ * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading, or twice,
+ * with a job found twice to merge.
  */
 export function sampleTracker(
   jobs: string | null,
@@ -156,7 +164,8 @@ export function sampleTracker(
   const revisions = new Map<string, Revision>();
   const revisionKey = (jobId: string, name: string) => `${jobId}/${stemOf(name)}`;
   let list: JobList = {
-    jobs: jobs === 'none' ? [] : sampleJobs(),
+    jobs:
+      jobs === 'none' ? [] : jobs === 'twice' ? [...sampleJobs(), sampleDuplicate()] : sampleJobs(),
     readAt: new Date().toISOString(),
   };
   const listeners = new Set<(list: JobList) => void>();
@@ -241,6 +250,40 @@ export function sampleTracker(
         (job) => jobIds.includes(job.id),
         (job) => edit(job, changes),
       ),
+    // As the tracker merges them, closely enough to check the screens by eye.
+    mergeJobs: async (keepId, otherId) => {
+      const keep = list.jobs.find((job) => job.id === keepId);
+      const other = list.jobs.find((job) => job.id === otherId);
+      if (!keep || !other || keep === other) {
+        return { ok: false, message: 'That job isn’t in your tracker anymore.' };
+      }
+      const latest = (other.statusOn ?? '') > (keep.statusOn ?? '') ? other : keep;
+      const byDay = <T extends { date: string | null }>(a: T, b: T) =>
+        (a.date ?? '').localeCompare(b.date ?? '');
+      const merged: Job = {
+        ...keep,
+        status: latest.status,
+        statusOn: latest.statusOn,
+        backOn: latest.backOn,
+        passReason: latest.passReason,
+        archived: latest.archived,
+        appliedOn: [keep.appliedOn, other.appliedOn].filter(Boolean).sort()[0] ?? null,
+        links: [...keep.links, ...other.links.filter((link) => !keep.links.includes(link))],
+        notes: [...keep.notes, ...other.notes].sort((a, b) => a.on.localeCompare(b.on)),
+        calls: [...keep.calls, ...other.calls].sort((a, b) => a.onDate.localeCompare(b.onDate)),
+        statusLog: [...keep.statusLog, ...other.statusLog].sort((a, b) => a.at.localeCompare(b.at)),
+        searches: [
+          ...keep.searches,
+          ...other.searches.filter(
+            (run) => !keep.searches.some((each) => each.folder === run.folder),
+          ),
+        ].sort(byDay),
+        events: [...keep.events, ...other.events].sort(byDay),
+      };
+      return publish(
+        list.jobs.flatMap((job) => (job === other ? [] : job === keep ? [merged] : [job])),
+      );
+    },
     addJob: async (input) => {
       const company = input.company.trim();
       if (!company) return { ok: false, message: 'Add the company’s name.' };

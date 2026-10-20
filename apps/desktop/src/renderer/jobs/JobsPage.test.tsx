@@ -160,6 +160,15 @@ describe('JobsPage', () => {
     expect(screen.getByRole('button', { name: /^Bluewave Staffing/ }).textContent).toMatch(
       /LinkedIn \w{3} \d+/,
     );
+    cleanup();
+    // A job passed on that a later search found again says so, in any view.
+    page({ filter: view('closed') });
+    expect(screen.getByRole('button', { name: /^Orchard Health/ }).textContent).toMatch(
+      /Found again · LinkedIn \w{3} \d+/,
+    );
+    expect(screen.getByRole('button', { name: /^Meridian Freight/ }).textContent).not.toContain(
+      'HN October 2026',
+    );
   });
 
   it('keeps showing a search that’s picked once nothing is left in it, to clear it', async () => {
@@ -252,7 +261,7 @@ describe('JobsPage', () => {
       .map((option) => option.textContent);
     expect(options[0]).toBe('Found anywhere');
     expect(options).toContain('HN October 2026 (16)');
-    expect(options.some((option) => /^LinkedIn \w{3} \d+ \(3\)$/.test(option ?? ''))).toBe(true);
+    expect(options.some((option) => /^LinkedIn \w{3} \d+ \(4\)$/.test(option ?? ''))).toBe(true);
     await userEvent.selectOptions(menu, 'HN October 2026 (16)');
     expect(props.onFilter).toHaveBeenCalledWith(
       expect.objectContaining({ found: 'search:2026-10-hn-whos-hiring' }),

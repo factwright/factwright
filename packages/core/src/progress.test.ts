@@ -184,6 +184,7 @@ describe('fitTier', () => {
       tier: 'good' as const,
       score: 90,
       detail: job().search?.detail ?? ({} as never),
+      again: false,
     };
     expect(fitTier({ fit: null, search }, 90)).toBe('good');
     expect([75, 62, 50, 49].map((score) => fitTier({ fit: null, search: null }, score))).toEqual([
@@ -230,7 +231,14 @@ describe('jobProgress', () => {
   });
 
   it('takes the fit check’s score, then the job search’s', () => {
-    const search = { source: 'HN', date: null, tier: null, score: 70, detail: {} as never };
+    const search = {
+      source: 'HN',
+      date: null,
+      tier: null,
+      score: 70,
+      detail: {} as never,
+      again: false,
+    };
     expect(progressOf({ search }).score).toBe(70);
     expect(progressOf({ search, fit: { verdict: 'Good', score: 74, date: null } }).score).toBe(74);
   });

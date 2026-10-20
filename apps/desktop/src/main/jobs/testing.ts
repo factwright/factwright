@@ -15,6 +15,7 @@ const ADDED: readonly (
   { jobColumns: ['back_on', 'pass_reason'] },
   { jobColumns: ['kind'] },
   { callColumns: ['minutes', 'mode', 'place', 'people', 'debrief'] },
+  { jobColumns: ['merged_into'] },
 ];
 
 /**

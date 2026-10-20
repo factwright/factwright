@@ -1,4 +1,11 @@
-import { type Call, type CallKind, dayFrom, type JobView, payLabel } from '@factwright/core';
+import {
+  AUTO_STATUSES,
+  type Call,
+  type CallKind,
+  dayFrom,
+  type JobView,
+  payLabel,
+} from '@factwright/core';
 import { FitBadge, StatusPill, VisuallyHidden } from '@factwright/ui';
 import { Check, ChevronRight } from 'lucide-react';
 import type { KeyboardEvent, MouseEvent } from 'react';
@@ -74,9 +81,23 @@ export interface LaterGroup {
 const name = (row: JobRow) => `${row.job.company}, ${row.job.role || 'Company outreach'}`;
 
 /**
+ * Whether a search found a job again after the user decided on it, such as passing on it: worth
+ * saying in every view, not just where the list says which search found each job.
+ */
+const againAfter = ({ job, progress }: JobRow) =>
+  Boolean(
+    job.search?.again &&
+      job.search.date &&
+      job.statusOn &&
+      job.statusOn <= job.search.date &&
+      !AUTO_STATUSES.includes(progress.status),
+  );
+
+/**
  * The jobs, one row each: company and role, status, fit, pay and the next step. Jobs in
- * interviews show their calls so far, and jobs to review say which search found them. Each row
- * can be picked, to move several at once, and To review ends with the jobs set aside.
+ * interviews show their calls so far, and jobs to review say which search found them last, and
+ * when it found them again. Each row can be picked, to move several at once, and To review ends
+ * with the jobs set aside.
  */
 export function JobList({
   rows,
@@ -106,6 +127,8 @@ export function JobList({
   const item = (row: JobRow) => {
     const { job, progress, next } = row;
     const pay = payLabel(job.pay);
+    // The newest search that found it.
+    const found = job.search?.source ?? job.searches.at(-1)?.source;
     const selected = job.id === selectedId;
     const picked = picks?.picked.has(job.id) ?? false;
     return (
@@ -142,8 +165,10 @@ export function JobList({
                   {row.kind.name}
                 </span>
               )}
-              {showFound && job.searches[0] && (
-                <span className={styles.found}>{job.searches[0].source}</span>
+              {found && (showFound || againAfter(row)) && (
+                <span className={styles.found}>
+                  {job.search?.again ? `Found again · ${found}` : found}
+                </span>
               )}
             </span>
             <span className={styles.role}>{job.role || 'Company outreach'}</span>

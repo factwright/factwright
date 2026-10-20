@@ -1,7 +1,7 @@
 import { ASK_ID, questionKey } from './answers.ts';
 import { isIsoDate } from './dates.ts';
 import type { CallDoc } from './extras.ts';
-import type { CollectedJob, Job, JobPay } from './jobs.ts';
+import { type CollectedJob, type Job, type JobPay, type KnownJob, mergedTargets } from './jobs.ts';
 import { KIND_ID } from './kinds.ts';
 import type { Link } from './links.ts';
 import { parsePay } from './pay.ts';
@@ -36,6 +36,8 @@ export interface TrackedRow extends TrackerFields {
   /** For a job added by hand, the pay the user typed. */
   payText: string | null;
   firstSeen: string | null;
+  /** For a job the user merged into another, that job's ID. It's no longer listed on its own. */
+  mergedInto: string | null;
 }
 
 /** A row of the tracker as SQLite keeps it, on this computer or synced from another. */
@@ -43,6 +45,9 @@ export type StoredRow = Record<string, unknown>;
 
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 const required = (value: unknown) => (typeof value === 'string' ? value : '');
+
+/** A job's ID, as the app makes them. */
+const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -122,6 +127,8 @@ export function trackedRow(row: StoredRow): TrackedRow {
     manual: row.manual === 1,
     payText: text(row.pay_text),
     firstSeen: text(row.first_seen),
+    mergedInto:
+      typeof row.merged_into === 'string' && JOB_ID.test(row.merged_into) ? row.merged_into : null,
     status: readStatus(row.status),
     statusOn: text(row.status_on),
     backOn: isIsoDate(row.back_on) ? row.back_on : null,
@@ -137,6 +144,17 @@ export function trackedRow(row: StoredRow): TrackedRow {
     kind: typeof row.kind === 'string' && KIND_ID.test(row.kind) ? row.kind : null,
   };
 }
+
+/** Every job the tracker knows, so the skills' records keep joining the same job. */
+export const knownJobsOf = (rows: readonly TrackedRow[]): KnownJob[] =>
+  rows.map(({ id, company, companyKey, role, links, mergedInto }) => ({
+    id,
+    company,
+    companyKey,
+    role,
+    links,
+    mergedInto,
+  }));
 
 /** The people on a call, leaving out any without a name. */
 const peopleOf = (json: unknown): CallPerson[] =>
@@ -265,9 +283,19 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
   };
   if (found) {
     const { docs, ...job } = found;
+    // The tracker remembers when the job first turned up, even once those files are gone, and a
+    // job added by hand is on file from the day it was added.
+    const firstSeen = [row.firstSeen, job.firstSeen].filter(Boolean).sort()[0] ?? null;
+    const search = job.search && {
+      ...job.search,
+      again:
+        job.search.again || Boolean(firstSeen && job.search.date && firstSeen < job.search.date),
+    };
     return {
       ...job,
       ...tracking,
+      firstSeen,
+      search,
       stage: asked ? 'review' : job.stage,
       pay: job.pay ?? typedPay(row),
       source: row.manual ? ADDED_BY_HAND : job.source,
@@ -326,14 +354,17 @@ interface Kept {
 
 /**
  * Every job to show: each tracker row joined with what the workspace says about it. A job whose
- * files are gone stays listed only while the user has tracked something about it.
+ * files are gone stays listed only while the user has tracked something about it, and a job the
+ * user merged into another isn't listed on its own.
  */
 export function jobList(
   rows: readonly TrackedRow[],
   found: ReadonlyMap<string, CollectedJob>,
   items: TrackedItems,
 ): Job[] {
+  const merged = mergedTargets(rows);
   return rows.flatMap((row) => {
+    if (merged.get(row.id)) return [];
     const job = found.get(row.id);
     const calls = items.calls.get(row.id) ?? [];
     const kept: Kept = {

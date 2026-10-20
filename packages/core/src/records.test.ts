@@ -299,6 +299,46 @@ describe('readRecords', () => {
     expect(sourceOf('LinkedIn Oct 12')).toBe('LinkedIn Oct 12');
   });
 
+  it('reads each run of a search in its folder, and the job find_job named for each job', () => {
+    const records = of(
+      readRecords(
+        memoryWorkspace({
+          'searches/2026-11-03-linkedin/jobs.json': JSON.stringify({
+            meta: { source: 'LinkedIn Nov 3', checked: '2026-11-03' },
+            jobs: [{ company: 'Acme Robotics', role: 'Staff Engineer' }],
+          }),
+          // The next run the same day, as the job search writes it beside the first.
+          'searches/2026-11-03-linkedin/jobs-2.json': JSON.stringify({
+            meta: { source: 'LinkedIn Nov 3', checked: '2026-11-03' },
+            jobs: [
+              {
+                company: 'Acme Robotics',
+                role: 'Staff Engineer',
+                job: 'Acme-Robotics--Staff-Engineer',
+              },
+              { company: 'Lumen Health', role: 'Engineer', job: '../not an id' },
+            ],
+            longShots: [{ company: 'Fernway', role: 'Engineer', job: 'fernway--engineer' }],
+          }),
+          'searches/2026-11-03-linkedin/jobs-10.json': JSON.stringify({
+            jobs: [{ company: 'Northwind Labs', role: 'Engineer' }],
+          }),
+          'searches/2026-11-03-linkedin/jobs-old.json': JSON.stringify({
+            jobs: [{ company: 'Skipped Inc', role: 'Engineer' }],
+          }),
+        }),
+      ),
+      'search',
+    );
+    expect(records.map(({ key, run, job }) => [key, run, job])).toEqual([
+      ['2026-11-03-linkedin:acme-robotics:staff-engineer', 1, null],
+      ['2026-11-03-linkedin#2:acme-robotics:staff-engineer', 2, 'acme-robotics--staff-engineer'],
+      ['2026-11-03-linkedin#2:lumen-health:engineer', 2, null],
+      ['2026-11-03-linkedin#2:fernway:engineer', 2, 'fernway--engineer'],
+      ['2026-11-03-linkedin#10:northwind-labs:engineer', 10, null],
+    ]);
+  });
+
   it('reads the kind of job a search or fit check gave each job', () => {
     const records = readRecords(
       memoryWorkspace({

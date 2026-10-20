@@ -10,8 +10,9 @@ import { AddJobDialog } from './AddJobDialog.tsx';
 import { FiltersPanel } from './FiltersPanel.tsx';
 import { FindJobsDialog } from './FindJobsDialog.tsx';
 import { JourneyDialog } from './JourneyDialog.tsx';
+import { MergeDialog } from './MergeDialog.tsx';
 import { jobRows, type ListFilter, NO_FILTERS } from './rows.ts';
-import { sampleJobs } from './sample-jobs.ts';
+import { sampleDuplicate, sampleJobs } from './sample-jobs.ts';
 import { WithdrawDialog } from './WithdrawDialog.tsx';
 
 const TODAY = localDate();
@@ -558,5 +559,71 @@ describe('FindJobsDialog', () => {
       true,
     );
     expect(screen.getByRole('button', { name: 'Search 2 places' })).toBeTruthy();
+  });
+});
+
+describe('MergeDialog', () => {
+  const rows = jobRows([...sampleJobs(), sampleDuplicate()], TODAY);
+  const quarry = rows.find((row) => row.job.company === 'Quarry')?.job;
+
+  it('offers the jobs likely the same first, and merges the one picked into this one', async () => {
+    const mergeJobs = vi.fn(async () => ({ ok: true as const }));
+    const onClose = vi.fn();
+    if (!quarry) throw new Error('No sample job found twice');
+    const { container } = render(
+      <MergeDialog
+        job={quarry}
+        rows={rows}
+        api={{ mergeJobs } as unknown as FactwrightApi}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Merge with another job' });
+    expect(dialog.textContent).toContain(
+      'its status, notes, calls and links move to Quarry, Senior Platform Engineer',
+    );
+    const list = within(dialog).getByRole('list', { name: 'Jobs to merge with' });
+    // Quarry Labs is the company written longer: the same company, another title.
+    expect(
+      within(list)
+        .getAllByRole('radio')
+        .map((radio) => radio.closest('label')?.textContent),
+    ).toEqual(['Quarry LabsSenior Software Engineer · To apply']);
+    const merge = screen.getByRole('button', { name: 'Merge' });
+    expect((merge as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(within(list).getByRole('radio'));
+    await userEvent.click(merge);
+    expect(mergeJobs).toHaveBeenCalledWith(quarry.id, 'quarry-labs--senior-software-engineer');
+    expect(onClose).toHaveBeenCalled();
+    const results = await axe.run(container.parentElement ?? document.body, {
+      rules: { 'color-contrast': { enabled: false } },
+    });
+    expect(results.violations).toEqual([]);
+  });
+
+  it('finds any other job by its company or role, and says why a merge failed', async () => {
+    const mergeJobs = vi.fn(async () => ({
+      ok: false as const,
+      message: 'That job isn’t in your tracker anymore.',
+    }));
+    if (!quarry) throw new Error('No sample job found twice');
+    render(
+      <MergeDialog
+        job={quarry}
+        rows={rows}
+        api={{ mergeJobs } as unknown as FactwrightApi}
+        onClose={vi.fn()}
+      />,
+    );
+    const search = screen.getByRole('searchbox', { name: 'Find the other job' });
+    await userEvent.type(search, 'tidewater');
+    const list = screen.getByRole('list', { name: 'Jobs to merge with' });
+    expect(within(list).getAllByRole('radio')).toHaveLength(1);
+    await userEvent.click(within(list).getByRole('radio', { name: /^Tidewater Analytics/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Merge' }));
+    expect(screen.getByRole('alert').textContent).toBe('That job isn’t in your tracker anymore.');
+    await userEvent.clear(search);
+    await userEvent.type(search, 'nothing like it');
+    expect(screen.getByRole('status').textContent).toBe('No other job matches “nothing like it”.');
   });
 });
