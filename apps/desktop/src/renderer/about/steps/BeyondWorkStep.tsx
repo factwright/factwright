@@ -340,14 +340,61 @@ function ProjectPanel({
             />
             <p className={styles.note}>{showing?.[2]}</p>
           </div>
-          <div>
-            <Button size="sm" variant="quiet" onClick={onRemove}>
-              Remove this project
-            </Button>
-          </div>
+          <RemoveProject name={named} onRemove={onRemove} />
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Removing a project, after asking: its overview goes, which can't be undone, while the facts
+ * Claude drafted from it stay in the fact bank.
+ */
+function RemoveProject({ name, onRemove }: { name: string; onRemove: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const kept = useRef(false);
+  // Keeping it puts focus back on the button that asked.
+  useEffect(() => {
+    if (asking || !kept.current) return;
+    kept.current = false;
+    button.current?.focus();
+  }, [asking]);
+  if (!asking) {
+    return (
+      <div>
+        <Button ref={button} size="sm" variant="quiet" onClick={() => setAsking(true)}>
+          Remove this project
+        </Button>
+      </div>
+    );
+  }
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a group of two buttons, not a form.
+    <div className={beyond.confirm} role="group" aria-label={`Remove ${name}?`}>
+      <p className={beyond.confirmText}>
+        Remove {name}? What you wrote about it here goes. Facts your Claude drafted from it stay in
+        your fact bank.
+      </p>
+      <div className={beyond.confirmActions}>
+        <Button size="sm" variant="primary" onClick={onRemove}>
+          Remove
+        </Button>
+        {/* Focus moves to the safe choice, as the button that asked has gone. */}
+        <Button
+          size="sm"
+          variant="quiet"
+          autoFocus
+          onClick={() => {
+            kept.current = true;
+            setAsking(false);
+          }}
+        >
+          Keep it
+        </Button>
+      </div>
+    </div>
   );
 }
 

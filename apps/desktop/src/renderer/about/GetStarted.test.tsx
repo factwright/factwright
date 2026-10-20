@@ -339,8 +339,16 @@ describe('GetStarted', () => {
     ]);
     expect(screen.getByRole('button', { name: 'Done with Riverside Reading Club' })).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
-    // Removing it takes it out.
+    // Removing it asks first, and Keep it keeps it.
     await userEvent.click(screen.getByRole('button', { name: 'Remove this project' }));
+    const asking = screen.getByRole('group', { name: 'Remove Riverside Reading Club?' });
+    expect(document.activeElement).toBe(within(asking).getByRole('button', { name: 'Keep it' }));
+    await userEvent.click(within(asking).getByRole('button', { name: 'Keep it' }));
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Remove this project' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Remove this project' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(async () => expect((await api.profile()).answers.projects).toEqual([]), SAVED);
   });
 
