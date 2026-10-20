@@ -38,7 +38,7 @@ describe('a search’s focus', () => {
 
   it('takes from the window only a focus that reads, with nothing it doesn’t know', () => {
     expect(parseFocus(FOCUS)).toEqual(FOCUS);
-    expect(parseFocus({ ...FOCUS, then: 'delete everything' })).toBeNull();
+    expect(parseFocus({ ...FOCUS, also: 'delete everything' })).toBeNull();
     expect(parseFocus({ ...FOCUS, stages: ['seed'] })).toBeNull();
     expect(parseFocus('early startups')).toBeNull();
   });
