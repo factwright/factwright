@@ -574,7 +574,7 @@ describe('FindJobsDialog', () => {
     const { container } = render(
       <FindJobsDialog api={api} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
     );
-    const toggle = screen.getByRole('button', { name: /^Focus this search/ });
+    const toggle = screen.getByRole('button', { name: /^Focus for this search/ });
     expect(toggle.textContent).toContain('Optional');
     await userEvent.click(toggle);
     await userEvent.click(screen.getByRole('button', { name: 'Early startup' }));
@@ -618,7 +618,7 @@ describe('FindJobsDialog', () => {
         onClose={() => {}}
       />,
     );
-    await userEvent.click(screen.getByRole('button', { name: /^Focus this search/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Focus for this search/ }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Pay a year, from' }), '200k');
     await userEvent.type(screen.getByRole('textbox', { name: 'to' }), '150k');
     expect(screen.getByRole('alert').textContent).toBe(

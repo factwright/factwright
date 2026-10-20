@@ -576,7 +576,7 @@ test('focuses one search, typing only its ID, and names the search by its focus'
   const dialog = window.getByRole('dialog', { name: 'Find jobs' });
   await dialog.getByRole('checkbox', { name: /^Hacker News/ }).uncheck();
   await dialog.getByRole('checkbox', { name: /^LinkedIn/ }).check();
-  await dialog.getByRole('button', { name: /^Focus this search/ }).click();
+  await dialog.getByRole('button', { name: /^Focus for this search/ }).click();
   await dialog.getByRole('button', { name: 'Early startup' }).click();
   await dialog.getByRole('textbox', { name: 'Pay a year, from' }).fill('150k');
   await dialog.getByRole('textbox', { name: 'to' }).fill('200,000');

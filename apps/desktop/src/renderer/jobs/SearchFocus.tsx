@@ -58,7 +58,7 @@ export function FocusSection({
         onClick={() => setOpen(!open)}
       >
         <ChevronRight className={styles.chevron} size={15} aria-hidden="true" />
-        <span className={styles.title}>Focus this search</span>
+        <span className={styles.title}>Focus for this search</span>
         <span className={styles.summary}>{name || (isFocused(focus) ? 'Set' : 'Optional')}</span>
       </button>
       {open && (

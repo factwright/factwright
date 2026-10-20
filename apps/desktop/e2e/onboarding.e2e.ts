@@ -213,7 +213,7 @@ test('takes a second kind of job, with its own titles, and searches for it alone
   await window.getByRole('button', { name: 'Find jobs' }).click();
   const find = window.getByRole('dialog', { name: 'Find jobs' });
   await find.locator('label').filter({ hasText: 'Project manager' }).click();
-  await find.getByRole('button', { name: 'Search' }).click();
+  await find.getByRole('button', { name: 'Search', exact: true }).click();
   const panel = window.locator('section[aria-label="Claude"]');
   await expect(panel.getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('/factwright:job-search for project-manager: HN');
