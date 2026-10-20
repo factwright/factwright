@@ -27,6 +27,7 @@ describe('sessionSettings', () => {
       'Skill(factwright *)',
       'mcp__factwright__find_job',
       'mcp__factwright__job_details',
+      'mcp__factwright__search_focus',
       'mcp__factwright__revision_findings',
       'mcp__factwright__build_resume',
       'mcp__factwright__build_cover_letter',

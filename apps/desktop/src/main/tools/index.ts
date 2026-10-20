@@ -9,6 +9,7 @@ import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { saveCallDoc } from './calls.ts';
 import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
+import { searchFocusText } from './focus.ts';
 import { buildCoverLetter } from './letter.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool } from './mcp.ts';
@@ -49,6 +50,7 @@ export const TOOLS_INSTRUCTIONS =
 export const LOCAL_TOOLS = [
   'find_job',
   'job_details',
+  'search_focus',
   'revision_findings',
   'build_resume',
   'build_cover_letter',
@@ -186,6 +188,24 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       annotations: READS,
       run: async (input) => findJob(deps.jobs.list().jobs, queryFrom(input), today(), kinds()),
+    },
+    {
+      name: 'search_focus',
+      description:
+        'What a job search the user focused in Find jobs looks for, by the focus’s ID, which the search’s input names after “focus”: kinds of company, a pay range, where it’s worked, industries to look in or leave out, how recently it was posted, and the user’s own words. It’s binding for that search alone, on top of searches/criteria.md. Call it before collecting anything.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          focus: {
+            type: 'string',
+            description: 'The focus’s ID, such as 2026-10-20-a3f9.',
+          },
+        },
+        required: ['focus'],
+        additionalProperties: false,
+      },
+      annotations: READS,
+      run: async (input) => searchFocusText(deps.workspace, textInput(input, 'focus', true) ?? ''),
     },
     {
       name: 'job_details',

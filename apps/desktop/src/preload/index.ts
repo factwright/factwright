@@ -14,6 +14,7 @@ const api: FactwrightApi = {
   onSetupCheck: (listener) => subscribe('setup:checked', listener),
   startClaude: (size, task) => ipcRenderer.invoke('claude:start', size, task),
   runTask: (task) => ipcRenderer.invoke('claude:task', task),
+  saveSearchFocus: (focus) => ipcRenderer.invoke('search:focus', focus),
   stopClaude: () => ipcRenderer.send('claude:stop'),
   writeToClaude: (data) => ipcRenderer.send('claude:input', data),
   resizeClaude: (size) => ipcRenderer.send('claude:resize', size),

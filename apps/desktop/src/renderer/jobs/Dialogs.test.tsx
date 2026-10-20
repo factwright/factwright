@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { FactwrightApi } from '../../shared/api.ts';
+import type { FactwrightApi, SaveFocusResult } from '../../shared/api.ts';
 import { AddJobDialog } from './AddJobDialog.tsx';
 import { FiltersPanel } from './FiltersPanel.tsx';
 import { FindJobsDialog } from './FindJobsDialog.tsx';
@@ -461,11 +461,15 @@ describe('WithdrawDialog', () => {
   });
 });
 
+/** Keeps a focus, by an ID like the app's, or says why it couldn't. */
+const focusApi = (saved: SaveFocusResult = { ok: true, id: '2026-10-12-a3f9' }) =>
+  ({ saveSearchFocus: vi.fn(async () => saved) }) satisfies Pick<FactwrightApi, 'saveSearchFocus'>;
+
 describe('FindJobsDialog', () => {
   it('starts on HN, and searches every place picked, with the month and a company', async () => {
     const onStart = vi.fn();
     const { container } = render(
-      <FindJobsDialog today="2026-10-12" onStart={onStart} onClose={() => {}} />,
+      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
     );
     const dialog = screen.getByRole('dialog', { name: 'Find jobs' });
     expect(
@@ -490,7 +494,9 @@ describe('FindJobsDialog', () => {
   });
 
   it('says how to name a company, and won’t search until it can', async () => {
-    render(<FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />);
+    render(
+      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
+    );
     await userEvent.click(screen.getByRole('checkbox', { name: /^Hacker News/ }));
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
     await userEvent.click(screen.getByRole('checkbox', { name: /^A company/ }));
@@ -521,7 +527,13 @@ describe('FindJobsDialog', () => {
     ];
     const onStart = vi.fn();
     const { container, unmount } = render(
-      <FindJobsDialog today="2026-10-12" kinds={kinds} onStart={onStart} onClose={() => {}} />,
+      <FindJobsDialog
+        api={focusApi()}
+        today="2026-10-12"
+        kinds={kinds}
+        onStart={onStart}
+        onClose={() => {}}
+      />,
     );
     const lookFor = screen.getByRole('group', { name: 'Look for' });
     expect(
@@ -535,26 +547,99 @@ describe('FindJobsDialog', () => {
     unmount();
     // Kept for next time, while the kind is still there.
     render(
-      <FindJobsDialog today="2026-10-12" kinds={kinds} onStart={onStart} onClose={() => {}} />,
+      <FindJobsDialog
+        api={focusApi()}
+        today="2026-10-12"
+        kinds={kinds}
+        onStart={onStart}
+        onClose={() => {}}
+      />,
     );
     expect(
       (screen.getByRole('radio', { name: 'Project manager' }) as HTMLInputElement).checked,
     ).toBe(true);
     cleanup();
     // With one kind of job, there's nothing to pick.
-    render(<FindJobsDialog today="2026-10-12" onStart={onStart} onClose={() => {}} />);
+    render(
+      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
+    );
     expect(screen.queryByRole('group', { name: 'Look for' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(onStart).toHaveBeenLastCalledWith({ sites: ['hn'] });
   });
 
+  it('focuses this search alone, keeping the focus first and starting with its ID', async () => {
+    const onStart = vi.fn();
+    const api = focusApi();
+    const { container } = render(
+      <FindJobsDialog api={api} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
+    );
+    const toggle = screen.getByRole('button', { name: /^Focus for this search/ });
+    expect(toggle.textContent).toContain('Optional');
+    await userEvent.click(toggle);
+    await userEvent.click(screen.getByRole('button', { name: 'Early startup' }));
+    expect(screen.getByText('Up to Series A, under about 50 people')).toBeTruthy();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Pay a year, from' }), '150k');
+    await userEvent.type(screen.getByRole('textbox', { name: 'to' }), '200,000');
+    await userEvent.click(screen.getByRole('button', { name: 'Remote' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Leave out' }), 'Crypto{Enter}');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Posted' }), 'Past week');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Anything else for this search' }),
+      'Founding roles.',
+    );
+    expect(toggle.textContent).toContain('early startups, $150k–$200k, remote, past week');
+    expect(container.textContent).toContain(
+      'Found by names it HN October 2026 · early startups, $150k–$200k, remote, past week',
+    );
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(api.saveSearchFocus).toHaveBeenCalledWith({
+      stages: ['early'],
+      payMin: 150_000,
+      payMax: 200_000,
+      workplaces: ['remote'],
+      industries: [],
+      avoid: ['Crypto'],
+      posted: 7,
+      notes: 'Founding roles.',
+    });
+    expect(onStart).toHaveBeenCalledWith({ sites: ['hn'], focus: '2026-10-12-a3f9' });
+  });
+
+  it('says when pay doesn’t read, and why a focus couldn’t be kept', async () => {
+    const onStart = vi.fn();
+    render(
+      <FindJobsDialog
+        api={focusApi({ ok: false, message: 'That change couldn’t be saved.' })}
+        today="2026-10-12"
+        onStart={onStart}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Focus for this search/ }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Pay a year, from' }), '200k');
+    await userEvent.type(screen.getByRole('textbox', { name: 'to' }), '150k');
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Type pay as a yearly amount, such as 150,000 or 150k, with the lower one first.',
+    );
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
+    await userEvent.clear(screen.getByRole('textbox', { name: 'to' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(screen.getByRole('alert').textContent).toBe('That change couldn’t be saved.');
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
   it('remembers the places picked for next time', async () => {
     const { unmount } = render(
-      <FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
+      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
     );
     await userEvent.click(screen.getByRole('checkbox', { name: /^Indeed/ }));
     unmount();
-    render(<FindJobsDialog today="2026-10-12" onStart={() => {}} onClose={() => {}} />);
+    render(
+      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
+    );
     expect((screen.getByRole('checkbox', { name: /^Indeed/ }) as HTMLInputElement).checked).toBe(
       true,
     );

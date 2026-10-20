@@ -11,6 +11,7 @@ import type {
   JobStatus,
   PassReason,
   SavedPosting,
+  SearchFocus,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
 import type { EffortChoices } from './effort.ts';
@@ -210,6 +211,9 @@ export type SaveFileResult = { ok: true; saved: boolean } | { ok: false; message
 /** Whether a job was added, and its ID if so. */
 export type AddJobResult = { ok: true; jobId: string } | { ok: false; message: string };
 
+/** Whether a search's focus was kept, and the ID the search reads it by if so. */
+export type SaveFocusResult = { ok: true; id: string } | { ok: false; message: string };
+
 /** A question for Claude about a job, kept under the ID its answer is saved by. */
 export type AskResult = { ok: true; askId: string } | { ok: false; message: string };
 
@@ -268,6 +272,11 @@ export interface FactwrightApi {
   startClaude(size: TerminalSize, task?: RunTask): Promise<StartResult>;
   /** Gives the run that's open a skill to run on a job, as if the user typed it. */
   runTask(task: RunTask): Promise<StartResult>;
+  /**
+   * Keeps what one job search looks for, on top of what the user wants in Profile, for that
+   * search alone, and answers with the ID its task names it by.
+   */
+  saveSearchFocus(focus: SearchFocus): Promise<SaveFocusResult>;
   stopClaude(): void;
   /** Sends what the user types in the panel to Claude Code. */
   writeToClaude(data: string): void;

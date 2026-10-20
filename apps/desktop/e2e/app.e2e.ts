@@ -570,6 +570,46 @@ test('merges a job found twice into one, keeping the user’s decision', async (
   await expect(window.getByRole('button', { name: /^Lakeside Data/ })).toHaveCount(0);
 });
 
+test('focuses one search, typing only its ID, and names the search by its focus', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Find jobs' });
+  await dialog.getByRole('checkbox', { name: /^Hacker News/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: /^LinkedIn/ }).check();
+  await dialog.getByRole('button', { name: /^Focus for this search/ }).click();
+  await dialog.getByRole('button', { name: 'Early startup' }).click();
+  await dialog.getByRole('textbox', { name: 'Pay a year, from' }).fill('150k');
+  await dialog.getByRole('textbox', { name: 'to' }).fill('200,000');
+  await dialog
+    .getByRole('textbox', { name: 'Anything else for this search' })
+    .fill('Founding roles only.');
+  await expect(dialog).toContainText('Found by names it LinkedIn');
+  await dialog.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The app types the focus's ID alone, and the search reads the focus with search_focus.
+  const typed = await terminalText(window);
+  expect(typed).toMatch(/\/factwright:job-search focus \d{4}-\d{2}-\d{2}-[0-9a-f]{4}: LinkedIn/);
+  expect(typed).toContain('This search’s focus: early startups, $150k–$200k');
+  expect(typed).not.toContain('Founding roles only.');
+  await closeRun();
+  const focuses = join(dataDir, 'workspace', 'searches', 'focus');
+  const [kept] = readdirSync(focuses);
+  expect(JSON.parse(readFileSync(join(focuses, kept ?? ''), 'utf8'))).toMatchObject({
+    stages: ['early'],
+    payMin: 150_000,
+    payMax: 200_000,
+    notes: 'Founding roles only.',
+  });
+  await pickView(/^New/);
+  await window
+    .getByRole('combobox', { name: 'Found by' })
+    .selectOption({ label: 'LinkedIn Oct 12 · early startups, $150k–$200k (1)' });
+  await expect(window.getByRole('button', { name: /^Brightline Health/ })).toBeVisible();
+  await window
+    .getByRole('combobox', { name: 'Found by' })
+    .selectOption({ label: 'Found anywhere' });
+});
+
 test('reads and changes the fact bank: a fact’s words, verifying one, and a new fact', async () => {
   const { window } = opened;
   // The fact bank, as getting started would have drafted it.

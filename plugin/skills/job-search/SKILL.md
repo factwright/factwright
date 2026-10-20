@@ -1,7 +1,7 @@
 ---
 name: job-search
 description: Search for jobs in one or more places (Hacker News's monthly "Who is hiring?" thread, LinkedIn's or Indeed's listings found through web search, companies' job boards on Greenhouse, Lever, Ashby or Gem, a company's careers page, or a job site's public listings, such as YC's Work at a Startup or Wellfound) and rank what passes the user's criteria by how well their fact bank fits each job. Use when the user says "run a job search", "check this month's HN thread", "search <source> for jobs", "what is <company> hiring for?", or names places to search. Saves each source word for word, plus a ranked report the app shows as new jobs to sort.
-argument-hint: "[for <kind of job>:] [places, between · marks: HN or HN 2026-11, LinkedIn, Indeed, company job boards, a link, or a company's name]"
+argument-hint: "[for <kind of job>, focus <id>:] [places, between · marks: HN or HN 2026-11, LinkedIn, Indeed, company job boards, a link, or a company's name]"
 ---
 
 # Job search
@@ -13,6 +13,8 @@ The input names the places to search, between " · " marks, as the app's Find jo
 - Anything else is a link to a job board or careers page, or a company's name.
 
 When the user wants more than one kind of job, such as Developer and Project manager, the input may start with `for <kind>:`, a kind's id, such as `for project-manager: HN · LinkedIn`. Then search for that kind's jobs alone. Without it, search for every kind: each job is scored as the kind it fits best.
+
+The input may also name a focus the user set in Find jobs for this search alone, by its id: `focus 2026-11-03-a3f9: LinkedIn`, or after a kind, `for project-manager, focus 2026-11-03-a3f9: LinkedIn`. Call `search_focus` with the id before collecting anything. What it says is binding for this run, on top of `searches/criteria.md`, whose deal-breakers still apply: kinds of company, a pay range, where it's worked, industries to look in or leave out, how recently it was posted, and the user's own words, which are their request. Filter by it, and say how many listings it left out. It never changes criteria.md. If it says there's no such focus, search without one, and say so.
 
 If there's no input, ask for the places in one round of AskUserQuestion, with these options:
 - **The newest HN "Who is hiring?" thread (Recommended)**
@@ -36,6 +38,7 @@ Before starting, read:
   - **HN:** `searches/<YYYY-MM>-hn-whos-hiring/`, by the thread's month, such as `2026-11-hn-whos-hiring`. Searching the same thread again refreshes its folder.
   - **Everywhere else:** `searches/<YYYY-MM-DD>-<place>/`, by today's date, such as `2026-11-03-linkedin`, `2026-11-03-company-job-boards` or `2026-11-03-acme-robotics`.
   - **For one kind of job:** add its id to the folder's name, such as `2026-11-hn-whos-hiring-project-manager` or `2026-11-03-linkedin-project-manager`, so a search for each kind keeps its own.
+  - **With a focus:** end the folder's name as `search_focus` says, such as `2026-11-03-linkedin-focus-a3f9`, so a focused search keeps its own.
   - **The folder has a `jobs.json` already,** from an earlier run the same day, or of HN's same month: keep it, and every file the earlier run wrote. Name this run's files with the next number free: `jobs-2.json`, `report-2.md` and `listings-2.md`, then `jobs-3.json` and on. The app reads every run, so the jobs the earlier run found stay listed.
 - Save every listing in the source, word for word:
   - **HN "Who is hiring?":** call `hn_jobs`, with the month if one was named. It saves every post as `hn-thread.md`, and lists each post's first line and HN id, plus the lines each run of 50 posts spans in the file.
@@ -51,10 +54,11 @@ Before starting, read:
 - Count as you go, for the funnel: listings in the source → pass the location filter → pass every filter → ranked.
 
 ## 2. Filter
-- Apply the criteria.md **Filters** to every listing. Count the reasons for everything you drop, with a few example companies for each.
+- Apply the criteria.md **Filters** to every listing, and with a focus, the focus too. Count the reasons for everything you drop, with a few example companies for each, and count what the focus left out as "outside this search's focus".
 - With more than one kind of job, a listing must also pass its kind's lines: the kind asked for, or for a search for every kind, the kind it fits best. One that fits no kind is dropped, counted as "not a kind of job they want".
 - With more than ~60 listings, split the reading across subagents, using the parts of 50 the tool listed (one or two parts each). Start them all at once. Give each one:
   - criteria.md's filters, and with more than one kind of job, the Level, Kind of work and Pay lines of the kind asked for, or of every kind, with their ids
+  - with a focus, all that `search_focus` gave, word for word
   - the file and its lines
   - what to return: the listings that pass (number, company, roles, where, pay, link, HN id, and with more than one kind, the kind each fits), the near misses, and the drop counts by reason with examples.
   - They don't need facts/.
@@ -92,6 +96,7 @@ Write `jobs.json` in the search's folder. The app reads it and lists each ranked
     "title": "November HN shortlist",
     "source": "HN November 2026",           // the search's name in the app: the place, then the month for HN or the day for the rest, such as "LinkedIn Nov 3", then " · " and the kind's name for a search for one kind of job
     "kind": "",                             // a search for one kind of job: its id
+    "focus": "",                            // a search with a focus: its id. The app adds the focus's name to the search's in Found by, so leave it out of source
     "checked": "2026-11-03",
     "threadUrl": "",
     "lede": "",
@@ -127,6 +132,7 @@ Write `jobs.json` in the search's folder. The app reads it and lists each ranked
 - **method:** one plain paragraph: what was read, the filters, and how the jobs were checked.
 
 Then write `report.md` in the folder, for reading:
+- with a focus, first, what it was, in a line or two: "Focused on early startups, $150k–$200k, remote, posted in the past 2 weeks."
 - the lede and the funnel
 - a ranked table: # · score · fit · company · role · pay · links, with a table for each kind of job when the search was for every kind
 - a profile of each ranked job: Company / Remote / Pay / Why you fit / Gaps / Watch for / Score
