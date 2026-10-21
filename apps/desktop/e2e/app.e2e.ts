@@ -72,7 +72,7 @@ test('opens Save to Factwright’s window from the sidebar, leaving the browsers
   await expect(window.getByRole('dialog')).toHaveCount(0);
 });
 
-test('shows the jobs on file, your Claude ready, a way to support Factwright, and its version', async () => {
+test('shows the jobs on file, your Claude ready, ways to support Factwright and report a problem, and its version', async () => {
   const { window } = opened;
   // It opens on the jobs furthest along: Acme, with Claude's fit check and a resume, is to review.
   await expect(window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible();
@@ -84,6 +84,11 @@ test('shows the jobs on file, your Claude ready, a way to support Factwright, an
   await expect(window.getByRole('link', { name: 'Support Factwright' })).toHaveAttribute(
     'href',
     'https://buymeacoffee.com/stevehillyer',
+  );
+  // Not clicked either: it would open a draft in the mail app of whoever runs the tests.
+  const report = await window.getByRole('link', { name: 'Report a problem' }).getAttribute('href');
+  expect(new URL(report ?? '').searchParams.get('subject')).toBe(
+    `A problem in Factwright ${version}`,
   );
   await expect(window.getByText(`Factwright ${version}`)).toBeVisible();
   // A job the search found, which nobody has touched, is new.
