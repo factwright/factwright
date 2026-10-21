@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SyncStatus } from '../shared/sync.ts';
-import { Sidebar } from './Sidebar.tsx';
+import { reportUrl, Sidebar } from './Sidebar.tsx';
 
 afterEach(cleanup);
 
@@ -35,6 +35,26 @@ describe('Sidebar', () => {
     expect(onOpenExtension).toHaveBeenCalledTimes(1);
     // Supporting Factwright is still a link, to Steve's page.
     expect(screen.getByRole('link', { name: 'Support Factwright' })).toBeTruthy();
+  });
+
+  it('drafts an email to report a problem, naming the version', () => {
+    renderSidebar({ state: 'off' });
+    const report = screen.getByRole('link', { name: 'Report a problem' });
+    const href = report.getAttribute('href') ?? '';
+    // It opens the user's own mail app, as the window opens a mailto link outside it.
+    expect(report.getAttribute('target')).toBe('_blank');
+    const draft = new URL(href);
+    expect(draft.protocol).toBe('mailto:');
+    expect(draft.pathname).toBe('steve@factwright.com');
+    expect(draft.searchParams.get('subject')).toBe('A problem in Factwright 0.9.1');
+    expect(draft.searchParams.get('body')).toContain('If it’s something Claude wrote');
+  });
+
+  it('drafts the report without a version when there isn’t one', () => {
+    const draft = new URL(reportUrl(''));
+    expect(draft.searchParams.get('subject')).toBe('A problem in Factwright');
+    // Spaces stay spaces in the mail app, not plus signs.
+    expect(reportUrl('0.12.0')).toContain('subject=A%20problem%20in%20Factwright%200.12.0');
   });
 
   it('offers the extension whatever sync is doing, as it saves straight to this computer too', () => {

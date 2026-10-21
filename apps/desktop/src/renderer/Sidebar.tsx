@@ -1,5 +1,5 @@
 import { NavItem } from '@factwright/ui';
-import { BookCheck, Briefcase, Heart, Puzzle, UserRound } from 'lucide-react';
+import { BookCheck, Briefcase, Flag, Heart, Puzzle, UserRound } from 'lucide-react';
 import type { EditResult, SetupCheck } from '../shared/api.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import type { AskingView, RequestView, SyncStatus } from '../shared/sync.ts';
@@ -19,10 +19,26 @@ export type Page = 'jobs' | 'facts' | 'profile';
 /** Steve Hillyer's page on Buy Me a Coffee, where anyone can chip in with a card and no account. */
 const COFFEE_URL = 'https://buymeacoffee.com/stevehillyer';
 
+/** Where Report a problem writes to, such as about something wrong that Claude wrote. */
+const REPORT_EMAIL = 'steve@factwright.com';
+
+/**
+ * Report a problem's email, as a draft in the user's own mail app, which they send themselves:
+ * the app sends nothing. It names the version, and asks what happened and where. The Microsoft
+ * Store asks an app that shows what an AI writes to let people report it, from inside the app.
+ */
+export function reportUrl(version: string): string {
+  const subject = version ? `A problem in Factwright ${version}` : 'A problem in Factwright';
+  const body =
+    'What happened, and where? If it’s something Claude wrote, paste it here or attach a screenshot, and say which job it was for.\n\n';
+  return `mailto:${REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 /**
  * The sidebar: the open profile when there's more than one, the app's places, then an update when
  * there's one, sync, the user's Claude and the levels it runs at, the browser extension, a way to
- * support Factwright, and Factwright's version, so an update shows it landed.
+ * support Factwright, a way to report a problem, and Factwright's version, so an update shows it
+ * landed.
  */
 export function Sidebar({
   profiles,
@@ -177,6 +193,10 @@ export function Sidebar({
           >
             <Heart size={14} aria-hidden="true" />
             Support Factwright
+          </a>
+          <a className={styles.link} href={reportUrl(version)} target="_blank" rel="noreferrer">
+            <Flag size={14} aria-hidden="true" />
+            Report a problem
           </a>
           {version && <p className={styles.version}>Factwright {version}</p>}
         </div>
