@@ -90,6 +90,34 @@
   font-weight: 550;
 }
 
+/* A heading sorts the list by its column: its own way, the other way, then back. */
+.sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--fw-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sort:hover {
+  color: var(--fw-text);
+}
+
+.sort:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 0;
+}
+
+.sorted {
+  color: var(--fw-accent-text);
+}
+
 /* The box that selects a job, or every job, ahead of each row. */
 .pick {
   display: flex;

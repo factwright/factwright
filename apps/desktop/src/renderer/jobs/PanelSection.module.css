@@ -3,6 +3,8 @@
   margin: 0 calc(-1 * var(--panel-pad));
   padding: 0 var(--panel-pad);
   border-top: 1px solid var(--fw-border);
+  /* Scrolled to, it shows below the job's name, which stays at the top. */
+  scroll-margin-top: 170px;
 }
 
 .head {

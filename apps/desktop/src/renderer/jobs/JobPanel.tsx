@@ -25,10 +25,9 @@ import {
   Maximize2,
   Minimize2,
   NotebookPen,
-  Sparkles,
   X,
 } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
 import { taskJob } from '../../shared/runs.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
@@ -40,14 +39,13 @@ import { FilesSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
 import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
-import { ArchiveFooter, HistorySection, NextStep, ProgressSection } from './JobTracking.tsx';
+import { ArchiveFooter, HistorySection, ProgressSection, Reminder } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
 import { ProjectsPageSection } from './ProjectsPageSection.tsx';
 import { BUSY, RunActions, type RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
+import { UpNext } from './UpNext.tsx';
 import type { ReminderSwitch } from './useCallReminders.ts';
-
-const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: styles.info } as const;
 
 /** Special steps for applying, up top, because they change what the user does next. */
 function ApplySection({ markdown }: { markdown: string }) {
@@ -88,22 +86,6 @@ function ApplySection({ markdown }: { markdown: string }) {
   );
 }
 
-/** What Claude has done for the job, in a few words, for its section's heading. */
-function claudeSummary(job: Job): string {
-  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
-  return (
-    [
-      job.fit && 'Fit checked',
-      job.files.length > 0 && 'Resume ready',
-      job.letters.length > 0 && 'Cover letter ready',
-      job.projectPages.length > 0 && 'Projects page ready',
-      job.asks.length > 0 && plural(job.asks.length, 'question'),
-    ]
-      .filter(Boolean)
-      .join(' · ') || 'Nothing run yet'
-  );
-}
-
 /** Moving through the jobs in the list while one has the window to itself. */
 export interface PanelNavigation {
   /** Where the job is in the list, from 1. */
@@ -138,7 +120,11 @@ export interface JobPanelProps {
   onMerge?: (() => void) | undefined;
 }
 
-/** Everything on file for the job picked in the list, in sections that open and close. */
+/**
+ * Everything on file for the job picked in the list. At the top, what to do next and everything
+ * Claude can do for it. Under them, in sections that open and close, what came from Claude, then
+ * the user's own progress.
+ */
 export function JobPanel({
   row,
   api,
@@ -157,6 +143,7 @@ export function JobPanel({
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
+  const panelId = useId();
   const jobId = row?.job.id;
   // When what had the keyboard's focus goes away, such as the row a job was picked from once
   // the job takes the window, or the arrows between jobs once it's put back, the panel takes
@@ -186,13 +173,12 @@ export function JobPanel({
       </aside>
     );
   }
-  const { job, progress, next } = row;
+  const { job, progress } = row;
   const pay = payLabel(job.pay) ?? job.pay?.text;
   // The newest search that found it, and whether the job was on file before it.
   const newest = job.search?.source ?? job.searches.at(-1)?.source;
   const found = newest && `${job.search?.again ? 'Found again in' : 'Found in'} ${newest}`;
   const meta = [job.location, pay, found].filter(Boolean).join(' · ');
-  const attention = progress.attention;
   const fit = progress.tier
     ? `${FIT_TIER_DISPLAY[progress.tier].label}${progress.score !== null ? ` ${progress.score}` : ''}`
     : 'Not scored yet';
@@ -229,13 +215,6 @@ export function JobPanel({
   const sorting =
     Boolean(job.role) &&
     (status === 'new' || status === 'review' || (status === 'later' && progress.backFromLater));
-  const fitCheck =
-    run && !job.fit
-      ? {
-          onRun: () => run.start({ skill: 'fit-check', jobId: job.id }),
-          disabled: BUSY.includes(run.phase),
-        }
-      : undefined;
   // Escape puts an expanded job back beside the list first, then closes it.
   const onEscape = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -243,12 +222,11 @@ export function JobPanel({
     else onClose();
   };
 
-  const nextStep = (
+  const upTop = (
     <div ref={top} className={styles.top}>
-      {attention && next && (
-        <p className={`${styles.next} ${NEXT_TONE[attention.level]}`}>{next.text}</p>
-      )}
-      {sorting && <SortButtons status={status} onMove={move} fitCheck={fitCheck} />}
+      <UpNext row={row} api={api} run={run} onApplied={() => void move('applied')}>
+        {sorting && <SortButtons status={status} onMove={move} />}
+      </UpNext>
       {status === 'later' && !progress.backFromLater && (
         <SetAsideBox
           job={job}
@@ -264,11 +242,44 @@ export function JobPanel({
           onUndo={undo}
         />
       )}
-      <NextStep key={`next-${job.id}`} job={job} api={api} />
+      {run && <RunActions job={job} run={run} api={api} />}
       {job.apply && <ApplySection markdown={job.apply} />}
     </div>
   );
-  const tracking: ReactNode[] = [
+  const fromClaude: ReactNode[] = [
+    <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} run={run} />,
+    <CoverLetterSection
+      key={`letter-${job.id}`}
+      job={job}
+      api={api}
+      today={today}
+      writing={
+        run?.task?.skill === 'cover-letter' &&
+        taskJob(run.task) === job.id &&
+        BUSY.includes(run.phase)
+      }
+    />,
+    <ProjectsPageSection
+      key={`projects-${job.id}`}
+      job={job}
+      api={api}
+      today={today}
+      making={
+        run?.task?.skill === 'projects-page' &&
+        taskJob(run.task) === job.id &&
+        BUSY.includes(run.phase)
+      }
+    />,
+    <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
+    <PanelSection key="fit" id="fit" title="Fit" icon={<Gauge size={15} />} summary={fit}>
+      <ScoreSection job={job} today={today} />
+      <SentimentSection job={job} today={today} />
+      <SearchSection job={job} today={today} />
+    </PanelSection>,
+    <AskSection key={`ask-${job.id}`} job={job} api={api} run={run} today={today} />,
+  ];
+  const yourProgress: ReactNode[] = [
+    <Reminder key={`reminder-${job.id}`} job={job} api={api} />,
     <ProgressSection
       key={`progress-${job.id}`}
       job={job}
@@ -295,47 +306,6 @@ export function JobPanel({
     >
       <JobNotes key={job.id} job={job} api={api} today={today} />
     </PanelSection>,
-  ];
-  const about: ReactNode[] = [
-    <PanelSection
-      key="claude"
-      id="claude"
-      title="Your Claude"
-      icon={<Sparkles size={15} />}
-      summary={claudeSummary(job)}
-    >
-      {run && <RunActions job={job} status={progress.status} run={run} api={api} />}
-      <AskSection key={`ask-${job.id}`} job={job} api={api} run={run} today={today} />
-    </PanelSection>,
-    <PanelSection key="fit" id="fit" title="Fit" icon={<Gauge size={15} />} summary={fit}>
-      <ScoreSection job={job} today={today} />
-      <SentimentSection job={job} today={today} />
-      <SearchSection job={job} today={today} />
-    </PanelSection>,
-    <CoverLetterSection
-      key={`letter-${job.id}`}
-      job={job}
-      api={api}
-      today={today}
-      writing={
-        run?.task?.skill === 'cover-letter' &&
-        taskJob(run.task) === job.id &&
-        BUSY.includes(run.phase)
-      }
-    />,
-    <ProjectsPageSection
-      key={`projects-${job.id}`}
-      job={job}
-      api={api}
-      today={today}
-      making={
-        run?.task?.skill === 'projects-page' &&
-        taskJob(run.task) === job.id &&
-        BUSY.includes(run.phase)
-      }
-    />,
-    <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
-    <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} run={run} />,
     <HistorySection key="activity" job={job} related={related} today={today} />,
   ];
 
@@ -443,14 +413,22 @@ export function JobPanel({
           )}
         </header>
 
+        {upTop}
         {/* The same two columns either way, side by side only when expanded, so expanding
             never loses what's being typed. */}
         <div className={styles.columns}>
-          <div className={styles.column}>
-            {nextStep}
-            {tracking}
-          </div>
-          <div className={styles.column}>{about}</div>
+          <section className={styles.column} aria-labelledby={`${panelId}-claude`}>
+            <h3 id={`${panelId}-claude`} className={styles.columnHeading}>
+              From your Claude
+            </h3>
+            {fromClaude}
+          </section>
+          <section className={styles.column} aria-labelledby={`${panelId}-progress`}>
+            <h3 id={`${panelId}-progress`} className={styles.columnHeading}>
+              Your progress
+            </h3>
+            {yourProgress}
+          </section>
         </div>
         <ArchiveFooter job={job} api={api} onMerge={onMerge} />
       </div>

@@ -1,12 +1,13 @@
 import { type Ask, askAnswer, type Job, type JobShot, shortDate } from '@factwright/core';
 import { Button, Dialog, DialogActions, Markdown, Pill, TextArea } from '@factwright/ui';
+import { MessageCircleQuestionMark } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import { taskJob } from '../../shared/runs.ts';
 import styles from './AskSection.module.css';
 import panel from './JobPanel.module.css';
-import tracking from './JobTracking.module.css';
+import { PanelSection } from './PanelSection.tsx';
 import { BUSY, type RunControls } from './RunActions.tsx';
 import {
   type PickedShot,
@@ -303,7 +304,8 @@ function AskItem({
 
 /**
  * The user's own questions about a job, such as what to expect from a call, each with Claude's
- * answer, which stays here to come back to. Asking starts Claude on it.
+ * answer, which stays here to come back to. They're asked from the row of Claude's skills at the
+ * top of the panel, and the section shows once there's one.
  */
 export function AskSection({
   job,
@@ -317,7 +319,6 @@ export function AskSection({
   today: string;
 }) {
   const [extras, setExtras] = useState<JobExtras | null>(null);
-  const [asking, setAsking] = useState(false);
 
   // Claude saves its answers in the workspace, which changes the job list, so they follow it.
   useEffect(() => {
@@ -336,43 +337,38 @@ export function AskSection({
     mine && busy && (task && 'askId' in task ? task.askId === ask.id : !extras?.asked[ask.id]);
   const start = (askId: string) => run?.start({ skill: 'ask', jobId: job.id, askId });
   const asks = [...job.asks].reverse();
+  if (asks.length === 0) return null;
+  const waiting = asks.filter((ask) => !extras?.asked[ask.id]).length;
 
   return (
-    <section className={panel.part} aria-labelledby={`ask-heading-${job.id}`}>
-      <div className={tracking.sectionHead}>
-        <h4 id={`ask-heading-${job.id}`} className={panel.subheading}>
-          Ask Claude
-        </h4>
-        {run && (
-          <Button size="sm" disabled={busy} onClick={() => setAsking(true)}>
-            Ask a question
-          </Button>
-        )}
-      </div>
-      {asks.length === 0 ? (
-        <p className={panel.quiet}>
-          Ask anything about this job, such as what to expect from a call. The answers stay here.
-        </p>
-      ) : (
-        <ul className={styles.asks}>
-          {asks.map((ask, i) => (
-            <AskItem
-              key={ask.id}
-              job={job}
-              ask={ask}
-              newest={i === 0}
-              answer={extras?.asked[ask.id]}
-              shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
-              answering={answering(ask)}
-              canRun={Boolean(run) && !busy}
-              api={api}
-              onRun={() => start(ask.id)}
-              today={today}
-            />
-          ))}
-        </ul>
-      )}
-      {asking && <AskDialog job={job} api={api} onAsked={start} onClose={() => setAsking(false)} />}
-    </section>
+    <PanelSection
+      id="asks"
+      title="Questions for Claude"
+      icon={<MessageCircleQuestionMark size={15} />}
+      summary={[
+        asks.length === 1 ? '1 question' : `${asks.length} questions`,
+        extras && waiting > 0 && `${waiting} not answered yet`,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
+    >
+      <ul className={styles.asks}>
+        {asks.map((ask, i) => (
+          <AskItem
+            key={ask.id}
+            job={job}
+            ask={ask}
+            newest={i === 0}
+            answer={extras?.asked[ask.id]}
+            shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
+            answering={answering(ask)}
+            canRun={Boolean(run) && !busy}
+            api={api}
+            onRun={() => start(ask.id)}
+            today={today}
+          />
+        ))}
+      </ul>
+    </PanelSection>
   );
 }

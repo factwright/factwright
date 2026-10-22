@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from 'vites
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
-import { AskSection } from './AskSection.tsx';
+import { AskDialog, AskSection } from './AskSection.tsx';
 import type { RunControls } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
@@ -50,22 +50,16 @@ function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunCon
   return { phase, task, start: vi.fn(), show: vi.fn() };
 }
 
-describe('AskSection', () => {
-  it('invites a question while there are none', async () => {
-    const { container } = render(
-      <AskSection job={job} api={apiStub()} run={controls()} today={TODAY} />,
-    );
-    expect(screen.getByRole('heading', { name: 'Ask Claude' })).toBeTruthy();
-    expect(screen.getByText(/Ask anything about this job/)).toBeTruthy();
-    expect((await axe.run(container)).violations).toEqual([]);
-  });
+/** The dialog a question is asked in, from the row of Claude's skills, and what it calls. */
+function asking(api = apiStub()) {
+  const onAsked = vi.fn();
+  render(<AskDialog job={job} api={api} onAsked={onAsked} onClose={() => {}} />);
+  return { api, onAsked, dialog: screen.getByRole('dialog', { name: 'Ask about Acme' }) };
+}
 
+describe('AskDialog', () => {
   it('keeps a question, with its screenshot, then starts Claude on it', async () => {
-    const api = apiStub();
-    const run = controls();
-    render(<AskSection job={job} api={api} run={run} today={TODAY} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
-    const dialog = screen.getByRole('dialog', { name: 'Ask about Acme' });
+    const { api, onAsked, dialog } = asking();
     await userEvent.click(within(dialog).getByRole('button', { name: /What’s the team/ }));
     const box = within(dialog).getByRole('textbox', {
       name: 'Your question',
@@ -82,13 +76,7 @@ describe('AskSection', () => {
     expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
     expect(api.askAboutJob).toHaveBeenCalledWith(job.id, 'What’s their stack?');
-    await waitFor(() =>
-      expect(run.start).toHaveBeenCalledWith({
-        skill: 'ask',
-        jobId: job.id,
-        askId: '2026-10-12-whats-their-stack',
-      }),
-    );
+    await waitFor(() => expect(onAsked).toHaveBeenCalledWith('2026-10-12-whats-their-stack'));
     expect(api.addShot).toHaveBeenCalledWith(
       job.id,
       { name: 'email.png', bytes: expect.any(Uint8Array) },
@@ -98,10 +86,7 @@ describe('AskSection', () => {
   });
 
   it('needs a question, and says why one wasn’t kept', async () => {
-    const api = apiStub();
-    const run = controls();
-    render(<AskSection job={job} api={api} run={run} today={TODAY} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
+    const { api, onAsked } = asking();
     await userEvent.click(screen.getByRole('button', { name: 'Ask Claude' }));
     expect(screen.getByRole('alert').textContent).toBe('Type your question first.');
     api.askAboutJob.mockResolvedValueOnce({
@@ -113,7 +98,44 @@ describe('AskSection', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'That job isn’t in your tracker anymore.',
     );
-    expect(run.start).not.toHaveBeenCalled();
+    expect(onAsked).not.toHaveBeenCalled();
+  });
+
+  it('keeps the question when a screenshot isn’t saved, and doesn’t ask it twice', async () => {
+    const api = apiStub();
+    api.addShot.mockResolvedValueOnce({ ok: false, message: 'email.png is empty.' });
+    const { onAsked, dialog } = asking(api);
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Your question' }), 'Why?');
+    await userEvent.upload(
+      dialog.querySelector('input[type="file"]') as HTMLInputElement,
+      new File([new Uint8Array([1])], 'email.png', { type: 'image/png' }),
+    );
+    await within(dialog).findByRole('img', { name: 'Screenshot 1' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Your question is kept, but a screenshot isn’t: email.png is empty. Remove it and ask, or try again.',
+    );
+    expect(onAsked).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove screenshot 1' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
+    await waitFor(() => expect(onAsked).toHaveBeenCalledOnce());
+    expect(api.askAboutJob).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AskSection', () => {
+  it('shows nothing until there’s a question, then the user’s questions', async () => {
+    const { container } = render(
+      <AskSection job={job} api={apiStub()} run={controls()} today={TODAY} />,
+    );
+    expect(container.textContent).toBe('');
+    cleanup();
+    const shown = render(
+      <AskSection job={{ ...job, asks: [ASK] }} api={apiStub()} run={controls()} today={TODAY} />,
+    );
+    const section = screen.getByRole('region', { name: 'Questions for Claude' });
+    await waitFor(() => expect(section.textContent).toContain('1 question · 1 not answered yet'));
+    expect((await axe.run(shown.container)).violations).toEqual([]);
   });
 
   it('shows Claude’s answer under the question, without the heading it was saved with', async () => {
@@ -148,33 +170,6 @@ describe('AskSection', () => {
     );
     expect(await screen.findByText('Answering')).toBeTruthy();
     expect(screen.getByText('Claude is working on it in its panel.')).toBeTruthy();
-    expect(
-      (screen.getByRole('button', { name: 'Ask a question' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
-  it('keeps the question when a screenshot isn’t saved, and doesn’t ask it twice', async () => {
-    const api = apiStub();
-    const run = controls();
-    api.addShot.mockResolvedValueOnce({ ok: false, message: 'email.png is empty.' });
-    render(<AskSection job={job} api={api} run={run} today={TODAY} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
-    const dialog = screen.getByRole('dialog', { name: 'Ask about Acme' });
-    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Your question' }), 'Why?');
-    await userEvent.upload(
-      dialog.querySelector('input[type="file"]') as HTMLInputElement,
-      new File([new Uint8Array([1])], 'email.png', { type: 'image/png' }),
-    );
-    await within(dialog).findByRole('img', { name: 'Screenshot 1' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
-    expect((await within(dialog).findByRole('alert')).textContent).toBe(
-      'Your question is kept, but a screenshot isn’t: email.png is empty. Remove it and ask, or try again.',
-    );
-    expect(run.start).not.toHaveBeenCalled();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove screenshot 1' }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
-    await waitFor(() => expect(run.start).toHaveBeenCalledOnce());
-    expect(api.askAboutJob).toHaveBeenCalledOnce();
   });
 
   it('asks again about an answered question, by its ID', async () => {

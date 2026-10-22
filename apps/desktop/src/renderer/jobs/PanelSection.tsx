@@ -1,7 +1,18 @@
 import { ChevronRight } from 'lucide-react';
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { isBoolean, usePref } from '../prefs.ts';
 import styles from './PanelSection.module.css';
+
+/** The event that asks a section of the job's panel to open and come into view, by its id. */
+const SHOW = 'factwright:show-section';
+
+/**
+ * Opens a section of the job's panel and scrolls to it, such as Calls and interviews when a call
+ * needs saying how it went. Nothing happens when the panel has no such section.
+ */
+export function showSection(id: string): void {
+  window.dispatchEvent(new CustomEvent(SHOW, { detail: id }));
+}
 
 export interface PanelSectionProps {
   /** Which section it is, so it stays open or closed as the user left it, for every job. */
@@ -33,8 +44,21 @@ export function PanelSection({
   const [open, setOpen] = usePref(`panel.open.${id}`, !closedAtFirst, isBoolean);
   const titleId = useId();
   const bodyId = useId();
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const show = (event: Event) => {
+      if ((event as CustomEvent<unknown>).detail !== id) return;
+      setOpen(true);
+      // Once it's open, so it scrolls to where its body starts too.
+      requestAnimationFrame(() =>
+        section.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+      );
+    };
+    window.addEventListener(SHOW, show);
+    return () => window.removeEventListener(SHOW, show);
+  }, [id, setOpen]);
   return (
-    <section className={styles.section} aria-labelledby={titleId} data-section={id}>
+    <section ref={section} className={styles.section} aria-labelledby={titleId} data-section={id}>
       <div className={styles.head}>
         <h3 className={styles.heading} aria-labelledby={titleId}>
           <button

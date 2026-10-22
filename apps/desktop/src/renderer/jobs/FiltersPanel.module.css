@@ -26,6 +26,22 @@
   box-shadow: 0 16px 40px rgb(0 0 0 / 0.16);
 }
 
+/* Opening from the slim list at the window's left, it reaches into the window. */
+.opensRight {
+  right: auto;
+  left: 0;
+}
+
+/* The list's other choices, where the page has no room for them. */
+.extra {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+  padding-bottom: var(--fw-space-3);
+  border-bottom: 1px solid var(--fw-border);
+}
+
 .tiers {
   margin: 0;
   padding: 0;

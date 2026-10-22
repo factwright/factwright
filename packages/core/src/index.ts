@@ -280,6 +280,7 @@ export {
   nextCallMoment,
   nextStep,
   STATUS_GROUPS,
+  type StepAction,
   startingView,
   VIEW_STATUSES,
   viewOf,

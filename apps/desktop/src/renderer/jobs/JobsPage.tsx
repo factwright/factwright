@@ -14,8 +14,10 @@ import {
   foundOptions,
   type JobRow,
   type ListFilter,
+  type ListSort,
   laterRows,
   NO_FILTERS,
+  nextSort,
   ofKind,
   viewCounts,
   visibleRows,
@@ -32,7 +34,7 @@ const option = ({ value, label, count }: FoundOption) => (
  * Where the jobs came from: each job search, so its jobs can be seen together, such as the
  * month's HN thread, then the other ways jobs came in.
  */
-function FoundBy({
+export function FoundBy({
   rows,
   all,
   today,
@@ -80,7 +82,7 @@ function FoundBy({
  * The kind of job to show, for a user who wants more than one, such as only their project
  * manager jobs. The numbers above the list follow it.
  */
-function KindOf({
+export function KindOf({
   rows,
   kinds,
   filter,
@@ -123,6 +125,9 @@ export interface JobsPageProps {
   today: string;
   filter: ListFilter;
   onFilter: (filter: ListFilter) => void;
+  /** How the list is sorted, by a column, or null for the newest activity first. */
+  sort?: ListSort | null;
+  onSort?: (sort: ListSort | null) => void;
   selectedId: string | null;
   onSelect: (jobId: string) => void;
   onRetry: () => void;
@@ -172,7 +177,7 @@ function usePicks(view: string) {
 
 /** The jobs page: the numbers that matter, the views, and the list of jobs. */
 export function JobsPage(props: JobsPageProps) {
-  const { jobs, rows, today, filter, onFilter, kinds = [] } = props;
+  const { jobs, rows, today, filter, onFilter, kinds = [], sort = null, onSort } = props;
   const picks = usePicks(filter.view);
   const [moved, setMoved] = useState<Moved | null>(null);
   const [laterOpen, setLaterOpen] = usePref('jobs.laterOpen', false, isBoolean);
@@ -217,7 +222,7 @@ export function JobsPage(props: JobsPageProps) {
   const kindOpen = kindRows.filter((row) => !row.job.archived);
   const stats = jobStats(kindRows, today);
   const counts = viewCounts(rows, filter);
-  const shown = visibleRows(rows, filter);
+  const shown = visibleRows(rows, filter, sort);
   const later = laterRows(rows, filter);
   const heardBack = stats.applied ? `${Math.round((100 * stats.heardBack) / stats.applied)}%` : '—';
   const narrowed = Boolean(
@@ -396,6 +401,8 @@ export function JobsPage(props: JobsPageProps) {
                   },
                 }}
                 later={{ rows: later, open: laterOpen, onToggle: () => setLaterOpen(!laterOpen) }}
+                sort={sort}
+                {...(onSort && { onSort: (by) => onSort(nextSort(sort, by)) })}
               />
             </>
           ) : (

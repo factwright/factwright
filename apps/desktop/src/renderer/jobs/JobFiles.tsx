@@ -169,9 +169,17 @@ export function FilesSection({
       .join(' · ') || 'None yet';
 
   return (
-    <PanelSection id="files" title="Files" icon={<FolderOpen size={15} />} summary={summary}>
+    <PanelSection
+      id="files"
+      title="Made for this job"
+      icon={<FolderOpen size={15} />}
+      summary={summary}
+    >
       {built.length === 0 && documents.length === 0 && !browserPosting ? (
-        <p className={styles.quiet}>No files yet.</p>
+        <p className={styles.quiet}>
+          What your Claude makes for this job shows up here, such as a tailored resume to preview
+          and attach.
+        </p>
       ) : (
         <ul className={styles.files}>
           {job.files.map((file) => (

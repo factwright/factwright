@@ -7,10 +7,10 @@ import {
   payLabel,
 } from '@factwright/core';
 import { FitBadge, StatusPill, VisuallyHidden } from '@factwright/ui';
-import { Check, ChevronRight } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, ChevronRight } from 'lucide-react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import styles from './JobList.module.css';
-import type { JobRow } from './rows.ts';
+import type { JobRow, ListSort, SortKey } from './rows.ts';
 
 /** Each kind of call in a word or two, for a row's line of steps. */
 const STEP_NAMES: Readonly<Record<CallKind, string>> = {
@@ -49,6 +49,15 @@ function CallSteps({ calls, today }: { calls: readonly Call[]; today: string }) 
 }
 
 const NEXT_TONE = { urgent: styles.urgent, action: styles.action, info: undefined } as const;
+
+/** Each column's heading, and how it sorts the list: its own way round, then the other. */
+const COLUMNS: readonly { by: SortKey; label: string; ways: readonly [string, string] }[] = [
+  { by: 'job', label: 'Job', ways: ['A to Z', 'Z to A'] },
+  { by: 'status', label: 'Status', ways: ['earliest step first', 'furthest along first'] },
+  { by: 'fit', label: 'Fit', ways: ['best fit first', 'lowest fit first'] },
+  { by: 'pay', label: 'Pay', ways: ['highest pay first', 'lowest pay first'] },
+  { by: 'next', label: 'Next step', ways: ['most pressing first', 'least pressing first'] },
+];
 
 /** Moves between rows with the arrow keys, and to the first or last with Home and End. */
 function moveFocus(event: KeyboardEvent<HTMLUListElement>) {
@@ -109,6 +118,8 @@ export function JobList({
   onSelect,
   picks,
   later,
+  sort = null,
+  onSort,
 }: {
   rows: readonly JobRow[];
   view: JobView;
@@ -121,6 +132,10 @@ export function JobList({
   onSelect: (jobId: string) => void;
   picks?: ListPicks;
   later?: LaterGroup;
+  /** How the list is sorted, by a column, or null for the newest activity first. */
+  sort?: ListSort | null;
+  /** Sorts by a column, once its heading is clicked. */
+  onSort?: (by: SortKey) => void;
 }) {
   const pickedHere = picks ? rows.filter((row) => picks.picked.has(row.job.id)).length : 0;
   const allPicked = rows.length > 0 && pickedHere === rows.length;
@@ -214,12 +229,36 @@ export function JobList({
                 />
               </span>
             )}
-            <div className={styles.head} aria-hidden="true">
-              <span className={styles.job}>Job</span>
-              <span className={styles.status}>Status</span>
-              <span className={styles.fit}>Fit</span>
-              <span className={styles.pay}>Pay</span>
-              <span className={styles.next}>Next step</span>
+            <div className={styles.head}>
+              {COLUMNS.map(({ by, label, ways }) => {
+                const sorted = sort?.by === by ? sort : null;
+                return (
+                  <span key={by} className={styles[by]}>
+                    {onSort ? (
+                      <button
+                        type="button"
+                        className={`${styles.sort} ${sorted ? styles.sorted : ''}`}
+                        aria-label={
+                          sorted
+                            ? `${label}, sorted ${ways[sorted.reversed ? 1 : 0]}`
+                            : `Sort by ${label.toLowerCase()}`
+                        }
+                        onClick={() => onSort(by)}
+                      >
+                        {label}
+                        {sorted &&
+                          (sorted.reversed ? (
+                            <ArrowUp size={13} aria-hidden="true" />
+                          ) : (
+                            <ArrowDown size={13} aria-hidden="true" />
+                          ))}
+                      </button>
+                    ) : (
+                      <span aria-hidden="true">{label}</span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}

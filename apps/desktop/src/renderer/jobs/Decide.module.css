@@ -9,10 +9,12 @@
   border: 0;
 }
 
-.moves {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.sortLabel {
+  align-self: center;
+  margin-right: 2px;
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-weight: 550;
 }
 
 /* Named for screen readers; the buttons say what they do. */

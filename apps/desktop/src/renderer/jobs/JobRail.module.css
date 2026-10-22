@@ -1,0 +1,130 @@
+/* Beside a job that has the window to itself, when there's room for both. Its jobs scroll under
+   the view and filters, which stay put. */
+.rail {
+  display: flex;
+  flex: 0 0 232px;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--fw-border);
+  background: var(--fw-bg);
+}
+
+@container work (max-width: 760px) {
+  .rail {
+    display: none;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  padding: var(--fw-space-4) var(--fw-space-3) var(--fw-space-3);
+  border-bottom: 1px solid var(--fw-border);
+}
+
+.view {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.view select {
+  height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--fw-space-2);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fw-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--fw-hover);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: -2px;
+}
+
+.selected,
+.selected:hover {
+  background: var(--fw-accent-soft);
+}
+
+.company,
+.role,
+.next {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.role {
+  color: var(--fw-muted);
+  font-size: 12.5px;
+}
+
+.next {
+  margin-top: 2px;
+  color: var(--fw-muted);
+  font-size: 12px;
+}
+
+.urgent {
+  color: var(--fw-bad);
+  font-weight: 600;
+}
+
+.action {
+  color: var(--fw-need);
+  font-weight: 600;
+}
+
+/* The jobs set aside, under their own label at the end of To review. */
+.group {
+  margin: var(--fw-space-4) 10px var(--fw-space-1);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.empty {
+  margin: var(--fw-space-4) 10px;
+  color: var(--fw-muted);
+  font-size: 13px;
+}

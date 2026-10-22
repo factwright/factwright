@@ -1,8 +1,11 @@
-import { asksForCoverLetter, asksForWorkSamples, type Job, type JobStatus } from '@factwright/core';
-import { useState } from 'react';
+import type { Job } from '@factwright/core';
+import { Tooltip, VisuallyHidden } from '@factwright/ui';
+import { Check, LoaderCircle } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunSkill, type RunTask, taskCall, taskJob } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
+import { AskDialog } from './AskSection.tsx';
 import { QuestionsDialog } from './QuestionsDialog.tsx';
 import styles from './RunActions.module.css';
 
@@ -58,91 +61,122 @@ export interface RunControls {
 /** While Claude is busy, other runs wait. */
 export const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
 
-type Tone = 'run' | 'ok' | 'quiet';
+/** Where a skill stands on a job: running, just done, or made or run before. */
+type State = 'running' | 'done' | 'ready' | 'ran';
 
-function stateOf(job: Job, skill: RunSkill, running: boolean, done: boolean): [string, Tone] {
-  if (running) return ['Running', 'run'];
-  if (done) return ['Done', 'ok'];
-  if (skill === 'fit-check' && job.fit) return ['Ran', 'quiet'];
-  if (skill === 'answer-questions' && job.docKinds.includes('answers')) return ['Ran', 'quiet'];
-  if (skill === 'focused-resume' && job.files.length > 0) return ['Ready', 'ok'];
-  if (skill === 'cover-letter' && job.letters.length > 0) return ['Ready', 'ok'];
-  if (skill === 'projects-page' && job.projectPages.length > 0) return ['Ready', 'ok'];
-  return ['Run', 'run'];
+const STATE_WORDS: Readonly<Record<State, string>> = {
+  running: 'running',
+  done: 'done',
+  ready: 'ready',
+  ran: 'ran before',
+};
+
+function stateOf(job: Job, skill: RunSkill, running: boolean, done: boolean): State | null {
+  if (running) return 'running';
+  if (done) return 'done';
+  if (skill === 'fit-check' && job.fit) return 'ran';
+  if (skill === 'answer-questions' && job.docKinds.includes('answers')) return 'ran';
+  if (skill === 'focused-resume' && job.files.length > 0) return 'ready';
+  if (skill === 'cover-letter' && job.letters.length > 0) return 'ready';
+  if (skill === 'projects-page' && job.projectPages.length > 0) return 'ready';
+  return null;
+}
+
+/** One button in the row: its name, a mark for where it stands, and what it does on hover. */
+function ActionButton({
+  label,
+  why,
+  state,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  why: ReactNode;
+  state: State | null;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip content={why}>
+      {(trigger) => (
+        <button
+          type="button"
+          {...trigger}
+          className={`${styles.action} ${state ? styles[state] : ''}`}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          {state === 'running' ? (
+            <LoaderCircle className={styles.spin} size={14} aria-hidden="true" />
+          ) : (
+            state && (
+              <Check className={styles.mark} size={14} strokeWidth={2.6} aria-hidden="true" />
+            )
+          )}
+          {label}
+          {state && <VisuallyHidden>, {STATE_WORDS[state]}</VisuallyHidden>}
+        </button>
+      )}
+    </Tooltip>
+  );
 }
 
 /**
- * The skills Claude can run on this job, with where each stands, and the one to do next. The
- * application's questions get pasted in first.
+ * Everything Claude can do for this job, in one row at the top of its panel: each skill, with a
+ * mark once it's running or has run, and what it does on hover, then a question about the job.
+ * The application's questions get pasted in first, and so does the question.
  */
-export function RunActions({
-  job,
-  status,
-  run,
-  api,
-}: {
-  job: Job;
-  status: JobStatus;
-  run: RunControls;
-  api: FactwrightApi;
-}) {
+export function RunActions({ job, run, api }: { job: Job; run: RunControls; api: FactwrightApi }) {
   const busy = BUSY.includes(run.phase);
+  const [pasting, setPasting] = useState(false);
   const [asking, setAsking] = useState(false);
   const begin = (skill: RunSkill) =>
-    skill === 'answer-questions' ? setAsking(true) : run.start({ skill, jobId: job.id });
+    skill === 'answer-questions' ? setPasting(true) : run.start({ skill, jobId: job.id });
+  // A run for one of the job's calls, such as its prep, has a button of its own there.
+  const mine = (skill: string) =>
+    run.task?.skill === skill && taskJob(run.task) === job.id && taskCall(run.task) === null;
+  const asked = mine('ask');
   return (
     <div className={styles.section}>
       <fieldset className={styles.actions}>
         <legend className={styles.legend}>Run with your Claude</legend>
-        {RUN_ACTIONS.map(({ skill, label, why }) => {
-          // A run for one of the job's calls, such as its prep, has a button of its own there.
-          const mine =
-            run.task?.skill === skill &&
-            taskJob(run.task) === job.id &&
-            taskCall(run.task) === null;
-          const running = mine && busy;
-          const done = mine && run.phase === 'done';
-          const [state, tone] = stateOf(job, skill, running, done);
-          // A fit check helps decide on a job, and a resume comes once the user will apply, then a
-          // cover letter when the posting asks for one, which copies the resume's header.
-          const suggested =
-            running ||
-            (!done &&
-              ((skill === 'fit-check' && !job.fit && (status === 'new' || status === 'review')) ||
-                (skill === 'focused-resume' && status === 'apply' && job.files.length === 0) ||
-                (skill === 'cover-letter' &&
-                  status === 'apply' &&
-                  job.files.length > 0 &&
-                  job.letters.length === 0 &&
-                  asksForCoverLetter(job)) ||
-                // A Projects page when the posting asks for samples of the user's work.
-                (skill === 'projects-page' &&
-                  status === 'apply' &&
-                  job.files.length > 0 &&
-                  job.projectPages.length === 0 &&
-                  asksForWorkSamples(job))));
-          return (
-            <button
-              key={skill}
-              type="button"
-              className={`${styles.action} ${suggested ? styles.suggested : ''}`}
-              disabled={busy && !running}
-              onClick={() => (running ? run.show() : begin(skill))}
-            >
-              <span className={styles.text}>
-                <span className={styles.label}>{label}</span>
-                <span className={styles.why}>{why}</span>
-              </span>
-              <span className={`${styles.state} ${styles[tone]}`}>{state}</span>
-            </button>
-          );
-        })}
+        <div className={styles.row}>
+          {RUN_ACTIONS.map(({ skill, label, why }) => {
+            const running = mine(skill) && busy;
+            const done = mine(skill) && run.phase === 'done';
+            return (
+              <ActionButton
+                key={skill}
+                label={label}
+                why={why}
+                state={stateOf(job, skill, running, done)}
+                disabled={busy && !running}
+                onClick={() => (running ? run.show() : begin(skill))}
+              />
+            );
+          })}
+          <ActionButton
+            label="Ask a question"
+            why="Anything about this job, such as what to expect from a call. The answer stays here."
+            state={asked && busy ? 'running' : asked && run.phase === 'done' ? 'done' : null}
+            disabled={busy && !asked}
+            onClick={() => (asked && busy ? run.show() : setAsking(true))}
+          />
+        </div>
       </fieldset>
-      {asking && (
+      {pasting && (
         <QuestionsDialog
           job={job}
           api={api}
           onAnswer={() => run.start({ skill: 'answer-questions', jobId: job.id })}
+          onClose={() => setPasting(false)}
+        />
+      )}
+      {asking && (
+        <AskDialog
+          job={job}
+          api={api}
+          onAsked={(askId) => run.start({ skill: 'ask', jobId: job.id, askId })}
           onClose={() => setAsking(false)}
         />
       )}
