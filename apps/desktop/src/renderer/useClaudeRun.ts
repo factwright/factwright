@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi, RunSignal, TerminalSize } from '../shared/api.ts';
 import type { RunTask } from '../shared/runs.ts';
+import { isBoolean, readPref, writePref } from './prefs.ts';
 
 /** Where the panel's run stands. "idle" means nothing is running. */
 export type RunPhase = 'idle' | 'starting' | RunSignal;
 
 export interface ClaudeRun {
   phase: RunPhase;
-  /** Whether the panel is showing. It hides on request and comes back when Claude needs the user. */
+  /**
+   * Whether Claude's work shows: the terminal Claude Code runs in, under the bar that says where
+   * the run stands. A task starts with it folded away, unless the user chose to see it, and it
+   * opens when only the terminal can take the user's answer.
+   */
   open: boolean;
   /** A plain-words reason, when a run couldn't start. */
   problem: string | undefined;
@@ -15,6 +20,10 @@ export interface ClaudeRun {
   runId: number;
   /** The skill and job the panel's latest run was started for, if a Run button started it. */
   task: RunTask | null;
+  /** Changes with every task started, so what's said of the last one starts over. */
+  taskId: number;
+  /** When the task at hand started, in milliseconds, or null before the first. */
+  startedAt: number | null;
   /** Claude Code is asking whether to trust the workspace, and the user hasn't answered yet. */
   trustAsked: boolean;
   /**
@@ -36,10 +45,16 @@ export interface ClaudeRun {
   /** Takes the terminal's size: the first report starts a requested run, later ones resize it. */
   onTerminalSize: (size: TerminalSize) => void;
   stop: () => void;
+  /** Shows Claude's work, such as for a question only the terminal can take. */
   show: () => void;
   hide: () => void;
+  /** Shows or hides Claude's work as the user asks, and keeps that for the next task. */
+  showWork: (open: boolean) => void;
   close: () => void;
 }
+
+/** Where the user's choice to see Claude's work as it runs is kept. */
+const SHOW_WORK = 'claude.showWork';
 
 const START_PROBLEMS = {
   'not-ready': 'Claude Code isn’t ready. The card in the sidebar says what to do.',
@@ -57,6 +72,8 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
   const [problem, setProblem] = useState<string>();
   const [runId, setRunId] = useState(0);
   const [task, setTask] = useState<RunTask | null>(null);
+  const [taskId, setTaskId] = useState(0);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [trustAsked, setTrustAsked] = useState(false);
   const [firstRun, setFirstRun] = useState(false);
   // A run waiting for the terminal's size, with its task. Cleared the moment it launches, so it
@@ -76,13 +93,11 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
         // Any signal means Claude Code is past its first-run screens and the question about trust.
         setTrustAsked(false);
         setFirstRun(false);
-        // The panel comes back whenever Claude needs the user.
-        if (signal === 'needs-answer') setOpen(true);
       }),
     [api],
   );
 
-  // Claude Code waits on the user to trust the workspace, so the panel comes back for it too.
+  // Claude Code waits on the user to trust the workspace, which only the terminal takes.
   useEffect(
     () =>
       api.onClaudeTrust(() => {
@@ -116,7 +131,11 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
     (next?: RunTask) => {
       setProblem(undefined);
       setTask(next ?? null);
-      setOpen(true);
+      setTaskId((id) => id + 1);
+      setStartedAt(Date.now());
+      // A task runs with its work folded away, unless the user chose to see it. Claude with no
+      // task waits for the user to type, which only the terminal takes.
+      setOpen(next ? readPref(SHOW_WORK, false, isBoolean) : true);
       if (!next || (phase !== 'done' && phase !== 'ready')) {
         startNew(next);
         return;
@@ -167,11 +186,17 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
     problem,
     runId,
     task,
+    taskId,
+    startedAt,
     requestStart,
     onTerminalSize,
     stop: useCallback(() => api.stopClaude(), [api]),
     show: useCallback(() => setOpen(true), []),
     hide: useCallback(() => setOpen(false), []),
+    showWork: useCallback((shown: boolean) => {
+      setOpen(shown);
+      writePref(SHOW_WORK, shown);
+    }, []),
     close: useCallback(() => {
       setOpen(false);
       setPhase('idle');

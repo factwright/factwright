@@ -30,7 +30,7 @@ import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
 import { MainWindow } from './main-window.ts';
-import { notifyIfAway, notifyOfRequests, remindOfCall } from './notify.ts';
+import { notifyIfAway, notifyOfRequests, notifyRunDone, remindOfCall } from './notify.ts';
 import { JobOpener } from './open-job.ts';
 import { contentSecurityPolicy } from './policy.ts';
 import {
@@ -384,6 +384,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         window.send('claude:signal', signal);
         notifyIfAway(window, signal);
       },
+      onStep: (step) => window.send('claude:step', step),
+      onTurnEnd: (end) => window.send('claude:turn-end', end),
       onTrust: () => {
         window.send('claude:trust');
         notifyIfAway(window, 'needs-answer');
@@ -470,6 +472,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       reminders,
       opener,
       saveHelper,
+      tellRunDone: (note) => notifyRunDone(window, note, () => window.send('claude:open-result')),
     });
     void sync.start();
     // Coming back to the app, or the computer waking, asks a paused computer's account whether it

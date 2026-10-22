@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 // pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { type Opened, openApp, terminalLines, terminalStart, terminalText } from './app.ts';
+import {
+  type Opened,
+  openApp,
+  showWork,
+  terminalLines,
+  terminalStart,
+  terminalText,
+} from './app.ts';
 import { version } from './paths.ts';
 import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder, usersClaude } from './workspace.ts';
 
@@ -188,6 +195,11 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
     .getByRole('button', { name: /^Cover letter/ })
     .click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The bar says what Claude made, with Claude's work folded away under it, and opens it.
+  await expect(claudePanel()).toContainText('Your cover letter for Acme Robotics is ready.');
+  await expect(claudePanel().getByRole('button', { name: 'Show Claude’s work' })).toBeVisible();
+  await claudePanel().getByRole('button', { name: 'Open it' }).click();
+  await expect(jobPanel().getByRole('region', { name: 'Cover letter' })).toBeInViewport();
   // The app types only the skill and the job. A letter is writing, so it gets Opus at extra high.
   expect(await terminalText(window)).toContain(`/factwright:cover-letter job ${ACME_ID}`);
   await expect.poll(() => terminalStart(window)).toContain('opus · xhigh effort');
@@ -332,6 +344,7 @@ test('answers a question about the job, and keeps the answer with it', async () 
     .fill('What should I expect from the recruiter screen?');
   await dialog.getByRole('button', { name: 'Ask Claude' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  await expect(claudePanel()).toContainText('Claude answered your question about Acme Robotics.');
   // The app types only the skill and the job; the question reaches Claude through its tools.
   expect(await terminalText(window)).toContain(`/factwright:ask job ${ACME_ID}`);
   expect(await terminalText(window)).not.toContain('recruiter screen');
@@ -367,6 +380,10 @@ test('adds a call with who it’s with, preps for it, and keeps the prep sheet w
   );
 
   await calls.getByRole('button', { name: 'Call prep for the recruiter screen' }).click();
+  // The question's run is done already, so the bar saying what the prep made is what tells it's done.
+  await expect(claudePanel()).toContainText(
+    'Your prep sheet for the recruiter screen at Acme Robotics is ready.',
+  );
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   // The app types only the job's and the call's IDs; who it's with reaches Claude through its tools.
   const typed = await terminalLines(window);
@@ -422,6 +439,7 @@ test('fills in a call from the company’s invite, read in the window', async ()
 
 test('keeps a picture pasted into Claude’s panel with the run’s job, for Claude to read', async () => {
   const { window } = opened;
+  await showWork(window);
   // A picture on the clipboard, pasted into the terminal, as the system hands it to the page.
   await window.evaluate(`(async () => {
     const canvas = document.createElement('canvas');
@@ -462,6 +480,8 @@ test('asks the user’s OK in a dialog, and saves to their profile only once the
     .click();
   const panel = claudePanel();
   await expect(panel.getByRole('status').first()).toHaveText('Done');
+  // The user types into Claude's work, once it shows.
+  await showWork(window);
   const typing = panel.locator('.xterm-helper-textarea');
   const ask = async () => {
     await typing.pressSequentially('save my notice period');

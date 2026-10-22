@@ -64,6 +64,32 @@
   margin-bottom: 0;
 }
 
+/* While Claude does the step, in place of its button. Claude's panel says how it's going. */
+.running {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fw-accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
 .hint {
   margin: 8px 0 0;
   color: var(--fw-muted);

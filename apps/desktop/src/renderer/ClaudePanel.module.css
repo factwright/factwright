@@ -1,4 +1,4 @@
-/* As tall as its parts: the header, any note, and the terminal. */
+/* As tall as its parts: the bar, anything under it, and Claude's work when it shows. */
 .panel {
   display: flex;
   flex: 0 0 auto;
@@ -8,28 +8,63 @@
   background: var(--fw-surface);
 }
 
-/* Tucked away, the run keeps going and its terminal keeps everything it printed. */
-.hidden {
-  display: none;
-}
-
-/* One line, whatever the width: the hint shortens first, so the buttons never move. */
-.header,
-.slim {
+/* One line, whatever the width: what Claude is doing shortens first, so the buttons never move. */
+.header {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: var(--fw-space-3);
-  padding: 9px var(--fw-space-4);
-  border-bottom: 1px solid var(--fw-border);
+  padding: 10px var(--fw-space-4);
   white-space: nowrap;
   container-type: inline-size;
 }
 
-.slim {
-  border-top: 1px solid var(--fw-border);
-  border-bottom: 0;
-  background: var(--fw-surface);
+/* While Claude starts or works, a light moves along the top of the bar. */
+.busy::before {
+  position: absolute;
+  top: -1px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--fw-accent), transparent) no-repeat;
+  background-size: 35% 100%;
+  animation: working 1.8s ease-in-out infinite;
+  content: "";
+}
+
+@keyframes working {
+  from {
+    background-position: -40% 0;
+  }
+
+  to {
+    background-position: 140% 0;
+  }
+}
+
+/* Done, with something to show for it: the bar turns green for a moment, then stays tinted. */
+.finished {
+  background: var(--fw-ok-soft);
+  animation: finished 0.9s ease-out;
+}
+
+@keyframes finished {
+  from {
+    box-shadow: inset 0 0 0 2px var(--fw-ok);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busy::before {
+    background: var(--fw-accent);
+    opacity: 0.5;
+    animation: none;
+  }
+
+  .finished {
+    animation: none;
+  }
 }
 
 .title {
@@ -46,6 +81,40 @@
   text-overflow: ellipsis;
 }
 
+.finished .hint {
+  color: var(--fw-text);
+  font-weight: 600;
+}
+
+/* What it made says which task it was. */
+.finished .title {
+  display: none;
+}
+
+/* The last step done, quietly, then the one Claude is on. */
+.did {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+}
+
+.didMark {
+  flex: none;
+  color: var(--fw-ok);
+}
+
+.doing {
+  color: var(--fw-text);
+  font-weight: 550;
+}
+
+.elapsed {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
 .plan {
   display: inline-flex;
   align-items: center;
@@ -54,8 +123,8 @@
   font-size: var(--fw-text-sm);
 }
 
-/* In a narrow panel, the hint matters more. The sidebar still says whose Claude it is. */
-@container (max-width: 760px) {
+/* In a narrow window, what Claude is doing matters more. The sidebar still says whose Claude it is. */
+@container (max-width: 1100px) {
   .plan {
     display: none;
   }
@@ -68,8 +137,59 @@
   background: var(--fw-ok);
 }
 
-.show {
-  margin-left: auto;
+/* What Claude said last, with nothing else to show for its task, and a reply to it. */
+.said {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  padding: 4px var(--fw-space-4) 12px;
+}
+
+.saidText {
+  max-height: 8.5em;
+  overflow: auto;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--fw-sunken);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.saidText > :first-child {
+  margin-top: 0;
+}
+
+.saidText > :last-child {
+  margin-bottom: 0;
+}
+
+.reply {
+  display: flex;
+  gap: var(--fw-space-2);
+}
+
+.reply > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Claude's work: the terminal, and the notes over it, under the bar. */
+.work {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  border-top: 1px solid var(--fw-border);
+}
+
+/*
+ * Folded away, it keeps its size, out of sight, so Claude Code starts, and draws everything it
+ * prints, as it would in view, and showing it again redraws nothing.
+ */
+.folded {
+  height: 0;
+  overflow: hidden;
+  border-top: 0;
 }
 
 /*
@@ -90,7 +210,7 @@
   align-items: center;
   gap: var(--fw-space-3);
   padding: 7px var(--fw-space-3) 7px var(--fw-space-4);
-  border-bottom: 1px solid var(--fw-border);
+  border-top: 1px solid var(--fw-border);
   background: var(--fw-need-soft);
 }
 
@@ -108,34 +228,6 @@
 }
 
 .filedText strong {
-  font-weight: 650;
-}
-
-/* Claude's questions, put aside in their dialog, waiting here for the user to come back to. */
-.asking {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--fw-space-3);
-  padding: 7px var(--fw-space-3) 7px var(--fw-space-4);
-  border-bottom: 1px solid var(--fw-border);
-  background: var(--fw-accent-soft);
-}
-
-.askingIcon {
-  flex: none;
-  color: var(--fw-accent-text);
-}
-
-.askingText {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.askingText strong {
   font-weight: 650;
 }
 

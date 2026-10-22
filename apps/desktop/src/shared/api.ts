@@ -14,6 +14,7 @@ import type {
   SearchFocus,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from './about.ts';
+import type { RunStep, TurnEnd } from './activity.ts';
 import type { EffortChoices } from './effort.ts';
 import type {
   FactBank,
@@ -285,6 +286,28 @@ export interface FactwrightApi {
   onClaudeOutput(listener: (data: string) => void): () => void;
   /** Listens for changes in where the run stands. Returns a function that stops listening. */
   onClaudeSignal(listener: (signal: RunSignal) => void): () => void;
+  /**
+   * Listens for what Claude does, a tool call at a time, as it starts and once it's done, to say
+   * so in Claude's panel. Returns a function that stops listening.
+   */
+  onClaudeStep(listener: (step: RunStep) => void): () => void;
+  /**
+   * Listens for how each of Claude's turns ends: what it said last, or the error that ended it.
+   * Returns a function that stops listening.
+   */
+  onClaudeTurnEnd(listener: (end: TurnEnd) => void): () => void;
+  /** Sends Claude a reply, such as to a question it stopped to ask, as if typed and sent. */
+  replyToClaude(text: string): void;
+  /**
+   * Tells the user a task is done, and what it made, in a notification, if they're looking
+   * somewhere else.
+   */
+  tellRunDone(note: { title: string; body: string }): void;
+  /**
+   * Listens for the user clicking that notification, to open what the task made. Returns a
+   * function that stops listening.
+   */
+  onOpenRunResult(listener: () => void): () => void;
   /**
    * Listens for Claude Code asking whether to trust the workspace, which it does once, in the
    * first run. Returns a function that stops listening.

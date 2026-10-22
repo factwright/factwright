@@ -51,6 +51,29 @@ describe('RunServer', () => {
     await vi.waitFor(() => expect(listener).toHaveBeenCalledWith({ hook_event_name: 'Stop' }));
   });
 
+  it('hears each tool call as it starts, on a path of its own, and answers at once', async () => {
+    await server.start();
+    const hooks = vi.fn();
+    const activity = vi.fn();
+    server.listen(TOKEN, hooks, { activity });
+    const event = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_use_id: 'toolu_1' };
+    const response = await post(server.activityUrl, event);
+    expect(response.status).toBe(204);
+    await vi.waitFor(() => expect(activity).toHaveBeenCalledWith(event));
+    // Only heard: the run's own hooks, and the questions they hold, never see it.
+    expect(hooks).not.toHaveBeenCalled();
+    // A run without a listener for it still hears back.
+    const stopOther = server.listen('c'.repeat(64), () => {});
+    const other = await fetch(server.activityUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${'c'.repeat(64)}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
+    stopOther();
+    expect(other.status).toBe(204);
+    expect(activity).toHaveBeenCalledOnce();
+  });
+
   it("tells a run's tools listener which methods it calls, one at a time or in a batch", async () => {
     await server.start();
     const tools = vi.fn();
@@ -549,6 +572,9 @@ describe('RunServer', () => {
     });
     expect(wrong.status).toBe(404);
     expect((await post(server.toolsUrl, {}, { Origin: 'https://evil.example' })).status).toBe(404);
+    expect((await post(server.activityUrl, {}, { Origin: 'https://evil.example' })).status).toBe(
+      404,
+    );
     const stream = await fetch(server.toolsUrl, { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(stream.status).toBe(405);
     stopListening();

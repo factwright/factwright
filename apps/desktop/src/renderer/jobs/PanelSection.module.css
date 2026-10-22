@@ -7,6 +7,23 @@
   scroll-margin-top: 170px;
 }
 
+/* Shown to the user, such as what a run just made, it lights up for a moment. */
+.lit {
+  animation: lit 1.8s ease-out;
+}
+
+@keyframes lit {
+  from {
+    background: var(--fw-accent-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lit {
+    animation-duration: 1ms;
+  }
+}
+
 .head {
   display: flex;
   align-items: center;

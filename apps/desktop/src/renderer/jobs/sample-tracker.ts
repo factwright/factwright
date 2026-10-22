@@ -25,6 +25,7 @@ import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import type { Revision } from '../../shared/revision.ts';
+import { type RunTask, taskJob } from '../../shared/runs.ts';
 import {
   sampleCallDocs,
   sampleDocs,
@@ -158,7 +159,10 @@ export function sampleTracker(
   jobs: string | null,
   resume: string | null = null,
   revised = false,
-): TrackerApi {
+): TrackerApi & {
+  /** What a made-up run leaves on its job, such as a tailored resume, as a real one would. */
+  madeBy: (task: RunTask) => void;
+} {
   const files = RESUMES[resume ?? ''] ?? { pdf: engineerPdf, word: engineerWord };
   // Revisions sent in the sample screens, by job and resume, until the page reloads.
   const revisions = new Map<string, Revision>();
@@ -446,6 +450,47 @@ export function sampleTracker(
     onJobsChanged: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    madeBy: (task) => {
+      const jobId = taskJob(task);
+      const modified = new Date().toISOString();
+      const file = (job: Job, name: string) => ({
+        path: `applications/${job.id}/${name}`,
+        name,
+        format: 'pdf' as const,
+        size: 48_213,
+        modified,
+      });
+      const named = (job: Job) => job.company.replace(/\W+/g, '');
+      change(
+        (job) => job.id === jobId,
+        (job) => {
+          switch (task.skill) {
+            case 'focused-resume':
+              return {
+                ...job,
+                files: [...job.files, file(job, `AlexRiveraResume_${named(job)}.pdf`)],
+              };
+            case 'cover-letter':
+              return {
+                ...job,
+                letters: [...job.letters, file(job, `AlexRiveraCoverLetter_${named(job)}.pdf`)],
+              };
+            case 'projects-page':
+              return {
+                ...job,
+                projectPages: [
+                  ...job.projectPages,
+                  file(job, `AlexRiveraProjects_${named(job)}.pdf`),
+                ],
+              };
+            case 'fit-check':
+              return { ...job, fit: { verdict: 'Good fit', score: 78, date: localDate() } };
+            default:
+              return job;
+          }
+        },
+      );
     },
     jobExtras: async (jobId) => {
       const job = list.jobs.find((each) => each.id === jobId);

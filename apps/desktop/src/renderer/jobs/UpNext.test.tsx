@@ -105,11 +105,10 @@ describe('UpNext', () => {
     });
   });
 
-  it('brings back the run doing the step, and waits while Claude does another', async () => {
-    const running = controls('working', { skill: 'focused-resume', jobId: job.id });
-    shown(toApply, running);
-    await userEvent.click(screen.getByRole('button', { name: 'Running… Show Claude' }));
-    expect(running.show).toHaveBeenCalled();
+  it('says Claude is on the step while it runs, and waits while Claude does another', () => {
+    shown(toApply, controls('working', { skill: 'focused-resume', jobId: job.id }));
+    expect(screen.getByText('Claude is on it')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Start with Claude' })).toBeNull();
     cleanup();
     shown(toApply, controls('working', { skill: 'salary-check', jobId: 'other--job' }));
     expect((start() as HTMLButtonElement).disabled).toBe(true);

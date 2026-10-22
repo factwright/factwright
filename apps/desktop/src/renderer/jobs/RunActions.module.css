@@ -59,7 +59,7 @@
   opacity: 0.55;
 }
 
-/* Made or run before: a quiet check. Just done, or running: the accent. */
+/* Made or run before: a quiet check. Running, or just done with nothing made: the accent. */
 .mark {
   flex: 0 0 auto;
   color: var(--fw-ok);

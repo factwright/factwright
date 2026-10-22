@@ -1,4 +1,5 @@
 import { localDate } from '@factwright/core';
+import type { RunStep, TurnEnd } from '../shared/activity.ts';
 import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
 import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import type { FiledFacts } from '../shared/facts.ts';
@@ -11,7 +12,7 @@ import {
   type RoundQuestion,
   type RoundReply,
 } from '../shared/rounds.ts';
-import type { RunTask } from '../shared/runs.ts';
+import { type RunTask, taskJob } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleSaveHelper } from './extension/sample-helper.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
@@ -396,12 +397,58 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * for that instead, in its dialog. ?helper picks where the browsers stand in the Save to
  * Factwright window (see extension/sample-helper.ts).
  */
+/** How long each made-up step of a run takes, in milliseconds. */
+const STEP_MS = 900;
+
+/** What the made-up run does for a task, a tool call at a time, as Claude Code's hooks tell it. */
+function sampleSteps(task: RunTask): Omit<RunStep, 'id' | 'state'>[] {
+  const folder = `applications/${taskJob(task) ?? 'the-job'}`;
+  const reading = [
+    { tool: 'mcp__factwright__job_details', detail: null },
+    { tool: 'Read', detail: 'facts/platform-engineering.md' },
+  ];
+  switch (task.skill) {
+    case 'focused-resume':
+      return [
+        ...reading,
+        { tool: 'Read', detail: 'guide/writing.md' },
+        { tool: 'Write', detail: `${folder}/resume.json` },
+        { tool: 'mcp__factwright__build_resume', detail: null },
+      ];
+    case 'cover-letter':
+      return [
+        ...reading,
+        { tool: 'Write', detail: `${folder}/cover-letter.json` },
+        { tool: 'mcp__factwright__build_cover_letter', detail: null },
+      ];
+    case 'fit-check':
+      return [
+        { tool: 'mcp__factwright__read_posting', detail: 'jobs.example' },
+        ...reading,
+        { tool: 'WebSearch', detail: 'Copperleaf Energy engineering team reviews' },
+        { tool: 'Write', detail: `${folder}/fit-check.md` },
+      ];
+    default:
+      return reading;
+  }
+}
+
 export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
   const claude = query.get('claude') ?? 'ready';
   const ready = PLANS[query.get('plan') ?? ''] ?? READY;
   const outputListeners = new Set<(data: string) => void>();
   const signalListeners = new Set<(signal: RunSignal) => void>();
+  const stepListeners = new Set<(step: RunStep) => void>();
+  const endListeners = new Set<(end: TurnEnd) => void>();
+  const step = (value: RunStep) => {
+    for (const listener of stepListeners) listener(value);
+  };
+  const ended = (end: TurnEnd) => {
+    for (const listener of endListeners) listener(end);
+  };
+  // ?jobs picks the jobs, and a made-up run leaves its work on them.
+  const tracker = sampleTracker(query.get('jobs'), query.get('resume'), query.has('revised'));
   const print = (lines: string[]) => {
     for (const line of lines) for (const listener of outputListeners) listener(line);
   };
@@ -469,7 +516,17 @@ export function sampleApi(): FactwrightApi {
   let reminding = query.get('reminders') !== 'off';
   let models: ModelChoices = DEFAULT_MODELS;
   let effort: EffortChoices = DEFAULT_EFFORT;
+  // ?end=question has a run stop to ask in its own words, and ?end=rate_limit end in that error.
+  const ending = query.get('end');
+  // The task at hand, which a reply to the made-up run's question finishes.
+  let current: RunTask | null = null;
+  const finish = (task: RunTask | null) => {
+    if (task) tracker.madeBy(task);
+    ended({ said: 'Done. The job’s panel shows what changed.', error: null });
+    done();
+  };
   const playTask = (task: RunTask) => {
+    current = task;
     signal('working');
     print(run.task(task));
     if (asks && task.skill === 'interview-prep') {
@@ -479,10 +536,30 @@ export function sampleApi(): FactwrightApi {
       }, 1200);
       return;
     }
-    setTimeout(() => {
-      print(run.taskDone(task));
-      done();
-    }, 1600);
+    const steps = sampleSteps(task).map((each, i) => ({
+      ...each,
+      id: `sample-${Date.now()}-${i}`,
+    }));
+    steps.forEach((each, i) => {
+      setTimeout(() => step({ ...each, state: 'running' }), 300 + i * STEP_MS);
+      setTimeout(() => step({ ...each, state: 'done' }), 300 + (i + 0.7) * STEP_MS);
+    });
+    setTimeout(
+      () => {
+        print(run.taskDone(task));
+        if (!ending) {
+          finish(task);
+          return;
+        }
+        ended(
+          ending === 'question'
+            ? { said: 'Which template would you like for it, Classic or Minimal?', error: null }
+            : { said: null, error: { kind: ending, message: 'API Error: Rate limit reached' } },
+        );
+        done();
+      },
+      300 + steps.length * STEP_MS,
+    );
   };
   return {
     platform: query.get('platform') ?? 'darwin',
@@ -618,6 +695,26 @@ export function sampleApi(): FactwrightApi {
       signalListeners.add(listener);
       return () => signalListeners.delete(listener);
     },
+    onClaudeStep: (listener) => {
+      stepListeners.add(listener);
+      return () => stepListeners.delete(listener);
+    },
+    onClaudeTurnEnd: (listener) => {
+      endListeners.add(listener);
+      return () => endListeners.delete(listener);
+    },
+    // A reply carries on the made-up run, as a message typed in the terminal does.
+    replyToClaude: (text) => {
+      print([`> ${text}\r\n`]);
+      signal('working');
+      setTimeout(() => {
+        print(run.finished);
+        finish(current);
+      }, 1600);
+    },
+    // The window is always in view in the screens preview, so a done run tells no one.
+    tellRunDone: () => {},
+    onOpenRunResult: () => () => {},
     onClaudeTrust: (listener) => {
       trustListeners.add(listener);
       return () => trustListeners.delete(listener);
@@ -673,7 +770,7 @@ export function sampleApi(): FactwrightApi {
     },
     // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray,
     // and ?revised a revision sent before it was last built, for the before-and-after.
-    ...sampleTracker(query.get('jobs'), query.get('resume'), query.has('revised')),
+    ...tracker,
     ...sampleSync(query.get('sync'), query.get('approve'), query.get('server'), query.get('plan')),
     ...sampleProfile(query.get('profile')),
     ...facts.api,

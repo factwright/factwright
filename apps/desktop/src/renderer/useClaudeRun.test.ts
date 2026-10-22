@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi, RunSignal, StartResult } from '../shared/api.ts';
 import type { RunTask } from '../shared/runs.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
@@ -38,7 +38,49 @@ function fakeApi(task: StartResult = { ok: true }) {
   };
 }
 
+afterEach(() => localStorage.clear());
+
 describe('useClaudeRun', () => {
+  it('runs a task with Claude’s work folded away, and Claude with no task with it in view', () => {
+    const { api } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    const at = Date.now();
+    act(() => result.current.requestStart(TASK));
+    expect(result.current.open).toBe(false);
+    expect(result.current.taskId).toBe(1);
+    expect(result.current.startedAt).toBeGreaterThanOrEqual(at);
+    act(() => result.current.requestStart());
+    // Claude with nothing to do waits for the user to type, which only the terminal takes.
+    expect(result.current.open).toBe(true);
+    expect(result.current.taskId).toBe(2);
+  });
+
+  it('keeps the user’s choice to see Claude’s work for the next task', () => {
+    const { api, signal } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => result.current.requestStart(TASK));
+    act(() => result.current.showWork(true));
+    expect(result.current.open).toBe(true);
+    act(() => signal('done'));
+    act(() => result.current.requestStart(TASK));
+    expect(result.current.open).toBe(true);
+    act(() => result.current.showWork(false));
+    act(() => result.current.requestStart(TASK));
+    expect(result.current.open).toBe(false);
+    // Shown for what only the terminal takes, it's no choice of the user's.
+    act(() => result.current.show());
+    act(() => result.current.requestStart(TASK));
+    expect(result.current.open).toBe(false);
+  });
+
+  it('leaves Claude’s work folded while Claude needs an answer the app’s dialogs take', () => {
+    const { api, signal } = fakeApi();
+    const { result } = renderHook(() => useClaudeRun(api));
+    act(() => result.current.requestStart(TASK));
+    act(() => signal('needs-answer'));
+    expect(result.current.open).toBe(false);
+  });
+
   it('starts Claude with a skill to run on a job, once the terminal has its size', async () => {
     const { api } = fakeApi();
     const { result } = renderHook(() => useClaudeRun(api));
@@ -111,7 +153,7 @@ describe('useClaudeRun', () => {
     expect(result.current.phase).toBe('stopped');
   });
 
-  it('explains the question about trust until the user answers it, and brings the panel back', async () => {
+  it('explains the question about trust until the user answers it, and shows Claude’s work for it', async () => {
     const { api, signal, trust } = fakeApi();
     const { result } = renderHook(() => useClaudeRun(api));
     act(() => result.current.requestStart());

@@ -241,8 +241,31 @@ describe('sessionSettings', () => {
       'PermissionRequest',
       'Notification',
       'Stop',
+      'StopFailure',
       'SessionEnd',
     ]);
+  });
+
+  it('hears every tool call as it starts on a path of its own, apart from the hooks that wait', () => {
+    const heard = sessionSettings({
+      hookUrl: 'http://127.0.0.1:4000/hook',
+      activityUrl: 'http://127.0.0.1:4000/activity',
+      dark: false,
+    });
+    expect(heard.hooks.PreToolUse).toHaveLength(3);
+    expect(heard.hooks.PreToolUse[2]).toEqual({
+      hooks: [
+        {
+          type: 'http',
+          url: 'http://127.0.0.1:4000/activity',
+          timeout: 5,
+          headers: { Authorization: `Bearer $${RUN_TOKEN_VARIABLE}` },
+          allowedEnvVars: [RUN_TOKEN_VARIABLE],
+        },
+      ],
+    });
+    // The hooks that wait on the user are as they were.
+    expect(heard.hooks.PreToolUse.slice(0, 2)).toEqual(settings.hooks.PreToolUse);
   });
 
   it('sends every hook to the app, with the token read from the environment', () => {

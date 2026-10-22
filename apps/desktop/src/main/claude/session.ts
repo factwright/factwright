@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
+import type { RunStep, TurnEnd } from '../../shared/activity.ts';
 import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
 import type { Effort } from '../../shared/effort.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
@@ -10,6 +11,7 @@ import type { Model } from '../../shared/models.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
+import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
@@ -46,7 +48,7 @@ export interface LaunchOptions {
   /** The app's own data folder, which holds the workspace and each run's settings. */
   dataDir: string;
   pluginDir: string;
-  server: Pick<RunServer, 'hookUrl' | 'toolsUrl'>;
+  server: Pick<RunServer, 'hookUrl' | 'activityUrl' | 'toolsUrl'>;
   dark: boolean;
   /** Names the run's settings files, so runs that overlap don't share them. */
   name: string;
@@ -79,6 +81,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
   const mcpConfig = join(runDir, `${options.name}-mcp.json`);
   const hookSettings = sessionSettings({
     hookUrl: options.server.hookUrl,
+    activityUrl: options.server.activityUrl,
     dark: options.dark,
     permissions: await loadPermissions(options.dataDir),
     ...(options.scope ? { scope: options.scope } : {}),
@@ -140,6 +143,10 @@ export interface SessionDeps {
   dark: () => boolean;
   onOutput: (data: string) => void;
   onSignal: (signal: RunSignal) => void;
+  /** Hears what Claude does, a tool call at a time, as it starts and once it's done. */
+  onStep?: (step: RunStep) => void;
+  /** Hears how each turn ends: what Claude said last, or the error that ended it. */
+  onTurnEnd?: (end: TurnEnd) => void;
   /** Claude Code is asking whether to trust the workspace, which it does once. */
   onTrust: () => void;
   /**
@@ -238,6 +245,8 @@ export class ClaudeSession {
     if (!launch) return { ok: false, reason: 'not-ready' };
 
     const signals = new RunSignals(this.deps.onSignal);
+    const { onStep } = this.deps;
+    const activity = onStep && new RunActivity(onStep, launch.cwd);
     const trust = new ScreenWatch(TRUST_QUESTION);
     const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
     let heard = false;
@@ -252,8 +261,12 @@ export class ClaudeSession {
       (event) => {
         pastScreens();
         signals.hear(event);
+        activity?.hear(event);
+        const end = turnEnd(event);
+        if (end) this.deps.onTurnEnd?.(end);
       },
       {
+        ...(activity && { activity: (event: unknown) => activity.started(event) }),
         // With no prompt, no hook comes until the user types. Claude Code reaches Factwright's
         // tools once it's past its first-run screens and the question about trust, so then it's
         // waiting for them.

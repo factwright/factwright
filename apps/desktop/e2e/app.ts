@@ -1,5 +1,11 @@
 import { delimiter } from 'node:path';
-import { _electron, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  _electron,
+  type ElectronApplication,
+  expect,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import electronPath from 'electron';
 import { desktop, fakeClaude } from './paths.ts';
 import { usersClaude } from './workspace.ts';
@@ -72,22 +78,75 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
   }
 }
 
+/**
+ * Shows Claude's work, the terminal under the run's bar, as a person does to type into it, when
+ * it's folded away. True when it was.
+ */
+export async function showWork(window: Page): Promise<boolean> {
+  const show = window
+    .locator('section[aria-label="Claude"]')
+    .getByRole('button', { name: 'Show Claude’s work' });
+  if ((await show.count()) === 0) return false;
+  await show.click();
+  return true;
+}
+
+/** Folds Claude's work away again, once it was shown only to read it. */
+const foldWork = (window: Page) =>
+  window
+    .locator('section[aria-label="Claude"]')
+    .getByRole('button', { name: 'Hide Claude’s work' })
+    .click();
+
+/**
+ * Reads what Claude's work shows, as a person does: the terminal draws only while it shows, so
+ * this shows it while it reads, then folds it away again if it was.
+ */
+async function reading<T>(window: Page, read: (rows: Locator) => Promise<T>): Promise<T> {
+  const folded = await showWork(window);
+  const rows = window.locator('section[aria-label="Claude"] .xterm-rows');
+  try {
+    // Shown again, it notices a moment later, then draws its rows on the next frames, over what it
+    // drew when it last showed. Once they hold still, they're all there.
+    if (folded) {
+      let last = '';
+      await expect
+        .poll(
+          async () => {
+            await window.evaluate(
+              'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))',
+            );
+            const now = await rows.innerText();
+            const still = now === last && /\S/.test(now);
+            last = now;
+            return still;
+          },
+          { intervals: [50, 100, 100, 200] },
+        )
+        .toBe(true);
+    }
+    return await read(rows);
+  } finally {
+    if (folded) await foldWork(window);
+  }
+}
+
 /** What Claude's panel shows in its terminal, as text. */
-export const terminalText = (window: Page) =>
-  window.locator('section[aria-label="Claude"] .xterm-rows').innerText();
+export const terminalText = (window: Page) => reading(window, (rows) => rows.innerText());
 
 /**
  * The top of what Claude's panel holds, where a run says which model and effort it has. A run that
  * prints more than the panel shows has scrolled it out of sight, so this scrolls back up to it, as
  * a person does, then down again. The terminal draws its rows a moment later, so poll it.
  */
-export async function terminalStart(window: Page): Promise<string> {
-  await window.locator('section[aria-label="Claude"] .xterm-screen').hover();
-  await window.mouse.wheel(0, -100_000);
-  const text = await terminalText(window);
-  await window.mouse.wheel(0, 100_000);
-  return text;
-}
+export const terminalStart = (window: Page) =>
+  reading(window, async (rows) => {
+    await window.locator('section[aria-label="Claude"] .xterm-screen').hover();
+    await window.mouse.wheel(0, -100_000);
+    const text = await rows.innerText();
+    await window.mouse.wheel(0, 100_000);
+    return text;
+  });
 
 /** What Claude's panel shows, as one run of text, so a line too long for the panel reads whole. */
 export const terminalLines = async (window: Page) =>

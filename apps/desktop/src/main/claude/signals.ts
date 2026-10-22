@@ -59,7 +59,10 @@ export class RunSignals {
           this.emit('needs-answer');
         }
         return;
+      // A turn that ends in an error, such as a rate limit, is over too, and Claude Code waits
+      // for the user's next message: the window says what the error was.
       case 'Stop':
+      case 'StopFailure':
         this.waiting.length = 0;
         this.answeredInApp.length = 0;
         this.emit('done');

@@ -23,6 +23,8 @@ describe('RunSignals', () => {
     [{ hook_event_name: 'Notification', notification_type: 'permission_prompt' }, 'needs-answer'],
     [{ hook_event_name: 'Notification', notification_type: 'elicitation_dialog' }, 'needs-answer'],
     [{ hook_event_name: 'Stop' }, 'done'],
+    // A turn that ends in an error, such as a rate limit, is over too.
+    [{ hook_event_name: 'StopFailure', error: 'rate_limit' }, 'done'],
   ])('reads %o as %s', (event, signal) => {
     const { signals, hear } = run();
     hear(event);

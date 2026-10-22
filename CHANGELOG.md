@@ -7,6 +7,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - The jobs list sorts by any column: click Job, Status, Fit, Pay or Next step at the top of it. Click again for the other way round, and once more to go back to the newest activity first. Factwright keeps your choice for next time.
 - A job that has the window to itself keeps a slim list of your jobs beside it, so another job is a click away without closing it: the view, with how many jobs each holds, its jobs in the list's order, each with its next step, and every other choice behind Filters, with Needs you and Found by among them. Searching narrows the slim list and leaves the job open. In a window too narrow for both, the job has the window to itself as before.
+- While Claude works on a task, the bar along the bottom of the window says what it's doing, a step at a time, such as Reading your fact bank, then Building the resume, with how long it's taken so far. Once it's done, it says what Claude made, such as "Your tailored resume for Acme Robotics is ready.", with Open it, which goes to the job and shows it there. If you're in another app, a notification says so too, and clicking it opens it.
+- When Claude stops to ask you something in its own words, the bar shows what it said, with a box to reply, so you can answer it there.
+- When Claude's turn ends in an error, such as a rate limit or your plan's usage limit for now, the bar says so, with Try again. Before, the run looked busy until you looked in the terminal.
 
 ### Changed
 - A job's panel starts with what to do next, in a box of its own: the step the list shows for the job, in the same words, such as Tailor a resume, Run a fit check or Prep for the recruiter screen Saturday, with the button that does it. Start with Claude starts Claude on the steps Claude does, Mark as applied marks a job that's ready, Done clears a reminder of your own, and Say how it went opens Calls and interviews for a call that's over. A job not sorted yet has To review, To apply, Later and Pass under its step.
@@ -14,6 +17,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Under them, a job's sections are in two groups: From your Claude, with what Claude made for the job, its fit and your questions for Claude, and Your progress, with your reminder, progress, calls and interviews, notes and history. They're side by side when the job has the window to itself. Files is now Made for this job, and says what goes there before anything does. Your questions for Claude have a section of their own once you've asked one.
 - Next step, the box for what you mean to do for a job and by when, is now Reminder, at the top of Your progress, so it isn't taken for the step Factwright suggests. What you write there is still the job's next step until you clear it.
 - A posting that asks for samples of your work, such as a portfolio, has a next step of its own once the resume and any cover letter are done: The posting asks for samples of your work, with Start with Claude to make a Projects page.
+- Claude's work, the terminal your own Claude Code runs in, stays folded away under the bar while Claude works on a task, so the job you're on keeps the window. Show Claude's work opens it, and Factwright keeps your choice for the next task. It opens on its own when only the terminal can take your answer: Claude Code's first-run screens, its question about trusting your workspace, and anything the app's dialogs leave to it. Claude with no task, which waits for you to type, starts with it open.
+- A job's Up next box says "Claude is on it" while Claude does that step.
 
 ## 0.11.1 - 2026-10-22
 

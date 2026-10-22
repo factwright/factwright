@@ -59,13 +59,15 @@ export interface AnsweredCall {
 export type AnsweredListener = (call: AnsweredCall) => void;
 
 /** The hooks after which nothing from before can still be waiting on the user. */
-const MOVED_ON = ['UserPromptSubmit', 'Stop', 'SessionEnd'];
+const MOVED_ON = ['UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd'];
 
 /** How many calls allowed in the app are kept, until their PostToolUse comes. */
 const MAX_ALLOWED = 50;
 
 interface RunListeners {
   hooks: HookListener;
+  /** Hears each tool call as it starts. */
+  activity: HookListener | undefined;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
   permit: PermissionAsker | undefined;
@@ -88,6 +90,8 @@ interface RunListeners {
 
 /** What else a run's listener hears, and what the run is for. */
 export interface ListenOptions {
+  /** Hears each tool call as it starts, from the hook every call has, to follow what Claude does. */
+  activity?: HookListener;
   /** Hears which MCP methods the run calls. */
   tools?: ToolsListener;
   /** What the run may change without asking. Every run but getting started is "hunt". */
@@ -117,6 +121,11 @@ export class RunServer {
   private server: Server | undefined;
   /** Where Claude Code sends its hooks. Set once the server is listening. */
   hookUrl = '';
+  /**
+   * Where Claude Code says each tool call is starting, apart from the hooks that wait on the user,
+   * so that hearing every call changes nothing about them. Set once the server is listening.
+   */
+  activityUrl = '';
   /** Where Claude Code calls Factwright's tools. Set once the server is listening. */
   toolsUrl = '';
 
@@ -130,6 +139,7 @@ export class RunServer {
     this.server = server;
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     this.hookUrl = `${origin}/hook`;
+    this.activityUrl = `${origin}/activity`;
     this.toolsUrl = `${origin}/mcp`;
   }
 
@@ -144,11 +154,12 @@ export class RunServer {
    * it was asking, so their dialog closes.
    */
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
-    const { tools, scope = 'hunt', onFiled, revision, ask, permit, onAnswered } = options;
+    const { activity, tools, scope = 'hunt', onFiled, revision, ask, permit, onAnswered } = options;
     const context = options.context ?? {};
     const held = new Map<AbortController, string | null>();
     this.listeners.set(token, {
       hooks,
+      activity,
       tools,
       ask,
       permit,
@@ -175,7 +186,7 @@ export class RunServer {
       response.writeHead(405, { Allow: 'POST' }).end();
       return;
     }
-    if (request.method !== 'POST' || (request.url !== '/hook' && request.url !== '/mcp')) {
+    if (request.method !== 'POST' || !['/hook', '/activity', '/mcp'].includes(request.url ?? '')) {
       response.writeHead(404).end();
       return;
     }
@@ -186,6 +197,12 @@ export class RunServer {
       if (body.length > MAX_BODY_BYTES) request.destroy();
     });
     request.on('end', () => {
+      // Only heard: a call starting waits on nothing here.
+      if (request.url === '/activity') {
+        response.writeHead(204).end();
+        listener.activity?.(parseJson(body));
+        return;
+      }
       if (request.url === '/hook') {
         const event = parseJson(body);
         // Heard before Claude Code carries on, so an answer is on record before Claude reads it.

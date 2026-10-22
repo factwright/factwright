@@ -1,32 +1,42 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RunStep } from '../shared/activity.ts';
 import type { FactwrightApi } from '../shared/api.ts';
-import { ClaudePanel } from './ClaudePanel.tsx';
-import type { ClaudeRun } from './useClaudeRun.ts';
+import { ClaudePanel, clock, doingLine, QUIET_AFTER_MS } from './ClaudePanel.tsx';
+import type { ClaudeRun, RunPhase } from './useClaudeRun.ts';
+import type { RunActivity } from './useRunActivity.ts';
 
 // The terminal itself needs a real browser, and these tests are about what's around it.
 const { terminal } = vi.hoisted(() => ({
-  terminal: vi.fn((_props: { attention?: boolean }) => null),
+  terminal: vi.fn((_props: { attention?: boolean; shown?: boolean }) => null),
 }));
 vi.mock('./TerminalView.tsx', () => ({ TerminalView: terminal }));
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.useRealTimers();
 });
 
 /** Whether the terminal was last drawn outlined, as waiting on the user. */
 const outlined = () => terminal.mock.lastCall?.[0]?.attention === true;
 
-const run = (open: boolean, trustAsked = false, firstRun = false) =>
+const run = (
+  open: boolean,
+  trustAsked = false,
+  firstRun = false,
+  phase: RunPhase = 'needs-answer',
+) =>
   ({
-    phase: 'needs-answer',
+    phase,
     open,
     problem: undefined,
     runId: 1,
-    task: null,
+    task: { skill: 'focused-resume', jobId: 'acme--staff' },
+    taskId: 1,
+    startedAt: Date.now() - 84_000,
     trustAsked,
     firstRun,
     typed: vi.fn(),
@@ -35,130 +45,106 @@ const run = (open: boolean, trustAsked = false, firstRun = false) =>
     stop: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
+    showWork: vi.fn(),
     close: vi.fn(),
   }) satisfies ClaudeRun;
 
+const step = (
+  tool: string,
+  detail: string | null,
+  state: RunStep['state'],
+  id = tool,
+): RunStep => ({
+  id,
+  tool,
+  detail,
+  state,
+});
+
+const api = () =>
+  ({ replyToClaude: vi.fn() }) as unknown as FactwrightApi & {
+    replyToClaude: ReturnType<typeof vi.fn>;
+  };
+
+const bar = () => screen.getByRole('region', { name: 'Claude' });
+
 describe('ClaudePanel', () => {
-  it('keeps questions the user put aside waiting, with a way back to them', async () => {
+  it('keeps questions the user put aside waiting in the bar, with a way back to them', async () => {
     const onAnswer = vi.fn();
     render(
       <ClaudePanel
-        api={{} as FactwrightApi}
-        run={run(true)}
+        api={api()}
+        run={run(false)}
         plan="Max"
         asking={{ what: 'questions', count: 2, open: false, onAnswer }}
       />,
     );
-    const panel = screen.getByRole('region', { name: 'Claude' });
-    expect(panel.textContent).toContain('Claude is waiting for your answer to 2 questions.');
-    // The header says Claude has a question, not that it's in the terminal.
-    expect(panel.textContent).toContain('Claude has a question for you.');
-    expect(panel.textContent).not.toContain('Answer it in the panel below');
+    expect(bar().textContent).toContain('Claude is waiting for your answer to 2 questions.');
     await userEvent.click(screen.getByRole('button', { name: 'Answer' }));
     expect(onAnswer).toHaveBeenCalled();
+    // Waiting in the app's dialog, it opens none of Claude's work.
+    expect(outlined()).toBe(false);
   });
 
-  it('offers them from the slim bar too, while the panel is tucked away', async () => {
-    const onAnswer = vi.fn();
-    render(
-      <ClaudePanel
-        api={{} as FactwrightApi}
-        run={run(false)}
-        plan="Max"
-        asking={{ what: 'questions', count: 1, open: false, onAnswer }}
-      />,
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Answer Claude' }));
-    expect(onAnswer).toHaveBeenCalled();
-  });
-
-  it('says nothing more of questions while their dialog is open, or when none wait', () => {
+  it('says Claude has a question while its dialog is open, and keeps a permission prompt waiting too', async () => {
     const { rerender } = render(
       <ClaudePanel
-        api={{} as FactwrightApi}
-        run={run(true)}
+        api={api()}
+        run={run(false)}
         plan="Max"
         asking={{ what: 'questions', count: 1, open: true, onAnswer: vi.fn() }}
       />,
     );
-    expect(screen.queryByText(/waiting for your answer/)).toBeNull();
+    expect(bar().textContent).toContain('Claude has a question for you.');
     expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull();
-    expect(screen.getByText('Claude has a question for you.')).toBeTruthy();
-    // A question in the terminal, such as one sent there, is answered in the panel.
-    rerender(<ClaudePanel api={{} as FactwrightApi} run={run(true)} plan="Max" />);
-    expect(screen.queryByText(/waiting for your answer/)).toBeNull();
-    expect(screen.getByText('Claude has a question. Answer it in the panel below.')).toBeTruthy();
-  });
-
-  it('keeps a permission prompt put aside waiting, saying Claude Code wants an OK', async () => {
     const onAnswer = vi.fn();
-    render(
+    rerender(
       <ClaudePanel
-        api={{} as FactwrightApi}
-        run={run(true)}
+        api={api()}
+        run={run(false)}
         plan="Max"
         asking={{ what: 'permission', count: 1, open: false, onAnswer }}
       />,
     );
-    const panel = screen.getByRole('region', { name: 'Claude' });
-    expect(panel.textContent).toContain(
+    expect(bar().textContent).toContain(
       'Claude Code is waiting for your OK before Claude carries on.',
     );
-    expect(panel.textContent).toContain('Claude Code is asking for your OK.');
     await userEvent.click(screen.getByRole('button', { name: 'Answer' }));
     expect(onAnswer).toHaveBeenCalled();
-    expect(outlined()).toBe(false);
   });
 
-  it('points to the terminal when only it can answer, explaining it once to someone new', async () => {
-    const { rerender } = render(
-      <ClaudePanel api={{} as FactwrightApi} run={run(true)} plan="Max" />,
-    );
-    const panel = screen.getByRole('region', { name: 'Claude' });
-    expect(panel.textContent).toContain(
+  it('opens Claude’s work for what only the terminal can answer, once the app would have asked', async () => {
+    vi.useFakeTimers();
+    const folded = run(false);
+    render(<ClaudePanel api={api()} run={folded} plan="Max" />);
+    expect(bar().textContent).toContain('Claude Code is asking you something in its work below.');
+    expect(folded.show).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1200));
+    expect(folded.show).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+    cleanup();
+    // Shown, it points to the terminal, explaining it once to someone new.
+    render(<ClaudePanel api={api()} run={run(true)} plan="Max" />);
+    expect(bar().textContent).toContain(
       'Claude Code is asking you something in the terminal below.',
     );
-    expect(panel.textContent).toContain('This is your own Claude Code.');
+    expect(bar().textContent).toContain('This is your own Claude Code.');
     expect(outlined()).toBe(true);
     await userEvent.click(screen.getByRole('button', { name: 'Got it' }));
-    expect(panel.textContent).not.toContain('This is your own Claude Code.');
-    expect(panel.textContent).toContain(
-      'Claude Code is asking you something in the terminal below.',
-    );
-    // Its question about trust has a note of its own, and outlines the terminal too.
-    rerender(<ClaudePanel api={{} as FactwrightApi} run={run(true, true)} plan="Max" />);
-    expect(panel.textContent).toContain('Claude Code asks once whether to trust your workspace');
-    expect(panel.textContent).not.toContain('asking you something in the terminal below');
-    expect(outlined()).toBe(true);
-    // While the app asks, the terminal has nothing to point to.
-    rerender(
-      <ClaudePanel
-        api={{} as FactwrightApi}
-        run={run(true)}
-        plan="Max"
-        asking={{ what: 'questions', count: 1, open: true, onAnswer: vi.fn() }}
-      />,
-    );
-    expect(panel.textContent).not.toContain('asking you something in the terminal below');
-    expect(outlined()).toBe(false);
+    expect(bar().textContent).not.toContain('This is your own Claude Code.');
   });
 
-  it('explains Claude Code’s first-run screens while they show, waiting on the user', () => {
-    const starting = { ...run(true, false, true), phase: 'starting' } satisfies ClaudeRun;
-    const { rerender } = render(
-      <ClaudePanel api={{} as FactwrightApi} run={starting} plan="Max" />,
+  it('explains Claude Code’s first-run screens and its question about trust', () => {
+    const starting = run(true, false, true, 'starting');
+    const { rerender } = render(<ClaudePanel api={api()} run={starting} plan="Max" />);
+    expect(screen.getByRole('note').textContent).toContain(
+      'Claude Code shows a few screens the first time it opens',
     );
-    const panel = screen.getByRole('region', { name: 'Claude' });
-    expect(screen.getByRole('note').textContent).toBe(
-      'Claude Code shows a few screens the first time it opensPress Enter on each one to go on. The text style it asks about only changes how Claude Code looks in your own terminal. Then it asks whether to trust your workspace, which needs the arrow keys first.',
-    );
-    expect(panel.textContent).toContain('Needs your answer');
-    expect(panel.textContent).not.toContain('asking you something in the terminal below');
+    expect(screen.getByRole('status').textContent).toBe('Needs your answer');
     expect(outlined()).toBe(true);
-    // Then the question about trust, with its own note.
     rerender(
       <ClaudePanel
-        api={{} as FactwrightApi}
+        api={api()}
         run={{ ...starting, trustAsked: true, firstRun: false }}
         plan="Max"
       />,
@@ -167,5 +153,164 @@ describe('ClaudePanel', () => {
     expect(screen.getByRole('note').textContent).toContain(
       'Claude Code asks once whether to trust your workspace',
     );
+  });
+
+  it('keeps Claude’s work folded away, and shows it on request', async () => {
+    const folded = run(false, false, false, 'working');
+    const { container } = render(<ClaudePanel api={api()} run={folded} plan="Max" />);
+    expect(container.querySelector('[inert]')).not.toBeNull();
+    expect(terminal.mock.lastCall?.[0]?.shown).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Show Claude’s work' }));
+    expect(folded.showWork).toHaveBeenCalledWith(true);
+  });
+
+  it('says what Claude is doing, a step at a time, and for how long', () => {
+    const activity: RunActivity = {
+      steps: [
+        step('Read', 'facts/platform.md', 'done', 'a'),
+        step('mcp__factwright__build_resume', null, 'running', 'b'),
+      ],
+      lastAt: Date.now(),
+      end: null,
+    };
+    render(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'working')}
+        plan="Max"
+        activity={activity}
+      />,
+    );
+    expect(bar().textContent).toContain('Read your fact bank');
+    expect(bar().textContent).toContain('Building the resume…');
+    expect(bar().textContent).toContain('Running for 1:24');
+  });
+
+  it('points to Claude’s work when Claude has gone quiet for a while', () => {
+    const activity: RunActivity = {
+      steps: [step('Read', 'facts/platform.md', 'done')],
+      lastAt: Date.now() - QUIET_AFTER_MS - 1000,
+      end: null,
+    };
+    render(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'working')}
+        plan="Max"
+        activity={activity}
+      />,
+    );
+    expect(bar().textContent).toContain('No word from Claude for a few minutes.');
+  });
+
+  it('says what a finished task made, with a way to open it', async () => {
+    const go = vi.fn();
+    render(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'done')}
+        plan="Max"
+        result={{ text: 'Your tailored resume for Acme is ready.', open: { label: 'Open it', go } }}
+      />,
+    );
+    expect(screen.getAllByText('Your tailored resume for Acme is ready.')).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Open it' }));
+    expect(go).toHaveBeenCalled();
+  });
+
+  it('shows what Claude said when it stopped to ask, and sends the user’s reply', async () => {
+    const replying = api();
+    const activity: RunActivity = {
+      steps: [],
+      lastAt: null,
+      end: { said: 'Which template would you like, Classic or Minimal?', error: null },
+    };
+    render(
+      <ClaudePanel
+        api={replying}
+        run={run(false, false, false, 'done')}
+        plan="Max"
+        activity={activity}
+        stoppedShort
+      />,
+    );
+    expect(bar().textContent).toContain('Claude has a question for you.');
+    expect(bar().textContent).toContain('Which template would you like, Classic or Minimal?');
+    expect(screen.getByRole('status').textContent).toBe('Needs your answer');
+    const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Reply to Claude' }),
+      'Classic{Enter}',
+    );
+    expect(replying.replyToClaude).toHaveBeenCalledWith('Classic');
+    expect(
+      (screen.getByRole('textbox', { name: 'Reply to Claude' }) as HTMLInputElement).value,
+    ).toBe('');
+  });
+
+  it('says a task stopped short without saying it’s done', () => {
+    const activity: RunActivity = {
+      steps: [],
+      lastAt: null,
+      end: { said: 'I need the posting.', error: null },
+    };
+    render(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'done')}
+        plan="Max"
+        activity={activity}
+        stoppedShort
+      />,
+    );
+    expect(bar().textContent).toContain('Claude stopped before it was done.');
+  });
+
+  it('says a turn ended in an error, such as a rate limit, and tries the task again', async () => {
+    const onRetry = vi.fn();
+    const activity: RunActivity = {
+      steps: [],
+      lastAt: null,
+      end: { said: null, error: { kind: 'rate_limit', message: 'API Error: Rate limit reached' } },
+    };
+    render(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'done')}
+        plan="Max"
+        activity={activity}
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('Didn’t finish');
+    expect(bar().textContent).toContain(
+      'Claude hit a rate limit, or your plan’s usage limit for now.',
+    );
+    expect(screen.queryByRole('textbox', { name: 'Reply to Claude' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalled();
+  });
+});
+
+describe('doingLine', () => {
+  it('says the step Claude is on after the last one done, or that it’s thinking', () => {
+    expect(doingLine([])).toEqual({ did: null, doing: 'Thinking…' });
+    const read = step('Read', 'guide/writing.md', 'running', 'a');
+    expect(doingLine([read])).toEqual({ did: null, doing: 'Reading your writing guide…' });
+    const done = { ...read, state: 'done' as const };
+    expect(doingLine([done])).toEqual({ did: 'Read your writing guide', doing: 'Thinking…' });
+    // Its to-do list says nothing worth showing, and leaves the line as it was.
+    const todo = step('TodoWrite', null, 'running', 'b');
+    expect(doingLine([done, todo])).toEqual({ did: 'Read your writing guide', doing: 'Thinking…' });
+  });
+});
+
+describe('clock', () => {
+  it('says how long it’s been as a clock does', () => {
+    expect(clock(0)).toBe('0:00');
+    expect(clock(42_000)).toBe('0:42');
+    expect(clock(725_000)).toBe('12:05');
+    expect(clock(3_725_000)).toBe('1:02:05');
   });
 });
