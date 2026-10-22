@@ -61,7 +61,7 @@ export interface RunControls {
 /** While Claude is busy, other runs wait. */
 export const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
 
-/** Where a skill stands on a job: running, just done, or made or run before. */
+/** Where a skill stands on a job: running, made or run before, or just done with nothing made. */
 type State = 'running' | 'done' | 'ready' | 'ran';
 
 const STATE_WORDS: Readonly<Record<State, string>> = {
@@ -73,13 +73,12 @@ const STATE_WORDS: Readonly<Record<State, string>> = {
 
 function stateOf(job: Job, skill: RunSkill, running: boolean, done: boolean): State | null {
   if (running) return 'running';
-  if (done) return 'done';
   if (skill === 'fit-check' && job.fit) return 'ran';
   if (skill === 'answer-questions' && job.docKinds.includes('answers')) return 'ran';
   if (skill === 'focused-resume' && job.files.length > 0) return 'ready';
   if (skill === 'cover-letter' && job.letters.length > 0) return 'ready';
   if (skill === 'projects-page' && job.projectPages.length > 0) return 'ready';
-  return null;
+  return done ? 'done' : null;
 }
 
 /** One button in the row: its name, a mark for where it stands, and what it does on hover. */
@@ -109,7 +108,7 @@ function ActionButton({
           {state === 'running' ? (
             <LoaderCircle className={styles.spin} size={14} aria-hidden="true" />
           ) : (
-            state && (
+            (state === 'ready' || state === 'ran') && (
               <Check className={styles.mark} size={14} strokeWidth={2.6} aria-hidden="true" />
             )
           )}

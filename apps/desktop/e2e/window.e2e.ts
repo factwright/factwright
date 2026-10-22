@@ -152,9 +152,10 @@ test.describe('on a Mac', () => {
     await expect(window.locator('section[aria-label="Claude"]').getByRole('status')).toHaveText(
       'Done',
     );
-    expect(
-      await app.evaluate(() => (globalThis as unknown as { shown: unknown[] }).shown.length),
-    ).toBe(1);
+    // The window tells of it once it knows what the search made, or after a moment that it's done.
+    await expect
+      .poll(() => app.evaluate(() => (globalThis as unknown as { shown: unknown[] }).shown.length))
+      .toBe(1);
     await closeWindow(opened);
     await opensAgain(() =>
       app.evaluate(() => {

@@ -5,9 +5,9 @@ import type { MainWindow, WindowLike } from './main-window.ts';
 import { present, QUIET } from './quiet.ts';
 import type { CallReminder } from './reminders.ts';
 
+// A run that's done is told of by the window, which knows what it made: see notifyRunDone.
 const MESSAGES: Partial<Record<RunSignal, { title: string; body: string }>> = {
   'needs-answer': { title: 'Claude needs your answer', body: 'Open Factwright to reply.' },
-  done: { title: 'Claude is done', body: 'Your run in Factwright finished.' },
   failed: {
     title: 'Claude Code stopped',
     body: 'It closed before finishing. Open Factwright to see why.',
@@ -56,6 +56,37 @@ export function notifyIfAway(
   notification.on('click', () => window.show());
   present(notification);
   if (signal === 'needs-answer' && !QUIET) app.dock?.bounce('informational');
+}
+
+/** Longest a done run's notification can be, in characters, title and body each. */
+const MAX_NOTE = 300;
+
+/**
+ * Tells the user what a finished run made, in the window's words, such as "Your tailored resume
+ * for Acme is ready", if they're looking somewhere else. Clicking it brings back the window, where
+ * what the run made opens.
+ */
+export function notifyRunDone(
+  window: Pick<MainWindow<WindowLike>, 'current' | 'focused' | 'show'>,
+  note: unknown,
+  onOpen: () => void,
+): void {
+  const { title, body } = (typeof note === 'object' && note !== null ? note : {}) as Record<
+    string,
+    unknown
+  >;
+  if (typeof title !== 'string' || typeof body !== 'string' || !title.trim()) return;
+  if (!window.current() || window.focused()) return;
+  const notification = new Notification({
+    title: title.slice(0, MAX_NOTE),
+    body: body.slice(0, MAX_NOTE),
+    silent: true,
+  });
+  notification.on('click', () => {
+    window.show();
+    onOpen();
+  });
+  present(notification);
 }
 
 /**

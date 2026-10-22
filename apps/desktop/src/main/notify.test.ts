@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestView } from '../shared/sync.ts';
-import { notifyIfAway, notifyOfRequests, remindOfCall } from './notify.ts';
+import { notifyIfAway, notifyOfRequests, notifyRunDone, remindOfCall } from './notify.ts';
 import { fakeMainWindow } from './testing.ts';
 
 /** The notifications shown, which the tests click as the user does. */
@@ -35,13 +35,21 @@ describe('notifyIfAway', () => {
     const { window, opened } = fakeMainWindow();
     window.open();
     window.show();
-    notifyIfAway(window, 'done');
+    notifyIfAway(window, 'needs-answer');
     expect(shown).toHaveLength(0);
     if (opened[0]) opened[0].looking = false;
-    notifyIfAway(window, 'done');
+    notifyIfAway(window, 'needs-answer');
     expect(shown.map((notification) => notification.options)).toEqual([
-      { title: 'Claude is done', body: 'Your run in Factwright finished.', silent: true },
+      { title: 'Claude needs your answer', body: 'Open Factwright to reply.', silent: false },
     ]);
+  });
+
+  it('leaves a run that’s done to the window, which says what it made', () => {
+    const { window, opened } = fakeMainWindow();
+    window.open();
+    if (opened[0]) opened[0].looking = false;
+    notifyIfAway(window, 'done');
+    expect(shown).toHaveLength(0);
   });
 
   it('says nothing once the window has closed, which stopped the run', () => {
@@ -71,6 +79,45 @@ describe('notifyIfAway', () => {
     expect(() => shown[0]?.emit('click')).not.toThrow();
     expect(opened).toHaveLength(2);
     expect(window.current()).toBe(opened[1]);
+  });
+});
+
+describe('notifyRunDone', () => {
+  const note = {
+    title: 'Your tailored resume for Acme is ready.',
+    body: 'Open Factwright to see it.',
+  };
+
+  it('says what a run made, in the window’s words, while the user is looking elsewhere', () => {
+    const { window, opened } = fakeMainWindow();
+    window.open();
+    window.show();
+    const onOpen = vi.fn();
+    notifyRunDone(window, note, onOpen);
+    expect(shown).toHaveLength(0);
+    if (opened[0]) opened[0].looking = false;
+    notifyRunDone(window, note, onOpen);
+    expect(shown.map((notification) => notification.options)).toEqual([{ ...note, silent: true }]);
+    // Clicked, it brings the window back and opens what the run made.
+    shown[0]?.emit('click');
+    expect(window.focused()).toBe(true);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('takes only words, and not too many of them', () => {
+    const { window, opened } = fakeMainWindow();
+    window.open();
+    if (opened[0]) opened[0].looking = false;
+    for (const odd of [null, 'Done', { title: 3, body: 'x' }, { title: ' ', body: 'x' }]) {
+      notifyRunDone(window, odd, () => {});
+    }
+    expect(shown).toHaveLength(0);
+    notifyRunDone(window, { title: 'a'.repeat(1000), body: 'b'.repeat(1000) }, () => {});
+    expect(shown[0]?.options).toEqual({
+      title: 'a'.repeat(300),
+      body: 'b'.repeat(300),
+      silent: true,
+    });
   });
 });
 

@@ -162,6 +162,8 @@ export interface IpcDeps {
   opener: JobOpener;
   /** Save to Factwright saving to this computer: where each browser stands, and setting it up. */
   saveHelper: SaveHelper;
+  /** Tells the user a task is done, in the window's words, if they're looking elsewhere. */
+  tellRunDone: (note: unknown) => void;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -202,6 +204,7 @@ export function registerIpc({
   reminders,
   opener,
   saveHelper,
+  tellRunDone,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -361,6 +364,20 @@ export function registerIpc({
     return session.send(runPrompt(run));
   });
 
+  // A reply from Claude's panel, on one line, as a message of the user's own: nothing in it can
+  // reach the terminal as a key that isn't text.
+  ipcMain.on('claude:reply', (event, text: unknown) => {
+    if (!fromApp(event) || typeof text !== 'string' || text.length > MAX_INPUT_LENGTH) return;
+    const line = [...text.replace(/\s+/g, ' ')]
+      .filter((char) => {
+        const code = char.charCodeAt(0);
+        return code >= 0x20 && (code < 0x7f || code > 0x9f);
+      })
+      .join('')
+      .trim();
+    if (line) session.send(line);
+  });
+
   ipcMain.on('claude:input', (event, data: unknown) => {
     if (fromApp(event) && typeof data === 'string' && data.length <= MAX_INPUT_LENGTH) {
       session.write(data);
@@ -374,6 +391,10 @@ export function registerIpc({
 
   ipcMain.on('claude:stop', (event) => {
     if (fromApp(event)) session.stop();
+  });
+
+  ipcMain.on('claude:done', (event, note: unknown) => {
+    if (fromApp(event)) tellRunDone(note);
   });
 
   // Claude's questions, answered in the window's dialog, or sent to the terminal to answer there.

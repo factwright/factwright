@@ -7,7 +7,7 @@ import {
   viewOf,
 } from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import { signInCommand } from '../shared/claude-commands.ts';
 import type { FiledFacts } from '../shared/facts.ts';
@@ -17,6 +17,7 @@ import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
+  type RunTask,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
   THANKS_SKILL,
@@ -26,7 +27,7 @@ import styles from './App.module.css';
 import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
-import { ClaudePanel } from './ClaudePanel.tsx';
+import { ClaudePanel, type RunResult, turnErrorWords } from './ClaudePanel.tsx';
 import { ClaudePermission } from './ClaudePermission.tsx';
 import { ClaudeQuestions } from './ClaudeQuestions.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
@@ -39,6 +40,7 @@ import { JobRail } from './jobs/JobRail.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { MergeDialog } from './jobs/MergeDialog.tsx';
+import { showSection } from './jobs/PanelSection.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
   filterForAdded,
@@ -64,6 +66,13 @@ import { isBoolean, readPref, usePref, writePref } from './prefs.ts';
 import { AddProfileDialog } from './profiles/AddProfileDialog.tsx';
 import { ManageProfilesDialog } from './profiles/ManageProfilesDialog.tsx';
 import { useProfiles } from './profiles/useProfiles.ts';
+import {
+  makesSomething,
+  type RunBefore,
+  type RunPlace,
+  runBefore,
+  runOutcome,
+} from './runOutcome.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useApprovals, useSync } from './sync/useSync.ts';
@@ -75,10 +84,17 @@ import { useClaudeQuestions } from './useClaudeQuestions.ts';
 import { useClaudeRun } from './useClaudeRun.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
 import { useLevelChoices } from './useLevelChoices.ts';
+import { useRunActivity } from './useRunActivity.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
 
 const isView = (value: unknown): value is JobView =>
   (JOB_VIEWS as readonly unknown[]).includes(value);
+
+/**
+ * How long after a task is done the window waits for what it made to show, in milliseconds, as
+ * the jobs catch up with the workspace, before it says the task stopped short.
+ */
+const SETTLE_MS = 3000;
 
 /** Where the view the user last picked is kept. Earlier versions kept theirs as jobs.view. */
 const VIEW_PREF = 'jobs.lastView';
@@ -95,6 +111,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const sync = useSync(api);
   const approvals = useApprovals(api);
   const run = useClaudeRun(api);
+  const activity = useRunActivity(api, run.taskId);
   const questions = useClaudeQuestions(api);
   const permission = useClaudePermission(api);
   const { jobs, reload } = useJobs(api);
@@ -325,9 +342,19 @@ export function App({ api }: { api: FactwrightApi }) {
     const next = stepFrom(order, selectedId ?? '', offset, (id) => ids.has(id));
     if (next) setSelectedId(next);
   };
+  // What the jobs looked like as the task at hand started, to tell once it's done what it made.
+  const [before, setBefore] = useState<RunBefore | null>(null);
+  const { requestStart } = run;
+  const startRun = useCallback(
+    (next?: RunTask) => {
+      setBefore(runBefore(next ?? null, rows));
+      requestStart(next);
+    },
+    [rows, requestStart],
+  );
   const runControls = useMemo<RunControls>(
-    () => ({ phase: run.phase, task: run.task, start: run.requestStart, show: run.show }),
-    [run.phase, run.task, run.requestStart, run.show],
+    () => ({ phase: run.phase, task: run.task, start: startRun, show: run.show }),
+    [run.phase, run.task, startRun, run.show],
   );
   // The run's name in Claude's panel, such as "Fit check · Acme", when a Run button started it.
   const task = run.task;
@@ -356,6 +383,83 @@ export function App({ api }: { api: FactwrightApi }) {
             : runJob && runLabel
               ? `${runLabel} · ${runJob.company}`
               : undefined;
+
+  // A job the window goes to for what a run made, with the section of its panel to show it in,
+  // once the job has opened.
+  const [reveal, setReveal] = useState<{ jobId: string; section: string } | null>(null);
+  useEffect(() => {
+    if (!reveal || page !== 'jobs' || selectedId !== reveal.jobId) return;
+    setReveal(null);
+    requestAnimationFrame(() => showSection(reveal.section));
+  }, [reveal, page, selectedId]);
+  const goTo = (place: RunPlace) => {
+    if ('page' in place) {
+      setPicked(place.page);
+      return;
+    }
+    setPicked('jobs');
+    if ('view' in place) {
+      setSelectedId(null);
+      changeFilter({
+        ...filter,
+        ...NO_FILTERS,
+        kind: filter.kind,
+        view: place.view,
+        query: '',
+        needsYou: false,
+      });
+      return;
+    }
+    setOpening(place.jobId);
+    if (place.section) setReveal({ jobId: place.jobId, section: place.section });
+  };
+  // What the task made, once it's done, as the jobs catch up with it. Some moments on, with
+  // nothing to show, it stopped short of what it was for, such as to ask the user something.
+  const outcome = useMemo(
+    () =>
+      run.phase === 'done' && before && before.task === run.task
+        ? runOutcome(before, rows, activity.steps)
+        : null,
+    [run.phase, run.task, before, rows, activity.steps],
+  );
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    setSettled(false);
+    if (run.phase !== 'done') return;
+    const timer = setTimeout(() => setSettled(true), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [run.phase, run.taskId]);
+  const stoppedShort = settled && !outcome && makesSomething(run.task);
+  const result: RunResult | null = outcome && {
+    text: outcome.text,
+    open: outcome.place && {
+      label: 'view' in outcome.place ? 'See them' : 'Open it',
+      go: () => outcome.place && goTo(outcome.place),
+    },
+  };
+  // Opens what the task made from the notification that says so, too.
+  const openResult = useRef<(() => void) | null>(null);
+  openResult.current = result?.open?.go ?? null;
+  useEffect(() => api.onOpenRunResult(() => openResult.current?.()), [api]);
+  // A notification says what the task made, or that Claude is done, once, if the user is away.
+  const turnError = run.phase === 'done' ? activity.end?.error : null;
+  const said = run.phase === 'done' ? (activity.end?.said ?? null) : null;
+  const note = useMemo(() => {
+    if (run.phase !== 'done') return null;
+    if (turnError) return { title: 'Claude didn’t finish', body: turnErrorWords(turnError.kind) };
+    if (outcome) return { title: outcome.text, body: 'Open Factwright to see it.' };
+    if (said?.endsWith('?')) return { title: 'Claude has a question for you', body: said };
+    return settled
+      ? { title: 'Claude is done', body: `${runTitle ?? 'Your task'}. Open Factwright to see it.` }
+      : null;
+  }, [run.phase, turnError, outcome, said, settled, runTitle]);
+  const told = useRef(false);
+  useEffect(() => {
+    if (run.phase !== 'done') told.current = false;
+    if (!note || told.current) return;
+    told.current = true;
+    api.tellRunDone(note);
+  }, [api, run.phase, note]);
 
   return (
     <div className={styles.app}>
@@ -405,7 +509,7 @@ export function App({ api }: { api: FactwrightApi }) {
           onOpenClaude={
             run.open && isRunning(run.phase)
               ? undefined
-              : () => (isRunning(run.phase) ? run.show() : run.requestStart())
+              : () => (isRunning(run.phase) ? run.show() : startRun())
           }
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           onOpenExtension={() => setDialog('extension')}
@@ -437,9 +541,9 @@ export function App({ api }: { api: FactwrightApi }) {
                 onStart={() => {
                   // The profile follows Claude as it gets to know the user.
                   setPicked('profile');
-                  run.requestStart({ skill: GET_STARTED_SKILL });
+                  startRun({ skill: GET_STARTED_SKILL });
                 }}
-                onMakeTemplate={(source) => run.requestStart({ skill: TEMPLATE_SKILL, source })}
+                onMakeTemplate={(source) => startRun({ skill: TEMPLATE_SKILL, source })}
                 onSkip={() => {
                   about.update({ skipped: true });
                   setPicked('jobs');
@@ -458,7 +562,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 api={api}
                 phase={run.phase}
                 ready={ready}
-                onRun={(next) => run.requestStart(next)}
+                onRun={(next) => startRun(next)}
                 onOpenFacts={() => setPicked('facts')}
                 {...(profiles.list && {
                   profiles: {
@@ -497,7 +601,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 onSelect={pick}
                 onRetry={reload}
                 canStartClaude={ready && !isRunning(run.phase)}
-                onStartClaude={() => run.requestStart()}
+                onStartClaude={() => startRun()}
                 canFindJobs={ready && !BUSY.includes(run.phase)}
                 onFindJobs={() => setDialog('find-jobs')}
                 onOpenJourney={() => setDialog('journey')}
@@ -548,6 +652,10 @@ export function App({ api }: { api: FactwrightApi }) {
             run={run}
             plan={plan}
             title={runTitle}
+            activity={activity}
+            result={result}
+            stoppedShort={stoppedShort}
+            onRetry={run.task ? () => startRun(run.task ?? undefined) : undefined}
             filed={filed}
             onReviewFiled={(part) => {
               seeFiled();
@@ -592,7 +700,7 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           today={today}
           kinds={kinds}
-          onStart={(sources) => run.requestStart({ skill: SEARCH_SKILL, sources })}
+          onStart={(sources) => startRun({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
       )}

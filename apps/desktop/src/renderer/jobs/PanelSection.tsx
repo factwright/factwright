@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { isBoolean, usePref } from '../prefs.ts';
 import styles from './PanelSection.module.css';
 
@@ -45,10 +45,13 @@ export function PanelSection({
   const titleId = useId();
   const bodyId = useId();
   const section = useRef<HTMLElement>(null);
+  // Shown to the user, it lights up for a moment, so it's clear which it is.
+  const [lit, setLit] = useState(false);
   useEffect(() => {
     const show = (event: Event) => {
       if ((event as CustomEvent<unknown>).detail !== id) return;
       setOpen(true);
+      setLit(true);
       // Once it's open, so it scrolls to where its body starts too.
       requestAnimationFrame(() =>
         section.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
@@ -58,7 +61,13 @@ export function PanelSection({
     return () => window.removeEventListener(SHOW, show);
   }, [id, setOpen]);
   return (
-    <section ref={section} className={styles.section} aria-labelledby={titleId} data-section={id}>
+    <section
+      ref={section}
+      className={`${styles.section} ${lit ? styles.lit : ''}`}
+      aria-labelledby={titleId}
+      data-section={id}
+      onAnimationEnd={() => setLit(false)}
+    >
       <div className={styles.head}>
         <h3 className={styles.heading} aria-labelledby={titleId}>
           <button

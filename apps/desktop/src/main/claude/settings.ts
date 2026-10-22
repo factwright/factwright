@@ -140,23 +140,28 @@ function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
  *   session ends, which the self-test listens for. The ones for Claude's questions and Claude
- *   Code's permission prompts wait while the user answers them in the app's dialogs.
+ *   Code's permission prompts wait while the user answers them in the app's dialogs. Another
+ *   hears each tool call as it starts, on a path of its own, so the window can say what Claude
+ *   is doing.
  */
 export function sessionSettings({
   hookUrl,
+  activityUrl,
   dark,
   permissions = ASK_FIRST,
   scope = 'hunt',
 }: {
   hookUrl: string;
+  /** Where each tool call says it's starting, so the window can say what Claude is doing. */
+  activityUrl?: string;
   dark: boolean;
   permissions?: ClaudePermissions;
   scope?: RunScope;
 }) {
-  const http = (timeout: number) => [
+  const http = (timeout: number, url = hookUrl) => [
     {
       type: 'http',
-      url: hookUrl,
+      url,
       timeout,
       headers: { Authorization: `Bearer $${RUN_TOKEN_VARIABLE}` },
       allowedEnvVars: [RUN_TOKEN_VARIABLE],
@@ -183,6 +188,8 @@ export function sessionSettings({
       PreToolUse: [
         { matcher: 'AskUserQuestion', hooks: http(ANSWER_WAIT_SECONDS) },
         { matcher: FILING_TOOLS.map(hookToolName).join('|'), hooks: hook },
+        // Every call as it starts, to say what Claude is doing, apart from the hooks above.
+        ...(activityUrl ? [{ hooks: http(HOOK_SECONDS, activityUrl) }] : []),
       ],
       PostToolUse: [{ hooks: hook }],
       PostToolUseFailure: [{ hooks: hook }],
@@ -190,6 +197,7 @@ export function sessionSettings({
       PermissionRequest: [{ hooks: http(ANSWER_WAIT_SECONDS) }],
       Notification: [{ hooks: hook }],
       Stop: [{ hooks: hook }],
+      StopFailure: [{ hooks: hook }],
       SessionEnd: [{ hooks: hook }],
     },
   };

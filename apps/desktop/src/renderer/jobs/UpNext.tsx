@@ -1,6 +1,6 @@
 import type { Job, StepAction } from '@factwright/core';
 import { Button } from '@factwright/ui';
-import { Check, Sparkles } from 'lucide-react';
+import { Check, LoaderCircle, Sparkles } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunSkill, type RunTask, taskCall, taskJob } from '../../shared/runs.ts';
@@ -71,9 +71,10 @@ export function UpNext({
   let button: ReactNode = null;
   if (claude && running) {
     button = (
-      <Button size="sm" onClick={run?.show}>
-        Running… Show Claude
-      </Button>
+      <span className={styles.running}>
+        <LoaderCircle className={styles.spin} size={14} aria-hidden="true" />
+        Claude is on it
+      </span>
     );
   } else if (claude) {
     button = (

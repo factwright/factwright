@@ -52,6 +52,8 @@ for (const file of [
 const settings = JSON.parse(readFileSync(after('--settings'), 'utf8'));
 const tools = JSON.parse(readFileSync(after('--mcp-config'), 'utf8')).mcpServers.factwright;
 const hookUrl = settings.hooks.Stop[0].hooks[0].url;
+// Where Claude Code says each tool call is starting: the one PreToolUse hook every call has.
+const activityUrl = settings.hooks.PreToolUse.find((group) => !group.matcher)?.hooks[0]?.url;
 const token = process.env.FACTWRIGHT_RUN_TOKEN;
 // The app puts the prompt, when there is one, right after the settings file.
 const prompt = args[args.indexOf('--settings') + 2];
@@ -80,8 +82,21 @@ async function file(name, args, { agent } = {}) {
   return call(name, args);
 }
 
-/** Calls one of Factwright's tools, as Claude Code does, and gives back its text. */
+/**
+ * Calls one of Factwright's tools, as Claude Code does, and gives back its text: its start to the
+ * hook every call has, then, once it's run, PostToolUse.
+ */
 async function call(name, args) {
+  const step = {
+    tool_name: `mcp__factwright__${name}`,
+    tool_use_id: `toolu_${name}_${Date.now()}`,
+    tool_input: args,
+  };
+  if (activityUrl) {
+    await post(activityUrl, { hook_event_name: 'PreToolUse', session_id: 'fake', ...step }).catch(
+      () => {},
+    );
+  }
   const response = await post(tools.url, {
     jsonrpc: '2.0',
     id: Date.now(),
@@ -89,7 +104,9 @@ async function call(name, args) {
     params: { name, arguments: args },
   });
   const { result } = await response.json();
-  return result?.content?.[0]?.text ?? '';
+  const text = result?.content?.[0]?.text ?? '';
+  await hook('PostToolUse', { ...step, tool_response: text });
+  return text;
 }
 
 /** The answer it gives to every question about a job. */
@@ -491,7 +508,7 @@ async function work(text) {
   // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
   await new Promise((resolve) => setTimeout(resolve, 300));
   show('Done.\n> ');
-  await hook('Stop');
+  await hook('Stop', { last_assistant_message: 'Done.' });
 }
 
 async function begin() {

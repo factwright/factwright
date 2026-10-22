@@ -1,23 +1,8 @@
-import { Button, type RunState, RunStatus } from '@factwright/ui';
+import { Button, type RunState, RunStatus, VisuallyHidden } from '@factwright/ui';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import type { ReactNode } from 'react';
 import styles from './ClaudePanel.module.css';
 import type { RunPhase } from './useClaudeRun.ts';
-
-const HINTS: Readonly<Record<RunPhase, string>> = {
-  idle: '',
-  starting: 'Claude Code is starting. Then type what you’d like.',
-  ready: 'Claude Code is ready. Type what you’d like.',
-  working: 'Keep working. You’ll hear when Claude needs you.',
-  'needs-answer': 'Claude has a question. Answer it in the panel below.',
-  done: 'Claude is done. Type to keep going, or close the panel.',
-  stopped: 'Claude Code has closed.',
-  failed: 'Claude Code stopped before it finished.',
-};
-
-/** The hint while something waits in the app, which asks it rather than the terminal. */
-const ASKING_HINTS = {
-  questions: 'Claude has a question for you.',
-  permission: 'Claude Code is asking for your OK.',
-} as const;
 
 /** The run's state as the status chip shows it. A run that couldn't start counts as failed. */
 export function chipState(phase: RunPhase, problem: string | undefined): RunState {
@@ -25,7 +10,7 @@ export function chipState(phase: RunPhase, problem: string | undefined): RunStat
   return phase;
 }
 
-/** Whether Claude Code is still open, and so can be stopped or tucked away. */
+/** Whether Claude Code is still open, and so can be stopped. */
 export function isRunning(phase: RunPhase): boolean {
   return (
     phase === 'starting' ||
@@ -36,52 +21,87 @@ export function isRunning(phase: RunPhase): boolean {
   );
 }
 
-/** The top of Claude's panel: where the run stands, whose Claude it is, and what you can do. */
+/**
+ * The bar along the bottom of the window while Claude has a task: where the run stands, what
+ * Claude is doing or what it made, how long it's been, whose Claude it is, and what you can do,
+ * such as open what it made, or see Claude's work, the terminal under the bar.
+ */
 export function PanelHeader({
   title = 'Claude',
   phase,
   plan,
   problem,
+  text,
+  elapsed = null,
+  action = null,
+  workShown,
+  onShowWork,
   onStop,
-  onHide,
   onClose,
-  asking = null,
+  finished = false,
+  failed = false,
 }: {
   /** What the run is, such as "Fit check · Acme". */
   title?: string;
   phase: RunPhase;
-  /** What waits on the user in the app rather than in the terminal, if anything. */
-  asking?: keyof typeof ASKING_HINTS | null;
   plan: string | undefined;
   problem: string | undefined;
+  /** What Claude is doing, what it's waiting for, or what it made. */
+  text: ReactNode;
+  /** How long the task has taken so far, such as "1:24", while it runs. */
+  elapsed?: string | null;
+  /** What to do next, such as answering Claude or opening what it made. */
+  action?: ReactNode;
+  /** Whether Claude's work, the terminal, shows under the bar. */
+  workShown: boolean;
+  onShowWork: (shown: boolean) => void;
   onStop: () => void;
-  onHide: () => void;
   onClose: () => void;
+  /** The task is done, with something to show for it. */
+  finished?: boolean;
+  /** Claude's turn ended in an error, such as a rate limit, though Claude Code is still open. */
+  failed?: boolean;
 }) {
   const running = isRunning(phase);
-  const hint =
-    problem ?? (asking && phase === 'needs-answer' ? ASKING_HINTS[asking] : HINTS[phase]);
+  const busy = phase === 'starting' || phase === 'working';
   return (
-    <div className={styles.header}>
+    <div
+      className={`${styles.header} ${busy ? styles.busy : ''} ${finished ? styles.finished : ''}`}
+    >
       <span role="status">
-        <RunStatus state={chipState(phase, problem)} />
+        <RunStatus state={failed ? 'failed' : chipState(phase, problem)} />
       </span>
       <span className={styles.title}>{title}</span>
-      <span className={styles.hint} title={hint}>
-        {hint}
-      </span>
+      <span className={styles.hint}>{problem ?? text}</span>
+      {elapsed && (
+        <span className={styles.elapsed}>
+          <VisuallyHidden>Running for </VisuallyHidden>
+          {elapsed}
+        </span>
+      )}
       <span className={styles.plan}>
         <span className={styles.planDot} aria-hidden="true" />
         {plan ? `Runs on your own Claude · ${plan}` : 'Runs on your own Claude'}
       </span>
-      {running && (
+      {action}
+      <Button
+        size="sm"
+        variant="quiet"
+        aria-expanded={workShown}
+        icon={
+          workShown ? (
+            <ChevronDown size={14} aria-hidden="true" />
+          ) : (
+            <ChevronUp size={14} aria-hidden="true" />
+          )
+        }
+        onClick={() => onShowWork(!workShown)}
+      >
+        {workShown ? 'Hide Claude’s work' : 'Show Claude’s work'}
+      </Button>
+      {running ? (
         <Button variant="quiet" size="sm" onClick={onStop}>
           Stop
-        </Button>
-      )}
-      {running ? (
-        <Button size="sm" onClick={onHide}>
-          Hide
         </Button>
       ) : (
         <Button size="sm" onClick={onClose}>

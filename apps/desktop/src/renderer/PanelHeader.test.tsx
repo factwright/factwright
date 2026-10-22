@@ -7,36 +7,65 @@ import type { RunPhase } from './useClaudeRun.ts';
 
 afterEach(cleanup);
 
-function renderHeader(phase: RunPhase, problem?: string) {
-  const actions = { onStop: vi.fn(), onHide: vi.fn(), onClose: vi.fn() };
+function renderHeader(
+  phase: RunPhase,
+  { problem, workShown = false, failed = false }: Partial<Record<string, unknown>> = {},
+) {
+  const actions = { onStop: vi.fn(), onShowWork: vi.fn(), onClose: vi.fn() };
   const result = render(
-    <PanelHeader phase={phase} plan="Max plan" problem={problem} {...actions} />,
+    <PanelHeader
+      title="Tailored resume · Acme"
+      phase={phase}
+      plan="Max plan"
+      problem={problem as string | undefined}
+      text="Reading your fact bank…"
+      elapsed="1:24"
+      workShown={workShown as boolean}
+      failed={failed as boolean}
+      {...actions}
+    />,
   );
   return { ...result, ...actions };
 }
 
 describe('PanelHeader', () => {
-  it('says whose Claude it is', () => {
+  it('says whose Claude it is, what it’s doing, and for how long', () => {
     renderHeader('working');
     expect(screen.getByText('Runs on your own Claude · Max plan')).toBeTruthy();
+    expect(screen.getByText('Tailored resume · Acme')).toBeTruthy();
+    expect(screen.getByText('Reading your fact bank…')).toBeTruthy();
+    expect(screen.getByText('1:24').textContent).toBe('Running for 1:24');
   });
 
   it.each([
-    ['ready', 'Ready', 'Claude Code is ready. Type what you’d like.'],
-    ['working', 'Working', 'Keep working. You’ll hear when Claude needs you.'],
-    ['needs-answer', 'Needs your answer', 'Claude has a question. Answer it in the panel below.'],
-    ['done', 'Done', 'Claude is done. Type to keep going, or close the panel.'],
-  ] as const)('while %s, shows the state and offers Stop and Hide', (phase, chip, hint) => {
-    const { onStop, onHide } = renderHeader(phase);
+    ['ready', 'Ready'],
+    ['working', 'Working'],
+    ['needs-answer', 'Needs your answer'],
+    ['done', 'Done'],
+  ] as const)('while %s, shows the state and offers Stop and Claude’s work', (phase, chip) => {
+    const { onStop, onShowWork } = renderHeader(phase);
     expect(screen.getByRole('status').textContent).toBe(chip);
-    expect(screen.getByText(hint)).toBeTruthy();
     screen.getByRole('button', { name: 'Stop' }).click();
-    screen.getByRole('button', { name: 'Hide' }).click();
+    screen.getByRole('button', { name: 'Show Claude’s work' }).click();
     expect(onStop).toHaveBeenCalledOnce();
-    expect(onHide).toHaveBeenCalledOnce();
+    expect(onShowWork).toHaveBeenCalledWith(true);
   });
 
-  it('once Claude Code has closed, offers only Close', () => {
+  it('folds Claude’s work away again', () => {
+    const { onShowWork } = renderHeader('working', { workShown: true });
+    const hide = screen.getByRole('button', { name: 'Hide Claude’s work' });
+    expect(hide.getAttribute('aria-expanded')).toBe('true');
+    hide.click();
+    expect(onShowWork).toHaveBeenCalledWith(false);
+  });
+
+  it('says a turn that ended in an error didn’t finish, though Claude Code is still open', () => {
+    renderHeader('done', { failed: true });
+    expect(screen.getByRole('status').textContent).toBe('Didn’t finish');
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+  });
+
+  it('once Claude Code has closed, offers Close in place of Stop', () => {
     const { onClose } = renderHeader('stopped');
     expect(screen.getByRole('status').textContent).toBe('Stopped');
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
@@ -45,7 +74,7 @@ describe('PanelHeader', () => {
   });
 
   it("explains a run that couldn't start", () => {
-    renderHeader('idle', 'Claude Code couldn’t start.');
+    renderHeader('idle', { problem: 'Claude Code couldn’t start.' });
     expect(screen.getByRole('status').textContent).toBe('Didn’t finish');
     expect(screen.getByText('Claude Code couldn’t start.')).toBeTruthy();
   });

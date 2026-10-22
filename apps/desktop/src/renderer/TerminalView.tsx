@@ -20,6 +20,7 @@ export function TerminalView({
   jobId = null,
   onPasteProblem,
   attention = false,
+  shown = true,
 }: {
   api: FactwrightApi;
   onSize: (size: TerminalSize) => void;
@@ -31,12 +32,15 @@ export function TerminalView({
   onPasteProblem?: (message: string | null) => void;
   /** Whether Claude Code waits on an answer only the terminal takes, which outlines it. */
   attention?: boolean;
+  /** Whether it shows, rather than folded away, which it can only take the keyboard while it does. */
+  shown?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const latestOnSize = useRef(onSize);
   const latestOnTyped = useRef(onTyped);
   const latestJob = useRef(jobId);
   const latestOnProblem = useRef(onPasteProblem);
+  const view = useRef<Terminal | null>(null);
   useEffect(() => {
     latestOnSize.current = onSize;
     latestOnTyped.current = onTyped;
@@ -60,6 +64,7 @@ export function TerminalView({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(element);
+    view.current = terminal;
 
     // A hidden panel has no size, so it keeps its last one until it shows again.
     const fitAndReport = () => {
@@ -110,9 +115,15 @@ export function TerminalView({
       typing.dispose();
       dark.removeEventListener('change', followTheme);
       resizes.disconnect();
+      view.current = null;
       terminal.dispose();
     };
   }, [api]);
+
+  // Shown for the user's answer, it takes the keyboard, as it can't while it's folded away.
+  useEffect(() => {
+    if (shown && attention) view.current?.focus();
+  }, [shown, attention]);
 
   return (
     <div ref={container} className={`${styles.terminal} ${attention ? styles.attention : ''}`} />
