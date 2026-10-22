@@ -4,7 +4,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
-## 0.12.0 - 2026-10-22
+## 0.11.1 - 2026-10-22
 
 ### Added
 - Report a problem, at the foot of the sidebar, under Support Factwright. It opens an email to steve@factwright.com in your own mail app, naming your version, for something wrong in the app or in what Claude wrote: paste it or attach a screenshot, and say which job it was for. Factwright sends nothing itself. The Microsoft Store asks an app that shows what an AI writes to let people report it from inside the app, and this is that way.
