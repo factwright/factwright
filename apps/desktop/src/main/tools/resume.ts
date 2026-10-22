@@ -11,6 +11,7 @@ import {
   type LintConfig,
   lintResume,
   outputName,
+  partsLeftOut,
   type Resume,
   type ResumeFormat,
   readConfidentialTerms,
@@ -184,6 +185,16 @@ export async function buildResume(
     ...lintResume(resume, rules, confidential),
     ...privateProblems(resume, await privateProjects(deps.workspace), 'resume'),
   ];
+  // A template's look can have no place for a part, such as the numbers or the highlight cards,
+  // when it was made from a resume without them. The resume leaves the part out too, so it looks
+  // like the template the user picked, in the PDF and the Word file alike.
+  const noPlace = partsLeftOut(template, resume);
+  if (noPlace.length > 0) {
+    const them = noPlace.length === 1 ? 'it' : 'them';
+    problems.push(
+      `The ${template.name} template has no place for ${listed(noPlace.map((part) => `\`${part}\``))}: its look leaves ${them} out, so the PDF wouldn’t show ${them}. Take ${them} out of ${at.data}, and work what matters in ${them} into the summary and the bullets.`,
+    );
+  }
   const maxPages = rules.maxPages ?? DEFAULT_MAX_PAGES;
   const report: string[] = [];
 

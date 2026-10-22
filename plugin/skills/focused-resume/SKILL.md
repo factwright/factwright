@@ -89,13 +89,17 @@ The user just told you these, so the resume can use them. Note in notes.md which
   - `format`: what the user asked for, or what `guide/templates.md` says.
   - `output_name` is `<FirstLast>Resume<MMDDYYYY>_<Company>`: the user's name from `facts/profile.md` without spaces, the folder's date, and the company's short name in letters and digits only (e.g. `AlexRiveraResume10072026_Acme`).
   - Leave the role out unless one company gets two resumes on the same date; then add a short role tag (e.g. `_Acme_TL`).
+- **Only the template's parts:** `list_templates` says what each template has no place for. Leave those parts out of resume.json, whatever the guide, the style or the starting point says, so the resume looks like the template the user picked: one they made from a resume they like has only that resume's parts.
+  - No band of numbers (`impact_stats`) or highlight cards (`systems`): their strongest numbers and facts go into the summary and the bullets instead.
+  - No headings over a job's bullets: each job has one group of bullets, with no heading. No bold lead-ins: none on the bullets.
+  - `build_resume` says when the resume holds a part its template has no place for.
 - Keep the base's `systems_heading` (such as "Key Systems Built at <employer>").
 - Tailor, following `guide/writing.md` and the style file:
-  - **Headline and tagline:** aimed at this role.
+  - **Headline and tagline:** aimed at this role. A tagline only when the template has a place for one.
   - **Summary:** rewritten for this job.
-  - **Stats:** the most relevant approved stats (usually 4).
-  - **Systems cards:** ranked by relevance, as many as `guide/lint.json` asks (6 when it doesn't say).
-  - **Bullets:** choose and re-order the bullets from facts, and re-head the groups to match the job's themes. Mirror the posting's exact terms where they're true.
+  - **Stats:** the most relevant approved stats (usually 4), when the template has a place for them.
+  - **Systems cards:** ranked by relevance, as many as `guide/lint.json` asks (6 when it doesn't say), when the template has a place for them.
+  - **Bullets:** choose and re-order the bullets from facts, and re-head the groups to match the job's themes, when the template has headings over them. Mirror the posting's exact terms where they're true.
   - **Skills:** as many lines as `guide/lint.json` asks (4 when it doesn't say), must-haves first, only what the facts prove: `facts/skills.md`, or a claim's Keywords. Keep the starting point's `skills_heading`, or name it for the field.
   - **Education:** keep it or drop it per the style and the posting. Keep it whenever the posting asks for a degree, a license or a certification.
   - **Projects:** as `about_you` says they show on resumes, unless job.md has a `- **Projects:**` line, the user's choice for this job, which wins.
@@ -117,7 +121,7 @@ The shape of `resume.json` (leave out what doesn't apply):
   "contact": { "phone": "", "email": "", "linkedin": "", "location": "", "website": "" },
   "summary": "",
   "impact_stats": [{ "value": "~40%", "label": "" }],
-  "competencies": [""],             // only in templates that show them: list_templates says
+  "competencies": [""],             // only in templates with a place for them: list_templates says
   "systems_heading": "", "systems": [{ "name": "", "text": "" }],
   "experience": [{ "title": "", "company": "", "company_note": "", "location": "", "start": "07/2024", "end": "Present",
     "intro": "", "bullet_groups": [{ "heading": "", "bullets": [{ "lead": "", "text": "" }] }] }],
@@ -129,7 +133,7 @@ The shape of `resume.json` (leave out what doesn't apply):
   "change_log": [], "notes": []     // history the resume never shows
 }
 ```
-Templates: the app's `classic` (the default) and `minimal`, and any of the user's own, each by its ID; `list_templates` names them all, and `guide/writing.md` says how they fit. Any text can hold `**bold**` (one key metric per bullet, at most) and `[[placeholders]]`, which the build refuses while one is left.
+Templates: the app's `classic` (the default) and `minimal`, and any of the user's own, each by its ID; `list_templates` names them all, with what each has no place for, and `guide/writing.md` says how they fit. Any text can hold `**bold**` (one key metric per bullet, at most) and `[[placeholders]]`, which the build refuses while one is left.
 
 ## 7. Build and fit
 Call `build_resume` with the folder's name (and `format: "both"` when the user wants Word). It builds the files and reports the pages, how full the last page is, the lines that run short, and anything that breaks the rules.

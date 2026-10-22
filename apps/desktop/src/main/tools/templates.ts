@@ -9,8 +9,8 @@ import {
   readTemplate,
   renderHtml,
   renderLetterHtml,
-  type Template,
   templateFile,
+  templateHasNoPlaceFor,
   templateLeavesOut,
 } from '@factwright/engine';
 import { RESUME_FONTS } from '../resume/fonts.ts';
@@ -18,6 +18,7 @@ import type { ResumePrinter } from '../resume/printer.ts';
 import { TEMPLATES_FOLDER, type TemplateLibrary } from '../resume/templates.ts';
 import { huntCall, type ToolCall } from './mcp.ts';
 import { resumeAt } from './resume.ts';
+import { listed } from './set.ts';
 
 export interface TemplateToolDeps {
   workspace: string;
@@ -25,25 +26,24 @@ export interface TemplateToolDeps {
   templates: TemplateLibrary;
 }
 
-/** Whether a template shows the strengths list, which only some do. */
-const showsCompetencies = (template: Template) =>
-  [template.body, ...Object.values(template.parts)].some((markup) =>
-    /\{\{\s*[#^]?\s*competencies\b/.test(markup),
-  );
+/** The parts of a resume a template's look has no place for, in words for Claude. */
+const noPlaceFor = (parts: readonly string[]) =>
+  parts.length > 0 ? listed(parts.map((part) => `\`${part}\``)) : 'nothing';
 
-/** The user's templates, with what each looks like and whose it is. */
+/** The user's templates, with what each looks like, whose it is, and what it has no place for. */
 export function listTemplates(templates: TemplateLibrary): string {
   const rows = templates.list().map((info) => {
     const found = templates.find(info.id);
-    const competencies = found.ok && showsCompetencies(found.template) ? 'yes' : 'no';
+    const none = found.ok ? noPlaceFor(templateHasNoPlaceFor(found.template)) : 'nothing';
     const dropped = found.ok ? templateLeavesOut(found.template) : [];
     const rest = dropped.length > 0 ? `no: leaves out ${dropped.join(' and ')}` : 'yes';
-    return `| \`${info.id}\` | ${info.name} | ${info.look} | ${info.own ? 'the user’s own' : 'built in'} | ${competencies} | ${rest} |`;
+    return `| \`${info.id}\` | ${info.name} | ${info.look} | ${info.own ? 'the user’s own' : 'built in'} | ${none} | ${rest} |`;
   });
   return [
     'The templates the user can pick. Set a resume’s `layout` to one’s ID. guide/templates.md says which the user picked for each kind of company.',
+    'A resume looks like its template: leave out of resume.json each part its template has no place for, whatever the guide or the starting resume says. A template the user made from a resume they like has only that resume’s parts.',
     '',
-    '| ID | Name | Look | Whose | Shows `competencies` | Shows `projects` and `extra_sections` |',
+    '| ID | Name | Look | Whose | Has no place for | Shows `projects` and `extra_sections` |',
     '|---|---|---|---|---|---|',
     ...rows,
   ].join('\n');
@@ -132,8 +132,12 @@ export async function saveTemplate(
   const letterPrinted = await deps.printer.print(renderLetterHtml(letter, template, RESUME_FONTS));
   await writeFile(join(deps.workspace, ...letterPath.split('/')), letterPrinted.pdf);
   const letterPages = letterPrinted.pages === 1 ? '1 page' : `${letterPrinted.pages} pages`;
+  const none = templateHasNoPlaceFor(template);
   return [
     `Saved ${TEMPLATES_FOLDER}/${template.id}.json, “${template.name}”${saved.replaced ? (before ? ', in place of the one before, which is in the trash to restore' : ', in place of the one before') : ''}. It’s in the user’s templates now.`,
+    none.length > 0
+      ? `It has no place for ${noPlaceFor(none)}, so resumes in it leave ${none.length === 1 ? 'it' : 'them'} out.`
+      : 'It has a place for every part of a resume.',
     `Its preview, with ${preview.label}, is ${path}: ${printed.pages} pages${fill}. Read it to check the look.`,
     template.letter
       ? `A cover letter in its letter layout is ${letterPath}: ${letterPages}. Read it too: its header should match the resume’s.`
