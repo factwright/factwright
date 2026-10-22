@@ -38,8 +38,11 @@ export function Problem({ message }: { message: string | null }) {
   ) : null;
 }
 
-/** What happens next, and by when. A date puts it in "Needs you" once it's due. */
-export function NextStep({ job, api }: { job: Job; api: FactwrightApi }) {
+/**
+ * Something the user means to do for the job, and by when, such as following up with someone. It's
+ * the job's next step until it's done, and a date puts it in "Needs you" once it's due.
+ */
+export function Reminder({ job, api }: { job: Job; api: FactwrightApi }) {
   const [text, setText] = useState(job.nextAction ?? '');
   const { problem, run } = useEdit();
   const id = useId();
@@ -50,17 +53,17 @@ export function NextStep({ job, api }: { job: Job; api: FactwrightApi }) {
       void run(api.updateJob(job.id, { nextAction: text }));
   };
   return (
-    <section className={styles.nextStep}>
+    <section className={styles.reminder}>
       <label htmlFor={id} className={styles.boxTitle}>
-        Next step
+        Reminder
       </label>
-      <div className={styles.nextRow}>
+      <div className={styles.reminderRow}>
         <Input
           id={id}
           aria-describedby={hintId}
           value={text}
           maxLength={LIMITS.nextAction}
-          placeholder="What happens next?"
+          placeholder="Something to do, such as follow up with Sam"
           onChange={(event) => setText(event.target.value)}
           onBlur={saveText}
           onKeyDown={(event) => {
@@ -68,9 +71,9 @@ export function NextStep({ job, api }: { job: Job; api: FactwrightApi }) {
           }}
         />
         <Input
-          className={styles.nextDate}
+          className={styles.reminderDate}
           type="date"
-          aria-label="Next step by"
+          aria-label="Reminder date"
           value={job.nextOn ?? ''}
           onChange={(event) =>
             void run(api.updateJob(job.id, { nextOn: event.target.value || null }))
@@ -78,7 +81,8 @@ export function NextStep({ job, api }: { job: Job; api: FactwrightApi }) {
         />
       </div>
       <p id={hintId} className={styles.hint}>
-        With a date, it shows in Needs you when it’s due.
+        It’s the job’s next step until you clear it. With a date, it shows in Needs you when it’s
+        due.
       </p>
       <Problem message={problem} />
     </section>

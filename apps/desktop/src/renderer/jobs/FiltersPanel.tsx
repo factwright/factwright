@@ -1,6 +1,6 @@
 import { Button, Checkbox, Chip, FIT_TIER_DISPLAY, Field, Input, type Tone } from '@factwright/ui';
 import { SlidersHorizontal } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import styles from './FiltersPanel.module.css';
 import { filterCount, type ListFilter, NO_FILTERS, type TierFilter } from './rows.ts';
 
@@ -12,19 +12,31 @@ const TIERS: readonly { tier: TierFilter; label: string; tone: Tone }[] = [
   { tier: 'none', label: 'Not scored', tone: 'gray' },
 ];
 
-/** The Filters button, and the panel it opens: fit, pay, resumes, and archived jobs. */
+/**
+ * The Filters button, and the panel it opens: fit, pay, resumes, and archived jobs, and where
+ * there's no room for them beside it, such as in the slim list, the rest of the list's choices.
+ */
 export function FiltersPanel({
   filter,
   onFilter,
+  extra,
+  extraCount = 0,
+  opens = 'left',
 }: {
   filter: ListFilter;
   onFilter: (filter: ListFilter) => void;
+  /** More choices, at the top of the panel, such as "Needs you" and where the jobs came from. */
+  extra?: ReactNode;
+  /** How many of those are on, for the button. */
+  extraCount?: number;
+  /** Which way the panel opens from the button: into the window from its edge. */
+  opens?: 'left' | 'right';
 }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const count = filterCount(filter);
+  const count = filterCount(filter) + extraCount;
 
   // A click anywhere else closes the panel, as a menu would, and so does Escape inside it.
   useEffect(() => {
@@ -71,7 +83,12 @@ export function FiltersPanel({
         {count > 0 ? `Filters · ${count}` : 'Filters'}
       </Button>
       {open && (
-        <section id={panelId} aria-label="Filters" className={styles.panel}>
+        <section
+          id={panelId}
+          aria-label="Filters"
+          className={`${styles.panel} ${opens === 'right' ? styles.opensRight : ''}`}
+        >
+          {extra && <div className={styles.extra}>{extra}</div>}
           <fieldset className={styles.tiers}>
             <legend className={styles.legend}>Fit</legend>
             <div className={styles.chips}>
@@ -122,7 +139,14 @@ export function FiltersPanel({
               size="sm"
               disabled={count === 0}
               // The kind of job stays: it's which jobs the page is about, not a filter.
-              onClick={() => onFilter({ ...filter, ...NO_FILTERS, kind: filter.kind })}
+              onClick={() =>
+                onFilter({
+                  ...filter,
+                  ...NO_FILTERS,
+                  kind: filter.kind,
+                  ...(extra !== undefined && { needsYou: false }),
+                })
+              }
             >
               Clear filters
             </Button>

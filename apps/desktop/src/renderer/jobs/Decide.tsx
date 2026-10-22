@@ -8,7 +8,6 @@ import {
   type StatusChange,
 } from '@factwright/core';
 import { Button, Chip, JOB_STATUS_DISPLAY } from '@factwright/ui';
-import { Sparkles } from 'lucide-react';
 import { useId } from 'react';
 import { DateEdit } from './DateEdit.tsx';
 import styles from './Decide.module.css';
@@ -51,51 +50,34 @@ export function focusNext(within: HTMLElement | null): boolean {
 }
 
 /**
- * A New job's quick choices, and a job's in To review: a fit check first when there's none, then
- * where it goes. Each is one click, and the status menu has the rest.
+ * A New job's quick choices, and a job's in To review: where it goes. Each is one click, and the
+ * status menu has the rest. A fit check, when there's none yet, is the step above them.
  */
 export function SortButtons({
   status,
   onMove,
-  fitCheck,
 }: {
   /** Where the job is now, which isn't offered. */
   status: JobStatus;
   onMove: (status: JobStatus) => void;
-  /** Runs a fit check, when the job has none yet and Claude can take it. */
-  fitCheck?: { onRun: () => void; disabled: boolean } | undefined;
 }) {
   return (
     <fieldset className={styles.sort}>
       <legend className={styles.legend}>Sort this job</legend>
-      {fitCheck && (
-        <Button
-          size="sm"
-          variant="primary"
-          icon={<Sparkles size={14} aria-hidden="true" />}
-          disabled={fitCheck.disabled}
-          onClick={fitCheck.onRun}
-          {...FOCUS_NEXT}
-        >
-          Run a fit check
-        </Button>
-      )}
-      {/* The moves stay together, beside the fit check or under it when the panel is narrow. */}
-      <span className={styles.moves}>
-        {SORT_MOVES.filter((move) => move.status !== status || status === 'later').map(
-          (move, i) => (
-            <Button
-              key={move.status}
-              size="sm"
-              onClick={() => onMove(move.status)}
-              // Next after the fit check, which can't take focus while Claude is busy.
-              {...(i === 0 && FOCUS_NEXT)}
-            >
-              {move.label}
-            </Button>
-          ),
-        )}
+      <span className={styles.sortLabel} aria-hidden="true">
+        Sort it
       </span>
+      {SORT_MOVES.filter((move) => move.status !== status || status === 'later').map((move, i) => (
+        <Button
+          key={move.status}
+          size="sm"
+          onClick={() => onMove(move.status)}
+          // Next after the fit check, which can't take focus while Claude is busy.
+          {...(i === 0 && FOCUS_NEXT)}
+        >
+          {move.label}
+        </Button>
+      ))}
     </fieldset>
   );
 }

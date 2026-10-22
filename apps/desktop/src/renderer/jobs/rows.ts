@@ -3,6 +3,7 @@ import {
   type FitTier,
   isInView,
   isSetAside,
+  JOB_STATUSES,
   JOB_VIEWS,
   type Job,
   type JobProgress,
@@ -225,11 +226,77 @@ const byActivity = (a: JobRow, b: JobRow) =>
   a.job.company.localeCompare(b.job.company) ||
   a.job.role.localeCompare(b.job.role);
 
-/** The rows to show, most recent activity first. */
-export function visibleRows(rows: readonly JobRow[], filter: ListFilter): JobRow[] {
+/** The list's columns, which it can be sorted by. */
+export const SORT_KEYS = ['job', 'status', 'fit', 'pay', 'next'] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+
+/** The list sorted by one of its columns, its own way or the other way round. */
+export interface ListSort {
+  by: SortKey;
+  reversed: boolean;
+}
+
+export const isListSort = (value: unknown): value is ListSort | null =>
+  value === null ||
+  (typeof value === 'object' &&
+    SORT_KEYS.includes((value as ListSort).by) &&
+    typeof (value as ListSort).reversed === 'boolean');
+
+const PRESSING = { urgent: 0, action: 1, info: 2 } as const;
+
+/**
+ * Where each column puts a job, its own way round: by company A to Z, by status as a job moves
+ * along, the best fit and the highest pay first, and what's most pressing first. A job with
+ * nothing in the column, such as no pay listed, has no place, and goes last either way.
+ */
+const PLACES: Readonly<Record<SortKey, (row: JobRow) => readonly string[] | number | null>> = {
+  job: ({ job }) => [job.company, job.role],
+  status: ({ progress }) => JOB_STATUSES.indexOf(progress.status),
+  fit: ({ progress }) => (progress.score === null ? null : -progress.score),
+  pay: ({ job }) => {
+    const most = job.pay?.max ?? job.pay?.min ?? null;
+    return most === null ? null : -most;
+  },
+  next: ({ next }) => (next ? PRESSING[next.level] : null),
+};
+
+/** Sorts rows by a column, then by the newest activity among jobs it puts level. */
+function bySort({ by, reversed }: ListSort) {
+  const place = PLACES[by];
+  return (a: JobRow, b: JobRow) => {
+    const x = place(a);
+    const y = place(b);
+    if (x === null || y === null) return x === y ? byActivity(a, b) : x === null ? 1 : -1;
+    const order =
+      typeof x === 'number' || typeof y === 'number'
+        ? Number(x) - Number(y)
+        : x.reduce(
+            (found, part, i) =>
+              found || part.localeCompare(y[i] ?? '', undefined, { sensitivity: 'base' }),
+            0,
+          );
+    return (reversed ? -order : order) || byActivity(a, b);
+  };
+}
+
+/**
+ * The next way to sort the list, once a column's heading is clicked: by that column its own way,
+ * then the other way round, then back to the newest activity first.
+ */
+export function nextSort(sort: ListSort | null, by: SortKey): ListSort | null {
+  if (sort?.by !== by) return { by, reversed: false };
+  return sort.reversed ? null : { by, reversed: true };
+}
+
+/** The rows to show: sorted by a column, or else the most recent activity first. */
+export function visibleRows(
+  rows: readonly JobRow[],
+  filter: ListFilter,
+  sort: ListSort | null = null,
+): JobRow[] {
   return matching(rows, filter)
     .filter((row) => listed(filter.view, row))
-    .sort(byActivity);
+    .sort(sort ? bySort(sort) : byActivity);
 }
 
 /**

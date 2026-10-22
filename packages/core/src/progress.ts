@@ -1,7 +1,7 @@
 import { daysBetween } from './dates.ts';
 import { FIT_TIERS, type FitTier } from './fit.ts';
 import type { Job } from './jobs.ts';
-import { asksForCoverLetter } from './letter.ts';
+import { asksForCoverLetter, asksForWorkSamples } from './letter.ts';
 import {
   CALL_STAGE,
   type Call,
@@ -128,9 +128,26 @@ export function callPeople(people: readonly CallPerson[]): string {
 /** How pressing something is: late, waiting on the user now, or good to know. */
 export type AttentionLevel = 'urgent' | 'action' | 'info';
 
+/**
+ * What the user can do about a step in a click: mark their own reminder done, say how a call
+ * went, prep for a call, have Claude check the fit, tailor a resume, write a cover letter or make
+ * a Projects page, or mark the job applied. Steps like waiting to hear back have nothing to do.
+ */
+export type StepAction =
+  | { kind: 'reminder' }
+  | { kind: 'debrief'; callId: string }
+  | { kind: 'prep'; callId: string }
+  | { kind: 'fit-check' }
+  | { kind: 'resume' }
+  | { kind: 'letter' }
+  | { kind: 'projects' }
+  | { kind: 'apply' };
+
 export interface Attention {
   level: AttentionLevel;
   text: string;
+  /** What does it, when a click can. */
+  action?: StepAction;
 }
 
 /** Where a job stands today, worked out from what the skills did and what the user tracked. */
@@ -307,6 +324,7 @@ function attentionFor(
     return {
       level: late ? 'urgent' : 'action',
       text: `${late ? 'Overdue' : 'Due today'}: ${step}`,
+      action: { kind: 'reminder' },
     };
   }
   const unlogged = calls.find((call) => call.state === 'scheduled' && isOver(call, today, clock));
@@ -314,6 +332,7 @@ function attentionFor(
     return {
       level: 'action',
       text: `How did the ${CALL_KIND_LABELS[unlogged.kind].toLowerCase()} go?`,
+      action: { kind: 'debrief', callId: unlogged.id },
     };
   }
   if (nextCall && daysBetween(today, nextCall.onDate) <= 3) {
@@ -322,9 +341,17 @@ function attentionFor(
     const prepped = job.callDocs.some((doc) => doc.callId === nextCall.id && doc.kind === 'prep');
     if (!prepped && daysBetween(today, nextCall.onDate) <= 2) {
       const kind = CALL_KIND_LABELS[nextCall.kind].toLowerCase();
-      return { level: 'action', text: `Prep for the ${kind} ${when}` };
+      return {
+        level: 'action',
+        text: `Prep for the ${kind} ${when}`,
+        action: { kind: 'prep', callId: nextCall.id },
+      };
     }
-    return { level: 'info', text: `${CALL_KIND_LABELS[nextCall.kind]} ${when}` };
+    return {
+      level: 'info',
+      text: `${CALL_KIND_LABELS[nextCall.kind]} ${when}`,
+      ...(!prepped && { action: { kind: 'prep', callId: nextCall.id } }),
+    };
   }
   const daysSince = (date: string | null) => (date ? daysBetween(date, today) : null);
   if (status === 'applied') {
@@ -347,7 +374,11 @@ function attentionFor(
     const days = daysSince(progress.lastActivity);
     if (days !== null && days >= 5) {
       const ask = status === 'apply' ? 'Apply?' : 'Apply or pass?';
-      return { level: 'info', text: `Resume ready for ${days} days. ${ask}` };
+      return {
+        level: 'info',
+        text: `Resume ready for ${days} days. ${ask}`,
+        ...(status === 'apply' && { action: { kind: 'apply' } }),
+      };
     }
   }
   return null;
@@ -437,14 +468,26 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
   if (progress.attention) return progress.attention;
   if (job.nextAction) {
     const by = job.nextOn ? ` · ${dayFrom(job.nextOn, today)}` : '';
-    return { level: 'info', text: `${job.nextAction}${by}` };
+    return { level: 'info', text: `${job.nextAction}${by}`, action: { kind: 'reminder' } };
   }
   if (progress.nextCall) {
     const call = progress.nextCall;
-    return { level: 'info', text: `${CALL_KIND_LABELS[call.kind]} ${callWhen(call, today)}` };
+    // A call can have its prep sheet any time before it.
+    const prepped = job.callDocs.some((doc) => doc.callId === call.id && doc.kind === 'prep');
+    return {
+      level: 'info',
+      text: `${CALL_KIND_LABELS[call.kind]} ${callWhen(call, today)}`,
+      ...(!prepped && { action: { kind: 'prep', callId: call.id } }),
+    };
   }
-  const step = (text: string): Attention => ({ level: 'info', text });
-  const check = () => step(looksHidden(job) ? 'Find the real employer' : 'Run a fit check');
+  const step = (text: string, action?: StepAction): Attention => ({
+    level: 'info',
+    text,
+    ...(action && { action }),
+  });
+  // A fit check finds out who's hiring too, as far as it can, and says when to look further.
+  const check = () =>
+    step(looksHidden(job) ? 'Find the real employer' : 'Run a fit check', { kind: 'fit-check' });
   switch (progress.status) {
     case 'new':
       if (!job.role || progress.tier === 'skip') return null;
@@ -455,12 +498,19 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
       if (!job.fit) return check();
       return step(progress.tier === 'skip' ? 'Fit check says skip. Pass?' : 'Apply or pass?');
     case 'apply': {
-      // A posting that asks for a cover letter gets one before the job's ready.
+      // A posting that asks for a cover letter gets one before the job's ready, and one that asks
+      // for samples of the user's work, a Projects page.
       const letter = asksForCoverLetter(job) && job.letters.length === 0;
       if (job.files.length === 0) {
-        return step(letter ? 'Tailor a resume and a cover letter' : 'Tailor a resume');
+        return step(letter ? 'Tailor a resume and a cover letter' : 'Tailor a resume', {
+          kind: 'resume',
+        });
       }
-      return step(letter ? 'The posting asks for a cover letter' : 'Ready to apply');
+      if (letter) return step('The posting asks for a cover letter', { kind: 'letter' });
+      if (asksForWorkSamples(job) && job.projectPages.length === 0) {
+        return step('The posting asks for samples of your work', { kind: 'projects' });
+      }
+      return step('Ready to apply', { kind: 'apply' });
     }
     case 'later':
       return job.backOn && job.backOn > today ? step(`Back ${dayFrom(job.backOn, today)}`) : null;

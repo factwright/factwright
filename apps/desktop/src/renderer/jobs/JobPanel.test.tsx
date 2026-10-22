@@ -67,12 +67,14 @@ describe('sorting a job before applying', () => {
   it('leads a new job with a fit check, then where it goes, each one click', async () => {
     const run = controls();
     const { api, container } = panel(byCompany('Copperleaf Energy'), {}, { run });
-    expect(sortButtons()).toEqual(['Run a fit check', 'To review', 'To apply', 'Later', 'Pass']);
+    const next = screen.getByRole('region', { name: 'Up next' });
+    expect(within(next).getByText('Run a fit check')).toBeTruthy();
+    expect(sortButtons()).toEqual(['To review', 'To apply', 'Later', 'Pass']);
     await userEvent.click(screen.getByRole('button', { name: 'To apply' }));
     expect(api.updateJob).toHaveBeenCalledWith('copperleaf-energy--principal-engineer', {
       status: 'apply',
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Run a fit check' }));
+    await userEvent.click(within(next).getByRole('button', { name: 'Start with Claude' }));
     expect(run.start).toHaveBeenCalledWith({
       skill: 'fit-check',
       jobId: 'copperleaf-energy--principal-engineer',
@@ -258,7 +260,7 @@ describe('JobPanel', () => {
 
   it('offers an ATS X-ray for a job’s resume, and none for its cover letter', async () => {
     panel(byCompany('Lumen Health'));
-    const files = screen.getByRole('region', { name: 'Files' });
+    const files = screen.getByRole('region', { name: 'Made for this job' });
     expect(
       within(files).getByRole('button', { name: 'Open AlexRiveraCoverLetter_LumenHealth.pdf' }),
     ).toBeTruthy();
@@ -362,7 +364,7 @@ describe('JobPanel', () => {
   it('says when a job isn’t scored yet', () => {
     panel(byCompany('Bluewave Staffing'));
     expect(screen.getByRole('heading', { name: 'Not scored yet' })).toBeTruthy();
-    expect(screen.getByText('No files yet.')).toBeTruthy();
+    expect(screen.getByText(/What your Claude makes for this job shows up here/)).toBeTruthy();
   });
 
   it('opens documents in the app, and resumes in the user’s own app', async () => {

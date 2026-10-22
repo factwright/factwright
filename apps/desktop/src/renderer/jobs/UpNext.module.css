@@ -1,0 +1,77 @@
+/* What to do next, first under the job's name, tinted by how pressing it is. */
+.box {
+  margin: 0 0 var(--fw-space-4);
+  padding: 12px 14px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bar);
+}
+
+.info {
+  border-color: color-mix(in srgb, var(--fw-accent) 40%, var(--fw-border));
+  background: var(--fw-accent-soft);
+}
+
+.action {
+  border-color: color-mix(in srgb, var(--fw-need) 40%, var(--fw-border));
+  background: var(--fw-need-soft);
+}
+
+.urgent {
+  border-color: color-mix(in srgb, var(--fw-bad) 40%, var(--fw-border));
+  background: var(--fw-bad-soft);
+}
+
+.kicker {
+  margin: 0 0 6px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The step, and its button at the right, or under it when the panel is narrow. */
+.stepRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.step {
+  flex: 1 1 200px;
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.action .step {
+  color: var(--fw-need);
+}
+
+.urgent .step {
+  color: var(--fw-bad);
+}
+
+/* Choices under the step, such as where to sort a new job. */
+.stepRow + * {
+  margin-top: 12px;
+}
+
+.box > :last-child {
+  margin-bottom: 0;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--fw-muted);
+  font-size: 13px;
+}
+
+.problem {
+  margin: 8px 0 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

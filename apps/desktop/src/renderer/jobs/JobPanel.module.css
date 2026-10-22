@@ -179,36 +179,14 @@
   font-size: var(--fw-text-sm);
 }
 
-/* What needs the user, the next step and how to apply: above the sections, never closed. */
+/* What to do next, everything Claude can do, and how to apply: above the sections, never
+   closed. */
 .top {
   padding: var(--fw-space-4) 0 var(--fw-space-5);
 }
 
 .top > :first-child {
   margin-top: 0;
-}
-
-.next {
-  margin: 0 0 var(--fw-space-3);
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.urgent {
-  background: var(--fw-bad-soft);
-  color: var(--fw-bad);
-}
-
-.action {
-  background: var(--fw-need-soft);
-  color: var(--fw-need);
-}
-
-.info {
-  background: var(--fw-accent-soft);
-  color: var(--fw-accent-text);
 }
 
 .apply {
@@ -243,8 +221,8 @@
   overflow-wrap: anywhere;
 }
 
-/* One column beside the list. Expanded: the job's progress and notes at the left, what's known
-   about it at the right. */
+/* One column beside the list: what came from Claude, then the user's progress. Expanded, the
+   two side by side. */
 .columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -256,23 +234,38 @@
   align-items: start;
 }
 
-/* Expanded, sections reach the edges of their column, not the window's, and the first in a
-   column needs no line above it. */
+/* Expanded, sections reach the edges of their column, not the window's. */
 .expanded .column {
   --panel-pad: 0px;
 }
 
-.expanded .column > section:first-child {
-  border-top: 0;
-}
-
-@container panel (max-width: 900px) {
+@container panel (max-width: 760px) {
   .expanded .columns {
     grid-template-columns: minmax(0, 1fr);
   }
+}
 
-  .expanded .column > section:first-child {
-    border-top: 1px solid var(--fw-border);
+/* What each column holds, over its sections. One under the other, the second starts lower. */
+.columnHeading {
+  margin: 0 0 var(--fw-space-2);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.column + .column .columnHeading {
+  margin-top: var(--fw-space-6);
+}
+
+.expanded .column + .column .columnHeading {
+  margin-top: 0;
+}
+
+@container panel (max-width: 760px) {
+  .expanded .column + .column .columnHeading {
+    margin-top: var(--fw-space-6);
   }
 }
 

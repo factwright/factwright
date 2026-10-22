@@ -35,15 +35,18 @@ import { FactBankPage } from './facts/FactBankPage.tsx';
 import { AddJobDialog } from './jobs/AddJobDialog.tsx';
 import { FindJobsDialog } from './jobs/FindJobsDialog.tsx';
 import { JobPanel } from './jobs/JobPanel.tsx';
+import { JobRail } from './jobs/JobRail.tsx';
 import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { MergeDialog } from './jobs/MergeDialog.tsx';
 import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
 import {
   filterForAdded,
+  isListSort,
   type JobRow,
   jobRows,
   type ListFilter,
+  type ListSort,
   NO_FILTERS,
   startingView,
   stepFrom,
@@ -129,6 +132,9 @@ export function App({ api }: { api: FactwrightApi }) {
   }));
   // A kind of job picked, then removed, shows every kind again.
   const filter = withKnownKind(chosen, kinds);
+  // The list's order: by a column the user sorted it by, kept for next time, or else the newest
+  // activity first.
+  const [sort, setSort] = usePref<ListSort | null>('jobs.sort', null, isListSort);
   const changeFilter = (next: ListFilter) => {
     if (next.view !== filter.view) writePref(VIEW_PREF, next.view);
     setFilter(next);
@@ -303,7 +309,7 @@ export function App({ api }: { api: FactwrightApi }) {
     [rows, selected],
   );
   // The list as it shows, for moving from job to job while one has the window to itself.
-  const shown = useMemo(() => visibleRows(rows, filter), [rows, filter]);
+  const shown = useMemo(() => visibleRows(rows, filter, sort), [rows, filter, sort]);
   // The list's order when a job took the window, to step through. It holds still as jobs get
   // new activity or leave the view, so the next job is always the next one the user saw.
   const [order, setOrder] = useState<string[]>([]);
@@ -358,8 +364,9 @@ export function App({ api }: { api: FactwrightApi }) {
         query={filter.query}
         onQuery={(query) => {
           setFilter((current) => ({ ...current, query }));
-          // Searching while a job has the window brings back the list, to show what matches.
-          if (alone) setSelectedId(null);
+          // Searching while a job has the window narrows the slim list beside it, to step through.
+          if (alone)
+            setOrder(visibleRows(rows, { ...filter, query }, sort).map((row) => row.job.id));
         }}
         searchRef={search}
         onAddJob={() => setDialog('add-job')}
@@ -484,6 +491,8 @@ export function App({ api }: { api: FactwrightApi }) {
                 today={today}
                 filter={filter}
                 onFilter={changeFilter}
+                sort={sort}
+                onSort={setSort}
                 selectedId={selectedId}
                 onSelect={pick}
                 onRetry={reload}
@@ -493,6 +502,22 @@ export function App({ api }: { api: FactwrightApi }) {
                 onFindJobs={() => setDialog('find-jobs')}
                 onOpenJourney={() => setDialog('journey')}
                 onGetStarted={gettingStarted ? () => setPicked('profile') : undefined}
+              />
+            )}
+            {page === 'jobs' && alone && (
+              <JobRail
+                rows={rows}
+                kinds={kinds}
+                today={today}
+                filter={filter}
+                onFilter={(next) => {
+                  changeFilter(next);
+                  // Another view or filter is another list to step through.
+                  setOrder(visibleRows(rows, next, sort).map((row) => row.job.id));
+                }}
+                sort={sort}
+                selectedId={selectedId}
+                onSelect={pick}
               />
             )}
             {page === 'jobs' && openJobs > 0 && (

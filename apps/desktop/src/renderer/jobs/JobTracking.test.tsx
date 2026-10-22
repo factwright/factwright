@@ -50,15 +50,15 @@ function panel(job: Job, result: EditResult = { ok: true }) {
   return { api, update, ...view };
 }
 
-describe('the next step', () => {
-  it('saves the step when the box loses focus, and the date as soon as it’s picked', async () => {
+describe('the reminder', () => {
+  it('saves the reminder when the box loses focus, and the date as soon as it’s picked', async () => {
     const { api } = panel(byCompany('Acme Robotics'));
-    const step = screen.getByRole('textbox', { name: 'Next step' });
+    const step = screen.getByRole('textbox', { name: 'Reminder' });
     await userEvent.type(step, 'Email the recruiter{Enter}');
     expect(api.updateJob).toHaveBeenCalledWith('acme-robotics--staff-engineer-developer-tools', {
       nextAction: 'Email the recruiter',
     });
-    const date = screen.getByLabelText('Next step by');
+    const date = screen.getByLabelText('Reminder date');
     await userEvent.type(date, '2026-10-20');
     expect(api.updateJob).toHaveBeenLastCalledWith(
       'acme-robotics--staff-engineer-developer-tools',
@@ -68,7 +68,7 @@ describe('the next step', () => {
 
   it('doesn’t save when nothing changed', async () => {
     const { api } = panel(byCompany('Acme Robotics'));
-    await userEvent.click(screen.getByRole('textbox', { name: 'Next step' }));
+    await userEvent.click(screen.getByRole('textbox', { name: 'Reminder' }));
     await userEvent.tab();
     expect(api.updateJob).not.toHaveBeenCalled();
   });

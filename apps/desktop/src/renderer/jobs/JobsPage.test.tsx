@@ -123,6 +123,27 @@ describe('JobsPage', () => {
     expect(props.onFilter).toHaveBeenCalledWith(expect.objectContaining({ needsYou: true }));
   });
 
+  it('sorts by a column’s heading: its own way, the other way, then back', async () => {
+    const onSort = vi.fn();
+    const names = () =>
+      within(screen.getByRole('list', { name: 'Jobs' }))
+        .getAllByRole('button')
+        .map((row) => row.textContent);
+    page({ onSort });
+    await userEvent.click(screen.getByRole('button', { name: 'Sort by fit' }));
+    expect(onSort).toHaveBeenLastCalledWith({ by: 'fit', reversed: false });
+    cleanup();
+    page({ onSort, sort: { by: 'fit', reversed: false } });
+    const sorted = names();
+    await userEvent.click(screen.getByRole('button', { name: 'Fit, sorted best fit first' }));
+    expect(onSort).toHaveBeenLastCalledWith({ by: 'fit', reversed: true });
+    cleanup();
+    page({ onSort, sort: { by: 'fit', reversed: true } });
+    expect(names()).toEqual([...sorted].reverse());
+    await userEvent.click(screen.getByRole('button', { name: 'Fit, sorted lowest fit first' }));
+    expect(onSort).toHaveBeenLastCalledWith(null);
+  });
+
   it('moves between jobs with the arrow keys', async () => {
     page();
     const rows = within(screen.getByRole('list', { name: 'Jobs' })).getAllByRole('button');

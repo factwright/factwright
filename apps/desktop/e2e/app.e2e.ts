@@ -240,7 +240,7 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
     letter.getByRole('button', { name: 'Open AlexRiveraCoverLetter10142026_Acme.docx' }),
   ).toBeVisible();
   // The resume is still the resume, and the letter is its own.
-  const files = jobPanel().getByRole('region', { name: 'Files' });
+  const files = jobPanel().getByRole('region', { name: 'Made for this job' });
   await expect(files).toContainText('1 resume · 1 cover letter');
   expect(readdirSync(join(dataDir, 'workspace', ACME_FOLDER)).sort()).toEqual(
     expect.arrayContaining([
@@ -289,7 +289,7 @@ test('makes a Projects page, printed as cards in the resume’s template, to pre
     await loading.destroy();
   }
   // It's neither a resume nor a letter.
-  const files = jobPanel().getByRole('region', { name: 'Files' });
+  const files = jobPanel().getByRole('region', { name: 'Made for this job' });
   await expect(files).toContainText('1 resume · 1 cover letter · 1 Projects page');
 });
 
@@ -335,9 +335,7 @@ test('answers a question about the job, and keeps the answer with it', async () 
   // The app types only the skill and the job; the question reaches Claude through its tools.
   expect(await terminalText(window)).toContain(`/factwright:ask job ${ACME_ID}`);
   expect(await terminalText(window)).not.toContain('recruiter screen');
-  const asked = jobPanel().locator('section', {
-    has: window.getByRole('heading', { name: 'Ask Claude' }),
-  });
+  const asked = jobPanel().getByRole('region', { name: 'Questions for Claude' });
   await expect(asked.getByText('Answered')).toBeVisible();
   await expect(asked.getByText('A short screen, from the stand-in Claude.')).toBeVisible();
   // Asked again, Claude answers it again, in place of the first answer.

@@ -271,10 +271,12 @@ describe('attention', () => {
     expect(attention({ nextOn: '2026-10-09', nextAction: 'Email Sam' })).toEqual({
       level: 'urgent',
       text: 'Overdue: Email Sam',
+      action: { kind: 'reminder' },
     });
     expect(attention({ nextOn: TODAY })).toEqual({
       level: 'action',
       text: 'Due today: your next step',
+      action: { kind: 'reminder' },
     });
     expect(attention({ nextOn: '2026-10-09', status: 'rejected' })).toBeNull();
   });
@@ -283,10 +285,12 @@ describe('attention', () => {
     expect(attention({ calls: [call({ onDate: '2026-10-08', kind: 'technical' })] })).toEqual({
       level: 'action',
       text: 'How did the technical interview go?',
+      action: { kind: 'debrief', callId: 'call-1' },
     });
     expect(attention({ calls: [call({ onDate: '2026-10-13', atTime: '10:30' })] })).toEqual({
       level: 'info',
       text: 'Recruiter screen Tuesday at 10:30 AM',
+      action: { kind: 'prep', callId: 'call-1' },
     });
     expect(attention({ calls: [call({ onDate: '2026-10-20' })] })).toBeNull();
   });
@@ -305,6 +309,7 @@ describe('attention', () => {
     expect(at('10:30').attention).toEqual({
       level: 'action',
       text: 'How did the panel interview go?',
+      action: { kind: 'debrief', callId: 'today' },
     });
     // Without the time of day, a call today is next all day, as before.
     expect(jobProgress(job({ calls: [today, later] }), TODAY).nextCall?.id).toBe('today');
@@ -330,6 +335,7 @@ describe('attention', () => {
     expect(attention({ calls: [soon] })).toEqual({
       level: 'action',
       text: 'Prep for the panel interview Monday at 2:00 PM',
+      action: { kind: 'prep', callId: 'soon' },
     });
     const prep = {
       callId: 'soon',
@@ -367,9 +373,11 @@ describe('attention', () => {
       level: 'info',
       text: 'Resume ready for 6 days. Apply or pass?',
     });
-    expect(attention({ ...resume, status: 'apply', statusOn: '2026-10-03' })?.text).toBe(
-      'Resume ready for 6 days. Apply?',
-    );
+    expect(attention({ ...resume, status: 'apply', statusOn: '2026-10-03' })).toEqual({
+      level: 'info',
+      text: 'Resume ready for 6 days. Apply?',
+      action: { kind: 'apply' },
+    });
     // Marking it To apply is something happening.
     expect(attention({ ...resume, status: 'apply', statusOn: '2026-10-08' })).toBeNull();
     expect(attention({ stage: 'review', lastActivity: '2026-10-01' })).toBeNull();
@@ -481,6 +489,40 @@ describe('nextStep', () => {
     expect(step({ status: 'later', backOn: '2026-10-11' })).toBe('Back tomorrow');
     expect(step({ status: 'later' })).toBeUndefined();
     expect(step({ status: 'later', backOn: TODAY })).toBe('Back from Later. Apply or pass?');
+  });
+
+  it('says what does each step in a click, when one can', () => {
+    const action = (extra: Partial<Job>) =>
+      nextStep(job(extra), jobProgress(job(extra), TODAY), TODAY)?.action;
+    expect(action({})).toEqual({ kind: 'fit-check' });
+    expect(action({ company: 'Bluewave Staffing' })).toEqual({ kind: 'fit-check' });
+    expect(action({ nextAction: 'Email Sam' })).toEqual({ kind: 'reminder' });
+    const apply = { status: 'apply' as const, statusOn: TODAY };
+    expect(action(apply)).toEqual({ kind: 'resume' });
+    expect(action({ ...apply, files: [pdf] })).toEqual({ kind: 'apply' });
+    const letter = { ...apply, files: [pdf], apply: '- Attach a cover letter.' };
+    expect(action(letter)).toEqual({ kind: 'letter' });
+    // A posting that asks for samples of the user's work gets a Projects page, once the resume
+    // and any letter are done.
+    const samples = { ...apply, files: [pdf], apply: 'Send a portfolio with your resume.' };
+    expect(step(samples)).toBe('The posting asks for samples of your work');
+    expect(action(samples)).toEqual({ kind: 'projects' });
+    expect(step({ ...samples, projectPages: [pdf] })).toBe('Ready to apply');
+    expect(step({ ...samples, apply: 'Send a portfolio and a cover letter.' })).toBe(
+      'The posting asks for a cover letter',
+    );
+    // A call ahead can have its prep sheet early. Once it has one, there's nothing to do.
+    const panel = call({ onDate: '2026-10-20', kind: 'panel' });
+    expect(action({ calls: [panel] })).toEqual({ kind: 'prep', callId: 'call-1' });
+    const prep = {
+      callId: 'call-1',
+      kind: 'prep' as const,
+      path: 'calls/acme--staff/call-1/prep.md',
+      modified: '2026-10-09T12:00:00.000Z',
+    };
+    expect(action({ calls: [panel], callDocs: [prep] })).toBeUndefined();
+    expect(action({ status: 'applied', appliedOn: '2026-10-07' })).toBeUndefined();
+    expect(action({ status: 'offer', statusOn: TODAY })).toBeUndefined();
   });
 
   it('suggests nothing for closed jobs, skips, or jobs without a role', () => {

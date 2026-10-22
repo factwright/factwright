@@ -18,29 +18,29 @@
   gap: var(--fw-space-3);
 }
 
-/* Next step: a calm box near the top, since it decides what shows in "Needs you". */
-.nextStep {
-  margin-top: var(--fw-space-4);
+/* The user's reminder: a calm box at the top of their progress, since it decides what's next. */
+.reminder {
+  margin: var(--fw-space-4) 0;
   padding: 12px 14px;
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   background: var(--fw-bar);
 }
 
-/* The date sits beside the step, or under it when the panel is narrow. */
-.nextRow {
+/* The date sits beside what to do, or under it when the panel is narrow. */
+.reminderRow {
   display: flex;
   flex-wrap: wrap;
   gap: var(--fw-space-2);
   margin-top: var(--fw-space-2);
 }
 
-.nextRow > :first-child {
+.reminderRow > :first-child {
   flex: 1 1 180px;
   min-width: 0;
 }
 
-.nextDate {
+.reminderDate {
   flex: 0 0 140px;
   width: 140px;
 }

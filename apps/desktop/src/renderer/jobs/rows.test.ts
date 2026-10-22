@@ -1,4 +1,4 @@
-import { fileSize, localDate, payLabel, shortDate } from '@factwright/core';
+import { fileSize, JOB_STATUSES, localDate, payLabel, shortDate } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   filterCount,
@@ -7,6 +7,7 @@ import {
   jobRows,
   laterRows,
   NO_FILTERS,
+  nextSort,
   ofKind,
   startingView,
   stepFrom,
@@ -155,6 +156,45 @@ describe('visibleRows', () => {
     expect(companies(visibleRows(byHand, { ...ALL, found: 'from:Added by hand' }))).toEqual([
       'Northwind Labs',
     ]);
+  });
+});
+
+describe('sorting', () => {
+  const sorted = (by: 'job' | 'status' | 'fit' | 'pay' | 'next', reversed = false) =>
+    visibleRows(rows, ALL, { by, reversed });
+
+  it('sorts by a column its own way, then the other way, then back to the newest activity', () => {
+    expect(nextSort(null, 'fit')).toEqual({ by: 'fit', reversed: false });
+    expect(nextSort({ by: 'fit', reversed: false }, 'fit')).toEqual({ by: 'fit', reversed: true });
+    expect(nextSort({ by: 'fit', reversed: true }, 'fit')).toBeNull();
+    expect(nextSort({ by: 'fit', reversed: true }, 'pay')).toEqual({ by: 'pay', reversed: false });
+    expect(visibleRows(rows, ALL, null)).toEqual(visibleRows(rows, ALL));
+  });
+
+  it('puts the best fit and the highest pay first, and jobs with none last either way', () => {
+    for (const reversed of [false, true]) {
+      const scores = sorted('fit', reversed).map((row) => row.progress.score);
+      const scored = scores.filter((score) => score !== null);
+      expect(scored.length).toBeGreaterThan(3);
+      expect(scored).toEqual([...scored].sort((a, b) => (reversed ? a - b : b - a)));
+      expect(scores.slice(scored.length).every((score) => score === null)).toBe(true);
+      const pays = sorted('pay', reversed).map(({ job }) => job.pay?.max ?? job.pay?.min ?? null);
+      const paid = pays.filter((pay) => pay !== null);
+      expect(paid).toEqual([...paid].sort((a, b) => (reversed ? a - b : b - a)));
+      expect(pays.slice(paid.length).every((pay) => pay === null)).toBe(true);
+    }
+  });
+
+  it('sorts by company A to Z, by status as a job moves along, and what’s most pressing first', () => {
+    const names = companies(sorted('job'));
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    expect(companies(sorted('job', true))).toEqual([...names].sort((a, b) => b.localeCompare(a)));
+    const steps = sorted('status').map((row) => JOB_STATUSES.indexOf(row.progress.status));
+    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    const levels = sorted('next').map((row) => row.next?.level ?? 'none');
+    const order = ['urgent', 'action', 'info', 'none'];
+    expect(levels).toEqual([...levels].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
+    expect(levels[0]).toBe('urgent');
   });
 });
 

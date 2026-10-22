@@ -51,7 +51,11 @@ describe('the phone’s job list', () => {
       'Cobalt',
       'Delta Freight',
     ]);
-    expect(rows[0]?.next).toEqual({ level: 'urgent', text: 'Overdue: Send references' });
+    expect(rows[0]?.next).toEqual({
+      level: 'urgent',
+      text: 'Overdue: Send references',
+      action: { kind: 'reminder' },
+    });
     expect(rows[1]?.next).toEqual({ level: 'action', text: 'Applied 12 days ago. Follow up?' });
     expect(rows[2]?.next).toEqual({ level: 'info', text: 'Applied yesterday' });
   });
