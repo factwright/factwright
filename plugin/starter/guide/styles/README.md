@@ -16,6 +16,9 @@ A style says who reads the resume, and what they reward. Each style has tracks f
 
 If the user doesn't name a style, infer it from the company and say which you picked. In between, use judgment: a 600-person company that still says "move fast" is `startup`.
 
+## Sections and templates
+Each style's **Sections** are the parts its resumes have, in a good order. A template can have fewer, in its own order: a resume holds only the parts its template has a place for, which `list_templates` says.
+
 ## Starting resumes
 `base/<style>-<track>.json` is the starting resume for that style and track, in the template `templates.md` gives that kind of company. Tailored resumes start from the closest one.
 

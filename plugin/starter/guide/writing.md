@@ -3,7 +3,7 @@
 The craft of a strong resume. If anything here conflicts, `rules.md` wins first, then the user's nudges in `preferences.md`, then this guide.
 
 ## The first six seconds
-A reader skims the top third of the first page before deciding to read on.
+A reader skims the top third of the first page before deciding to read on. Each part below goes on a resume when its template has a place for it.
 - **Headline:** the role they're hiring for, said back to them, as far as the facts allow, such as "Senior Product Designer".
 - **Tagline:** three to six "·"-separated focus areas, in the posting's own words where they're true.
 - **Highlights** (`impact_stats`): the three or four numbers from `facts/` that matter most for this job.
@@ -51,4 +51,4 @@ A reader skims the top third of the first page before deciding to read on.
 | `classic` | Traditional, all serif, black and white | Yes, three columns |
 | `minimal` | White space, gray headings, no color | Yes, three columns |
 
-The user can have templates of their own too, made from a resume whose look they like, or from a file someone shared. `list_templates` lists them all, and says which show the strengths list.
+The user can have templates of their own too, made from a resume whose look they like, or from a file someone shared. `list_templates` lists them all, with the parts each has no place for. A template made from a resume the user likes has only that resume's parts, such as no band of numbers or no highlight cards. A resume in it leaves those out too, so it looks like the template, and its strongest numbers and facts go into the summary and the bullets instead.

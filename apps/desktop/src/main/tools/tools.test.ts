@@ -1243,6 +1243,53 @@ describe('build_resume', () => {
     );
   });
 
+  it('says when the template has no place for a part of the resume, whatever the format', async () => {
+    mkdirSync(join(root, 'templates'), { recursive: true });
+    const classic = builtInTemplate('classic') as Template;
+    // As a template made from a resume with no numbers and no headings over a job's bullets.
+    const parts = {
+      ...classic.parts,
+      stats: '',
+      'job-body':
+        '{{#intro}}<div class="intro">{{intro}}</div>{{/intro}}{{#groups}}<ul class="b">{{#bullets}}<li>{{#lead}}<span class="lead">{{lead}}:</span> {{/lead}}{{text}}</li>{{/bullets}}</ul>{{/groups}}',
+    };
+    writeFileSync(
+      join(root, 'templates', 'plain.json'),
+      JSON.stringify({ ...JSON.parse(templateFile(classic)), name: 'Plain', parts }),
+    );
+    const job = {
+      ...resume.experience[0],
+      bullet_groups: [{ heading: 'Platform', bullets: [{ text: 'Cut deploy time by **~40%**.' }] }],
+    };
+    writeResume({
+      ...resume,
+      layout: 'plain',
+      impact_stats: [{ value: '~40%', label: 'Faster deploys' }],
+      experience: [job],
+    });
+    const problem =
+      'The Plain template has no place for `impact_stats` and `experience[].bullet_groups[].heading`: its look leaves them out, so the PDF wouldn’t show them. Take them out of resume.json, and work what matters in them into the summary and the bullets.';
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
+      `Problems to fix, then build again:\n- ${problem}`,
+    );
+    // The Word file holds no more than the template has a place for, either.
+    expect(await tool('build_resume').run({ folder: FOLDER, format: 'docx' })).toContain(problem);
+    writeResume({
+      ...resume,
+      layout: 'plain',
+      impact_stats: [{ value: '~40%', label: 'Faster deploys' }],
+    });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain(
+      '- The Plain template has no place for `impact_stats`: its look leaves it out, so the PDF wouldn’t show it. Take it out of resume.json,',
+    );
+    writeResume({
+      ...resume,
+      layout: 'plain',
+      experience: [{ ...job, bullet_groups: [{ bullets: job.bullet_groups[0]?.bullets ?? [] }] }],
+    });
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Checks: clean.');
+  });
+
   it('builds a Word file too, in the format asked for', async () => {
     writeResume({ ...resume, layout: 'classic' });
     const answer = await tool('build_resume').run({ folder: FOLDER, format: 'both' });
@@ -1744,12 +1791,13 @@ describe('the template tools', () => {
     expect(await tool('list_templates').run({})).toBe(
       [
         'The templates the user can pick. Set a resume’s `layout` to one’s ID. guide/templates.md says which the user picked for each kind of company.',
+        'A resume looks like its template: leave out of resume.json each part its template has no place for, whatever the guide or the starting resume says. A template the user made from a resume they like has only that resume’s parts.',
         '',
-        '| ID | Name | Look | Whose | Shows `competencies` | Shows `projects` and `extra_sections` |',
+        '| ID | Name | Look | Whose | Has no place for | Shows `projects` and `extra_sections` |',
         '|---|---|---|---|---|---|',
-        '| `classic` | Classic | Traditional and all serif, in black and white. The safest choice for formal fields. | built in | yes | yes |',
-        '| `minimal` | Minimal | Quiet and airy: lots of white space, gray headings and no color. | built in | yes | yes |',
-        '| `navy-sidebar` | Navy Sidebar | A navy column down the left. | the user’s own | no | no: leaves out the projects and the Interests section |',
+        '| `classic` | Classic | Traditional and all serif, in black and white. The safest choice for formal fields. | built in | nothing | yes |',
+        '| `minimal` | Minimal | Quiet and airy: lots of white space, gray headings and no color. | built in | nothing | yes |',
+        '| `navy-sidebar` | Navy Sidebar | A navy column down the left. | the user’s own | `tagline`, `impact_stats`, `competencies`, `systems`, `experience[].company_note`, `experience[].location`, `experience[].intro`, `experience[].bullet_groups[].heading`, `experience[].bullet_groups[].bullets[].lead`, `education`, `education[].note` and `skills` | no: leaves out the projects and the Interests section |',
       ].join('\n'),
     );
   });
@@ -1763,6 +1811,13 @@ describe('the template tools', () => {
       'Not saved: it leaves out the projects. Show {{#projects}} and {{#extra_sections}} as the app’s own templates do, so a resume with them prints them.',
     );
     expect(existsSync(join(root, 'templates', 'navy.json'))).toBe(false);
+  });
+
+  it('says what a template it saves has no place for', async () => {
+    const parts = { ...classic().parts, stats: '' };
+    expect(await tool('save_template').run({ id: 'navy', template: file({ parts }) })).toContain(
+      'It’s in the user’s templates now.\nIt has no place for `impact_stats`, so resumes in it leave it out.\n',
+    );
   });
 
   it('reads a template’s file, to start one from or to change it', async () => {
@@ -1783,6 +1838,7 @@ describe('the template tools', () => {
     expect(answer).toBe(
       [
         'Saved templates/navy-sidebar.json, “Navy Sidebar”. It’s in the user’s templates now.',
+        'It has a place for every part of a resume.',
         'Its preview, with the made-up resume the gallery shows, is templates/.previews/navy-sidebar.pdf: 2 pages, the last one 84% full. Read it to check the look.',
         'A cover letter in its letter layout is templates/.previews/navy-sidebar.letter.pdf: 2 pages. Read it too: its header should match the resume’s.',
       ].join('\n'),

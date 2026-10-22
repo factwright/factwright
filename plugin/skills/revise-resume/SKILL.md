@@ -26,7 +26,7 @@ Before starting, read:
 For each finding under **Fix in the resume**, change `resume.json`, following `guide/writing.md` and the style file `notes.md` names:
 - **A key term to add:** the fact bank backs it, as the finding says where. Add it where it's true and reads naturally: a skills line, or a bullet or card from the claim that backs it, in the posting's own words. Never stretch a claim to fit a term.
 - **Dates** systems may not read: give every date as the template's date fields take them, such as `07/2024`, with `Present` for a job still going.
-- **Headings** systems don't know: rename the part to the standard name, such as "Skills" or "Experience", through `resume.json`, such as `skills_heading`. When the X-ray found no section of a kind, such as no Skills section, add it from the facts. A heading the template prints itself is the template's: `read_template` shows its `titles`. Change it only with **template fix**, and otherwise say in your reply that it takes the template.
+- **Headings** systems don't know: rename the part to the standard name, such as "Skills" or "Experience", through `resume.json`, such as `skills_heading`. When the X-ray found no section of a kind, such as no Skills section, add it from the facts, if the template has a place for it: `list_templates` says what each has no place for. A heading the template prints itself is the template's: `read_template` shows its `titles`. Change it only with **template fix**, and otherwise say in your reply that it takes the template.
 - **Contact details** systems can't find: put them in `contact` from `facts/profile.md`. Add only what the user has there.
 - **Length:** trim or fill to the pages `guide/lint.json` asks for, as the style file says.
 

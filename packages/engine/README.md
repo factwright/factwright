@@ -35,7 +35,7 @@ A template can come from anywhere, so `readTemplate` checks one before it's used
 
 The page itself carries a policy that runs no scripts and loads nothing from elsewhere, and the app prints it in a hidden, sandboxed window that loads nothing but the page.
 
-Every template the app comes with shows the same parts of a resume, so a resume can change its look without changing its text. Any text can hold `**bold**`, and `[[placeholders]]`, which lint refuses so none ship by accident. A resume can name its own headings: `systems_heading` over the highlight cards (otherwise "Key Systems"), `projects_heading` (otherwise "Independent Projects") and `skills_heading` (otherwise the template's own). Education comes after the experience, or first with `education_first`, as early in a career it says the most.
+Every template the app comes with shows the same parts of a resume, so a resume can change its look without changing its text. A template of the user's own can have no place for some, such as the band of numbers or the highlight cards, when the resume it copies has none: `templateHasNoPlaceFor` names them, and `partsLeftOut` names the ones a resume holds that its template wouldn't show, so the resume can leave them out and look like its template. Any text can hold `**bold**`, and `[[placeholders]]`, which lint refuses so none ship by accident. A resume can name its own headings: `systems_heading` over the highlight cards (otherwise "Key Systems"), `projects_heading` (otherwise "Independent Projects") and `skills_heading` (otherwise the template's own). Education comes after the experience, or first with `education_first`, as early in a career it says the most.
 
 ```ts
 import {
