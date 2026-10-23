@@ -7,6 +7,7 @@ import {
   type AboutYou,
   type AnswerChanges,
   applyChanges,
+  type Contact,
   readAnswers,
 } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
@@ -89,7 +90,11 @@ const TWO_KINDS = readAnswers({
   ],
 });
 
-function profileApi(status: Partial<ProfileStatus> = {}, answers: AboutYou = ANSWERS) {
+function profileApi(
+  status: Partial<ProfileStatus> = {},
+  answers: AboutYou = ANSWERS,
+  fromResume: Contact | null = null,
+) {
   const profile: Profile = {
     answers,
     notes: 'I run the guest team.',
@@ -115,6 +120,7 @@ function profileApi(status: Partial<ProfileStatus> = {}, answers: AboutYou = ANS
       }),
     ),
     removeTemplate: vi.fn(async () => ({ ok: true as const })),
+    contactFromResume: vi.fn(async () => fromResume),
   };
 }
 
@@ -291,6 +297,60 @@ describe('ProfilePage', () => {
         }),
       ),
     );
+  });
+
+  it('fills in what Profile leaves blank from the newest resume, with one click', async () => {
+    const resume: Contact = {
+      name: 'Jordan Avery',
+      email: 'jordan.avery@example.com',
+      phone: '(555) 555-0123',
+      location: 'Austin, TX',
+      linkedin: 'linkedin.com/in/jordanavery',
+      website: '',
+    };
+    const api = profileApi({}, ANSWERS, resume);
+    render(<Harness api={api} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    await userEvent.click(
+      await within(about).findByRole('button', { name: 'Fill in from your resume' }),
+    );
+    // Only what's blank: the email Profile has stays as it is.
+    await waitFor(() =>
+      expect(api.saveAnswers).toHaveBeenCalledWith({
+        you: {
+          name: 'Jordan Avery',
+          email: 'jordan@example.com',
+          phone: '(555) 555-0123',
+          location: 'Austin, TX',
+          linkedin: 'linkedin.com/in/jordanavery',
+          website: '',
+        },
+      }),
+    );
+  });
+
+  it('says what the resume would fill in, where you change your details', async () => {
+    const blank = readAnswers({ ...ANSWERS, you: { name: '', email: '' } });
+    const resume: Contact = {
+      name: 'Jordan Avery',
+      email: 'jordan.avery@example.com',
+      phone: '',
+      location: '',
+      linkedin: '',
+      website: '',
+    };
+    render(<Harness api={profileApi({}, blank, resume)} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    await userEvent.click(within(about).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'About you' });
+    expect(within(dialog).getByText('Your newest resume has your name and email.')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Fill in from your resume' })).toBeTruthy();
+  });
+
+  it('offers nothing to fill in when there’s no resume yet', async () => {
+    render(<Harness api={profileApi()} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    expect(within(about).queryByRole('button', { name: 'Fill in from your resume' })).toBeNull();
   });
 
   it('opens each part to change it, saving as the user goes', async () => {

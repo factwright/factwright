@@ -15,7 +15,7 @@ import type {
   SavedPosting,
   SearchFocus,
 } from '@factwright/core';
-import type { AboutYou, AnswerChanges } from './about.ts';
+import type { AboutYou, AnswerChanges, Contact } from './about.ts';
 import type { RunStep, TurnEnd } from './activity.ts';
 import type { EffortChoices } from './effort.ts';
 import type {
@@ -523,6 +523,11 @@ export interface FactwrightApi {
   privateAnswers(): Promise<KeptPrivate>;
   /** Saves changes to what's kept on this computer alone, and answers with all of it. */
   savePrivateAnswers(changes: Partial<KeptPrivate>): Promise<KeptPrivate>;
+  /**
+   * The contact details the newest resume Factwright made shows, to fill Profile's blanks with,
+   * or null before it's made one.
+   */
+  contactFromResume(): Promise<Contact | null>;
   /** Saves the notes the user wrote about themselves. */
   saveNotes(text: string): Promise<EditResult>;
   /**

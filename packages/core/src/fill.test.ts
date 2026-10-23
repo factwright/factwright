@@ -5,6 +5,7 @@ import {
   NO_EQUAL_OPPORTUNITY,
   NO_PRIVATE,
   type OnFile,
+  type ResumeOnFile,
   readEqualOpportunity,
 } from './fill.ts';
 import type { FieldControl, FormField } from './forms.ts';
@@ -30,7 +31,22 @@ const ON_FILE: OnFile = {
   start: 'Two weeks’ notice',
   relocate: 'no',
   targetPay: '$165,000',
-  resume: { company: 'Tidewater Analytics', title: 'Senior Product Manager' },
+  resume: {
+    from: 'job',
+    name: 'Ana María Ruiz',
+    email: 'ana@example.com',
+    phone: '(303) 555-0142',
+    location: 'Denver, CO',
+    linkedin: 'https://www.linkedin.com/in/anaruiz',
+    website: '',
+    company: 'Tidewater Analytics',
+    title: 'Senior Product Manager',
+    since: '2021',
+    education: [],
+    skills: [],
+    sections: [],
+    summary: '',
+  },
   job: { company: 'Harbor & Pine', foundOn: 'LinkedIn', location: 'Denver, CO' },
   sent: [
     {
@@ -462,6 +478,118 @@ describe('answering a form from what’s on file', () => {
       kind: 'question',
       source: 'you',
       left: 'new',
+    });
+  });
+});
+
+describe('answering from a resume where Profile is blank', () => {
+  /** A resume Factwright made for another job: the newest, for a job that has none. */
+  const NEWEST: ResumeOnFile = {
+    from: 'newest',
+    name: 'Ana María Ruiz',
+    email: 'ana.ruiz@example.com',
+    phone: '(720) 555-0199',
+    location: 'Boulder, CO',
+    linkedin: 'https://www.linkedin.com/in/anaruiz',
+    website: 'https://anaruiz.dev',
+    company: 'Tidewater Analytics',
+    title: 'Senior Product Manager',
+    since: '2021',
+    education: [
+      {
+        school: 'University of Colorado Boulder',
+        degree: 'B.S., Computer Science',
+        start: '2010',
+        end: '2014',
+      },
+    ],
+    skills: [
+      { category: 'Product', items: ['Roadmaps', 'Discovery'] },
+      { category: 'Data', items: ['SQL', 'Python'] },
+    ],
+    sections: [{ heading: 'Certifications', items: ['Certified Scrum Product Owner'] }],
+    summary: 'Product manager who ships data products.',
+  };
+  /** Profile with nothing told, as after skipping setup, with only the newest resume. */
+  const BLANK: OnFile = {
+    ...ON_FILE,
+    you: { name: '', email: '', phone: '', location: '', linkedin: '', website: '' },
+    applications: { ...NO_APPLICATIONS, countries: ['United States'] },
+    resume: NEWEST,
+  };
+  const from = (question: string, more: Partial<FormField> = {}) =>
+    answerField(field(question, more), BLANK);
+
+  it('fills who you are from your newest resume, and says so', () => {
+    expect(from('First Name', { autocomplete: 'given-name' })).toMatchObject({
+      text: 'Ana María',
+      source: 'resume',
+      from: 'From your newest resume',
+    });
+    expect(from('Last Name').text).toBe('Ruiz');
+    expect(from('Full name').text).toBe('Ana María Ruiz');
+    expect(from('Email', { type: 'email' }).text).toBe('ana.ruiz@example.com');
+    expect(from('Phone', { type: 'tel' }).text).toBe('(720) 555-0199');
+    expect(from('Current location').text).toBe('Boulder, CO');
+    expect(from('City').text).toBe('Boulder');
+    expect(from('State', { control: 'choice' }).pick).toEqual(['CO', 'Colorado']);
+    expect(from('Country', { control: 'combo' }).pick?.[0]).toBe('United States');
+    expect(from('LinkedIn URL').text).toBe('https://www.linkedin.com/in/anaruiz');
+    expect(from('Portfolio URL').text).toBe('https://anaruiz.dev');
+    expect(from('Phone country code', { control: 'combo' }).pick?.[0]).toBe('United States');
+  });
+
+  it('keeps Profile’s answer first, where it has one', () => {
+    expect(answer('Email', { type: 'email' }).text).toBe('ana@example.com');
+    expect(answer('Email', { type: 'email' }).source).toBe('profile');
+    // The job's own resume says where you work now, as before.
+    expect(answer('Current company')).toMatchObject({
+      text: 'Tidewater Analytics',
+      from: 'From the job’s resume',
+    });
+  });
+
+  it('fills your school, degree and field of study, as a resume lists them', () => {
+    expect(from('School').text).toBe('University of Colorado Boulder');
+    expect(
+      from('Degree', {
+        control: 'choice',
+        options: ['High School', "Associate's Degree", "Bachelor's Degree", "Master's Degree"],
+      }).pick?.[0],
+    ).toBe("Bachelor's Degree");
+    expect(from('Degree').text).toBe('B.S., Computer Science');
+    expect(from('Discipline').text).toBe('Computer Science');
+    expect(from('Graduation year').text).toBe('2014');
+    // A date picker reads a date its own way, so that's yours.
+    expect(from('Graduation date', { control: 'date', type: 'date' })).toMatchObject({
+      left: 'unset',
+    });
+  });
+
+  it('fills your skills, certifications and summary where a form asks for them by name', () => {
+    expect(from('Skills').text).toBe('Roadmaps, Discovery, SQL, Python');
+    expect(from('Skills', { control: 'long' }).text).toBe(
+      'Product: Roadmaps, Discovery\nData: SQL, Python',
+    );
+    expect(
+      from('Skills', { control: 'choices', options: ['SQL', 'Java', 'Python'] }),
+    ).toMatchObject({ pick: ['Roadmaps', 'Discovery', 'SQL', 'Python'], exact: true });
+    expect(from('Certifications').text).toBe('Certified Scrum Product Owner');
+    expect(from('Professional summary', { control: 'long' }).text).toBe(
+      'Product manager who ships data products.',
+    );
+    expect(from('Skills', { limit: 10 })).toMatchObject({ left: 'unset' });
+  });
+
+  it('leaves what no resume says for you: a middle name, an apartment, a GPA', () => {
+    for (const question of ['Middle name', 'Address line 2', 'GPA']) {
+      expect(from(question)).toMatchObject({ source: 'you', left: 'unset' });
+    }
+  });
+
+  it('leaves it all for you with no resume either', () => {
+    expect(answerField(field('Full name'), { ...BLANK, resume: null })).toMatchObject({
+      left: 'unset',
     });
   });
 });

@@ -11,6 +11,7 @@ import {
 import { parsePrivateChanges } from '../../shared/private.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
+import { contactFromResume } from './from-resume.ts';
 import type { TemplatePreviews } from './previews.ts';
 import type { PrivateAnswers } from './private.ts';
 import type { AboutStore } from './store.ts';
@@ -48,12 +49,15 @@ export function registerAboutIpc(
     previews,
     templates,
     kept,
+    workspace,
   }: {
     about: AboutStore;
     previews: TemplatePreviews;
     templates: TemplateLibrary;
     /** What Profile keeps for applications on this computer alone. */
     kept: PrivateAnswers;
+    /** The open profile's workspace, where the resumes Factwright made are. */
+    workspace: string;
   },
 ): void {
   answer('about:profile', () => about.profile());
@@ -65,6 +69,8 @@ export function registerAboutIpc(
   });
 
   answer('about:private', () => kept.read());
+
+  answer('about:from-resume', () => contactFromResume(workspace));
 
   answer('about:save-private', (changes) => {
     const valid = parsePrivateChanges(changes);

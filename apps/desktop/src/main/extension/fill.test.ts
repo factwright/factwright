@@ -240,6 +240,41 @@ describe('answering a form to fill', () => {
   });
 });
 
+describe('answering from the resumes, where Profile is blank', () => {
+  const BLANK = { name: '', email: '', phone: '', location: '', linkedin: '', website: '' };
+
+  it('takes who you are from the job’s own resume, and names the upload by it', async () => {
+    about = { ...ABOUT, you: BLANK };
+    const answer = (await fill([
+      field('Full name'),
+      field('Current company'),
+      field('Resume', { control: 'file', type: 'file' }),
+    ])) as Filled;
+    expect(answer.replies[0]).toMatchObject({
+      text: 'Ana María Ruiz',
+      source: 'resume',
+      from: 'From the job’s resume',
+    });
+    expect(answer.replies[1]?.text).toBe('Tidewater Analytics');
+    expect(answer.files.resume?.name).toBe('Ana María Ruiz - Resume.pdf');
+  });
+
+  it('takes your newest resume for a job that has none yet', async () => {
+    about = { ...ABOUT, you: BLANK };
+    const answer = (await fill(
+      [field('Full name'), field('Current job title')],
+      'https://jobs.lever.co/elsewhere/1a2b3c4d/apply',
+      'Elsewhere',
+      'Designer',
+    )) as Filled;
+    expect(answer.job).toBeNull();
+    expect(answer.replies.map((reply) => [reply.text, reply.from])).toEqual([
+      ['Ana María Ruiz', 'From your newest resume'],
+      ['Senior Product Manager', 'From your newest resume'],
+    ]);
+  });
+});
+
 describe('a part of a file', () => {
   /** The resume's version, as the job's form offers it. */
   const offered = async () =>

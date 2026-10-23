@@ -1,8 +1,15 @@
 import type { ForApplications, JobFile } from '@factwright/core';
 import { Button, Dialog, DialogActions, VisuallyHidden } from '@factwright/ui';
 import { Check, Circle, FileText, LoaderCircle, Plus } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
-import { labelOf, OVER_18, pagesFor, RESUME_FILES, SPONSORSHIP } from '../../shared/about.ts';
+import { type ReactNode, useEffect, useState } from 'react';
+import {
+  type Contact,
+  labelOf,
+  OVER_18,
+  pagesFor,
+  RESUME_FILES,
+  SPONSORSHIP,
+} from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { labelIn, PAGE_SHAPE_CHOICES } from '../../shared/beyond.ts';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
@@ -17,7 +24,7 @@ import type { RunPhase } from '../useClaudeRun.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
-import { AboutYouStep } from './steps/AboutYouStep.tsx';
+import { AboutYouStep, resumeFillIns } from './steps/AboutYouStep.tsx';
 import { ApplicationsStep } from './steps/ApplicationsStep.tsx';
 import {
   BeyondWorkStep,
@@ -220,6 +227,19 @@ export function ProfilePage({
   const { profile } = state;
   const { answers, status } = profile;
   const [editing, setEditing] = useState<Editing>(null);
+  // What the newest resume Factwright made shows of you, to fill in what Profile leaves blank.
+  const [fromResume, setFromResume] = useState<Contact | null>(null);
+  useEffect(() => {
+    let current = true;
+    void api.contactFromResume().then(
+      (contact) => current && setFromResume(contact),
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [api]);
+  const resumeFills = resumeFillIns(answers.you, fromResume);
   // The Beyond work dialog opened to add a project, which starts with a new one open.
   const [addingProject, setAddingProject] = useState(false);
   const [preview, setPreview] = useState<JobFile | null>(null);
@@ -470,9 +490,19 @@ export function ProfilePage({
         <Card
           title="About you"
           actions={
-            <Button size="sm" onClick={() => setEditing('about')}>
-              Change
-            </Button>
+            <>
+              {resumeFills && (
+                <Button
+                  size="sm"
+                  onClick={() => state.update({ you: { ...answers.you, ...resumeFills } })}
+                >
+                  Fill in from your resume
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setEditing('about')}>
+                Change
+              </Button>
+            </>
           }
         >
           <p>{answers.you.name || 'No name yet.'}</p>
@@ -598,7 +628,9 @@ export function ProfilePage({
         >
           {(close) => (
             <div className={styles.editor}>
-              {editing === 'about' && <AboutYouStep you={answers.you} update={state.update} />}
+              {editing === 'about' && (
+                <AboutYouStep you={answers.you} update={state.update} fromResume={fromResume} />
+              )}
               {editing === 'applications' && (
                 <ApplicationsStep
                   applications={answers.applications}

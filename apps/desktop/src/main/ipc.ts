@@ -716,5 +716,5 @@ export function registerIpc({
   });
   answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
-  registerAboutIpc(answer, { about, previews, templates, kept });
+  registerAboutIpc(answer, { about, previews, templates, kept, workspace });
 }

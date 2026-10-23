@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { type FileHandle, open, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { type FileHandle, open, realpath } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import {
   type AskedJob,
   answerField,
@@ -27,9 +27,9 @@ import {
   SENT_STATUSES,
   type SentBefore,
 } from '@factwright/core';
-import { type Resume, readResume } from '@factwright/engine';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
 import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.ts';
+import { resumeOnFile } from '../about/from-resume.ts';
 import { matchJobs } from '../tools/lookup.ts';
 
 /**
@@ -156,26 +156,6 @@ async function openInside(workspace: string, file: JobFile): Promise<Opened | nu
   }
 }
 
-/** A job's resume.json, or null when it has none, or one that doesn't hold up. */
-async function resumeIn(folder: string): Promise<Resume | null> {
-  try {
-    const read = readResume(JSON.parse(await readFile(join(folder, 'resume.json'), 'utf8')));
-    return read.ok ? read.resume : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Where the job's own resume says you work now: the job that runs to the present. */
-async function workingNow(workspace: string, job: Job): Promise<OnFile['resume']> {
-  if (!job.folder) return null;
-  const resume = await resumeIn(join(workspace, 'applications', job.folder));
-  const current = resume?.experience.find((each) =>
-    /^(present|current|now|today)$/i.test(each.end.trim()),
-  );
-  return current ? { company: current.company, title: current.title } : null;
-}
-
 /** Everything you sent before, newest first, with whose application each was in. */
 function sentBefore(jobs: readonly Job[]): SentBefore[] {
   return jobs
@@ -221,13 +201,12 @@ async function fill(
   const about = deps.about.answers();
   const docs = job ? deps.jobs.docs(job.id) : null;
   const letter = readLetterText(docs?.letter);
-  const [resume, cv, coverLetter] = job
-    ? await Promise.all([
-        workingNow(deps.workspace, job),
-        offer(deps, job, 'resume', about.you.name),
-        offer(deps, job, 'cover-letter', about.you.name),
-      ])
-    : [null, null, null];
+  // Your name for the upload's name, from Profile or else the resume.
+  const resume = await resumeOnFile(deps.workspace, job?.folder ?? null);
+  const you = about.you.name || resume?.name || '';
+  const [cv, coverLetter] = job
+    ? await Promise.all([offer(deps, job, 'resume', you), offer(deps, job, 'cover-letter', you)])
+    : [null, null];
   const onFile: OnFile = {
     you: about.you,
     applications: about.applications,
