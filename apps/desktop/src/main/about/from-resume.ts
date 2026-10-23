@@ -80,6 +80,13 @@ export function resumeDetails(resume: Resume, from: ResumeOnFile['from']): Resum
     company: now?.company ?? '',
     title: now?.title ?? '',
     since: now?.start ?? '',
+    positions: resume.experience.map((each) => ({
+      company: each.company,
+      title: each.title,
+      location: each.location ?? '',
+      start: each.start,
+      end: each.end,
+    })),
     education: (resume.education ?? []).map((each) => ({
       school: each.school,
       degree: each.degree,

@@ -1,10 +1,11 @@
 // Fills an application form with Factwright in Chromium, on this computer. The built extension's
 // panel reads a form on a page served here, asks Factwright through the desktop app's helper,
 // built for testing, and the app's own inbox and fill code, over a made-up job hunt, then fills
-// the form and uploads the job's resume. Once the form is done, Mark as applied records what was
-// sent, marks the job Applied, and offers to keep a new answer in Profile. On a form with fields
-// you can't see, as a page's traps for bots, it reads only those you can. Nothing is submitted,
-// and nothing leaves this computer.
+// the form and uploads the job's resume. Your Claude drafts the form's own questions, as a
+// stand-in here, and the panel fills its drafts in once it's done. Once the form is done, Mark as
+// applied records what was sent, marks the job Applied, and offers to keep a new answer in
+// Profile. On a form with fields you can't see, as a page's traps for bots, it reads only those
+// you can. Nothing is submitted, and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change.
@@ -25,7 +26,13 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INBOX_FOLDER, NO_APPLICATIONS, NO_EQUAL_OPPORTUNITY, SAVE_HELPER } from '@factwright/core';
+import {
+  INBOX_FOLDER,
+  NO_APPLICATIONS,
+  NO_EQUAL_OPPORTUNITY,
+  NO_HISTORY,
+  SAVE_HELPER,
+} from '@factwright/core';
 import { type BrowserContext, chromium, type Page } from '@playwright/test';
 import { PrivateAnswers } from '../../desktop/src/main/about/private.ts';
 import { answerAsk } from '../../desktop/src/main/extension/fill.ts';
@@ -168,6 +175,7 @@ try {
     },
   };
   const aboutStore = {
+    history: () => NO_HISTORY,
     answers: () => about,
     saveAnswers: (changes: Parameters<typeof applyChanges>[1]) => {
       about = applyChanges(about, changes);
@@ -176,10 +184,42 @@ try {
   };
   const kept = new PrivateAnswers(join(home, PRIVATE_FILE));
   kept.save({ equalOpportunity: { ...NO_EQUAL_OPPORTUNITY, gender: 'woman' } });
+  // Your Claude, drafting a form's questions in the window: a stand-in that saves its drafts a
+  // few seconds after it starts, as the answer-questions skill does, with a choice's first option.
+  let drafting = false;
+  const drafts = {
+    start: async (jobId: string) => {
+      const asked = jobs.savedForm(jobId)?.questions ?? [];
+      drafting = true;
+      setTimeout(() => {
+        const choices = asked.filter((each) => each.options.length > 0);
+        writeFileSync(
+          join(folder, 'answers.md'),
+          [
+            '# Application questions: Northwind Labs, Senior Product Manager, Data',
+            '',
+            ...asked
+              .filter((each) => each.options.length === 0)
+              .flatMap((each) => [`## ${each.question}`, '', 'Drafted by the stand-in.', '']),
+            '## Choices',
+            '',
+            '| Question | Pick | Why |',
+            '| --- | --- | --- |',
+            ...choices.map((each) => `| ${each.question} | ${each.options[0]} | A stand-in. |`),
+            '',
+          ].join('\n'),
+        );
+        jobs.read();
+        drafting = false;
+      }, 4000);
+      return 'started' as const;
+    },
+    state: () => ({ drafting, waiting: false }),
+  };
   const inbox = new JobInbox({
     folder: join(home, INBOX_FOLDER),
     add: (saved) => jobs.addSaved(saved),
-    answer: (ask) => answerAsk(ask, { jobs, about: aboutStore, kept, workspace }),
+    answer: (ask) => answerAsk(ask, { jobs, about: aboutStore, kept, workspace, drafts }),
   });
 
   // The helper, built for testing, which takes the data folder from FACTWRIGHT_HELPER_HOME.
@@ -323,6 +363,26 @@ try {
   );
   await shoot(panel, 'fill-1-panel');
   await shoot(form, 'fill-2-form');
+
+  // Your Claude drafts the form's own questions that nothing on file answers, and the panel
+  // fills each draft in once it's done.
+  await panel.getByRole('button', { name: /^Draft (it|them) with your Claude$/ }).click();
+  await panel
+    .getByText(/^Your Claude is drafting \d+ answers? in Factwright/)
+    .waitFor({ timeout: 20_000 });
+  await panel.getByText(/^Your Claude drafted \d+ answers?\./).waitFor({ timeout: 40_000 });
+  const drafted = jobs.savedForm(job?.id ?? '')?.questions.map((each) => each.question) ?? [];
+  console.log(`  Drafted: ${drafted.join(' · ')}`);
+  check(
+    drafted.includes('Have you ever been previously employed by Northwind Labs?'),
+    'it has your Claude draft the questions nothing on file answers, kept with the job',
+  );
+  check(await checked('No'), 'and fills in each draft once your Claude is done');
+  check(
+    (await panel.getByText('Your Claude’s draft for this job').count()) >= 1,
+    'saying it’s your Claude’s draft',
+  );
+  await shoot(panel, 'fill-2b-drafted');
 
   // You answer what's left, and change your phone; then you'd submit the form on the site.
   await form.getByLabel('No', { exact: true }).first().check();

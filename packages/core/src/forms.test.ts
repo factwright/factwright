@@ -350,6 +350,67 @@ describe('what a field asks for', () => {
     ).toEqual(['middle-name', 'street-2', 'street-2', 'phone-country', 'street']);
   });
 
+  it('knows what a part of the form for each job or school asks, by its heading or name', () => {
+    const inPart = (
+      question: string,
+      section: string,
+      more: { name?: string; control?: FieldControl } = {},
+    ) => fieldKind({ ...field(question, more), section });
+    expect(
+      ['Company name', 'Title', 'Start date month', 'End date year', 'Location', 'Description'].map(
+        (question) => inPart(question, 'Employment'),
+      ),
+    ).toEqual([
+      'current-company',
+      'current-title',
+      'job-start',
+      'job-end',
+      'job-location',
+      'job-summary',
+    ]);
+    expect(inPart('I currently work here', 'Work experience', { control: 'check' })).toBe(
+      'job-current',
+    );
+    expect(
+      ['School', 'Degree', 'Field of study', 'Start date year', 'End date year', 'Location'].map(
+        (question) => inPart(question, 'Education'),
+      ),
+    ).toEqual(['school', 'degree', 'discipline', 'edu-start', 'graduation', 'edu-location']);
+    // Its name says which part when no heading does.
+    expect(fieldKind(field('Start date', { name: 'employment[0][start_date]' }))).toBe('job-start');
+    // A month or year with nothing saying whose is never when you can start.
+    expect(fieldKind(field('Start date year'))).toBe('block-date');
+    expect(fieldKind(field('Start date'))).toBe('start-date');
+    // A form's own heading over every field says nothing of the part a field's in.
+    expect(inPart('Location', 'Apply for this job')).toBe('location');
+  });
+
+  it('knows a part by its heading as forms put it: numbered, yours, or inside another', () => {
+    const inPart = (question: string, section: string) =>
+      fieldKind({ ...field(question), section });
+    expect(inPart('Company', 'Work Experience 2')).toBe('current-company');
+    expect(inPart('Employer', 'Your employment history')).toBe('current-company');
+    expect(inPart('School', 'Education (optional)')).toBe('school');
+    expect(inPart('Start date Month', 'Work experience › Position 1')).toBe('job-start');
+    expect(inPart('Start date Year', 'Education › Degree 1')).toBe('edu-start');
+    // The nearest part says, before the one around it.
+    expect(inPart('Location', 'Work experience › Education')).toBe('edu-location');
+    // A heading that only mentions employment isn't a part for each job.
+    expect(inPart('Location', 'Previous Harbor & Pine Employment')).toBe('location');
+  });
+
+  it('never takes a reference’s or an emergency contact’s name and phone for yours', () => {
+    const inPart = (question: string, section: string, more: { type?: string } = {}) =>
+      fieldKind({ ...field(question, more), section });
+    expect([
+      inPart('Name', 'References'),
+      inPart('Phone', 'Professional reference 2', { type: 'tel' }),
+      inPart('Email', 'Application › Emergency contact', { type: 'email' }),
+      fieldKind(field('Full name', { name: 'reference_1_name' })),
+    ]).toEqual(['question', 'question', 'question', 'question']);
+    expect(inPart('Name', 'Contact details')).toBe('full-name');
+  });
+
   it('goes by the browser’s own words for a field, and its name, when its question says little', () => {
     expect(
       kinds([

@@ -10,7 +10,9 @@ import {
   type Job,
   type KeptPrivate,
   NO_APPLICATIONS,
+  NO_HISTORY,
   NO_PRIVATE,
+  type SavedForm,
 } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sampleJob } from '../../renderer/jobs/sample-jobs.ts';
@@ -52,8 +54,15 @@ let jobs: Job[];
 let about: AboutYou;
 let kept: KeptPrivate;
 let deps: FillDeps & {
-  jobs: { recordAnswers: ReturnType<typeof vi.fn>; updateJob: ReturnType<typeof vi.fn> };
+  jobs: {
+    recordAnswers: ReturnType<typeof vi.fn>;
+    updateJob: ReturnType<typeof vi.fn>;
+    keepForm: ReturnType<typeof vi.fn>;
+  };
+  drafts: { start: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn> };
 };
+/** The forms' questions kept with each job, by its ID. */
+let forms: Map<string, SavedForm>;
 /** The resume's PDF, a little over one part. */
 const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(FILE_PART_BYTES + 1000, 7)]);
 
@@ -135,6 +144,11 @@ beforeEach(() => {
         recorded: answers.length,
       })),
       updateJob: vi.fn(() => ({ ok: true as const })),
+      keepForm: vi.fn((id: string, form: SavedForm) => {
+        forms.set(id, form);
+        return { ok: true as const };
+      }),
+      savedForm: (id) => forms.get(id) ?? null,
     },
     about: {
       answers: () => about,
@@ -142,6 +156,7 @@ beforeEach(() => {
         about = { ...about, ...changes } as AboutYou;
         return about;
       },
+      history: () => NO_HISTORY,
     },
     kept: {
       read: () => kept,
@@ -151,8 +166,13 @@ beforeEach(() => {
       },
     },
     workspace,
+    drafts: {
+      start: vi.fn(async () => 'started' as const),
+      state: vi.fn(() => ({ drafting: true, waiting: false })),
+    },
     now: () => new Date('2026-10-23T15:00:00Z'),
   };
+  forms = new Map();
 });
 
 afterEach(() => {
@@ -387,5 +407,95 @@ describe('answers to keep', () => {
     expect(about.applications.pronouns).toBe('she/her');
     expect(kept.street).toBe('1420 Larimer St');
     expect(kept.equalOpportunity.gender).toBe('woman');
+  });
+});
+
+describe('drafts of a form’s own questions', () => {
+  const JOB = 'harbor-pine--account-executive';
+  const questions = [
+    field('Why do you want to join Harbor & Pine?', { control: 'long', limit: 500 }),
+    field('Are you open to travel?', {
+      control: 'choice',
+      options: ['Yes', 'No'],
+      required: true,
+      section: 'Questions',
+    }),
+  ];
+  const draft = (more: Partial<Extract<InboxAsk, { ask: 'draft' }>> = {}): InboxAsk => ({
+    ask: 'draft',
+    job: JOB,
+    url: POSTING,
+    questions,
+    ...more,
+  });
+
+  it('keeps the questions with the job, as the form asks them, and has your Claude start', async () => {
+    expect(await answerAsk(draft(), deps)).toEqual({ ok: true, did: 'draft' });
+    expect(deps.jobs.keepForm).toHaveBeenCalledWith(JOB, {
+      url: POSTING,
+      read: '2026-10-23T15:00:00.000Z',
+      questions: [
+        {
+          question: 'Why do you want to join Harbor & Pine?',
+          hint: '',
+          section: '',
+          control: 'long',
+          options: [],
+          required: false,
+          limit: 500,
+        },
+        {
+          question: 'Are you open to travel?',
+          hint: '',
+          section: 'Questions',
+          control: 'choice',
+          options: ['Yes', 'No'],
+          required: true,
+          limit: null,
+        },
+      ],
+    });
+    expect(deps.drafts.start).toHaveBeenCalledWith(JOB);
+  });
+
+  it('says why your Claude couldn’t start', async () => {
+    deps.drafts.start.mockResolvedValueOnce('busy');
+    expect(await answerAsk(draft(), deps)).toMatchObject({
+      ok: false,
+      reason: 'busy',
+      message: expect.stringMatching(/^Your Claude is busy/),
+    });
+    deps.drafts.start.mockResolvedValueOnce('closed');
+    expect(await answerAsk(draft(), deps)).toMatchObject({
+      ok: false,
+      reason: 'failed',
+      message: 'Open Factwright’s window, then try again.',
+    });
+    deps.drafts.start.mockResolvedValueOnce('not-ready');
+    expect(await answerAsk(draft(), deps)).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/^Claude Code isn’t ready/),
+    });
+  });
+
+  it('says how the drafts are coming, and how many of the form’s questions have one', async () => {
+    await answerAsk(draft(), deps);
+    expect(await answerAsk({ ask: 'drafts', job: JOB }, deps)).toEqual({
+      ok: true,
+      did: 'drafts',
+      drafting: true,
+      waiting: false,
+      // answers.md answers "Why do you want to join Harbor & Pine?" already.
+      drafted: 1,
+    });
+    expect(deps.drafts.state).toHaveBeenCalledWith(JOB);
+  });
+
+  it('is only for a job Factwright has', async () => {
+    expect(await answerAsk(draft({ job: 'gone' }), deps)).toMatchObject({ reason: 'not-found' });
+    expect(await answerAsk({ ask: 'drafts', job: 'gone' }, deps)).toMatchObject({
+      reason: 'not-found',
+    });
+    expect(deps.drafts.start).not.toHaveBeenCalled();
   });
 });

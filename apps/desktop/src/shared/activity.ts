@@ -57,6 +57,7 @@ const TOOLS: Readonly<Record<string, StepWords>> = {
   save_gap: words('Noting something you don’t have', 'Noted something you don’t have'),
   verify_fact: words('Updating a fact', 'Updated a fact'),
   save_about_you: words('Saving what you told Claude', 'Saved what you told Claude'),
+  save_work_history: words('Saving your work history', 'Saved your work history'),
 };
 
 /** A job's files, by name, as reading them and writing them. */

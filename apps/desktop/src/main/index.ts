@@ -20,10 +20,11 @@ import { PrivateAnswers } from './about/private.ts';
 import { AboutStore } from './about/store.ts';
 import { Desk } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
+import { FormDrafts, RunRequests } from './claude/run-requests.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
-import { answerAsk } from './extension/fill.ts';
+import { answerAsk, type FillDeps } from './extension/fill.ts';
 import { JobInbox } from './extension/inbox.ts';
 import { helperName, registerSaveHelper, runProgram } from './extension/register.ts';
 import { createSaveHelper } from './extension/save-helper.ts';
@@ -318,11 +319,26 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     // come.
     // The extension's asks as it fills an application form come the same way, while the app
     // is open.
+    // Your Claude drafting a form's questions, which the extension asks for: the window starts
+    // the run, as only it has Claude's panel, without coming to the front.
+    const runRequests = new RunRequests((request) => window.send('claude:run-request', request));
+    const formDrafts = new FormDrafts();
+    const drafts: FillDeps['drafts'] = {
+      start: async (jobId) => {
+        // The window says so before it starts the run, so this comes before the run's signals.
+        const started = await runRequests.start({ skill: 'answer-questions', jobId, form: true });
+        if (started === 'started') formDrafts.started(jobId);
+        return started;
+      },
+      // A question or permission prompt in the window waits on the user too.
+      state: (jobId) =>
+        formDrafts.state(jobId, questions.current() !== null || permissionAsks.current() !== null),
+    };
     const inbox = new JobInbox({
       folder: join(dataDir, INBOX_FOLDER),
       add: (job) => jobs.addSaved(job),
       added: () => jobs.sendList(),
-      answer: (ask) => answerAsk(ask, { jobs, about, kept, workspace }),
+      answer: (ask) => answerAsk(ask, { jobs, about, kept, workspace, drafts }),
     });
     try {
       inbox.start();
@@ -393,16 +409,19 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onSignal: (signal) => {
         window.send('claude:signal', signal);
         notifyIfAway(window, signal);
+        formDrafts.heard(signal);
       },
       onStep: (step) => window.send('claude:step', step),
       onTurnEnd: (end) => window.send('claude:turn-end', end),
       onTrust: () => {
         window.send('claude:trust');
         notifyIfAway(window, 'needs-answer');
+        formDrafts.waitsOnYou();
       },
       onFirstRun: () => {
         window.send('claude:first-run');
         notifyIfAway(window, 'needs-answer');
+        formDrafts.waitsOnYou();
       },
       onFiled: (filed) => window.send('facts:filed', filed),
       ask: (round, signal) => questions.ask(round, signal),
@@ -489,6 +508,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       opener,
       saveHelper,
       tellRunDone: (note) => notifyRunDone(window, note, () => window.send('claude:open-result')),
+      runRequests,
     });
     void sync.start();
     // Coming back to the app, or the computer waking, asks a paused computer's account whether it

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NO_HISTORY, type WorkHistory } from '@factwright/core';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -94,11 +95,13 @@ function profileApi(
   status: Partial<ProfileStatus> = {},
   answers: AboutYou = ANSWERS,
   fromResume: Contact | null = null,
+  history: WorkHistory = NO_HISTORY,
 ) {
   const profile: Profile = {
     answers,
     notes: 'I run the guest team.',
     confidential: [],
+    history,
     status: { ...STATUS, ...status },
     templates: TEMPLATES,
   };
@@ -121,6 +124,7 @@ function profileApi(
     ),
     removeTemplate: vi.fn(async () => ({ ok: true as const })),
     contactFromResume: vi.fn(async () => fromResume),
+    saveHistory: vi.fn(async (saved: WorkHistory) => saved),
   };
 }
 
@@ -351,6 +355,66 @@ describe('ProfilePage', () => {
     render(<Harness api={profileApi()} />);
     const about = await screen.findByRole('region', { name: 'About you' });
     expect(within(about).queryByRole('button', { name: 'Fill in from your resume' })).toBeNull();
+  });
+
+  it('has Claude fill in the work history, before there is one', async () => {
+    const onRun = vi.fn();
+    render(<Harness api={profileApi()} onRun={onRun} />);
+    const card = await screen.findByRole('region', { name: 'Work history and education' });
+    expect(within(card).getByText(/Your Claude fills them in from your fact bank/)).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Fill in with Claude' }));
+    expect(onRun).toHaveBeenLastCalledWith({ skill: 'work-history' });
+  });
+
+  it('shows each position held at a company, and changes them', async () => {
+    const history: WorkHistory = {
+      jobs: [
+        {
+          company: 'Harbor & Pine',
+          location: 'Oakland, CA',
+          positions: [
+            {
+              title: 'Director of Guest Experience',
+              start: '2023-02',
+              end: 'present',
+              summary: '',
+            },
+            { title: 'Store Lead', start: '2018', end: '2023-02', summary: '' },
+          ],
+        },
+      ],
+      schools: [
+        {
+          school: 'San Francisco State University',
+          degree: 'B.A.',
+          field: 'Hospitality and Tourism',
+          start: '2012',
+          end: '2016',
+        },
+      ],
+    };
+    const onRun = vi.fn();
+    const api = profileApi({}, ANSWERS, null, history);
+    render(<Harness api={api} onRun={onRun} />);
+    const card = await screen.findByRole('region', { name: 'Work history and education' });
+    expect(
+      within(card).getByText(
+        'Harbor & Pine: Director of Guest Experience (Feb 2023 – now), Store Lead (2018 – Feb 2023)',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(card).getByText('San Francisco State University: B.A., Hospitality and Tourism'),
+    ).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Update with Claude' }));
+    expect(onRun).toHaveBeenLastCalledWith({ skill: 'work-history' });
+    await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Work history and education' });
+    const [, lead] = within(dialog).getAllByRole('textbox', { name: 'Title' });
+    await userEvent.type(lead as HTMLElement, ', Union Square');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    expect(api.saveHistory.mock.lastCall?.[0].jobs[0]?.positions[1]?.title).toBe(
+      'Store Lead, Union Square',
+    );
   });
 
   it('opens each part to change it, saving as the user goes', async () => {

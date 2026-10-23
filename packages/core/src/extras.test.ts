@@ -7,6 +7,10 @@ import {
   readCallDocs,
   readJobExtras,
   readOutreach,
+  readSavedForm,
+  type SavedForm,
+  savedFormFile,
+  savedFormJson,
   savedPostingFile,
   savedPostingMarkdown,
   shotsFolder,
@@ -218,5 +222,59 @@ describe('readOutreach', () => {
         text: '# Who to message at Acme\n\nDana Lee first.',
       },
     ]);
+  });
+});
+
+describe('a form’s questions saved from the browser', () => {
+  const form: SavedForm = {
+    url: 'https://jobs.lever.co/northwind/7a1c9e40/apply',
+    read: '2026-10-23T15:00:00.000Z',
+    questions: [
+      {
+        question: 'Why Northwind?',
+        hint: 'Up to 500 characters.',
+        section: 'Additional information',
+        control: 'long',
+        options: [],
+        required: true,
+        limit: 500,
+      },
+      {
+        question: 'Are you open to travel?',
+        hint: '',
+        section: '',
+        control: 'choice',
+        options: ['Yes', 'No'],
+        required: false,
+        limit: null,
+      },
+    ],
+  };
+
+  it('is kept beside the job’s saved posting, and read back as it was', () => {
+    expect(savedFormFile('northwind--senior-pm')).toBe('saved/northwind--senior-pm/form.json');
+    expect(readSavedForm(savedFormJson(form))).toEqual(form);
+  });
+
+  it('keeps each question that holds up, whatever else the file says', () => {
+    const text = JSON.stringify({
+      ...form,
+      questions: [
+        ...form.questions,
+        { question: '', control: 'text' },
+        { question: 'Salary?', control: 'password' },
+        { question: 'Portfolio', control: 'text', limit: -3, options: 'Yes' },
+        'Why?',
+      ],
+    });
+    expect(readSavedForm(text)?.questions.map((each) => each.question)).toEqual([
+      'Why Northwind?',
+      'Are you open to travel?',
+      'Portfolio',
+    ]);
+    expect(readSavedForm(text)?.questions[2]).toMatchObject({ limit: null, options: [] });
+    expect(readSavedForm('{"questions": "none"}')).toBeNull();
+    expect(readSavedForm('not JSON')).toBeNull();
+    expect(readSavedForm(null)).toBeNull();
   });
 });

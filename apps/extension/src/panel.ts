@@ -5,6 +5,9 @@ import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
+  askForDrafts,
+  draftable,
+  draftsSoFar,
   type FillPlan,
   fetchFile,
   fieldsToRead,
@@ -21,7 +24,7 @@ import {
   sentAnswers,
   showField,
 } from './fill.ts';
-import type { FieldFilled, FieldValue, PageForm } from './page/form.ts';
+import type { FieldFilled, FieldValue, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readTab } from './read-tab.ts';
 import { settings } from './settings.ts';
 import { toSave } from './tab-job.ts';
@@ -48,6 +51,22 @@ const PASSES = 3;
 /** Native messaging, which filling a form needs, to reach Factwright on this computer. */
 const NATIVE = { permissions: ['nativeMessaging'] };
 
+/** How often it asks how your Claude's drafts are coming along, while it drafts them. */
+const DRAFTS_EVERY_MS = 3000;
+
+/** How long it follows your Claude's drafts: a long application's take a few minutes. */
+const DRAFTS_FOR_MS = 20 * 60 * 1000;
+
+/** Your Claude drafting the form's own questions in Factwright, as the panel follows it. */
+interface Drafting {
+  /** The fields it's drafting, by their keys. */
+  keys: Set<string>;
+  /** Whether it's waiting on you in Factwright, for an answer or a permission. */
+  waiting: boolean;
+  /** When it started. */
+  since: number;
+}
+
 /** A form being filled: the tab it's in, what was read and answered, and how filling went. */
 interface Filling {
   tabId: number;
@@ -71,11 +90,15 @@ interface Filling {
   status: string;
   /** The job once you've marked it applied, and the answers it offers to keep. */
   applied: { job: AskedJob; offers: NewAnswer[]; saved: Set<string> } | null;
+  /** Your Claude drafting the form's own questions, while it does. */
+  drafting: Drafting | null;
 }
 
 /** The form being filled, and only it: whatever an earlier start of filling was doing stops. */
 let filling: Filling | null = null;
 let looking: ReturnType<typeof setInterval> | null = null;
+/** The next look at how your Claude's drafts are coming along. */
+let following: ReturnType<typeof setTimeout> | null = null;
 /** How many times filling has started, so an earlier start that's still going stops there. */
 let starts = 0;
 
@@ -96,6 +119,7 @@ const small = (text: string, click: () => void, label: string) =>
 
 function message(text: string, ...more: Child[]): void {
   stopLooking();
+  stopFollowing();
   show(app, heading('Fill this application'), h('p', {}, text), ...more);
 }
 
@@ -115,6 +139,7 @@ const LEFT: Record<LeftFor, string> = {
   unset: 'Not in Profile yet',
   sensitive: 'An equal-opportunity question, for you',
   new: 'A question for you',
+  pick: 'Yours to pick on the page',
 };
 
 /** Whether two addresses are the same page, but for what's after their #. */
@@ -127,26 +152,35 @@ function merged(before: readonly FieldValue[] | null, now: readonly FieldValue[]
 }
 
 /** What only a resume answers, which a field Profile can't fill is left for when none says. */
-const FROM_RESUMES = new Set<FieldReply['kind']>([
+const FROM_RESUMES = new Set<FieldReply['kind']>(['skills', 'certifications', 'summary']);
+
+/** What a form asks that your work history in Profile says, or else your resumes: each job and school. */
+const FROM_HISTORY = new Set<FieldReply['kind']>([
   'current-company',
   'current-title',
+  'job-start',
+  'job-end',
+  'job-location',
+  'job-summary',
   'school',
   'degree',
   'discipline',
   'graduation',
-  'skills',
-  'certifications',
-  'summary',
+  'edu-start',
 ]);
 
 /** Why a field is left for you, in words, as the field's kind says it best. */
 function leftFor(reply: FieldReply): string {
+  // Your Claude's reason, as "For you: your notice period isn't on file".
+  if (reply.left === 'new' && reply.from) return reply.from;
   if (reply.left === 'unset') {
     if (reply.kind === 'resume') return 'This job has no resume yet';
     if (reply.kind === 'cover-letter') return 'This job has no cover letter yet';
+    if (FROM_HISTORY.has(reply.kind)) return 'Not in your work history or resumes yet';
     if (FROM_RESUMES.has(reply.kind)) return 'Not on your resumes yet';
   }
-  return LEFT[reply.left ?? 'new'];
+  // A newer Factwright may have a reason this doesn't know yet.
+  return LEFT[reply.left ?? 'new'] ?? LEFT.new;
 }
 
 /** Where an answer came from, in words. */
@@ -273,6 +307,48 @@ function jobLine(state: Filling): Child[] {
   ];
 }
 
+const answers = (count: number) => `${count} ${count === 1 ? 'answer' : 'answers'}`;
+
+/**
+ * What the panel says of your Claude's drafts: how they're coming along, or an offer to draft
+ * the form's own questions that nothing on file answers.
+ */
+function draftLine(state: Filling): Child[] {
+  if (!state.plan.job) return [];
+  if (state.drafting) {
+    return [
+      h(
+        'p',
+        { class: 'note', role: 'status' },
+        state.drafting.waiting
+          ? 'Your Claude is waiting for you in Factwright. Answer it there, and it carries on.'
+          : `Your Claude is drafting ${answers(state.drafting.keys.size)} in Factwright. They fill in here once they’re done.`,
+      ),
+    ];
+  }
+  const left = draftable(state.form, state.plan.replies, state.filled);
+  if (left.length === 0) return [];
+  return [
+    h(
+      'p',
+      { class: 'small' },
+      left.length === 1
+        ? 'Nothing on file answers one of the form’s questions. Your Claude can draft it in Factwright.'
+        : `Nothing on file answers ${left.length} of the form’s questions. Your Claude can draft them in Factwright.`,
+    ),
+    h(
+      'div',
+      { class: 'actions' },
+      button(
+        left.length === 1 ? 'Draft it with your Claude' : 'Draft them with your Claude',
+        () => void draft(state),
+        false,
+        state.busy,
+      ),
+    ),
+  ];
+}
+
 /** How many fields were filled, and how many are left for you. */
 function summary(state: Filling): string {
   const total = state.form.fields.length;
@@ -309,6 +385,7 @@ function render(state: Filling): void {
         `This is for “${state.form.title}”. Go back to its tab, or click Fill on this one.`,
       ),
     h('p', { class: 'muted small', role: 'status' }, state.status || summary(state)),
+    ...draftLine(state),
     h(
       'ol',
       { class: 'fields', 'aria-label': 'The form’s fields' },
@@ -457,6 +534,139 @@ function stopLooking(): void {
   looking = null;
 }
 
+function stopFollowing(): void {
+  if (following) clearTimeout(following);
+  following = null;
+}
+
+/**
+ * Has your Claude draft answers to the form's own questions that nothing on file answers, in
+ * Factwright, then follows along until it's done, and fills them in.
+ */
+async function draft(state: Filling): Promise<void> {
+  const { job } = state.plan;
+  const fields = draftable(state.form, state.plan.replies, state.filled);
+  if (!job || fields.length === 0) return;
+  const drafting: Drafting = {
+    keys: new Set(fields.map((field) => field.key)),
+    waiting: false,
+    since: Date.now(),
+  };
+  state.drafting = drafting;
+  state.status = '';
+  render(state);
+  const asked = await askForDrafts(state.form, job.id, fields);
+  if (filling !== state || state.drafting !== drafting) return;
+  if (!asked.ok || asked.did !== 'draft') {
+    state.drafting = null;
+    state.status = asked.ok
+      ? 'Factwright didn’t answer. Try again.'
+      : asked.reason === 'bad-message'
+        ? 'Update Factwright on this computer to have your Claude draft these.'
+        : asked.message;
+    render(state);
+    return;
+  }
+  following = setTimeout(() => void followDrafts(state, drafting), DRAFTS_EVERY_MS);
+}
+
+/**
+ * Asks how your Claude's drafts are coming along, every few seconds, and says when it's waiting
+ * on you in Factwright. Once it's done, or has taken too long, it fills in what it drafted.
+ */
+async function followDrafts(state: Filling, drafting: Drafting): Promise<void> {
+  following = null;
+  const { job } = state.plan;
+  if (filling !== state || state.drafting !== drafting || !job) return;
+  const now = await draftsSoFar(job.id);
+  if (filling !== state || state.drafting !== drafting) return;
+  const goOn = () => {
+    following = setTimeout(() => void followDrafts(state, drafting), DRAFTS_EVERY_MS);
+  };
+  if (!now.ok || now.did !== 'drafts') {
+    // Factwright was busy a moment: it asks again.
+    if (!now.ok && now.reason === 'busy') {
+      goOn();
+      return;
+    }
+    state.drafting = null;
+    state.status = now.ok ? 'Factwright didn’t answer. Click Fill again.' : now.message;
+    render(state);
+    return;
+  }
+  if (now.drafting && Date.now() - drafting.since < DRAFTS_FOR_MS) {
+    if (now.waiting !== drafting.waiting) {
+      drafting.waiting = now.waiting;
+      render(state);
+    }
+    goOn();
+    return;
+  }
+  await fillDrafts(state, drafting);
+}
+
+/**
+ * Fills in your Claude's drafts: each field it drafted, unless you've typed in it meanwhile,
+ * and says how many it drafted. What it left for you says why.
+ */
+async function fillDrafts(state: Filling, drafting: Drafting): Promise<void> {
+  const places = state.form.fields.flatMap((field, at) =>
+    drafting.keys.has(field.key) ? [at] : [],
+  );
+  const fields = places.flatMap((at) => state.form.fields[at] ?? []);
+  const planned = await planFill({ ...state.form, fields }, state.shows);
+  if (filling !== state || state.drafting !== drafting) return;
+  state.drafting = null;
+  if (!planned.ok || planned.did !== 'fill') {
+    state.status = planned.ok ? 'Factwright didn’t answer. Click Fill again.' : planned.message;
+    render(state);
+    return;
+  }
+  places.forEach((at, i) => {
+    const reply = planned.replies[i];
+    if (reply) state.plan.replies[at] = reply;
+  });
+  const drafted = fields.filter((_, i) => planned.replies[i]?.source === 'claude');
+  if (!state.copyOnly && drafted.length > 0) {
+    // What you typed while your Claude drafted stays.
+    const read = await formValues(state.tabId, drafted);
+    if (filling !== state) return;
+    const typed = new Set(
+      (read?.values ?? []).filter((each) => each.value.trim()).map((each) => each.key),
+    );
+    const empty = drafted.filter((field) => !typed.has(field.key));
+    const filled = await fillForm(
+      state.tabId,
+      state.form.url,
+      fillAnswers({ ...state.form, fields: empty }, empty.map(replyFor(state)), {}),
+    );
+    if (filling !== state) return;
+    if (Array.isArray(filled)) {
+      for (const each of filled) {
+        const field = empty.find((one) => one.ref === each.ref);
+        if (field) state.filled.set(field.key, each);
+      }
+    }
+    const left = state.form.fields.filter(
+      (field) => field.required && !state.filled.get(field.key)?.ok,
+    );
+    await outlineFields(state.tabId, left);
+    if (filling !== state) return;
+  }
+  state.status =
+    drafted.length > 0
+      ? `Your Claude drafted ${answers(drafted.length)}. Check each one before you submit.`
+      : 'Your Claude didn’t draft any. Each field says why, or Factwright does.';
+  render(state);
+}
+
+/** The reply for one of the form's fields, by its place in the form. */
+const replyFor = (state: Filling) => (field: PageField) =>
+  state.plan.replies[state.form.fields.indexOf(field)] ?? {
+    kind: 'question' as const,
+    source: 'you' as const,
+  };
+
 /**
  * Reads what's in the form's own questions every few seconds while the panel shows, so it has
  * what you sent once you submit it, field by field: a field the form takes away, as a form of
@@ -567,6 +777,7 @@ async function fillPasses(state: Filling): Promise<true | 'elsewhere' | 'unreach
  */
 async function begin(): Promise<void> {
   stopLooking();
+  stopFollowing();
   filling = null;
   const start = ++starts;
   const later = () => start !== starts;
@@ -652,6 +863,7 @@ async function begin(): Promise<void> {
     busy: false,
     status: '',
     applied: null,
+    drafting: null,
   };
   filling = state;
   render(state);

@@ -5,6 +5,7 @@ import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
+  HISTORY_SKILL,
   type RunTask,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
@@ -205,5 +206,11 @@ export function runOutcome(
 export function makesSomething(task: RunTask | null): boolean {
   if (!task) return false;
   if (task.skill === 'interview-prep' && 'practice' in task && task.practice) return false;
-  return ![GET_STARTED_SKILL, FACTS_SKILL, 'who-to-message', 'salary-check'].includes(task.skill);
+  return ![
+    GET_STARTED_SKILL,
+    FACTS_SKILL,
+    HISTORY_SKILL,
+    'who-to-message',
+    'salary-check',
+  ].includes(task.skill);
 }

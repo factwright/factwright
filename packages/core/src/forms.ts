@@ -39,6 +39,12 @@ export interface FormField {
   autocomplete: string;
   /** Its name and id, such as "first_name" or "urls[LinkedIn]". */
   name: string;
+  /**
+   * The part of the form it's in, as the page names it, such as "Education" or "Employment", or
+   * the outer part's name and the inner's, as "Work experience › Position 1", when the page has
+   * them: "Start date" there is when you started a job or school, not when you can start.
+   */
+  section?: string;
   options: string[];
   required: boolean;
   limit: number | null;
@@ -71,6 +77,19 @@ export type FieldKind =
   // Where you work now, from the job's own resume, or your newest.
   | 'current-company'
   | 'current-title'
+  // A job you held, as a form asks for each one: when it started and ended, where, what you did
+  // there, and whether you still hold it, which is yours to tick. The company and title are the
+  // kinds above, the first time a form asks, and each time after.
+  | 'job-start'
+  | 'job-end'
+  | 'job-location'
+  | 'job-summary'
+  | 'job-current'
+  // When you started at a school, and where it is, which is yours to fill.
+  | 'edu-start'
+  | 'edu-location'
+  // A month or year of a start or an end, in a part of the form that doesn't say whose.
+  | 'block-date'
   // What your resumes say of your schools, your skills and you.
   | 'school'
   | 'degree'
@@ -427,6 +446,85 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'location', name: /^(location|candidate location)\b/ },
 ];
 
+/** The part of a form that asks for each job you held, by its heading, such as "Employment 2". */
+const JOB_PART =
+  /^(your |my )?(employment|employment history|employment information|work experience|work history|professional experience|experience|previous employment|job history)( \d{1,2})?( optional)?$/;
+
+/** The part that asks for each school, by its heading. */
+const SCHOOL_PART =
+  /^(your |my )?(education|education history|educational background|academic background|academic history|schools?|degrees?)( \d{1,2})?( optional)?$/;
+
+/** A part that asks about someone else, by its heading: a reference, or who to call in an emergency. */
+const OTHER_PART =
+  /^(your |my )?((professional |personal )?(references?|referees?)|emergency contacts?|next of kin)( \d{1,2})?( optional)?$/;
+
+/** What each field in a part for jobs asks, in order: the first that fits is it. */
+const JOB_FIELDS: [FieldKind, RegExp][] = [
+  [
+    'job-current',
+    /\b(i )?(currently|still) (work|working) here\b|\bcurrent(ly)? (role|position|job|employer)\b|^current$/,
+  ],
+  [
+    'current-company',
+    /^(company|company name|employer|employer name|organi[sz]ation|organi[sz]ation name)$/,
+  ],
+  ['current-title', /^(title|job title|position|position title|role|job role)$/],
+  ['job-start', /^(start|from)\b|\bstart (date|month|year)\b|\bdate (started|from)\b/],
+  ['job-end', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate (ended|to)\b/],
+  ['job-location', /^(location|city|job location|work location)$/],
+  [
+    'job-summary',
+    /^(description|role description|job description|responsibilities|duties|summary|what did you do)$/,
+  ],
+];
+
+/** What each field in a part for schools asks. */
+const SCHOOL_FIELDS: [FieldKind, RegExp][] = [
+  ['school', /\b(school|university|college|institution)( name)?$/],
+  ['discipline', /\b(field of study|major|discipline|area of study|concentration)\b/],
+  ['degree', /^(degree|degree type|degree level|qualification)$/],
+  ['edu-start', /^(start|from)\b|\bstart (date|month|year)\b/],
+  ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bgraduat/],
+  ['gpa', /\bgpa\b|\bgrade point average\b/],
+  ['edu-location', /^(location|city)$/],
+];
+
+/**
+ * Which part of a form a field's in, by the names of the parts it's in, the nearest first, or
+ * else its own name: a job's, a school's, or none.
+ */
+export function fieldPart(
+  field: Omit<FormField, 'options' | 'required' | 'limit'>,
+): 'job' | 'school' | null {
+  for (const section of (field.section ?? '').split(' › ').map(plain).reverse()) {
+    if (SCHOOL_PART.test(section)) return 'school';
+    if (JOB_PART.test(section)) return 'job';
+  }
+  const name = plain(field.name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+  if (/\b(education|educations|school|schools)\b/.test(name)) return 'school';
+  if (/\b(employment|employments|experience|experiences|work history)\b/.test(name)) return 'job';
+  return null;
+}
+
+/** Whether a field is in a part of the form about someone else, so its name and phone are theirs. */
+function forSomeoneElse(field: Omit<FormField, 'options' | 'required' | 'limit'>): boolean {
+  return (
+    (field.section ?? '').split(' › ').some((section) => OTHER_PART.test(plain(section))) ||
+    /\b(references?|referees?|emergency contacts?)\b/.test(
+      plain(field.name.replace(/([a-z])([A-Z])/g, '$1 $2')),
+    )
+  );
+}
+
+/** What a field in a part for jobs or schools asks, or null for anything else there. */
+function partKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): FieldKind | null {
+  const part = fieldPart(field);
+  if (!part) return null;
+  const question = plain(field.question);
+  const rules = part === 'job' ? JOB_FIELDS : SCHOOL_FIELDS;
+  return rules.find(([, words]) => words.test(question))?.[0] ?? null;
+}
+
 /**
  * What a field asks for, by its type, the browser's words for it, its question and its name. A
  * field it can't tell is a question of the form's own. One that asks for a password, payment
@@ -452,6 +550,13 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
     return 'question';
   }
   if (field.control === 'check' && AGREE.test(question)) return 'consent';
+  // In a part of the form for each job or school, "Start date" and "Location" are its own.
+  const inPart = partKind(field);
+  if (inPart) return inPart;
+  // In a part about a reference or an emergency contact, "Name" and "Phone" are theirs.
+  if (forSomeoneElse(field)) return 'question';
+  // A month or year of a start or an end, with no part saying whose, is never your start date.
+  if (/\b(start|end)\b/.test(question) && /\b(month|year)\b/.test(question)) return 'block-date';
   if (auto) return auto;
   if (type === 'email') return 'email';
   if (type === 'tel') return 'phone';

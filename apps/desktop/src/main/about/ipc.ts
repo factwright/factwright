@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { readHistory } from '@factwright/core';
 import { shell } from 'electron';
 import { ANSWER_LIMITS, parseAnswerChanges } from '../../shared/about.ts';
 import type { EditResult } from '../../shared/api.ts';
@@ -71,6 +72,14 @@ export function registerAboutIpc(
   answer('about:private', () => kept.read());
 
   answer('about:from-resume', () => contactFromResume(workspace));
+
+  // The work history as the window changed it, checked as the file is read.
+  answer('about:save-history', (history) => {
+    if (typeof history !== 'object' || history === null || Array.isArray(history)) {
+      throw new Error('Refused a work history the app doesn’t take.');
+    }
+    return about.saveHistory(readHistory(history));
+  });
 
   answer('about:save-private', (changes) => {
     const valid = parsePrivateChanges(changes);
