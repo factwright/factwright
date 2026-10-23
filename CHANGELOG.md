@@ -4,8 +4,14 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.12.1 - 2026-10-23
+
+### Security
+- Factwright reads a job's posting, a company's job board and Hacker News without Brotli compression. The Brotli decoder in Node.js, which Factwright runs on inside Electron, had a flaw that a page made for it could use to run code on your computer (CVE-2026-111497). Factwright now asks sites for gzip or a plain page, which every site can send, and turns away a page sent in Brotli anyway, so your Claude uses the posting you saved from your browser or asks you to paste it.
+- Factwright runs on Electron 44.9.3, up from 44.7.0, with Chromium 152.0.7977.167 and Node.js 24.22.0. It blocks the eMudhra intermediate certificates whose keys turned out to be recoverable in October 2026, in Chromium and in Node.js alike, so someone who can see your network traffic can't use them to pose as the sync server or a job's site (GHSA-jr5w-w6x2-84p9). It also has Chromium's and V8's latest security fixes.
+
 ### Changed
-- factwright.com's drawing of the app at the top shows a job's panel as 0.12.0 has it. The Lumen Health job opens with Up next, prep for Friday's panel interview, then its fit and an area for each kind of thing. The drawing presses Prep for the call, and the bar along the bottom says what Claude is doing, a step at a time. Claude asks about HIPAA in a box of its own, and then the bar says the prep sheet is ready, with Open it, which goes to the call. The sidebar says Factwright 0.12.0. How it works says to click what's up next, and shows Claude's question the way the app asks it. Each task card says where in the app it's done, in the words on its buttons. It goes live with the site's next update.
+- factwright.com's drawing of the app at the top shows a job's panel as 0.12.0 has it. The Lumen Health job opens with Up next, prep for Friday's panel interview, then its fit and an area for each kind of thing. The drawing presses Prep for the call, and the bar along the bottom says what Claude is doing, a step at a time. Claude asks about HIPAA in a box of its own, and then the bar says the prep sheet is ready, with Open it, which goes to the call. The sidebar says Factwright 0.12.0. How it works says to click what's up next, and shows Claude's question the way the app asks it. Each task card says where in the app it's done, in the words on its buttons.
 
 ## 0.12.0 - 2026-10-22
 
