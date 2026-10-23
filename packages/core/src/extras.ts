@@ -135,6 +135,29 @@ export function readSavedPosting(path: string, markdown: string): SavedPosting {
   };
 }
 
+/** Messages Claude drafted for people at a job's company, as who-to-message saves them. */
+export interface OutreachDraft {
+  /** Where it is in the workspace, such as "outreach/2026-10-08-acme.md". */
+  path: string;
+  /** The day it was drafted, from its name. */
+  date: string | null;
+  text: string;
+}
+
+/** The drafts saved at these paths, newest first, leaving out any that's gone or empty. */
+export function readOutreach(
+  workspace: WorkspaceReader,
+  paths: readonly string[],
+): OutreachDraft[] {
+  return paths
+    .flatMap((path) => {
+      const text = workspace.readText(path)?.trim();
+      const date = path.match(/(?:^|\/)(\d{4}-\d{2}-\d{2})-[^/]+\.md$/)?.[1] ?? null;
+      return text ? [{ path, date, text }] : [];
+    })
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '') || b.path.localeCompare(a.path));
+}
+
 /** Where Claude's answer to one of the user's questions about a job is kept. */
 export const askedFile = (jobId: string, askId: string) =>
   `${JOB_EXTRAS.asked}/${jobId}/${askId}.md`;

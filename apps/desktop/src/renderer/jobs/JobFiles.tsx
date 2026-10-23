@@ -2,27 +2,23 @@ import type { Job, JobDocKind, JobDocs, JobFile, SavedPosting } from '@factwrigh
 import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, Markdown } from '@factwright/ui';
 import { FileText, FolderOpen } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { OpenXRay } from '../xray/OpenXRay.tsx';
 import styles from './JobPanel.module.css';
 import { PanelSection } from './PanelSection.tsx';
-import { ResumePreview } from './ResumePreview.tsx';
-import { BUSY, type RunControls } from './RunActions.tsx';
 
-/** The documents a job's folder can hold, in the order they're listed, with what each one is. */
+/**
+ * The documents a job's folder can hold, in the order they're listed, with what each one is.
+ * Interview prep is with the job's calls.
+ */
 const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = [
-  { kind: 'prep', name: 'Interview prep', about: 'For your calls and interviews' },
-  { kind: 'answers', name: 'Application answers', about: 'Answers to the form’s questions' },
+  { kind: 'answers', name: 'Application answers', about: 'Claude’s answers, with why' },
   { kind: 'posting', name: 'Posting', about: 'Saved word for word' },
   { kind: 'fit', name: 'Fit check report', about: 'The full write-up' },
   { kind: 'job', name: 'Job notes', about: 'What Claude noted about the job' },
   { kind: 'unmask', name: 'Employer check', about: 'Who’s really hiring' },
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
-
-/** A file's name without its extension, which a resume's PDF and Word file share. */
-const stem = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
 
 /**
  * A resume's or cover letter's file: a PDF previews here, and either opens in the user's own app,
@@ -86,24 +82,12 @@ export function FileRow({
 }
 
 /**
- * A job's resumes and cover letters, which open in the user's own app, and its documents, which
- * open here. A resume's X-ray can send what it found for revision, with Claude's panel.
+ * What's saved for a job besides its resumes and letters, to open here: the posting, saved word
+ * for word or from the user's browser, the fit check's write-up, and Claude's other notes.
  */
-export function FilesSection({
-  job,
-  api,
-  today,
-  run,
-}: {
-  job: Job;
-  api: FactwrightApi;
-  today: string;
-  run?: RunControls | undefined;
-}) {
+export function SavedSection({ job, api, today }: { job: Job; api: FactwrightApi; today: string }) {
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
-  const [preview, setPreview] = useState<JobFile | null>(null);
-  const [xray, setXray] = useState<JobFile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   // The posting the user saved from their browser with Save to Factwright, kept apart from the
   // job's folder, which Claude's work makes.
@@ -120,16 +104,6 @@ export function FilesSection({
     };
   }, [api, job]);
 
-  // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes,
-  // and a job saved from the browser may have only the posting the user saved there.
-  const posting = useCallback(async () => {
-    const loaded = await api.jobDocs(job.id);
-    return loaded?.posting ?? saved?.text ?? loaded?.job ?? null;
-  }, [api, job.id, saved]);
-  /** A resume's PDF and Word file, which share a name, for the X-ray to switch between. */
-  const sameResume = (file: JobFile) =>
-    job.files.filter((each) => stem(each.name) === stem(file.name));
-
   // Once Claude saves the posting in the job's folder, that one is shown instead.
   const browserPosting = saved && !job.docKinds.includes('posting') ? saved : null;
   // Older folders keep the posting inside the job notes, unless the browser saved it.
@@ -138,11 +112,8 @@ export function FilesSection({
       ? { ...doc, name: 'Posting', about: 'Saved with the job notes' }
       : doc,
   );
-
-  const openFile = async (path: string) => {
-    const result = await api.openFile(path);
-    setProblem(result.ok ? null : result.message);
-  };
+  const total = documents.length + (browserPosting ? 1 : 0);
+  if (total === 0) return null;
 
   const openDocument = async (kind: JobDocKind, title: string) => {
     const loaded = docs ?? (await api.jobDocs(job.id));
@@ -152,97 +123,56 @@ export function FilesSection({
     if (text) setOpen({ title: `${title}: ${job.company}`, text });
   };
 
-  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  // A resume or letter built as a PDF and a Word file is one, by its name.
-  const named = (files: readonly JobFile[]) =>
-    new Set(files.map((file) => file.name.replace(/\.[^.]+$/, ''))).size;
-  const built = [...job.files, ...job.letters, ...job.projectPages];
-  const summary =
-    [
-      job.files.length > 0 && count(named(job.files), 'resume'),
-      job.letters.length > 0 && count(named(job.letters), 'cover letter'),
-      job.projectPages.length > 0 && count(named(job.projectPages), 'Projects page'),
-      documents.length + (browserPosting ? 1 : 0) > 0 &&
-        count(documents.length + (browserPosting ? 1 : 0), 'document'),
-    ]
-      .filter(Boolean)
-      .join(' · ') || 'None yet';
-
   return (
     <PanelSection
-      id="files"
-      title="Made for this job"
+      id="saved"
+      title="Saved for this job"
       icon={<FolderOpen size={15} />}
-      summary={summary}
+      summary={total === 1 ? '1 document' : `${total} documents`}
+      count={total}
+      closedAtFirst
     >
-      {built.length === 0 && documents.length === 0 && !browserPosting ? (
-        <p className={styles.quiet}>
-          What your Claude makes for this job shows up here, such as a tailored resume to preview
-          and attach.
-        </p>
-      ) : (
-        <ul className={styles.files}>
-          {job.files.map((file) => (
-            <FileRow
-              key={file.path}
-              file={file}
-              today={today}
-              onPreview={setPreview}
-              onOpen={openFile}
-              onXRay={setXray}
-            />
-          ))}
-          {/* Cover letters and Projects pages have no X-ray: it reads resumes. */}
-          {[...job.letters, ...job.projectPages].map((file) => (
-            <FileRow
-              key={file.path}
-              file={file}
-              today={today}
-              onPreview={setPreview}
-              onOpen={openFile}
-            />
-          ))}
-          {documents.map(({ kind, name, about }) => (
-            <li key={kind} className={styles.file}>
-              <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
-              <span className={styles.fileText}>
-                <span className={styles.fileName}>{name}</span>
-                <span className={styles.fileMeta}>{about}</span>
+      <ul className={styles.files}>
+        {documents.map(({ kind, name, about }) => (
+          <li key={kind} className={styles.file}>
+            <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
+            <span className={styles.fileText}>
+              <span className={styles.fileName}>{name}</span>
+              <span className={styles.fileMeta}>{about}</span>
+            </span>
+            <Button
+              size="sm"
+              variant="quiet"
+              aria-label={`Open ${name}`}
+              onClick={() => openDocument(kind, name)}
+            >
+              Open
+            </Button>
+          </li>
+        ))}
+        {browserPosting && (
+          <li className={styles.file}>
+            <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
+            <span className={styles.fileText}>
+              <span className={styles.fileName}>Posting</span>
+              <span className={styles.fileMeta}>
+                Saved from your browser
+                {browserPosting.saved ? `, ${shortDate(browserPosting.saved, today)}` : ''}
               </span>
-              <Button
-                size="sm"
-                variant="quiet"
-                aria-label={`Open ${name}`}
-                onClick={() => openDocument(kind, name)}
-              >
-                Open
-              </Button>
-            </li>
-          ))}
-          {browserPosting && (
-            <li className={styles.file}>
-              <FileText className={styles.fileIcon} size={16} aria-hidden="true" />
-              <span className={styles.fileText}>
-                <span className={styles.fileName}>Posting</span>
-                <span className={styles.fileMeta}>
-                  Saved from your browser
-                  {browserPosting.saved ? `, ${shortDate(browserPosting.saved, today)}` : ''}
-                </span>
-              </span>
-              <Button
-                size="sm"
-                variant="quiet"
-                aria-label="Open the posting saved from your browser"
-                onClick={() =>
-                  setOpen({ title: `Posting: ${job.company}`, text: browserPosting.text })
-                }
-              >
-                Open
-              </Button>
-            </li>
-          )}
-        </ul>
-      )}
+            </span>
+            <Button
+              size="sm"
+              variant="quiet"
+              aria-label="Open the posting saved from your browser"
+              onClick={() =>
+                setOpen({ title: `Posting: ${job.company}`, text: browserPosting.text })
+              }
+            >
+              Open
+            </Button>
+          </li>
+        )}
+      </ul>
       {problem && (
         <p className={styles.problem} role="alert">
           {problem}
@@ -252,21 +182,6 @@ export function FilesSection({
         <Dialog title={open.title} size="lg" onClose={() => setOpen(null)}>
           <Markdown text={open.text} />
         </Dialog>
-      )}
-      {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
-      {xray && (
-        <OpenXRay
-          api={api}
-          files={sameResume(xray)}
-          start={xray.path}
-          posting={posting}
-          revise={{
-            jobId: job.id,
-            busy: run ? BUSY.includes(run.phase) : false,
-            start: run?.start ?? null,
-          }}
-          onClose={() => setXray(null)}
-        />
       )}
     </PanelSection>
   );

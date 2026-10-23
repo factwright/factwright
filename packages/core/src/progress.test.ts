@@ -343,9 +343,11 @@ describe('attention', () => {
       path: 'calls/acme--staff/soon/prep.md',
       modified: '2026-10-09T12:00:00.000Z',
     };
+    // Prepped, a mock interview is what's left, which doesn't need the user.
     expect(attention({ calls: [soon], callDocs: [prep] })).toEqual({
       level: 'info',
       text: 'Panel interview Monday at 2:00 PM',
+      action: { kind: 'practice', callId: 'soon' },
     });
     // Thank-you notes from an earlier call aren't prep for this one.
     expect(attention({ calls: [soon], callDocs: [{ ...prep, kind: 'thanks' }] })?.level).toBe(
@@ -372,6 +374,7 @@ describe('attention', () => {
     expect(attention(resume)).toEqual({
       level: 'info',
       text: 'Resume ready for 6 days. Apply or pass?',
+      action: { kind: 'to-apply' },
     });
     expect(attention({ ...resume, status: 'apply', statusOn: '2026-10-03' })).toEqual({
       level: 'info',
@@ -384,6 +387,7 @@ describe('attention', () => {
     expect(attention({ status: 'later', backOn: '2026-10-10' })).toEqual({
       level: 'action',
       text: 'Back from Later. Apply or pass?',
+      action: { kind: 'to-apply' },
     });
     expect(attention({ status: 'later', backOn: '2026-10-11' })).toBeNull();
   });
@@ -441,10 +445,14 @@ describe('isInView', () => {
 describe('nextStep', () => {
   const step = (extra: Partial<Job>) =>
     nextStep(job(extra), jobProgress(job(extra), TODAY), TODAY)?.text;
+  const action = (extra: Partial<Job>) =>
+    nextStep(job(extra), jobProgress(job(extra), TODAY), TODAY)?.action;
 
   it('puts what needs the user first, then their own next step, then calls', () => {
     expect(step({ nextOn: '2026-10-09', nextAction: 'Email Sam' })).toBe('Overdue: Email Sam');
-    expect(step({ nextAction: 'Email Sam', nextOn: '2026-10-13' })).toBe('Email Sam · Tuesday');
+    // A reminder waits in Progress until its day, and one with no day is the next step.
+    expect(step({ nextAction: 'Email Sam', nextOn: '2026-10-13' })).toBe('Run a fit check');
+    expect(step({ nextAction: 'Email Sam' })).toBe('Email Sam');
     expect(step({ calls: [call({ onDate: '2026-10-20', kind: 'panel' })] })).toBe(
       'Panel interview Tue, Oct 20',
     );
@@ -492,8 +500,6 @@ describe('nextStep', () => {
   });
 
   it('says what does each step in a click, when one can', () => {
-    const action = (extra: Partial<Job>) =>
-      nextStep(job(extra), jobProgress(job(extra), TODAY), TODAY)?.action;
     expect(action({})).toEqual({ kind: 'fit-check' });
     expect(action({ company: 'Bluewave Staffing' })).toEqual({ kind: 'fit-check' });
     expect(action({ nextAction: 'Email Sam' })).toEqual({ kind: 'reminder' });
@@ -511,7 +517,7 @@ describe('nextStep', () => {
     expect(step({ ...samples, apply: 'Send a portfolio and a cover letter.' })).toBe(
       'The posting asks for a cover letter',
     );
-    // A call ahead can have its prep sheet early. Once it has one, there's nothing to do.
+    // A call ahead can have its prep sheet early, and once it has one, a mock interview.
     const panel = call({ onDate: '2026-10-20', kind: 'panel' });
     expect(action({ calls: [panel] })).toEqual({ kind: 'prep', callId: 'call-1' });
     const prep = {
@@ -520,9 +526,57 @@ describe('nextStep', () => {
       path: 'calls/acme--staff/call-1/prep.md',
       modified: '2026-10-09T12:00:00.000Z',
     };
-    expect(action({ calls: [panel], callDocs: [prep] })).toBeUndefined();
-    expect(action({ status: 'applied', appliedOn: '2026-10-07' })).toBeUndefined();
-    expect(action({ status: 'offer', statusOn: TODAY })).toBeUndefined();
+    expect(action({ calls: [panel], callDocs: [prep] })).toEqual({
+      kind: 'practice',
+      callId: 'call-1',
+    });
+  });
+
+  it('suggests a step at every stage, apart from closed jobs', () => {
+    const fit = { verdict: 'Good', score: 70, date: null };
+    // Sorting a job with a fit check: apply, or pass when it says to skip.
+    expect(action({ stage: 'review', fit })).toEqual({ kind: 'to-apply' });
+    expect(action({ stage: 'review', fit: { ...fit, verdict: 'Skip: on-site' } })).toEqual({
+      kind: 'pass',
+    });
+    expect(action({ status: 'later', backOn: TODAY })).toEqual({ kind: 'to-apply' });
+    // Waiting to hear back, the call that comes of it; after ten quiet days, people to follow up
+    // with; after thirty, marking that no reply came.
+    expect(action({ status: 'applied', appliedOn: '2026-10-07' })).toEqual({ kind: 'add-call' });
+    expect(action({ status: 'screen', statusOn: TODAY })).toEqual({ kind: 'add-call' });
+    expect(action({ status: 'interview', statusOn: '2026-10-02' })).toEqual({ kind: 'add-call' });
+    expect(action({ status: 'applied', appliedOn: '2026-09-30', statusOn: '2026-09-30' })).toEqual({
+      kind: 'outreach',
+    });
+    expect(action({ status: 'applied', appliedOn: '2026-09-09' })).toEqual({ kind: 'no-reply' });
+    // An offer is the user's to accept or decline.
+    expect(step({ status: 'offer', statusOn: TODAY })).toBe('Decide on the offer');
+    expect(action({ status: 'offer', statusOn: TODAY })).toEqual({ kind: 'offer' });
+    expect(action({ status: 'rejected', statusOn: TODAY })).toBeUndefined();
+  });
+
+  it('suggests thank-you notes for a call just had, until there are some', () => {
+    const had = call({ id: 'screen-1', onDate: '2026-10-09', state: 'done', outcome: 'advanced' });
+    const screen = { status: 'screen' as const, statusOn: '2026-10-09', calls: [had] };
+    expect(step(screen)).toBe('Send thank-you notes for the recruiter screen');
+    expect(action(screen)).toEqual({ kind: 'thanks', callId: 'screen-1' });
+    const notes = {
+      callId: 'screen-1',
+      kind: 'thanks' as const,
+      path: 'calls/acme--staff/screen-1/thank-you.md',
+      modified: '2026-10-09T18:00:00.000Z',
+    };
+    expect(action({ ...screen, callDocs: [notes] })).toEqual({ kind: 'add-call' });
+    // A few days on, it's late for them.
+    expect(action({ ...screen, calls: [{ ...had, onDate: '2026-10-01' }] })).toEqual({
+      kind: 'add-call',
+    });
+    // Before the next call's prep, which comes two days out.
+    const next = call({ id: 'panel-1', kind: 'panel', onDate: '2026-10-16' });
+    expect(action({ ...screen, calls: [had, next] })).toEqual({
+      kind: 'thanks',
+      callId: 'screen-1',
+    });
   });
 
   it('suggests nothing for closed jobs, skips, or jobs without a role', () => {

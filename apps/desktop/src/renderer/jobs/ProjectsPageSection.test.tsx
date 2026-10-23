@@ -5,7 +5,9 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { ProjectsPageSection, readPageOutline } from './ProjectsPageSection.tsx';
+import type { RunTask } from '../../shared/runs.ts';
+import { ProjectsPagePart, readPageOutline } from './ProjectsPageSection.tsx';
+import type { RunControls } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -60,10 +62,19 @@ describe('readPageOutline', () => {
   });
 });
 
-describe('ProjectsPageSection', () => {
+const controls = (task: RunTask | null = null): RunControls => ({
+  phase: task ? 'working' : 'idle',
+  task,
+  start: vi.fn(),
+  show: vi.fn(),
+});
+
+describe('ProjectsPagePart', () => {
   it('shows what’s on the page and its files, to preview and open', async () => {
     const api = apiStub();
-    const { container } = render(<ProjectsPageSection job={job} api={api} today={TODAY} />);
+    const { container } = render(
+      <ProjectsPagePart job={job} api={api} today={TODAY} run={controls()} />,
+    );
     expect(screen.getByRole('heading', { name: 'Projects page' })).toBeTruthy();
     expect(await screen.findByText('2 projects, as cards')).toBeTruthy();
     expect(screen.getByText('Trailhead · Code Club')).toBeTruthy();
@@ -77,18 +88,23 @@ describe('ProjectsPageSection', () => {
     );
   });
 
-  it('says when Claude is still making it, and shows nothing for a job without one', async () => {
-    render(<ProjectsPageSection job={job} api={apiStub()} today={TODAY} making />);
+  it('says when Claude is still making it, and offers to make one for a job without', async () => {
+    const making = controls({ skill: 'projects-page', jobId: job.id });
+    render(<ProjectsPagePart job={job} api={apiStub()} today={TODAY} run={making} />);
     expect(await screen.findByText('Being made')).toBeTruthy();
     expect(screen.getByText('Your Claude is still making and checking this page.')).toBeTruthy();
     cleanup();
-    const { container } = render(
-      <ProjectsPageSection
+    const run = controls();
+    render(
+      <ProjectsPagePart
         job={{ ...job, docKinds: [], projectPages: [] }}
         api={apiStub()}
         today={TODAY}
+        run={run}
       />,
     );
-    expect(container.innerHTML).toBe('');
+    expect(screen.getByText(/The posting asks for samples of your work/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Make a Projects page' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'projects-page', jobId: job.id });
   });
 });

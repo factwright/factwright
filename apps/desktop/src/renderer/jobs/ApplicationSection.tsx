@@ -12,10 +12,14 @@ import { ClipboardList, Copy } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
+import type { RunTask } from '../../shared/runs.ts';
 import styles from './ApplicationSection.module.css';
+import { ClaudeButton } from './ClaudeButton.tsx';
 import panel from './JobPanel.module.css';
 import tracking from './JobTracking.module.css';
-import { PanelSection } from './PanelSection.tsx';
+import { PanelSection, Placeholder } from './PanelSection.tsx';
+import { QuestionsDialog } from './QuestionsDialog.tsx';
+import type { RunControls } from './RunActions.tsx';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
@@ -192,18 +196,22 @@ function AnswerItem({
 /**
  * The application's questions, each with Claude's suggested answer and what the user actually
  * sent, which they record here after applying. It's all here to look back on when the job moves
- * on, and Claude reads what they sent before an interview.
+ * on, and Claude reads what they sent before an interview. The questions get pasted in first,
+ * and before there are any, what goes here and the button to start.
  */
 export function ApplicationSection({
   job,
   api,
   today,
+  run,
 }: {
   job: Job;
   api: FactwrightApi;
   today: string;
+  run?: RunControls | undefined;
 }) {
   const [suggested, setSuggested] = useState<SuggestedAnswer[]>([]);
+  const [pasting, setPasting] = useState(false);
   const hasAnswers = job.docKinds.includes('answers');
 
   // Claude's answers come from answers.md, which changes the job list when it's saved.
@@ -222,32 +230,56 @@ export function ApplicationSection({
   }, [api, job, hasAnswers]);
 
   const answers = applicationAnswers(job.questions, suggested, job.sent);
-  if (answers.length === 0) return null;
+  const empty = answers.length === 0 && !hasAnswers;
   const sent = answers.filter((answer) => answer.sent).length;
+  const task: RunTask = { skill: 'answer-questions', jobId: job.id };
+  const start = (label: string) => (
+    <ClaudeButton run={run} task={task} label={label} adds onStart={() => setPasting(true)} />
+  );
 
   return (
     <PanelSection
       id="application"
-      title="Application answers"
+      title="Application questions"
       icon={<ClipboardList size={15} />}
-      summary={`${sent} of ${answers.length} sent`}
+      summary={empty ? undefined : `${sent} of ${answers.length} sent`}
+      count={answers.length}
+      empty={empty}
+      actions={!empty && start('Add questions')}
     >
-      <p className={panel.quiet}>
-        Keep what you actually sent, so it’s here when the job moves on. Claude reads it before your
-        interviews.
-      </p>
-      <ol className={styles.list}>
-        {answers.map((answer, i) => (
-          <AnswerItem
-            key={questionKey(answer.question)}
-            job={job}
-            answer={answer}
-            number={i + 1}
-            api={api}
-            today={today}
-          />
-        ))}
-      </ol>
+      {empty ? (
+        <Placeholder action={start('Answer the questions')}>
+          Paste the application form’s questions, and your Claude drafts answers from your facts, in
+          your own voice.
+        </Placeholder>
+      ) : (
+        <>
+          <p className={panel.quiet}>
+            Keep what you actually sent, so it’s here when the job moves on. Claude reads it before
+            your interviews.
+          </p>
+          <ol className={styles.list}>
+            {answers.map((answer, i) => (
+              <AnswerItem
+                key={questionKey(answer.question)}
+                job={job}
+                answer={answer}
+                number={i + 1}
+                api={api}
+                today={today}
+              />
+            ))}
+          </ol>
+        </>
+      )}
+      {pasting && (
+        <QuestionsDialog
+          job={job}
+          api={api}
+          onAnswer={() => run?.start(task)}
+          onClose={() => setPasting(false)}
+        />
+      )}
     </PanelSection>
   );
 }

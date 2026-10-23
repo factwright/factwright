@@ -32,6 +32,7 @@ import {
   sampleDuplicate,
   sampleJob,
   sampleJobs,
+  sampleOutreach,
 } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
 
@@ -486,6 +487,17 @@ export function sampleTracker(
               };
             case 'fit-check':
               return { ...job, fit: { verdict: 'Good fit', score: 78, date: localDate() } };
+            case 'salary-check':
+              return {
+                ...job,
+                pay: { text: '$160k–$190k', min: 160_000, max: 190_000, source: 'estimate' },
+              };
+            case 'who-to-message': {
+              const path = `outreach/${localDate()}-${job.companyKey}.md`;
+              return job.outreach.includes(path)
+                ? job
+                : { ...job, outreach: [...job.outreach, path] };
+            }
             default:
               return job;
           }
@@ -507,6 +519,7 @@ export function sampleTracker(
           .filter((shot) => shot.path.startsWith(`${shotsFolder(jobId)}/`)),
         posting: null,
         calls: sampleCallDocs(job),
+        outreach: sampleOutreach(job),
       };
     },
     recordAnswer: async (jobId, question, nth, text) =>

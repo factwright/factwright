@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
-import { RunActions, type RunControls } from './RunActions.tsx';
+import { ApplicationSection } from './ApplicationSection.tsx';
+import type { RunControls } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 beforeAll(() => {
@@ -27,7 +28,7 @@ function apiStub() {
   return {
     platform: 'darwin',
     updateJob: vi.fn(async () => ({ ok: true }) as const),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null })),
+    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, outreach: [] })),
     readShot: vi.fn(async () => null),
     addShot: vi.fn(async (jobId: string) => ({
       ok: true as const,
@@ -66,145 +67,12 @@ function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunCon
 
 const action = (name: RegExp) => screen.getByRole('button', { name });
 
-describe('RunActions for a job with calls', () => {
-  it('leaves Interview prep alone while Claude preps for one of the job’s calls', () => {
-    const task: RunTask = { skill: 'interview-prep', jobId: job.id, callId: 'call-1' };
-    render(<RunActions job={job} run={controls('working', task)} api={apiStub()} />);
-    const prep = screen.getByRole('button', { name: /^Interview prep/ });
-    expect(prep.textContent).not.toContain('running');
-    expect((prep as HTMLButtonElement).disabled).toBe(true);
-  });
-});
-
-describe('RunActions', () => {
-  const resume = {
-    path: 'applications/a/r.pdf',
-    name: 'r.pdf',
-    format: 'pdf' as const,
-    size: 1,
-    modified: '',
-  };
-
-  it('offers every skill in one row, then a question, with what each does on hover', async () => {
-    const { container } = render(<RunActions job={job} run={controls()} api={apiStub()} />);
-    const row = screen.getByRole('group', { name: 'Run with your Claude' });
-    expect(
-      within(row)
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual([
-      'Tailored resume',
-      'Cover letter',
-      'Projects page',
-      'Fit check',
-      'Salary check',
-      'Who to message',
-      'Interview prep',
-      'Application questions',
-      'Ask a question',
-    ]);
-    await userEvent.hover(action(/^Tailored resume/));
-    expect((await screen.findByRole('tooltip')).textContent).toBe(
-      'A resume for this job, every line traced to a fact',
-    );
-    expect((await axe.run(container)).violations).toEqual([]);
-  });
-
-  it('starts a skill on this job', async () => {
-    const run = controls();
-    render(<RunActions job={job} run={run} api={apiStub()} />);
-    await userEvent.click(action(/^Interview prep/));
-    expect(run.start).toHaveBeenCalledWith({
-      skill: 'interview-prep',
-      jobId: 'acme--staff-engineer',
-    });
-    await userEvent.click(action(/^Cover letter/));
-    expect(run.start).toHaveBeenLastCalledWith({ skill: 'cover-letter', jobId: job.id });
-  });
-
-  it('says what ran before: a fit check, a resume ready', () => {
-    const checked = { ...job, fit: { verdict: 'Good', score: 70, date: '2026-10-07' } };
-    const withResume = { ...checked, files: [resume] };
-    render(<RunActions job={withResume} run={controls()} api={apiStub()} />);
-    expect(action(/^Fit check/).textContent).toBe('Fit check, ran before');
-    expect(action(/^Tailored resume/).textContent).toBe('Tailored resume, ready');
-    expect(action(/^Cover letter/).textContent).toBe('Cover letter');
-    cleanup();
-    const withLetter = { ...withResume, letters: withResume.files, projectPages: [resume] };
-    render(<RunActions job={withLetter} run={controls()} api={apiStub()} />);
-    expect(action(/^Cover letter/).textContent).toBe('Cover letter, ready');
-    expect(action(/^Projects page/).textContent).toBe('Projects page, ready');
-    cleanup();
-    const answered = { ...job, docKinds: ['answers' as const] };
-    render(<RunActions job={answered} run={controls()} api={apiStub()} />);
-    expect(action(/^Application questions/).textContent).toBe('Application questions, ran before');
-  });
-
-  it('holds the other skills while one runs, and brings back the running one', async () => {
-    const run = controls('working', { skill: 'salary-check', jobId: job.id });
-    render(<RunActions job={job} run={run} api={apiStub()} />);
-    expect(action(/^Salary check/).textContent).toBe('Salary check, running');
-    expect((action(/^Fit check/) as HTMLButtonElement).disabled).toBe(true);
-    expect((action(/^Ask a question/) as HTMLButtonElement).disabled).toBe(true);
-    await userEvent.click(action(/^Salary check/));
-    expect(run.show).toHaveBeenCalled();
-    expect(run.start).not.toHaveBeenCalled();
-  });
-
-  it('marks the skill that just finished, and lets the next one start', () => {
-    render(
-      <RunActions
-        job={job}
-        run={controls('done', { skill: 'salary-check', jobId: job.id })}
-        api={apiStub()}
-      />,
-    );
-    expect(action(/^Salary check/).textContent).toBe('Salary check, done');
-    expect((action(/^Fit check/) as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('only follows runs on this job', () => {
-    render(
-      <RunActions
-        job={job}
-        run={controls('working', { skill: 'salary-check', jobId: 'other--job' })}
-        api={apiStub()}
-      />,
-    );
-    expect(action(/^Salary check/).textContent).toBe('Salary check');
-    expect((action(/^Salary check/) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('asks Claude about the job, and brings back the run answering it', async () => {
-    const run = controls();
-    const api = Object.assign(apiStub(), {
-      askAboutJob: vi.fn(async () => ({ ok: true as const, askId: '2026-10-12-1' })),
-    });
-    render(<RunActions job={job} run={run} api={api} />);
-    await userEvent.click(action(/^Ask a question/));
-    const dialog = screen.getByRole('dialog', { name: 'Ask about Acme' });
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: 'Your question' }),
-      'What’s the team like?',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
-    expect(api.askAboutJob).toHaveBeenCalledWith(job.id, 'What’s the team like?');
-    expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: '2026-10-12-1' });
-    cleanup();
-    const answering = controls('working', { skill: 'ask', jobId: job.id, askId: '2026-10-12-1' });
-    render(<RunActions job={job} run={answering} api={apiStub()} />);
-    expect(action(/^Ask a question/).textContent).toBe('Ask a question, running');
-    await userEvent.click(action(/^Ask a question/));
-    expect(answering.show).toHaveBeenCalled();
-  });
-});
-
 describe('the application questions', () => {
   const open = async (on = job) => {
     const run = controls();
     const api = apiStub();
-    render(<RunActions job={on} run={run} api={api} />);
-    await userEvent.click(action(/Application questions/));
+    render(<ApplicationSection job={on} api={api} today="2026-10-12" run={run} />);
+    await userEvent.click(action(/^(Answer the questions|Add questions)$/));
     return { run, api, dialog: screen.getByRole('dialog', { name: 'Application questions' }) };
   };
   const box = (n: number) => screen.getByRole('textbox', { name: `Question ${n}` });
@@ -287,13 +155,14 @@ describe('the application questions', () => {
       asked: {},
       posting: null,
       calls: {},
+      outreach: [],
       shots: [
         { path, name: 'form-2026-10-11-1.png', kind: 'form', ask: null, size: 8, modified: '' },
       ],
     });
     vi.mocked(api.readShot).mockResolvedValue(new Uint8Array([1, 2, 3]));
-    render(<RunActions job={job} run={run} api={api} />);
-    await userEvent.click(action(/Application questions/));
+    render(<ApplicationSection job={job} api={api} today="2026-10-12" run={run} />);
+    await userEvent.click(action(/^Answer the questions$/));
     const picture = (await screen.findByRole('img', { name: 'Screenshot 1' })) as HTMLImageElement;
     expect(picture.src).toBe('data:image/png;base64,AQID');
   });

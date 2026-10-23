@@ -15,6 +15,7 @@ import {
   type CallMode,
   type CallPerson,
   type CallState,
+  CLOSED_STATUSES,
   callInvite,
   callInviteName,
   callLength,
@@ -67,12 +68,24 @@ import { LIMITS } from '../../shared/limits.ts';
 import { REMINDER_LEAD } from '../../shared/reminders.ts';
 import { type RunTask, THANKS_SKILL, taskCall, taskJob } from '../../shared/runs.ts';
 import { keepsDrafts } from '../unsaved.ts';
+import { ClaudeButton } from './ClaudeButton.tsx';
 import styles from './JobCalls.module.css';
 import panel from './JobPanel.module.css';
 import { Problem, useEdit } from './JobTracking.tsx';
-import { PanelSection } from './PanelSection.tsx';
+import { PanelSection, Placeholder, showSection } from './PanelSection.tsx';
 import { BUSY, type RunControls } from './RunActions.tsx';
 import type { ReminderSwitch } from './useCallReminders.ts';
+
+/** The event that asks the job's Calls and interviews to open its form to add a call. */
+const ADD_CALL = 'factwright:add-call';
+
+/**
+ * Opens the form to add a call in the job's Calls and interviews, and scrolls to it, such as from
+ * Up next once the user hears back.
+ */
+export function requestAddCall(): void {
+  window.dispatchEvent(new Event(ADD_CALL));
+}
 
 /**
  * How a call went, typed but not saved yet, by the call, so moving away and back keeps it: the
@@ -1194,8 +1207,53 @@ function CallCard({
 }
 
 /**
+ * Claude's prep sheet for the job's calls as a whole, to open, or the button that writes one, once
+ * the user has applied.
+ */
+function JobPrep({
+  job,
+  run,
+  onOpen,
+}: {
+  job: Job;
+  run: RunControls | undefined;
+  onOpen: () => void;
+}) {
+  const task: RunTask = { skill: 'interview-prep', jobId: job.id };
+  if (!job.docKinds.includes('prep')) {
+    return (
+      <Placeholder
+        title="Interview prep"
+        action={<ClaudeButton run={run} task={task} label="Interview prep" adds />}
+      >
+        A prep sheet for your calls with {job.company}: the company, the role, your stories for it,
+        and what to ask.
+      </Placeholder>
+    );
+  }
+  return (
+    <ul className={panel.files} aria-label="Interview prep">
+      <li className={panel.file}>
+        <FileText className={panel.fileIcon} size={16} aria-hidden="true" />
+        <span className={panel.fileText}>
+          <span className={panel.fileName}>Interview prep</span>
+          <span className={panel.fileMeta}>For your calls with {job.company}</span>
+        </span>
+        <span className={panel.fileActions}>
+          <Button size="sm" variant="quiet" aria-label="Open Interview prep" onClick={onOpen}>
+            Open
+          </Button>
+          <ClaudeButton run={run} task={task} label="Prep again" />
+        </span>
+      </li>
+    </ul>
+  );
+}
+
+/**
  * The job's calls and interviews, each a step in the company's hiring process, in the order they
- * happen: what each one is and who it's with, Claude's prep for it, and how it went.
+ * happen: what each one is and who it's with, Claude's prep for it, and how it went. Before
+ * there's one, what goes here and the button to add one.
  */
 export function CallsSection({
   job,
@@ -1243,6 +1301,16 @@ export function CallsSection({
     const tick = setInterval(() => setNow(clockNow()), 60_000);
     return () => clearInterval(tick);
   }, []);
+  // Asked from elsewhere, such as Up next, the form opens here and the section comes into view.
+  const { status } = progress;
+  useEffect(() => {
+    const start = () => {
+      setAdding((open) => open ?? nextKind(job, status));
+      showSection('calls');
+    };
+    window.addEventListener(ADD_CALL, start);
+    return () => window.removeEventListener(ADD_CALL, start);
+  }, [job, status]);
 
   const openDoc = async (call: Call, kind: CallDocKind) => {
     const extras = await api.jobExtras(job.id);
@@ -1254,25 +1322,43 @@ export function CallsSection({
     }
   };
 
+  const openPrep = async () => {
+    const text = (await api.jobDocs(job.id))?.prep;
+    setProblem(text ? null : 'That isn’t in your workspace anymore.');
+    if (text) setOpen({ title: `Interview prep: ${job.company}`, kind: 'prep', text });
+  };
+  // Prep for the calls as a whole has a place once the user has applied, or once there's some.
+  const prepped = job.docKinds.includes('prep');
+  const prep =
+    prepped ||
+    (!CLOSED_STATUSES.includes(status) && progress.reached >= (STATUS_RANK.applied ?? 0));
+  const empty = job.calls.length === 0 && adding === null && !prepped;
+  const addButton = (
+    <Button
+      ref={add}
+      size="sm"
+      icon={empty ? <Plus size={14} aria-hidden="true" /> : undefined}
+      onClick={() => setAdding(nextKind(job, status))}
+    >
+      Add a call
+    </Button>
+  );
+
   return (
     <PanelSection
       id="calls"
       title="Calls and interviews"
       icon={<CalendarClock size={15} />}
-      summary={callsSummary(job, progress, today)}
-      actions={
-        adding === null && (
-          <Button ref={add} size="sm" onClick={() => setAdding(nextKind(job, progress.status))}>
-            Add a call
-          </Button>
-        )
-      }
+      summary={empty ? undefined : callsSummary(job, progress, today)}
+      count={job.calls.length}
+      empty={empty}
+      actions={!empty && adding === null && addButton}
     >
-      {job.calls.length === 0 && adding === null && (
-        <p className={panel.quiet}>
+      {empty && (
+        <Placeholder action={addButton}>
           When a company sets up a call, add it here with who it’s with, and your Claude can get you
           ready for it.
-        </p>
+        </Placeholder>
       )}
       {job.calls.length > 0 && (
         <ol className={styles.calls} aria-label={`Calls and interviews with ${job.company}`}>
@@ -1310,6 +1396,11 @@ export function CallsSection({
             setRefocus(true);
           }}
         />
+      )}
+      {prep && (
+        <div className={styles.jobPrep}>
+          <JobPrep job={job} run={run} onOpen={() => void openPrep()} />
+        </div>
       )}
       {problem && (
         <p className={panel.problem} role="alert">

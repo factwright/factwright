@@ -56,8 +56,16 @@ describe('the phone’s job list', () => {
       text: 'Overdue: Send references',
       action: { kind: 'reminder' },
     });
-    expect(rows[1]?.next).toEqual({ level: 'action', text: 'Applied 12 days ago. Follow up?' });
-    expect(rows[2]?.next).toEqual({ level: 'info', text: 'Applied yesterday' });
+    expect(rows[1]?.next).toEqual({
+      level: 'action',
+      text: 'Applied 12 days ago. Follow up?',
+      action: { kind: 'outreach' },
+    });
+    expect(rows[2]?.next).toEqual({
+      level: 'info',
+      text: 'Applied yesterday',
+      action: { kind: 'add-call' },
+    });
   });
 
   it('puts each job under a kind of job, for a user who wants more than one', () => {

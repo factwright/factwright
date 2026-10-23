@@ -9,6 +9,7 @@ import type {
   JobDocs,
   JobShot,
   JobStatus,
+  OutreachDraft,
   PassReason,
   SavedPosting,
   SearchFocus,
@@ -234,6 +235,8 @@ export interface JobExtras {
   shots: JobShot[];
   posting: SavedPosting | null;
   calls: Record<string, Partial<Record<CallDocKind, string>>>;
+  /** Messages Claude drafted for people at the company, newest first. */
+  outreach: OutreachDraft[];
 }
 
 /** A picture pasted into Claude's panel, saved where Claude can read it, by its full path. */

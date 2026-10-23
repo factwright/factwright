@@ -6,6 +6,7 @@ import {
   readAllCallDocs,
   readCallDocs,
   readJobExtras,
+  readOutreach,
   savedPostingFile,
   savedPostingMarkdown,
   shotsFolder,
@@ -188,5 +189,34 @@ describe('a posting saved from the browser', () => {
     expect(
       readJobExtras(memoryWorkspace({ [savedPostingFile(JOB)]: empty }), JOB).posting,
     ).toBeNull();
+  });
+});
+
+describe('readOutreach', () => {
+  it('reads the drafts for a job’s company, newest first, leaving out any gone or empty', () => {
+    const workspace = memoryWorkspace({
+      'outreach/2026-10-08-acme-robotics.md': '# Who to message at Acme\n\nDana Lee first.\n',
+      'outreach/2026-10-14-acme-robotics.md': '# Who to message at Acme\n\nSam Ortiz now.\n',
+      'outreach/2026-10-15-acme-robotics.md': '  \n',
+    });
+    expect(
+      readOutreach(workspace, [
+        'outreach/2026-10-08-acme-robotics.md',
+        'outreach/2026-10-14-acme-robotics.md',
+        'outreach/2026-10-15-acme-robotics.md',
+        'outreach/2026-10-16-acme-robotics.md',
+      ]),
+    ).toEqual([
+      {
+        path: 'outreach/2026-10-14-acme-robotics.md',
+        date: '2026-10-14',
+        text: '# Who to message at Acme\n\nSam Ortiz now.',
+      },
+      {
+        path: 'outreach/2026-10-08-acme-robotics.md',
+        date: '2026-10-08',
+        text: '# Who to message at Acme\n\nDana Lee first.',
+      },
+    ]);
   });
 });
