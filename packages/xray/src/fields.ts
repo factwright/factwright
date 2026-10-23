@@ -1,4 +1,4 @@
-import { type DateRange, dateRanges, singleDates } from './dates.ts';
+import { type DateRange, dateRanges, formOf, singleDates } from './dates.ts';
 import type { Line } from './read.ts';
 import { headingKind, type Section, sectionsOf } from './sections.ts';
 
@@ -168,53 +168,166 @@ const headerLike = (line: Line | undefined) =>
   // A group heading in capitals, such as "GROWTH", starts the bullets.
   /\p{Ll}/u.test(line.text);
 
+/** A line's pieces split at a bar, and at a dot, dash, "@" or "at" with a space each side. */
+const split = (text: string) =>
+  text
+    .split(/\||(?<=\s)(?:·|—|–|@|at)(?=\s)/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+
+/** A place on its own, such as "Denver, CO" or "Remote". */
+const isPlace = (piece: string) => PLACE.test(piece) && piece.split(' ').length <= 5;
+
+/**
+ * A name, such as a company's: it starts with a letter or a digit, and each of its longer words
+ * has a capital or a digit, as "Bank of America" does and a bullet such as "Cut costs by 40%"
+ * doesn't.
+ */
+const isName = (piece: string) =>
+  /^[\p{L}\p{N}]/u.test(piece) &&
+  piece
+    .split(/\s+/)
+    .every(
+      (word) => word.replace(/[^\p{L}\p{N}]/gu, '').length <= 3 || /[\p{Lu}\p{N}]/u.test(word),
+    );
+
+/** A job as the lines around its dates give it, with what the section's other jobs need. */
+interface Found {
+  job: Job;
+  /** Whether a piece with words such as "Manager" gave its title. */
+  titled: boolean;
+  /** The lines it was read from. */
+  read: number[];
+}
+
 /**
  * A job's title, company and place, from the lines around its dates: the dates' own line, then
- * up to three short lines after them, as a date rail down the side has them, or the line before
- * when the dates stand alone after it.
+ * up to three short lines after them that hold a title, a name or a place, as a date rail down
+ * the side has them, or the line before when the dates stand alone after it. A bullet with no
+ * full stop, such as "Cut costs by 40%", holds none of them, so it's never the company.
  */
-function jobAt(lines: readonly Line[], index: number, range: DateRange, section: Section): Job {
+function jobAt(lines: readonly Line[], index: number, range: DateRange, section: Section): Found {
   const line = lines[index] as Line;
   const without = (text: string) =>
     trimEndOf(text.replace(range.text, ' ').replace(/^[\s|,–—-]+/, ''), isSeparator);
-  // Split at a bar, and at a dot, dash, "@" or "at" with a space each side.
-  const split = (text: string) =>
-    text
-      .split(/\||(?<=\s)(?:·|—|–|@|at)(?=\s)/)
-      .map((piece) => piece.trim())
-      .filter(Boolean);
   const piecesAt = (at: number) => piecesOf(lines[at] as Line).flatMap(split);
   const here = piecesOf(line).map(without).filter(Boolean).flatMap(split);
   const after: string[] = [];
-  for (let at = index + 1; at < Math.min(index + 4, section.end) && headerLike(lines[at]); at++)
-    after.push(...piecesAt(at));
+  const read = [index];
+  for (let at = index + 1; at < Math.min(index + 4, section.end) && headerLike(lines[at]); at++) {
+    const pieces = piecesAt(at);
+    if (!pieces.some((piece) => isPlace(piece) || TITLE_WORDS.test(piece) || isName(piece))) break;
+    after.push(...pieces);
+    read.push(at);
+  }
   const before =
     here.length === 0 && index - 1 > section.line && headerLike(lines[index - 1])
       ? piecesAt(index - 1)
       : [];
+  if (before.length > 0) read.unshift(index - 1);
   const candidates = [...here, ...after, ...before];
-  const location =
-    candidates.find((piece) => PLACE.test(piece) && piece.split(' ').length <= 5) ?? null;
+  const location = candidates.find(isPlace) ?? null;
   const rest = candidates.filter((piece) => piece !== location);
   // A title has words such as "Manager". Without one, the title comes first, as most resumes have it.
-  const title = rest.find((piece) => TITLE_WORDS.test(piece)) ?? rest[0] ?? null;
+  const titled = rest.find((piece) => TITLE_WORDS.test(piece));
+  const title = titled ?? rest[0] ?? null;
   const company = rest.find((piece) => piece !== title) ?? null;
-  return { title, company, location, dates: range, line: index };
+  return { job: { title, company, location, dates: range, line: index }, titled: !!titled, read };
+}
+
+/** A company's name and place, which go on to the jobs under it. */
+interface Employer {
+  company: string;
+  location: string | null;
+}
+
+/**
+ * A line that names a company on its own, as a resume with more than one title at a company
+ * can have it, once above them: short, with no dates and no title's words, and a name, which a
+ * bullet isn't. It can give a place too, and be in capitals.
+ */
+function employerLine(line: Line): Employer | null {
+  const { text } = line;
+  if (text.split(/\s+/).length > 10 || /[.;:]$|:\s/.test(text) || headingKind(text)) return null;
+  if (dateRanges(text).length > 0) return null;
+  const pieces = piecesOf(line).flatMap(split);
+  const location = pieces.find(isPlace) ?? null;
+  const rest = pieces.filter((piece) => piece !== location);
+  const [company] = rest;
+  if (!company || !isName(company) || rest.some((piece) => TITLE_WORDS.test(piece))) return null;
+  return { company, location };
+}
+
+/** A date's year, with "Present" after every year. Null when it gives none, as "Jun '19" doesn't. */
+function yearOf(date: string): number | null {
+  if (formOf(date) === 'now') return Number.POSITIVE_INFINITY;
+  const year = date.match(/(?:19|20)\d{2}/)?.[0];
+  return year ? Number(year) : null;
+}
+
+/** Whether a span of dates falls inside another, by their years, or may, when a year is missing. */
+function within(inner: DateRange, outer: DateRange): boolean {
+  const years = [inner.start, inner.end, outer.start, outer.end].map(yearOf);
+  const [start, end, from, to] = years;
+  if (years.some((year) => year === null)) return true;
+  return (start as number) >= (from as number) && (end as number) <= (to as number);
+}
+
+/**
+ * Whether a span of dates is a company's own, over the titles held there, rather than a job: its
+ * line has no title's words, the next job's does, and that job's dates fall inside its own.
+ */
+function isEmployer(found: Found, next: Found | undefined): boolean {
+  const company = found.job.title;
+  return (
+    !found.titled &&
+    company !== null &&
+    !!next?.titled &&
+    (next.job.company === null || next.job.company === company) &&
+    within(next.job.dates, found.job.dates)
+  );
 }
 
 /**
  * The jobs in the experience sections: one for each span of dates on a line of its own or
  * beside a title, with what's around it. A span inside a sentence, such as a bullet's "from 2019
- * to 2021", isn't a job's.
+ * to 2021", isn't a job's. A resume with more than one title at a company can name the company
+ * once, above them, with or without the company's own span of dates: each job without a company
+ * of its own is at the company named last, and in its place when it has none.
  */
 function jobsIn(lines: readonly Line[], sections: readonly Section[]): Job[] {
   const experience = sectionsOf(sections, 'experience');
   return experience.flatMap((section) => {
-    const jobs: Job[] = [];
+    const found: Found[] = [];
     for (let index = section.line + 1; index < section.end; index++) {
       const line = lines[index] as Line;
       if (/[.;!?]$/.test(line.text) || line.text.split(/\s+/).length > 14) continue;
-      for (const range of dateRanges(line.text)) jobs.push(jobAt(lines, index, range, section));
+      for (const range of dateRanges(line.text)) found.push(jobAt(lines, index, range, section));
+    }
+    const read = new Set(found.flatMap((each) => each.read));
+    const jobs: Job[] = [];
+    let employer: Employer | null = null;
+    for (const [i, each] of found.entries()) {
+      const { job } = each;
+      if (isEmployer(each, found[i + 1])) {
+        employer = { company: job.title as string, location: job.location };
+        continue;
+      }
+      if (job.company) {
+        employer = { company: job.company, location: job.location };
+        jobs.push(job);
+        continue;
+      }
+      // The company's own line, right above the job's title and dates.
+      const above = Math.min(...each.read) - 1;
+      const named =
+        above > section.line && !read.has(above) ? employerLine(lines[above] as Line) : null;
+      employer = named ?? employer;
+      jobs.push(
+        employer
+          ? { ...job, company: employer.company, location: job.location ?? employer.location }
+          : job,
+      );
     }
     return jobs;
   });
