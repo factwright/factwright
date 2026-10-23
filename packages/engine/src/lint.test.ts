@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { lintResume, readConfidentialTerms } from './lint.ts';
 import { sampleResume } from './sample.ts';
+import type { Resume } from './schema.ts';
 
 /** How long something takes, in milliseconds. */
 function timed(work: () => unknown): number {
@@ -80,6 +81,65 @@ describe('lintResume', () => {
       'The systems need exactly 6 cards, not 1.',
       'The "Deploy pipeline" card has 11 words; keep it to 16–26.',
     ]);
+  });
+
+  describe('with more than one title at a company', () => {
+    // Three roles at Tidewater, newest first, each its own job on the resume.
+    const promoted: Resume = {
+      ...sampleResume(),
+      experience: [
+        ['Staff Engineer', '03/2022', 'Present'],
+        ['Senior Engineer', '06/2019', '02/2022'],
+        ['Engineer', '08/2017', '05/2019'],
+      ].map(([title = '', start = '', end = '']) => ({
+        title,
+        company: 'Tidewater Analytics',
+        start,
+        end,
+      })),
+    };
+    // A rule file is JSON anyone can edit, so a company's titles can be anything.
+    const titles = (exact: unknown) => ({
+      titles: { 'Tidewater Analytics': exact } as Record<string, string | string[]>,
+    });
+
+    it('checks each job there against every title held there', () => {
+      expect(
+        lintResume(promoted, titles(['Staff Engineer', 'Senior Engineer', 'Engineer'])),
+      ).toEqual([]);
+      const wrong = {
+        ...promoted,
+        experience: promoted.experience.map((job, i) =>
+          i === 1 ? { ...job, title: 'Principal Engineer' } : job,
+        ),
+      };
+      expect(lintResume(wrong, titles(['Staff Engineer', 'Senior Engineer', 'Engineer']))).toEqual([
+        'The title at Tidewater Analytics must be exactly one of "Staff Engineer", "Senior Engineer" or "Engineer", not "Principal Engineer".',
+      ]);
+      expect(lintResume(promoted, titles(['Staff Engineer']))).toEqual([
+        'The title at Tidewater Analytics must be exactly "Staff Engineer", not "Senior Engineer".',
+        'The title at Tidewater Analytics must be exactly "Staff Engineer", not "Engineer".',
+      ]);
+    });
+
+    it('reads a single title, as older rules give it, as one job’s title there', () => {
+      // The newest title is right, whichever title the rule names.
+      expect(lintResume(promoted, titles('Staff Engineer'))).toEqual([]);
+      expect(lintResume(promoted, titles('Senior Engineer'))).toEqual([]);
+      expect(lintResume(promoted, titles('Principal Engineer'))).toEqual([
+        'The title at Tidewater Analytics must be exactly "Principal Engineer", not "Staff Engineer".',
+      ]);
+    });
+
+    it('says when a company’s titles aren’t a title or a list of them', () => {
+      for (const exact of [[], [3], 42, null, {}]) {
+        expect(lintResume(promoted, titles(exact))).toEqual([
+          'The titles for Tidewater Analytics in guide/lint.json should be a title, or a list of every title held there.',
+        ]);
+      }
+      // A company the resume doesn't have is never checked.
+      expect(lintResume(promoted, { titles: { Acme: ['Director'] } })).toEqual([]);
+    });
   });
 });
 
