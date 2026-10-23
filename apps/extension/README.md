@@ -26,6 +26,7 @@ Setup asks where saved jobs go. **Factwright on this computer** needs nothing bu
 | `scripts/build.ts` | Builds both browsers' folders and zips, and checks the built page reader works on its own |
 | `scripts/e2e.ts` | Runs the built extension in Chromium, from setting up to saving: against local sync servers, the one it's built for, one chosen in setup as your own, and one that sells sync, as Factwright's will, and straight to Factwright on this computer, through the desktop app's helper and its inbox |
 | `scripts/e2e-fill.ts` | Fills a Lever form served on this computer in Chromium, through the desktop app's helper and its inbox and fill code, over a made-up job hunt: Factwright closed, then open, the resume uploaded, Mark as applied, and a new answer kept |
+| `scripts/e2e-firefox-fill.ts` | Fills forms served on this computer in a real Firefox, through the extension's own scripting, as its sidebar does |
 | `scripts/e2e-firefox.ts` | Saves straight to Factwright on this computer in a real Firefox, the stores' build: Firefox's own grant of native messaging on setup's click, the helper reached at once from setup and from the background, what setup says when Firefox can't find the helper, and saves with Factwright closed and open. On Linux, as CI runs it, and on a Mac |
 | `scripts/bidi.ts` | A small WebDriver BiDi client, to drive a real Firefox, which Playwright can't do with an extension |
 | `scripts/icons.ts` | Draws its icons from Factwright's app icon |
@@ -88,6 +89,8 @@ Filling a form has a run of its own in Chromium, as `e2e` does, with the desktop
 ```bash
 pnpm --filter @factwright/extension e2e:fill
 ```
+
+In Firefox, `e2e:firefox-fill` sends the built form function into forms served on this computer through the extension's own scripting, as its sidebar does, with the same Firefox 158 or later that `e2e:firefox` needs: it reads, fills, never a password, and uploads a file through Firefox's content-script sandbox.
 
 `FIREFOX=<path>` runs another Firefox than the one on PATH, or on a Mac than the one in Applications: CI runs Mozilla's 158 that way, since its runners' own is older. When Firefox can't reach the helper, it says "No such native application com.factwright.save" for one that isn't registered, or isn't for this extension, and only "An unexpected error occurred" for one that isn't where its manifest says, as when Factwright was moved to the trash. Setup reads both as Factwright not found, as it does Chrome's words.
 

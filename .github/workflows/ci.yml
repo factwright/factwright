@@ -100,3 +100,7 @@ jobs:
       - run: pnpm --filter @factwright/extension e2e:firefox
         env:
           FIREFOX: ${{ runner.temp }}/firefox/firefox
+      # Filling a form in it: reading, filling and uploading through its content-script sandbox.
+      - run: pnpm --filter @factwright/extension e2e:firefox-fill
+        env:
+          FIREFOX: ${{ runner.temp }}/firefox/firefox
