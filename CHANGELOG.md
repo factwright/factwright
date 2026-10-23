@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.14.0 - 2026-10-23
+
 ### Added
 - Filling an application uses your resumes for what Profile leaves blank: your name, email, phone, where you live, LinkedIn and website, and where you work now and as what. They come from the job's own tailored resume, or your newest for a job that has none yet. Where a form asks for them by name, it also fills your school, degree, field of study and graduation year, and your skills, certifications and summary. The extension's panel says which resume each answer came from, and a resume field on a job with no tailored resume says so, rather than "Not in Profile yet". This reaches the stores with the extension's next version.
 - Profile's About you has Fill in from your resume, once Factwright has made a resume: one click fills in what's blank there from your newest resume, and leaves what you've typed as it is.
