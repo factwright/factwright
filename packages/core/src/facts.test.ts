@@ -6,6 +6,7 @@ import {
   confirmClaim,
   factBlocks,
   findBlock,
+  findSection,
   leavesCodeOpen,
   removeBlock,
   replaceBlock,
@@ -218,6 +219,95 @@ describe('addClaim', () => {
     expect(addClaim('# Projects\r\n', claim)).toBe(
       `# Projects\r\n\r\n${claim.replaceAll('\n', '\r\n')}\r\n`,
     );
+  });
+
+  describe('in a section', () => {
+    // A job where the user held three titles, a section for each role, newest first.
+    const ROLES = [
+      '# Tidewater Analytics',
+      '',
+      '## Overview',
+      'Staff Engineer (03/2022 – Present), Senior Engineer (06/2019 – 02/2022), Engineer (08/2017 – 05/2019).',
+      '',
+      '## Staff Engineer (03/2022 – Present)',
+      '',
+      '### Deploy pipeline',
+      '`live` `led-and-built` `high`',
+      '> Cut deploy time ~40%.',
+      '',
+      '## Senior Engineer (06/2019 – 02/2022)',
+      '',
+      '### Service moves',
+      '`shipped` `led-team` `high`',
+      '> Moved 12 services to one pipeline.',
+      '',
+      '## Engineer (08/2017 – 05/2019)',
+      '',
+      "## Don't claim",
+      '- Never "architect".',
+      '',
+    ].join('\n');
+    const titles = (file: string) => factBlocks(file).map((block) => block.title);
+
+    it('puts it after the section’s last claim, whatever case, marks and spacing name it', () => {
+      for (const section of [
+        'Senior Engineer (06/2019 – 02/2022)',
+        '## senior engineer (06/2019 - 02/2022)',
+        'Senior Engineer, 06/2019–02/2022',
+      ]) {
+        const added = addClaim(ROLES, claim, section);
+        expect(titles(added)).toEqual([
+          'Tidewater Analytics',
+          'Overview',
+          'Staff Engineer (03/2022 – Present)',
+          'Deploy pipeline',
+          'Senior Engineer (06/2019 – 02/2022)',
+          'Service moves',
+          'On-call rotation',
+          'Engineer (08/2017 – 05/2019)',
+          "Don't claim",
+        ]);
+        expect(added).toContain(
+          `> Moved 12 services to one pipeline.\n\n${claim}\n\n## Engineer (08/2017 – 05/2019)`,
+        );
+      }
+    });
+
+    it('puts it at the end of a section with no claims yet', () => {
+      const added = addClaim(ROLES, claim, 'Engineer (08/2017 – 05/2019)');
+      expect(added).toContain(`## Engineer (08/2017 – 05/2019)\n\n${claim}\n\n## Don't claim`);
+    });
+
+    it('starts a section the file doesn’t have, where the claim would go without one', () => {
+      const added = addClaim(FILE, claim, '## Staff Engineer (2021 – 2026)');
+      expect(titles(added)).toEqual([
+        'Acme Health',
+        'Overview',
+        'Scheduling',
+        'Scheduling platform',
+        'Reminder texts',
+        'Staff Engineer (2021 – 2026)',
+        'On-call rotation',
+        "Don't claim",
+      ]);
+      expect(added).toContain(
+        `- **Source:** resume alex.pdf 2026-10-10\n\n## Staff Engineer (2021 – 2026)\n\n${claim}\n\n## Don't claim`,
+      );
+      expect(addClaim('# Projects\r\n', claim, 'Trailhead')).toBe(
+        `# Projects\r\n\r\n## Trailhead\r\n\r\n${claim.replaceAll('\n', '\r\n')}\r\n`,
+      );
+    });
+
+    it('goes after the file’s last claim, as before, with no section, or one of only marks', () => {
+      for (const section of [undefined, null, '', '##', '  ']) {
+        expect(addClaim(ROLES, claim, section)).toBe(addClaim(ROLES, claim));
+      }
+      // A claim's heading isn't a section.
+      expect(findSection(factBlocks(ROLES), 'Deploy pipeline')).toBeNull();
+      expect(findSection(factBlocks(ROLES), 'engineer (08/2017 – 05/2019)')?.title).toBe(
+        'Engineer (08/2017 – 05/2019)',
+      );
+    });
   });
 });
 

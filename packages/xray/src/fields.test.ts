@@ -121,6 +121,83 @@ describe('jobs', () => {
     const fields = fieldsOf([heading('Education'), wordLine('B.A., History 2010 – 2014')]);
     expect(fields.jobs).toEqual([]);
   });
+
+  describe('more than one title at a company', () => {
+    const jobsOf = (lines: Line[]) =>
+      fieldsOf([heading('Experience'), ...lines]).jobs.map(
+        ({ title, company, location, dates }) => [title, company, location, dates.text],
+      );
+    const promoted = [
+      ['Staff Engineer', 'Tidewater Analytics', 'Remote', '03/2022 – Present'],
+      ['Senior Engineer', 'Tidewater Analytics', 'Remote', '06/2019 – 02/2022'],
+      ['Engineer', 'Tidewater Analytics', 'Remote', '08/2017 – 05/2019'],
+    ];
+
+    it('reads the company under each title, as Factwright’s own resumes have it', () => {
+      expect(
+        jobsOf([
+          wordLine('Staff Engineer\t03/2022 – Present'),
+          wordLine('Tidewater Analytics — Data tools\tRemote'),
+          wordLine('Cut deploy time by 40%.'),
+          wordLine('Senior Engineer\t06/2019 – 02/2022'),
+          wordLine('Tidewater Analytics — Data tools\tRemote'),
+          wordLine('Moved 12 services to one pipeline.'),
+          wordLine('Engineer\t08/2017 – 05/2019'),
+          wordLine('Tidewater Analytics — Data tools\tRemote'),
+          wordLine('Wrote the first integration tests.'),
+        ]),
+      ).toEqual(promoted);
+    });
+
+    it('reads a company named once, above its titles, for each of them, until the next', () => {
+      expect(
+        jobsOf([
+          wordLine('Tidewater Analytics\tRemote'),
+          wordLine('Staff Engineer\t03/2022 – Present'),
+          wordLine('Cut deploy time by 40%.'),
+          // Bullets with no full stop, above a title and below one, aren't a company's line.
+          wordLine('Moved 12 services to one pipeline'),
+          wordLine('Senior Engineer\t06/2019 – 02/2022'),
+          wordLine('Ran the on-call rotation.'),
+          wordLine('Engineer\t08/2017 – 05/2019'),
+          wordLine('Wrote the first integration tests'),
+          wordLine('NORTHWIND STAYS | Denver, CO'),
+          wordLine('Product Manager\t06/2015 – 07/2017'),
+          wordLine('Ran pricing experiments.'),
+        ]),
+      ).toEqual([
+        ...promoted,
+        ['Product Manager', 'NORTHWIND STAYS', 'Denver, CO', '06/2015 – 07/2017'],
+      ]);
+    });
+
+    it('reads a company with its own span of dates as the company over its titles, not a job', () => {
+      expect(
+        jobsOf([
+          wordLine('Tidewater Analytics | Remote\t08/2017 – Present'),
+          wordLine('Staff Engineer\t03/2022 – Present'),
+          wordLine('Cut deploy time by 40%.'),
+          wordLine('Senior Engineer\t06/2019 – 02/2022'),
+          wordLine('Moved 12 services to one pipeline.'),
+          wordLine('Engineer\t08/2017 – 05/2019'),
+          wordLine('Wrote the first integration tests.'),
+        ]),
+      ).toEqual(promoted);
+    });
+
+    it('keeps a job whose title has no title’s words, when the next one isn’t inside its dates', () => {
+      expect(
+        jobsOf([
+          wordLine('Bartender | The Rusty Anchor\t2013 – 2015'),
+          wordLine('Shift Supervisor\t2015 – 2017'),
+          wordLine('Ran the weekend shifts.'),
+        ]),
+      ).toEqual([
+        ['Bartender', 'The Rusty Anchor', null, '2013 – 2015'],
+        ['Shift Supervisor', 'The Rusty Anchor', null, '2015 – 2017'],
+      ]);
+    });
+  });
 });
 
 describe('education and skills', () => {

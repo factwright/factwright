@@ -222,35 +222,74 @@ export function removeBlock(file: string, at: BlockAt): string | null {
 }
 
 /**
+ * A section's heading as it's given, such as "## Staff Engineer (03/2022 – Present)": its words,
+ * without the #s, on one line.
+ */
+export const sectionTitle = (heading: string): string =>
+  heading
+    .replace(/^[ \t]*#{1,6}(?:[ \t]+|$)/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** A heading's words, as a section is found by them, whatever their case, marks and spacing. */
+const headingKey = (heading: string) =>
+  sectionTitle(heading)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}+#]+/gu, ' ')
+    .trim();
+
+/**
+ * The `##` section a heading names, such as a role's in a job's file, "Staff Engineer (03/2022 –
+ * Present)", whatever its case, marks and spacing: the first, if the file has two. Null when the
+ * file has none.
+ */
+export function findSection(blocks: readonly FactBlock[], heading: string): FactBlock | null {
+  const key = headingKey(heading);
+  if (!key) return null;
+  return blocks.find((block) => block.level === 2 && headingKey(block.title) === key) ?? null;
+}
+
+/**
  * The file with a new claim after its last one, so it lands among the others rather than after
  * the file's closing sections, such as what never to claim. A file without claims gets it at the
- * end. A blank line keeps it apart from what's around it.
+ * end. With a section, such as a role's in the file of a job where the user held more than one
+ * title, it goes after that section's last claim, or at its end. A section the file doesn't have
+ * yet starts with it, where the claim would go without one. A blank line keeps it apart from
+ * what's around it.
  */
-export function addClaim(file: string, claim: string): string {
+export function addClaim(file: string, claim: string, section?: string | null): string {
   const blocks = factBlocks(file);
-  const last = blocks.findLastIndex((block) => block.tags !== null);
+  const title = section ? sectionTitle(section) : '';
+  const found = title ? findSection(blocks, title) : null;
+  // How many of the file's blocks come before it.
+  let split: number;
+  if (found) {
+    let end = found.index + 1;
+    while (end < blocks.length && (blocks[end]?.level ?? 0) > 2) end++;
+    const last = blocks.slice(found.index + 1, end).findLastIndex((block) => block.tags !== null);
+    split = last < 0 ? end : found.index + 2 + last;
+  } else {
+    const last = blocks.findLastIndex((block) => block.tags !== null);
+    split = last < 0 ? blocks.length : last + 1;
+  }
   const ending = endingOf(file);
-  const before =
-    last < 0
-      ? file
-      : blocks
-          .slice(0, last + 1)
-          .map((block) => block.text)
-          .join('');
-  const after =
-    last < 0
-      ? ''
-      : blocks
-          .slice(last + 1)
-          .map((block) => block.text)
-          .join('');
+  const before = blocks
+    .slice(0, split)
+    .map((block) => block.text)
+    .join('');
+  const after = blocks
+    .slice(split)
+    .map((block) => block.text)
+    .join('');
   const gap =
     before === '' || /\n[ \t]*\r?\n$/.test(before)
       ? ''
       : before.endsWith('\n')
         ? ending
         : ending + ending;
-  return `${before}${gap}${withEnding(claim.trimEnd(), ending)}${ending}${after ? ending : ''}${after}`;
+  const text = found || !title ? claim.trimEnd() : `## ${title}\n\n${claim.trimEnd()}`;
+  return `${before}${gap}${withEnding(text, ending)}${ending}${after ? ending : ''}${after}`;
 }
 
 /**

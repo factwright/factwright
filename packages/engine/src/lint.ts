@@ -16,8 +16,13 @@ export interface LintConfig {
   systemsCards?: number;
   /** The fewest and most words a systems card may have. */
   cardWords?: [number, number];
-  /** Exact titles by company, such as { "Acme": "Staff Engineer" }. */
-  titles?: Record<string, string>;
+  /**
+   * Exact titles by company: every title the user held there, such as { "Acme": ["Staff
+   * Engineer", "Senior Engineer"] }, so each of the resume's jobs at that company has one of them.
+   * A single title, as older rules give it, such as { "Acme": "Staff Engineer" }, is one job's
+   * title there.
+   */
+  titles?: Record<string, string | string[]>;
   /** Wording that must never appear, as case-blind patterns, with why, and matches to allow. */
   banned?: { pattern: string; why: string; allow?: string }[];
 }
@@ -88,6 +93,36 @@ function textProblems(
 }
 
 /**
+ * What's wrong with a resume's titles at a company, by the user's rules. Someone promoted there
+ * held more than one title, each its own job on the resume, so a list of every title they held
+ * there checks each of those jobs. A single title, as older rules give it, has to be one of the
+ * jobs' titles there, so it never flags the user's other titles at the company.
+ */
+function titleProblems(resume: Resume, company: string, exact: unknown): string[] {
+  const jobs = resume.experience.filter((job) => job.company === company);
+  if (typeof exact === 'string') {
+    const [first] = jobs;
+    return first && !jobs.some((job) => job.title === exact)
+      ? [`The title at ${company} must be exactly "${exact}", not "${first.title}".`]
+      : [];
+  }
+  const held = Array.isArray(exact)
+    ? exact.filter((title): title is string => typeof title === 'string')
+    : [];
+  if (held.length === 0) {
+    return [
+      `The titles for ${company} in guide/lint.json should be a title, or a list of every title held there.`,
+    ];
+  }
+  const quoted = held.map((title) => `"${title}"`);
+  const last = quoted.pop();
+  const them = quoted.length === 0 ? last : `one of ${quoted.join(', ')} or ${last}`;
+  return jobs
+    .filter((job) => !held.includes(job.title))
+    .map((job) => `The title at ${company} must be exactly ${them}, not "${job.title}".`);
+}
+
+/**
  * Checks a resume against the user's rules, and against their confidential terms, such as
  * customers' names, which must never reach an employer. Returns each problem in plain words.
  */
@@ -103,10 +138,9 @@ export function lintResume(
     confidential,
   );
 
-  for (const [company, title] of Object.entries(config.titles ?? {})) {
-    const job = resume.experience.find((e) => e.company === company);
-    if (job && job.title !== title) {
-      issues.push(`The title at ${company} must be exactly "${title}", not "${job.title}".`);
+  if (config.titles && typeof config.titles === 'object') {
+    for (const [company, exact] of Object.entries(config.titles)) {
+      issues.push(...titleProblems(resume, company, exact));
     }
   }
 

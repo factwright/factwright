@@ -70,6 +70,7 @@ export {
   type FactBlock,
   factBlocks,
   findBlock,
+  findSection,
   leavesCodeOpen,
   removeBlock,
   replaceBlock,
@@ -77,6 +78,7 @@ export {
   sameBlock,
   sectionParts,
   sectionText,
+  sectionTitle,
   UNCONFIRMED,
 } from './facts.ts';
 export {

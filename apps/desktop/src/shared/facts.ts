@@ -259,8 +259,16 @@ export function withChange(file: string, kind: FactFileKind, change: FactChange)
     : (replaceBlock(file, block, change.next) ?? { problem: CHANGED_SINCE });
 }
 
-/** A file of claims with a new one after its last. */
-export function withClaim(file: string, kind: FactFileKind, text: string): FactEdit {
+/**
+ * A file of claims with a new one after its last, or after the last in a section, such as a
+ * role's in a job's file, which it starts when the file has none.
+ */
+export function withClaim(
+  file: string,
+  kind: FactFileKind,
+  text: string,
+  section: string | null = null,
+): FactEdit {
   if (kind !== 'claims') return { problem: 'Facts go in one of your files of facts.' };
   if (leavesCodeOpen(file)) {
     return {
@@ -269,7 +277,7 @@ export function withClaim(file: string, kind: FactFileKind, text: string): FactE
     };
   }
   const problem = blockProblem(text, 3, { claim: true });
-  return problem ? { problem } : addClaim(file, text);
+  return problem ? { problem } : addClaim(file, text, section);
 }
 
 /** A file without a claim. Sections stay: their words can be changed, or cleared. */

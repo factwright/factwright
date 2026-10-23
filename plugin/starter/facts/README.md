@@ -6,7 +6,7 @@ The single source of truth for every resume, answer and message. If a claim isn'
 | File | What's in it |
 |---|---|
 | `profile.md` | Name and contact details, education, certifications and licenses, languages, the roles they want, and their story in a few lines |
-| one file per job, such as `acme-health.md` | An **Overview** (titles exactly as held, dates, place, what the company does, scope), then that job's claims |
+| one file per employer, such as `acme-health.md` | An **Overview** (each title exactly as held, with its dates, the place, what the company does, scope), then that job's claims. With more than one title there, as after a promotion, a `## <Title> (<start> – <end>)` section for each role, newest first, with that role's claims under it |
 | `projects.md` | Work outside a job, in any field: apps and products, side projects, open source, research, creative work, volunteering, community work, a small business, school projects. A `##` section for each, starting with its **Overview** (what it is, their part in it, what it's part of, when, where it stands, its links), then its claims |
 | `skills.md` | Each skill and tool, how deep it goes, and which file proves it |
 | `gaps.md` | **Doesn't have** (settled: don't claim it, don't ask again), a table with the columns Topic, Their answer and Date, then **Needs confirmation** and **Open questions** |
@@ -53,7 +53,7 @@ Each claim gets its own `###` heading, so it can be cited as `file.md#claim-titl
 - `answer <YYYY-MM-DD>, <what Claude was doing>`, such as `answer 2026-10-14, tailoring a resume for Acme Health`: the user's answer to Claude's question, `unconfirmed` until they verify it. Under it, a `- **Question:**` and `- **Answer:**` line for each question it rests on, word for word, written by the app from its own record of what the user answered.
 
 ## Adding facts
-- File each fact where it belongs, in the claim format.
+- File each fact where it belongs, in the claim format: under its role's section, when the job's file has one for each title.
 - While Claude works on a job, it saves the user's answers with Factwright's tools: a yes as a claim tagged `unconfirmed`, with its source and the questions it rests on, and a "No, I haven't" as a row under **Doesn't have** in `gaps.md`, so nobody asks again. The tools never change a verified claim.
 - When the user corrects a fact, edit it in place and update its Source. Never keep two versions.
 - Plain, active wording. No "I", no fluff.

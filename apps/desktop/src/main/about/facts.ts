@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  addClaim,
   factBlocks,
   findBlock,
   GAPS_FILE,
@@ -139,18 +140,24 @@ export class FactBankFiles {
   }
 
   /**
-   * Files a claim from the user's answers in a run: after a file's last claim, or in place of
-   * one that still waits to be verified. A confirmed claim is never changed or deleted. A file
-   * of projects is started when there's none, with the claim in it.
+   * Files a claim from the user's answers in a run: after a file's last claim, or the last in a
+   * section, such as a role's, or in place of one that still waits to be verified. A confirmed
+   * claim is never changed or deleted. A file of projects is started when there's none, with the
+   * claim in it.
    */
-  fileClaim(path: string, text: string, replacing: FactTarget | null = null): FactResult {
+  fileClaim(
+    path: string,
+    text: string,
+    replacing: FactTarget | null = null,
+    section: string | null = null,
+  ): FactResult {
     if (path === PROJECTS && !replacing && this.file(path) === null && !this.exists(path)) {
-      return this.create(path, `# Projects\n\n${text.trimEnd()}\n`);
+      return this.create(path, addClaim('# Projects\n', text, section));
     }
     return this.edit(
       path,
       (file, kind) => {
-        if (!replacing) return withClaim(file, kind, text);
+        if (!replacing) return withClaim(file, kind, text, section);
         const block = findBlock(factBlocks(file), replacing);
         if (!block) return { problem: CHANGED_SINCE };
         if (!block.tags?.includes(UNCONFIRMED)) {
