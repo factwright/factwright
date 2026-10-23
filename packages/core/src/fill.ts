@@ -240,7 +240,19 @@ export interface FieldReply {
   from?: string;
   /** Why it's left for you. */
   left?: LeftFor;
+  /**
+   * Other answers on file that fit as well, best first, such as what you sent another company to
+   * the same question, or your Claude's draft for this job: the extension's menus in a form's
+   * fields offer them beside this one. Filling a form puts in this one alone.
+   */
+  others?: OtherAnswer[];
 }
+
+/** Another answer on file for a field, as a menu in the field offers it. */
+export type OtherAnswer = Pick<FieldReply, 'text' | 'pick' | 'exact' | 'source' | 'from'>;
+
+/** The most other answers a field's reply carries. */
+export const MOST_OTHERS = 3;
 
 /** The words that mean "I'd rather not say", as forms put them. */
 const DECLINE = [
@@ -668,28 +680,32 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
   if (!key) return left('question', 'new');
   const job = onFile.job?.company ?? '';
   const written = field.control === 'long' || field.control === 'text';
-  const before = onFile.sent.find(
-    (each) =>
-      questionKey(each.question) === key &&
-      each.text.trim() &&
-      !(written && aboutCompany(each, job)),
-  );
-  if (before) {
-    const from = `From your ${before.company || 'earlier'} application, ${shortDate(before.on, onFile.today)}`;
-    if (choosing(field)) {
-      return { kind: 'question', pick: [before.text], exact: true, source: 'sent', from };
-    }
-    if (!field.limit || before.text.length <= field.limit) {
-      return { kind: 'question', text: before.text, source: 'sent', from };
-    }
-  }
+  const fits = (text: string) => !field.limit || text.length <= field.limit;
+  // Each answer you sent to the same question, newest first, that fits the field.
+  const sent = onFile.sent
+    .filter(
+      (each) =>
+        questionKey(each.question) === key &&
+        each.text.trim() &&
+        !(written && aboutCompany(each, job)) &&
+        (choosing(field) || fits(each.text)),
+    )
+    .map((before): FieldReply => {
+      const from = `From your ${before.company || 'earlier'} application, ${shortDate(before.on, onFile.today)}`;
+      return choosing(field)
+        ? { kind: 'question', pick: [before.text], exact: true, source: 'sent', from }
+        : { kind: 'question', text: before.text, source: 'sent', from };
+    });
   const drafts = onFile.suggested.filter((each) => questionKey(each.question) === key);
   const draft = drafts.at(-1);
-  // A draft that says only you can answer it, and why, leaves it for you, saying why.
-  if (draft && /^\s*for you:/i.test(draft.answer)) {
+  // A draft that says only you can answer it, and why, leaves it for you, saying why, unless you
+  // answered it before.
+  const forYou = draft !== undefined && /^\s*for you:/i.test(draft.answer);
+  if (forYou && sent.length === 0) {
     return { ...left('question', 'new'), from: draft.answer.trim() };
   }
-  if (draft?.answer.trim()) {
+  const drafted = ((): FieldReply | null => {
+    if (forYou || !draft?.answer.trim()) return null;
     const from = 'Your Claude’s draft for this job';
     // A question that takes any of its options takes each the draft picks, as "SQL; Python".
     const picks =
@@ -701,11 +717,21 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
         : [draft.answer.trim()];
     if (choosing(field))
       return { kind: 'question', pick: picks, exact: true, source: 'claude', from };
-    if (!field.limit || draft.answer.length <= field.limit) {
-      return { kind: 'question', text: draft.answer, source: 'claude', from };
-    }
-  }
-  return left('question', 'new');
+    return fits(draft.answer)
+      ? { kind: 'question', text: draft.answer, source: 'claude', from }
+      : null;
+  })();
+  // What you sent before comes first, then your Claude's draft; the same words twice are one.
+  const said = new Set<string>();
+  const [first, ...others] = [...sent, ...(drafted ? [drafted] : [])].filter((each) => {
+    const words = plain(each.text ?? each.pick?.join(' ') ?? '');
+    if (said.has(words)) return false;
+    said.add(words);
+    return true;
+  });
+  if (!first) return left('question', 'new');
+  if (others.length === 0) return first;
+  return { ...first, others: others.slice(0, MOST_OTHERS).map(({ kind: _, ...other }) => other) };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { EXTENSION_IDS } from '@factwright/sync';
 import { describe, expect, it } from 'vitest';
+import { jobSites } from '../src/applicant-systems.ts';
 import { FIREFOX_ID, manifest } from '../src/manifest.ts';
 
 describe('each browser’s manifest', () => {
@@ -28,10 +29,11 @@ describe('each browser’s manifest', () => {
     });
     for (const built of [chrome, firefox]) {
       expect(Object.keys(built.commands as object)).toEqual(['save-job', 'fill-form']);
-      // No content scripts, and nothing a page can load or message.
+      // No content scripts of its own, and nothing a page can message. Its frame is for its
+      // script on the job sites you allowed, which it registers once you allow them.
       expect(built).not.toHaveProperty('content_scripts');
-      expect(built).not.toHaveProperty('web_accessible_resources');
       expect(built).not.toHaveProperty('externally_connectable');
+      expect(built.web_accessible_resources).toMatchObject([{ resources: ['frame.html'] }]);
     }
     expect((chrome.description as string).length).toBeLessThanOrEqual(132);
   });
@@ -51,6 +53,28 @@ describe('each browser’s manifest', () => {
     const built = manifest('chrome', '0.2.0', 'http://127.0.0.1:8787', { nativeAtInstall: true });
     expect(built.permissions).toContain('nativeMessaging');
     expect(built).not.toHaveProperty('optional_permissions');
+  });
+
+  it('asks for the job application sites when you turn them on, never at install', () => {
+    for (const target of ['chrome', 'firefox'] as const) {
+      const built = manifest(target, '0.3.0');
+      expect(built.host_permissions).toEqual(['https://app.factwright.com/*']);
+      expect(built.optional_host_permissions).toEqual(
+        expect.arrayContaining(['https://jobs.lever.co/*', 'https://*.myworkdayjobs.com/*']),
+      );
+      const asked = [
+        ...(built.host_permissions as string[]),
+        ...(built.optional_host_permissions as string[]),
+      ];
+      expect(asked).not.toContain('<all_urls>');
+      expect(asked.some((site) => /linkedin|indeed/.test(site))).toBe(false);
+    }
+    // Only the end-to-end run in Chromium has them at install, as it can't answer the prompt.
+    const forTests = manifest('chrome', '0.3.0', 'http://127.0.0.1:8787', {
+      jobSitesAtInstall: true,
+    });
+    expect(forTests.host_permissions).toEqual(['http://127.0.0.1/*', ...jobSites(false)]);
+    expect(forTests.optional_host_permissions).toEqual(['https://*/*', 'http://localhost/*']);
   });
 
   it('has the Firefox ID Factwright’s helper lets reach it', () => {

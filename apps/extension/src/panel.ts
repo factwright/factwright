@@ -1,18 +1,30 @@
 import 'virtual:theme.css';
 import './ui.css';
 import { type AskedJob, type FieldReply, isLinkedIn, type LeftFor } from '@factwright/core';
+import {
+  allowCareersSite,
+  allowJobSites,
+  careersSiteOf,
+  chosen,
+  isAllowedPage,
+  onJobSite,
+  removeCareersSite,
+  stopJobSites,
+} from './application-sites.ts';
 import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
+  answerSource,
   askForDrafts,
   draftable,
   draftsSoFar,
   type FillPlan,
-  fetchFile,
   fieldsToRead,
   fillAnswers,
+  filledSummary,
   fillForm,
+  fillInPasses,
   formValues,
   isCopyOnly,
   type NewAnswer,
@@ -24,6 +36,7 @@ import {
   sentAnswers,
   showField,
 } from './fill.ts';
+import { isToPanel } from './job-site-messages.ts';
 import type { FieldFilled, FieldValue, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readTab } from './read-tab.ts';
 import { settings } from './settings.ts';
@@ -41,12 +54,6 @@ const app = document.getElementById('app') as HTMLElement;
 
 /** How often it reads what's in the form, while the panel shows, to have what you sent. */
 const LOOK_EVERY_MS = 3000;
-
-/**
- * How many times it fills the form: once, then again for fields a form shows only once others
- * are answered, as a question about race once you've said whether you're Hispanic or Latino.
- */
-const PASSES = 3;
 
 /** Native messaging, which filling a form needs, to reach Factwright on this computer. */
 const NATIVE = { permissions: ['nativeMessaging'] };
@@ -92,7 +99,17 @@ interface Filling {
   applied: { job: AskedJob; offers: NewAnswer[]; saved: Set<string> } | null;
   /** Your Claude drafting the form's own questions, while it does. */
   drafting: Drafting | null;
+  /** Whether Factwright's menus and Fill button show on the form's site, as you allowed. */
+  site: SiteChoice;
 }
+
+/**
+ * The form's site, as the panel offers Factwright's menus and Fill button on it: one of the job
+ * application sites, or a careers site, allowed or not. LinkedIn's and Indeed's never are.
+ */
+type SiteChoice =
+  | { is: 'never' }
+  | { is: 'job-site' | 'careers-site'; allowed: boolean; site: string };
 
 /** The form being filled, and only it: whatever an earlier start of filling was doing stops. */
 let filling: Filling | null = null;
@@ -101,6 +118,8 @@ let looking: ReturnType<typeof setInterval> | null = null;
 let following: ReturnType<typeof setTimeout> | null = null;
 /** How many times filling has started, so an earlier start that's still going stops there. */
 let starts = 0;
+/** When filling last started, so a Fill button clicked before then doesn't start it again. */
+let startedAt = 0;
 
 const button = (text: string, click: () => void, primary = false, disabled = false) =>
   h(
@@ -183,21 +202,9 @@ function leftFor(reply: FieldReply): string {
   return LEFT[reply.left ?? 'new'] ?? LEFT.new;
 }
 
-/** Where an answer came from, in words. */
-function source(reply: FieldReply): string {
-  if (reply.source === 'you') return leftFor(reply);
-  if (
-    reply.from &&
-    (reply.source === 'sent' || reply.source === 'claude' || reply.source === 'resume')
-  ) {
-    return reply.from;
-  }
-  if (reply.file) return reply.file === 'resume' ? 'The job’s resume' : 'The job’s cover letter';
-  if (reply.source === 'resume') return 'From the job’s resume';
-  if (reply.source === 'job')
-    return reply.kind === 'how-heard' ? 'Where you found the job' : 'From the job';
-  return 'From Profile';
-}
+/** Where an answer came from, in words, or why the field is left for you. */
+const source = (reply: FieldReply): string =>
+  reply.source === 'you' ? leftFor(reply) : answerSource(reply);
 
 /** How filling a field went, in words, when it didn't take. */
 const NOT_FILLED: Record<Exclude<FieldFilled['why'], ''>, string> = {
@@ -356,11 +363,82 @@ function summary(state: Filling): string {
     const answered = state.plan.replies.filter((reply) => reply.source !== 'you').length;
     return `Factwright has answers for ${answered} of ${total} fields.`;
   }
-  const filled = [...state.filled.values()].filter((each) => each.ok).length;
-  const left = total - filled;
-  return left > 0
-    ? `Filled ${filled} of ${total} fields. ${left} ${left === 1 ? 'is' : 'are'} left for you.`
-    : `Filled all ${total} fields. Check them, then submit it on the page.`;
+  return filledSummary(state.form, state.filled);
+}
+
+/** The form's site, as the panel offers Factwright's menus and Fill button on it. */
+async function siteChoice(url: string): Promise<SiteChoice> {
+  if (isCopyOnly(url)) return { is: 'never' };
+  const allowed = await isAllowedPage(url);
+  if (onJobSite(url)) return { is: 'job-site', allowed, site: url };
+  const site = careersSiteOf(url);
+  if (!site) return { is: 'never' };
+  // A careers site counts as allowed only as one you added, not as a job application site.
+  const added = (await chosen()).sites.includes(site);
+  return { is: 'careers-site', allowed: allowed && added, site };
+}
+
+/**
+ * The offer of Factwright's menus and Fill button on the form's site, or a way to turn them off.
+ * The browser is asked on the click itself, before anything is waited on, as Firefox wants.
+ */
+function siteLine(state: Filling): Child[] {
+  const { site } = state;
+  if (site.is === 'never') return [];
+  const changed = (allowed: boolean) => {
+    if (filling !== state) return;
+    state.site = { ...site, allowed };
+    render(state);
+  };
+  if (site.allowed) {
+    return [
+      h(
+        'div',
+        { class: 'card' },
+        h(
+          'p',
+          { class: 'small' },
+          site.is === 'job-site'
+            ? 'Factwright’s menus and Fill button are on for job application sites.'
+            : 'Factwright’s menus and Fill button are on for this site.',
+        ),
+        h(
+          'div',
+          { class: 'actions' },
+          button(site.is === 'job-site' ? 'Turn them off' : 'Turn them off here', () => {
+            void (site.is === 'job-site' ? stopJobSites() : removeCareersSite(site.site)).then(() =>
+              changed(false),
+            );
+          }),
+        ),
+      ),
+    ];
+  }
+  return [
+    h(
+      'div',
+      { class: 'card' },
+      h(
+        'p',
+        { class: 'small' },
+        site.is === 'job-site'
+          ? 'Factwright can show its answers in the fields of application forms on job application sites, as you fill them in, and put a Fill button on each. You choose each answer: nothing goes in a field until you pick it.'
+          : 'Factwright can show its answers in this site’s form fields, as you fill them in, and put a Fill button on its forms. You choose each answer: nothing goes in a field until you pick it.',
+      ),
+      h(
+        'div',
+        { class: 'actions' },
+        button(
+          site.is === 'job-site' ? 'Turn on for job application sites' : 'Turn on for this site',
+          () => {
+            const asked =
+              site.is === 'job-site' ? allowJobSites() : allowCareersSite(state.form.url);
+            void asked.then(changed);
+          },
+        ),
+      ),
+    ),
+  ];
 }
 
 function render(state: Filling): void {
@@ -404,6 +482,7 @@ function render(state: Filling): void {
       { class: 'small muted' },
       'Factwright never submits a form. Check each answer, then submit it on the page yourself.',
     ),
+    ...siteLine(state),
   );
 }
 
@@ -718,58 +797,20 @@ async function fill(state: Filling): Promise<boolean> {
 }
 
 /** Each pass of filling the form, then the outlines for what's left: or why it stopped. */
-async function fillPasses(state: Filling): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> {
-  const { job, files } = state.plan;
-  const replies = state.plan.replies;
-  const fetched: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>> = {};
-  if (job) {
-    for (const kind of ['resume', 'cover-letter'] as const) {
-      const offered = files[kind];
-      if (!offered || !replies.some((reply) => reply.file === kind)) continue;
-      state.status =
-        kind === 'resume' ? 'Getting the job’s resume…' : 'Getting the job’s cover letter…';
+const fillPasses = (state: Filling) =>
+  fillInPasses({
+    tabId: state.tabId,
+    form: state.form,
+    plan: state.plan,
+    shows: state.shows,
+    filled: state.filled,
+    stale: () => filling !== state,
+    status: (text) => {
+      state.status = text;
       render(state);
-      const base64 = await fetchFile(job.id, kind, offered);
-      if (filling !== state) return 'stale';
-      if (base64) fetched[kind] = { name: offered.name, base64 };
-    }
-  }
-  state.status = 'Filling the form…';
-  render(state);
-  let from = 0;
-  for (let pass = 0; pass < PASSES; pass++) {
-    const fields = state.form.fields.slice(from);
-    const answers = fillAnswers({ ...state.form, fields }, replies.slice(from), fetched);
-    const filled = await fillForm(state.tabId, state.form.url, answers);
-    if (filling !== state) return 'stale';
-    if (filled === null) return 'unreachable';
-    if (filled === 'elsewhere') return 'elsewhere';
-    for (const each of filled) {
-      const field = fields.find((one) => one.ref === each.ref);
-      if (field) state.filled.set(field.key, each);
-    }
-    // Fields the form showed once others were answered, filled in the next pass.
-    const again = await readForm(state.tabId);
-    if (filling !== state) return 'stale';
-    if (!again || !samePage(again.url, state.form.url)) break;
-    const known = new Set(state.form.fields.map((field) => field.key));
-    const added = again.fields.filter((field) => !known.has(field.key));
-    if (added.length === 0) break;
-    const planned = await planFill({ ...again, fields: added }, state.shows);
-    if (filling !== state) return 'stale';
-    if (!planned.ok || planned.did !== 'fill') break;
-    from = state.form.fields.length;
-    state.form.fields.push(...added);
-    replies.push(...planned.replies);
-    render(state);
-  }
-  // What's left for you, and needed, is outlined in orange on the page.
-  const left = state.form.fields.filter(
-    (field) => field.required && !state.filled.get(field.key)?.ok,
-  );
-  await outlineFields(state.tabId, left);
-  return filling === state ? true : 'stale';
-}
+    },
+    added: () => render(state),
+  });
 
 /**
  * Starts filling the form in the tab that's in front, from reading it to filling it. A start
@@ -780,6 +821,7 @@ async function begin(): Promise<void> {
   stopFollowing();
   filling = null;
   const start = ++starts;
+  startedAt = Date.now();
   const later = () => start !== starts;
   show(app, heading('Fill this application'), h('p', { class: 'muted' }, 'Reading the form…'));
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
@@ -839,6 +881,8 @@ async function begin(): Promise<void> {
   if (later()) return;
   const planned = await planFill(form, { company: page.company, role: page.title });
   if (later()) return;
+  const site = await siteChoice(form.url);
+  if (later()) return;
   if (!planned.ok || planned.did !== 'fill') {
     message(
       planned.ok ? 'Factwright didn’t answer. Try again.' : planned.message,
@@ -864,6 +908,7 @@ async function begin(): Promise<void> {
     status: '',
     applied: null,
     drafting: null,
+    site,
   };
   filling = state;
   render(state);
@@ -876,6 +921,14 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
   if (!filling || filling.applied) return;
   filling.elsewhere = tabId !== filling.tabId;
   render(filling);
+});
+
+// The Fill button on a job site you allowed, clicked while the panel shows: it fills that form,
+// unless it started filling since, as it does when the click is what opened it.
+ext.runtime.onMessage.addListener((message, sender) => {
+  if (sender.id !== ext.runtime.id || sender.tab || !isToPanel(message)) return undefined;
+  if (message.at > startedAt) void begin();
+  return undefined;
 });
 
 void begin();

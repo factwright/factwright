@@ -3,7 +3,6 @@ import {
   type AskedField,
   DRAFT_QUESTIONS,
   type FieldReply,
-  fieldKind,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
@@ -12,6 +11,9 @@ import {
   type RememberedKind,
 } from '@factwright/core';
 import { askComputer } from './computer.ts';
+
+export { looksLikeApplication } from './application-form.ts';
+
 import { ext } from './ext.ts';
 import {
   type FieldAnswer,
@@ -38,15 +40,6 @@ import {
  * Indeed's Easily apply. There, the panel gives each answer to copy, and fills nothing.
  */
 const COPY_ONLY = /(^|\.)(linkedin\.com|indeed\.com)$/i;
-
-/**
- * Whether a page's form looks like an application, so the popup offers to fill it: a few fields,
- * one of them a file or an email address.
- */
-export function looksLikeApplication(form: PageForm | null): boolean {
-  if (!form || form.fields.length < 3) return false;
-  return form.fields.some((field) => field.control === 'file' || fieldKind(field) === 'email');
-}
 
 /** Whether a page is one where the panel only gives answers to copy. */
 export function isCopyOnly(url: string): boolean {
@@ -243,6 +236,116 @@ export function fillAnswers(
 export function replyText(reply: FieldReply): string {
   if (reply.file) return reply.from ?? '';
   return reply.text ?? reply.pick?.[0] ?? '';
+}
+
+/** Where an answer Factwright has came from, in words, as the panel and the menus say it. */
+export function answerSource(reply: FieldReply): string {
+  if (
+    reply.from &&
+    (reply.source === 'sent' || reply.source === 'claude' || reply.source === 'resume')
+  ) {
+    return reply.from;
+  }
+  if (reply.file) return reply.file === 'resume' ? 'The job’s resume' : 'The job’s cover letter';
+  if (reply.source === 'resume') return 'From the job’s resume';
+  if (reply.source === 'job')
+    return reply.kind === 'how-heard' ? 'Where you found the job' : 'From the job';
+  return 'From Profile';
+}
+
+/**
+ * How many times a form is filled: once, then again for fields a form shows only once others are
+ * answered, as a question about race once you've said whether you're Hispanic or Latino.
+ */
+const PASSES = 3;
+
+/** A form being filled, as filling it in passes goes along. */
+export interface Passes {
+  tabId: number;
+  /** The form as read, which gains the fields the form shows as it's filled. */
+  form: PageForm;
+  /** Factwright's answers, which gain the replies for those fields. */
+  plan: FillPlan;
+  /** The company and job title the page shows, which the job the form is for is found by. */
+  shows: { company: string; role: string };
+  /** How filling each field went, by its key, as a form's fields can move as it changes. */
+  filled: Map<string, FieldFilled>;
+  /** Whether a later start of filling took over, which stops this one where it is. */
+  stale: () => boolean;
+  /** What it's doing now, to say. */
+  status?: (text: string) => void;
+  /** The form showed more fields, which it's answered. */
+  added?: () => void;
+}
+
+/**
+ * Fills a form with Factwright's answers, as the panel and the Fill button on the job sites you
+ * allowed do: it fetches the job's files to upload first, fills each field, then again for those
+ * the form showed meanwhile, and outlines what's left for you, and needed, in orange. Or it says
+ * why it stopped: the tab moved on from the form, the browser doesn't let it reach the tab, or a
+ * later start took over.
+ */
+export async function fillInPasses(
+  passes: Passes,
+): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> {
+  const { tabId, form, plan, shows, filled, stale } = passes;
+  const { job, files } = plan;
+  const replies = plan.replies;
+  const fetched: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>> = {};
+  if (job) {
+    for (const kind of ['resume', 'cover-letter'] as const) {
+      const offered = files[kind];
+      if (!offered || !replies.some((reply) => reply.file === kind)) continue;
+      passes.status?.(
+        kind === 'resume' ? 'Getting the job’s resume…' : 'Getting the job’s cover letter…',
+      );
+      const base64 = await fetchFile(job.id, kind, offered);
+      if (stale()) return 'stale';
+      if (base64) fetched[kind] = { name: offered.name, base64 };
+    }
+  }
+  passes.status?.('Filling the form…');
+  let from = 0;
+  for (let pass = 0; pass < PASSES; pass++) {
+    const fields = form.fields.slice(from);
+    const answers = fillAnswers({ ...form, fields }, replies.slice(from), fetched);
+    const done = await fillForm(tabId, form.url, answers);
+    if (stale()) return 'stale';
+    if (done === null) return 'unreachable';
+    if (done === 'elsewhere') return 'elsewhere';
+    for (const each of done) {
+      const field = fields.find((one) => one.ref === each.ref);
+      if (field) filled.set(field.key, each);
+    }
+    // Fields the form showed once others were answered, filled in the next pass.
+    const again = await readForm(tabId);
+    if (stale()) return 'stale';
+    if (!again || again.url.split('#')[0] !== form.url.split('#')[0]) break;
+    const known = new Set(form.fields.map((field) => field.key));
+    const added = again.fields.filter((field) => !known.has(field.key));
+    if (added.length === 0) break;
+    const planned = await planFill({ ...again, fields: added }, shows);
+    if (stale()) return 'stale';
+    if (!planned.ok || planned.did !== 'fill') break;
+    from = form.fields.length;
+    form.fields.push(...added);
+    replies.push(...planned.replies);
+    passes.added?.();
+  }
+  // What's left for you, and needed, is outlined in orange on the page.
+  const left = form.fields.filter((field) => field.required && !filled.get(field.key)?.ok);
+  await outlineFields(tabId, left);
+  return stale() ? 'stale' : true;
+}
+
+/** How many fields were filled, and how many are left for you, as the panel says it. */
+export function filledSummary(form: PageForm, filled: ReadonlyMap<string, FieldFilled>): string {
+  const total = form.fields.length;
+  const done = [...filled.values()].filter((each) => each.ok).length;
+  const left = total - done;
+  return left > 0
+    ? `Filled ${done} of ${total} fields. ${left} ${left === 1 ? 'is' : 'are'} left for you.`
+    : `Filled all ${total} fields. Check them, then submit it on the page.`;
 }
 
 /**

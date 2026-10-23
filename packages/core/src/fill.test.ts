@@ -493,6 +493,53 @@ describe('answering a form from what’s on file', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  it('gives the other answers on file that fit too, for the field menus to offer', () => {
+    const question = 'What’s the biggest product bet you’ve made?';
+    const twice: OnFile = {
+      ...ON_FILE,
+      sent: [
+        { question, text: 'Streaming analytics.', on: '2026-10-20', company: 'Northwind' },
+        { question, text: 'Streaming analytics.', on: '2026-10-14', company: 'Fernway' },
+        { question, text: 'A pricing change.', on: '2026-10-12', company: 'Lumen Health' },
+        { question, text: 'x'.repeat(300), on: '2026-10-10', company: 'Tidewater' },
+      ],
+      suggested: [{ question, answer: 'Your Claude’s take.', why: null, batch: 1 }],
+    };
+    // The newest is the answer, as before; the same words again aren't another; one too long
+    // for the field isn't one.
+    expect(answer(question, { control: 'long', limit: 200 }, twice)).toEqual({
+      kind: 'question',
+      text: 'Streaming analytics.',
+      source: 'sent',
+      from: 'From your Northwind application, Oct 20',
+      others: [
+        {
+          text: 'A pricing change.',
+          source: 'sent',
+          from: 'From your Lumen Health application, Oct 12',
+        },
+        { text: 'Your Claude’s take.', source: 'claude', from: 'Your Claude’s draft for this job' },
+      ],
+    });
+    // One answer on file has no others.
+    expect(answer(question, { control: 'long' })).not.toHaveProperty('others');
+  });
+
+  it('gives what you sent before over a draft that says the question is yours', () => {
+    const question = 'Tell us about a time you used HL7.';
+    const both: OnFile = {
+      ...ON_FILE,
+      sent: [{ question, text: 'At Tidewater.', on: '2026-10-12', company: 'Lumen Health' }],
+      suggested: [{ question, answer: 'For you: not on file.', why: null, batch: 1 }],
+    };
+    expect(answer(question, { control: 'long' }, both)).toEqual({
+      kind: 'question',
+      text: 'At Tidewater.',
+      source: 'sent',
+      from: 'From your Lumen Health application, Oct 12',
+    });
+  });
+
   it('keeps to a field’s limit, leaving a longer answer for you', () => {
     expect(
       answer('What’s the biggest product bet you’ve made?', { control: 'long', limit: 20 }),

@@ -1,8 +1,12 @@
 // Fills a form in a real Firefox, headless, with the built extension's own form function: sent
 // into a page served here by the extension's scripting.executeScript, as its sidebar does it, it
 // reads the form, fills it, uploads a file through Firefox's content-script sandbox, and reads
-// what's in it. It reads no field you can't see, as a page's traps for bots. Nothing is submitted. As e2e:firefox does, it needs Mozilla's Firefox 158 or
-// later, which FIREFOX names, or on a Mac the one in Applications.
+// what's in it. It reads no field you can't see, as a page's traps for bots. Then the job
+// application sites: turned on in setup, Firefox registers the extension's script on them, which
+// puts its Fill button on the form, and Firefox, which opens its sidebar only from a click of its
+// own, has the button fill the form there, which, with no Factwright on this computer, says so.
+// Turned off, the script and its button are gone. Nothing is submitted. As e2e:firefox does, it
+// needs Mozilla's Firefox 158 or later, which FIREFOX names, or on a Mac the one in Applications.
 // `pnpm --filter @factwright/extension e2e:firefox-fill`.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -11,6 +15,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SAVE_HELPER } from '@factwright/core';
 import { FIREFOX_ID } from '../src/manifest.ts';
 import type {
   FieldAnswer,
@@ -98,7 +103,12 @@ try {
   firefox = await Firefox.launch({
     program: firefoxProgram(),
     profile: join(work, 'profile'),
-    prefs: { 'extensions.webextensions.uuids': JSON.stringify({ [FIREFOX_ID]: UUID }) },
+    prefs: {
+      'extensions.webextensions.uuids': JSON.stringify({ [FIREFOX_ID]: UUID }),
+      // An optional permission asked for on a click is granted, as Firefox's prompt can't be
+      // answered here. Asked for any other way, Firefox still refuses it.
+      'extensions.webextOptionalPermissionPrompts': false,
+    },
     env: {
       ...process.env,
       HOME: home,
@@ -215,6 +225,104 @@ try {
   check(
     JSON.stringify(questions) === JSON.stringify(SEEN),
     `it reads only the fields you can see, never a trap for bots (${questions.join(', ')})`,
+  );
+
+  // The job application sites. Setup shows them once it's set up to save to this computer, which
+  // native messaging it asks for on a click.
+  type Ext = {
+    storage: { local: { set(items: object): Promise<void> } };
+    scripting: {
+      getRegisteredContentScripts(): Promise<{ matches: string[]; excludeMatches?: string[] }[]>;
+    };
+    runtime: { sendNativeMessage?(name: string, message: object): Promise<unknown> };
+  };
+  await running.run(setup, () =>
+    (globalThis as unknown as { browser: Ext }).browser.storage.local.set({
+      settings: { linkedInText: true, where: 'computer' },
+    }),
+  );
+  await running.send('browsingContext.reload', { context: setup, wait: 'complete' });
+  /** A button on setup's page, by its words, once it's there to click, clicked as a person does. */
+  const click = async (context: string, words: string) => {
+    const target = await waitFor(`the ${words} button`, () =>
+      running.find(
+        context,
+        (name: string) =>
+          [...document.querySelectorAll('button')].find(
+            (each) => each.textContent === name && !each.disabled,
+          ),
+        words,
+      ),
+    );
+    await running.click(context, target);
+  };
+  const says = (context: string, words: string) =>
+    waitFor(`“${words}”`, () =>
+      running.run(context, (wanted: string) => document.body.innerText.includes(wanted), words),
+    );
+  await click(setup, 'Allow it');
+  await click(setup, 'Turn on for job application sites');
+  await says(setup, 'On for job application sites.');
+  const registered = () =>
+    running.run(setup, () =>
+      (globalThis as unknown as { browser: Ext }).browser.scripting.getRegisteredContentScripts(),
+    );
+  const [script, ...more] = await registered();
+  check(
+    more.length === 0 &&
+      script?.matches.includes('https://jobs.lever.co/*') === true &&
+      script.matches.includes('http://127.0.0.1/*') &&
+      script.excludeMatches?.includes('*://*.linkedin.com/*') === true,
+    'turned on in setup, which Firefox grants on the click, its script is registered for the job application sites alone',
+  );
+
+  /** The extension's frame on a page, by what its address says after its #. */
+  const frameOn = (context: string, mode: string) =>
+    waitFor(`the ${mode} frame`, async () => {
+      const tree = await running.send<{
+        contexts: { context: string; children: { context: string; url: string }[] }[];
+      }>('browsingContext.getTree', { root: context });
+      return tree.contexts[0]?.children.find((each) => each.url.includes(`/frame.html#${mode}`))
+        ?.context;
+    });
+  const lever = `${origin}/lever/apply`;
+  await running.send('browsingContext.navigate', { context: tab, url: lever, wait: 'complete' });
+  const fillButton = await frameOn(tab, 'button');
+  check(true, 'the script puts its Fill button on the form, in the extension’s own frame');
+  // Before the button asks Factwright anything, Firefox must find no helper, as the run has
+  // registered none: one it found would be your own Factwright's.
+  const helper = await running.run(
+    setup,
+    async (name: string) => {
+      try {
+        const sent = (globalThis as unknown as { browser: Ext }).browser.runtime.sendNativeMessage;
+        return { answer: await sent?.(name, { type: 'hello' }) };
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+    },
+    SAVE_HELPER,
+  );
+  if (!('error' in helper) || !/no such native application/i.test(helper.error ?? '')) {
+    throw new Error(`Firefox found a helper the run didn’t register: ${JSON.stringify(helper)}`);
+  }
+  await click(fillButton, 'Fill');
+  await says(fillButton, 'couldn’t find Factwright');
+  check(
+    true,
+    'its Fill button asks for the form’s answers itself, as Firefox opens its sidebar only from its own click, and says why it can’t fill it',
+  );
+  await click(setup, 'Turn off');
+  await says(setup, 'Off for job application sites.');
+  await waitFor('the Fill button to go', async () => {
+    const tree = await running.send<{
+      contexts: { children: { url: string }[] }[];
+    }>('browsingContext.getTree', { root: tab });
+    return !tree.contexts[0]?.children.some((each) => each.url.includes('/frame.html'));
+  });
+  check(
+    (await registered()).length === 0,
+    'turned off, Firefox takes its script away, and its button goes from the page',
   );
 } catch (error) {
   failed = true;

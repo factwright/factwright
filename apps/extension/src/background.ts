@@ -1,8 +1,10 @@
 import { LIGHT } from '@factwright/ui/tokens';
 import { browserName, canReachSync, clientFor, forgetAccount } from './account.ts';
+import { registerScripts } from './application-sites.ts';
 import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
 import { isSave } from './messages.ts';
+import { forgetTab, onJobSiteMessage, stopWhereNotAllowed } from './on-job-sites.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab } from './read-tab.ts';
 import { type JobToSave, type SaveResult, saveJob } from './save.ts';
@@ -13,7 +15,9 @@ import { needsChecking, toSave } from './tab-job.ts';
  * The extension's background: it saves jobs, for the popup, the page's right-click menu and the
  * keyboard shortcut, and opens the setup page on install. It saves through sync, or straight to
  * Factwright on this computer, as setup set it up. It holds nothing between saves: the sign-in,
- * the keys and the settings stay in the extension's own storage.
+ * the keys and the settings stay in the extension's own storage. On the job sites you allowed, it
+ * registers the extension's script, and answers it and the extension's frame there
+ * (src/on-job-sites.ts).
  */
 
 const MENU = 'save-job';
@@ -206,12 +210,35 @@ async function saveTab(tab: Tab): Promise<void> {
   }
 }
 
+/**
+ * Registers the script for the job sites you allowed, as they are now, and stops it on pages whose
+ * site isn't one of them anymore.
+ */
+function jobSites(): void {
+  void registerScripts()
+    .then(stopWhereNotAllowed)
+    .catch(() => {});
+}
+
 ext.runtime.onInstalled.addListener(({ reason }) => {
   menus();
   void lightUpForms().catch(() => {});
+  // An update takes the scripts a browser registered away, as Firefox does: they're registered again.
+  jobSites();
   if (reason === 'install') void openSetup();
 });
-ext.runtime.onStartup.addListener(menus);
+ext.runtime.onStartup.addListener(() => {
+  menus();
+  jobSites();
+});
+// The sites change as you turn them on or off in setup or the panel, or the browser's settings
+// take one away.
+ext.permissions.onAdded.addListener(jobSites);
+ext.permissions.onRemoved.addListener(jobSites);
+ext.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'jobSites' in changes) jobSites();
+});
+ext.tabs.onRemoved.addListener(forgetTab);
 
 ext.contextMenus.onClicked.addListener((click, tab) => {
   if (click.menuItemId === MENU && tab) void saveTab(tab);
@@ -239,10 +266,16 @@ ext.commands.onCommand.addListener((command, tab) => {
   });
 });
 
-// Only the extension's own pages can ask: it has no content scripts, and no site can message it.
+// Only the extension's own pages can ask to save: no site can message it, and its script on the
+// job sites you allowed only asks for what to show there.
+ext.runtime.onMessage.addListener(onJobSiteMessage);
 ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Its own pages, never its frame on a page, which only shows the Fill button and menus there.
   const ours =
-    sender.id === ext.runtime.id && (sender.url ?? '').startsWith(ext.runtime.getURL(''));
+    sender.id === ext.runtime.id &&
+    (sender.frameId ?? 0) === 0 &&
+    !/^https?:/i.test(sender.tab?.url ?? '') &&
+    (sender.url ?? '').startsWith(ext.runtime.getURL(''));
   if (!ours || !isSave(message)) return undefined;
   save(message.job).then(sendResponse, (error: unknown) =>
     sendResponse({ ok: false, reason: 'failed', message: String(error) } satisfies SaveResult),

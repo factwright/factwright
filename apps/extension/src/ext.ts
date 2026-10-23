@@ -24,8 +24,34 @@ export interface Permissions {
   permissions?: string[];
 }
 
+/**
+ * Who sent a message: one of the extension's own pages, its script on a job site you allowed,
+ * or its own frame on such a site, with the tab it's in and the frame in that tab.
+ */
+export interface Sender {
+  id?: string;
+  url?: string;
+  tab?: Tab;
+  frameId?: number;
+}
+
+/**
+ * A script the browser runs on the sites it names, as each of their pages loads, which the
+ * extension registers for the job sites you allowed, and only those.
+ */
+export interface ContentScript {
+  id: string;
+  matches: string[];
+  excludeMatches?: string[];
+  js: string[];
+  runAt?: 'document_start' | 'document_end' | 'document_idle';
+  allFrames?: boolean;
+  persistAcrossSessions?: boolean;
+}
+
 interface Event<Listener> {
   addListener(listener: Listener): void;
+  removeListener?(listener: Listener): void;
 }
 
 export interface Ext {
@@ -44,7 +70,7 @@ export interface Ext {
     onMessage: Event<
       (
         message: unknown,
-        sender: { id?: string; url?: string },
+        sender: Sender,
         sendResponse: (answer: unknown) => void,
       ) => boolean | undefined
     >;
@@ -60,19 +86,33 @@ export interface Ext {
     update(windowId: number, properties: { focused?: boolean }): Promise<unknown>;
   };
   tabs: {
-    query(query: { active?: boolean; currentWindow?: boolean; url?: string }): Promise<Tab[]>;
+    /** Tabs, by what they show: only those on sites the browser lets the extension reach say. */
+    query(query: {
+      active?: boolean;
+      currentWindow?: boolean;
+      url?: string | string[];
+    }): Promise<Tab[]>;
     create(properties: { url: string; active?: boolean }): Promise<Tab>;
     update(tabId: number, properties: { active?: boolean }): Promise<Tab>;
+    /** Sends the extension's script in a tab a message, in one frame, and waits for its answer. */
+    sendMessage(tabId: number, message: unknown, options?: { frameId?: number }): Promise<unknown>;
     /** A tab coming to the front, in a window. */
     onActivated: Event<(info: { tabId: number; windowId: number }) => void>;
+    /** A tab closing. */
+    onRemoved: Event<(tabId: number) => void>;
   };
   scripting: {
     /** Runs one function in a tab's page, given what it's passed, and waits for what it gives back. */
-    executeScript<Result, Args extends unknown[] = []>(injection: {
-      target: { tabId: number };
-      func: (...args: Args) => Result;
-      args?: Args;
-    }): Promise<{ result?: Awaited<Result> }[]>;
+    executeScript<Result, Args extends unknown[] = []>(
+      injection:
+        | { target: { tabId: number }; func: (...args: Args) => Result; args?: Args }
+        | { target: { tabId: number }; files: string[] },
+    ): Promise<{ result?: Awaited<Result> }[]>;
+    /** Has the browser run a script on the sites it names, as their pages load, from now on. */
+    registerContentScripts(scripts: ContentScript[]): Promise<void>;
+    getRegisteredContentScripts(filter?: { ids?: string[] }): Promise<ContentScript[]>;
+    updateContentScripts(scripts: ContentScript[]): Promise<void>;
+    unregisterContentScripts(filter?: { ids?: string[] }): Promise<void>;
   };
   /**
    * Chrome's side panel, beside the page, where filling a form is checked. Opening it takes a
@@ -81,9 +121,13 @@ export interface Ext {
   sidePanel?: {
     open(options: { tabId?: number; windowId?: number }): Promise<void>;
   };
-  /** Firefox's sidebar, as Chrome's side panel. Opening it takes a click, a menu item or a shortcut. */
+  /**
+   * Firefox's sidebar, as Chrome's side panel. Opening it takes a click on the extension's button
+   * or in one of its own pages, a menu item or a shortcut: never a click in a page's frame.
+   */
   sidebarAction?: {
     open(): Promise<void>;
+    isOpen(details: { windowId?: number }): Promise<boolean>;
   };
   /**
    * Chrome's rules for how the toolbar button looks on pages that match them, which the browser
@@ -134,6 +178,9 @@ export interface Ext {
     request(permissions: Permissions): Promise<boolean>;
     remove(permissions: Permissions): Promise<boolean>;
     getAll(): Promise<Permissions>;
+    /** Permissions the browser granted, or took away, as from its own settings. */
+    onAdded: Event<(permissions: Permissions) => void>;
+    onRemoved: Event<(permissions: Permissions) => void>;
   };
   /**
    * The browser's own window for extensions to sign in through: it opens a page, and once that

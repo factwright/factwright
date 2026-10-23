@@ -34,6 +34,8 @@ export default defineConfig({
         popup: 'popup.html',
         setup: 'setup.html',
         sidepanel: 'sidepanel.html',
+        // Its own frame, for the Fill button and the menus on the job sites you allowed.
+        frame: 'frame.html',
         background: 'src/background.ts',
       },
       output: {
