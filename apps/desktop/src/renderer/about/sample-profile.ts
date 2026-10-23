@@ -1,3 +1,4 @@
+import { type KeptPrivate, NO_PRIVATE } from '@factwright/core';
 import { TEMPLATES } from '@factwright/engine/templates';
 import { type AboutYou, applyChanges, readAnswers, type SharedFile } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
@@ -8,6 +9,8 @@ type ProfileApi = Pick<
   FactwrightApi,
   | 'profile'
   | 'saveAnswers'
+  | 'privateAnswers'
+  | 'savePrivateAnswers'
   | 'saveNotes'
   | 'changeConfidential'
   | 'addFile'
@@ -214,6 +217,7 @@ export function sampleProfile(state: string | null): ProfileApi {
   const kind = state && state in STATUS ? state : 'done';
   let answers: AboutYou = kind === 'new' ? readAnswers({}) : kind === 'kinds' ? TWO_KINDS : TOLD;
   let notes = kind === 'new' ? '' : NOTES;
+  let kept: KeptPrivate = NO_PRIVATE;
   let confidential = kind === 'new' ? [] : ['Bluebird'];
   let templates: TemplateInfo[] = [
     ...BUILT_IN,
@@ -254,6 +258,11 @@ export function sampleProfile(state: string | null): ProfileApi {
     saveAnswers: async (changes) => {
       answers = applyChanges(answers, changes);
       return answers;
+    },
+    privateAnswers: async () => kept,
+    savePrivateAnswers: async (changes) => {
+      kept = { ...kept, ...changes };
+      return kept;
     },
     saveNotes: async (text) => {
       notes = text;

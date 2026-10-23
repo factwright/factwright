@@ -1,5 +1,5 @@
 /**
- * Where saving from a browser to Factwright on this computer stands, as the Save to Factwright
+ * Where saving from a browser to Factwright on this computer stands, as the Browser extension
  * window shows it. Each browser reaches Factwright through the helper the app registers with it
  * (main/extension/register.ts).
  */
@@ -50,7 +50,7 @@ export interface SaveHelperView {
    * rather than on its own as the app starts, as on Windows.
    */
   onRequest: boolean;
-  /** The browsers on this computer that Save to Factwright runs in. */
+  /** The browsers on this computer that the extension runs in. */
   browsers: HelperBrowserView[];
 }
 

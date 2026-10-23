@@ -184,8 +184,8 @@ ${sprite}
 <div class="og og-ext">
   <div>
     ${cardBrand()}
-    <h1>Save to Factwright</h1>
-    <p class="og-sub">Save the job you’re looking at, with its posting. For Chrome and Firefox.</p>
+    <h1>For Chrome and Firefox</h1>
+    <p class="og-sub">Save the job you’re looking at, with its posting, to your job hunt.</p>
   </div>
   ${drawing}
 </div>

@@ -10,6 +10,7 @@ import {
   labelOf,
   parseAnswerChanges,
   RELOCATE,
+  SPONSORSHIP,
   WORKPLACES,
 } from '../../shared/about.ts';
 import {
@@ -151,6 +152,17 @@ export function aboutYouText(answers: AboutYou): string {
   if (!kinds) pay(answers);
   item('Work authorization', answers.authorization);
   item('When they can start', answers.start);
+  // What forms ask that a resume doesn't say. Their street, postal code and equal-opportunity
+  // answers are kept on their computer alone, never here.
+  const { applications } = answers;
+  item('Preferred first name', applications.preferredName);
+  item('Pronouns', applications.pronouns);
+  item('GitHub', applications.github);
+  item('Countries they can work in without a visa', applications.countries.join('; '));
+  item(
+    'Visa sponsorship',
+    applications.sponsorship && labelOf(SPONSORSHIP, applications.sponsorship),
+  );
   item('Must-haves', answers.mustHaves);
   item('Deal-breakers', answers.dealBreakers);
   if (answers.quiet) {

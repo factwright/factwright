@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INBOX_FOLDER, INBOX_JOB, INBOX_LIMIT, readSavedJob } from '@factwright/core';
+import { INBOX_ASK, INBOX_FOLDER, INBOX_JOB, INBOX_LIMIT, readSavedJob } from '@factwright/core';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   addProfile,
@@ -24,7 +24,7 @@ import {
   profileToOpen,
 } from '../profiles.ts';
 
-// The helper Save to Factwright saves through on this computer (apps/desktop/helper), built for
+// The helper the extension saves through on this computer (apps/desktop/helper), built for
 // the tests, which give it a data folder of their own, then run as the browser runs it: a message
 // on stdin, an answer on stdout.
 
@@ -48,7 +48,7 @@ const compiler = (COMPILERS[process.platform] ?? ['cc']).find((name) =>
 /** The longest message the helper takes: 1 MiB. */
 const MESSAGE_LIMIT = 1_048_576;
 
-/** A job as Save to Factwright sends it. */
+/** A job as the extension sends it. */
 const JOB = {
   type: 'save',
   url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
@@ -179,6 +179,52 @@ function openApp(answer: string): () => void {
     }
   }, 10);
   return () => clearInterval(timer);
+}
+
+/** An ask as the extension sends one, to fill a form: the ask itself, as JSON, inside. */
+const ASK = {
+  type: 'ask',
+  request: JSON.stringify({
+    ask: 'fill',
+    url: 'https://jobs.lever.co/harborpine/4f1c2b7e/apply',
+    title: 'Harbor & Pine - Senior Product Manager, Data',
+    fields: [],
+  }),
+};
+
+/**
+ * Stands in for the open app, for asks: it marks the inbox as the app does, and answers each ask
+ * that comes, as the app does: it takes the ask away, then writes its answer beside it, whole, a
+ * while later when a test says. What it took is kept, to check. It stops when what it gives back
+ * is called.
+ */
+function answerAsks(answer: string, after = 0): { took: string[]; close: () => void } {
+  const inbox = inboxOf(home);
+  mkdirSync(inbox, { recursive: true });
+  writeFileSync(join(inbox, '.listening'), String(process.pid));
+  const took: string[] = [];
+  const later: ReturnType<typeof setTimeout>[] = [];
+  const timer = setInterval(() => {
+    for (const file of readdirSync(inbox).filter((name) => INBOX_ASK.test(name))) {
+      const name = file.slice(0, -'.ask'.length);
+      took.push(readFileSync(join(inbox, file), 'utf8'));
+      rmSync(join(inbox, file));
+      const reply = () => {
+        const draft = join(inbox, `.${name}.done.tmp`);
+        writeFileSync(draft, answer);
+        renameSync(draft, join(inbox, `${name}.done`));
+      };
+      if (after > 0) later.push(setTimeout(reply, after));
+      else reply();
+    }
+  }, 10);
+  return {
+    took,
+    close: () => {
+      clearInterval(timer);
+      for (const each of later) clearTimeout(each);
+    },
+  };
 }
 
 describe.skipIf(!compiler)(
@@ -357,6 +403,11 @@ describe.skipIf(!compiler)(
         ['a character past U+10FFFF', jobWithBytes([0xf4, 0x90, 0x80, 0x80])],
         ['a character cut short', jobWithBytes([0xe2, 0x82])],
         ['a NUL byte', jobWithBytes([0x00])],
+        ['an ask without its request', '{"type":"ask"}'],
+        ['an ask with a job’s keys', JSON.stringify({ ...JOB, type: 'ask' })],
+        ['an ask with more', '{"type":"ask","request":"{}","url":"https://example.com"}'],
+        ['an ask whose request isn’t a string', '{"type":"ask","request":{"ask":"fill"}}'],
+        ['a request with a save', JSON.stringify({ ...JOB, request: '{}' })],
       ])('is refused and writes nothing: %s', (_, message) => {
         expect(run(framed(message))).toEqual({ answer: refused('bad-message'), status: 0 });
         expect(readdirSync(home)).toEqual([]);
@@ -561,6 +612,96 @@ describe.skipIf(!compiler)(
         }
         expect(jobsIn(home)).toHaveLength(markers.length);
       }, 30_000);
+    });
+
+    describe('an ask', () => {
+      const asks = () => inboxFiles(home).filter((name) => INBOX_ASK.test(name));
+
+      it('finds no app when Factwright is closed, at once, and writes nothing', () => {
+        const started = Date.now();
+        expect(run(framed(JSON.stringify(ASK)))).toEqual({ answer: refused('closed'), status: 0 });
+        expect(Date.now() - started).toBeLessThan(2000);
+        expect(inboxFiles(home)).toEqual([]);
+        // Nor when Factwright never ran here.
+        const nowhere = join(home, 'never-ran');
+        expect(run(framed(JSON.stringify(ASK)), nowhere).answer).toEqual(refused('closed'));
+        expect(existsSync(nowhere)).toBe(false);
+      });
+
+      it('goes to the open app as it came, and has the app’s answer passed on, up to a part of a file', async () => {
+        const part = { ok: true, did: 'file', part: 0, parts: 1, base64: 'A'.repeat(900_000) };
+        for (const answer of [{ ok: true, did: 'remember', saved: 1 }, part]) {
+          const app = answerAsks(JSON.stringify(answer));
+          try {
+            expect(await runAlongside(framed(JSON.stringify(ASK)))).toEqual({ answer, status: 0 });
+          } finally {
+            app.close();
+          }
+          expect(app.took).toEqual([JSON.stringify(ASK)]);
+          expect(inboxFiles(home)).toEqual(['.listening']);
+        }
+      });
+
+      it('says the app was busy when its answer can’t be passed on, and so when it’s over 1 MB', async () => {
+        for (const [answer, reason] of [
+          ['not JSON', 'busy'],
+          ['[1]', 'busy'],
+          [JSON.stringify({ base64: 'A'.repeat(1_000_000) }), 'too-big'],
+        ] as const) {
+          const app = answerAsks(answer);
+          try {
+            expect((await runAlongside(framed(JSON.stringify(ASK)))).answer).toEqual(
+              refused(reason),
+            );
+          } finally {
+            app.close();
+          }
+          expect(inboxFiles(home)).toEqual(['.listening']);
+        }
+      });
+
+      it('waits as long again for an ask the app took, so its answer is passed on', async () => {
+        const answer = { ok: true, did: 'sent', recorded: 3 };
+        // The testing build waits 3 seconds, then takes back an ask the app hasn't taken.
+        const app = answerAsks(JSON.stringify(answer), 4000);
+        try {
+          expect(await runAlongside(framed(JSON.stringify(ASK)))).toEqual({ answer, status: 0 });
+        } finally {
+          app.close();
+        }
+        expect(inboxFiles(home)).toEqual(['.listening']);
+      }, 20_000);
+
+      it('is taken back when the app doesn’t answer in time, so the app never acts on it', () => {
+        mkdirSync(inboxOf(home));
+        writeFileSync(join(inboxOf(home), '.listening'), String(process.pid));
+        const started = Date.now();
+        expect(run(framed(JSON.stringify(ASK))).answer).toEqual(refused('busy'));
+        expect(Date.now() - started).toBeGreaterThanOrEqual(2900);
+        expect(asks()).toEqual([]);
+        expect(jobsIn(home)).toEqual([]);
+      }, 20_000);
+
+      it('never counts as a job, nor waits behind 200 of them', async () => {
+        mkdirSync(inboxOf(home));
+        for (let n = 0; n < INBOX_LIMIT; n++) {
+          writeFileSync(
+            join(inboxOf(home), `1760745600000-${String(n).padStart(16, '0')}.json`),
+            '{}',
+          );
+        }
+        const app = answerAsks(JSON.stringify({ ok: true, did: 'remember', saved: 0 }));
+        try {
+          expect((await runAlongside(framed(JSON.stringify(ASK)))).answer).toEqual({
+            ok: true,
+            did: 'remember',
+            saved: 0,
+          });
+        } finally {
+          app.close();
+        }
+        expect(jobsIn(home)).toHaveLength(INBOX_LIMIT);
+      }, 20_000);
     });
   },
 );

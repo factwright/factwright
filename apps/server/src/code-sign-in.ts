@@ -10,8 +10,8 @@ import {
 import { APIError, createAuthEndpoint, getAuthoritativeSessionFromCtx } from 'better-auth/api';
 
 /**
- * Signing an app in through the browser with a one-time code, and nothing to compare: Save to
- * Factwright through the browser's own window for extensions (extension-sign-in.ts), and the
+ * Signing an app in through the browser with a one-time code, and nothing to compare: the
+ * extension through the browser's own window for extensions (extension-sign-in.ts), and the
  * desktop app through a page that sends the browser back to it on its computer
  * (desktop-sign-in.ts). The web view's page asks the person, signed in here in their browser, and
  * its answer goes to the app's return address, which only that app gets. With a yes, that carries

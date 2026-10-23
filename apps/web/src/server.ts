@@ -53,7 +53,7 @@ export async function getSession(): Promise<Session | null | undefined> {
 
 /**
  * What the server offers: the ways to sign in it has set up, what more it can do, the return
- * addresses Save to Factwright's sign-in window may go back to, and the terms and privacy policy
+ * addresses the extension's sign-in window may go back to, and the terms and privacy policy
  * signing in agrees to, which a server of your own doesn't have.
  */
 export interface ServerOptions {
@@ -216,7 +216,7 @@ export async function releaseDeviceCode(userCode: string): Promise<void> {
 }
 
 /**
- * What happened to an answer for an app, Save to Factwright or the desktop app: where to go with
+ * What happened to an answer for an app, the browser extension or the desktop app: where to go with
  * it, to its return address, or why it can't go. "sign-in" means this browser needs to sign in
  * here first.
  */
@@ -264,7 +264,7 @@ async function answerApp(
 }
 
 /**
- * Lets Save to Factwright sign in to `account`, the one the page names, or doesn't. The answer
+ * Lets the extension sign in to `account`, the one the page names, or doesn't. The answer
  * goes to the return address it asked for, in its fragment, and nowhere else.
  */
 export const answerExtension = (ask: ExtensionAsk, allow: boolean, account: string) =>
@@ -272,7 +272,7 @@ export const answerExtension = (ask: ExtensionAsk, allow: boolean, account: stri
     EXTENSION_SIGN_IN.answer,
     { ...askValues(ask), allow, account },
     `${ask.redirect}#`,
-    'Close this window, and sign in again from Save to Factwright’s setup.',
+    'Close this window, and sign in again from the extension’s setup.',
   );
 
 /**

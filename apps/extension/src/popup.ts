@@ -4,9 +4,11 @@ import { JOB_LIMITS } from '@factwright/core';
 import { canReachSync } from './account.ts';
 import { canReachComputer, type Destination, destination, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
-import { ext } from './ext.ts';
+import { ext, type Tab } from './ext.ts';
+import { looksLikeApplication, readForm } from './fill.ts';
 import { askToSave } from './messages.ts';
 import type { PageJob } from './page/read-job.ts';
+import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
 import type { JobToSave, SaveResult } from './save.ts';
 import { serverName } from './server.ts';
@@ -22,6 +24,20 @@ const app = document.getElementById('app') as HTMLElement;
 
 /** Where the extension saves, once the popup has looked: an account to manage only through sync. */
 let savingTo: Destination = null;
+
+/** The tab's application form, to fill, when the page has one. */
+let fillable: Tab | null = null;
+
+/**
+ * Opens the panel beside the page, which fills the form there. It's opened straight from the
+ * click, as each browser asks, and the popup closes once it's open.
+ */
+function fillIn(tab: Tab): void {
+  void openPanel(tab).then(
+    () => window.close(),
+    () => window.close(),
+  );
+}
 
 /** Where the posting's text came from, as the popup says it. */
 const SOURCES: Record<PageJob['source'], string> = {
@@ -85,7 +101,7 @@ function noAccess(to: Exclude<Destination, null>): void {
   const where =
     to.to === 'computer' ? 'Factwright on this computer' : serverName(to.account.server);
   message(
-    `The browser doesn’t let Save to Factwright reach ${where}, so it can’t save jobs.`,
+    `The browser doesn’t let the extension reach ${where}, so it can’t save jobs.`,
     h('div', { class: 'actions' }, button('Allow it in setup', openSetup, true)),
   );
 }
@@ -212,9 +228,22 @@ function form(
         start.posting.length > PREVIEW ? `${start.posting.slice(0, PREVIEW)}…` : start.posting,
       ),
     );
+  const filling = fillable;
   show(
     app,
     heading(),
+    filling &&
+      h(
+        'div',
+        { class: 'card' },
+        h('p', { class: 'small' }, 'This page has an application form.'),
+        h(
+          'div',
+          { class: 'actions' },
+          button('Fill this application', () => fillIn(filling), true),
+        ),
+      ),
+    filling && h('h2', {}, 'Or save this job'),
     h(
       'form',
       { on: { submit: (event) => void save(event) } },
@@ -229,12 +258,18 @@ function form(
       h(
         'div',
         { class: 'actions' },
-        h('button', { class: 'primary', type: 'submit', id: 'save' }, 'Save to Factwright'),
+        h(
+          'button',
+          { class: filling ? '' : 'primary', type: 'submit', id: 'save' },
+          'Save to Factwright',
+        ),
       ),
     ),
     settingsLink(),
   );
-  (document.getElementById(start.company ? 'save' : 'company') as HTMLElement | null)?.focus();
+  if (!filling) {
+    (document.getElementById(start.company ? 'save' : 'company') as HTMLElement | null)?.focus();
+  }
 }
 
 function saving(): void {
@@ -321,7 +356,7 @@ function done(
   }
   if (result.reason === 'signed-out') {
     message(
-      'Save to Factwright isn’t signed in anymore.',
+      'The extension isn’t signed in anymore.',
       h('div', { class: 'actions' }, button('Set it up again', openSetup, true)),
     );
     return;
@@ -352,6 +387,10 @@ async function start(): Promise<void> {
     return;
   }
   const { page, unread } = await readTab(tab);
+  // Filling a form reads the page's fields too, which LinkedIn's link-only setting leaves alone.
+  if (tab.id !== undefined && unread !== 'linkedin-link-only') {
+    fillable = looksLikeApplication(await readForm(tab.id)) ? tab : null;
+  }
   form(to, page, unread);
 }
 

@@ -9,7 +9,10 @@ import { ANSWER_PATH, extensionSignIn, TOKEN_PATH } from './extension-sign-in.ts
 const DEVICE_CLIENTS: ReadonlySet<string> = new Set(Object.values(CLIENTS));
 
 /** What the account page calls the browser extension, before the browser it's in. */
-const EXTENSION_NAME = 'Save to Factwright in';
+const EXTENSION_NAME = 'Factwright in';
+
+/** What it called the extension when it was Save to Factwright, which older sessions still say. */
+const OLD_EXTENSION_NAME = 'Save to Factwright in';
 
 const DAY_SECONDS = 24 * 60 * 60;
 
@@ -45,8 +48,8 @@ const WEB_SIGN_IN = /^\/callback\//;
 
 /**
  * Whether a session is the browser extension's: made through the browser's window for extensions,
- * or with a device code it asked for under its own name. Its name then says so, such as "Save to
- * Factwright in Chrome on Mac", so the account page and the app's question about linking it tell
+ * or with a device code it asked for under its own name. Its name then says so, such as
+ * "Factwright in Chrome on Mac", so the account page and the app's question about linking it tell
  * it apart from a browser's own sign-in.
  */
 const byExtension = (context: { path?: string; body?: unknown } | null | undefined) =>
@@ -281,16 +284,21 @@ function decoded(text: string): string {
  * extension's, which is a browser's with its own name in front.
  */
 const DEVICE_NAME =
-  /^(Factwright on .{1,100}|(Save to Factwright in )?(Edge|Firefox|Chrome|Safari|A browser)( on (iPhone|iPad|Android|Mac|Windows|Linux))?)$/;
+  /^(Factwright on .{1,100}|(Factwright in )?(Edge|Firefox|Chrome|Safari|A browser)( on (iPhone|iPad|Android|Mac|Windows|Linux))?)$/;
 
 /**
  * A device's name, from what it sent when it signed in, such as "Safari on iPhone". The app
  * sends its computer's name percent-encoded, as "Factwright/1.0 (Sam%E2%80%99s Mac)". A name it
- * already gave comes back as it is.
+ * already gave comes back as it is, and the extension's from when it was Save to Factwright comes
+ * back with the name it has now.
  */
 export function deviceName(userAgent: string | null | undefined): string {
   const agent = userAgent ?? '';
   if (DEVICE_NAME.test(agent)) return agent;
+  if (agent.startsWith(`${OLD_EXTENSION_NAME} `)) {
+    const renamed = `${EXTENSION_NAME} ${agent.slice(OLD_EXTENSION_NAME.length + 1)}`;
+    if (DEVICE_NAME.test(renamed)) return renamed;
+  }
   const app = /^Factwright\/\S+ \((.{1,300})\)$/.exec(agent);
   if (app?.[1]) return `Factwright on ${decoded(app[1]).slice(0, 100)}`;
   const browser = /Edg\//.test(agent)

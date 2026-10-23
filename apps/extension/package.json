@@ -2,13 +2,15 @@
   "name": "@factwright/extension",
   "version": "0.2.0",
   "private": true,
-  "description": "Save to Factwright: save the job you're looking at, with its posting, to your job hunt.",
+  "description": "Factwright for Chrome and Firefox: save the job you're looking at, with its posting, to your job hunt.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.ts",
     "e2e": "node scripts/e2e.ts",
     "e2e:firefox": "node scripts/e2e-firefox.ts",
+    "e2e:firefox-fill": "node scripts/e2e-firefox-fill.ts",
+    "e2e:fill": "node scripts/e2e-fill.ts",
     "icons": "node scripts/icons.ts",
     "typecheck": "tsc",
     "test": "vitest run"

@@ -1,12 +1,12 @@
 /**
- * The page on Factwright's website for Save to Factwright, the browser extension: what it does,
+ * The page on Factwright's website for the browser extension: what it does,
  * and where to get it. The app links to it where saving jobs from the browser would help.
  */
 export const EXTENSION_URL = 'https://factwright.com/extension';
 
 /**
  * The guide to running a sync server of your own, on Factwright's website, which "How to set one
- * up" opens in the app, the web view and Save to Factwright: what's good to know first, then the
+ * up" opens in the app, the web view and the extension: what's good to know first, then the
  * steps, with the Deploy to Cloudflare button for the ready-to-deploy copy.
  */
 export const OWN_SERVER_GUIDE = 'https://factwright.com/own-server';

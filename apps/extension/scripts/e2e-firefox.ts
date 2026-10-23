@@ -1,4 +1,4 @@
-// Runs Save to Factwright's "Factwright on this computer" in a real Firefox, as the stores' build:
+// Runs the extension's "Factwright on this computer" in a real Firefox, as the stores' build:
 // setup asks Firefox for native messaging on the click that chooses it, finds Factwright's helper,
 // and saves through it, from setup and from the background, which both ran before Firefox allowed
 // it. Chromium's run (scripts/e2e.ts) does the rest, the popup included, which Firefox lets read a
@@ -188,7 +188,8 @@ function registerHelper(path: string): void {
     join(manifests, `${SAVE_HELPER}.json`),
     JSON.stringify({
       name: SAVE_HELPER,
-      description: 'Saves jobs from Save to Factwright to the Factwright app on this computer.',
+      description:
+        'Connects Factwright’s browser extension to the Factwright app on this computer.',
       path,
       type: 'stdio',
       allowed_extensions: [FIREFOX_ID],
@@ -428,7 +429,7 @@ try {
       JSON.stringify({
         ok: false,
         reason: 'signed-out',
-        message: 'Set up Save to Factwright first.',
+        message: 'Set up the extension first.',
       }),
     'before it’s set up, the background saves nothing, and says to set it up',
   );
@@ -563,7 +564,7 @@ try {
   check(
     !lost.ok &&
       lost.reason === 'no-app' &&
-      lost.message.startsWith('Save to Factwright couldn’t find Factwright on this computer.'),
+      lost.message.startsWith('The extension couldn’t find Factwright on this computer.'),
     'with the helper gone, a save says it couldn’t find Factwright, and how to get it',
   );
   registerHelper(helper);

@@ -89,7 +89,7 @@ export function SavedSection({ job, api, today }: { job: Job; api: FactwrightApi
   const [docs, setDocs] = useState<JobDocs | null>(null);
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  // The posting the user saved from their browser with Save to Factwright, kept apart from the
+  // The posting the user saved from their browser with the extension, kept apart from the
   // job's folder, which Claude's work makes.
   const [saved, setSaved] = useState<SavedPosting | null>(null);
 

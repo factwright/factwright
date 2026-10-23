@@ -63,7 +63,7 @@ export const isSealedKey = (value: unknown): value is string =>
 
 /**
  * The apps that sign in with a device code, each under its own name, so the server knows which
- * one a session is: the desktop app, or the browser extension, Save to Factwright.
+ * one a session is: the desktop app, or the browser extension.
  */
 export const CLIENTS = {
   desktop: 'factwright-desktop',

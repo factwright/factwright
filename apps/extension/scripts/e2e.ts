@@ -1,4 +1,4 @@
-// Runs Save to Factwright in Chromium, from setting it up to saving a job: through a server of
+// Runs the extension in Chromium, from setting it up to saving a job: through a server of
 // your own, chosen in setup, with a site that counts every request standing in for the server it's
 // built for, and then through the server it's built for, a local copy of the sync server standing
 // in for Factwright's sync. A server of your own signs it in through the browser's own window for
@@ -313,7 +313,8 @@ function registerHelper(profile: string, helper: string, id: string): void {
     join(folder, `${SAVE_HELPER}.json`),
     JSON.stringify({
       name: SAVE_HELPER,
-      description: 'Save to Factwright: saves jobs to Factwright on this computer',
+      description:
+        'Connects Factwright’s browser extension to the Factwright app on this computer.',
       path: helper,
       type: 'stdio',
       allowed_origins: [`chrome-extension://${id}/`],
@@ -470,9 +471,7 @@ try {
     await setup.locator('#server').fill(old.origin);
     await setup.getByRole('button', { name: 'Sign in to sync' }).click();
     await setup
-      .getByText(
-        `${new URL(old.origin).host} needs an update for this version of Save to Factwright`,
-      )
+      .getByText(`${new URL(old.origin).host} needs an update for this version of the extension`)
       .waitFor();
     await pause(1000);
     check(
@@ -531,7 +530,7 @@ try {
       .getByRole('heading', { name: 'Link it with your job hunt' })
       .waitFor({ timeout: 30_000 });
     const devices = (await sam.client.account()).devices.map((device) => device.name);
-    check(devices.includes('Save to Factwright in Chrome on Mac'), 'signs in under its own name');
+    check(devices.includes('Factwright in Chrome on Mac'), 'signs in under its own name');
     check(
       JSON.stringify((await asked()).at(-1)) === JSON.stringify([LOCAL_SITE]) &&
         standIn.requests() === 0,
@@ -612,7 +611,7 @@ try {
       await popup.locator('body').screenshot(),
       400,
       'Check it, save it',
-      'On a job’s page, click Save to Factwright. It reads the job’s title, company, pay and posting.',
+      'On a job’s page, click the Factwright button. It reads the job’s title, company, pay and posting.',
       '1-save.png',
     );
     await popup.getByRole('button', { name: 'Save to Factwright' }).click();
@@ -713,7 +712,7 @@ try {
     // Signed out, setup asks where saved jobs go again, offering sync, then your own server
     // again, with its address.
     await setup.reload();
-    await setup.getByRole('button', { name: 'Sign out of Save to Factwright' }).click();
+    await setup.getByRole('button', { name: 'Sign out' }).click();
     await setup.getByRole('button', { name: 'Continue' }).waitFor();
     check(
       await setup.getByRole('radio', { name: 'Through sync' }).isChecked(),
@@ -862,7 +861,7 @@ try {
     await signIn(other.setup, selling.url.origin, sam.token, 'Sync needs a subscription');
     const extensions = async () =>
       (await sam.client.account()).devices.filter((device) =>
-        device.name.startsWith('Save to Factwright'),
+        device.name.startsWith('Factwright in '),
       ).length;
     const signedInBefore = await extensions();
     await other.setup.getByRole('button', { name: 'Use this computer instead' }).click();
@@ -892,7 +891,7 @@ try {
       window.url().startsWith(`${windowed.url.origin}/sign-in/extension?`),
       'opens the server’s own page in the browser’s window',
     );
-    await window.getByRole('heading', { name: 'Let Save to Factwright sign in?' }).waitFor();
+    await window.getByRole('heading', { name: 'Let the Factwright extension sign in?' }).waitFor();
     check(
       (await window.getByText(sam.email).count()) === 1 &&
         (await window.getByRole('link', { name: 'Jobs' }).count()) === 0,
@@ -914,9 +913,7 @@ try {
       .waitFor({ timeout: 30_000 });
     check(true, 'signs in once it’s allowed, and the window closes by itself');
     const devices = (await sam.client.account()).devices;
-    const signedIn = devices.find(
-      (device) => device.name === 'Save to Factwright in Chrome on Mac',
-    );
+    const signedIn = devices.find((device) => device.name === 'Factwright in Chrome on Mac');
     check(
       signedIn !== undefined && devices.length === 2,
       'signs in under its own name, as a session of its own',
@@ -954,7 +951,7 @@ try {
     // GitHub brings the window back to the same page, signed in.
     await signedInAt(context, windowed, sam.token);
     await window.reload();
-    await window.getByRole('heading', { name: 'Let Save to Factwright sign in?' }).waitFor();
+    await window.getByRole('heading', { name: 'Let the Factwright extension sign in?' }).waitFor();
     const closed = window.waitForEvent('close');
     await window.getByRole('button', { name: 'Allow', exact: true }).click();
     await closed;
@@ -963,7 +960,7 @@ try {
       .waitFor({ timeout: 30_000 });
     check(
       (await sam.client.account()).devices.some(
-        (device) => device.name === 'Save to Factwright in Chrome on Mac',
+        (device) => device.name === 'Factwright in Chrome on Mac',
       ),
       'then asks, and signs in once it’s allowed',
     );
@@ -980,7 +977,7 @@ try {
     const closed = window.waitForEvent('close');
     await window.getByRole('button', { name: 'Don’t allow' }).click();
     await closed;
-    await setup.getByText('You chose Don’t allow, so Save to Factwright didn’t sign in.').waitFor();
+    await setup.getByText('You chose Don’t allow, so the extension didn’t sign in.').waitFor();
     check(
       (await sam.client.account()).devices.length === 1,
       'turned down, signs nothing in, and says so',

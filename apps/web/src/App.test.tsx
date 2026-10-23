@@ -21,7 +21,7 @@ const SESSION = {
 /** What signing in for a device's code says it's for: the desktop app, or the extension. */
 const DESKTOP_LEAD = 'Sign in to let Factwright on your computer sync your job hunt.';
 const EXTENSION_LEAD =
-  'Sign in with the account Factwright on your computer uses. Then Save to Factwright can save jobs to your job hunt.';
+  'Sign in with the account Factwright on your computer uses. Then the extension can save jobs to your job hunt.';
 
 /** The server, with whoever's signed in, and an empty job hunt. */
 function server(session: object | null) {
@@ -236,7 +236,7 @@ describe('the web view', () => {
     const requests = server(null);
     render(<App />);
     expect(
-      await screen.findByRole('heading', { name: 'Sign in to set up Save to Factwright' }),
+      await screen.findByRole('heading', { name: 'Sign in to set up the Factwright extension' }),
     ).toBeTruthy();
     expect(screen.getByText(EXTENSION_LEAD)).toBeTruthy();
     expect(screen.queryByText(DESKTOP_LEAD)).toBeNull();
@@ -360,7 +360,7 @@ describe('a sign-in that didn’t work', () => {
     const requests = server(null);
     render(<App />);
     expect(
-      await screen.findByRole('heading', { name: 'Sign in to set up Save to Factwright' }),
+      await screen.findByRole('heading', { name: 'Sign in to set up the Factwright extension' }),
     ).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toBe(CANCELED);
     expect(location.pathname + location.search).toBe('/device?user_code=WDJBMJHT&for=extension');
@@ -602,7 +602,7 @@ describe('subscribing, where sync is sold', () => {
   });
 });
 
-describe('Save to Factwright’s sign-in, in the browser’s window', () => {
+describe('the extension’s sign-in, in the browser’s window', () => {
   const RETURN = 'https://gjhjddlohoonikgdbfcfnljeffilblai.chromiumapp.org/';
   /** The page's address, as the extension makes it, for a return address. */
   const asking = (redirect = RETURN) =>
@@ -615,7 +615,7 @@ describe('Save to Factwright’s sign-in, in the browser’s window', () => {
       state: 's'.repeat(22),
     })}`;
   const NOT_ASKED =
-    'This isn’t a sign-in Save to Factwright can finish here. Close this window, and sign in again from Save to Factwright’s setup.';
+    'This isn’t a sign-in the Factwright extension can finish here. Close this window, and sign in again from the extension’s setup.';
 
   /** The server, with whoever's signed in, knowing the stores' Chrome copy alone. */
   const serving = (session: object | null) =>
@@ -633,7 +633,7 @@ describe('Save to Factwright’s sign-in, in the browser’s window', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in to Factwright' })).toBeTruthy();
     expect(
       screen.getByText(
-        'Sign in with the account Factwright on your computer uses, to let Save to Factwright save jobs to it.',
+        'Sign in with the account Factwright on your computer uses, to let the Factwright extension save jobs to it.',
       ),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }));
@@ -649,7 +649,7 @@ describe('Save to Factwright’s sign-in, in the browser’s window', () => {
     serving(SESSION);
     render(<App />);
     expect(
-      await screen.findByRole('heading', { name: 'Let Save to Factwright sign in?' }),
+      await screen.findByRole('heading', { name: 'Let the Factwright extension sign in?' }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Allow' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Jobs' })).toBeNull();

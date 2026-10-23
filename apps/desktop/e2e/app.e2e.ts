@@ -65,10 +65,10 @@ test('offers only a server of your own in a copy built without Factwright’s sy
 
 // Saving to this computer needs no sync, so every copy offers the extension's window. One the
 // tests drive leaves the browsers on the computer that runs them as they are.
-test('opens Save to Factwright’s window from the sidebar, leaving the browsers alone', async () => {
+test('opens the Browser extension window from the sidebar, leaving the browsers alone', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: 'Browser extension' }).click();
-  const dialog = window.getByRole('dialog', { name: 'Save to Factwright' });
+  const dialog = window.getByRole('dialog', { name: 'Browser extension' });
   // Not clicked: it would open factwright.com in the browser of whoever runs the tests.
   await expect(dialog.getByRole('link', { name: 'Factwright’s extension page' })).toHaveAttribute(
     'href',
@@ -555,10 +555,9 @@ test('adds a job by hand', async () => {
   const dialog = window.getByRole('dialog', { name: 'Add a job' });
   // Saving to this computer needs no sync, so even a copy without Factwright's sync points to the
   // extension, for a job found in the browser.
-  await expect(dialog.getByRole('link', { name: 'Save to Factwright' })).toHaveAttribute(
-    'href',
-    'https://factwright.com/extension',
-  );
+  await expect(
+    dialog.getByRole('link', { name: 'Our extension for Chrome and Firefox' }),
+  ).toHaveAttribute('href', 'https://factwright.com/extension');
   await dialog.getByRole('textbox', { name: 'Company' }).fill('Northwind Labs');
   await dialog.getByRole('button', { name: 'Add job' }).click();
   await expect(window.getByRole('button', { name: /^Northwind Labs/ })).toBeVisible();

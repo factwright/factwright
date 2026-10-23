@@ -1,8 +1,8 @@
-import type { JobFile } from '@factwright/core';
+import type { ForApplications, JobFile } from '@factwright/core';
 import { Button, Dialog, DialogActions, VisuallyHidden } from '@factwright/ui';
 import { Check, Circle, FileText, LoaderCircle, Plus } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { labelOf, pagesFor, RESUME_FILES } from '../../shared/about.ts';
+import { labelOf, OVER_18, pagesFor, RESUME_FILES, SPONSORSHIP } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { labelIn, PAGE_SHAPE_CHOICES } from '../../shared/beyond.ts';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
@@ -18,6 +18,7 @@ import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
 import { AboutYouStep } from './steps/AboutYouStep.tsx';
+import { ApplicationsStep } from './steps/ApplicationsStep.tsx';
 import {
   BeyondWorkStep,
   outsideLines,
@@ -38,13 +39,34 @@ import { WantsStep } from './steps/WantsStep.tsx';
 import { WordsStep } from './steps/WordsStep.tsx';
 import type { ProfileState } from './useProfile.ts';
 
-type Editing = 'about' | 'files' | 'words' | 'wants' | 'templates' | 'beyond' | null;
+type Editing =
+  | 'about'
+  | 'applications'
+  | 'files'
+  | 'words'
+  | 'wants'
+  | 'templates'
+  | 'beyond'
+  | null;
 
 /** How the projects are ordered on the card: featured first, then as the user added them. */
 const SHOWN_FIRST = { feature: 0, fit: 1, private: 2 } as const;
 
 /** "In a section" as it reads after a colon: "in a section". */
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/** What Profile keeps for applications, in a line: where you can work, and sponsorship. */
+function applicationsSummary(applications: ForApplications): string {
+  const where =
+    applications.countries.length > 0 ? `Works in ${applications.countries.join(', ')}` : '';
+  const sponsorship = applications.sponsorship
+    ? `Sponsorship: ${labelOf(SPONSORSHIP, applications.sponsorship).toLowerCase()}`
+    : '';
+  const adult = applications.over18
+    ? `18 or older: ${labelOf(OVER_18, applications.over18).toLowerCase()}`
+    : '';
+  return [where, sponsorship, adult].filter(Boolean).join(' · ') || 'Nothing yet.';
+}
 
 const plural = (count: number, word: string) =>
   `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
@@ -529,6 +551,21 @@ export function ProfilePage({
             <p className={styles.need}>Changed since your Claude last read it.</p>
           )}
         </Card>
+
+        <Card
+          title="For applications"
+          actions={
+            <Button size="sm" onClick={() => setEditing('applications')}>
+              Change
+            </Button>
+          }
+        >
+          <p>{applicationsSummary(answers.applications)}</p>
+          <p className={styles.quiet}>
+            The browser extension fills forms with these. Equal-opportunity answers stay on this
+            computer.
+          </p>
+        </Card>
       </div>
 
       {profiles && (
@@ -544,6 +581,7 @@ export function ProfilePage({
           title={
             {
               about: 'About you',
+              applications: 'For applications',
               files: 'What you’ve shared',
               words: 'In your words',
               wants: 'What you want',
@@ -561,6 +599,13 @@ export function ProfilePage({
           {(close) => (
             <div className={styles.editor}>
               {editing === 'about' && <AboutYouStep you={answers.you} update={state.update} />}
+              {editing === 'applications' && (
+                <ApplicationsStep
+                  applications={answers.applications}
+                  update={state.update}
+                  api={api}
+                />
+              )}
               {editing === 'files' && (
                 <FilesStep
                   answers={answers}

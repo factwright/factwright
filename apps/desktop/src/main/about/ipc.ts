@@ -8,9 +8,11 @@ import {
   parseGapTarget,
   parseNewFact,
 } from '../../shared/facts.ts';
+import { parsePrivateChanges } from '../../shared/private.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import type { TemplatePreviews } from './previews.ts';
+import type { PrivateAnswers } from './private.ts';
 import type { AboutStore } from './store.ts';
 import { checkLinkedIn, checkUpload } from './uploads.ts';
 
@@ -45,7 +47,14 @@ export function registerAboutIpc(
     about,
     previews,
     templates,
-  }: { about: AboutStore; previews: TemplatePreviews; templates: TemplateLibrary },
+    kept,
+  }: {
+    about: AboutStore;
+    previews: TemplatePreviews;
+    templates: TemplateLibrary;
+    /** What Profile keeps for applications on this computer alone. */
+    kept: PrivateAnswers;
+  },
 ): void {
   answer('about:profile', () => about.profile());
 
@@ -53,6 +62,14 @@ export function registerAboutIpc(
     const valid = parseAnswerChanges(changes);
     if (!valid) throw new Error('Refused answers the app doesn’t take.');
     return about.saveAnswers(valid);
+  });
+
+  answer('about:private', () => kept.read());
+
+  answer('about:save-private', (changes) => {
+    const valid = parsePrivateChanges(changes);
+    if (!valid) throw new Error('Refused answers the app doesn’t take.');
+    return kept.save(valid);
   });
 
   answer('about:notes', (text): EditResult => {

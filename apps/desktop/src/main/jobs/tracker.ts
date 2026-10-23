@@ -43,6 +43,7 @@ import type {
   NewJob,
   NewNote,
   NoteChanges,
+  RecordedAnswers,
 } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 
@@ -495,6 +496,38 @@ export class Tracker {
     return DONE;
   }
 
+  /**
+   * Keeps what the user sent for several of an application's questions at once, as recordAnswer
+   * does for one, in one change. Answers past what a job can keep are left out, and a question
+   * with no words to keep it by is too.
+   */
+  recordAnswers(
+    jobId: string,
+    answers: readonly { question: string; nth: number; text: string }[],
+    context: EditContext,
+  ): RecordedAnswers {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    let sent = job.sent;
+    let recorded = 0;
+    for (const { question, nth, text } of answers) {
+      const key = questionKey(question);
+      if (!key || !text.trim()) continue;
+      const same = (each: SentAnswer) => questionKey(each.question) === key && each.nth === nth;
+      const at = sent.findIndex(same);
+      if (at < 0 && sent.length >= LIMITS.questions) continue;
+      const answer = { question, nth, text, on: context.today, at: context.now };
+      sent = at < 0 ? [...sent, answer] : sent.map((each, index) => (index === at ? answer : each));
+      recorded += 1;
+    }
+    if (recorded > 0) {
+      this.db
+        .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(sent), context.now, jobId);
+    }
+    return { ok: true, recorded };
+  }
+
   /** Keeps a question the user asked Claude about a job, under a new ID for its answer. */
   addAsk(jobId: string, question: string, context: EditContext): AskResult {
     const job = this.row(jobId);
@@ -560,7 +593,7 @@ export class Tracker {
       return { ok: false, message: 'Links start with https:// or http://.' };
     }
     const status = input.status ?? null;
-    // A company with no Latin letters gets an ID from its link, as Save to Factwright gives it.
+    // A company with no Latin letters gets an ID from its link, as the extension gives it.
     const base = jobIdFor(company, role, link ? shortCode(normalizeUrl(link)) : undefined);
     const taken = this.db.prepare('SELECT 1 FROM jobs WHERE id = ?');
     let id = base;
@@ -595,7 +628,7 @@ export class Tracker {
   }
 
   /**
-   * Adds a job Save to Factwright saved on this computer, as it adds one through sync: the same
+   * Adds a job the extension saved on this computer, as it adds one through sync: the same
    * rows, as New, with its history's first line, and an ID from its company and role. The same
    * job, by its link, is added once: when the ID it would take is held by a job with the same
    * link, that's the job, and nothing is added. When another job holds it, the next ID, "-2" on, is

@@ -74,6 +74,24 @@ export {
   sectionText,
   UNCONFIRMED,
 } from './facts.ts';
+export {
+  type AnswerSource,
+  answerField,
+  type EqualOpportunity,
+  type FieldReply,
+  type ForApplications,
+  isRemembered,
+  type KeptPrivate,
+  type LeftFor,
+  NO_APPLICATIONS,
+  NO_EQUAL_OPPORTUNITY,
+  NO_PRIVATE,
+  type OnFile,
+  REMEMBERED_KINDS,
+  type RememberedKind,
+  readEqualOpportunity,
+  type SentBefore,
+} from './fill.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
 export {
   type Evidence,
@@ -119,6 +137,16 @@ export {
 } from './focus.ts';
 export { fileSize, payLabel, shortDate } from './format.ts';
 export {
+  EQUAL_OPPORTUNITY_KINDS,
+  type EqualOpportunityKind,
+  FIELD_CONTROLS,
+  type FieldControl,
+  type FieldKind,
+  type FormField,
+  fieldKind,
+  isEqualOpportunity,
+} from './forms.ts';
+export {
   type DoesntHave,
   doesntHave,
   GAPS_FILE,
@@ -141,11 +169,21 @@ export {
   readHnThread,
 } from './hn.ts';
 export {
+  ASK_FIELDS,
+  type AskedField,
+  type AskedJob,
+  FILE_LIMIT,
+  FILE_PART_BYTES,
+  INBOX_ASK,
   INBOX_FOLDER,
   INBOX_JOB,
   INBOX_LIMIT,
   type InboxAnswer,
+  type InboxAsk,
+  type InboxAskAnswer,
+  type OfferedFile,
   type PostingSaved,
+  readInboxAsk,
   readSavedJob,
   SAVE_HELPER,
   SAVED_POSTING_LIMIT,

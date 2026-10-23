@@ -291,3 +291,85 @@ details.preview summary {
 .steps li {
   margin-bottom: var(--fw-space-2);
 }
+
+/* The side panel beside the page, where filling a form is checked. */
+body.panel {
+  padding: var(--fw-space-4);
+  min-width: 0;
+}
+
+/* The form's fields, each with its answer, where it came from, and what to do. */
+.fields {
+  list-style: none;
+  margin: var(--fw-space-3) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+}
+
+.field {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-space-2) var(--fw-space-3);
+  font-size: var(--fw-text-sm);
+}
+
+/* What's left for you, edged in orange, as the page outlines it, and as the app marks what needs you. */
+.field.yours {
+  border-left: 3px solid var(--fw-need);
+}
+
+.field .question {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.field .answer {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.field .meta {
+  margin-top: 2px;
+  color: var(--fw-muted);
+}
+
+.field.yours .meta:not(.bad) {
+  color: var(--fw-need);
+}
+
+/* Where an answer came from, with what to do about it, on one line. */
+.field .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-1);
+}
+
+.field .row .meta {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.row-actions {
+  display: flex;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-2);
+}
+
+.field .row .row-actions {
+  margin-top: 0;
+  flex: none;
+}
+
+button.small-button {
+  padding: 2px var(--fw-space-2);
+  font-size: var(--fw-text-sm);
+}

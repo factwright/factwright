@@ -305,7 +305,7 @@ describe('addJob', () => {
     expect(row('tidewater--general')?.kind).toBeNull();
   });
 
-  it('names a job whose company has no Latin letters by its link, as Save to Factwright does', () => {
+  it('names a job whose company has no Latin letters by its link, as the extension does', () => {
     const link = 'https://example.jp/jobs/1?utm_source=x';
     const added = tracker.addJob({ company: '株式会社', role: 'エンジニア', link }, AT);
     expect(added).toEqual({
@@ -942,6 +942,29 @@ describe('answers the user sent', () => {
     tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys.', AT);
     tracker.recordAnswer('acme--staff', 'Why Acme?', 0, '  ', AT);
     expect(row()?.sent).toEqual([]);
+  });
+
+  it('keeps several at once, as one change, as a form’s answers are', () => {
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys.', AT);
+    expect(
+      tracker.recordAnswers(
+        'acme--staff',
+        [
+          { question: 'Why Acme?', nth: 0, text: 'Deploys, mostly.' },
+          { question: 'If yes, please explain', nth: 0, text: 'First.' },
+          { question: 'If yes, please explain', nth: 1, text: 'Second.' },
+          { question: '???', nth: 0, text: 'No words to keep it by.' },
+          { question: 'Anything else?', nth: 0, text: ' ' },
+        ],
+        AT,
+      ),
+    ).toEqual({ ok: true, recorded: 3 });
+    expect(row()?.sent.map((answer) => [answer.question, answer.nth, answer.text])).toEqual([
+      ['Why Acme?', 0, 'Deploys, mostly.'],
+      ['If yes, please explain', 0, 'First.'],
+      ['If yes, please explain', 1, 'Second.'],
+    ]);
+    expect(tracker.recordAnswers('nope', [], AT)).toMatchObject({ ok: false });
   });
 
   it('says so when the job is gone, or the question has no words', () => {

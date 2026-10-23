@@ -209,19 +209,19 @@ describe('how setup signs in', () => {
     // code Factwright's sync gave it, for the person to allow there.
     expect(signInWay(OWN, knows(), RETURN, ID)).toEqual({
       problem:
-        'factwright-sync.sam.workers.dev needs an update for this version of Save to Factwright, which signs in to a server of your own through the browser’s window. Update it, then try again.',
+        'factwright-sync.sam.workers.dev needs an update for this version of the extension, which signs in to a server of your own through the browser’s window. Update it, then try again.',
     });
     // One that doesn't know this copy, as one built from the code, which it can add.
     const built = 'abcdefghijklmnopabcdefghijklmnop';
     expect(
       signInWay(OWN, knows(...STORE_RETURNS), `https://${built}.chromiumapp.org/`, built),
     ).toEqual({
-      problem: `factwright-sync.sam.workers.dev doesn’t know this copy of Save to Factwright, so it can’t sign it in. Add its ID, ${built}, to EXTENSION_IDS in the server’s settings, then try again.`,
+      problem: `factwright-sync.sam.workers.dev doesn’t know this copy of the extension, so it can’t sign it in. Add its ID, ${built}, to EXTENSION_IDS in the server’s settings, then try again.`,
     });
     // A browser with no window for extensions.
     expect(signInWay(OWN, knows(...STORE_RETURNS), null, ID)).toEqual({
       problem:
-        'This browser has no sign-in window for extensions, which Save to Factwright needs to sign in to a server of your own.',
+        'This browser has no sign-in window for extensions, which the extension needs to sign in to a server of your own.',
     });
   });
 });
@@ -237,12 +237,12 @@ describe('the page a code’s sign-in opens', () => {
   it('is never another address, or anything that isn’t a page on one', () => {
     expect(codePage('https://sync.example.com/device?user_code=WDJBMJHT', DEFAULT_SERVER)).toEqual({
       ok: false,
-      problem: `${HOST} sends its sign-in to another address, sync.example.com, so Save to Factwright didn’t open it.`,
+      problem: `${HOST} sends its sign-in to another address, sync.example.com, so the extension didn’t open it.`,
     });
     for (const url of ['/device?user_code=WDJBMJHT', 'file:///etc/hosts', 'javascript:void 0']) {
       expect(codePage(url, DEFAULT_SERVER)).toEqual({
         ok: false,
-        problem: `${HOST} didn’t give a sign-in page Save to Factwright can open.`,
+        problem: `${HOST} didn’t give a sign-in page the extension can open.`,
       });
     }
   });
@@ -263,15 +263,14 @@ describe('the server it’s built for', () => {
 
 describe('the manifest’s permissions', () => {
   it('asks for the browser’s own sign-in window, which shows no warning, and nothing more', () => {
-    for (const target of ['chrome', 'firefox'] as const) {
-      expect(manifest(target, '1.0.0').permissions).toEqual([
-        'activeTab',
-        'scripting',
-        'storage',
-        'contextMenus',
-        'identity',
-      ]);
-    }
+    const both = ['activeTab', 'scripting', 'storage', 'contextMenus', 'identity'];
+    expect(manifest('firefox', '1.0.0').permissions).toEqual(both);
+    // Chrome's side panel, and its rules for lighting the button up, show no warning either.
+    expect(manifest('chrome', '1.0.0').permissions).toEqual([
+      ...both,
+      'sidePanel',
+      'declarativeContent',
+    ]);
   });
 
   it('gives Firefox the ID whose return address sync servers know', async () => {

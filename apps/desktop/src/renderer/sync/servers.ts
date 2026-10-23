@@ -2,7 +2,7 @@ import type { SyncStatus } from '../../shared/sync.ts';
 
 /**
  * The guide to running a sync server of your own, on Factwright's website, which "How to set one
- * up" and "How to update" open, kept with the web view's and Save to Factwright's in
+ * up" and "How to update" open, kept with the web view's and the extension's in
  * @factwright/core.
  */
 export { OWN_SERVER_GUIDE } from '@factwright/core';

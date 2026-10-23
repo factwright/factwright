@@ -9,7 +9,7 @@ import { type SaveHelperDeps, saveHelperStatus, setUpSaveHelper } from './regist
 export const FILES_AND_FOLDERS =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders';
 
-/** The app's side of the Save to Factwright window. */
+/** The app's side of the Browser extension window. */
 export interface SaveHelper {
   /** Where each browser on this computer stands. Looking never touches a browser's folders. */
   status(): SaveHelperView;

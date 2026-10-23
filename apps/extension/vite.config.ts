@@ -30,7 +30,12 @@ export default defineConfig({
     // Browsers that run Manifest V3 extensions, as far back as each manifest allows.
     target: ['chrome127', 'firefox140'],
     rolldownOptions: {
-      input: { popup: 'popup.html', setup: 'setup.html', background: 'src/background.ts' },
+      input: {
+        popup: 'popup.html',
+        setup: 'setup.html',
+        sidepanel: 'sidepanel.html',
+        background: 'src/background.ts',
+      },
       output: {
         entryFileNames: (chunk) =>
           chunk.name === 'background' ? 'background.js' : 'assets/[name]-[hash].js',

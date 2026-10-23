@@ -110,6 +110,42 @@ function checkPageReader(folder: string): void {
   }
 }
 
+/**
+ * The form's function, as built: the browser sends it into the page on its own, as the page
+ * reader, so it's taken out of the built file and run on a small form, and the build stops if it
+ * reaches for anything outside itself.
+ */
+async function checkFormReader(folder: string): Promise<void> {
+  const files = Object.entries(filesIn(folder)).filter(([path]) => path.endsWith('.js'));
+  const found = files
+    .map(([, data]) => new TextDecoder().decode(data))
+    .find((code) => code.includes('async function formPage('));
+  if (!found) throw new Error('The built extension has no formPage.');
+  const start = found.indexOf('async function formPage(');
+  let depth = 0;
+  let end = found.indexOf('{', found.indexOf(')', start));
+  for (; end < found.length; end++) {
+    if (found[end] === '{') depth++;
+    else if (found[end] === '}' && --depth === 0) break;
+  }
+  const source = found.slice(start, end + 1);
+  const page = new JSDOM(
+    '<form><label for="e">Email *</label><input id="e" type="email" required /></form>',
+    { url: 'https://jobs.example.com/apply', runScripts: 'outside-only' },
+  );
+  const { window } = page;
+  const run = window.eval(`(${source})`) as (
+    task: unknown,
+    doc: Document,
+    href: string,
+  ) => Promise<{ did: string; form: { fields: { question: string; required: boolean }[] } }>;
+  const read = await run({ do: 'read' }, window.document, window.location.href);
+  const [field] = read.form.fields;
+  if (read.did !== 'read' || field?.question !== 'Email' || !field.required) {
+    throw new Error(`The built form reader read the wrong form: ${JSON.stringify(read)}`);
+  }
+}
+
 rmSync(DIST, { recursive: true, force: true });
 await build({
   root: ROOT,
@@ -119,6 +155,7 @@ await build({
   define: { 'import.meta.env.VITE_FACTWRIGHT_SYNC_SERVER': JSON.stringify(server) },
 });
 checkPageReader(join(DIST, 'build'));
+await checkFormReader(join(DIST, 'build'));
 
 for (const target of ['chrome', 'firefox'] as const satisfies readonly Target[]) {
   const out = join(DIST, target);

@@ -394,8 +394,8 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * README's screenshots show it, and ?ask=more makes the first run's round three questions, or
  * ?ask=kinds a number and a line of words.
  * ?permit=edit, write, read, page, profile or template has the first run ask Claude Code's OK
- * for that instead, in its dialog. ?helper picks where the browsers stand in the Save to
- * Factwright window (see extension/sample-helper.ts).
+ * for that instead, in its dialog. ?helper picks where the browsers stand in the Browser
+ * extension window (see extension/sample-helper.ts).
  */
 /** How long each made-up step of a run takes, in milliseconds. */
 const STEP_MS = 900;

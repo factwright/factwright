@@ -219,6 +219,12 @@ describe('sign-in records', () => {
 
     // A session from before sessions kept only a device's name.
     const phone = await server.newSession(sam.id, IPHONE);
+    // The extension's, from when it was Save to Factwright.
+    const extension = await server.newSession(
+      sam.id,
+      'Save to Factwright in Chrome on Mac',
+      'device',
+    );
 
     await server.worker.scheduled({ cron: '17 4 * * *', scheduledTime: new Date(now) });
 
@@ -226,6 +232,10 @@ describe('sign-in records', () => {
       .bind(phone.sessionId)
       .first<{ userAgent: string }>();
     expect(shortened?.userAgent).toBe('Safari on iPhone');
+    const renamed = await server.env.DB.prepare('SELECT userAgent FROM "session" WHERE id = ?')
+      .bind(extension.sessionId)
+      .first<{ userAgent: string }>();
+    expect(renamed?.userAgent).toBe('Factwright in Chrome on Mac');
     expect(await ids('session')).not.toContain('ended');
     expect(await ids('session')).toContain(sam.sessionId);
     expect(await ids('verification')).toEqual(['verification-new']);

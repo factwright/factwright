@@ -274,7 +274,7 @@ describe('saving to Factwright on this computer', () => {
         ok: false,
         reason: 'no-app',
         message:
-          'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it. On a Mac, then choose Browser extension in its sidebar, and set up this browser.',
+          'The extension couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it. On a Mac, then choose Browser extension in its sidebar, and set up this browser.',
       });
     }
   });

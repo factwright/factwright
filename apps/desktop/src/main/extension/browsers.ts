@@ -1,5 +1,5 @@
 /**
- * The browsers Save to Factwright runs in, and where each looks for the helper the app registers
+ * The browsers the extension runs in, and where each looks for the helper the app registers
  * with it. Chrome, Chromium, Edge, Brave, Vivaldi and Arc read a Chrome manifest, which names the
  * extension by its Chrome Web Store ID, and Firefox reads one of its own, which names it by its
  * Firefox ID.

@@ -9,6 +9,7 @@ import type {
   JobDocs,
   JobShot,
   JobStatus,
+  KeptPrivate,
   OutreachDraft,
   PassReason,
   SavedPosting,
@@ -208,6 +209,9 @@ export interface CallChanges {
 
 /** Whether an edit was saved, and if not, why, in words the user can act on. */
 export type EditResult = { ok: true } | { ok: false; message: string };
+
+/** Whether answers sent for a job's questions were kept, and how many, or why they weren't. */
+export type RecordedAnswers = { ok: true; recorded: number } | { ok: false; message: string };
 
 /** Whether a file was saved, or the user canceled, or why it couldn't be. */
 export type SaveFileResult = { ok: true; saved: boolean } | { ok: false; message: string };
@@ -512,6 +516,13 @@ export interface FactwrightApi {
   profile(): Promise<Profile>;
   /** Saves changes to the answers, and answers with all of them. */
   saveAnswers(changes: AnswerChanges): Promise<AboutYou>;
+  /**
+   * What Profile keeps for applications on this computer alone: the street, the postal code and
+   * the equal-opportunity answers, which never sync and which Claude's tools never reach.
+   */
+  privateAnswers(): Promise<KeptPrivate>;
+  /** Saves changes to what's kept on this computer alone, and answers with all of it. */
+  savePrivateAnswers(changes: Partial<KeptPrivate>): Promise<KeptPrivate>;
   /** Saves the notes the user wrote about themselves. */
   saveNotes(text: string): Promise<EditResult>;
   /**
@@ -569,12 +580,12 @@ export interface FactwrightApi {
   /** Restarts into a downloaded update. Answers whether there was one to install. */
   installUpdate(): Promise<boolean>;
   /**
-   * Where saving from each browser to Factwright on this computer stands, for the Save to
-   * Factwright window. Looking never touches a browser's folders.
+   * Where saving from each browser to Factwright on this computer stands, for the Browser
+   * extension window. Looking never touches a browser's folders.
    */
   saveHelperStatus(): Promise<SaveHelperView>;
   /**
-   * Sets browsers up so Save to Factwright can save to Factwright on this computer: the ones
+   * Sets browsers up so the extension can save to Factwright on this computer: the ones
    * given, or every one found. On a Mac, macOS may ask the user first, once for each browser.
    */
   setUpSaveHelper(only?: string[]): Promise<SetUpResult>;

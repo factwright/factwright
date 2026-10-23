@@ -168,7 +168,7 @@ describe('collectJobs', () => {
     expect(job?.id).toBe(jobIdFor('株式会社テスト', 'エンジニア', shortCode(normalizeUrl(link))));
   });
 
-  it('gives a job it finds the ID Add job and Save to Factwright would, cut to fit a folder', () => {
+  it('gives a job it finds the ID Add job and the extension would, cut to fit a folder', () => {
     const role =
       'Senior Software Engineer, Machine Learning Infrastructure - Distributed Training Platform';
     const [job] = collectJobs([search('Acme Robotics', role)]);

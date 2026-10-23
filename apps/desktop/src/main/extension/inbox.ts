@@ -6,14 +6,24 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  unlinkSync,
   watch,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { INBOX_JOB, type InboxAnswer, readSavedJob, type SavedJob } from '@factwright/core';
+import {
+  INBOX_ASK,
+  INBOX_JOB,
+  type InboxAnswer,
+  type InboxAsk,
+  type InboxAskAnswer,
+  readInboxAsk,
+  readSavedJob,
+  type SavedJob,
+} from '@factwright/core';
 
 /**
- * The inbox Save to Factwright drops jobs in on this computer. The browser hands each job the
+ * The inbox the extension drops jobs in on this computer. The browser hands each job the
  * extension saves to the helper the app registers with it (apps/desktop/helper), which writes it
  * whole, as a file of its own, into the inbox of the profile open last, and does nothing else. The
  * app adds each job from there while it's open, and the ones that came while it was closed as it
@@ -23,6 +33,10 @@ import { INBOX_JOB, type InboxAnswer, readSavedJob, type SavedJob } from '@factw
  * a moment for the app's answer, which it hands back to the extension: the job's ID, whether the
  * job hunt had it already, and what became of its posting. With the app closed, the helper says
  * the job waits for it, at once.
+ *
+ * Asks come the same way, as the extension fills an application form: for the answers to a
+ * form's fields, a part of a job's file, what was sent, or answers to keep. The helper passes an
+ * ask only to an app that's open, and takes it back if no answer comes in time.
  */
 
 /** The marker that says the app is open on this profile, with its process ID. */
@@ -30,6 +44,16 @@ export const LISTENING = '.listening';
 
 /** How old a job may be, by its name, for its answer to be written: the helper waits 3 seconds. */
 const ANSWER_MS = 30_000;
+
+/**
+ * How old an ask may be, by its name, to be taken: less than the 10 seconds the helper waits
+ * before it takes an ask back, so it never takes back one the app has started on. Once the app
+ * has taken one, the helper waits for its answer as long again.
+ */
+const ASK_MS = 8_000;
+
+/** The longest answer to an ask the helper passes on: ASK_ANSWER_LIMIT in the helper. */
+const ASK_ANSWER_BYTES = 1_000_000;
 
 /** How old a half-written job or an answer nobody took must be before it's cleaned away. */
 const LEFTOVER_MS = 60_000;
@@ -66,6 +90,8 @@ export interface InboxDeps {
   folder: string;
   /** Adds a job to the job hunt, and says how it went. */
   add: (job: SavedJob) => InboxAnswer;
+  /** Answers an ask, as the extension fills a form. Without it, an ask is turned away. */
+  answer?: (ask: InboxAsk) => Promise<InboxAskAnswer>;
   /** Once a look has added one or more jobs: to show the new list, once for them all. */
   added?: () => void;
   /** Watches the inbox for changes: the system's own watching, unless a test stands in. */
@@ -96,7 +122,7 @@ function isFolder(path: string): boolean {
   }
 }
 
-/** The inbox of the open profile: the jobs Save to Factwright saved on this computer. */
+/** The inbox of the open profile: the jobs the extension saved on this computer. */
 export class JobInbox {
   private readonly deps: InboxDeps;
   private watcher: Watcher | null = null;
@@ -194,8 +220,10 @@ export class JobInbox {
     for (const name of names) {
       if (this.stuck.has(name)) continue;
       const job = INBOX_JOB.exec(name);
+      const ask = INBOX_ASK.exec(name);
       try {
         if (job) added = this.takeJob(name, Number(job[1]), now) || added;
+        else if (ask) this.takeAsk(name, Number(ask[1]), now);
         else if (LEFTOVER.test(name)) this.cleanAway(name, now);
       } catch {
         // Tried again at the next look.
@@ -259,6 +287,63 @@ export class JobInbox {
       this.stuck.add(name);
     }
     return answer.ok;
+  }
+
+  /**
+   * Answers an ask. It's taken away first, which is what takes it: should the helper have taken
+   * it back already, nobody waits for it, and it's left. Then it's answered beside where it was.
+   * One too old to answer in time is left for the helper to take back, or cleaned away once it's
+   * long left over, and one that isn't an ask is turned away.
+   */
+  private takeAsk(name: string, at: number, now: number): void {
+    const file = join(this.deps.folder, name);
+    if (now - at > ASK_MS) {
+      this.cleanAway(name, now);
+      return;
+    }
+    let text: string | null = null;
+    try {
+      const stats = lstatSync(file);
+      if (stats.isFile() && stats.size <= MAX_BYTES) text = readFileSync(file, 'utf8');
+    } catch {
+      // Gone already: the helper took it back.
+      return;
+    }
+    try {
+      unlinkSync(file);
+    } catch (error) {
+      // Gone already, as the helper took it back just now, or one that can't be taken.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.stuck.add(name);
+      return;
+    }
+    const reply = (answer: InboxAskAnswer) => {
+      let said = JSON.stringify(answer);
+      if (Buffer.byteLength(said) > ASK_ANSWER_BYTES) {
+        said = JSON.stringify({
+          ok: false,
+          reason: 'too-big',
+          message: 'That’s more than Factwright on this computer can answer at once.',
+        } satisfies InboxAskAnswer);
+      }
+      try {
+        writeWhole(join(this.deps.folder, name.replace(/\.ask$/, '.done')), said);
+      } catch {
+        // The helper says the app was busy.
+      }
+    };
+    const ask = text === null ? null : readInboxAsk(text);
+    const answer = this.deps.answer;
+    if (!ask || !answer) {
+      reply({
+        ok: false,
+        reason: 'bad-message',
+        message: 'That wasn’t something Factwright answers.',
+      });
+      return;
+    }
+    answer(ask).then(reply, () =>
+      reply({ ok: false, reason: 'failed', message: 'Factwright couldn’t do that just now.' }),
+    );
   }
 
   /** Deletes a half-written job or an answer nobody took, once it's been left long enough. */

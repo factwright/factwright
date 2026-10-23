@@ -277,9 +277,9 @@ export function ManageSync({
           Saving jobs from your browser
         </h3>
         <p className={styles.hint}>
-          Save to Factwright, an extension for Chrome and Firefox, saves the job you’re looking at
-          to your job hunt, with its posting: straight to Factwright on this computer, or through
-          sync from another.{' '}
+          Factwright’s extension for Chrome and Firefox saves the job you’re looking at to your job
+          hunt, with its posting: straight to Factwright on this computer, or through sync from
+          another.{' '}
           <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
             About the extension
           </a>

@@ -63,12 +63,44 @@ export interface Ext {
     query(query: { active?: boolean; currentWindow?: boolean; url?: string }): Promise<Tab[]>;
     create(properties: { url: string; active?: boolean }): Promise<Tab>;
     update(tabId: number, properties: { active?: boolean }): Promise<Tab>;
+    /** A tab coming to the front, in a window. */
+    onActivated: Event<(info: { tabId: number; windowId: number }) => void>;
   };
   scripting: {
-    executeScript<Result>(injection: {
+    /** Runs one function in a tab's page, given what it's passed, and waits for what it gives back. */
+    executeScript<Result, Args extends unknown[] = []>(injection: {
       target: { tabId: number };
-      func: () => Result;
-    }): Promise<{ result?: Result }[]>;
+      func: (...args: Args) => Result;
+      args?: Args;
+    }): Promise<{ result?: Awaited<Result> }[]>;
+  };
+  /**
+   * Chrome's side panel, beside the page, where filling a form is checked. Opening it takes a
+   * click, a menu item or a shortcut. Missing in Firefox, which has a sidebar instead.
+   */
+  sidePanel?: {
+    open(options: { tabId?: number; windowId?: number }): Promise<void>;
+  };
+  /** Firefox's sidebar, as Chrome's side panel. Opening it takes a click, a menu item or a shortcut. */
+  sidebarAction?: {
+    open(): Promise<void>;
+  };
+  /**
+   * Chrome's rules for how the toolbar button looks on pages that match them, which the browser
+   * checks itself, so the extension never reads a page to light the button up. Missing in Firefox.
+   */
+  declarativeContent?: {
+    onPageChanged: {
+      removeRules(ruleIds?: string[]): Promise<void>;
+      addRules(
+        rules: { id?: string; conditions: unknown[]; actions: unknown[] }[],
+      ): Promise<unknown>;
+    };
+    PageStateMatcher: new (options: {
+      pageUrl?: { hostSuffix?: string; hostEquals?: string; schemes?: string[] };
+      css?: string[];
+    }) => unknown;
+    SetIcon: new (options: { imageData: Record<number, ImageData> }) => unknown;
   };
   storage: {
     local: {
@@ -89,7 +121,7 @@ export interface Ext {
     create(properties: {
       id: string;
       title: string;
-      contexts: ('page' | 'selection' | 'link')[];
+      contexts: ('page' | 'selection' | 'link' | 'editable')[];
     }): unknown;
     removeAll(): Promise<void>;
     onClicked: Event<(click: MenuClick, tab?: Tab) => void>;

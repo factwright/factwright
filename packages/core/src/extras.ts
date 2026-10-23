@@ -12,7 +12,7 @@ export const JOB_EXTRAS = {
   asked: 'asked',
   /** Screenshots: screenshots/<job ID>/<name>, or screenshots/<name> for one with no job. */
   screenshots: 'screenshots',
-  /** The posting as the user saw it, saved with Save to Factwright: saved/<job ID>/posting.md. */
+  /** The posting as the user saw it, saved with the extension: saved/<job ID>/posting.md. */
   saved: 'saved',
   /** Claude's work for each of the job's calls: calls/<job ID>/<call ID>/prep.md, and so on. */
   calls: 'calls',

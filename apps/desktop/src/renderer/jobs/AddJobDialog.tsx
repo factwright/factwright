@@ -170,10 +170,9 @@ export function AddJobDialog({
           </p>
           <p className={`${styles.hint} ${styles.wide}`}>
             <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-              Save to Factwright
-            </a>
-            , our extension for Chrome and Firefox, saves jobs straight from your browser, with
-            their postings.
+              Our extension for Chrome and Firefox
+            </a>{' '}
+            saves jobs straight from your browser, with their postings.
           </p>
           {problem && (
             <p className={`${styles.problem} ${styles.wide}`} role="alert">

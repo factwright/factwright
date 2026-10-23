@@ -29,7 +29,7 @@ function renderSidebar(sync: SyncStatus | 'checking', onOpenExtension = vi.fn())
 }
 
 describe('Sidebar', () => {
-  it('opens Save to Factwright’s window from Browser extension', () => {
+  it('opens the Browser extension window from its button', () => {
     const onOpenExtension = renderSidebar({ state: 'off' });
     fireEvent.click(screen.getByRole('button', { name: 'Browser extension' }));
     expect(onOpenExtension).toHaveBeenCalledTimes(1);

@@ -32,7 +32,7 @@ beforeEach(() => {
   history.replaceState(null, '', HERE);
 });
 
-describe('letting Save to Factwright sign in from the browser’s window', () => {
+describe('letting the extension sign in from the browser’s window', () => {
   it('names the extension and the account it needs, with no code to compare, then lets it in', async () => {
     const requests = fakeServer({
       [ANSWER]: () => ({ url: `${RETURN}#code=${'k'.repeat(43)}&state=${ASK.state}` }),
@@ -40,18 +40,20 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
     const { container } = render(
       <ApproveExtension ask={ASK} account="sam" email={EMAIL} providers={['github']} />,
     );
-    expect(screen.getByRole('heading', { name: 'Let Save to Factwright sign in?' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Let the Factwright extension sign in?' }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
-        'Save to Factwright, the browser extension, asks to sign in to sync, so it can save jobs to your job hunt from this browser.',
+        'The Factwright extension asks to sign in to sync, so it can save jobs to your job hunt from this browser.',
       ),
     ).toBeTruthy();
     expect(accountLine()).toBe(
-      'Signed in as sam@example.com. Save to Factwright signs in to this account, so it needs to be the one Factwright on your computer uses. Use another account',
+      'Signed in as sam@example.com. The extension signs in to this account, so it needs to be the one Factwright on your computer uses. Use another account',
     );
     expect(
       screen.getByText(
-        'Only allow it if you just clicked Sign in to sync in Save to Factwright’s setup.',
+        'Only allow it if you just clicked Sign in to sync in the extension’s setup.',
       ),
     ).toBeTruthy();
     expect(container.textContent).not.toMatch(/code/i);
@@ -60,7 +62,7 @@ describe('letting Save to Factwright sign in from the browser’s window', () =>
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     await waitFor(() => expect(leaveFor).toHaveBeenCalledOnce());
     expect(leaveFor).toHaveBeenCalledWith(`${RETURN}#code=${'k'.repeat(43)}&state=${ASK.state}`);
-    expect(screen.getByRole('status').textContent).toBe('Going back to Save to Factwright…');
+    expect(screen.getByRole('status').textContent).toBe('Going back to the extension…');
     expect(screen.queryByRole('button')).toBeNull();
     expect(sent(requests)).toEqual([ANSWER]);
     expect(requests[0]?.body).toEqual({

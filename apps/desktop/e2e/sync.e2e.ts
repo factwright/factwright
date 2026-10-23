@@ -224,7 +224,7 @@ test('connects a server of your own, in a copy without Factwright’s sync', asy
     await window.getByRole('button', { name: 'Turn on sync' }).click();
     await expect(syncOn(desk)).toBeVisible();
     await expect(window.getByText(/^Sync server:/)).toContainText(own.url.host);
-    // Save to Factwright syncs through a server of your own too, since its version 0.2.
+    // The extension syncs through a server of your own too, since its version 0.2.
     await expect(
       window.getByRole('region', { name: 'Saving jobs from your browser' }),
     ).toBeVisible();
