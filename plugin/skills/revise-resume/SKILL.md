@@ -1,12 +1,14 @@
 ---
 name: revise-resume
-description: Revise a job's resume for what its ATS X-ray found. The app starts it when the user picks findings in a resume's X-ray and sends them for revision. Reads the picked findings with revision_findings, fixes what's in the resume's words, asks the user about the terms the fact bank doesn't back yet and saves their answers to the fact bank, fixes or switches the template when they chose to, then rebuilds and fact-checks the resume. The app keeps the previous version.
-argument-hint: "[job <id> findings <ids>, from the app's ATS X-ray]"
+description: Revise a job's resume for what its ATS X-ray found, or for the changes the user typed in the app. The app starts it when the user picks findings in a resume's X-ray and sends them for revision, or asks for changes to the resume. Reads the picked findings with revision_findings, fixes what's in the resume's words, asks the user about the terms the fact bank doesn't back yet and saves their answers to the fact bank, fixes or switches the template when they chose to, then rebuilds and fact-checks the resume. The app keeps the previous version.
+argument-hint: "[job <id> findings <ids>, from the app's ATS X-ray, or job <id> changes]"
 ---
 
 # Revise a resume for its ATS X-ray
 
 The app starts this run with `job <id>`, the IDs of the findings the user picked in its ATS X-ray, and, when they picked one from the template, `template fix` or `template switch`. Which resume, and what the findings say, come from `revision_findings`. This run can't reach the web, and needs nothing from it.
+
+Or it starts it with `job <id> changes`, for changes the user typed in the app. Then `requested_changes` gives them, in place of the findings: see **Changes the user asked for**, below, and skip the steps about findings.
 
 Before starting, read:
 - `guide/rules.md`: binding rules for every resume.
@@ -56,6 +58,15 @@ Only when a finding under **From the template** was picked. `revision_findings` 
 - **Use a template that reads cleanly:** set `layout` to the app's `classic`, or `minimal` when `guide/templates.md` picks it for this kind of job. Leave the user's template as it is.
 
 You can't X-ray the files here. The user's X-ray reads them again, and says what got fixed.
+
+## Changes the user asked for
+When the command says `changes`:
+- Call `requested_changes`. It gives the job's folder, where the app kept the resume before the changes, and what the user asked for, in their own words. If it says this run wasn't started with Request changes, say in one line that changes start from a resume's Request changes in the app, and stop.
+- Call `job_details` with the job's id. If it shows the user applied, the resume stays as sent: say so in one line, and stop.
+- Read the job's `resume.json`, `posting.md` (older folders keep the posting in `job.md`) and `notes.md`, and **all** of `facts/`. Keep `output_name` as it is, so the rebuilt files take the old ones' place.
+- Make the changes in `resume.json`, following `guide/writing.md` and the style file `notes.md` names, as step 2 does for its findings. Everything still traces to the facts: a change that would say more than the fact bank backs is a question for the user first, as in step 3, and what they don't have stays out. A change that would break a rule in `guide/rules.md`, say so, and leave that part.
+- Change the template only if they asked, as step 4 does when they chose to fix it, asking before saving it.
+- Then build and check as below, and in your reply say what changed, and anything you couldn't change and why.
 
 ## 5. Build and check
 Call `build_resume` with the folder's name, and `format: "both"` when the job had a Word file too. Read the PDF it built, then fix and build again until it's clean, as the Tailored resume does it: `Checks: clean`, the pages `guide/lint.json` asks for, the last page 70–98% full, no runts, and no orphaned headings. If it says the files went out with the application, stop: say the resume stays as sent, and that the changes are in `resume.json` for its next version.

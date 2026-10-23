@@ -30,14 +30,20 @@ const job = sampleJob({ id: 'acme--staff-engineer', company: 'Acme', role: 'Staf
 const ASK = { id: '2026-10-12-what-should-i-expect', question: 'What should I expect?', on: TODAY };
 
 function apiStub(
-  extras: Omit<JobExtras, 'posting' | 'calls' | 'outreach'> & Partial<JobExtras> = {
+  extras: Omit<JobExtras, 'posting' | 'calls' | 'outreach' | 'versions'> & Partial<JobExtras> = {
     asked: {},
     shots: [],
   },
 ) {
   return {
     platform: 'darwin',
-    jobExtras: vi.fn(async () => ({ posting: null, calls: {}, outreach: [], ...extras })),
+    jobExtras: vi.fn(async () => ({
+      posting: null,
+      calls: {},
+      outreach: [],
+      versions: [],
+      ...extras,
+    })),
     askAboutJob: vi.fn(async () => ({ ok: true as const, askId: '2026-10-12-whats-their-stack' })),
     removeAsk: vi.fn(async () => ({ ok: true }) as const),
     addShot: vi.fn(async () => ({ ok: true as const, path: 'screenshots/x/ask-1.png' })),

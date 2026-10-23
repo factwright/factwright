@@ -24,8 +24,9 @@ import iconsPdf from '@factwright/xray/fixtures/icons.pdf?url';
 import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
-import type { Revision } from '../../shared/revision.ts';
+import { REVISE_SKILL, type Revision } from '../../shared/revision.ts';
 import { type RunTask, taskJob } from '../../shared/runs.ts';
+import type { DocKind, DocVersion } from '../../shared/versions.ts';
 import {
   sampleCallDocs,
   sampleDocs,
@@ -33,6 +34,7 @@ import {
   sampleJob,
   sampleJobs,
   sampleOutreach,
+  sampleVersions,
 } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
 
@@ -86,6 +88,10 @@ type TrackerApi = Pick<
   | 'pasteImage'
   | 'prepareRevision'
   | 'revisionOf'
+  | 'keepVersion'
+  | 'useVersion'
+  | 'removeVersion'
+  | 'requestChanges'
 >;
 
 /** A resume's file name without its format, which its PDF and Word file share. */
@@ -150,6 +156,18 @@ function sampleAnswer(question: string, on: string): string {
 
 const SAVED: EditResult = { ok: true };
 
+/** A job's files of one kind. */
+const filesOf = (job: Job, kind: DocKind) =>
+  kind === 'resume' ? job.files : kind === 'letter' ? job.letters : job.projectPages;
+
+/** A job with its files of one kind in place of the ones it had. */
+const withFiles = (job: Job, kind: DocKind, files: Job['files']): Job =>
+  kind === 'resume'
+    ? { ...job, files }
+    : kind === 'letter'
+      ? { ...job, letters: files }
+      : { ...job, projectPages: files };
+
 /**
  * The tracker for the sample screens, kept in memory until the page reloads. It follows the
  * real tracker's main rules (a call moves a job forward, Undo puts it back) closely enough to
@@ -167,12 +185,15 @@ export function sampleTracker(
   const files = RESUMES[resume ?? ''] ?? { pdf: engineerPdf, word: engineerWord };
   // Revisions sent in the sample screens, by job and resume, until the page reloads.
   const revisions = new Map<string, Revision>();
+  // Earlier versions of the jobs' resumes, letters and Projects pages, newest first, by job.
+  const versions = new Map<string, DocVersion[]>();
   const revisionKey = (jobId: string, name: string) => `${jobId}/${stemOf(name)}`;
   let list: JobList = {
     jobs:
       jobs === 'none' ? [] : jobs === 'twice' ? [...sampleJobs(), sampleDuplicate()] : sampleJobs(),
     readAt: new Date().toISOString(),
   };
+  for (const [jobId, kept] of sampleVersions(list.jobs)) versions.set(jobId, kept);
   const listeners = new Set<(list: JobList) => void>();
   // Screenshots added in the sample screens, by path, and Claude's answers to questions.
   const shots = new Map<string, { shot: JobShot; bytes: Uint8Array }>();
@@ -192,6 +213,33 @@ export function sampleTracker(
   const change = (test: (job: Job) => boolean, edit: (job: Job) => Job) =>
     publish(list.jobs.map((job) => (test(job) ? edit(job) : job)));
   const settled = (job: Job) => Boolean(job.status && SETTLED_STATUSES.includes(job.status));
+  /** Keeps a job's current version as an earlier one, as the app does before a run makes another. */
+  const keep = (
+    jobId: string,
+    kind: DocKind,
+    why: 'new' | 'changes',
+    changes?: string,
+  ): EditResult => {
+    const job = list.jobs.find((each) => each.id === jobId);
+    if (!job) return { ok: false, message: 'That job isn’t on file anymore.' };
+    if (kind !== 'projects' && resumeSent(job)) {
+      return { ok: false, message: 'You applied with this one, so it stays as you sent it.' };
+    }
+    const current = filesOf(job, kind);
+    if (current.length === 0) return SAVED;
+    const folder = `applications/${folderOf(job)}/previous/${stampOf(new Date())}`;
+    const kept: DocVersion = {
+      folder,
+      kind,
+      at: new Date().toISOString(),
+      why,
+      changes: changes ?? null,
+      files: current.map((each) => ({ ...each, path: `${folder}/${each.name}` })),
+      usable: true,
+    };
+    versions.set(jobId, [kept, ...(versions.get(jobId) ?? [])]);
+    return SAVED;
+  };
   const mark = (job: Job, status: JobStatus, at: string): Job => ({
     ...job,
     status,
@@ -466,24 +514,22 @@ export function sampleTracker(
       change(
         (job) => job.id === jobId,
         (job) => {
+          // One the job has already is built again, under its own name.
+          const again = (files: Job['files'], name: string) =>
+            files.length > 0 ? files.map((each) => ({ ...each, modified })) : [file(job, name)];
           switch (task.skill) {
             case 'focused-resume':
-              return {
-                ...job,
-                files: [...job.files, file(job, `AlexRiveraResume_${named(job)}.pdf`)],
-              };
+            case REVISE_SKILL:
+              return { ...job, files: again(job.files, `AlexRiveraResume_${named(job)}.pdf`) };
             case 'cover-letter':
               return {
                 ...job,
-                letters: [...job.letters, file(job, `AlexRiveraCoverLetter_${named(job)}.pdf`)],
+                letters: again(job.letters, `AlexRiveraCoverLetter_${named(job)}.pdf`),
               };
             case 'projects-page':
               return {
                 ...job,
-                projectPages: [
-                  ...job.projectPages,
-                  file(job, `AlexRiveraProjects_${named(job)}.pdf`),
-                ],
+                projectPages: again(job.projectPages, `AlexRiveraProjects_${named(job)}.pdf`),
               };
             case 'fit-check':
               return { ...job, fit: { verdict: 'Good fit', score: 78, date: localDate() } };
@@ -520,6 +566,7 @@ export function sampleTracker(
         posting: null,
         calls: sampleCallDocs(job),
         outreach: sampleOutreach(job),
+        versions: versions.get(jobId) ?? [],
       };
     },
     recordAnswer: async (jobId, question, nth, text) =>
@@ -612,6 +659,48 @@ export function sampleTracker(
       return { ok: true };
     },
     // A job applied to keeps its resume as sent, as the app's does.
+    keepVersion: async (jobId, kind) => keep(jobId, kind, 'new'),
+    useVersion: async (jobId, folder) => {
+      const job = list.jobs.find((each) => each.id === jobId);
+      const kept = versions.get(jobId) ?? [];
+      const version = kept.find((each) => each.folder === folder);
+      if (!job || !version) return { ok: false, message: 'That version isn’t on file anymore.' };
+      const current = filesOf(job, version.kind);
+      const aside: DocVersion = {
+        folder: `applications/${folderOf(job)}/previous/${stampOf(new Date())}`,
+        kind: version.kind,
+        at: new Date().toISOString(),
+        why: 'swapped',
+        changes: null,
+        files: current.map((each) => ({
+          ...each,
+          path: `applications/${folderOf(job)}/previous/${stampOf(new Date())}/${each.name}`,
+        })),
+        usable: true,
+      };
+      versions.set(jobId, [aside, ...kept.filter((each) => each !== version)]);
+      const back = version.files.map((each) => ({
+        ...each,
+        path: `applications/${folderOf(job)}/${each.name}`,
+      }));
+      return change(
+        (each) => each.id === jobId,
+        (each) => withFiles(each, version.kind, back),
+      );
+    },
+    removeVersion: async (jobId, folder) => {
+      versions.set(
+        jobId,
+        (versions.get(jobId) ?? []).filter((each) => each.folder !== folder),
+      );
+      // The job reads its versions again, as it does when the folder goes.
+      return change(
+        (each) => each.id === jobId,
+        (each) => ({ ...each }),
+      );
+    },
+    requestChanges: async (request) =>
+      keep(request.jobId, request.kind, 'changes', request.changes),
     revisionOf: async (jobId, name) => {
       const job = list.jobs.find((each) => each.id === jobId);
       const locked =

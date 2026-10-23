@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Job, resumeSent, WORKSPACE_PATHS } from '@factwright/core';
 import { outputName } from '@factwright/engine';
@@ -22,7 +22,7 @@ export const PREVIOUS_FOLDER = 'previous';
  * A previous version's folder: when it was revised, such as 2026-10-15-093012, with "-2" and so
  * on for another in the same second.
  */
-const STAMP = /^\d{4}-\d{2}-\d{2}-\d{6}(?:-[1-9][0-9]?)?$/;
+export const STAMP = /^\d{4}-\d{2}-\d{2}-\d{6}(?:-[1-9][0-9]?)?$/;
 
 /** The most files a previous version keeps: the resume's PDF and Word file. */
 const MAX_KEPT = 4;
@@ -53,7 +53,7 @@ export interface RevisionsDeps {
 const stemOf = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
 
 /** A time as a previous version's folder: 2026-10-15-093012, in the computer's own time. */
-function stampOf(date: Date): string {
+export function stampOf(date: Date): string {
   const two = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}-${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`;
 }
@@ -214,7 +214,12 @@ export class Revisions {
     try {
       previous = await this.newFolder(`${folder}/${PREVIOUS_FOLDER}`, stampOf(now));
       for (const name of names) {
-        await copyFile(this.path(`${folder}/${name}`), this.path(`${previous}/${name}`));
+        const from = this.path(`${folder}/${name}`);
+        const to = this.path(`${previous}/${name}`);
+        await copyFile(from, to);
+        // As it was built, so its versions show when each was made.
+        const { atime, mtime } = await stat(from);
+        await utimes(to, atime, mtime);
       }
       await copyFile(this.path(`${folder}/resume.json`), this.path(`${previous}/resume.json`));
     } catch {

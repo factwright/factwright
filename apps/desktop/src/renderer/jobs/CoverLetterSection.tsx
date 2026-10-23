@@ -12,6 +12,7 @@ import { Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
+import type { DocVersion } from '../../shared/versions.ts';
 import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
 import styles from './CoverLetter.module.css';
 import { FileRow } from './JobFiles.tsx';
@@ -19,6 +20,7 @@ import panel from './JobPanel.module.css';
 import { Part, Placeholder } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
 import type { RunControls } from './RunActions.tsx';
+import { EarlierVersions, NewVersionButton, RequestChanges, SentPill } from './Versions.tsx';
 
 /** What a letter's files are, in a few words: "PDF and Word". */
 function formats(files: readonly JobFile[]): string | null {
@@ -37,11 +39,14 @@ export function CoverLetterPart({
   api,
   today,
   run,
+  versions = [],
 }: {
   job: Job;
   api: FactwrightApi;
   today: string;
   run: RunControls | undefined;
+  /** The job's earlier versions, of which the letter's show under it. */
+  versions?: readonly DocVersion[];
 }) {
   const [letter, setLetter] = useState<LetterText | null>(null);
   const [copied, setCopied] = useState(false);
@@ -101,8 +106,17 @@ export function CoverLetterPart({
   return (
     <Part
       title="Cover letter"
-      summary={summary}
-      actions={<ClaudeButton run={run} task={task} label="New version" />}
+      summary={
+        <>
+          {summary} <SentPill job={job} kind="letter" />
+        </>
+      }
+      actions={
+        <>
+          <RequestChanges job={job} kind="letter" api={api} run={run} />
+          <NewVersionButton job={job} kind="letter" api={api} run={run} onProblem={setProblem} />
+        </>
+      }
     >
       {writing && (
         <p className={`${panel.quiet} ${styles.writing}`}>
@@ -159,6 +173,15 @@ export function CoverLetterPart({
           ))}
         </ul>
       )}
+      <EarlierVersions
+        job={job}
+        kind="letter"
+        versions={versions}
+        api={api}
+        today={today}
+        onPreview={setPreview}
+        onProblem={setProblem}
+      />
       {problem && (
         <p className={panel.problem} role="alert">
           {problem}

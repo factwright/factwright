@@ -156,6 +156,7 @@ describe('the application questions', () => {
       posting: null,
       calls: {},
       outreach: [],
+      versions: [],
       shots: [
         { path, name: 'form-2026-10-11-1.png', kind: 'form', ask: null, size: 8, modified: '' },
       ],

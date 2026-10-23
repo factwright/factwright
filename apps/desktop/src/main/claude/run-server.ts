@@ -6,6 +6,7 @@ import type { PermissionAnswer, PermissionAsk } from '../../shared/permission-as
 import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
+import type { BoundChanges } from '../jobs/versions.ts';
 import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
 import { type AskContext, permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
@@ -100,6 +101,8 @@ export interface ListenOptions {
   onFiled?: (filed: FiledFacts) => void;
   /** The revision the run was started for, which only its own tool calls can read. */
   revision?: BoundRevision;
+  /** The changes the user asked for, which only the run's own tool calls can read. */
+  changes?: BoundChanges;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
@@ -154,7 +157,17 @@ export class RunServer {
    * it was asking, so their dialog closes.
    */
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
-    const { activity, tools, scope = 'hunt', onFiled, revision, ask, permit, onAnswered } = options;
+    const {
+      activity,
+      tools,
+      scope = 'hunt',
+      onFiled,
+      revision,
+      changes,
+      ask,
+      permit,
+      onAnswered,
+    } = options;
     const context = options.context ?? {};
     const held = new Map<AbortController, string | null>();
     this.listeners.set(token, {
@@ -167,7 +180,7 @@ export class RunServer {
       context,
       held,
       allowed: [],
-      call: newCall(scope, onFiled, revision),
+      call: newCall(scope, onFiled, revision, changes),
     });
     return () => {
       this.listeners.delete(token);

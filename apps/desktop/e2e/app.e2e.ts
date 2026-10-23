@@ -333,9 +333,7 @@ test('asks for an application’s questions, then runs them in Claude’s panel'
 });
 
 test('keeps what was actually sent for a question', async () => {
-  const answers = jobPanel().locator('section', {
-    has: opened.window.getByRole('heading', { name: 'Application questions' }),
-  });
+  const answers = jobPanel().getByRole('region', { name: 'Application questions' });
   await answers.getByText('Why Acme?', { exact: true }).click();
   const box = answers.getByRole('textbox', { name: /What you sent/ });
   await box.fill('Deploys, mostly.');
@@ -774,16 +772,19 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
     .getByRole('button', { name: /^Jobs/ })
     .click();
   await pickView(/^All/);
-  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  // Acme's resume went out with its application, so it stays as sent: this tailors Tidewater's.
+  await window.getByRole('button', { name: /^Tidewater Analytics/ }).click();
   await jobPanel()
-    .getByRole('region', { name: 'Resume', exact: true })
-    .getByRole('button', { name: 'New version' })
+    .getByRole('region', { name: 'Resumes and cover letters' })
+    .getByRole('button', { name: 'Tailor a resume' })
     .click();
   const panel = claudePanel();
   // The stand-in asks two questions in one round, which open in the app's dialog rather than the
   // terminal. Put aside, the round waits in Claude's panel.
   const asks = window.getByRole('dialog', { name: 'Claude has 2 questions' });
-  await expect(asks).toContainText('From your Claude, working on Tailored resume · Acme Robotics.');
+  await expect(asks).toContainText(
+    'From your Claude, working on Tailored resume · Tidewater Analytics.',
+  );
   // The user says yes to one, puts the round aside, and comes back to it as they left it.
   const graphql = asks
     .getByRole('group', { name: /Have you used GraphQL/ })
@@ -812,11 +813,11 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   await expect.poll(() => terminalText(window)).toContain('only from your own call');
   const text = readFileSync(file, 'utf8');
   expect(text).toMatch(
-    /### GraphQL for the driver app\n`unconfirmed` `live` `solo` `medium`\n> Built the driver app’s GraphQL API\.\n- \*\*Keywords:\*\* GraphQL\n- \*\*Source:\*\* answer \d{4}-\d{2}-\d{2}, tailoring a resume for Acme Robotics\n- \*\*Question:\*\* The posting wants GraphQL\. Have you used GraphQL\?\n- \*\*Answer:\*\* Yes, in production\n/,
+    /### GraphQL for the driver app\n`unconfirmed` `live` `solo` `medium`\n> Built the driver app’s GraphQL API\.\n- \*\*Keywords:\*\* GraphQL\n- \*\*Source:\*\* answer \d{4}-\d{2}-\d{2}, tailoring a resume for Tidewater Analytics\n- \*\*Question:\*\* The posting wants GraphQL\. Have you used GraphQL\?\n- \*\*Answer:\*\* Yes, in production\n/,
   );
   expect(text).not.toContain('Led a big team');
   expect(readFileSync(gaps, 'utf8')).toMatch(
-    /\| Kafka \| No \(asked “The posting wants Kafka\. Have you run Kafka, or another event-streaming platform\?” while tailoring a resume for Acme Robotics\) \| \d{4}-\d{2}-\d{2} \|/,
+    /\| Kafka \| No \(asked “The posting wants Kafka\. Have you run Kafka, or another event-streaming platform\?” while tailoring a resume for Tidewater Analytics\) \| \d{4}-\d{2}-\d{2} \|/,
   );
   // The sidebar says there's a fact to verify, and the panel goes to it.
   await expect(
@@ -825,7 +826,9 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   await panel.getByRole('button', { name: 'Verify them' }).click();
   const toVerify = window.getByRole('region', { name: 'Unverified' });
   const answered = toVerify.getByRole('article', { name: 'GraphQL for the driver app' });
-  await expect(answered).toContainText('Your answer while tailoring a resume for Acme Robotics');
+  await expect(answered).toContainText(
+    'Your answer while tailoring a resume for Tidewater Analytics',
+  );
   await expect(answered).toContainText('“Yes, in production”');
   await answered.getByRole('button', { name: 'Verify “GraphQL for the driver app”' }).click();
   await expect(toVerify).toHaveCount(0);

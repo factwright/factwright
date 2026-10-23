@@ -24,6 +24,8 @@ import {
   TEMPLATE_SKILL,
   TEMPLATE_SOURCE,
   THANKS_SKILL,
+  VERSION_SKILLS,
+  type VersionSkill,
 } from '../shared/runs.ts';
 import { SOURCES_FOLDER } from './resume/templates.ts';
 
@@ -158,7 +160,10 @@ export function parseSearchSources(value: unknown): SearchSources | null {
  */
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
-  if ((value as Record<string, unknown>).skill === REVISE_SKILL) return parseRevision(value);
+  const fields = value as Record<string, unknown>;
+  // A new version, or the changes the user asked for, on one job.
+  if (fields.again !== undefined || fields.changes !== undefined) return parseVersionTask(fields);
+  if (fields.skill === REVISE_SKILL) return parseRevision(value);
   const { skill, jobId, mode, askId, source, sources, callId, practice, ...rest } = value as Record<
     string,
     unknown
@@ -223,6 +228,22 @@ export function parseRunTask(value: unknown): RunTask | null {
  * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
  * findings to fix, each once, with a choice for the template when one's given.
  */
+/** A new version of a job's resume, letter or Projects page, or changes to its resume or letter. */
+function parseVersionTask(fields: Record<string, unknown>): RunTask | null {
+  const { skill, jobId, again, changes, ...rest } = fields;
+  if (Object.keys(rest).length > 0) return null;
+  if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
+  if (again === true && changes === undefined) {
+    return (VERSION_SKILLS as readonly unknown[]).includes(skill)
+      ? { skill: skill as VersionSkill, jobId, again }
+      : null;
+  }
+  if (changes === true && again === undefined) {
+    return skill === REVISE_SKILL || skill === 'cover-letter' ? { skill, jobId, changes } : null;
+  }
+  return null;
+}
+
 function parseRevision(value: object): RunTask | null {
   const { skill, jobId, resume, findings, template, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || skill !== REVISE_SKILL) return null;
@@ -287,6 +308,10 @@ export function runPrompt(task: RunTask): string {
     const template = task.template ? ` template ${task.template}` : '';
     return `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${template}`;
   }
+  // Which one, by a word of the app's own: the run reads the user's changes with
+  // requested_changes, and a new version's job_details says the app kept the one before.
+  if ('again' in task) return `/factwright:${task.skill} job ${task.jobId} new version`;
+  if ('changes' in task) return `/factwright:${task.skill} job ${task.jobId} changes`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
   if ('callId' in task) {
     const practice = 'practice' in task && task.practice ? ' practice' : '';

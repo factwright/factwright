@@ -29,6 +29,7 @@ describe('sessionSettings', () => {
       'mcp__factwright__job_details',
       'mcp__factwright__search_focus',
       'mcp__factwright__revision_findings',
+      'mcp__factwright__requested_changes',
       'mcp__factwright__build_resume',
       'mcp__factwright__build_cover_letter',
       'mcp__factwright__build_projects_page',
@@ -194,6 +195,7 @@ describe('sessionSettings', () => {
     }
     for (const tool of [
       'mcp__factwright__revision_findings',
+      'mcp__factwright__requested_changes',
       'mcp__factwright__build_resume',
       'mcp__factwright__save_fact',
       'mcp__factwright__save_gap',

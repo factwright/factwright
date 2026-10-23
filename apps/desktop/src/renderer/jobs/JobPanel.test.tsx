@@ -50,6 +50,7 @@ function panel(
       posting: null,
       calls: {},
       outreach: [],
+      versions: [],
     })),
     openFile: vi.fn(async () => ({ ok: true as const })),
     ...api,
@@ -104,6 +105,7 @@ describe('sorting a job before applying', () => {
         posting: null,
         calls: {},
         outreach: [],
+        versions: [],
       })),
     } as unknown as FactwrightApi;
     const shown = (each: Job) => (
@@ -141,6 +143,7 @@ describe('sorting a job before applying', () => {
         posting: null,
         calls: {},
         outreach: [],
+        versions: [],
       })),
     } as unknown as FactwrightApi;
     // A fit check is running on another job, so its button here can't take focus.
@@ -418,7 +421,14 @@ describe('JobPanel', () => {
       { path: job.outreach[0] ?? '', date: '2026-10-08', text: '# Who to message\n\nDana Lee.' },
     ];
     panel(job, {
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {}, outreach })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: null,
+        calls: {},
+        outreach,
+        versions: [],
+      })),
     });
     const people = screen.getByRole('region', { name: 'People to contact' });
     expect(await within(people).findByText('Dana Lee.')).toBeTruthy();
@@ -455,6 +465,7 @@ describe('JobPanel', () => {
         posting: saved,
         calls: {},
         outreach: [],
+        versions: [],
       })),
     });
     await openSaved();
@@ -476,6 +487,7 @@ describe('JobPanel', () => {
         posting: saved,
         calls: {},
         outreach: [],
+        versions: [],
       })),
     });
     await openSaved();
@@ -495,6 +507,7 @@ describe('JobPanel', () => {
       posting,
       calls: {},
       outreach: [],
+      versions: [],
     }));
     const { api, rerender } = panel(job, { jobExtras });
     await vi.waitFor(() => expect(jobExtras).toHaveBeenCalled());
@@ -521,6 +534,7 @@ describe('JobPanel', () => {
         posting: saved,
         calls: {},
         outreach: [],
+        versions: [],
       })),
     });
     await openSaved();
@@ -597,6 +611,7 @@ describe('JobPanel', () => {
         posting: null,
         calls: {},
         outreach: [],
+        versions: [],
       })),
     } as unknown as FactwrightApi;
     const shown = (expanded: boolean) => (

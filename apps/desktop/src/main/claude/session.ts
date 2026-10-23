@@ -10,6 +10,7 @@ import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
+import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
@@ -131,6 +132,8 @@ export interface RunOptions {
   scope?: RunScope;
   /** The revision it's started for, which its calls to revision_findings read. */
   revision?: BoundRevision | undefined;
+  /** The changes the user asked for, which its calls to requested_changes read. */
+  changes?: BoundChanges | undefined;
 }
 
 /** What a run needs from the app: where things live, and where its output and signals go. */
@@ -231,7 +234,7 @@ export class ClaudeSession {
   }
 
   private async launch(size: TerminalSize, options: RunOptions): Promise<StartResult> {
-    const { prompt, choose, scope = 'hunt', revision } = options;
+    const { prompt, choose, scope = 'hunt', revision, changes } = options;
     const launch = await prepareLaunch({
       dataDir: this.deps.dataDir,
       pluginDir: this.deps.pluginDir,
@@ -285,6 +288,7 @@ export class ClaudeSession {
         onAnswered: (call) => signals.answered(call),
         context: { workspace: launch.cwd, templateName: this.deps.templateName },
         ...(revision && { revision }),
+        ...(changes && { changes }),
       },
     );
     let terminal: IPty;

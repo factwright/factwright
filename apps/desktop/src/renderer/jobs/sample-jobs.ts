@@ -14,6 +14,7 @@ import {
   type SearchDetail,
   type Sentiment,
 } from '@factwright/core';
+import type { DocVersion } from '../../shared/versions.ts';
 
 /** The sample job that's furthest along, with a screen done and a panel coming up. */
 const NORTHWIND = 'northwind-labs--senior-software-engineer-platform';
@@ -919,4 +920,36 @@ export function sampleOutreach(job: Job): OutreachDraft[] {
       text: PEOPLE(job.company),
     }))
     .reverse();
+}
+
+/**
+ * The earlier versions the sample jobs start with: Brightpath's resume as it was before the user
+ * asked for changes, and Northwind's first resume, from before the one it applied with, each
+ * three days before the one the job has now.
+ */
+export function sampleVersions(jobs: readonly Job[]): [string, DocVersion[]][] {
+  const before = (id: string, changes: string | null): [string, DocVersion[]][] => {
+    const job = jobs.find((each) => each.id === id);
+    const resume = job?.files[0];
+    if (!job || !resume) return [];
+    const built = new Date(Date.parse(resume.modified) - 3 * 86_400_000).toISOString();
+    const folder = `applications/${resume.path.split('/')[1]}/previous/${day(-3)}-101500`;
+    const version: DocVersion = {
+      folder,
+      kind: 'resume',
+      at: built,
+      why: changes ? 'changes' : 'new',
+      changes,
+      files: [{ ...resume, path: `${folder}/${resume.name}`, modified: built }],
+      usable: true,
+    };
+    return [[job.id, [version]]];
+  };
+  return [
+    ...before(
+      'brightpath-learning--software-engineer-iii',
+      'Lead with the platform work, and keep it to one page',
+    ),
+    ...before(NORTHWIND, null),
+  ];
 }
