@@ -3,6 +3,7 @@ import { browserName, canReachSync, clientFor, forgetAccount } from './account.t
 import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
 import { isSave } from './messages.ts';
+import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab } from './read-tab.ts';
 import { type JobToSave, type SaveResult, saveJob } from './save.ts';
 import { serverName } from './server.ts';
@@ -16,17 +17,79 @@ import { needsChecking, toSave } from './tab-job.ts';
  */
 
 const MENU = 'save-job';
-const TITLE = 'Save this job to Factwright';
+const FILL = 'fill-form';
+const TITLE = 'Factwright';
 
-/** The right-click menu's item, made again whenever the background starts. */
+/** The right-click menu's items, made again whenever the background starts. */
 function menus(): void {
-  void ext.contextMenus.removeAll().then(() =>
+  void ext.contextMenus.removeAll().then(() => {
     ext.contextMenus.create({
       id: MENU,
       title: 'Save job to Factwright',
       contexts: ['page', 'selection'],
-    }),
-  );
+    });
+    ext.contextMenus.create({
+      id: FILL,
+      title: 'Fill this application with Factwright',
+      contexts: ['page', 'editable'],
+    });
+  });
+}
+
+/**
+ * Pages that look like an application form, by what Chrome sees on them itself: a file to upload
+ * and an email address to give, or a file to upload on an applicant system's site. Chrome checks
+ * these rules, so the extension never reads a page to light its button up.
+ */
+const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
+  { css: ['input[type="file"]', 'input[type="email"]'] },
+  { css: ['input[type="file"]', 'input[autocomplete="email"]'] },
+  ...[
+    'greenhouse.io',
+    'lever.co',
+    'ashbyhq.com',
+    'myworkdayjobs.com',
+    'icims.com',
+    'smartrecruiters.com',
+    'workable.com',
+    'jobvite.com',
+  ].map((host) => ({ pageUrl: { hostSuffix: host }, css: ['input[type="file"]'] })),
+];
+
+/** The toolbar button's icon with a dot in Factwright's accent, at each size it shows. */
+async function litIcon(): Promise<Record<number, ImageData>> {
+  const sizes = [16, 32];
+  const icons: Record<number, ImageData> = {};
+  for (const size of sizes) {
+    const response = await fetch(ext.runtime.getURL(`icons/${size}.png`));
+    const image = await createImageBitmap(await response.blob());
+    const canvas = new OffscreenCanvas(size, size);
+    const draw = canvas.getContext('2d');
+    if (!draw) continue;
+    draw.drawImage(image, 0, 0, size, size);
+    const radius = size * 0.22;
+    draw.beginPath();
+    draw.arc(size - radius, size - radius, radius, 0, Math.PI * 2);
+    draw.fillStyle = LIGHT.need;
+    draw.fill();
+    icons[size] = draw.getImageData(0, 0, size, size);
+  }
+  return icons;
+}
+
+/** Lights the toolbar button up on pages that look like an application form, in Chrome. */
+async function lightUpForms(): Promise<void> {
+  const rules = ext.declarativeContent;
+  if (!rules) return;
+  const imageData = await litIcon();
+  await rules.onPageChanged.removeRules();
+  await rules.onPageChanged.addRules([
+    {
+      id: 'application-form',
+      conditions: FORM_PAGES.map((page) => new rules.PageStateMatcher(page)),
+      actions: [new rules.SetIcon({ imageData })],
+    },
+  ]);
 }
 
 /**
@@ -145,15 +208,27 @@ async function saveTab(tab: Tab): Promise<void> {
 
 ext.runtime.onInstalled.addListener(({ reason }) => {
   menus();
+  void lightUpForms().catch(() => {});
   if (reason === 'install') void openSetup();
 });
 ext.runtime.onStartup.addListener(menus);
 
 ext.contextMenus.onClicked.addListener((click, tab) => {
   if (click.menuItemId === MENU && tab) void saveTab(tab);
+  // The panel opens straight from the click, as each browser asks, and fills the tab in front.
+  if (click.menuItemId === FILL && tab) void openPanel(tab);
 });
 
 ext.commands.onCommand.addListener((command, tab) => {
+  if (command === 'fill-form') {
+    if (tab) {
+      void openPanel(tab);
+    } else {
+      // Firefox gives no tab: its sidebar opens beside the one in front.
+      void ext.sidebarAction?.open();
+    }
+    return;
+  }
   if (command !== 'save-job') return;
   if (tab) {
     void saveTab(tab);

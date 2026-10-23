@@ -59,7 +59,11 @@ export interface Asks {
  * - reaching a sync server of your own instead, asked for only when you choose one in setup, and
  *   then only for its address (optional host permissions)
  * - talking to Factwright on this computer, through the helper Factwright installs, asked for only
- *   when you choose to save there in setup (optional native messaging)
+ *   when you choose to save there in setup, or fill a form (optional native messaging)
+ * - in Chrome, its side panel, where filling a form is checked (sidePanel), and the browser's own
+ *   rules for lighting its button up on pages that look like an application form, which Chrome
+ *   checks itself (declarativeContent). Firefox has a sidebar instead, and no such rules. Neither
+ *   shows a warning, at install or on an update.
  * It has no content scripts and nothing pages can load, so sites can't tell it's installed.
  */
 export function manifest(
@@ -70,15 +74,15 @@ export function manifest(
 ): Record<string, unknown> {
   const common = {
     manifest_version: 3,
-    name: 'Save to Factwright',
+    name: 'Factwright',
     short_name: 'Factwright',
     description:
-      'Save the job you’re looking at, with its posting, to your Factwright job hunt. End-to-end encrypted.',
+      'Save the job you’re looking at to your Factwright job hunt, and fill in its application for you to check.',
     version,
     homepage_url: 'https://factwright.com',
     icons,
     action: {
-      default_title: 'Save this job to Factwright',
+      default_title: 'Factwright',
       default_popup: 'popup.html',
       default_icon: icons,
     },
@@ -104,11 +108,17 @@ export function manifest(
         suggested_key: { default: 'Alt+Shift+S' },
         description: 'Save the job on this page, without opening the extension',
       },
+      'fill-form': {
+        suggested_key: { default: 'Alt+Shift+F' },
+        description: 'Fill the application form on this page',
+      },
     },
   };
   if (target === 'chrome') {
     return {
       ...common,
+      permissions: [...common.permissions, 'sidePanel', 'declarativeContent'],
+      side_panel: { default_path: 'sidepanel.html' },
       background: { service_worker: 'background.js', type: 'module' },
       // Chrome 127 is the first to let an extension open its popup, as a save that needs checking does.
       minimum_chrome_version: '127',
@@ -116,6 +126,13 @@ export function manifest(
   }
   return {
     ...common,
+    // Firefox's sidebar, as Chrome's side panel, which opens only when you click Fill.
+    sidebar_action: {
+      default_panel: 'sidepanel.html',
+      default_title: 'Factwright',
+      default_icon: icons,
+      open_at_install: false,
+    },
     background: { scripts: ['background.js'], type: 'module' },
     browser_specific_settings: {
       gecko: {

@@ -114,8 +114,12 @@ export const INBOX_ASK = /^(\d{13})-[0-9a-f]{16}\.ask$/;
 /** The most fields an ask may carry: a long application has a hundred or so. */
 export const ASK_FIELDS = 300;
 
-/** The most of a file one answer carries: an answer the helper passes on holds under 1 MB. */
-export const FILE_PART_BYTES = 512 * 1024;
+/**
+ * The most of a file one answer carries: 384 KiB, which is 512 KiB as base64, as an answer the
+ * helper passes on holds under 1 MB. It's a multiple of 3 bytes, so each part's base64 ends whole,
+ * and the parts' base64, joined, is the file's.
+ */
+export const FILE_PART_BYTES = 384 * 1024;
 
 /** The longest file Factwright hands over: a resume or a cover letter is far less. */
 export const FILE_LIMIT = 10 * 1024 * 1024;

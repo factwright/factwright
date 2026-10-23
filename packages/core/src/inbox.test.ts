@@ -124,7 +124,7 @@ describe('an ask from the inbox', () => {
     const file = { ask: 'file', job: 'harbor-pine--account-executive', file: 'resume', part: 0 };
     expect(readInboxAsk(message({ ...file, file: '../tracker.db' }))).toBeNull();
     expect(readInboxAsk(message({ ...file, job: '../../etc' }))).toBeNull();
-    expect(readInboxAsk(message({ ...file, part: 20 }))).toBeNull();
+    expect(readInboxAsk(message({ ...file, part: 30 }))).toBeNull();
     expect(readInboxAsk(message({ ...file, part: 1.5 }))).toBeNull();
     expect(
       readInboxAsk(

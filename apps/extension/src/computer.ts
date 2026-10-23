@@ -1,4 +1,9 @@
-import { SAVE_HELPER, SAVED_POSTING_LIMIT } from '@factwright/core';
+import {
+  type InboxAsk,
+  type InboxAskAnswer,
+  SAVE_HELPER,
+  SAVED_POSTING_LIMIT,
+} from '@factwright/core';
 import type { AccountKeys } from '@factwright/sync';
 import { type Account, loadAccount } from './account.ts';
 import { ext, type Permissions } from './ext.ts';
@@ -215,4 +220,61 @@ export async function saveOnComputer(job: JobToSave): Promise<SaveResult> {
     const { missing, message } = unreachable(error);
     return { ok: false, reason: missing ? 'no-app' : 'failed', message };
   }
+}
+
+/** What asking Factwright on this computer can't do, and why, as the panel says it. */
+export type NotAsked = Extract<InboxAskAnswer, { ok: false }> & { message: string };
+
+/** Why an ask got no answer, in words. */
+const ASK_REASONS: Record<string, string> = {
+  closed: 'Open Factwright on this computer to fill this page, then click Fill again.',
+  busy: 'Factwright on this computer is busy. Try again in a moment.',
+  'not-found': 'That isn’t in Factwright anymore. Click Fill again.',
+  'bad-message': 'Factwright on this computer couldn’t take that. Update it, then try again.',
+  failed: 'Factwright on this computer couldn’t do that. Try again.',
+};
+
+/**
+ * Asks Factwright on this computer something, as filling a form does, through the helper, and
+ * waits for its answer. The helper passes an ask only to an app that's open. Only what the ask
+ * says goes, as the extension built it, and never what's in the page's fields, until you mark the
+ * job applied and it sends the answers to the form's own questions.
+ */
+export async function askComputer(
+  ask: InboxAsk,
+): Promise<Extract<InboxAskAnswer, { ok: true }> | NotAsked> {
+  if (!(await canReachComputer())) {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: 'The browser doesn’t let Factwright reach Factwright on this computer.',
+    };
+  }
+  if (!canSendNow()) {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: 'Close this, then click the Factwright button again.',
+    };
+  }
+  let answer: unknown;
+  try {
+    answer = await send({ type: 'ask', request: JSON.stringify(ask) });
+  } catch (error) {
+    return { ok: false, reason: 'failed', message: unreachable(error).message };
+  }
+  const said = (answer ?? {}) as Record<string, unknown>;
+  if (said.ok === true && typeof said.did === 'string' && said.did === ask.ask) {
+    return answer as Extract<InboxAskAnswer, { ok: true }>;
+  }
+  const reason = typeof said.reason === 'string' ? said.reason : 'failed';
+  const message =
+    typeof said.message === 'string' && said.message
+      ? said.message.slice(0, 300)
+      : (ASK_REASONS[reason] ?? 'Factwright on this computer couldn’t do that. Try again.');
+  return {
+    ok: false,
+    reason: (Object.hasOwn(ASK_REASONS, reason) ? reason : 'failed') as NotAsked['reason'],
+    message,
+  };
 }

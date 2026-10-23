@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply: Operations Manager | Fernway</title>
+  </head>
+  <body>
+    <header>
+      <form role="search"><label for="q">Search jobs</label><input id="q" name="q" type="search" /></form>
+      <input name="newsletter" type="email" placeholder="Get our newsletter" />
+    </header>
+    <main>
+      <h1>Operations Manager</h1>
+      <form id="apply" action="/apply" method="post">
+        <input type="hidden" name="job_id" value="ops-17" />
+        <label for="full">Full name *</label>
+        <input id="full" name="full_name" type="text" required />
+        <label for="mail">Email address</label>
+        <input id="mail" name="email" type="email" required />
+        <label for="tel">Phone</label>
+        <input id="tel" name="phone" type="tel" />
+        <label for="state">State</label>
+        <select id="state" name="state">
+          <option value="">Select…</option>
+          <option value="CO">Colorado</option>
+          <option value="UT">Utah</option>
+        </select>
+        <fieldset>
+          <legend>Will you now or in the future require visa sponsorship? *</legend>
+          <label><input type="radio" name="sponsor" value="yes" /> Yes</label>
+          <label><input type="radio" name="sponsor" value="no" /> No</label>
+        </fieldset>
+        <div class="question">
+          <p>Which shifts can you work?</p>
+          <label><input type="checkbox" name="shifts" value="day" /> Day</label>
+          <label><input type="checkbox" name="shifts" value="night" /> Night</label>
+        </div>
+        <label for="why">Why do you want to work at Fernway?</label>
+        <p id="why-hint">Up to 500 characters max.</p>
+        <textarea id="why" name="why" aria-describedby="why-hint"></textarea>
+        <label for="cv">Resume</label>
+        <input id="cv" name="resume" type="file" />
+        <label for="dob">Date of birth</label>
+        <input id="dob" name="dob" type="date" />
+        <label for="pw">Create a password</label>
+        <input id="pw" name="password" type="password" />
+        <div style="display: none">
+          <label for="ghost">Phone (again)</label>
+          <input id="ghost" name="phone2" type="tel" />
+        </div>
+        <label><input type="checkbox" name="consent" /> I agree to the privacy policy</label>
+        <button type="submit">Submit application</button>
+      </form>
+    </main>
+    <footer><label for="f">Email us</label><input id="f" type="email" /></footer>
+  </body>
+</html>

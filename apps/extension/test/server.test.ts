@@ -263,15 +263,14 @@ describe('the server it’s built for', () => {
 
 describe('the manifest’s permissions', () => {
   it('asks for the browser’s own sign-in window, which shows no warning, and nothing more', () => {
-    for (const target of ['chrome', 'firefox'] as const) {
-      expect(manifest(target, '1.0.0').permissions).toEqual([
-        'activeTab',
-        'scripting',
-        'storage',
-        'contextMenus',
-        'identity',
-      ]);
-    }
+    const both = ['activeTab', 'scripting', 'storage', 'contextMenus', 'identity'];
+    expect(manifest('firefox', '1.0.0').permissions).toEqual(both);
+    // Chrome's side panel, and its rules for lighting the button up, show no warning either.
+    expect(manifest('chrome', '1.0.0').permissions).toEqual([
+      ...both,
+      'sidePanel',
+      'declarativeContent',
+    ]);
   });
 
   it('gives Firefox the ID whose return address sync servers know', async () => {
