@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INBOX_JOB, readSavedJob } from './inbox.ts';
+import { INBOX_JOB, readInboxAsk, readSavedJob } from './inbox.ts';
 
 const job = {
   type: 'save',
@@ -51,5 +51,88 @@ describe('a job from the inbox', () => {
     expect(INBOX_JOB.test('.1760745600000-3f9c2a7b1e4d5c6a.tmp')).toBe(false);
     expect(INBOX_JOB.test('1760745600000-3f9c2a7b1e4d5c6a.done')).toBe(false);
     expect(INBOX_JOB.test('../1760745600000-3f9c2a7b1e4d5c6a.json')).toBe(false);
+  });
+});
+
+describe('an ask from the inbox', () => {
+  const field = {
+    question: 'Email',
+    hint: '',
+    control: 'text',
+    type: 'email',
+    autocomplete: 'email',
+    name: 'email',
+    options: [],
+    required: true,
+    limit: null,
+  };
+  const fill = {
+    ask: 'fill',
+    url: 'https://job-boards.greenhouse.io/harborpine/jobs/4567890',
+    title: 'Job Application for Account Executive at Harbor & Pine',
+    fields: [field],
+  };
+  /** An ask as the helper writes it: the extension's message, as it came. */
+  const message = (request: unknown) =>
+    JSON.stringify({ type: 'ask', request: JSON.stringify(request) });
+
+  it('reads a form to fill, with its fields and nothing in them', () => {
+    expect(readInboxAsk(message(fill))).toEqual(fill);
+  });
+
+  it('reads asks for a part of a file, what was sent, and answers to keep', () => {
+    const file = { ask: 'file', job: 'harbor-pine--account-executive', file: 'resume', part: 0 };
+    expect(readInboxAsk(message(file))).toEqual(file);
+    const sent = {
+      ask: 'sent',
+      job: 'harbor-pine--account-executive',
+      url: fill.url,
+      answers: [{ question: 'Why Harbor & Pine?', text: 'Gear that lasts.' }],
+    };
+    expect(readInboxAsk(message(sent))).toEqual(sent);
+    const remember = { ask: 'remember', answers: [{ kind: 'phone', text: '(303) 555-0142' }] };
+    expect(readInboxAsk(message(remember))).toEqual(remember);
+  });
+
+  it('takes only an ask, as the helper passes it on', () => {
+    expect(readInboxAsk('not JSON')).toBeNull();
+    expect(
+      readInboxAsk(JSON.stringify({ type: 'save', request: JSON.stringify(fill) })),
+    ).toBeNull();
+    expect(readInboxAsk(JSON.stringify({ type: 'ask', request: fill }))).toBeNull();
+    expect(
+      readInboxAsk(JSON.stringify({ type: 'ask', request: JSON.stringify(fill), more: '' })),
+    ).toBeNull();
+    expect(readInboxAsk(message('fill'))).toBeNull();
+  });
+
+  it('checks each kind of ask has its own fields, each as it should be, and no others', () => {
+    expect(readInboxAsk(message({ ...fill, cookies: 'session=1' }))).toBeNull();
+    expect(readInboxAsk(message({ ...fill, url: 'javascript:alert(1)' }))).toBeNull();
+    expect(
+      readInboxAsk(message({ ...fill, fields: [{ ...field, control: 'password' }] })),
+    ).toBeNull();
+    expect(
+      readInboxAsk(message({ ...fill, fields: [{ ...field, value: 'ana@example.com' }] })),
+    ).toEqual(
+      // A field's value is never part of an ask: one that carries it isn't a field.
+      null,
+    );
+    expect(readInboxAsk(message({ ...fill, fields: Array(301).fill(field) }))).toBeNull();
+    const file = { ask: 'file', job: 'harbor-pine--account-executive', file: 'resume', part: 0 };
+    expect(readInboxAsk(message({ ...file, file: '../tracker.db' }))).toBeNull();
+    expect(readInboxAsk(message({ ...file, job: '../../etc' }))).toBeNull();
+    expect(readInboxAsk(message({ ...file, part: 20 }))).toBeNull();
+    expect(readInboxAsk(message({ ...file, part: 1.5 }))).toBeNull();
+    expect(
+      readInboxAsk(
+        message({
+          ask: 'sent',
+          job: 'harbor-pine--account-executive',
+          url: fill.url,
+          answers: [{ question: 'Why?', text: 'Because.', field: 3 }],
+        }),
+      ),
+    ).toBeNull();
   });
 });
