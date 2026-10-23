@@ -580,12 +580,12 @@ export interface FactwrightApi {
   /** Restarts into a downloaded update. Answers whether there was one to install. */
   installUpdate(): Promise<boolean>;
   /**
-   * Where saving from each browser to Factwright on this computer stands, for the Save to
-   * Factwright window. Looking never touches a browser's folders.
+   * Where saving from each browser to Factwright on this computer stands, for the Browser
+   * extension window. Looking never touches a browser's folders.
    */
   saveHelperStatus(): Promise<SaveHelperView>;
   /**
-   * Sets browsers up so Save to Factwright can save to Factwright on this computer: the ones
+   * Sets browsers up so the extension can save to Factwright on this computer: the ones
    * given, or every one found. On a Mac, macOS may ask the user first, once for each browser.
    */
   setUpSaveHelper(only?: string[]): Promise<SetUpResult>;

@@ -60,7 +60,7 @@ const LINK_CODE = 'factwright-link-code';
 
 /**
  * What the sign-in page for a device's code says, by who asked for the code: the desktop app, or
- * the browser extension, Save to Factwright, when it signs in with a code rather than through its
+ * the browser extension, when it signs in with a code rather than through its
  * window (EXTENSION_SIGN_IN). The server names them in the page's address, such as
  * "for=extension". Anyone can change an address, so it only ever picks these words: signed in, the
  * page goes by the server's own word for who asked. Without it, as for a code from before the
@@ -72,8 +72,8 @@ const DEVICE_SIGN_IN = {
     lead: 'Sign in to let Factwright on your computer sync your job hunt.',
   },
   extension: {
-    title: 'Sign in to set up Save to Factwright',
-    lead: 'Sign in with the account Factwright on your computer uses. Then Save to Factwright can save jobs to your job hunt.',
+    title: 'Sign in to set up the Factwright extension',
+    lead: 'Sign in with the account Factwright on your computer uses. Then the extension can save jobs to your job hunt.',
   },
 } as const;
 
@@ -91,7 +91,7 @@ function takeLinkCode(): string | null {
 }
 
 /**
- * What Save to Factwright asked, from this page's address, when it's an ask this server can
+ * What the extension asked, from this page's address, when it's an ask this server can
  * answer: for a return address it knows.
  */
 function extensionAsk(redirects: string[]): ExtensionAsk | null {
@@ -284,7 +284,7 @@ export function App() {
               providers={providers}
               legal={legal}
               title="Sign in to Factwright"
-              lead="Sign in with the account Factwright on your computer uses, to let Save to Factwright save jobs to it."
+              lead="Sign in with the account Factwright on your computer uses, to let the Factwright extension save jobs to it."
               returnTo={location.pathname + location.search}
               signInProblem={signInProblem}
             />

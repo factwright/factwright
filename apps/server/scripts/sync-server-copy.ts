@@ -125,7 +125,7 @@ export function copyReadme(version: string, commit: string): string {
   const address = `https://${NAME}.<subdomain>.workers.dev`;
   return `# Factwright’s sync server, ready to deploy
 
-Factwright’s sync server, built and ready to run in your own Cloudflare account, for free. Factwright, Save to Factwright and the web view on your phone can all sync through it, end-to-end encrypted: the server only ever holds locked data.
+Factwright’s sync server, built and ready to run in your own Cloudflare account, for free. Factwright, its browser extension and the web view on your phone can all sync through it, end-to-end encrypted: the server only ever holds locked data.
 
 This is the server from Factwright ${version}, made from [apps/server at ${commit.slice(0, 7)}](https://github.com/factwright/factwright/tree/${commit}/apps/server) with nothing changed. Its source is there, under the AGPL.
 

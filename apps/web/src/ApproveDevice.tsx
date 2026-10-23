@@ -26,8 +26,8 @@ type Step =
   | { problem: string };
 
 /**
- * What the page says, for the desktop app or for the browser extension, Save to Factwright, on
- * this server, `host`, such as app.factwright.com.
+ * What the page says, for the desktop app or for the browser extension, on this server, `host`,
+ * such as app.factwright.com.
  */
 const wordsFor = (host: string) => ({
   app: {
@@ -47,21 +47,21 @@ const wordsFor = (host: string) => ({
     again: 'To let a computer in, sign in again here first. Then you’ll see the code again.',
   },
   extension: {
-    title: 'Let Save to Factwright sign in?',
-    check: 'Check that the Set up Save to Factwright tab, the one you came from, shows this code:',
+    title: 'Let the Factwright extension sign in?',
+    check: 'Check that the Set up Factwright tab, the one you came from, shows this code:',
     // Setup shows a code only for the server its copy was built for, which its 0.2 versions name
     // beside it. With a server of your own, it signs in through the browser's window, with no
     // code. So a code here that the tab doesn't show is someone else's: a server of your own could
     // get one from this server, and send the window, or a tab, here for the person to allow
     // (signInWay, in apps/extension/src/server.ts).
-    only: `Only allow it if you just started setting up Save to Factwright, the browser extension. It lets the extension save jobs to your job hunt from this browser. If that tab shows no code, or names a server other than ${host}, don’t allow it.`,
+    only: `Only allow it if you just started setting up the Factwright extension. It lets the extension save jobs to your job hunt from this browser. If that tab shows no code, or names a server other than ${host}, don’t allow it.`,
     account:
-      'Save to Factwright signs in to this account, so it needs to be the one Factwright on your computer uses.',
+      'The extension signs in to this account, so it needs to be the one Factwright on your computer uses.',
     switch:
       'Sign in with the account Factwright on your computer uses. Then you’ll see this code again.',
-    allowed: 'Save to Factwright is signed in.',
-    next: 'Go back to the Set up Save to Factwright tab to link it with Factwright on your computer.',
-    declined: 'Turned away. Save to Factwright won’t sign in with this code.',
+    allowed: 'The Factwright extension is signed in.',
+    next: 'Go back to the Set up Factwright tab to link it with Factwright on your computer.',
+    declined: 'Turned away. The extension won’t sign in with this code.',
     again: 'To let it in, sign in again here first. Then you’ll see the code again.',
   },
 });

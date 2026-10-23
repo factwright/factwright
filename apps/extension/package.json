@@ -2,7 +2,7 @@
   "name": "@factwright/extension",
   "version": "0.2.0",
   "private": true,
-  "description": "Save to Factwright: save the job you're looking at, with its posting, to your job hunt.",
+  "description": "Factwright for Chrome and Firefox: save the job you're looking at, with its posting, to your job hunt.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {

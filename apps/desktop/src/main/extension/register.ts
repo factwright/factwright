@@ -9,7 +9,7 @@ import type { HelperState, HelperUnavailable, SaveHelperView } from '../../share
 import { BROWSERS, type Browser, type BrowserId } from './browsers.ts';
 
 /**
- * Registering the helper with the browsers. Save to Factwright reaches the app on this computer
+ * Registering the helper with the browsers. The extension reaches the app on this computer
  * through the browser's native messaging: the browser starts the helper the app installs
  * (apps/desktop/helper) once a manifest it reads names the helper and the extension. On a Mac
  * that's a file in the browser's own folders, and on Windows, a file in the app's data folder,
@@ -17,7 +17,7 @@ import { BROWSERS, type Browser, type BrowserId } from './browsers.ts';
  *
  * On Windows the app registers with each browser it finds as it starts, which asks nothing of the
  * user. On a Mac it never touches a browser's folders until the user sets that browser up in the
- * Save to Factwright window: macOS keeps each app's data from other apps, and asks the user, or
+ * Browser extension window: macOS keeps each app's data from other apps, and asks the user, or
  * blocks it and says so, when one tries. Once a browser is set up, a start keeps its manifest
  * current.
  *
@@ -40,7 +40,8 @@ export const RECORD_FILE = 'save-helper.json';
 export const MANIFEST_FOLDER = 'save-helper';
 
 /** What a manifest says the helper does, which a browser may show. */
-const DESCRIPTION = 'Saves jobs from Save to Factwright to the Factwright app on this computer.';
+const DESCRIPTION =
+  'Connects Factwright’s browser extension to the Factwright app on this computer.';
 
 /** A Chrome extension's ID: 32 letters from a to p. */
 const CHROME_ID = /^[a-p]{32}$/;
@@ -154,7 +155,7 @@ export interface SaveHelperDeps {
   helper: string;
   /** The app's version, as a new version registers again. */
   version: string;
-  /** Save to Factwright's IDs: its Chrome Web Store item's and its Firefox one. */
+  /** The extension's IDs: its Chrome Web Store item's and its Firefox one. */
   extensionIds?: { chrome: string; firefox: string };
   /**
    * More Chrome extensions to let reach the helper, such as one being developed, loaded unpacked:
@@ -184,8 +185,8 @@ export interface SaveHelperDeps {
  * - disk-image: the app runs from a disk image or another disk, under /Volumes, which goes away
  *   once it's ejected.
  * - unchanged: it's registered already, for this version and helper, and nothing's changed since.
- * - not-set-up: on a Mac, no browser is set up yet. The user sets each up in the Save to
- *   Factwright window, and until then the app leaves the browsers' folders alone.
+ * - not-set-up: on a Mac, no browser is set up yet. The user sets each up in the Browser
+ *   extension window, and until then the app leaves the browsers' folders alone.
  */
 export type SkipReason =
   | 'other-system'
@@ -581,8 +582,8 @@ function prepare(
 }
 
 /**
- * Registers the helper as the app starts, so Save to Factwright can reach the app. On Windows,
- * each browser found gets a manifest naming the helper and Save to Factwright's IDs, with any more
+ * Registers the helper as the app starts, so the extension can reach the app. On Windows,
+ * each browser found gets a manifest naming the helper and the extension's IDs, with any more
  * Chrome IDs given, unless it's registered already. On a Mac, only the browsers the user set up
  * are kept current, and none are touched until there are some. A browser that fails never stops
  * the others.
@@ -618,7 +619,7 @@ export async function registerSaveHelper(deps: SaveHelperDeps): Promise<Registra
 }
 
 /**
- * Sets browsers up because the user asked, in the Save to Factwright window: on a Mac, the ones
+ * Sets browsers up because the user asked, in the Browser extension window: on a Mac, the ones
  * given that are installed, or every one installed, which macOS may ask the user about, along with
  * any set up before whose manifests are out of date. On Windows, it registers with every browser
  * found, as a start would, even when nothing seems to have changed.
@@ -650,7 +651,7 @@ const UNAVAILABLE: Partial<Record<SkipReason, HelperUnavailable>> = {
 };
 
 /**
- * Where each browser on this computer stands, for the Save to Factwright window, from the record
+ * Where each browser on this computer stands, for the Browser extension window, from the record
  * alone: on a Mac, the browsers are found by their apps, so looking never touches their folders.
  */
 export function saveHelperStatus(deps: SaveHelperDeps): SaveHelperView {

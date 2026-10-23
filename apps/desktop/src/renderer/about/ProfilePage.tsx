@@ -562,7 +562,7 @@ export function ProfilePage({
         >
           <p>{applicationsSummary(answers.applications)}</p>
           <p className={styles.quiet}>
-            Save to Factwright fills forms with these. Equal-opportunity answers stay on this
+            The browser extension fills forms with these. Equal-opportunity answers stay on this
             computer.
           </p>
         </Card>

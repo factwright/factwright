@@ -1,6 +1,6 @@
-# Save to Factwright
+# The browser extension
 
-The browser extension, for Chrome and Firefox. On a job's page, click its button, check the title and company, and save it: the job lands in your Factwright job hunt as New, with its link and its posting as you saw it. It saves straight to Factwright on the same computer, with no account, or through sync, from any computer: Factwright's sync, or a sync server of your own. It reads pages that need a sign-in too, since it reads what's on your screen, LinkedIn included, unless you turn that off.
+Factwright's extension for Chrome and Firefox, called Factwright in both stores. It was Save to Factwright at first, as its Firefox ID (`save@factwright.com`) and its listings' addresses still say. On a job's page, click its button, check the title and company, and save it: the job lands in your Factwright job hunt as New, with its link and its posting as you saw it. It saves straight to Factwright on the same computer, with no account, or through sync, from any computer: Factwright's sync, or a sync server of your own. It reads pages that need a sign-in too, since it reads what's on your screen, LinkedIn included, unless you turn that off.
 
 On the same computer, it also fills in a job's application form, for you to check and submit yourself: click Fill this application in the popup, in the right-click menu, or with Alt+Shift+F, and a panel opens beside the page. It reads the form, asks Factwright for an answer to each field, from Profile, the job's own resume and what you sent before, uploads the job's resume and cover letter, and lists every field with where its answer came from. What's left for you, and needed, is outlined in orange on the page. Mark as applied keeps what you sent with the job. It never submits anything, and on LinkedIn and Indeed, whose terms forbid filling their forms, it only gives answers to copy.
 
@@ -56,9 +56,9 @@ It makes `dist/chrome` and `dist/firefox`, and a zip of each.
 - **Chrome:** open `chrome://extensions`, turn on Developer mode, then Load unpacked and pick `dist/chrome`.
 - **Firefox:** open `about:debugging#/runtime/this-firefox`, then Load Temporary Add-on and pick `dist/firefox/manifest.json`. It stays until Firefox restarts.
 
-Setup opens on its own. A copy loaded this way signs in to Factwright's sync with a code, since its server knows only the stores' copies by their IDs, and Chrome gives a copy loaded from a folder an ID of its own. Firefox gives it the stores' ID, so it signs in through the window. A server's `EXTENSION_IDS` can add a copy's ID ([apps/server](../server/README.md#save-to-factwrights-window)).
+Setup opens on its own. A copy loaded this way signs in to Factwright's sync with a code, since its server knows only the stores' copies by their IDs, and Chrome gives a copy loaded from a folder an ID of its own. Firefox gives it the stores' ID, so it signs in through the window. A server's `EXTENSION_IDS` can add a copy's ID ([apps/server](../server/README.md#the-extensions-window)).
 
-To try saving to Factwright on this computer, build the desktop app's helper (`pnpm --filter @factwright/desktop helper`), then run the desktop app from the code with the unpacked extension's ID, from `chrome://extensions`, so it registers the helper for it as well as the stores' ID. On a Mac, then set the browser up in the app's Save to Factwright window (Browser extension, in its sidebar), as macOS asks first:
+To try saving to Factwright on this computer, build the desktop app's helper (`pnpm --filter @factwright/desktop helper`), then run the desktop app from the code with the unpacked extension's ID, from `chrome://extensions`, so it registers the helper for it as well as the stores' ID. On a Mac, then set the browser up in the app's Browser extension window, from its sidebar, as macOS asks first:
 
 ```bash
 FACTWRIGHT_EXTENSION_ID=<the unpacked extension's ID> pnpm dev

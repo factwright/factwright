@@ -22,7 +22,7 @@ import {
   setUpSaveHelper,
 } from './register.ts';
 
-/** Save to Factwright's Chrome Web Store item. */
+/** The extension's Chrome Web Store item. */
 const STORE = 'gjhjddlohoonikgdbfcfnljeffilblai';
 /** An unpacked copy of the extension, being developed. */
 const UNPACKED = 'abcdefghijklmnopabcdefghijklmnop';
@@ -59,7 +59,8 @@ const setKey = (under: string, manifest: string) => [
   '/f',
 ];
 
-const DESCRIPTION = 'Saves jobs from Save to Factwright to the Factwright app on this computer.';
+const DESCRIPTION =
+  'Connects Factwright’s browser extension to the Factwright app on this computer.';
 const chromeManifest = (path: string, ids = [STORE]) => ({
   name: 'com.factwright.save',
   description: DESCRIPTION,
@@ -236,7 +237,7 @@ async function register(deps: SaveHelperDeps) {
   return { result, writes, runs };
 }
 
-/** Sets browsers up, as the Save to Factwright window asks, and says what was written and run. */
+/** Sets browsers up, as the Browser extension window asks, and says what was written and run. */
 async function setUp(deps: SaveHelperDeps, only?: string[]) {
   writes = [];
   runs = [];

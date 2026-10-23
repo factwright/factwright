@@ -41,7 +41,7 @@ const diskImage = JSON.parse(
 const windows = process.argv.includes('--win');
 
 /**
- * The helper the browsers start for Save to Factwright, so it can save to the app on this
+ * The helper the browsers start for the browser extension, so it can save to the app on this
  * computer. It's in helper/out once scripts/build-helper.ts has built it, as `pnpm dist:mac` and
  * `dist:win` do first. Without it, electron-builder would build the app anyway, with only a
  * warning, and the extension could never reach that app: the build stops instead.

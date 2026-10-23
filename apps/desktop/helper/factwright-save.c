@@ -1,4 +1,4 @@
-// factwright-save: the helper Save to Factwright, the browser extension, reaches on this computer.
+// factwright-save: the helper the browser extension reaches on this computer.
 //
 // The browser starts it for each message from the extension, through the browser's native
 // messaging, and talks to it over stdin and stdout: a message is its length, in four bytes in this

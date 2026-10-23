@@ -101,7 +101,7 @@ function noAccess(to: Exclude<Destination, null>): void {
   const where =
     to.to === 'computer' ? 'Factwright on this computer' : serverName(to.account.server);
   message(
-    `The browser doesn’t let Save to Factwright reach ${where}, so it can’t save jobs.`,
+    `The browser doesn’t let the extension reach ${where}, so it can’t save jobs.`,
     h('div', { class: 'actions' }, button('Allow it in setup', openSetup, true)),
   );
 }
@@ -356,7 +356,7 @@ function done(
   }
   if (result.reason === 'signed-out') {
     message(
-      'Save to Factwright isn’t signed in anymore.',
+      'The extension isn’t signed in anymore.',
       h('div', { class: 'actions' }, button('Set it up again', openSetup, true)),
     );
     return;

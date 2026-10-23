@@ -23,7 +23,7 @@ const UPDATE_SETTINGS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Where the app keeps the helper Save to Factwright saves through, from the folder its program is
+ * Where the app keeps the helper the extension saves through, from the folder its program is
  * in: in its resources on a Mac, and beside its program on Windows.
  */
 const HELPER: Readonly<Record<string, string>> = {
@@ -175,9 +175,9 @@ test('looks for updates only if built with a download site', () => {
   }
 });
 
-// The helper the browsers start for Save to Factwright answers a hello, as the extension sends
-// one, with the app's version. A hello reads and writes nothing on disk, so this runs anywhere.
-test('carries the helper Save to Factwright reaches, which answers with the app’s version', () => {
+// The helper the browsers start for the extension answers a hello, as the extension sends one,
+// with the app's version. A hello reads and writes nothing on disk, so this runs anywhere.
+test('carries the helper the extension reaches, which answers with the app’s version', () => {
   const message = Buffer.from(JSON.stringify({ type: 'hello' }));
   // Native messaging's framing: the message's length in four bytes, then the message.
   const length = Buffer.alloc(4);

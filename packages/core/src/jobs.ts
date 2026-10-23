@@ -638,7 +638,7 @@ export function collectJobs(
     draft.records.push(record);
   };
   const create = (record: ToolRecord, key: string, link?: string) => {
-    // Made as Add job and Save to Factwright make them, so the ID fits a folder's name and both
+    // Made as Add job and the extension make them, so the ID fits a folder's name and both
     // find the job: a company with no Latin letters by the job's link.
     const named = idPart(key || slug(record.company), 'company');
     const code = link ? `job-${shortCode(normalizeUrl(link))}` : 'unknown';

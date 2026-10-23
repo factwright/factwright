@@ -36,6 +36,17 @@ describe('each browser’s manifest', () => {
     expect((chrome.description as string).length).toBeLessThanOrEqual(132);
   });
 
+  it('is called Factwright, on its button and on Firefox’s sidebar too', () => {
+    for (const target of ['chrome', 'firefox'] as const) {
+      const built = manifest(target, '0.3.0');
+      expect(built.name).toBe('Factwright');
+      expect(built.action).toMatchObject({ default_title: 'Factwright' });
+    }
+    expect(manifest('firefox', '0.3.0').sidebar_action).toMatchObject({
+      default_title: 'Factwright',
+    });
+  });
+
   it('asks for it at install only in the end-to-end run’s build', () => {
     const built = manifest('chrome', '0.2.0', 'http://127.0.0.1:8787', { nativeAtInstall: true });
     expect(built.permissions).toContain('nativeMessaging');

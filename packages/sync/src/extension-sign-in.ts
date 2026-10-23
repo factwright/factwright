@@ -3,7 +3,7 @@ import { CLIENTS } from './protocol.ts';
 import type { SignInResult } from './sign-in.ts';
 
 /**
- * Save to Factwright's sign-in through the browser's own window for extensions
+ * The browser extension's sign-in through the browser's own window for extensions
  * (identity.launchWebAuthFlow), with nothing to compare: an authorization code (RFC 6749) for the
  * extension alone, tied to it with PKCE (RFC 7636, S256) and state. The browser opens the server's
  * page in a window of its own, where the person signs in if they aren't, and allows the extension.
@@ -23,7 +23,7 @@ export const EXTENSION_SIGN_IN = {
 } as const;
 
 /**
- * Save to Factwright's IDs in the stores: the Chrome Web Store's item, and the ID its manifest
+ * The extension's IDs in the stores: the Chrome Web Store's item, and the ID its manifest
  * gives Firefox. Each browser keeps an extension's return address for that ID alone.
  */
 export const EXTENSION_IDS = {
@@ -61,7 +61,7 @@ export const STORE_RETURNS: readonly string[] = [
 
 /** What the page asks, as its address carries it: who for, where the answer goes, and its ties. */
 export interface ExtensionAsk {
-  /** The extension's return address, which the server must know as one of Save to Factwright's. */
+  /** The extension's return address, which the server must know as one of the extension's. */
   redirect: string;
   /** The verifier's S256 challenge, which the code is tied to. */
   challenge: string;
@@ -96,7 +96,7 @@ export function askUrl(server: string, ask: ExtensionAsk): string {
 
 /**
  * An ask, from the page's address or the server's request, or null when anything's missing or out
- * of shape: Save to Factwright alone, a code tied to an S256 challenge, and a state. Whether the
+ * of shape: the extension alone, a code tied to an S256 challenge, and a state. Whether the
  * return address is one the server knows is the server's to say.
  */
 export function readAsk(values: Readonly<Record<string, unknown>>): ExtensionAsk | null {
@@ -182,7 +182,7 @@ export interface WindowSignInDeps {
 }
 
 /**
- * Signs Save to Factwright in through the browser's window: `start` gives the page to open in it,
+ * Signs the extension in through the browser's window: `start` gives the page to open in it,
  * and `finish` takes the address the window returned to, and trades its code for the extension's
  * session. The window itself is the extension's to open, since only it can.
  */

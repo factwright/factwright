@@ -285,7 +285,7 @@ describe('using another account', () => {
 });
 
 describe('letting the browser extension sign in', () => {
-  it('names Save to Factwright, its tab, and the account it needs, then lets it sign in', async () => {
+  it('names the extension, its tab, and the account it needs, then lets it sign in', async () => {
     fakeServer({
       'GET /api/auth/device': fromExtension,
       'POST /api/auth/device/approve': () => ({ success: true }),
@@ -294,28 +294,28 @@ describe('letting the browser extension sign in', () => {
       <ApproveDevice userCode="WDJBMJHT" email={EMAIL} providers={['github']} />,
     );
     expect(
-      await screen.findByRole('heading', { name: 'Let Save to Factwright sign in?' }),
+      await screen.findByRole('heading', { name: 'Let the Factwright extension sign in?' }),
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'Check that the Set up Save to Factwright tab, the one you came from, shows this code:',
+        'Check that the Set up Factwright tab, the one you came from, shows this code:',
       ),
     ).toBeTruthy();
     // Its tab shows a code only for this server, so a code it doesn't show is someone else's.
     expect(
       screen.getByText(
-        `Only allow it if you just started setting up Save to Factwright, the browser extension. It lets the extension save jobs to your job hunt from this browser. If that tab shows no code, or names a server other than ${location.host}, don’t allow it.`,
+        `Only allow it if you just started setting up the Factwright extension. It lets the extension save jobs to your job hunt from this browser. If that tab shows no code, or names a server other than ${location.host}, don’t allow it.`,
       ),
     ).toBeTruthy();
     expect(accountLine()).toBe(
-      'Signed in as sam@example.com. Save to Factwright signs in to this account, so it needs to be the one Factwright on your computer uses. Use another account',
+      'Signed in as sam@example.com. The extension signs in to this account, so it needs to be the one Factwright on your computer uses. Use another account',
     );
     expect((await axe.run(container)).violations).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
-    expect(await screen.findByText('Save to Factwright is signed in.')).toBeTruthy();
+    expect(await screen.findByText('The Factwright extension is signed in.')).toBeTruthy();
     expect(
       screen.getByText(
-        'Go back to the Set up Save to Factwright tab to link it with Factwright on your computer.',
+        'Go back to the Set up Factwright tab to link it with Factwright on your computer.',
       ),
     ).toBeTruthy();
   });
@@ -329,7 +329,9 @@ describe('letting the browser extension sign in', () => {
     });
     render(<ApproveDevice userCode="WDJBMJHT" email={EMAIL} providers={['github']} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Use another account' }));
-    expect(screen.getByRole('heading', { name: 'Let Save to Factwright sign in?' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Let the Factwright extension sign in?' }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         'Sign in with the account Factwright on your computer uses. Then you’ll see this code again.',

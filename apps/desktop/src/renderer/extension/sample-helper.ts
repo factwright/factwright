@@ -15,12 +15,12 @@ const UNAVAILABLE: readonly HelperUnavailable[] = [
 ];
 
 /**
- * Sample answers for the Save to Factwright window, which ?helper picks:
+ * Sample answers for the Browser extension window, which ?helper picks:
  * - unset: Google Chrome isn't set up yet, and Firefox is ready.
  * - blocked: macOS blocked Google Chrome.
  * - brave: Brave too, which macOS blocked, and whose file goes in Chrome's folder as well.
  * - refuse: setting a browser up is refused, as when the user chooses Don't Allow.
- * - none: no browser Save to Factwright runs in is installed.
+ * - none: no browser the extension runs in is installed.
  * - development, translocated, disk-image, no-helper or other-system: this copy can't set the
  *   browsers up, and why.
  * On Windows (?platform=win32), the browsers are set up as the app starts, so both are ready.

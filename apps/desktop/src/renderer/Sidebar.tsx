@@ -98,7 +98,7 @@ export function Sidebar({
   /** Opens Claude's settings: its model, and what it may do without asking. */
   onOpenClaudeSettings: () => void;
   /**
-   * Opens Save to Factwright's window: the browser extension, where to get it, and saving straight
+   * Opens the Browser extension window: the extension, where to get it, and saving straight
    * to Factwright on this computer, which works whatever sync is doing.
    */
   onOpenExtension: () => void;

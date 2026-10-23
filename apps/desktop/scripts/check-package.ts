@@ -1,6 +1,6 @@
 // Checks what the built app carries in its archive: the built app without its source maps, its
 // package file, and node-pty, and nothing else from the folder, such as sources, tests or local
-// settings. Then that the helper Save to Factwright saves through is where the installers put it,
+// settings. Then that the helper the extension saves through is where the installers put it,
 // and on a Mac, that it runs on both kinds of Mac. Run after
 // `pnpm dist:mac` or `dist:win`: node scripts/check-package.ts
 import { spawnSync } from 'node:child_process';
@@ -53,7 +53,7 @@ function helperProblems(): string[] {
   const helper = fileURLToPath(new URL(`../${where}`, import.meta.url));
   if (!existsSync(helper)) {
     return [
-      `${where} isn't there, so Save to Factwright couldn't save to the app. dist:mac and dist:win build it first, and pnpm helper builds it on its own.`,
+      `${where} isn't there, so the extension couldn't save to the app. dist:mac and dist:win build it first, and pnpm helper builds it on its own.`,
     ];
   }
   if (process.platform !== 'darwin') return [];

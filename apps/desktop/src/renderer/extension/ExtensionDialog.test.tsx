@@ -49,7 +49,7 @@ describe('ExtensionDialog', () => {
     await screen.findByRole('list', { name: 'Your browsers' });
     expect(row('Google Chrome').getByText('Not set up')).toBeTruthy();
     expect(row('Firefox').getByText('Ready')).toBeTruthy();
-    expect(screen.getByText(/From version 0.2, Save to Factwright can save straight/)).toBeTruthy();
+    expect(screen.getByText(/From version 0.2, the extension can save straight/)).toBeTruthy();
     expect(screen.getByText(/macOS may ask you to allow it: choose Allow/)).toBeTruthy();
     // Looking sets nothing up.
     expect(api.setUpSaveHelper).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe('ExtensionDialog', () => {
   it('says when no browser it runs in is installed', async () => {
     render(<ExtensionDialog api={sampled('none')} onClose={vi.fn()} />);
     expect(
-      await screen.findByText(/didn’t find a browser Save to Factwright runs in: Chrome, Chromium/),
+      await screen.findByText(/didn’t find a browser the extension runs in: Chrome, Chromium/),
     ).toBeTruthy();
   });
 

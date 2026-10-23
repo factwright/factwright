@@ -1,4 +1,4 @@
-// Builds factwright-save, the small helper Save to Factwright saves through on this computer
+// Builds factwright-save, the small helper the browser extension saves through on this computer
 // (helper/README.md says what it does), from helper/factwright-save.c, for the computer it runs on:
 // on a Mac, one program for both Apple silicon and Intel, as the app is, on Windows one for x64,
 // and on Linux one for the tests alone. It compiles in the app's version, from package.json. The

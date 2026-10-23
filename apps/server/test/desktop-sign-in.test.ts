@@ -209,7 +209,7 @@ describe('signing the desktop app in through the browser, back to its computer',
   });
 
   it('never signs in one app with a code given for the other', async () => {
-    // The desktop app's code, traded as Save to Factwright, at either way in.
+    // The desktop app's code, traded as the extension, at either way in.
     const desktop = await allowed();
     const asExtension = await trade(desktop.code, desktop.ask.verifier, {
       at: EXTENSION_SIGN_IN.token,
@@ -220,7 +220,7 @@ describe('signing the desktop app in through the browser, back to its computer',
       (await trade(desktop.code, desktop.ask.verifier, { client: 'factwright-extension' })).status,
     ).toBe(400);
 
-    // Save to Factwright's code, traded as the desktop app.
+    // The extension's code, traded as the desktop app.
     const sam = await server.signUp();
     const [chrome] = STORE_RETURNS as [string];
     const verifier = toBase64Url(randomBytes(32));
@@ -281,7 +281,7 @@ describe('signing the desktop app in through the browser, back to its computer',
       'http://127.0.0.1:51004/',
       'http://127.0.0.1:51004/signed-in?code=planted',
       'http://127.0.0.1:51004/signed-in#',
-      // Save to Factwright's.
+      // The extension's.
       ...STORE_RETURNS,
       'javascript:alert(1)',
       42,

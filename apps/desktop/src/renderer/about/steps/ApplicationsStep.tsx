@@ -41,7 +41,7 @@ const LINES: readonly {
 ];
 
 /**
- * What application forms ask that a resume doesn't say, for Save to Factwright to fill them with:
+ * What application forms ask that a resume doesn't say, for the extension to fill them with:
  * names, where you live, links, and the questions forms ask about working there. Your street,
  * postal code and equal-opportunity answers are kept on this computer alone, and each
  * equal-opportunity question is left for you unless you choose an answer.
@@ -101,8 +101,8 @@ export function ApplicationsStep({
           For applications
         </h2>
         <p className={styles.lead}>
-          What application forms ask that your resume doesn’t say. Save to Factwright fills forms
-          with these, and leaves anything blank here for you to answer on the form.
+          What application forms ask that your resume doesn’t say. Factwright’s browser extension
+          fills forms with these, and leaves anything blank here for you to answer on the form.
         </p>
       </div>
 

@@ -208,7 +208,7 @@ export class JobsService {
   }
 
   /**
-   * Adds a job Save to Factwright saved on this computer, from the inbox, as a save through sync
+   * Adds a job the extension saved on this computer, from the inbox, as a save through sync
    * adds it: its row, as New, and its posting as the person saw it, kept with the job's extras in
    * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. The
    * same job, by its link, is added once, and saving it again adds its posting if it has none. The

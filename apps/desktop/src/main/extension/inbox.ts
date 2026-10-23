@@ -23,7 +23,7 @@ import {
 } from '@factwright/core';
 
 /**
- * The inbox Save to Factwright drops jobs in on this computer. The browser hands each job the
+ * The inbox the extension drops jobs in on this computer. The browser hands each job the
  * extension saves to the helper the app registers with it (apps/desktop/helper), which writes it
  * whole, as a file of its own, into the inbox of the profile open last, and does nothing else. The
  * app adds each job from there while it's open, and the ones that came while it was closed as it
@@ -122,7 +122,7 @@ function isFolder(path: string): boolean {
   }
 }
 
-/** The inbox of the open profile: the jobs Save to Factwright saved on this computer. */
+/** The inbox of the open profile: the jobs the extension saved on this computer. */
 export class JobInbox {
   private readonly deps: InboxDeps;
   private watcher: Watcher | null = null;

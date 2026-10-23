@@ -143,7 +143,7 @@ describe('signing the browser extension in through its window', () => {
     const account = await extension.account();
     expect(account.user.id).toBe(sam.id);
     expect(account.devices.find((device) => device.current)?.name).toBe(
-      'Save to Factwright in Chrome on Mac',
+      'Factwright in Chrome on Mac',
     );
     const kept = await server.env.DB.prepare(
       'SELECT userAgent, ipAddress, via FROM "session" WHERE token = ?',
@@ -151,7 +151,7 @@ describe('signing the browser extension in through its window', () => {
       .bind(traded.body.access_token)
       .first();
     expect(kept).toEqual({
-      userAgent: 'Save to Factwright in Chrome on Mac',
+      userAgent: 'Factwright in Chrome on Mac',
       ipAddress: null,
       via: 'device',
     });
