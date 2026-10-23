@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.12.0 - 2026-10-22
+
 ### Added
 - The jobs list sorts by any column: click Job, Status, Fit, Pay or Next step at the top of it. Click again for the other way round, and once more to go back to the newest activity first. Factwright keeps your choice for next time.
 - A job that has the window to itself keeps a slim list of your jobs beside it, so another job is a click away without closing it: the view, with how many jobs each holds, its jobs in the list's order, each with its next step, and every other choice behind Filters, with Needs you and Found by among them. Searching narrows the slim list and leaves the job open. In a window too narrow for both, the job has the window to itself as before.
