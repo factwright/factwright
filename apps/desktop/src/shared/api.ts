@@ -9,6 +9,7 @@ import type {
   JobDocs,
   JobShot,
   JobStatus,
+  KeptPrivate,
   OutreachDraft,
   PassReason,
   SavedPosting,
@@ -512,6 +513,13 @@ export interface FactwrightApi {
   profile(): Promise<Profile>;
   /** Saves changes to the answers, and answers with all of them. */
   saveAnswers(changes: AnswerChanges): Promise<AboutYou>;
+  /**
+   * What Profile keeps for applications on this computer alone: the street, the postal code and
+   * the equal-opportunity answers, which never sync and which Claude's tools never reach.
+   */
+  privateAnswers(): Promise<KeptPrivate>;
+  /** Saves changes to what's kept on this computer alone, and answers with all of it. */
+  savePrivateAnswers(changes: Partial<KeptPrivate>): Promise<KeptPrivate>;
   /** Saves the notes the user wrote about themselves. */
   saveNotes(text: string): Promise<EditResult>;
   /**

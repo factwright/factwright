@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { InboxAnswer, SavedJob } from '@factwright/core';
+import type { InboxAnswer, InboxAsk, InboxAskAnswer, SavedJob } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobInbox, LISTENING } from './inbox.ts';
 
@@ -59,10 +59,13 @@ const answer = (name: string) =>
 
 const files = () => readdirSync(folder).sort();
 
-function open(extra: { now?: number; pid?: number } = {}) {
+function open(
+  extra: { now?: number; pid?: number; answer?: (ask: InboxAsk) => Promise<InboxAskAnswer> } = {},
+) {
   inbox = new JobInbox({
     folder,
     add: (job) => add(job),
+    ...(extra.answer && { answer: extra.answer }),
     added: () => {
       announced += 1;
     },
@@ -238,5 +241,90 @@ describe('the inbox', () => {
     open();
     expect(added).toEqual([]);
     expect(readdirSync(elsewhere)).toEqual([`${named(NOW)}.json`]);
+  });
+});
+
+describe('asks in the inbox', () => {
+  /** An ask, as the helper drops it: the extension's message, as it came. */
+  const ASK = {
+    type: 'ask',
+    request: JSON.stringify({
+      ask: 'remember',
+      answers: [{ kind: 'phone', text: '(303) 555-0142' }],
+    }),
+  };
+  const dropAsk = (name: string, contents: unknown = ASK) =>
+    writeFileSync(
+      join(folder, `${name}.ask`),
+      typeof contents === 'string' ? contents : JSON.stringify(contents),
+    );
+  const asked = (name: string) =>
+    JSON.parse(readFileSync(join(folder, `${name}.done`), 'utf8')) as InboxAskAnswer;
+  /** Waits for answers that take a moment, as reading a file does. */
+  const settle = () => new Promise((done) => setTimeout(done, 20));
+
+  it('takes an ask away at once, then answers beside it', async () => {
+    mkdirSync(folder);
+    dropAsk(named(NOW));
+    const answers: InboxAsk[] = [];
+    open({
+      answer: async (ask) => {
+        answers.push(ask);
+        return { ok: true, did: 'remember', saved: 1 };
+      },
+    });
+    expect(files()).toEqual([LISTENING]);
+    await settle();
+    expect(answers).toEqual([
+      { ask: 'remember', answers: [{ kind: 'phone', text: '(303) 555-0142' }] },
+    ]);
+    expect(asked(named(NOW))).toEqual({ ok: true, did: 'remember', saved: 1 });
+    expect(added).toEqual([]);
+  });
+
+  it('turns away what isn’t an ask, and any ask when the app can’t answer them', async () => {
+    mkdirSync(folder);
+    dropAsk(named(NOW, '1111111111111111'), 'not JSON');
+    dropAsk(named(NOW, '2222222222222222'), { ...ASK, type: 'save' });
+    open({ answer: async () => ({ ok: true, did: 'remember', saved: 0 }) });
+    await settle();
+    expect(asked(named(NOW, '1111111111111111'))).toMatchObject({
+      ok: false,
+      reason: 'bad-message',
+    });
+    expect(asked(named(NOW, '2222222222222222'))).toMatchObject({
+      ok: false,
+      reason: 'bad-message',
+    });
+    inbox.stop();
+    rmSync(folder, { recursive: true });
+    mkdirSync(folder);
+    dropAsk(named(NOW));
+    open();
+    await settle();
+    expect(asked(named(NOW))).toMatchObject({ ok: false, reason: 'bad-message' });
+  });
+
+  it('says it failed when answering goes wrong', async () => {
+    mkdirSync(folder);
+    dropAsk(named(NOW));
+    open({ answer: async () => Promise.reject(new Error('the tracker is busy')) });
+    await settle();
+    expect(asked(named(NOW))).toMatchObject({ ok: false, reason: 'failed' });
+  });
+
+  it('only takes away an ask older than the helper waits for', async () => {
+    mkdirSync(folder);
+    dropAsk(named(NOW - 60_000));
+    let answered = 0;
+    open({
+      answer: async () => {
+        answered += 1;
+        return { ok: true, did: 'remember', saved: 0 };
+      },
+    });
+    await settle();
+    expect(answered).toBe(0);
+    expect(files()).toEqual([LISTENING]);
   });
 });

@@ -9,17 +9,19 @@ import { type FieldKind, type FormField, fieldKind, isEqualOpportunity } from '.
  * in Profile, and passwords, payment details, ID numbers and dates of birth never.
  */
 
-/** Profile's part for applications: what forms ask that a resume doesn't say. */
+/**
+ * Profile's part for applications: what forms ask that a resume doesn't say. It's kept with the
+ * rest of Profile, so it syncs, and Claude can read it. Your street, postal code and
+ * equal-opportunity answers are kept apart (KeptPrivate).
+ */
 export interface ForApplications {
   /** The first name you go by, if it isn't the one on your resume. */
   preferredName: string;
   /** Such as "she/her". */
   pronouns: string;
-  street: string;
   city: string;
   /** Your state, province or region, such as "CO" or "Colorado". */
   region: string;
-  postalCode: string;
   country: string;
   /** Your GitHub, for forms that ask, such as "https://github.com/you". */
   github: string;
@@ -31,6 +33,16 @@ export interface ForApplications {
   over18: '' | 'yes' | 'no';
   /** What to say to "How did you hear about us?" when where you found the job doesn't say. */
   howHeard: string;
+}
+
+/**
+ * What Profile keeps for applications on this computer alone, outside the workspace: never synced,
+ * and never where Claude's tools reach.
+ */
+export interface KeptPrivate {
+  street: string;
+  postalCode: string;
+  equalOpportunity: EqualOpportunity;
 }
 
 /** The equal-opportunity answers, each one "" to leave it for you, or the answer you chose. */
@@ -54,10 +66,8 @@ export interface EqualOpportunity {
 export const NO_APPLICATIONS: ForApplications = {
   preferredName: '',
   pronouns: '',
-  street: '',
   city: '',
   region: '',
-  postalCode: '',
   country: '',
   github: '',
   countries: [],
@@ -72,6 +82,12 @@ export const NO_EQUAL_OPPORTUNITY: EqualOpportunity = {
   race: '',
   veteran: '',
   disability: '',
+};
+
+export const NO_PRIVATE: KeptPrivate = {
+  street: '',
+  postalCode: '',
+  equalOpportunity: NO_EQUAL_OPPORTUNITY,
 };
 
 /** An answer you sent before, with whose application it was in. */
@@ -96,7 +112,8 @@ export interface OnFile {
     website: string;
   };
   applications: ForApplications;
-  equalOpportunity: EqualOpportunity;
+  /** What's kept on this computer alone: your street, postal code and equal-opportunity answers. */
+  kept: KeptPrivate;
   /** Profile's own words on working where the jobs are, such as "US citizen". */
   authorization: string;
   /** When you can start, as you put it, such as "two weeks' notice". */
@@ -485,7 +502,7 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
     return left(kind, kind === 'consent' ? 'consent' : 'new');
   }
   if (isEqualOpportunity(kind)) {
-    const answer = onFile.equalOpportunity[kind];
+    const answer = onFile.kept.equalOpportunity[kind];
     if (!answer) return left(kind, 'sensitive');
     const picks = (EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>)[answer] ?? [];
     return choosing(field)
@@ -508,13 +525,13 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
     case 'phone':
       return fromProfile(kind, field, you.phone);
     case 'street':
-      return fromProfile(kind, field, applications.street);
+      return fromProfile(kind, field, onFile.kept.street);
     case 'city':
       return fromProfile(kind, field, applications.city || place.city);
     case 'region':
       return fromProfile(kind, field, ...regionNames(applications.region || place.region));
     case 'postal-code':
-      return fromProfile(kind, field, applications.postalCode);
+      return fromProfile(kind, field, onFile.kept.postalCode);
     case 'country':
       return applications.country
         ? fromProfile(kind, field, ...countryNames(applications.country))
@@ -582,4 +599,61 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
     default:
       return field.control === 'file' ? left(kind, 'new') : ownQuestion(field, onFile);
   }
+}
+
+/**
+ * The kinds of field whose answer, typed on a form when Factwright had none, it offers to keep in
+ * Profile for next time. Names stay as Profile has them, and a form's own questions are kept as
+ * what you sent.
+ */
+export const REMEMBERED_KINDS = [
+  'preferred-name',
+  'pronouns',
+  'email',
+  'phone',
+  'street',
+  'city',
+  'region',
+  'postal-code',
+  'country',
+  'location',
+  'linkedin',
+  'github',
+  'website',
+  'start-date',
+  'how-heard',
+  'gender',
+  'hispanic',
+  'race',
+  'veteran',
+  'disability',
+] as const satisfies readonly FieldKind[];
+
+export type RememberedKind = (typeof REMEMBERED_KINDS)[number];
+
+/** Whether Factwright offers to keep a kind of field's answer in Profile. */
+export const isRemembered = (kind: FieldKind): kind is RememberedKind =>
+  (REMEMBERED_KINDS as readonly FieldKind[]).includes(kind);
+
+/**
+ * An equal-opportunity answer as Profile keeps it, from an option a form showed, such as "Female"
+ * for "woman", or null when the option isn't one Profile knows.
+ */
+export function readEqualOpportunity<K extends keyof EqualOpportunity>(
+  kind: K,
+  option: string,
+): Exclude<EqualOpportunity[K], ''> | null {
+  const said = plain(option);
+  if (!said) return null;
+  const answers = EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>;
+  for (const [answer, picks] of Object.entries(answers)) {
+    if (picks.some((pick) => plain(pick) === said))
+      return answer as Exclude<EqualOpportunity[K], ''>;
+  }
+  for (const [answer, picks] of Object.entries(answers)) {
+    if (picks.some((pick) => said.startsWith(`${plain(pick)} `))) {
+      return answer as Exclude<EqualOpportunity[K], ''>;
+    }
+  }
+  return null;
 }

@@ -1,8 +1,10 @@
 import {
+  type ForApplications,
   KIND_ID,
   KIND_LIMITS,
   type KindName,
   kindNameText,
+  NO_APPLICATIONS,
   readKindName,
   sameKind,
   unnamedFirstKind,
@@ -85,6 +87,12 @@ export interface AboutYou extends BeyondWork {
   firstKind: KindName | null;
   /** Each kind of job after the first, with its own titles, kinds of work, levels and pay. */
   otherKinds: JobKind[];
+  /**
+   * What application forms ask that a resume doesn't say, for Save to Factwright to fill them
+   * with. Your street, postal code and equal-opportunity answers are kept apart, on this computer
+   * alone (private.ts).
+   */
+  applications: ForApplications;
 }
 
 /**
@@ -198,6 +206,21 @@ export const WORKPLACES = [
 ] as const;
 export type Workplace = (typeof WORKPLACES)[number][0];
 
+/** Whether you'll need a visa sponsored, as Profile asks it for applications. */
+export const SPONSORSHIP = [
+  ['', 'Leave it for me'],
+  ['no', 'No'],
+  ['later', 'Not now, but later'],
+  ['now', 'Yes, now'],
+] as const satisfies readonly (readonly [ForApplications['sponsorship'], string])[];
+
+/** Whether you're 18 or older, as Profile asks it for applications. */
+export const OVER_18 = [
+  ['', 'Leave it for me'],
+  ['yes', 'Yes'],
+  ['no', 'No'],
+] as const satisfies readonly (readonly [ForApplications['over18'], string])[];
+
 export const RELOCATE = [
   ['', 'Not sure yet'],
   ['no', 'No'],
@@ -278,6 +301,7 @@ export const NO_ANSWERS: AboutYou = {
   skipped: false,
   firstKind: null,
   otherKinds: [],
+  applications: NO_APPLICATIONS,
   ...NO_BEYOND,
 };
 
@@ -344,6 +368,28 @@ function contact(value: unknown): Contact | undefined {
     read[key] = field;
   }
   return read as Contact;
+}
+
+/** Profile's answers for applications, each checked, with nothing told for any not there yet. */
+function forApplications(value: unknown): ForApplications | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const fields = value as Record<string, unknown>;
+  const line = (key: keyof ForApplications) => text(fields[key] ?? '');
+  const read = {
+    preferredName: line('preferredName'),
+    pronouns: line('pronouns'),
+    city: line('city'),
+    region: line('region'),
+    country: line('country'),
+    github: line('github'),
+    countries: entries(fields.countries ?? []),
+    sponsorship: choice(fields.sponsorship ?? '', SPONSORSHIP),
+    over18: choice(fields.over18 ?? '', OVER_18),
+    howHeard: line('howHeard'),
+  };
+  return Object.values(read).every((each) => each !== undefined)
+    ? (read as ForApplications)
+    : undefined;
 }
 
 function looks(value: unknown): Look[] | undefined {
@@ -530,6 +576,7 @@ const READERS: { [K in keyof AboutYou]: (value: unknown) => AboutYou[K] | undefi
   communities: entries,
   cares: (value) => text(value, ANSWER_LIMITS.text),
   interestsOnResumes: (value) => choice(value, INTERESTS_ON_RESUMES),
+  applications: forApplications,
 };
 
 /**

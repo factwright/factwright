@@ -70,6 +70,8 @@ describe('an ask from the inbox', () => {
     ask: 'fill',
     url: 'https://job-boards.greenhouse.io/harborpine/jobs/4567890',
     title: 'Job Application for Account Executive at Harbor & Pine',
+    company: 'Harbor & Pine',
+    role: 'Account Executive',
     fields: [field],
   };
   /** An ask as the helper writes it: the extension's message, as it came. */

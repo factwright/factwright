@@ -142,7 +142,15 @@ export interface AskedField {
 /** What the extension asks the app, on this computer. */
 export type InboxAsk =
   /** Factwright's answers for a form's fields, with the job it's for. */
-  | { ask: 'fill'; url: string; title: string; fields: AskedField[] }
+  | {
+      ask: 'fill';
+      url: string;
+      title: string;
+      /** The company and job title the page shows, as the extension reads a job's page. */
+      company: string;
+      role: string;
+      fields: AskedField[];
+    }
   /** A part of one of a job's files, to upload. */
   | { ask: 'file'; job: string; file: 'resume' | 'cover-letter'; part: number }
   /** What you sent, once you've applied: the answers to the form's own questions. */
@@ -225,13 +233,14 @@ export function readInboxAsk(text: string): InboxAsk | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const asked = value as Record<string, unknown>;
   const keys = Object.keys(asked).sort().join(' ');
-  if (asked.ask === 'fill' && keys === 'ask fields title url') {
-    if (!isPage(asked.url) || !isText(asked.title, 1000) || !Array.isArray(asked.fields))
-      return null;
+  if (asked.ask === 'fill' && keys === 'ask company fields role title url') {
+    const { url, title, company, role } = asked;
+    if (!isPage(url) || !isText(title, 1000) || !Array.isArray(asked.fields)) return null;
+    if (!isText(company, JOB_LIMITS.company) || !isText(role, JOB_LIMITS.role)) return null;
     if (asked.fields.length > ASK_FIELDS) return null;
     const fields = asked.fields.map(askedField);
     if (!fields.every((field): field is AskedField => field !== null)) return null;
-    return { ask: 'fill', url: asked.url, title: asked.title, fields };
+    return { ask: 'fill', url, title, company, role, fields };
   }
   if (asked.ask === 'file' && keys === 'ask file job part') {
     const { job, file, part } = asked;

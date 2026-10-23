@@ -13,14 +13,17 @@ import {
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { PermissionAnswer, PermissionAsk } from '../shared/permission-asks.ts';
+import { PRIVATE_FILE } from '../shared/private.ts';
 import type { QuestionRound, RoundReply } from '../shared/rounds.ts';
 import { TemplatePreviews } from './about/previews.ts';
+import { PrivateAnswers } from './about/private.ts';
 import { AboutStore } from './about/store.ts';
 import { Desk } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
 import { ClaudeSession, prepareLaunch, startHidden } from './claude/session.ts';
+import { answerAsk } from './extension/fill.ts';
 import { JobInbox } from './extension/inbox.ts';
 import { helperName, registerSaveHelper, runProgram } from './extension/register.ts';
 import { createSaveHelper } from './extension/save-helper.ts';
@@ -298,6 +301,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       trash: (path) => shell.trashItem(path),
       templates: () => templates.list(),
     });
+    // Profile's street, postal code and equal-opportunity answers for applications, kept beside
+    // the tracker, never in the workspace, so they never sync and Claude's tools never reach them.
+    const kept = new PrivateAnswers(join(dataDir, PRIVATE_FILE));
     const printer = new ElectronResumePrinter();
     const previews = new TemplatePreviews(printer, templates);
     const server = new RunServer({
@@ -310,10 +316,13 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     // Jobs Save to Factwright saved on this computer, which the helper each browser starts drops
     // in the profile's inbox: the ones that came while the app was closed now, the rest as they
     // come.
+    // Save to Factwright's asks as it fills an application form come the same way, while the app
+    // is open.
     const inbox = new JobInbox({
       folder: join(dataDir, INBOX_FOLDER),
       add: (job) => jobs.addSaved(job),
       added: () => jobs.sendList(),
+      answer: (ask) => answerAsk(ask, { jobs, about, kept, workspace }),
     });
     try {
       inbox.start();
@@ -457,6 +466,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     registerIpc({
       isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
       about,
+      kept,
       templates,
       previews,
       claude,

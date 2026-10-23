@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { answerField, NO_APPLICATIONS, NO_EQUAL_OPPORTUNITY, type OnFile } from './fill.ts';
+import {
+  answerField,
+  NO_APPLICATIONS,
+  NO_EQUAL_OPPORTUNITY,
+  NO_PRIVATE,
+  type OnFile,
+  readEqualOpportunity,
+} from './fill.ts';
 import type { FieldControl, FormField } from './forms.ts';
 
 const ON_FILE: OnFile = {
@@ -18,7 +25,7 @@ const ON_FILE: OnFile = {
     countries: ['United States'],
     sponsorship: 'no',
   },
-  equalOpportunity: NO_EQUAL_OPPORTUNITY,
+  kept: { ...NO_PRIVATE, street: '1420 Larimer St', postalCode: '80202' },
   authorization: 'US citizen',
   start: 'Two weeks’ notice',
   relocate: 'no',
@@ -83,6 +90,10 @@ describe('answering a form from what’s on file', () => {
     expect(answer('Email', { type: 'email' }).text).toBe('ana@example.com');
     expect(answer('Phone', { type: 'tel' }).text).toBe('(303) 555-0142');
     expect(answer('City').text).toBe('Denver');
+    expect(answer('Street address', { autocomplete: 'street-address' }).text).toBe(
+      '1420 Larimer St',
+    );
+    expect(answer('Zip code').text).toBe('80202');
     expect(answer('Current location').text).toBe('Denver, CO');
     expect(answer('LinkedIn URL').text).toBe('https://www.linkedin.com/in/anaruiz');
     expect(answer('Portfolio URL').text).toBe('https://anaruiz.dev');
@@ -182,10 +193,13 @@ describe('answering a form from what’s on file', () => {
     expect(answer('Gender', gender)).toMatchObject({ source: 'you', left: 'sensitive' });
     const set = {
       ...ON_FILE,
-      equalOpportunity: {
-        ...NO_EQUAL_OPPORTUNITY,
-        gender: 'woman' as const,
-        veteran: 'decline' as const,
+      kept: {
+        ...ON_FILE.kept,
+        equalOpportunity: {
+          ...NO_EQUAL_OPPORTUNITY,
+          gender: 'woman' as const,
+          veteran: 'decline' as const,
+        },
       },
     };
     expect(answer('Gender', gender, set).pick?.slice(0, 2)).toEqual(['Woman', 'Female']);
@@ -270,5 +284,25 @@ describe('answering a form from what’s on file', () => {
       source: 'you',
       left: 'new',
     });
+  });
+});
+
+describe('an equal-opportunity answer from a form’s option', () => {
+  it('is the answer Profile keeps, however the form put it', () => {
+    expect(readEqualOpportunity('gender', 'Female')).toBe('woman');
+    expect(readEqualOpportunity('gender', 'Decline To Self Identify')).toBe('decline');
+    expect(readEqualOpportunity('veteran', 'I am not a protected veteran')).toBe('no');
+    expect(
+      readEqualOpportunity(
+        'disability',
+        'No, I do not have a disability and have not had one in the past',
+      ),
+    ).toBe('no');
+    expect(readEqualOpportunity('race', 'White (Not Hispanic or Latino)')).toBe('white');
+  });
+
+  it('is nothing for an option Profile doesn’t know', () => {
+    expect(readEqualOpportunity('gender', 'I use another term')).toBeNull();
+    expect(readEqualOpportunity('race', '')).toBeNull();
   });
 });

@@ -10,7 +10,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { INBOX_JOB, type InboxAnswer, readSavedJob, type SavedJob } from '@factwright/core';
+import {
+  INBOX_ASK,
+  INBOX_JOB,
+  type InboxAnswer,
+  type InboxAsk,
+  type InboxAskAnswer,
+  readInboxAsk,
+  readSavedJob,
+  type SavedJob,
+} from '@factwright/core';
 
 /**
  * The inbox Save to Factwright drops jobs in on this computer. The browser hands each job the
@@ -23,6 +32,10 @@ import { INBOX_JOB, type InboxAnswer, readSavedJob, type SavedJob } from '@factw
  * a moment for the app's answer, which it hands back to the extension: the job's ID, whether the
  * job hunt had it already, and what became of its posting. With the app closed, the helper says
  * the job waits for it, at once.
+ *
+ * Asks come the same way, as the extension fills an application form: for the answers to a
+ * form's fields, a part of a job's file, what was sent, or answers to keep. The helper passes an
+ * ask only to an app that's open, and takes it back if no answer comes in time.
  */
 
 /** The marker that says the app is open on this profile, with its process ID. */
@@ -30,6 +43,9 @@ export const LISTENING = '.listening';
 
 /** How old a job may be, by its name, for its answer to be written: the helper waits 3 seconds. */
 const ANSWER_MS = 30_000;
+
+/** How old an ask may be, by its name, to be answered: the helper waits 10 seconds for it. */
+const ASK_MS = 15_000;
 
 /** How old a half-written job or an answer nobody took must be before it's cleaned away. */
 const LEFTOVER_MS = 60_000;
@@ -66,6 +82,8 @@ export interface InboxDeps {
   folder: string;
   /** Adds a job to the job hunt, and says how it went. */
   add: (job: SavedJob) => InboxAnswer;
+  /** Answers an ask, as the extension fills a form. Without it, an ask is turned away. */
+  answer?: (ask: InboxAsk) => Promise<InboxAskAnswer>;
   /** Once a look has added one or more jobs: to show the new list, once for them all. */
   added?: () => void;
   /** Watches the inbox for changes: the system's own watching, unless a test stands in. */
@@ -194,8 +212,10 @@ export class JobInbox {
     for (const name of names) {
       if (this.stuck.has(name)) continue;
       const job = INBOX_JOB.exec(name);
+      const ask = INBOX_ASK.exec(name);
       try {
         if (job) added = this.takeJob(name, Number(job[1]), now) || added;
+        else if (ask) this.takeAsk(name, Number(ask[1]), now);
         else if (LEFTOVER.test(name)) this.cleanAway(name, now);
       } catch {
         // Tried again at the next look.
@@ -259,6 +279,50 @@ export class JobInbox {
       this.stuck.add(name);
     }
     return answer.ok;
+  }
+
+  /**
+   * Answers an ask. It's taken away first, so the helper, waiting for the answer, can't take it
+   * back once the app has it, then answered beside where it was. One older than the helper waits
+   * for is only taken away, and one that isn't an ask is turned away.
+   */
+  private takeAsk(name: string, at: number, now: number): void {
+    const file = join(this.deps.folder, name);
+    let text: string | null = null;
+    try {
+      const stats = lstatSync(file);
+      if (stats.isFile() && stats.size <= MAX_BYTES) text = readFileSync(file, 'utf8');
+    } catch {
+      // Gone already: the helper took it back.
+      return;
+    }
+    try {
+      rmSync(file, { force: true });
+    } catch {
+      this.stuck.add(name);
+      return;
+    }
+    if (now - at > ASK_MS) return;
+    const reply = (answer: InboxAskAnswer) => {
+      try {
+        writeWhole(join(this.deps.folder, name.replace(/\.ask$/, '.done')), JSON.stringify(answer));
+      } catch {
+        // The helper says the app was busy.
+      }
+    };
+    const ask = text === null ? null : readInboxAsk(text);
+    const answer = this.deps.answer;
+    if (!ask || !answer) {
+      reply({
+        ok: false,
+        reason: 'bad-message',
+        message: 'That wasn’t something Factwright answers.',
+      });
+      return;
+    }
+    answer(ask).then(reply, () =>
+      reply({ ok: false, reason: 'failed', message: 'Factwright couldn’t do that just now.' }),
+    );
   }
 
   /** Deletes a half-written job or an answer nobody took, once it's been left long enough. */

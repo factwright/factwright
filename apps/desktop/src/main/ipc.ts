@@ -36,6 +36,7 @@ import type { UpdateStatus } from '../shared/updates.ts';
 import { DOC_KINDS, type DocKind, parseChangesRequest } from '../shared/versions.ts';
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
+import type { PrivateAnswers } from './about/private.ts';
 import type { AboutStore } from './about/store.ts';
 import type { Desk } from './claude/desk.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
@@ -138,6 +139,8 @@ export interface IpcDeps {
   isAppPage: (url: string) => boolean;
   /** What the user tells Factwright about themselves, their templates, and the previews. */
   about: AboutStore;
+  /** What Profile keeps for applications on this computer alone. */
+  kept: PrivateAnswers;
   templates: TemplateLibrary;
   previews: TemplatePreviews;
   claude: ClaudeSession;
@@ -192,6 +195,7 @@ const isFile = (path: string) => {
 export function registerIpc({
   isAppPage,
   about,
+  kept,
   templates,
   previews,
   claude: session,
@@ -712,5 +716,5 @@ export function registerIpc({
   });
   answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
-  registerAboutIpc(answer, { about, previews, templates });
+  registerAboutIpc(answer, { about, previews, templates, kept });
 }

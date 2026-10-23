@@ -80,10 +80,16 @@ export {
   type EqualOpportunity,
   type FieldReply,
   type ForApplications,
+  isRemembered,
+  type KeptPrivate,
   type LeftFor,
   NO_APPLICATIONS,
   NO_EQUAL_OPPORTUNITY,
+  NO_PRIVATE,
   type OnFile,
+  REMEMBERED_KINDS,
+  type RememberedKind,
+  readEqualOpportunity,
   type SentBefore,
 } from './fill.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
