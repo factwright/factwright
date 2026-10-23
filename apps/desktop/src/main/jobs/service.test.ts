@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
+import type { SavedForm } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JobList } from '../../shared/api.ts';
 import { JobsService } from './service.ts';
@@ -332,6 +333,64 @@ describe('a job the extension saved on this computer', () => {
   });
 });
 
+describe('a form’s questions, for your Claude to draft', () => {
+  const id = 'acme-robotics--staff-engineer';
+  const asked = (question: string, more: Partial<SavedForm['questions'][number]> = {}) => ({
+    question,
+    hint: '',
+    section: '',
+    control: 'long' as const,
+    options: [],
+    required: false,
+    limit: null,
+    ...more,
+  });
+  const form: SavedForm = {
+    url: 'https://jobs.lever.co/acme/1/apply',
+    read: '2026-10-10T16:30:00.000Z',
+    questions: [
+      asked('Why Acme?', { limit: 500 }),
+      asked('If yes, please explain'),
+      asked('Are you open to travel?', { control: 'choice', options: ['Yes', 'No'] }),
+      asked('If yes, please explain'),
+    ],
+  };
+
+  beforeEach(() => {
+    jobs.read();
+  });
+
+  it('keeps them with the job, beside its saved posting, and reads them back', () => {
+    expect(jobs.keepForm(id, form)).toEqual({ ok: true });
+    expect(JSON.parse(readFileSync(join(root, 'saved', id, 'form.json'), 'utf8'))).toEqual(form);
+    expect(jobs.savedForm(id)).toEqual(form);
+    expect(jobs.savedForm('missing')).toBeNull();
+  });
+
+  it('adds each to the job’s application questions it doesn’t have, as many times as the form asks it', () => {
+    jobs.updateJob(id, { questions: ['1. Why Acme? *', 'If yes, please explain'] });
+    jobs.keepForm(id, form);
+    expect(jobs.job(id)?.questions).toEqual([
+      '1. Why Acme? *',
+      'If yes, please explain',
+      'Are you open to travel?',
+      'If yes, please explain',
+    ]);
+    // Asked again, nothing's added twice.
+    jobs.keepForm(id, form);
+    expect(jobs.job(id)?.questions).toHaveLength(4);
+  });
+
+  it('is only for a job that’s there, and says when it couldn’t keep them', () => {
+    expect(jobs.keepForm('missing', form)).toMatchObject({ ok: false });
+    write('saved', 'not a folder');
+    expect(jobs.keepForm(id, form)).toEqual({
+      ok: false,
+      message: 'Factwright couldn’t keep the form’s questions.',
+    });
+  });
+});
+
 describe('merging a job found twice', () => {
   const kept = 'acme-robotics--staff-engineer';
   const twice = 'acme--staff-software-engineer-tools';
@@ -359,6 +418,7 @@ describe('merging a job found twice', () => {
     write(`screenshots/${kept}/form-2026-10-10-1.png`, 'png');
     write(`calls/${twice}/c-1/prep.md`, '# Prep');
     write(`saved/${twice}/posting.md`, '# Job posting');
+    write(`saved/${twice}/form.json`, '{"questions": []}');
 
     expect(await jobs.mergeJobs(kept, twice)).toEqual({ ok: true });
     const [job, ...rest] = changes.at(-1)?.jobs ?? [];
@@ -378,6 +438,7 @@ describe('merging a job found twice', () => {
       `screenshots/${kept}/form-2026-10-10-2.png`,
       `calls/${kept}/c-1/prep.md`,
       `saved/${kept}/posting.md`,
+      `saved/${kept}/form.json`,
     ]) {
       expect(existsSync(join(root, file))).toBe(true);
     }

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { type FileHandle, open, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { type FileHandle, open, realpath } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import {
   type AskedJob,
-  answerField,
+  answerForm,
+  applicationAnswers,
   FILE_LIMIT,
   FILE_PART_BYTES,
   fieldKind,
@@ -24,12 +25,15 @@ import {
   readEqualOpportunity,
   readLetterText,
   readSuggestedAnswers,
+  type SavedForm,
   SENT_STATUSES,
   type SentBefore,
+  type WorkHistory,
 } from '@factwright/core';
-import { type Resume, readResume } from '@factwright/engine';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
 import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.ts';
+import type { RunRequestAnswer } from '../../shared/runs.ts';
+import { resumeOnFile } from '../about/from-resume.ts';
 import { matchJobs } from '../tools/lookup.ts';
 
 /**
@@ -51,11 +55,28 @@ export interface FillDeps {
       answers: readonly { question: string; nth: number; text: string }[],
     ): RecordedAnswers;
     updateJob(jobId: string, changes: JobChanges): EditResult;
+    /** Keeps the questions of a job's application form with it, for its Claude to draft. */
+    keepForm(jobId: string, form: SavedForm): EditResult;
+    /** The questions of a job's application form, as kept, or null. */
+    savedForm(jobId: string): SavedForm | null;
   };
-  about: { answers(): AboutYou; saveAnswers(changes: AnswerChanges): AboutYou };
+  about: {
+    answers(): AboutYou;
+    saveAnswers(changes: AnswerChanges): AboutYou;
+    /** Profile's work history and education. */
+    history(): WorkHistory;
+  };
   kept: { read(): KeptPrivate; save(changes: Partial<KeptPrivate>): KeptPrivate };
   /** The open profile's workspace, where the jobs' folders are. */
   workspace: string;
+  /**
+   * Your Claude, drafting a job's form's questions in the window: starting it there, as its Run
+   * buttons do, and how it's going.
+   */
+  drafts: {
+    start(jobId: string): Promise<RunRequestAnswer | 'closed'>;
+    state(jobId: string): { drafting: boolean; waiting: boolean };
+  };
   now?: () => Date;
 }
 
@@ -156,26 +177,6 @@ async function openInside(workspace: string, file: JobFile): Promise<Opened | nu
   }
 }
 
-/** A job's resume.json, or null when it has none, or one that doesn't hold up. */
-async function resumeIn(folder: string): Promise<Resume | null> {
-  try {
-    const read = readResume(JSON.parse(await readFile(join(folder, 'resume.json'), 'utf8')));
-    return read.ok ? read.resume : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Where the job's own resume says you work now: the job that runs to the present. */
-async function workingNow(workspace: string, job: Job): Promise<OnFile['resume']> {
-  if (!job.folder) return null;
-  const resume = await resumeIn(join(workspace, 'applications', job.folder));
-  const current = resume?.experience.find((each) =>
-    /^(present|current|now|today)$/i.test(each.end.trim()),
-  );
-  return current ? { company: current.company, title: current.title } : null;
-}
-
 /** Everything you sent before, newest first, with whose application each was in. */
 function sentBefore(jobs: readonly Job[]): SentBefore[] {
   return jobs
@@ -221,13 +222,12 @@ async function fill(
   const about = deps.about.answers();
   const docs = job ? deps.jobs.docs(job.id) : null;
   const letter = readLetterText(docs?.letter);
-  const [resume, cv, coverLetter] = job
-    ? await Promise.all([
-        workingNow(deps.workspace, job),
-        offer(deps, job, 'resume', about.you.name),
-        offer(deps, job, 'cover-letter', about.you.name),
-      ])
-    : [null, null, null];
+  // Your name for the upload's name, from Profile or else the resume.
+  const resume = await resumeOnFile(deps.workspace, job?.folder ?? null);
+  const you = about.you.name || resume?.name || '';
+  const [cv, coverLetter] = job
+    ? await Promise.all([offer(deps, job, 'resume', you), offer(deps, job, 'cover-letter', you)])
+    : [null, null];
   const onFile: OnFile = {
     you: about.you,
     applications: about.applications,
@@ -237,6 +237,7 @@ async function fill(
     relocate: about.relocate,
     targetPay: about.targetPay,
     resume,
+    history: deps.about.history(),
     job: job ? { company: job.company, foundOn: foundOn(job), location: job.location ?? '' } : null,
     sent: sentBefore(jobs),
     suggested: readSuggestedAnswers(docs?.answers),
@@ -248,7 +249,7 @@ async function fill(
     ok: true,
     did: 'fill',
     job: job ? asked(job) : null,
-    replies: ask.fields.map((field) => answerField(field, onFile)),
+    replies: answerForm(ask.fields, onFile),
     files: { resume: cv, 'cover-letter': coverLetter },
   };
 }
@@ -379,12 +380,69 @@ function remember(ask: Extract<InboxAsk, { ask: 'remember' }>, deps: FillDeps): 
   return { ok: true, did: 'remember', saved };
 }
 
+/** Why your Claude couldn't start on a form's questions, in words, by what the window said. */
+const NOT_STARTED: Record<Exclude<RunRequestAnswer, 'started'> | 'closed', string> = {
+  busy: 'Your Claude is busy with something else in Factwright. Try again once it’s done.',
+  'not-ready': 'Claude Code isn’t ready in Factwright. Its sidebar says what to do.',
+  closed: 'Open Factwright’s window, then try again.',
+};
+
+/**
+ * Has your Claude draft answers to a form's own questions that nothing on file answers, in
+ * Factwright's window, as its Run buttons do. The questions are kept with the job first, with
+ * what each asks and how, where the run reads them in job_details. The extension asks how it's
+ * going, and fills the drafts in once they're saved.
+ */
+async function draft(
+  ask: Extract<InboxAsk, { ask: 'draft' }>,
+  deps: FillDeps,
+): Promise<InboxAskAnswer> {
+  const job = deps.jobs.job(ask.job);
+  if (!job) return notFound('That job isn’t in Factwright anymore.');
+  const kept = deps.jobs.keepForm(job.id, {
+    url: ask.url,
+    read: (deps.now?.() ?? new Date()).toISOString(),
+    questions: ask.questions.map((each) => ({
+      question: each.question,
+      hint: each.hint,
+      section: each.section ?? '',
+      control: each.control,
+      options: each.options,
+      required: each.required,
+      limit: each.limit,
+    })),
+  });
+  if (!kept.ok) return failed(kept.message);
+  const started = await deps.drafts.start(job.id);
+  if (started === 'started') return { ok: true, did: 'draft' };
+  const message = NOT_STARTED[started];
+  return started === 'busy' ? { ok: false, reason: 'busy', message } : failed(message);
+}
+
+/**
+ * How your Claude's drafts of a job's form's questions are coming along: whether it's still at
+ * them, whether it's waiting on you in Factwright, and how many of the form's questions have one.
+ */
+function drafts(ask: Extract<InboxAsk, { ask: 'drafts' }>, deps: FillDeps): InboxAskAnswer {
+  const job = deps.jobs.job(ask.job);
+  if (!job) return notFound('That job isn’t in Factwright anymore.');
+  const asked = deps.jobs.savedForm(job.id)?.questions.map((each) => each.question) ?? [];
+  const suggested = readSuggestedAnswers(deps.jobs.docs(job.id)?.answers);
+  // The form's questions come first, each with its draft, if it has one.
+  const drafted = applicationAnswers(asked, suggested, [])
+    .slice(0, asked.length)
+    .filter((each) => each.suggested !== null).length;
+  return { ok: true, did: 'drafts', ...deps.drafts.state(job.id), drafted };
+}
+
 /** Answers one ask from the extension. Nothing in it can stop the app: a failure says so. */
 export async function answerAsk(ask: InboxAsk, deps: FillDeps): Promise<InboxAskAnswer> {
   try {
     if (ask.ask === 'fill') return await fill(ask, deps);
     if (ask.ask === 'file') return await filePart(ask, deps);
     if (ask.ask === 'sent') return sent(ask, deps);
+    if (ask.ask === 'draft') return await draft(ask, deps);
+    if (ask.ask === 'drafts') return drafts(ask, deps);
     return remember(ask, deps);
   } catch {
     return failed('Factwright couldn’t do that just now. Try again.');

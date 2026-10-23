@@ -39,6 +39,12 @@ export interface FormField {
   autocomplete: string;
   /** Its name and id, such as "first_name" or "urls[LinkedIn]". */
   name: string;
+  /**
+   * The part of the form it's in, as the page names it, such as "Education" or "Employment", or
+   * the outer part's name and the inner's, as "Work experience › Position 1", when the page has
+   * them: "Start date" there is when you started a job or school, not when you can start.
+   */
+  section?: string;
   options: string[];
   required: boolean;
   limit: number | null;
@@ -48,13 +54,18 @@ export interface FormField {
 export type FieldKind =
   // Who you are, from Profile.
   | 'first-name'
+  | 'middle-name'
   | 'last-name'
   | 'full-name'
   | 'preferred-name'
   | 'pronouns'
   | 'email'
   | 'phone'
+  // The country a phone number is in, as a form's box for its code asks it.
+  | 'phone-country'
   | 'street'
+  // A second line for an address, such as an apartment, which is yours to fill.
+  | 'street-2'
   | 'city'
   | 'region'
   | 'postal-code'
@@ -63,9 +74,31 @@ export type FieldKind =
   | 'linkedin'
   | 'github'
   | 'website'
-  // Where you work now, from the job's own resume.
+  // Where you work now, from the job's own resume, or your newest.
   | 'current-company'
   | 'current-title'
+  // A job you held, as a form asks for each one: when it started and ended, where, what you did
+  // there, and whether you still hold it, which is yours to tick. The company and title are the
+  // kinds above, the first time a form asks, and each time after.
+  | 'job-start'
+  | 'job-end'
+  | 'job-location'
+  | 'job-summary'
+  | 'job-current'
+  // When you started at a school, and where it is, which is yours to fill.
+  | 'edu-start'
+  | 'edu-location'
+  // A month or year of a start or an end, in a part of the form that doesn't say whose.
+  | 'block-date'
+  // What your resumes say of your schools, your skills and you.
+  | 'school'
+  | 'degree'
+  | 'discipline'
+  | 'graduation'
+  | 'gpa'
+  | 'skills'
+  | 'certifications'
+  | 'summary'
   // Questions Profile answers.
   | 'authorized'
   | 'sponsorship'
@@ -255,6 +288,49 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
   },
   // Cover letters, to type or upload.
   { kind: 'cover-letter', words: /\b(cover|motivation(al)?) letter\b/ },
+  // Schools, as a resume lists them, asked one field at a time. Whether you have a degree, or
+  // have graduated, is a question for you.
+  {
+    kind: 'school',
+    words:
+      /^(school|university|college|institution|school name|university name|college name)$|\b(school|university|college|institution) (name|attended)\b|\bname of (your )?(school|university|college|institution)\b|\bwhere did you (study|go to school)\b/,
+    not: /\b(high school diploma|do you|did you|have you|are you)\b/,
+  },
+  {
+    kind: 'degree',
+    words:
+      /^(degree|degree type|degree level|qualification|highest degree)$|\bhighest (level of education|degree|qualification|education)\b|\b(level of education|education level)\b|\bdegree (obtained|earned|completed|attained|received)\b/,
+    not: /\b(do you|did you|have you|are you|field|major|discipline|area)\b/,
+  },
+  {
+    kind: 'discipline',
+    words:
+      /^(discipline|major|academic discipline|concentration|field of study|area of study|major field of study)$|\b(your|college|university|degree) major\b|\bfield of study\b|\barea of study\b/,
+    not: /\b(minor|do you|did you|have you)\b/,
+  },
+  {
+    kind: 'graduation',
+    words:
+      /\bgraduat(ion|ed) (date|year|month)\b|\b(date|year|month) (of )?graduat(ion|ed)\b|\bwhen did you graduate\b|^(expected )?graduation$|\bexpected graduation\b/,
+    not: /\b(have you|did you|are you)\b/,
+  },
+  { kind: 'gpa', words: /\bgpa\b|\bgrade point average\b/ },
+  // What a resume says, asked by name alone: "Skills", "Certifications", "Summary".
+  {
+    kind: 'skills',
+    words:
+      /^((key|technical|core|relevant|top|professional) )?skills( (and )?(expertise|competencies|technologies))?$|^(skill set|skillset|competencies|core competencies|areas of expertise)$/,
+  },
+  {
+    kind: 'certifications',
+    words:
+      /^(licen[cs]es?( (and )?certifications?)?|certifications?( (and )?licen[cs]es?)?|professional certifications?|certificates)$/,
+  },
+  {
+    kind: 'summary',
+    words:
+      /^(professional |career |executive )?summary$|^(professional profile|profile summary|short bio|bio)$/,
+  },
   // Links.
   { kind: 'linkedin', words: /\blinked ?in\b/ },
   { kind: 'github', words: /\bgit ?hub\b/ },
@@ -264,6 +340,7 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     not: /\b(other|company|employer|referr)/,
   },
   // Names: "company name" or "name of your school" are someone else's.
+  { kind: 'middle-name', words: /\bmiddle (name|initial)s?\b/ },
   {
     kind: 'preferred-name',
     words:
@@ -295,7 +372,12 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
       /^(your )?(full |legal |complete )?name$|^name and surname$|\bfull name\b|\blegal name\b/,
     not: /\b(company|employer|school|university|referr|emergency|reference|manager|recruiter|contact|preferred)/,
   },
-  // Contact.
+  // Contact. A box for a phone number's country code, before the phone itself.
+  {
+    kind: 'phone-country',
+    words:
+      /\b(phone|mobile|dialing|calling) (number )?(country )?code\b|^country code$|^phone country$|\bcountry code\b/,
+  },
   {
     kind: 'email',
     words: /\be ?mail\b/,
@@ -306,7 +388,12 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     words: /\b(phone|mobile|cell ?phone|cell|telephone|tel)\b/,
     not: /\b(referr|reference|manager|recruiter|emergency|screen|interview)/,
   },
-  // Where you live.
+  // Where you live, an apartment or suite apart from the street.
+  {
+    kind: 'street-2',
+    words:
+      /\baddress (line )?(2|two)\b|\bsecond address line\b|\b(apartment|apt|suite|unit)( number| no)?\b/,
+  },
   {
     kind: 'street',
     words:
@@ -336,6 +423,7 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
 /** What a name or id says a field is: "first_name", "urls[LinkedIn]", "_systemfield_email". */
 const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'first-name', name: /\b(first ?name|fname|given ?name)\b/ },
+  { kind: 'middle-name', name: /\bmiddle ?name\b/ },
   { kind: 'last-name', name: /\b(last ?name|lname|surname|family ?name)\b/ },
   { kind: 'preferred-name', name: /\bpreferred ?name\b/ },
   { kind: 'email', name: /\be ?mail\b/ },
@@ -351,9 +439,91 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'race', name: /^race\b/ },
   { kind: 'veteran', name: /^veteran/ },
   { kind: 'disability', name: /^disability/ },
+  { kind: 'school', name: /\b(school|university|college)\b/ },
+  { kind: 'degree', name: /\bdegree\b/ },
+  { kind: 'discipline', name: /\b(discipline|major)\b/ },
   { kind: 'full-name', name: /^(name|full ?name|systemfield name)\b/ },
   { kind: 'location', name: /^(location|candidate location)\b/ },
 ];
+
+/** The part of a form that asks for each job you held, by its heading, such as "Employment 2". */
+const JOB_PART =
+  /^(your |my )?(employment|employment history|employment information|work experience|work history|professional experience|experience|previous employment|job history)( \d{1,2})?( optional)?$/;
+
+/** The part that asks for each school, by its heading. */
+const SCHOOL_PART =
+  /^(your |my )?(education|education history|educational background|academic background|academic history|schools?|degrees?)( \d{1,2})?( optional)?$/;
+
+/** A part that asks about someone else, by its heading: a reference, or who to call in an emergency. */
+const OTHER_PART =
+  /^(your |my )?((professional |personal )?(references?|referees?)|emergency contacts?|next of kin)( \d{1,2})?( optional)?$/;
+
+/** What each field in a part for jobs asks, in order: the first that fits is it. */
+const JOB_FIELDS: [FieldKind, RegExp][] = [
+  [
+    'job-current',
+    /\b(i )?(currently|still) (work|working) here\b|\bcurrent(ly)? (role|position|job|employer)\b|^current$/,
+  ],
+  [
+    'current-company',
+    /^(company|company name|employer|employer name|organi[sz]ation|organi[sz]ation name)$/,
+  ],
+  ['current-title', /^(title|job title|position|position title|role|job role)$/],
+  ['job-start', /^(start|from)\b|\bstart (date|month|year)\b|\bdate (started|from)\b/],
+  ['job-end', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate (ended|to)\b/],
+  ['job-location', /^(location|city|job location|work location)$/],
+  [
+    'job-summary',
+    /^(description|role description|job description|responsibilities|duties|summary|what did you do)$/,
+  ],
+];
+
+/** What each field in a part for schools asks. */
+const SCHOOL_FIELDS: [FieldKind, RegExp][] = [
+  ['school', /\b(school|university|college|institution)( name)?$/],
+  ['discipline', /\b(field of study|major|discipline|area of study|concentration)\b/],
+  ['degree', /^(degree|degree type|degree level|qualification)$/],
+  ['edu-start', /^(start|from)\b|\bstart (date|month|year)\b/],
+  ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bgraduat/],
+  ['gpa', /\bgpa\b|\bgrade point average\b/],
+  ['edu-location', /^(location|city)$/],
+];
+
+/**
+ * Which part of a form a field's in, by the names of the parts it's in, the nearest first, or
+ * else its own name: a job's, a school's, or none.
+ */
+export function fieldPart(
+  field: Omit<FormField, 'options' | 'required' | 'limit'>,
+): 'job' | 'school' | null {
+  for (const section of (field.section ?? '').split(' › ').map(plain).reverse()) {
+    if (SCHOOL_PART.test(section)) return 'school';
+    if (JOB_PART.test(section)) return 'job';
+  }
+  const name = plain(field.name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+  if (/\b(education|educations|school|schools)\b/.test(name)) return 'school';
+  if (/\b(employment|employments|experience|experiences|work history)\b/.test(name)) return 'job';
+  return null;
+}
+
+/** Whether a field is in a part of the form about someone else, so its name and phone are theirs. */
+function forSomeoneElse(field: Omit<FormField, 'options' | 'required' | 'limit'>): boolean {
+  return (
+    (field.section ?? '').split(' › ').some((section) => OTHER_PART.test(plain(section))) ||
+    /\b(references?|referees?|emergency contacts?)\b/.test(
+      plain(field.name.replace(/([a-z])([A-Z])/g, '$1 $2')),
+    )
+  );
+}
+
+/** What a field in a part for jobs or schools asks, or null for anything else there. */
+function partKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): FieldKind | null {
+  const part = fieldPart(field);
+  if (!part) return null;
+  const question = plain(field.question);
+  const rules = part === 'job' ? JOB_FIELDS : SCHOOL_FIELDS;
+  return rules.find(([, words]) => words.test(question))?.[0] ?? null;
+}
 
 /**
  * What a field asks for, by its type, the browser's words for it, its question and its name. A
@@ -380,6 +550,13 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
     return 'question';
   }
   if (field.control === 'check' && AGREE.test(question)) return 'consent';
+  // In a part of the form for each job or school, "Start date" and "Location" are its own.
+  const inPart = partKind(field);
+  if (inPart) return inPart;
+  // In a part about a reference or an emergency contact, "Name" and "Phone" are theirs.
+  if (forSomeoneElse(field)) return 'question';
+  // A month or year of a start or an end, with no part saying whose, is never your start date.
+  if (/\b(start|end)\b/.test(question) && /\b(month|year)\b/.test(question)) return 'block-date';
   if (auto) return auto;
   if (type === 'email') return 'email';
   if (type === 'tel') return 'phone';

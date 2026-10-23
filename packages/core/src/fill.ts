@@ -1,18 +1,36 @@
 import { questionKey, type SuggestedAnswer } from './answers.ts';
-import { countriesOfPlace, countryCode, countryNames, placesIn, US_STATES } from './countries.ts';
+import {
+  countriesOfPlace,
+  countryCode,
+  countryName,
+  countryNames,
+  placesIn,
+  US_STATES,
+} from './countries.ts';
 import { shortDate } from './format.ts';
 import {
   type FieldKind,
   type FormField,
   fieldKind,
+  fieldPart,
   isEqualOpportunity,
   WITHOUT_SPONSORSHIP,
 } from './forms.ts';
+import {
+  type HeldPosition,
+  monthNames,
+  positionsOf,
+  type School,
+  typedDate,
+  type WorkHistory,
+  yearOf,
+} from './history.ts';
 import { parsePay } from './pay.ts';
 
 /**
  * Answering an application form from what's on file, field by field: Profile first, then the
- * job's own resume and letter, then what you sent before, then your Claude's drafts for the job.
+ * job's own resume and letter, or your newest resume where Profile is blank or the job has none
+ * yet, then what you sent before, then your Claude's drafts for the job.
  * Anything else is left for you. Equal-opportunity questions are answered only from what you set
  * in Profile, personal questions never, and passwords, payment details, ID numbers and dates of
  * birth never.
@@ -99,6 +117,35 @@ export const NO_PRIVATE: KeptPrivate = {
   equalOpportunity: NO_EQUAL_OPPORTUNITY,
 };
 
+/**
+ * What a resume Factwright made for you says of you, for the fields Profile leaves blank: the
+ * job's own resume, or your newest, when the job has none yet.
+ */
+export interface ResumeOnFile {
+  /** Whose it is: the job's own, or your newest, made for another job or as a base. */
+  from: 'job' | 'newest';
+  name: string;
+  email: string;
+  phone: string;
+  /** Where you live, as the resume says it, such as "Denver, CO". */
+  location: string;
+  linkedin: string;
+  website: string;
+  /** Where you work now, by the job that runs to the present, as what, and since when. */
+  company: string;
+  title: string;
+  since: string;
+  /** Every position the resume lists, newest first, with its company, and when, as it says. */
+  positions: { company: string; title: string; location: string; start: string; end: string }[];
+  /** Your schools, as the resume lists them, newest first. */
+  education: { school: string; degree: string; start: string; end: string }[];
+  /** Your skills, by their category. */
+  skills: { category: string; items: string[] }[];
+  /** Its other sections, such as Certifications, by their headings. */
+  sections: { heading: string; items: string[] }[];
+  summary: string;
+}
+
 /** An answer you sent before, with whose application it was in. */
 export interface SentBefore {
   question: string;
@@ -130,8 +177,10 @@ export interface OnFile {
   relocate: '' | 'no' | 'maybe' | 'yes';
   /** The pay you're after, as you put it, such as "$150,000". */
   targetPay: string;
-  /** Where the job's own resume says you work now. */
-  resume: { company: string; title: string } | null;
+  /** What the job's own resume, or your newest, says of you, or null when you have none yet. */
+  resume: ResumeOnFile | null;
+  /** Profile's work history and education, for forms that ask for each job and school. */
+  history: WorkHistory;
   /**
    * The job the form is for: who it's with, where you found it, such as "LinkedIn", and where
    * it's based, as its posting says, such as "Denver, CO".
@@ -168,7 +217,12 @@ export type LeftFor =
    */
   | 'sensitive'
   /** Nothing on file answers it: a question for you or your Claude. */
-  | 'new';
+  | 'new'
+  /**
+   * What's on file answers it, but not as the field takes it: a date to pick on a calendar, the
+   * end of a job you still hold, or a box to tick.
+   */
+  | 'pick';
 
 /** Factwright's answer for a field: what to put in it and where that came from, or why it's yours. */
 export interface FieldReply {
@@ -280,6 +334,192 @@ const plain = (text: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 
+/** The country where you live says, such as "United States" for "Denver, CO", or "". */
+function livesIn(location: string | undefined): string {
+  const [code] = countriesOfPlace(location ?? '');
+  return code ? countryName(code) : '';
+}
+
+/** A degree's level, as a choice of degrees names it: "B.S., Computer Science" is a Bachelor's. */
+function degreeNames(degree: string): string[] {
+  const said = plain(degree);
+  const levels: [RegExp, string[]][] = [
+    [/\b(ph ?d|doctor(ate)?|d phil|ed ?d)\b/, ['Doctorate', 'Doctoral Degree', 'Ph.D.', 'PhD']],
+    [
+      /\b(m ?b ?a|master|masters|m ?s|m ?sc|m ?a|m ?eng|m ?ed|m ?fa|m ?p ?h)\b/,
+      ["Master's Degree", "Master's", 'Master', 'MBA', 'MS', 'MA'],
+    ],
+    [
+      /\b(bachelor|bachelors|b ?s|b ?sc|b ?a|b ?eng|b ?b ?a|b ?f ?a|a ?b)\b/,
+      ["Bachelor's Degree", "Bachelor's", 'Bachelor', 'BS', 'BA'],
+    ],
+    [/\b(associate|associates|a ?a|a ?s)\b/, ["Associate's Degree", "Associate's", 'Associate']],
+    [/\b(high school|ged|secondary)\b/, ['High School', 'High School Diploma', 'GED']],
+  ];
+  const level = levels.find(([words]) => words.test(said))?.[1] ?? [];
+  return [...level, degree].filter(Boolean);
+}
+
+/** A degree's field of study: "Computer Science" in "B.S., Computer Science" or "BA in History". */
+function fieldOfStudy(degree: string): string {
+  const comma = degree.indexOf(',');
+  if (comma >= 0) return degree.slice(comma + 1).trim();
+  const at = degree.toLowerCase().lastIndexOf(' in ');
+  return at >= 0 ? degree.slice(at + 4).trim() : '';
+}
+
+/** Where an answer came from: Profile's work history, or a resume. */
+interface Said {
+  source: AnswerSource;
+  from: string;
+}
+
+/** A position, as a form asks for it, with where it came from. */
+type HeldAt = HeldPosition & Said;
+
+/**
+ * The position a form asks for, the nth time it asks, newest first: from Profile's work history,
+ * or else the resume, as it lists them.
+ */
+function positionAt(onFile: OnFile, nth: number): HeldAt | null {
+  const fromHistory = positionsOf(onFile.history)[nth];
+  if (fromHistory) return { ...fromHistory, source: 'profile', from: 'From your work history' };
+  const resume = onFile.resume;
+  const listed = resume?.positions[nth];
+  if (!resume || !listed) return null;
+  return {
+    ...listed,
+    start: datedAs(listed.start),
+    end: datedAs(listed.end),
+    summary: '',
+    source: 'resume',
+    from: fromResume(resume),
+  };
+}
+
+/** The position you hold now, from Profile's work history, or else the resume. */
+function currentPosition(onFile: OnFile): HeldAt | null {
+  const now = positionsOf(onFile.history).find((each) => each.end === 'present');
+  if (now) return { ...now, source: 'profile', from: 'From your work history' };
+  const resume = onFile.resume;
+  if (!resume?.company && !resume?.title) return null;
+  return {
+    company: resume.company,
+    title: resume.title,
+    location: '',
+    start: datedAs(resume.since),
+    end: 'present',
+    summary: '',
+    source: 'resume',
+    from: fromResume(resume),
+  };
+}
+
+/** The school a form asks for, the nth time it asks: from Profile, or else the resume. */
+function schoolAt(onFile: OnFile, nth: number): (School & Said) | null {
+  const fromHistory = onFile.history.schools[nth];
+  if (fromHistory) return { ...fromHistory, source: 'profile', from: 'From your work history' };
+  const resume = onFile.resume;
+  const listed = resume?.education[nth];
+  if (!resume || !listed) return null;
+  return {
+    school: listed.school,
+    degree: listed.degree,
+    field: fieldOfStudy(listed.degree),
+    start: datedAs(listed.start),
+    end: datedAs(listed.end),
+    source: 'resume',
+    from: fromResume(resume),
+  };
+}
+
+/** The months, by the words a resume may use for them. */
+const MONTH_WORDS = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+];
+
+/**
+ * A date as a resume words it, such as "Mar 2021", "03/2021", "2021" or "Present", as the work
+ * history keeps it: "2021-03", "2021" or "present", or "" for one it can't read.
+ */
+export function datedAs(text: string): string {
+  const said = text.trim().toLowerCase();
+  if (/^(present|current|now|today)$/.test(said)) return 'present';
+  const year = /\b(19|20)\d{2}\b/.exec(said)?.[0];
+  if (!year) return '';
+  const numbered = /^(\d{1,2})[/.-](19|20)\d{2}$/.exec(said)?.[1];
+  const named = MONTH_WORDS.findIndex((month) => said.startsWith(month));
+  const month = numbered ? Number(numbered) : named >= 0 ? named + 1 : 0;
+  return month >= 1 && month <= 12 ? `${year}-${String(month).padStart(2, '0')}` : year;
+}
+
+/**
+ * A start or an end, as the field takes it: a month or a year where a form asks for one alone, a
+ * month a month box takes, or the date as typed, "03/2021". One that's still going is "Present"
+ * to type or pick, and where a form asks for its month or year, yours, as its own box says so.
+ */
+function dateReply(kind: FieldKind, field: FormField, date: string, said: Said): FieldReply {
+  if (!date) return left(kind, 'unset');
+  const question = plain(`${field.question} ${field.hint}`);
+  const month = /\bmonth\b/.test(question);
+  const year = /\byear\b/.test(question);
+  const reply = (words: string[]): FieldReply =>
+    words.some(Boolean) ? { ...fromProfile(kind, field, ...words), ...said } : left(kind, 'unset');
+  if (date === 'present') {
+    return month || year || field.control === 'date'
+      ? left(kind, 'pick')
+      : reply(['Present', 'Current']);
+  }
+  if (month) {
+    const names = monthNames(date);
+    return choosing(field)
+      ? reply(names)
+      : reply([field.control === 'number' ? (names[2] ?? '') : (names[0] ?? '')]);
+  }
+  if (year) return reply([yearOf(date)]);
+  // A calendar wants a day, which a job's dates never say.
+  if (field.control === 'date') return left(kind, 'pick');
+  if (field.type === 'month')
+    return /^\d{4}-\d{2}$/.test(date) ? reply([date]) : left(kind, 'pick');
+  return reply([typedDate(date), yearOf(date)]);
+}
+
+/**
+ * Factwright's answers for a form's fields, in order: each part of the form for a job or a
+ * school takes the next one, newest first, as a form asks for one job, then another.
+ */
+export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldReply[] {
+  const asked = new Map<string, number>();
+  return fields.map((field) => {
+    const part = fieldPart(field);
+    if (!part) return answerField(field, onFile);
+    const kind = fieldKind(field);
+    // A date's month and its year are two fields of one job, each asked once a job.
+    const question = plain(field.question);
+    const piece = /\bmonth\b/.test(question) ? 'month' : /\byear\b/.test(question) ? 'year' : '';
+    const key = `${part}:${kind}:${piece}`;
+    const nth = asked.get(key) ?? 0;
+    asked.set(key, nth + 1);
+    return answerField(field, onFile, nth);
+  });
+}
+
+/** An answer that fits the field's limit, or left for you when it doesn't. */
+function withinLimit(kind: FieldKind, field: FormField, reply: FieldReply): FieldReply {
+  return reply.text && field.limit && reply.text.length > field.limit ? left(kind, 'unset') : reply;
+}
+
 /** A state's other name: "CO" for "Colorado", and "Colorado" for "CO". */
 function regionNames(region: string): string[] {
   const code = region.trim().toUpperCase();
@@ -313,6 +553,35 @@ function fromProfile(kind: FieldKind, field: FormField, ...words: string[]): Fie
   if (!first) return left(kind, 'unset');
   if (choosing(field)) return { kind, pick: words.filter(Boolean), source: 'profile' };
   return { kind, text: first, source: 'profile' };
+}
+
+/** Where an answer from a resume came from, in words. */
+const fromResume = (resume: ResumeOnFile) =>
+  resume.from === 'job' ? 'From the job’s resume' : 'From your newest resume';
+
+/**
+ * Profile's answer, or else the resume's, for a field Profile leaves blank, saying which resume
+ * it came from.
+ */
+function profileOrResume(
+  kind: FieldKind,
+  field: FormField,
+  profile: readonly string[],
+  resume: readonly string[],
+  onFile: OnFile,
+): FieldReply {
+  if (profile.some(Boolean)) return fromProfile(kind, field, ...profile);
+  if (!onFile.resume || !resume.some(Boolean)) return left(kind, 'unset');
+  return {
+    ...fromProfile(kind, field, ...resume),
+    source: 'resume',
+    from: fromResume(onFile.resume),
+  };
+}
+
+/** An answer only a resume gives, saying which. */
+function resumeSays(kind: FieldKind, field: FormField, onFile: OnFile, ...words: string[]) {
+  return profileOrResume(kind, field, [], words, onFile);
 }
 
 /** Yes or no, as a choice's option, or as text. */
@@ -416,10 +685,22 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
   }
   const drafts = onFile.suggested.filter((each) => questionKey(each.question) === key);
   const draft = drafts.at(-1);
+  // A draft that says only you can answer it, and why, leaves it for you, saying why.
+  if (draft && /^\s*for you:/i.test(draft.answer)) {
+    return { ...left('question', 'new'), from: draft.answer.trim() };
+  }
   if (draft?.answer.trim()) {
     const from = 'Your Claude’s draft for this job';
+    // A question that takes any of its options takes each the draft picks, as "SQL; Python".
+    const picks =
+      field.control === 'choices'
+        ? draft.answer
+            .split(/[;\n]/)
+            .map((each) => each.trim().replace(/^[-*]\s+/, ''))
+            .filter(Boolean)
+        : [draft.answer.trim()];
     if (choosing(field))
-      return { kind: 'question', pick: [draft.answer], exact: true, source: 'claude', from };
+      return { kind: 'question', pick: picks, exact: true, source: 'claude', from };
     if (!field.limit || draft.answer.length <= field.limit) {
       return { kind: 'question', text: draft.answer, source: 'claude', from };
     }
@@ -427,9 +708,23 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
   return left('question', 'new');
 }
 
-/** A link, or only its last part where a form asks for a user name. */
-function linkOrHandle(kind: FieldKind, field: FormField, link: string): FieldReply {
+/**
+ * A link, from Profile or else the resume, or only its last part where a form asks for a user
+ * name.
+ */
+function linkOrHandle(
+  kind: FieldKind,
+  field: FormField,
+  mine: string,
+  resume: ResumeOnFile | null = null,
+  theirs = '',
+): FieldReply {
+  const link = mine || theirs;
   if (!link) return left(kind, 'unset');
+  const said = (text: string): FieldReply =>
+    mine || !resume
+      ? { kind, text, source: 'profile' }
+      : { kind, text, source: 'resume', from: fromResume(resume) };
   if (/\b(user ?name|handle)\b/.test(plain(`${field.question} ${field.hint}`))) {
     // "https://github.com/you/" is "you": the last part of its path.
     const handle =
@@ -437,9 +732,9 @@ function linkOrHandle(kind: FieldKind, field: FormField, link: string): FieldRep
         .split('/')
         .filter((part) => part !== '')
         .at(-1) ?? '';
-    return handle ? { kind, text: handle, source: 'profile' } : left(kind, 'unset');
+    return handle ? said(handle) : left(kind, 'unset');
   }
-  return { kind, text: link, source: 'profile' };
+  return said(link);
 }
 
 /** Pay as one amount a year, for a box that takes a number, or null when it isn't one, clearly. */
@@ -457,7 +752,7 @@ function yearlyPay(field: FormField, targetPay: string): number | null {
  * never agrees to anything for you, and answers an equal-opportunity question only as you set it
  * in Profile, and only by picking one of its options.
  */
-export function answerField(field: FormField, onFile: OnFile): FieldReply {
+export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldReply {
   const kind = fieldKind(field);
   const { you, applications } = onFile;
   const place = placeParts(you.location);
@@ -474,56 +769,190 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
     const picks = (EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>)[answer] ?? [];
     return { kind, pick: picks, source: 'profile' };
   }
+  const resume = onFile.resume;
+  const theirs = nameParts(resume?.name ?? '');
+  const theirPlace = placeParts(resume?.location ?? '');
   switch (kind) {
     case 'first-name':
-      return fromProfile(kind, field, name.first);
+      return profileOrResume(kind, field, [name.first], [theirs.first], onFile);
     case 'last-name':
-      return fromProfile(kind, field, name.last);
+      return profileOrResume(kind, field, [name.last], [theirs.last], onFile);
     case 'full-name':
-      return fromProfile(kind, field, you.name);
+      return profileOrResume(kind, field, [you.name], [resume?.name ?? ''], onFile);
     case 'preferred-name':
       return fromProfile(kind, field, applications.preferredName);
     case 'pronouns':
       return fromProfile(kind, field, applications.pronouns);
     case 'email':
-      return fromProfile(kind, field, you.email);
+      return profileOrResume(kind, field, [you.email], [resume?.email ?? ''], onFile);
     case 'phone':
-      return fromProfile(kind, field, you.phone);
+      return profileOrResume(kind, field, [you.phone], [resume?.phone ?? ''], onFile);
+    case 'phone-country': {
+      const mine = applications.country || livesIn(you.location);
+      return choosing(field)
+        ? profileOrResume(
+            kind,
+            field,
+            mine ? countryNames(mine) : [],
+            countryNames(livesIn(resume?.location)).filter(Boolean),
+            onFile,
+          )
+        : left(kind, 'unset');
+    }
     case 'street':
       return fromProfile(kind, field, onFile.kept.street);
     case 'city':
-      return fromProfile(kind, field, applications.city || place.city);
-    case 'region':
-      return fromProfile(kind, field, ...regionNames(applications.region || place.region));
+      return profileOrResume(
+        kind,
+        field,
+        [applications.city || place.city],
+        [theirPlace.city],
+        onFile,
+      );
+    case 'region': {
+      const mine = applications.region || place.region;
+      return profileOrResume(
+        kind,
+        field,
+        mine ? regionNames(mine) : [],
+        theirPlace.region ? regionNames(theirPlace.region) : [],
+        onFile,
+      );
+    }
     case 'postal-code':
       return fromProfile(kind, field, onFile.kept.postalCode);
-    case 'country':
-      return applications.country
-        ? fromProfile(kind, field, ...countryNames(applications.country))
-        : left(kind, 'unset');
+    case 'country': {
+      // Where you live says your country, when For applications doesn't.
+      const mine = applications.country || livesIn(you.location);
+      const fromResumes = livesIn(resume?.location);
+      return profileOrResume(
+        kind,
+        field,
+        mine ? countryNames(mine) : [],
+        fromResumes ? countryNames(fromResumes) : [],
+        onFile,
+      );
+    }
     case 'location': {
       // A choice of places can be cities or countries, as some forms ask "your location" with a
       // list of countries: your city first, then your country, by its names.
+      const country = applications.country || livesIn(you.location || resume?.location);
       if (choosing(field)) {
-        const country = applications.country ? countryNames(applications.country) : [];
-        return fromProfile(kind, field, you.location, place.city, ...country);
+        const names = country ? countryNames(country) : [];
+        return profileOrResume(
+          kind,
+          field,
+          you.location ? [you.location, place.city, ...names] : [],
+          resume?.location ? [resume.location, theirPlace.city, ...names] : names,
+          onFile,
+        );
       }
-      return fromProfile(kind, field, you.location);
+      return profileOrResume(kind, field, [you.location], [resume?.location ?? ''], onFile);
     }
     case 'linkedin':
-      return linkOrHandle(kind, field, you.linkedin);
+      return linkOrHandle(kind, field, you.linkedin, resume, resume?.linkedin);
     case 'github':
       return linkOrHandle(kind, field, applications.github);
     case 'website':
-      return linkOrHandle(kind, field, you.website);
+      return linkOrHandle(kind, field, you.website, resume, resume?.website);
     case 'current-company':
-      return onFile.resume?.company
-        ? { ...fromProfile(kind, field, onFile.resume.company), source: 'resume' }
-        : left(kind, 'unset');
     case 'current-title':
-      return onFile.resume?.title
-        ? { ...fromProfile(kind, field, onFile.resume.title), source: 'resume' }
+    case 'job-start':
+    case 'job-end':
+    case 'job-location':
+    case 'job-summary': {
+      // In a part of the form for each job, the job it's asking for; asked once, the one you
+      // hold now.
+      const held = fieldPart(field) === 'job' ? positionAt(onFile, nth) : currentPosition(onFile);
+      if (!held) return left(kind, 'unset');
+      const said = { source: held.source, from: held.from };
+      if (kind === 'job-start' || kind === 'job-end') {
+        return dateReply(kind, field, kind === 'job-start' ? held.start : held.end, said);
+      }
+      const words =
+        kind === 'current-company'
+          ? held.company
+          : kind === 'current-title'
+            ? held.title
+            : kind === 'job-location'
+              ? held.location
+              : held.summary;
+      if (!words) return left(kind, 'unset');
+      return withinLimit(kind, field, { ...fromProfile(kind, field, words), ...said });
+    }
+    case 'school':
+    case 'degree':
+    case 'discipline':
+    case 'graduation':
+    case 'edu-start': {
+      const studied = schoolAt(onFile, nth);
+      if (!studied) return left(kind, 'unset');
+      const said = { source: studied.source, from: studied.from };
+      if (kind === 'edu-start' || kind === 'graduation') {
+        const date = kind === 'edu-start' ? studied.start : studied.end;
+        // A school's end, asked as a year to type, as a resume gives it.
+        return dateReply(kind, field, date, said);
+      }
+      const words =
+        kind === 'school'
+          ? [studied.school]
+          : kind === 'discipline'
+            ? [studied.field]
+            : choosing(field)
+              ? degreeNames(studied.degree)
+              : [studied.degree];
+      if (!words.some(Boolean)) return left(kind, 'unset');
+      return { ...fromProfile(kind, field, ...words), ...said };
+    }
+    case 'skills': {
+      const items = resume?.skills.flatMap((each) => each.items) ?? [];
+      if (choosing(field)) {
+        return items.length > 0 && onFile.resume
+          ? {
+              kind,
+              pick: items,
+              exact: true,
+              source: 'resume',
+              from: fromResume(onFile.resume),
+            }
+          : left(kind, 'unset');
+      }
+      const text =
+        field.control === 'long'
+          ? (resume?.skills ?? [])
+              .map((each) => `${each.category}: ${each.items.join(', ')}`)
+              .join('\n')
+          : items.join(', ');
+      return withinLimit(kind, field, resumeSays(kind, field, onFile, text));
+    }
+    case 'certifications': {
+      const items =
+        resume?.sections
+          .filter((each) => /certif|licen/i.test(each.heading))
+          .flatMap((each) => each.items) ?? [];
+      return choosing(field)
+        ? left(kind, 'unset')
+        : withinLimit(
+            kind,
+            field,
+            resumeSays(kind, field, onFile, items.join(field.control === 'long' ? '\n' : '; ')),
+          );
+    }
+    case 'summary':
+      return field.control === 'long'
+        ? withinLimit(kind, field, resumeSays(kind, field, onFile, resume?.summary ?? ''))
         : left(kind, 'unset');
+    case 'middle-name':
+    case 'street-2':
+    case 'gpa':
+      return left(kind, 'unset');
+    // Factwright never ticks a box: whether you work there now is yours to tick.
+    case 'job-current':
+      return left(kind, 'pick');
+    // Nothing on file says where a school is, or whose a date is with nothing saying.
+    case 'edu-location':
+    case 'block-date':
+      return left(kind, 'new');
     case 'authorized': {
       const can = authorizedFor(field, onFile);
       if (!/\bsponsor/.test(plain(field.question))) return yesNo(kind, field, can);

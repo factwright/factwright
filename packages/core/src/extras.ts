@@ -1,4 +1,5 @@
 import { ASK_ID } from './answers.ts';
+import { FIELD_CONTROLS, type FieldControl } from './forms.ts';
 import type { WorkspaceEntry, WorkspaceReader } from './records.ts';
 
 /**
@@ -12,7 +13,10 @@ export const JOB_EXTRAS = {
   asked: 'asked',
   /** Screenshots: screenshots/<job ID>/<name>, or screenshots/<name> for one with no job. */
   screenshots: 'screenshots',
-  /** The posting as the user saw it, saved with the extension: saved/<job ID>/posting.md. */
+  /**
+   * The posting as the user saw it, saved with the extension: saved/<job ID>/posting.md, and the
+   * application form's questions it read for the user's Claude to draft: saved/<job ID>/form.json.
+   */
   saved: 'saved',
   /** Claude's work for each of the job's calls: calls/<job ID>/<call ID>/prep.md, and so on. */
   calls: 'calls',
@@ -86,6 +90,86 @@ export function readAllCallDocs(workspace: WorkspaceReader): Map<string, CallDoc
 
 /** Where the posting the user saved from their browser is kept. */
 export const savedPostingFile = (jobId: string) => `${JOB_EXTRAS.saved}/${jobId}/posting.md`;
+
+/**
+ * Where the questions of a job's application form are kept, as the extension read them in the
+ * user's browser, for their Claude to draft answers to.
+ */
+export const savedFormFile = (jobId: string) => `${JOB_EXTRAS.saved}/${jobId}/form.json`;
+
+/** One of an application form's own questions, as the page asks it: never what's in it. */
+export interface FormQuestion {
+  question: string;
+  /** What the page says under or around it, such as "500 characters max". */
+  hint: string;
+  /** The part of the form it's in, as the page names it, or "". */
+  section: string;
+  control: FieldControl;
+  /** For a choice, its options, as the page shows them. */
+  options: string[];
+  required: boolean;
+  /** The most characters it takes, when the page says. */
+  limit: number | null;
+}
+
+/** An application form's own questions, as the extension read them in the user's browser. */
+export interface SavedForm {
+  /** The form's page. */
+  url: string;
+  /** When it was read, as an ISO time. */
+  read: string;
+  questions: FormQuestion[];
+}
+
+/** The most a form keeps: its questions, a question's options, and the longest of its words. */
+const FORM_LIMITS = { questions: 50, options: 300, text: 500 } as const;
+
+const formText = (value: unknown) =>
+  typeof value === 'string' ? value.slice(0, FORM_LIMITS.text) : '';
+
+/** A form's questions from its file, each checked on its own, or null when it isn't one. */
+export function readSavedForm(text: string | null | undefined): SavedForm | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text ?? '');
+  } catch {
+    return null;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const file = value as Record<string, unknown>;
+  if (!Array.isArray(file.questions)) return null;
+  const questions = file.questions
+    .slice(0, FORM_LIMITS.questions)
+    .flatMap((each): FormQuestion[] => {
+      if (typeof each !== 'object' || each === null) return [];
+      const asked = each as Record<string, unknown>;
+      const question = formText(asked.question).trim();
+      const control = asked.control as FieldControl;
+      if (!question || !FIELD_CONTROLS.includes(control)) return [];
+      const limit = asked.limit;
+      return [
+        {
+          question,
+          hint: formText(asked.hint),
+          section: formText(asked.section),
+          control,
+          options: Array.isArray(asked.options)
+            ? asked.options.slice(0, FORM_LIMITS.options).map(formText).filter(Boolean)
+            : [],
+          required: asked.required === true,
+          limit: Number.isInteger(limit) && (limit as number) > 0 ? (limit as number) : null,
+        },
+      ];
+    });
+  return {
+    url: formText(file.url),
+    read: formText(file.read),
+    questions,
+  };
+}
+
+/** A form's questions as their file keeps them. */
+export const savedFormJson = (form: SavedForm) => `${JSON.stringify(form, null, 2)}\n`;
 
 /** A posting the user saved from their browser, as save_posting keeps one in a job's folder. */
 export interface SavedPosting {

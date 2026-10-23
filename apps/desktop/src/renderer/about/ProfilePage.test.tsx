@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NO_HISTORY, type WorkHistory } from '@factwright/core';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -7,6 +8,7 @@ import {
   type AboutYou,
   type AnswerChanges,
   applyChanges,
+  type Contact,
   readAnswers,
 } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
@@ -89,11 +91,17 @@ const TWO_KINDS = readAnswers({
   ],
 });
 
-function profileApi(status: Partial<ProfileStatus> = {}, answers: AboutYou = ANSWERS) {
+function profileApi(
+  status: Partial<ProfileStatus> = {},
+  answers: AboutYou = ANSWERS,
+  fromResume: Contact | null = null,
+  history: WorkHistory = NO_HISTORY,
+) {
   const profile: Profile = {
     answers,
     notes: 'I run the guest team.',
     confidential: [],
+    history,
     status: { ...STATUS, ...status },
     templates: TEMPLATES,
   };
@@ -115,6 +123,8 @@ function profileApi(status: Partial<ProfileStatus> = {}, answers: AboutYou = ANS
       }),
     ),
     removeTemplate: vi.fn(async () => ({ ok: true as const })),
+    contactFromResume: vi.fn(async () => fromResume),
+    saveHistory: vi.fn(async (saved: WorkHistory) => saved),
   };
 }
 
@@ -290,6 +300,120 @@ describe('ProfilePage', () => {
           }),
         }),
       ),
+    );
+  });
+
+  it('fills in what Profile leaves blank from the newest resume, with one click', async () => {
+    const resume: Contact = {
+      name: 'Jordan Avery',
+      email: 'jordan.avery@example.com',
+      phone: '(555) 555-0123',
+      location: 'Austin, TX',
+      linkedin: 'linkedin.com/in/jordanavery',
+      website: '',
+    };
+    const api = profileApi({}, ANSWERS, resume);
+    render(<Harness api={api} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    await userEvent.click(
+      await within(about).findByRole('button', { name: 'Fill in from your resume' }),
+    );
+    // Only what's blank: the email Profile has stays as it is.
+    await waitFor(() =>
+      expect(api.saveAnswers).toHaveBeenCalledWith({
+        you: {
+          name: 'Jordan Avery',
+          email: 'jordan@example.com',
+          phone: '(555) 555-0123',
+          location: 'Austin, TX',
+          linkedin: 'linkedin.com/in/jordanavery',
+          website: '',
+        },
+      }),
+    );
+  });
+
+  it('says what the resume would fill in, where you change your details', async () => {
+    const blank = readAnswers({ ...ANSWERS, you: { name: '', email: '' } });
+    const resume: Contact = {
+      name: 'Jordan Avery',
+      email: 'jordan.avery@example.com',
+      phone: '',
+      location: '',
+      linkedin: '',
+      website: '',
+    };
+    render(<Harness api={profileApi({}, blank, resume)} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    await userEvent.click(within(about).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'About you' });
+    expect(within(dialog).getByText('Your newest resume has your name and email.')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Fill in from your resume' })).toBeTruthy();
+  });
+
+  it('offers nothing to fill in when there’s no resume yet', async () => {
+    render(<Harness api={profileApi()} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    expect(within(about).queryByRole('button', { name: 'Fill in from your resume' })).toBeNull();
+  });
+
+  it('has Claude fill in the work history, before there is one', async () => {
+    const onRun = vi.fn();
+    render(<Harness api={profileApi()} onRun={onRun} />);
+    const card = await screen.findByRole('region', { name: 'Work history and education' });
+    expect(within(card).getByText(/Your Claude fills them in from your fact bank/)).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Fill in with Claude' }));
+    expect(onRun).toHaveBeenLastCalledWith({ skill: 'work-history' });
+  });
+
+  it('shows each position held at a company, and changes them', async () => {
+    const history: WorkHistory = {
+      jobs: [
+        {
+          company: 'Harbor & Pine',
+          location: 'Oakland, CA',
+          positions: [
+            {
+              title: 'Director of Guest Experience',
+              start: '2023-02',
+              end: 'present',
+              summary: '',
+            },
+            { title: 'Store Lead', start: '2018', end: '2023-02', summary: '' },
+          ],
+        },
+      ],
+      schools: [
+        {
+          school: 'San Francisco State University',
+          degree: 'B.A.',
+          field: 'Hospitality and Tourism',
+          start: '2012',
+          end: '2016',
+        },
+      ],
+    };
+    const onRun = vi.fn();
+    const api = profileApi({}, ANSWERS, null, history);
+    render(<Harness api={api} onRun={onRun} />);
+    const card = await screen.findByRole('region', { name: 'Work history and education' });
+    expect(
+      within(card).getByText(
+        'Harbor & Pine: Director of Guest Experience (Feb 2023 – now), Store Lead (2018 – Feb 2023)',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(card).getByText('San Francisco State University: B.A., Hospitality and Tourism'),
+    ).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Update with Claude' }));
+    expect(onRun).toHaveBeenLastCalledWith({ skill: 'work-history' });
+    await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Work history and education' });
+    const [, lead] = within(dialog).getAllByRole('textbox', { name: 'Title' });
+    await userEvent.type(lead as HTMLElement, ', Union Square');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    expect(api.saveHistory.mock.lastCall?.[0].jobs[0]?.positions[1]?.title).toBe(
+      'Store Lead, Union Square',
     );
   });
 

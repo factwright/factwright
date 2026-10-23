@@ -1,4 +1,4 @@
-import { type KeptPrivate, NO_PRIVATE } from '@factwright/core';
+import { type KeptPrivate, NO_HISTORY, NO_PRIVATE, type WorkHistory } from '@factwright/core';
 import { TEMPLATES } from '@factwright/engine/templates';
 import { type AboutYou, applyChanges, readAnswers, type SharedFile } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
@@ -11,6 +11,8 @@ type ProfileApi = Pick<
   | 'saveAnswers'
   | 'privateAnswers'
   | 'savePrivateAnswers'
+  | 'contactFromResume'
+  | 'saveHistory'
   | 'saveNotes'
   | 'changeConfidential'
   | 'addFile'
@@ -233,12 +235,54 @@ export function sampleProfile(state: string | null): ProfileApi {
           },
         ]),
   ];
+  // Three positions at one company, as people hold them, then one at another, and a school.
+  let history: WorkHistory =
+    kind === 'new'
+      ? NO_HISTORY
+      : {
+          jobs: [
+            {
+              company: 'Harbor & Pine',
+              location: 'Oakland, CA',
+              positions: [
+                {
+                  title: 'Director of Guest Experience',
+                  start: '2023-02',
+                  end: 'present',
+                  summary: 'Runs the guest team across nine stores.',
+                },
+                {
+                  title: 'Guest Experience Manager',
+                  start: '2020-08',
+                  end: '2023-02',
+                  summary: '',
+                },
+                { title: 'Store Lead', start: '2018-05', end: '2020-08', summary: '' },
+              ],
+            },
+            {
+              company: 'Fernway Outfitters',
+              location: 'Berkeley, CA',
+              positions: [{ title: 'Sales Associate', start: '2016', end: '2018', summary: '' }],
+            },
+          ],
+          schools: [
+            {
+              school: 'San Francisco State University',
+              degree: 'B.A.',
+              field: 'Hospitality and Tourism',
+              start: '2012',
+              end: '2016',
+            },
+          ],
+        };
   const listeners = new Set<(profile: Profile) => void>();
   const profile = (): Profile => ({
     answers,
     notes,
     confidential,
     templates,
+    history,
     status: {
       facts: { claims: 0, unconfirmed: 0, files: 0 },
       starting: [],
@@ -260,6 +304,19 @@ export function sampleProfile(state: string | null): ProfileApi {
       return answers;
     },
     privateAnswers: async () => kept,
+    saveHistory: async (saved) => {
+      history = saved;
+      changed();
+      return history;
+    },
+    contactFromResume: async () => ({
+      name: 'Alex Rivera',
+      email: 'alex.rivera@example.com',
+      phone: '(415) 555-0137',
+      location: 'Oakland, CA',
+      linkedin: 'linkedin.com/in/alexrivera',
+      website: '',
+    }),
     savePrivateAnswers: async (changes) => {
       kept = { ...kept, ...changes };
       return kept;

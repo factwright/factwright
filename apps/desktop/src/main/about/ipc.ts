@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { readHistory } from '@factwright/core';
 import { shell } from 'electron';
 import { ANSWER_LIMITS, parseAnswerChanges } from '../../shared/about.ts';
 import type { EditResult } from '../../shared/api.ts';
@@ -11,6 +12,7 @@ import {
 import { parsePrivateChanges } from '../../shared/private.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
+import { contactFromResume } from './from-resume.ts';
 import type { TemplatePreviews } from './previews.ts';
 import type { PrivateAnswers } from './private.ts';
 import type { AboutStore } from './store.ts';
@@ -48,12 +50,15 @@ export function registerAboutIpc(
     previews,
     templates,
     kept,
+    workspace,
   }: {
     about: AboutStore;
     previews: TemplatePreviews;
     templates: TemplateLibrary;
     /** What Profile keeps for applications on this computer alone. */
     kept: PrivateAnswers;
+    /** The open profile's workspace, where the resumes Factwright made are. */
+    workspace: string;
   },
 ): void {
   answer('about:profile', () => about.profile());
@@ -65,6 +70,16 @@ export function registerAboutIpc(
   });
 
   answer('about:private', () => kept.read());
+
+  answer('about:from-resume', () => contactFromResume(workspace));
+
+  // The work history as the window changed it, checked as the file is read.
+  answer('about:save-history', (history) => {
+    if (typeof history !== 'object' || history === null || Array.isArray(history)) {
+      throw new Error('Refused a work history the app doesn’t take.');
+    }
+    return about.saveHistory(readHistory(history));
+  });
 
   answer('about:save-private', (changes) => {
     const valid = parsePrivateChanges(changes);

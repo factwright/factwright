@@ -70,9 +70,14 @@ export class MainWindow<W extends WindowLike> {
     return this.current()?.isFocused() ?? false;
   }
 
-  /** Sends to the window, unless it's closed, as when a run ends while the app quits. */
-  send(channel: string, ...values: unknown[]): void {
+  /**
+   * Sends to the window, unless it's closed, as when a run ends while the app quits, and says
+   * whether there was one to send to.
+   */
+  send(channel: string, ...values: unknown[]): boolean {
     const contents = this.current()?.webContents;
-    if (contents && !contents.isDestroyed()) contents.send(channel, ...values);
+    if (!contents || contents.isDestroyed()) return false;
+    contents.send(channel, ...values);
+    return true;
   }
 }

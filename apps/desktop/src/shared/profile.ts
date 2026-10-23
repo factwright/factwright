@@ -1,3 +1,4 @@
+import type { WorkHistory } from '@factwright/core';
 import type { AboutYou, FileKind, SharedFile } from './about.ts';
 
 /** A file the user shared, as the window sends it: its bytes, and any text read out of it. */
@@ -101,6 +102,8 @@ export interface Profile {
   status: ProfileStatus;
   /** Every template the user can pick: the app's, then their own. */
   templates: TemplateInfo[];
+  /** Each job and school, for forms that ask for them one at a time. */
+  history: WorkHistory;
 }
 
 /** A template's preview: a made-up resume printed in it, or why it couldn't be. */

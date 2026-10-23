@@ -17,6 +17,8 @@ import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
+  HISTORY_SKILL,
+  type RunRequest,
   type RunTask,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
@@ -41,7 +43,7 @@ import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { MergeDialog } from './jobs/MergeDialog.tsx';
 import { showSection } from './jobs/PanelSection.tsx';
-import { BUSY, RUN_ACTIONS, type RunControls } from './jobs/RunActions.tsx';
+import { BUSY, RUN_ACTIONS, type RunControls, requestedRun } from './jobs/RunActions.tsx';
 import {
   filterForAdded,
   isListSort,
@@ -380,9 +382,11 @@ export function App({ api }: { api: FactwrightApi }) {
           ? 'Your fact bank'
           : task?.skill === TEMPLATE_SKILL
             ? 'A template of your own'
-            : runJob && runLabel
-              ? `${runLabel} · ${runJob.company}`
-              : undefined;
+            : task?.skill === HISTORY_SKILL
+              ? 'Your work history'
+              : runJob && runLabel
+                ? `${runLabel} · ${runJob.company}`
+                : undefined;
 
   // A job the window goes to for what a run made, with the section of its panel to show it in,
   // once the job has opened.
@@ -441,6 +445,16 @@ export function App({ api }: { api: FactwrightApi }) {
   const openResult = useRef<(() => void) | null>(null);
   openResult.current = result?.open?.go ?? null;
   useEffect(() => api.onOpenRunResult(() => openResult.current?.()), [api]);
+  // A run the app asks for, as when the browser extension asks for drafts of a form's questions,
+  // starts as a Run button's does, unless Claude is busy or isn't ready. The window stays where
+  // it is.
+  const runRequested = useRef<(request: RunRequest) => void>(() => {});
+  runRequested.current = ({ id, task: asked }) => {
+    const answer = requestedRun(ready, run.phase);
+    api.answerRunRequest(id, answer);
+    if (answer === 'started') startRun(asked);
+  };
+  useEffect(() => api.onRunRequest((request) => runRequested.current(request)), [api]);
   // A notification says what the task made, or that Claude is done, once, if the user is away.
   const turnError = run.phase === 'done' ? activity.end?.error : null;
   const said = run.phase === 'done' ? (activity.end?.said ?? null) : null;

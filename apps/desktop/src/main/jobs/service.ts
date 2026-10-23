@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmdirSync,
   rmSync,
@@ -23,11 +24,16 @@ import {
   jobList,
   localDate,
   type PostingSaved,
+  questionKey,
   readAllCallDocs,
   readJobExtras,
   readOutreach,
   readRecords,
+  readSavedForm,
+  type SavedForm,
   type SavedJob,
+  savedFormFile,
+  savedFormJson,
   savedPostingFile,
   savedPostingMarkdown,
 } from '@factwright/core';
@@ -47,6 +53,7 @@ import type {
   ShotFor,
   ShotResult,
 } from '../../shared/api.ts';
+import { LIMITS } from '../../shared/limits.ts';
 import { readShot, saveShot, shotFile } from './shots.ts';
 import type { EditContext, Tracker } from './tracker.ts';
 import { diskWorkspace, watchWorkspace } from './workspace.ts';
@@ -255,6 +262,56 @@ export class JobsService {
   }
 
   /**
+   * Keeps the questions of a job's application form, as the extension read them in the user's
+   * browser for their Claude to draft answers to: what each asks and how, in
+   * `saved/<job ID>/form.json` beside the posting saved from the browser, and each question the
+   * job's application questions don't have yet, as many times as the form asks it.
+   */
+  keepForm(jobId: string, form: SavedForm): EditResult {
+    const job = this.job(jobId);
+    if (!job) return { ok: false, message: 'That job isn’t in Factwright anymore.' };
+    const file = join(this.deps.workspace, ...savedFormFile(job.id).split('/'));
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      writeWhole(file, savedFormJson(form));
+    } catch {
+      return { ok: false, message: 'Factwright couldn’t keep the form’s questions.' };
+    }
+    const count = (questions: readonly string[]) => {
+      const counted = new Map<string, number>();
+      for (const question of questions) {
+        const key = questionKey(question);
+        if (key) counted.set(key, (counted.get(key) ?? 0) + 1);
+      }
+      return counted;
+    };
+    const had = count(job.questions);
+    const seen = new Map<string, number>();
+    const added = form.questions
+      .map((each) => each.question)
+      .filter((question) => {
+        const key = questionKey(question);
+        const times = (seen.get(key) ?? 0) + 1;
+        seen.set(key, times);
+        return key !== '' && times > (had.get(key) ?? 0);
+      });
+    if (added.length === 0) return { ok: true };
+    return this.updateJob(job.id, {
+      questions: [...job.questions, ...added].slice(0, LIMITS.questions),
+    });
+  }
+
+  /** The questions of a job's application form, as the extension read them, or null. */
+  savedForm(jobId: string): SavedForm | null {
+    try {
+      const file = join(this.deps.workspace, ...savedFormFile(jobId).split('/'));
+      return readSavedForm(readFileSync(file, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Merges another job into one, for a job the skills' work found twice, as the tracker merges
    * them, then moves what the app keeps for the other by its ID onto the one kept, and reads the
    * workspace again, so what the other was found by joins the one kept.
@@ -270,8 +327,8 @@ export class JobsService {
   /**
    * Moves what the app keeps for a job by its ID onto another: Claude's answers to the user's
    * questions, each under the ID its question has now, the user's screenshots, Claude's work for
-   * each call, and the posting saved from the browser, unless the job kept has one, when it goes
-   * in the trash. A file that won't move stays where it is.
+   * each call, and the posting and the form's questions saved from the browser, unless the job
+   * kept has its own, when they go in the trash. A file that won't move stays where it is.
    */
   private async moveExtras(from: string, to: string, asks: ReadonlyMap<string, string>) {
     const { workspace } = this.deps;
@@ -308,11 +365,12 @@ export class JobsService {
     for (const call of names(folder('calls', from))) {
       move(join(folder('calls', from), call), join(folder('calls', to), call));
     }
-    const posting = join(workspace, ...savedPostingFile(from).split('/'));
-    if (existsSync(posting)) {
-      const kept = join(workspace, ...savedPostingFile(to).split('/'));
-      if (existsSync(kept)) await this.deps.trash?.(posting).catch(() => {});
-      else move(posting, kept);
+    for (const file of [savedPostingFile, savedFormFile]) {
+      const saved = join(workspace, ...file(from).split('/'));
+      if (!existsSync(saved)) continue;
+      const kept = join(workspace, ...file(to).split('/'));
+      if (existsSync(kept)) await this.deps.trash?.(saved).catch(() => {});
+      else move(saved, kept);
     }
     for (const kind of ['asked', 'screenshots', 'calls', 'saved'] as const) {
       try {

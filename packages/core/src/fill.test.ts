@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   answerField,
+  answerForm,
+  datedAs,
   NO_APPLICATIONS,
   NO_EQUAL_OPPORTUNITY,
   NO_PRIVATE,
   type OnFile,
+  type ResumeOnFile,
   readEqualOpportunity,
 } from './fill.ts';
 import type { FieldControl, FormField } from './forms.ts';
+import { NO_HISTORY, type WorkHistory } from './history.ts';
 
 const ON_FILE: OnFile = {
   you: {
@@ -30,7 +34,32 @@ const ON_FILE: OnFile = {
   start: 'Two weeks’ notice',
   relocate: 'no',
   targetPay: '$165,000',
-  resume: { company: 'Tidewater Analytics', title: 'Senior Product Manager' },
+  resume: {
+    from: 'job',
+    name: 'Ana María Ruiz',
+    email: 'ana@example.com',
+    phone: '(303) 555-0142',
+    location: 'Denver, CO',
+    linkedin: 'https://www.linkedin.com/in/anaruiz',
+    website: '',
+    company: 'Tidewater Analytics',
+    title: 'Senior Product Manager',
+    since: '2021',
+    positions: [
+      {
+        company: 'Tidewater Analytics',
+        title: 'Senior Product Manager',
+        location: 'Denver, CO',
+        start: '2021',
+        end: 'Present',
+      },
+    ],
+    education: [],
+    skills: [],
+    sections: [],
+    summary: '',
+  },
+  history: NO_HISTORY,
   job: { company: 'Harbor & Pine', foundOn: 'LinkedIn', location: 'Denver, CO' },
   sent: [
     {
@@ -402,6 +431,68 @@ describe('answering a form from what’s on file', () => {
     });
   });
 
+  it('leaves a question your Claude said is yours for you, saying why', () => {
+    const yours: OnFile = {
+      ...ON_FILE,
+      suggested: [
+        {
+          question: 'Tell us about a time you used HL7.',
+          answer: 'For you: the facts don’t say whether you’ve used HL7.',
+          why: null,
+          batch: 1,
+        },
+      ],
+    };
+    expect(answer('Tell us about a time you used HL7.', { control: 'long' }, yours)).toEqual({
+      kind: 'question',
+      source: 'you',
+      left: 'new',
+      from: 'For you: the facts don’t say whether you’ve used HL7.',
+    });
+  });
+
+  it('picks each of the options your Claude chose, for a question that takes any of them', () => {
+    const picked: OnFile = {
+      ...ON_FILE,
+      suggested: [
+        {
+          question: 'Which tools do you use?',
+          answer: 'SQL; Python',
+          why: 'On the resume.',
+          batch: 1,
+        },
+      ],
+    };
+    expect(
+      answer(
+        'Which tools do you use?',
+        { control: 'choices', options: ['SQL', 'Python', 'Excel'] },
+        picked,
+      ),
+    ).toMatchObject({ pick: ['SQL', 'Python'], exact: true, source: 'claude' });
+    // One that takes one of them takes the draft whole.
+    expect(
+      answer('Which tools do you use?', { control: 'choice', options: ['SQL; Python'] }, picked),
+    ).toMatchObject({ pick: ['SQL; Python'] });
+    // Picks on lines of their own, as a list, and a long run of spaces, read in one pass.
+    const listed: OnFile = {
+      ...ON_FILE,
+      suggested: [
+        {
+          question: 'Which tools do you use?',
+          answer: `- SQL\n- Python\n\n${' \t'.repeat(50_000)}`,
+          why: null,
+          batch: 1,
+        },
+      ],
+    };
+    const started = Date.now();
+    expect(
+      answer('Which tools do you use?', { control: 'choices', options: ['SQL', 'Python'] }, listed),
+    ).toMatchObject({ pick: ['SQL', 'Python'] });
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('keeps to a field’s limit, leaving a longer answer for you', () => {
     expect(
       answer('What’s the biggest product bet you’ve made?', { control: 'long', limit: 20 }),
@@ -463,6 +554,302 @@ describe('answering a form from what’s on file', () => {
       source: 'you',
       left: 'new',
     });
+  });
+});
+
+describe('answering from a resume where Profile is blank', () => {
+  /** A resume Factwright made for another job: the newest, for a job that has none. */
+  const NEWEST: ResumeOnFile = {
+    from: 'newest',
+    name: 'Ana María Ruiz',
+    email: 'ana.ruiz@example.com',
+    phone: '(720) 555-0199',
+    location: 'Boulder, CO',
+    linkedin: 'https://www.linkedin.com/in/anaruiz',
+    website: 'https://anaruiz.dev',
+    company: 'Tidewater Analytics',
+    title: 'Senior Product Manager',
+    since: '2021',
+    positions: [
+      {
+        company: 'Tidewater Analytics',
+        title: 'Senior Product Manager',
+        location: 'Denver, CO',
+        start: 'Mar 2021',
+        end: 'Present',
+      },
+      { company: 'Fernway', title: 'Product Manager', location: '', start: '2018', end: '2021' },
+    ],
+    education: [
+      {
+        school: 'University of Colorado Boulder',
+        degree: 'B.S., Computer Science',
+        start: '2010',
+        end: '2014',
+      },
+    ],
+    skills: [
+      { category: 'Product', items: ['Roadmaps', 'Discovery'] },
+      { category: 'Data', items: ['SQL', 'Python'] },
+    ],
+    sections: [{ heading: 'Certifications', items: ['Certified Scrum Product Owner'] }],
+    summary: 'Product manager who ships data products.',
+  };
+  /** Profile with nothing told, as after skipping setup, with only the newest resume. */
+  const BLANK: OnFile = {
+    ...ON_FILE,
+    you: { name: '', email: '', phone: '', location: '', linkedin: '', website: '' },
+    applications: { ...NO_APPLICATIONS, countries: ['United States'] },
+    resume: NEWEST,
+  };
+  const from = (question: string, more: Partial<FormField> = {}) =>
+    answerField(field(question, more), BLANK);
+
+  it('fills who you are from your newest resume, and says so', () => {
+    expect(from('First Name', { autocomplete: 'given-name' })).toMatchObject({
+      text: 'Ana María',
+      source: 'resume',
+      from: 'From your newest resume',
+    });
+    expect(from('Last Name').text).toBe('Ruiz');
+    expect(from('Full name').text).toBe('Ana María Ruiz');
+    expect(from('Email', { type: 'email' }).text).toBe('ana.ruiz@example.com');
+    expect(from('Phone', { type: 'tel' }).text).toBe('(720) 555-0199');
+    expect(from('Current location').text).toBe('Boulder, CO');
+    expect(from('City').text).toBe('Boulder');
+    expect(from('State', { control: 'choice' }).pick).toEqual(['CO', 'Colorado']);
+    expect(from('Country', { control: 'combo' }).pick?.[0]).toBe('United States');
+    expect(from('LinkedIn URL').text).toBe('https://www.linkedin.com/in/anaruiz');
+    expect(from('Portfolio URL').text).toBe('https://anaruiz.dev');
+    expect(from('Phone country code', { control: 'combo' }).pick?.[0]).toBe('United States');
+  });
+
+  it('keeps Profile’s answer first, where it has one', () => {
+    expect(answer('Email', { type: 'email' }).text).toBe('ana@example.com');
+    expect(answer('Email', { type: 'email' }).source).toBe('profile');
+    // The job's own resume says where you work now, as before.
+    expect(answer('Current company')).toMatchObject({
+      text: 'Tidewater Analytics',
+      from: 'From the job’s resume',
+    });
+  });
+
+  it('fills your school, degree and field of study, as a resume lists them', () => {
+    expect(from('School').text).toBe('University of Colorado Boulder');
+    expect(
+      from('Degree', {
+        control: 'choice',
+        options: ['High School', "Associate's Degree", "Bachelor's Degree", "Master's Degree"],
+      }).pick?.[0],
+    ).toBe("Bachelor's Degree");
+    expect(from('Degree').text).toBe('B.S., Computer Science');
+    expect(from('Discipline').text).toBe('Computer Science');
+    expect(from('Graduation year').text).toBe('2014');
+    // A date picker reads a date its own way, so that's yours.
+    expect(from('Graduation date', { control: 'date', type: 'date' })).toMatchObject({
+      left: 'pick',
+    });
+  });
+
+  it('fills your skills, certifications and summary where a form asks for them by name', () => {
+    expect(from('Skills').text).toBe('Roadmaps, Discovery, SQL, Python');
+    expect(from('Skills', { control: 'long' }).text).toBe(
+      'Product: Roadmaps, Discovery\nData: SQL, Python',
+    );
+    expect(
+      from('Skills', { control: 'choices', options: ['SQL', 'Java', 'Python'] }),
+    ).toMatchObject({ pick: ['Roadmaps', 'Discovery', 'SQL', 'Python'], exact: true });
+    expect(from('Certifications').text).toBe('Certified Scrum Product Owner');
+    expect(from('Professional summary', { control: 'long' }).text).toBe(
+      'Product manager who ships data products.',
+    );
+    expect(from('Skills', { limit: 10 })).toMatchObject({ left: 'unset' });
+  });
+
+  it('leaves what no resume says for you: a middle name, an apartment, a GPA', () => {
+    for (const question of ['Middle name', 'Address line 2', 'GPA']) {
+      expect(from(question)).toMatchObject({ source: 'you', left: 'unset' });
+    }
+  });
+
+  it('leaves it all for you with no resume either', () => {
+    expect(answerField(field('Full name'), { ...BLANK, resume: null })).toMatchObject({
+      left: 'unset',
+    });
+  });
+});
+
+describe('a form that asks for each job and school', () => {
+  /** Three positions at one company, then one at another, and two schools. */
+  const HISTORY: WorkHistory = {
+    jobs: [
+      {
+        company: 'Tidewater Analytics',
+        location: 'Denver, CO',
+        positions: [
+          {
+            title: 'Director of Product',
+            start: '2023-04',
+            end: 'present',
+            summary: 'Runs the data products team.',
+          },
+          { title: 'Senior Product Manager', start: '2021-03', end: '2023-04', summary: '' },
+          { title: 'Product Manager', start: '2019-06', end: '2021-03', summary: '' },
+        ],
+      },
+      {
+        company: 'Fernway',
+        location: 'Boulder, CO',
+        positions: [{ title: 'Associate PM', start: '2017', end: '2019', summary: '' }],
+      },
+    ],
+    schools: [
+      {
+        school: 'CU Boulder',
+        degree: 'B.S.',
+        field: 'Computer Science',
+        start: '2013',
+        end: '2017',
+      },
+      { school: 'Denver East High School', degree: '', field: '', start: '', end: '2013' },
+    ],
+  };
+  const WITH: OnFile = { ...ON_FILE, history: HISTORY };
+  /** One block of a form's part for jobs, as Greenhouse asks it, the nth time. */
+  const job = (n: number) => [
+    field('Company name', { section: 'Employment', name: `employment_company_${n}` }),
+    field('Title', { section: 'Employment', name: `employment_title_${n}` }),
+    field('Start date month', {
+      section: 'Employment',
+      control: 'combo',
+      name: `employment_start_month_${n}`,
+    }),
+    field('Start date year', {
+      section: 'Employment',
+      control: 'combo',
+      name: `employment_start_year_${n}`,
+    }),
+    field('End date year', {
+      section: 'Employment',
+      control: 'combo',
+      name: `employment_end_year_${n}`,
+    }),
+  ];
+
+  it('fills each job it asks for with the next position, three at one company as three', () => {
+    const fields = [...job(0), ...job(1), ...job(2), ...job(3)];
+    const replies = answerForm(fields, WITH);
+    const said = replies.map((reply) => reply.text ?? reply.pick?.[0] ?? `(${reply.left})`);
+    expect(said).toEqual([
+      'Tidewater Analytics',
+      'Director of Product',
+      'April',
+      '2023',
+      // A job you still hold has no end year to pick.
+      '(pick)',
+      'Tidewater Analytics',
+      'Senior Product Manager',
+      'March',
+      '2021',
+      '2023',
+      'Tidewater Analytics',
+      'Product Manager',
+      'June',
+      '2019',
+      '2021',
+      'Fernway',
+      'Associate PM',
+      '(unset)',
+      '2017',
+      '2019',
+    ]);
+    expect(replies[0]).toMatchObject({ source: 'profile', from: 'From your work history' });
+  });
+
+  it('asks for the job you hold now when a form asks once, apart from the part for each job', () => {
+    expect(answerField(field('Current company'), WITH).text).toBe('Tidewater Analytics');
+    expect(answerField(field('Current job title'), WITH).text).toBe('Director of Product');
+    const replies = answerForm([field('Current company'), ...job(0)], WITH);
+    expect(replies[1]?.text).toBe('Tidewater Analytics');
+  });
+
+  it('fills each school, with its degree, field and years', () => {
+    const school = (n: number) => [
+      field('School', { section: 'Education', name: `education_school_${n}` }),
+      field('Degree', {
+        section: 'Education',
+        control: 'combo',
+        name: `education_degree_${n}`,
+      }),
+      field('Discipline', { section: 'Education', name: `education_discipline_${n}` }),
+      field('End date year', { section: 'Education', name: `education_end_year_${n}` }),
+    ];
+    const said = answerForm([...school(0), ...school(1)], WITH).map(
+      (reply) => reply.text ?? reply.pick?.[0] ?? `(${reply.left})`,
+    );
+    expect(said).toEqual([
+      'CU Boulder',
+      "Bachelor's Degree",
+      'Computer Science',
+      '2017',
+      'Denver East High School',
+      '(unset)',
+      '(unset)',
+      '2013',
+    ]);
+  });
+
+  it('types a date as a box for one takes it, and a job still going as Present', () => {
+    const typed = (question: string, more: Partial<FormField> = {}) =>
+      answerForm([field(question, { section: 'Work experience', ...more })], WITH)[0];
+    expect(typed('Start date')?.text).toBe('04/2023');
+    expect(typed('End date')?.text).toBe('Present');
+    expect(typed('Start date', { type: 'month' })?.text).toBe('2023-04');
+    expect(typed('Start date', { control: 'date', type: 'date' })).toMatchObject({ left: 'pick' });
+    expect(typed('Description', { control: 'long' })?.text).toBe('Runs the data products team.');
+    expect(typed('I currently work here', { control: 'check' })).toMatchObject({ left: 'pick' });
+  });
+
+  it('takes the positions a resume lists when Profile has no work history', () => {
+    const resume = ON_FILE.resume;
+    if (!resume) throw new Error('No resume');
+    const onFile: OnFile = {
+      ...ON_FILE,
+      resume: {
+        ...resume,
+        positions: [
+          ...resume.positions,
+          {
+            company: 'Fernway',
+            title: 'Product Manager',
+            location: '',
+            start: 'Jun 2018',
+            end: '03/2021',
+          },
+        ],
+      },
+    };
+    const said = answerForm([...job(0), ...job(1)], onFile).map(
+      (reply) => reply.text ?? reply.pick?.[0] ?? `(${reply.left})`,
+    );
+    expect(said).toEqual([
+      'Tidewater Analytics',
+      'Senior Product Manager',
+      '(unset)',
+      '2021',
+      '(pick)',
+      'Fernway',
+      'Product Manager',
+      'June',
+      '2018',
+      '2021',
+    ]);
+  });
+
+  it('reads a resume’s dates as the work history keeps them', () => {
+    expect(
+      ['Mar 2021', 'March 2021', '03/2021', '2021', 'Present', '', 'soon'].map(datedAs),
+    ).toEqual(['2021-03', '2021-03', '2021-03', '2021', 'present', '', '']);
   });
 });
 

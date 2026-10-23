@@ -29,6 +29,11 @@ export interface PageField {
   question: string;
   /** What the page says under or around it, such as "500 characters max". */
   hint: string;
+  /**
+   * The part of the form it's in, as the page names it, such as "Work experience" or "Education
+   * 2", or "" when the page doesn't say.
+   */
+  section: string;
   control: FieldControl;
   /** Its own type, as an input has one, such as "email" or "tel". */
   type: string;
@@ -382,6 +387,69 @@ export async function formPage(
     return squash(byIds || group.getAttribute('aria-label') || '');
   };
 
+  /** The longest name of a part of the form: one longer is a sentence, not a name. */
+  const MAX_SECTION = 120;
+  /** What a part of the form holds, as fields. */
+  const CONTROLS =
+    'input:not([type="hidden"]), select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"]';
+  /** Node.DOCUMENT_POSITION_FOLLOWING: what compareDocumentPosition says of an element after. */
+  const FOLLOWS = 4;
+
+  /**
+   * The page's headings, in its order, each with the box it names: the nearest one around it
+   * that holds fields. A heading in a label or legend is a question's, not a part's.
+   */
+  let headings: { heading: Element; words: string; names: Element }[] | null = null;
+  const headingsOf = () => {
+    headings ??= [...doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')].flatMap(
+      (heading) => {
+        if (heading.closest(`${AROUND}, label, legend`) || !shown(heading)) return [];
+        const words = wordsOf(heading);
+        let names = heading.parentElement;
+        while (names && !names.querySelector(CONTROLS)) names = names.parentElement;
+        return words && words.length <= MAX_SECTION && names ? [{ heading, words, names }] : [];
+      },
+    );
+    return headings;
+  };
+
+  /** A set of fields, which may name a part of the form, or a question. */
+  const SETS = 'fieldset, [role="group"], [role="region"]';
+
+  /**
+   * The part of the form a field is in, as the page names it, such as "Work experience" or
+   * "Education 2": the nearest heading before it, in the box the heading names, and the name of
+   * the nearest set of fields around it that holds others, the outer first, as "Work experience ›
+   * Position 1". A set that holds only a few, such as a date's month and year, names a question,
+   * not a part.
+   */
+  const sectionOf = (members: HTMLElement[], question: string): string => {
+    const [first] = members;
+    if (!first) return '';
+    let heading: { words: string; names: Element } | null = null;
+    for (const each of headingsOf()) {
+      if (!(each.heading.compareDocumentPosition(first) & FOLLOWS)) break;
+      if (each.names.contains(first) && each.words !== question) heading = each;
+    }
+    let set = first.parentElement?.closest(SETS) ?? null;
+    let named = '';
+    for (; set; set = set.parentElement?.closest(SETS) ?? null) {
+      const others = [...set.querySelectorAll<HTMLElement>(CONTROLS)].filter(
+        (each) => !members.includes(each),
+      );
+      named = others.length >= 3 ? groupWords(set) : '';
+      if (named && named.length <= MAX_SECTION) break;
+      named = '';
+    }
+    const names =
+      !heading || !set
+        ? [heading?.words ?? '', named]
+        : heading.names.contains(set)
+          ? [heading.words, named]
+          : [named, heading.words];
+    return [...new Set(names.filter(Boolean))].join(' › ');
+  };
+
   /** What a control asks, and whether its words mark it as required. */
   const questionOf = (control: Element): { question: string; raw: string } => {
     const tried: string[] = [];
@@ -581,7 +649,7 @@ export async function formPage(
       const name = control.getAttribute('name') ?? '';
       const id = control.getAttribute('id') ?? '';
       const group = groups.get(`${type}:${name}`);
-      let field: Omit<PageField, 'ref' | 'key'>;
+      let field: Omit<PageField, 'ref' | 'key' | 'section'>;
       let members = [control];
       if (group && (type === 'radio' || group.length > 1)) {
         members = group;
@@ -612,7 +680,14 @@ export async function formPage(
         };
       } else {
         done.add(control);
-        const { question, raw } = questionOf(control);
+        const own = questionOf(control);
+        // A date's parts, such as "Month" and "Year", are asked by the set they're in, such as
+        // "Start date *", which may mark them as required.
+        const set = /^(day|month|year)$/i.test(own.question)
+          ? groupWords(control.closest('fieldset, [role="group"]'))
+          : '';
+        const question = set ? `${cleanQuestion(set)} ${own.question}` : own.question;
+        const raw = set ? `${own.raw} ${set}` : own.raw;
         const tag = control.tagName;
         const role = control.getAttribute('role');
         const control_: FieldControl =
@@ -663,7 +738,8 @@ export async function formPage(
       }
       const ref = found.length;
       const key = cut(`${control.tagName}|${type}|${id}|${name}|${field.question}`);
-      found.push({ field: { ref, key, ...field }, controls: members });
+      const section = sectionOf(members, field.question);
+      found.push({ field: { ref, key, ...field, section }, controls: members });
     }
     return found;
   };

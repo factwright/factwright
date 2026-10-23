@@ -53,6 +53,32 @@ describe('SyncClient', () => {
     await expect(offline).rejects.toMatchObject({ kind: 'offline' });
   });
 
+  it('gives up on a request the server doesn’t answer in time, so sync tries again', async () => {
+    // A server that takes the request and never answers, until the request gives up.
+    const fetch = vi.fn(
+      (_url: URL, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    );
+    const client = new SyncClient({
+      server: 'https://app.example',
+      timeoutMs: 20,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+    await expect(client.changes(0)).rejects.toMatchObject({
+      kind: 'offline',
+      message: 'The sync server didn’t answer in time.',
+    });
+    // A file gets longer, by its size, as one that big takes longer to send.
+    const upload = client.putFile('file-1', new Uint8Array(2_500_000));
+    await new Promise((done) => setTimeout(done, 60));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const signal = fetch.mock.calls[1]?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
+    void upload.catch(() => {});
+  });
+
   it('says when sync needs a subscription, which trying again won’t fix', async () => {
     const { client } = fakeServer(
       json(

@@ -1,8 +1,23 @@
-import type { ForApplications, JobFile } from '@factwright/core';
+import {
+  type ForApplications,
+  hasHistory,
+  type JobFile,
+  monthNames,
+  NO_HISTORY,
+  type WorkHistory,
+  yearOf,
+} from '@factwright/core';
 import { Button, Dialog, DialogActions, VisuallyHidden } from '@factwright/ui';
 import { Check, Circle, FileText, LoaderCircle, Plus } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
-import { labelOf, OVER_18, pagesFor, RESUME_FILES, SPONSORSHIP } from '../../shared/about.ts';
+import { type ReactNode, useEffect, useState } from 'react';
+import {
+  type Contact,
+  labelOf,
+  OVER_18,
+  pagesFor,
+  RESUME_FILES,
+  SPONSORSHIP,
+} from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { labelIn, PAGE_SHAPE_CHOICES } from '../../shared/beyond.ts';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
@@ -17,7 +32,7 @@ import type { RunPhase } from '../useClaudeRun.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
-import { AboutYouStep } from './steps/AboutYouStep.tsx';
+import { AboutYouStep, resumeFillIns } from './steps/AboutYouStep.tsx';
 import { ApplicationsStep } from './steps/ApplicationsStep.tsx';
 import {
   BeyondWorkStep,
@@ -27,6 +42,7 @@ import {
   ShowingPill,
 } from './steps/BeyondWorkStep.tsx';
 import { FilesStep } from './steps/FilesStep.tsx';
+import { HistoryStep } from './steps/HistoryStep.tsx';
 import {
   looksSummary,
   placesSummary,
@@ -42,6 +58,7 @@ import type { ProfileState } from './useProfile.ts';
 type Editing =
   | 'about'
   | 'applications'
+  | 'history'
   | 'files'
   | 'words'
   | 'wants'
@@ -54,6 +71,28 @@ const SHOWN_FIRST = { feature: 0, fit: 1, private: 2 } as const;
 
 /** "In a section" as it reads after a colon: "in a section". */
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/** A date as the card shows it: "Mar 2021", or the year alone. */
+const shownDate = (date: string) =>
+  [monthNames(date)[1], yearOf(date)].filter(Boolean).join(' ') || '?';
+
+/** A position's dates, as the card shows them: "Mar 2021 – Apr 2023", or "Apr 2023 – now". */
+const span = (start: string, end: string) =>
+  [shownDate(start), end === 'present' ? 'now' : shownDate(end)].join(' – ');
+
+/** The work history, a line a company, as the card shows it, the first few. */
+function historyLines(history: WorkHistory): string[] {
+  const shown = history.jobs
+    .slice(0, 4)
+    .map(
+      (job) =>
+        `${job.company}: ${job.positions
+          .map((position) => `${position.title} (${span(position.start, position.end)})`)
+          .join(', ')}`,
+    );
+  const more = history.jobs.length - shown.length;
+  return more > 0 ? [...shown, `And ${more} more ${more === 1 ? 'company' : 'companies'}.`] : shown;
+}
 
 /** What Profile keeps for applications, in a line: where you can work, and sponsorship. */
 function applicationsSummary(applications: ForApplications): string {
@@ -219,7 +258,22 @@ export function ProfilePage({
 }) {
   const { profile } = state;
   const { answers, status } = profile;
+  // A profile from before the work history has none.
+  const history = profile.history ?? NO_HISTORY;
   const [editing, setEditing] = useState<Editing>(null);
+  // What the newest resume Factwright made shows of you, to fill in what Profile leaves blank.
+  const [fromResume, setFromResume] = useState<Contact | null>(null);
+  useEffect(() => {
+    let current = true;
+    void api.contactFromResume().then(
+      (contact) => current && setFromResume(contact),
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [api]);
+  const resumeFills = resumeFillIns(answers.you, fromResume);
   // The Beyond work dialog opened to add a project, which starts with a new one open.
   const [addingProject, setAddingProject] = useState(false);
   const [preview, setPreview] = useState<JobFile | null>(null);
@@ -470,9 +524,19 @@ export function ProfilePage({
         <Card
           title="About you"
           actions={
-            <Button size="sm" onClick={() => setEditing('about')}>
-              Change
-            </Button>
+            <>
+              {resumeFills && (
+                <Button
+                  size="sm"
+                  onClick={() => state.update({ you: { ...answers.you, ...resumeFills } })}
+                >
+                  Fill in from your resume
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setEditing('about')}>
+                Change
+              </Button>
+            </>
           }
         >
           <p>{answers.you.name || 'No name yet.'}</p>
@@ -566,6 +630,47 @@ export function ProfilePage({
             computer.
           </p>
         </Card>
+
+        <Card
+          title="Work history and education"
+          wide
+          actions={
+            <>
+              {runButton(
+                hasHistory(history) ? 'Update with Claude' : 'Fill in with Claude',
+                { skill: 'work-history' },
+                !hasHistory(history),
+              )}
+              <Button size="sm" onClick={() => setEditing('history')}>
+                Change
+              </Button>
+            </>
+          }
+        >
+          {hasHistory(history) ? (
+            <>
+              {historyLines(history).map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+              {history.schools.length > 0 && (
+                <p className={styles.quiet}>
+                  {history.schools
+                    .map((school) =>
+                      [school.school, [school.degree, school.field].filter(Boolean).join(', ')]
+                        .filter(Boolean)
+                        .join(': '),
+                    )
+                    .join(' · ')}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className={styles.quiet}>
+              Each job and school, for forms that ask for them one at a time. Your Claude fills them
+              in from your fact bank and resumes.
+            </p>
+          )}
+        </Card>
       </div>
 
       {profiles && (
@@ -582,6 +687,7 @@ export function ProfilePage({
             {
               about: 'About you',
               applications: 'For applications',
+              history: 'Work history and education',
               files: 'What you’ve shared',
               words: 'In your words',
               wants: 'What you want',
@@ -598,7 +704,10 @@ export function ProfilePage({
         >
           {(close) => (
             <div className={styles.editor}>
-              {editing === 'about' && <AboutYouStep you={answers.you} update={state.update} />}
+              {editing === 'about' && (
+                <AboutYouStep you={answers.you} update={state.update} fromResume={fromResume} />
+              )}
+              {editing === 'history' && <HistoryStep history={history} api={api} />}
               {editing === 'applications' && (
                 <ApplicationsStep
                   applications={answers.applications}

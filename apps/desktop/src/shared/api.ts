@@ -14,8 +14,9 @@ import type {
   PassReason,
   SavedPosting,
   SearchFocus,
+  WorkHistory,
 } from '@factwright/core';
-import type { AboutYou, AnswerChanges } from './about.ts';
+import type { AboutYou, AnswerChanges, Contact } from './about.ts';
 import type { RunStep, TurnEnd } from './activity.ts';
 import type { EffortChoices } from './effort.ts';
 import type {
@@ -42,7 +43,7 @@ import type {
 import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RevisionRequest, RevisionState } from './revision.ts';
 import type { QuestionRound, RoundReply } from './rounds.ts';
-import type { RunTask } from './runs.ts';
+import type { RunRequest, RunRequestAnswer, RunTask } from './runs.ts';
 import type { SaveHelperView, SetUpResult } from './save-helper.ts';
 import type {
   AccountResult,
@@ -329,6 +330,13 @@ export interface FactwrightApi {
    * Enter through them once. Returns a function that stops listening.
    */
   onClaudeFirstRun(listener: () => void): () => void;
+  /**
+   * Listens for the app asking the window to start a run on a task, as when the browser
+   * extension asks for drafts of a form's questions. Returns a function that stops listening.
+   */
+  onRunRequest(listener: (request: RunRequest) => void): () => void;
+  /** Says whether the window started a run the app asked for, and if not, why. */
+  answerRunRequest(id: string, answer: RunRequestAnswer): void;
   /** The round of Claude's questions waiting on the user to answer in the window, or null. */
   claudeQuestion(): Promise<QuestionRound | null>;
   /**
@@ -523,6 +531,13 @@ export interface FactwrightApi {
   privateAnswers(): Promise<KeptPrivate>;
   /** Saves changes to what's kept on this computer alone, and answers with all of it. */
   savePrivateAnswers(changes: Partial<KeptPrivate>): Promise<KeptPrivate>;
+  /**
+   * The contact details the newest resume Factwright made shows, to fill Profile's blanks with,
+   * or null before it's made one.
+   */
+  contactFromResume(): Promise<Contact | null>;
+  /** Saves the work history and education whole, and answers with them as kept. */
+  saveHistory(history: WorkHistory): Promise<WorkHistory>;
   /** Saves the notes the user wrote about themselves. */
   saveNotes(text: string): Promise<EditResult>;
   /**

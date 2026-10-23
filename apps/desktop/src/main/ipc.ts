@@ -45,6 +45,7 @@ import { loadModels, saveModels } from './claude/models.ts';
 import { parsePermissionAnswer } from './claude/permission-asks.ts';
 import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import { parseReply } from './claude/rounds.ts';
+import type { RunRequests } from './claude/run-requests.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
@@ -171,6 +172,8 @@ export interface IpcDeps {
   saveHelper: SaveHelper;
   /** Tells the user a task is done, in the window's words, if they're looking elsewhere. */
   tellRunDone: (note: unknown) => void;
+  /** The app's requests to the window to start a run, which the window answers. */
+  runRequests: RunRequests;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -214,6 +217,7 @@ export function registerIpc({
   opener,
   saveHelper,
   tellRunDone,
+  runRequests,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -434,6 +438,11 @@ export function registerIpc({
 
   ipcMain.on('claude:stop', (event) => {
     if (fromApp(event)) session.stop();
+  });
+
+  // Whether the window started a run the app asked it to, as for a form's drafts.
+  ipcMain.on('claude:run-request-answer', (event, id: unknown, answer: unknown) => {
+    if (fromApp(event)) runRequests.answered(id, answer);
   });
 
   ipcMain.on('claude:done', (event, note: unknown) => {
@@ -716,5 +725,5 @@ export function registerIpc({
   });
   answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
-  registerAboutIpc(answer, { about, previews, templates, kept });
+  registerAboutIpc(answer, { about, previews, templates, kept, workspace });
 }

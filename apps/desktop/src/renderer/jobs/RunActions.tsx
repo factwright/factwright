@@ -1,4 +1,10 @@
-import { type RunSkill, type RunTask, taskCall, taskJob } from '../../shared/runs.ts';
+import {
+  type RunRequestAnswer,
+  type RunSkill,
+  type RunTask,
+  taskCall,
+  taskJob,
+} from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
 
 /** What each skill does for a job, as its panel offers it, in the approved order. */
@@ -52,6 +58,13 @@ export interface RunControls {
 
 /** While Claude is busy, other runs wait. */
 export const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
+
+/**
+ * Whether a run the app asks for starts now, as when the browser extension asks for drafts of a
+ * form's questions: only once Claude Code is ready, and while Claude isn't busy.
+ */
+export const requestedRun = (ready: boolean, phase: RunPhase): RunRequestAnswer =>
+  !ready ? 'not-ready' : BUSY.includes(phase) ? 'busy' : 'started';
 
 /** Whether a run is this one: the same skill, on the same job and call. */
 export const isSameRun = (task: RunTask | null, run: RunTask) =>

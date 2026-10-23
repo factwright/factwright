@@ -39,6 +39,7 @@ export {
   type CallDoc,
   type CallDocKind,
   callDocFile,
+  type FormQuestion,
   JOB_EXTRAS,
   type JobShot,
   type OutreachDraft,
@@ -46,10 +47,14 @@ export {
   readCallDocs,
   readJobExtras,
   readOutreach,
+  readSavedForm,
   readSavedPosting,
+  type SavedForm,
   type SavedPosting,
   SHOT_TYPES,
   type ShotKind,
+  savedFormFile,
+  savedFormJson,
   savedPostingFile,
   savedPostingMarkdown,
   shotsFolder,
@@ -79,6 +84,8 @@ export {
 export {
   type AnswerSource,
   answerField,
+  answerForm,
+  datedAs,
   type EqualOpportunity,
   type FieldReply,
   type ForApplications,
@@ -91,6 +98,7 @@ export {
   type OnFile,
   REMEMBERED_KINDS,
   type RememberedKind,
+  type ResumeOnFile,
   readEqualOpportunity,
   type SentBefore,
 } from './fill.ts';
@@ -146,6 +154,7 @@ export {
   type FieldKind,
   type FormField,
   fieldKind,
+  fieldPart,
   isEqualOpportunity,
 } from './forms.ts';
 export {
@@ -161,6 +170,22 @@ export {
   withoutGap,
 } from './gaps.ts';
 export {
+  type Employer,
+  type HeldPosition,
+  HISTORY_LIMITS,
+  hasHistory,
+  historyDate,
+  monthNames,
+  NO_HISTORY,
+  type Position,
+  positionsOf,
+  readHistory,
+  type School,
+  typedDate,
+  type WorkHistory,
+  yearOf,
+} from './history.ts';
+export {
   HN_THREADS_URL,
   type HnPost,
   type HnThread,
@@ -174,6 +199,7 @@ export {
   ASK_FIELDS,
   type AskedField,
   type AskedJob,
+  DRAFT_QUESTIONS,
   FILE_LIMIT,
   FILE_PART_BYTES,
   INBOX_ASK,

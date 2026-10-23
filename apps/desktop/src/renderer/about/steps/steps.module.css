@@ -48,6 +48,36 @@
   border-radius: var(--fw-radius-lg);
 }
 
+/* A company's or a school's own name, over its fields, in the work history. */
+.legend {
+  padding: 0 var(--fw-space-1);
+  font-weight: 600;
+}
+
+/* Buttons side by side, as under a company's positions. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-2);
+}
+
+/* What a resume Factwright made can fill in, above the fields it fills. */
+.fromResume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-3) var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.fromResume p {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
 .fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

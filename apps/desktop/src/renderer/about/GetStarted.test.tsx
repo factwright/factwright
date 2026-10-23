@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { NO_HISTORY } from '@factwright/core';
 import { TEMPLATES } from '@factwright/engine/templates';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -42,6 +43,7 @@ function profileApi(start: Partial<AboutYou> = {}) {
     answers,
     notes,
     confidential,
+    history: NO_HISTORY,
     status: {
       facts: { claims: 0, unconfirmed: 0, files: 0 },
       starting: [],

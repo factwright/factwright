@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { KINDS_FILE, type KindName, localDate } from '@factwright/core';
+import {
+  KINDS_FILE,
+  type KindName,
+  localDate,
+  readHistory,
+  type WorkHistory,
+} from '@factwright/core';
 import { TEMPLATES } from '@factwright/engine';
 import {
   type AboutYou,
@@ -23,6 +29,7 @@ import {
   localTime,
 } from '../../shared/beyond.ts';
 import { criteriaMarkdown } from '../../shared/criteria.ts';
+import { HISTORY_FILE } from '../../shared/history.ts';
 import { templatesMarkdown } from '../../shared/looks.ts';
 import {
   type AddFileResult,
@@ -396,6 +403,26 @@ export class AboutStore {
     return this.saveAll({ ...this.answers(), startedOn: this.today(), skipped: false });
   }
 
+  /** The work history and education, as about-me/history.json keeps them. */
+  history(): WorkHistory {
+    return readHistory(this.readJson(HISTORY_FILE));
+  }
+
+  /**
+   * Saves the work history and education whole, as checked, when they change, and answers with
+   * them as kept.
+   */
+  saveHistory(history: WorkHistory): WorkHistory {
+    const kept = readHistory(history);
+    const before = this.history();
+    if (JSON.stringify(before) === JSON.stringify(kept)) return kept;
+    this.write(
+      HISTORY_FILE,
+      `${JSON.stringify({ updated: localTime(this.now()), ...kept }, null, 2)}\n`,
+    );
+    return kept;
+  }
+
   profile(): Profile {
     const answers = this.answers();
     return {
@@ -404,6 +431,7 @@ export class AboutStore {
       confidential: this.confidential(),
       status: profileStatus(this.workspace, answers),
       templates: this.templates(),
+      history: this.history(),
     };
   }
 }

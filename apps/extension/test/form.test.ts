@@ -180,6 +180,71 @@ describe('reading an application form', () => {
     );
     expect((await read(doc)).submitted).toBe(true);
   });
+
+  it('says which part of the form each field is in, as for each job and school', async () => {
+    const job = (at: number) => `
+      <div class="employment">
+        <div class="header"><h3>Work Experience ${at}</h3></div>
+        <label>Company <input name="company-${at}"></label>
+        <label>Title <input name="title-${at}"></label>
+        <fieldset>
+          <legend>Start date *</legend>
+          <label>Month <select name="start-month-${at}"><option></option><option>March</option></select></label>
+          <label>Year <input name="start-year-${at}"></label>
+        </fieldset>
+        <label><input type="checkbox" name="current-${at}"> I currently work here</label>
+      </div>`;
+    const doc = new DOMParser().parseFromString(
+      `<main>
+        <h1>Operations Manager</h1>
+        <form>
+          <label>Email <input type="email" name="email"></label>
+          ${job(1)}
+          ${job(2)}
+          <div class="education">
+            <h3>Education</h3>
+            <label>School <input name="school"></label>
+            <label>Degree <input name="degree"></label>
+          </div>
+          <fieldset>
+            <legend>Professional reference</legend>
+            <label>Name <input name="r1"></label>
+            <label>Phone <input type="tel" name="r2"></label>
+            <label>Relationship <input name="r3"></label>
+            <label>Years known <input name="r4"></label>
+          </fieldset>
+          <label>Location <input name="location"></label>
+        </form>
+      </main>`,
+      'text/html',
+    );
+    const form = await read(doc);
+    const jobFields = (at: number) => [
+      `current-company: Company, in Work Experience ${at}`,
+      `current-title: Title, in Work Experience ${at}`,
+      `job-start: Start date Month, in Work Experience ${at}`,
+      `job-start: Start date Year, in Work Experience ${at}`,
+      `job-current: I currently work here, in Work Experience ${at}`,
+    ];
+    expect(
+      form.fields.map((field) => `${fieldKind(field)}: ${field.question}, in ${field.section}`),
+    ).toEqual([
+      'email: Email, in Operations Manager',
+      ...jobFields(1),
+      ...jobFields(2),
+      'school: School, in Education',
+      'degree: Degree, in Education',
+      // A reference's name and phone are never yours.
+      'question: Name, in Operations Manager › Professional reference',
+      'question: Phone, in Operations Manager › Professional reference',
+      'question: Relationship, in Operations Manager › Professional reference',
+      'question: Years known, in Operations Manager › Professional reference',
+      // Past the parts for jobs and schools, the form's own again.
+      'location: Location, in Operations Manager',
+    ]);
+    // A date's month and year ask whatever their set does.
+    expect(form.fields[3]?.required).toBe(true);
+  });
 });
 
 describe('filling a form', () => {
