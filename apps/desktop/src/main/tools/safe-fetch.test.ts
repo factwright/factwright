@@ -1,5 +1,22 @@
+import type { IncomingMessage } from 'node:http';
+import { Readable } from 'node:stream';
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { isPrivateAddress, linkProblem } from './safe-fetch.ts';
+import { decoded, isPrivateAddress, linkProblem } from './safe-fetch.ts';
+
+/** A site's answer, as the fetcher gets it. */
+function answer(body: Buffer, encoding?: string): IncomingMessage {
+  return Object.assign(Readable.from([body]), {
+    headers: encoding ? { 'content-encoding': encoding } : {},
+  }) as unknown as IncomingMessage;
+}
+
+async function text(stream: NodeJS.ReadableStream | null): Promise<string> {
+  if (!stream) throw new Error('The page was turned away');
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 describe('isPrivateAddress', () => {
   it.each([
@@ -66,5 +83,19 @@ describe('linkProblem', () => {
     expect(linkProblem(url)).toContain('sign-in');
     url.password = 'made-up';
     expect(linkProblem(url)).toContain('sign-in');
+  });
+});
+
+describe('decoded', () => {
+  const page = '<h1>Staff Engineer</h1><p>Remote, $180k–$210k</p>';
+
+  it('unpacks gzip and deflate, and reads a page that came as it is', async () => {
+    expect(await text(decoded(answer(gzipSync(page), 'gzip')))).toBe(page);
+    expect(await text(decoded(answer(deflateSync(page), 'deflate')))).toBe(page);
+    expect(await text(decoded(answer(Buffer.from(page))))).toBe(page);
+  });
+
+  it.each(['br', 'BR', 'gzip, br'])('never unpacks a page sent in Brotli (%s)', (encoding) => {
+    expect(decoded(answer(brotliCompressSync(page), encoding))).toBeNull();
   });
 });

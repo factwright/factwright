@@ -2,7 +2,7 @@ import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import type { IncomingMessage } from 'node:http';
 import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
-import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
+import { createGunzip, createInflate } from 'node:zlib';
 import { isLinkedIn } from '@factwright/core';
 
 /** The most a fetched page may weigh, unless the caller allows more, so a huge or endless answer can't fill memory. */
@@ -87,14 +87,19 @@ export function linkProblem(url: URL): string | null {
   return null;
 }
 
-function decoded(response: IncomingMessage): NodeJS.ReadableStream {
-  switch (response.headers['content-encoding']) {
+/**
+ * The page as it came, unpacked from gzip or deflate, or null when it came in Brotli. The app
+ * never asks for Brotli or unpacks it, so a page can't reach a flaw like the one Node.js's
+ * Brotli decoder had (CVE-2026-111497), which let a page made for it run code.
+ */
+export function decoded(response: IncomingMessage): NodeJS.ReadableStream | null {
+  const encoding = response.headers['content-encoding'] ?? '';
+  if (/\bbr\b/i.test(encoding)) return null;
+  switch (encoding) {
     case 'gzip':
       return response.pipe(createGunzip());
     case 'deflate':
       return response.pipe(createInflate());
-    case 'br':
-      return response.pipe(createBrotliDecompress());
     default:
       return response;
   }
@@ -116,7 +121,7 @@ function get(
         headers: {
           'user-agent': 'Mozilla/5.0 (Factwright; saves job postings for the user)',
           accept: json ? 'application/json' : 'text/html,application/xhtml+xml,*/*;q=0.8',
-          'accept-encoding': 'gzip, deflate, br',
+          'accept-encoding': 'gzip, deflate',
         },
       },
       (response) => {
@@ -130,6 +135,14 @@ function get(
         const chunks: Buffer[] = [];
         let size = 0;
         const stream = decoded(response);
+        if (!stream) {
+          fail(
+            new FetchRefused(
+              'That site sent the page compressed with Brotli, which the app never unpacks. Use a posting the user saved from their browser, or ask the user to paste it.',
+            ),
+          );
+          return;
+        }
         stream.on('data', (chunk: Buffer) => {
           size += chunk.length;
           if (size > maxBytes) fail(new FetchRefused('That page is too big.'));
