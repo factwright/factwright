@@ -101,6 +101,9 @@ async function allowInBrowser({ app }: Opened, on: TestServer, who: Account): Pr
 }
 
 const syncCard = ({ window }: Opened) => window.getByRole('region', { name: 'Sync' });
+// The dialog once sync is on, by its title. The sidebar's card has a heading named Sync too, so a
+// heading alone would be found there before sync is on, and twice once it is.
+const syncOn = ({ window }: Opened) => window.getByRole('dialog', { name: 'Sync', exact: true });
 
 let mac: Opened;
 let pc: Opened;
@@ -116,7 +119,7 @@ test('turns on sync on the first computer, with a recovery key saved', async () 
   await expect(window.getByRole('heading', { name: 'Save your recovery key' })).toBeVisible();
   await window.getByText('I’ve saved my recovery key somewhere safe').click();
   await window.getByRole('button', { name: 'Turn on sync' }).click();
-  await expect(window.getByRole('heading', { name: 'Sync' })).toBeVisible();
+  await expect(syncOn(mac)).toBeVisible();
   await expect(window.getByText(/Up to date/).first()).toBeVisible({ timeout: 20_000 });
 });
 
@@ -137,7 +140,7 @@ test('links a second computer with a code, and the job hunt arrives', async () =
   await pc.window.getByText('Or type a code from your other device').click();
   await pc.window.getByRole('textbox', { name: 'Code from your other device' }).fill(code);
   await pc.window.getByRole('button', { name: 'Link this computer' }).click();
-  await expect(pc.window.getByRole('heading', { name: 'Sync' })).toBeVisible();
+  await expect(syncOn(pc)).toBeVisible();
   await pc.window.getByRole('button', { name: 'Done' }).click();
   await expect(pc.window.getByRole('button', { name: /^Acme Robotics/ })).toBeVisible({
     timeout: 20_000,
@@ -179,7 +182,7 @@ test('links a third computer from the first, once both show the same emoji', asy
 
   await laptop.window.getByRole('button', { name: 'They match', exact: true }).click();
   await mac.window.getByRole('button', { name: 'They match, link it' }).click();
-  await expect(laptop.window.getByRole('heading', { name: 'Sync' })).toBeVisible({
+  await expect(syncOn(laptop)).toBeVisible({
     timeout: 20_000,
   });
   await expect(mac.window.getByText(/is linked\.$/)).toBeVisible({ timeout: 20_000 });
@@ -219,7 +222,7 @@ test('connects a server of your own, in a copy without Factwright’s sync', asy
     await expect(window.getByRole('heading', { name: 'Save your recovery key' })).toBeVisible();
     await window.getByText('I’ve saved my recovery key somewhere safe').click();
     await window.getByRole('button', { name: 'Turn on sync' }).click();
-    await expect(window.getByRole('heading', { name: 'Sync' })).toBeVisible();
+    await expect(syncOn(desk)).toBeVisible();
     await expect(window.getByText(/^Sync server:/)).toContainText(own.url.host);
     // Save to Factwright syncs through a server of your own too, since its version 0.2.
     await expect(
