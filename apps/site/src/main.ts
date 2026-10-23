@@ -184,11 +184,10 @@ function heroRun(root: HTMLElement): void {
       if (part.dataset.demoThenClass) part.className = part.dataset.demoThenClass;
     }
   };
-  // Open it goes to the call, where the prep sheet is, and keeps it in view once laid out, and
-  // again whenever the areas' size changes, such as when a tablet turns.
+  // Open it goes to the call, where the prep sheet is, as soon as the areas are laid out, and
+  // keeps it in view whenever their size changes, such as when a tablet turns.
   const openCall = () => {
-    scrollAreas(call, 12);
-    if (areas) new ResizeObserver(() => scrollAreas(call, 12, false)).observe(areas);
+    if (areas) new ResizeObserver(() => scrollAreas(call, 12)).observe(areas);
   };
 
   if (still) {

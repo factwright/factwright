@@ -415,23 +415,32 @@ describe('the home page', () => {
 
   it('says where each card’s task is done in the app, in the words on its buttons', () => {
     const sources = appSources();
-    // The app says them as a string, such as label="Tailor a resume", or as a button's text.
-    const says = (words: string) => {
+    // Words the app puts on a button: a Button's own text, a ClaudeButton's label, a step Up
+    // next starts Claude on, or the button that asks for the application's questions. Not a
+    // step's words, a task's name or a dialog's title.
+    const onButton = (words: string) => {
       const exact = words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(`(['"\`>]|^\\s*)${exact}(['"\`<]|\\s*$)`, 'm');
-      return sources.some((text) => pattern.test(text));
+      const ways = [
+        `>\\s*${exact}\\s*</Button>`,
+        `<ClaudeButton\\b[^<]*?\\blabel="${exact}"`,
+        `\\btask: \\{[^}]*\\},\\s*label: '${exact}'`,
+        `\\bstart\\('${exact}'\\)`,
+      ].map((way) => new RegExp(way));
+      return sources.some((text) => ways.some((way) => way.test(text)));
     };
+    expect(onButton('Tailor a resume')).toBe(true);
+    expect(onButton('Tailored resume')).toBe(false);
     const doc = open('index.html');
     const cards = [...doc.querySelectorAll('#tasks .task')];
     expect(cards.length).toBeGreaterThan(5);
     for (const card of cards) {
       const words = [...card.querySelectorAll('.task-where b')].map(said);
       expect(words, said(card.querySelector('h3'))).not.toHaveLength(0);
-      for (const each of words) expect(says(each), each).toBe(true);
+      for (const each of words) expect(onButton(each), each).toBe(true);
     }
     // And the way to ask about anything else.
     for (const each of [...doc.querySelectorAll('.tasks-note b')].map(said)) {
-      expect(says(each), each).toBe(true);
+      expect(onButton(each), each).toBe(true);
     }
   });
 

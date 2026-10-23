@@ -565,39 +565,6 @@
   white-space: nowrap;
 }
 
-/* A job's calls so far, under its role: the ones done, then what's booked and when. */
-.t-job .t-steps {
-  display: flex;
-  gap: 4px;
-  margin-block: 4px 1px;
-}
-
-.t-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 0 7px;
-  border: 1px solid var(--fw-border);
-  border-radius: var(--fw-radius-full);
-  color: var(--fw-text);
-  font-size: var(--fw-text-xs);
-  font-style: normal;
-  line-height: 18px;
-  white-space: nowrap;
-}
-
-.t-step.is-done {
-  border-color: transparent;
-  background: var(--fw-tone-teal-bg);
-  color: var(--fw-tone-teal-fg);
-}
-
-.t-step .icon {
-  width: 11px;
-  height: 11px;
-  stroke-width: 3;
-}
-
 /* Narrower, the pay goes under the role too, as it does in the app. */
 @container list (max-width: 580px) {
   .t-cells {
@@ -996,12 +963,6 @@
   .run-status {
     margin-right: auto;
   }
-
-  /* Claude's question sits just above the bar, where the run plays. */
-  .ask {
-    align-items: flex-end;
-    padding-bottom: 96px;
-  }
 }
 
 /*
@@ -1019,5 +980,29 @@
 
   .extra {
     display: none;
+  }
+
+  /* Claude's question sits just above the bar, where the run plays, however tall the job is. */
+  .ask {
+    align-items: flex-end;
+    padding-bottom: 64px;
+  }
+}
+
+/* On a phone, the bar takes two lines, so the question sits a little higher. */
+@container win (max-width: 480px) {
+  .ask {
+    padding-bottom: 96px;
+  }
+}
+
+/* On a short screen, such as a phone on its side, the question keeps to its words and answers. */
+@media (max-height: 520px) {
+  .ask :is(.ask-from, .ask-option > span > span) {
+    display: none;
+  }
+
+  .ask .ask-tag {
+    margin-top: 8px;
   }
 }

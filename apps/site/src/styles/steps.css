@@ -302,7 +302,7 @@
   box-shadow: none;
 }
 
-/* Step 3: a job to review, its quick choices, and its fit check */
+/* Step 3: a job to review, Up next with its quick choices, and its fit check */
 .fit {
   overflow: hidden;
 }
@@ -340,7 +340,10 @@
 
 .fit-moves {
   gap: 6px;
-  padding: 16px 20px;
+}
+
+.fit-next {
+  padding: 0 20px;
 }
 
 .fit .job-section {
