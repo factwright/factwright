@@ -694,6 +694,28 @@ describe('about_you', () => {
     expect(answer).not.toContain('Email');
   });
 
+  it('says what forms ask that a resume doesn’t, and never what’s kept on the computer alone', async () => {
+    answers = {
+      ...answers,
+      applications: {
+        ...answers.applications,
+        pronouns: 'she/her',
+        countries: ['United States', 'Canada'],
+        sponsorship: 'later',
+      },
+    };
+    const answer = await tool('about_you').run({});
+    for (const line of [
+      '- Pronouns: she/her',
+      '- Countries they can work in without a visa: United States; Canada',
+      '- Visa sponsorship: Not now, but later',
+    ]) {
+      expect(answer).toContain(line);
+    }
+    // The street, postal code and equal-opportunity answers aren't in Profile's answers at all.
+    expect(answer).not.toMatch(/gender|veteran|disability|street|postal/i);
+  });
+
   it('lists each kind of job with its own roles, levels and pay', async () => {
     answers = {
       ...answers,
