@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- factwright.com's drawing of the app at the top shows a job's panel as 0.12.0 has it. The Lumen Health job opens with Up next, prep for Friday's panel interview, then its fit and an area for each kind of thing. The drawing presses Prep for the call, and the bar along the bottom says what Claude is doing, a step at a time. Claude asks about HIPAA in a box of its own, and then the bar says the prep sheet is ready, with Open it, which goes to the call. The sidebar says Factwright 0.12.0. How it works says to click what's up next, and shows Claude's question the way the app asks it. Each task card says where in the app it's done, in the words on its buttons. It goes live with the site's next update.
+
 ## 0.12.0 - 2026-10-22
 
 ### Added
