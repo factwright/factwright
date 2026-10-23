@@ -275,6 +275,116 @@ describe('save_fact', () => {
     );
   });
 
+  describe('in a section, such as a role’s', () => {
+    // A job where the user held three titles, a section for each role, newest first.
+    const ROLES = [
+      '# Tidewater Analytics',
+      '',
+      '## Overview',
+      'Staff Engineer (03/2022 – Present), Senior Engineer (06/2019 – 02/2022), Engineer (08/2017 – 05/2019).',
+      '',
+      '## Staff Engineer (03/2022 – Present)',
+      '',
+      '### Deploy pipeline',
+      '`live` `led-and-built` `high`',
+      '> Cut deploy time ~40%.',
+      '- **Source:** Alex 2026-10-01',
+      '',
+      '## Senior Engineer (06/2019 – 02/2022)',
+      '',
+      '### Service moves',
+      '`shipped` `led-team` `high`',
+      '> Moved 12 services to one pipeline.',
+      '- **Source:** Alex 2026-10-01',
+      '',
+      '## Engineer (08/2017 – 05/2019)',
+      '',
+      '### Integration tests',
+      '`shipped` `solo` `high`',
+      '> Wrote the first integration tests.',
+      '- **Source:** Alex 2026-10-01',
+      '',
+    ].join('\n');
+
+    it('files it after the last fact of the role it names, not the file’s last role', async () => {
+      write('facts/tidewater.md', ROLES);
+      answered({ [GRAPHQL]: 'Yes, in production' });
+      expect(
+        await tool('save_fact')({
+          ...FACT,
+          file: 'facts/tidewater.md',
+          section: '## senior engineer (06/2019 - 02/2022)',
+        }),
+      ).toMatch(
+        /^Saved “GraphQL for the partner API” in facts\/tidewater\.md, under “Senior Engineer \(06\/2019 – 02\/2022\)”, unverified, from the user’s answer/,
+      );
+      const text = read('facts/tidewater.md');
+      expect(text).toContain(
+        '> Moved 12 services to one pipeline.\n- **Source:** Alex 2026-10-01\n\n### GraphQL for the partner API\n`unconfirmed` `live` `solo` `medium`\n',
+      );
+      expect(text.indexOf('### GraphQL')).toBeLessThan(text.indexOf('## Engineer (08/2017'));
+    });
+
+    it('starts a section the file doesn’t have, only in words the file or the user gives', async () => {
+      answered({ [GRAPHQL]: 'Yes, in production' });
+      // A title nobody gave can't come into the fact bank this way.
+      await expect(
+        tool('save_fact')({ ...FACT, section: 'Chief Architect (2021 – 2026)' }),
+      ).rejects.toThrow(
+        "Not saved: facts/acme.md has no section “Chief Architect (2021 – 2026)”, and neither the file nor the user’s answer says “chief”, so it can’t start one. Its sections: “Overview”, “Don't claim”. Give the section as the file has it, or word the role as the file or the user does.",
+      );
+      expect(read('facts/acme.md')).toBe(ACME);
+      // The Overview gives this one, as the file holds no sections for roles yet.
+      expect(await tool('save_fact')({ ...FACT, section: 'Staff Engineer (2021 – 2026)' })).toMatch(
+        /, under “Staff Engineer \(2021 – 2026\)”, a new section, unverified,/,
+      );
+      expect(read('facts/acme.md')).toContain(
+        '- **Source:** resume alex.pdf 2026-10-10\n\n## Staff Engineer (2021 – 2026)\n\n### GraphQL for the partner API\n',
+      );
+      // And the user's answer gives this one.
+      answered({ [KAFKA]: 'Yes, in production', [WHERE]: 'As tech lead, on the events pipeline' });
+      expect(
+        await tool('save_fact')({
+          ...FACT,
+          title: 'Kafka for events',
+          wording: 'Ran Kafka for the events pipeline.',
+          keywords: 'Kafka',
+          questions: [KAFKA, WHERE],
+          section: 'Tech Lead',
+        }),
+      ).toMatch(/, under “Tech Lead”, a new section,/);
+    });
+
+    it('puts a fact that replaces another in its place, and takes no heading of only marks', async () => {
+      write('facts/tidewater.md', ROLES);
+      answered({ [GRAPHQL]: 'Yes, in production' });
+      await expect(
+        tool('save_fact')({ ...FACT, file: 'facts/tidewater.md', section: '##' }),
+      ).rejects.toThrow('Give the section as the words of its ## heading');
+      await tool('save_fact')({
+        ...FACT,
+        file: 'facts/tidewater.md',
+        section: 'Engineer (08/2017 – 05/2019)',
+      });
+      answered({ [WHERE]: 'The partner API' });
+      expect(
+        await tool('save_fact')({
+          ...FACT,
+          file: 'facts/tidewater.md',
+          title: 'GraphQL partner API',
+          replaces: 'GraphQL for the partner API',
+          questions: [GRAPHQL, WHERE],
+          wording: 'Built the partner API in GraphQL.',
+          section: 'Staff Engineer (03/2022 – Present)',
+        }),
+      ).toMatch(/^Replaced “GraphQL partner API” in facts\/tidewater\.md, unverified,/);
+      const text = read('facts/tidewater.md');
+      expect(text.indexOf('### GraphQL partner API')).toBeGreaterThan(
+        text.indexOf('## Engineer (08/2017'),
+      );
+    });
+  });
+
   it('checks every part of the fact', async () => {
     answered({ [GRAPHQL]: 'Yes, in production' });
     await expect(tool('save_fact')({ ...FACT, status: 'launched' })).rejects.toThrow(

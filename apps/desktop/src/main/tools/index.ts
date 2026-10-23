@@ -651,7 +651,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     },
     {
       name: 'save_fact',
-      description: `Saves a fact the user just told you in answer to a question you asked with AskUserQuestion in this run, such as a yes to “Have you used GraphQL?”, in their fact bank, unverified until they verify it. Give the question word for word as you asked it, and its follow-up if you asked one; the file it belongs in; and the claim in the fact bank’s format: a short title, its status, ownership and confidence, wording within what they said, and any numbers, keywords and say or don’t-say. Its keywords are the terms you asked about, its title or wording names one, and every number in it, in digits or words, is one the user gave or saw in your question. An answer that starts with a no backs no fact. Factwright adds where it came from: the date, the job, and the questions with the user’s answers, from its own record of the round. Use the fact in this run’s work. Later runs offer it before using it: ask “${UNVERIFIED_CHOICES.join('”, “')}”. It never changes a verified fact. To fix one that waits to be verified, give its title as replaces: one this run saved, or one the user just answered a question about, naming it by its title in quotes. A plain “No” is never a fact: save it with save_gap.`,
+      description: `Saves a fact the user just told you in answer to a question you asked with AskUserQuestion in this run, such as a yes to “Have you used GraphQL?”, in their fact bank, unverified until they verify it. Give the question word for word as you asked it, and its follow-up if you asked one; the file it belongs in, with the section when the file has one for each title the user held there; and the claim in the fact bank’s format: a short title, its status, ownership and confidence, wording within what they said, and any numbers, keywords and say or don’t-say. Its keywords are the terms you asked about, its title or wording names one, and every number in it, in digits or words, is one the user gave or saw in your question. An answer that starts with a no backs no fact. Factwright adds where it came from: the date, the job, and the questions with the user’s answers, from its own record of the round. Use the fact in this run’s work. Later runs offer it before using it: ask “${UNVERIFIED_CHOICES.join('”, “')}”. It never changes a verified fact. To fix one that waits to be verified, give its title as replaces: one this run saved, or one the user just answered a question about, naming it by its title in quotes. A plain “No” is never a fact: save it with save_gap.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -659,6 +659,11 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             type: 'string',
             description:
               'The file of facts it goes in: the job’s, such as facts/acme-health.md, or facts/projects.md for work outside a job.',
+          },
+          section: {
+            type: 'string',
+            description:
+              'The ## heading in the file it goes under, as the file has it: the role’s, such as “Staff Engineer (03/2022 – Present)”, when the user held more than one title at the job, or the project’s in facts/projects.md. It goes after that section’s last fact. A section the file doesn’t have yet starts with it, in words the file or the user’s answer has. Leave it out to put the fact after the file’s last one.',
           },
           title: {
             type: 'string',
@@ -716,7 +721,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           replaces: {
             type: 'string',
             description:
-              'The title of a fact in the same file that waits to be verified, which this one corrects.',
+              'The title of a fact in the same file that waits to be verified, which this one corrects. It takes that fact’s place, in its section.',
           },
         },
         required: ['file', 'title', 'status', 'confidence', 'wording', 'keywords', 'questions'],

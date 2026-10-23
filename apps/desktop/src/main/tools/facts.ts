@@ -3,8 +3,10 @@ import {
   claimParts,
   FACT_TAGS,
   type FactBlock,
+  findSection,
   type Job,
   oneLine,
+  sectionTitle,
   UNCONFIRMED,
 } from '@factwright/core';
 import {
@@ -54,6 +56,10 @@ const MAX_KEPT_QUESTION = 700;
 const MAX_KEPT_ANSWER = 1_000;
 /** The longest company name a fact's source gives. */
 const MAX_COMPANY = 100;
+/** The longest heading of a section a fact goes under, such as a role's title and dates. */
+const MAX_SECTION = 200;
+/** How many of a file's sections a refusal lists, so Claude can give one as it's written. */
+const MAX_SECTIONS = 12;
 /** A fact rests on one question, or on one and its follow-up. */
 const MAX_BACKING = 2;
 
@@ -118,6 +124,22 @@ function questionsOf(input: Record<string, unknown>): string[] {
     }
     return each;
   });
+}
+
+/**
+ * The `##` section a fact goes under, when one is given, such as a role's in the file of a job
+ * where the user held more than one title: its heading's words, without the #s.
+ */
+function sectionOf(input: Record<string, unknown>): string | null {
+  const given = line(input, 'section', MAX_SECTION, false);
+  if (given === null) return null;
+  const title = sectionTitle(given);
+  if (!/[\p{L}\p{N}]/u.test(title)) {
+    throw new Error(
+      'Give the section as the words of its ## heading, such as “Staff Engineer (03/2022 – Present)”.',
+    );
+  }
+  return title;
 }
 
 /** A file of claims a fact from an answer can go in. */
@@ -422,6 +444,44 @@ const askedText = (answers: readonly Answered[]) =>
 const claimsIn = (bank: FactBank, path: string): FactBlock[] =>
   bank.files.find((file) => file.path === path)?.blocks.filter((block) => block.tags) ?? [];
 
+/**
+ * The section of a file a fact goes under, by its heading as the file has it, and whether the
+ * fact starts it. A section the file doesn't have yet needs every word of its heading in the
+ * file or in what the user saw and said: a title they held, with its dates, is in the job's
+ * Overview, or in their answer.
+ */
+function sectionFor(
+  bank: FactBank,
+  path: string,
+  section: string,
+  asked: string,
+): { heading: string; made: boolean } {
+  const file = bank.files.find((each) => each.path === path);
+  const found = file ? findSection(file.blocks, section) : null;
+  if (found) return { heading: found.title, made: false };
+  const known = words(`${file?.blocks.map((block) => block.text).join('') ?? ''} ${asked}`);
+  const unknown = words(section)
+    .trim()
+    .split(' ')
+    .find((word) => !known.includes(` ${word} `));
+  if (unknown) {
+    const sections = (file?.blocks ?? [])
+      .filter((block) => block.level === 2)
+      .slice(0, MAX_SECTIONS)
+      .map((block) => `“${block.title}”`);
+    throw new Error(
+      [
+        `Not saved: ${path} has no section “${section}”, and neither the file nor the user’s answer says “${unknown}”, so it can’t start one.`,
+        sections.length > 0 ? `Its sections: ${sections.join(', ')}.` : '',
+        'Give the section as the file has it, or word the role as the file or the user does.',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+  }
+  return { heading: section, made: true };
+}
+
 const sameTitle = (a: string, b: string) => questionKey(a) === questionKey(b);
 
 /** A claim as the bank last read it, to change. */
@@ -461,9 +521,12 @@ function checkBacking(
  * Files a fact from the user's answers in this run, tagged `unconfirmed` until they verify it,
  * with its source and the questions and answers it rests on as Claude Code reported them. It must
  * be about what was asked, by one of its keywords, and every number in it must be one the user
- * saw or gave. It goes after the file's last claim, or in place of one that waits to be verified,
- * when this run filed it or the user just answered a question naming it. It never changes a
- * confirmed fact.
+ * saw or gave. It goes after the file's last claim, or the last in the section given, such as
+ * the role's in the file of a job where the user held more than one title, or in place of one
+ * that waits to be verified, when this run filed it or the user just answered a question naming
+ * it. A section the file doesn't have yet starts with it, when the file or the user's answer has
+ * every word of its heading, so a run can't give the user a title they never held. It never
+ * changes a confirmed fact.
  */
 export async function saveFact(
   input: Record<string, unknown>,
@@ -472,6 +535,7 @@ export async function saveFact(
 ): Promise<string> {
   await fromRunsClaude('save_fact', input, call, deps.answerWaitMs);
   const path = claimsFile(input);
+  const section = sectionOf(input);
   const title = line(input, 'title', MAX_TITLE, true);
   const status = oneOf(input, 'status', FACT_TAGS.status, true) as string;
   const ownership = oneOf(input, 'ownership', FACT_TAGS.ownership, false);
@@ -575,6 +639,8 @@ export async function saveFact(
         `Not saved: there’s no ${path} in the fact bank. File it in a file that’s there, or in facts/projects.md for work outside a job.`,
       );
     }
+    // A fact that replaces another takes its place, whatever section that's in.
+    const under = section && !replacing ? sectionFor(bank, path, section, asked) : null;
 
     const text = answeredClaimText({
       title,
@@ -587,7 +653,7 @@ export async function saveFact(
       context: contextOf(task, company),
       asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
     });
-    const result = deps.facts.fileClaim(path, text, replacing);
+    const result = deps.facts.fileClaim(path, text, replacing, under?.heading ?? null);
     if (!result.ok) throw refused(result);
     // A fact this run filed, then replaced, counts once.
     call.filed.facts = call.filed.facts.filter(
@@ -596,8 +662,9 @@ export async function saveFact(
     call.saves += 1;
     call.filed.facts.push({ path, title, save: call.saves });
     call.onFiled?.({ facts: [...call.filed.facts], gaps: call.filed.gaps });
+    const where = under ? `, under “${under.heading}”${under.made ? ', a new section' : ''}` : '';
     return [
-      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
+      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
       'Use it in this run’s work: the user just said it. Say which lines rest on it when you report.',
       'Later runs offer it to the user before using it, until they verify it.',
     ].join(' ');
