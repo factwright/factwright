@@ -2,6 +2,7 @@ import type { Job, JobFile } from '@factwright/core';
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
+import type { DocVersion } from '../../shared/versions.ts';
 import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
 import styles from './CoverLetter.module.css';
 import { FileRow } from './JobFiles.tsx';
@@ -9,6 +10,7 @@ import panel from './JobPanel.module.css';
 import { Part, Placeholder } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
 import type { RunControls } from './RunActions.tsx';
+import { EarlierVersions, NewVersionButton } from './Versions.tsx';
 
 /** What a Projects page shows, as the panel lists it: its heading, shape and projects. */
 interface PageOutline {
@@ -62,11 +64,14 @@ export function ProjectsPagePart({
   api,
   today,
   run,
+  versions = [],
 }: {
   job: Job;
   api: FactwrightApi;
   today: string;
   run: RunControls | undefined;
+  /** The job's earlier versions, of which the page's show under it. */
+  versions?: readonly DocVersion[];
 }) {
   const [outline, setOutline] = useState<PageOutline | null>(null);
   const [preview, setPreview] = useState<JobFile | null>(null);
@@ -118,7 +123,9 @@ export function ProjectsPagePart({
     <Part
       title="Projects page"
       summary={summary}
-      actions={<ClaudeButton run={run} task={task} label="New version" />}
+      actions={
+        <NewVersionButton job={job} kind="projects" api={api} run={run} onProblem={setProblem} />
+      }
     >
       {making && (
         <p className={`${panel.quiet} ${styles.writing}`}>
@@ -147,6 +154,15 @@ export function ProjectsPagePart({
           ))}
         </ul>
       )}
+      <EarlierVersions
+        job={job}
+        kind="projects"
+        versions={versions}
+        api={api}
+        today={today}
+        onPreview={setPreview}
+        onProblem={setProblem}
+      />
       {problem && (
         <p className={panel.problem} role="alert">
           {problem}

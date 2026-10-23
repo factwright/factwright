@@ -2,6 +2,7 @@ import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import { QuestionLog } from '../claude/questions.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
+import type { BoundChanges } from '../jobs/versions.ts';
 
 /** The run calling a tool: what it was started for, and what it has saved so far. */
 export interface ToolCall {
@@ -21,6 +22,11 @@ export interface ToolCall {
    * picked in the resume's X-ray. No other run has it.
    */
   revision?: BoundRevision | undefined;
+  /**
+   * The changes the user asked for, which requested_changes gives this run: their own words, typed
+   * in the app. No other run has them.
+   */
+  changes?: BoundChanges | undefined;
 }
 
 /** A run's tool calls, before it has saved or been told anything. */
@@ -28,6 +34,7 @@ export const newCall = (
   scope: RunScope,
   onFiled?: (filed: FiledFacts) => void,
   revision?: BoundRevision,
+  changes?: BoundChanges,
 ): ToolCall => ({
   scope,
   templates: new Set(),
@@ -36,6 +43,7 @@ export const newCall = (
   saves: 0,
   onFiled,
   revision,
+  changes,
 });
 
 /** A call from no run in particular, such as a test's: a run on the job hunt. */

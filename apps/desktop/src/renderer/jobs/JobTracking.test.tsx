@@ -44,6 +44,7 @@ function panel(job: Job, result: EditResult = { ok: true }) {
       posting: null,
       calls: {},
       outreach: [],
+      versions: [],
     })),
     openFile: answer,
   } as unknown as FactwrightApi;

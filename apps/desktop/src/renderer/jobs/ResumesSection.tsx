@@ -1,8 +1,9 @@
 import { asksForWorkSamples, type Job, type JobFile } from '@factwright/core';
 import { FileText } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
+import type { DocVersion } from '../../shared/versions.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import { ClaudeButton } from './ClaudeButton.tsx';
 import { CoverLetterPart } from './CoverLetterSection.tsx';
@@ -12,6 +13,7 @@ import { PanelSection, Part, Placeholder } from './PanelSection.tsx';
 import { ProjectsPagePart } from './ProjectsPageSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
 import { BUSY, type RunControls } from './RunActions.tsx';
+import { EarlierVersions, NewVersionButton, RequestChanges, SentPill } from './Versions.tsx';
 
 /** A file's name without its extension, which a resume's PDF and Word file share. */
 const stem = (name: string) => name.replace(/\.(?:pdf|docx)$/i, '');
@@ -41,6 +43,17 @@ export function ResumesSection({
   const [preview, setPreview] = useState<JobFile | null>(null);
   const [xray, setXray] = useState<JobFile | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // The earlier versions, read again whenever the job changes, as a new version or a sync does.
+  const [versions, setVersions] = useState<DocVersion[]>([]);
+  useEffect(() => {
+    let live = true;
+    void api.jobExtras(job.id).then((extras) => {
+      if (live) setVersions(extras?.versions ?? []);
+    });
+    return () => {
+      live = false;
+    };
+  }, [api, job]);
 
   // The X-ray checks a job's resume against its posting. Older folders keep it in the job notes,
   // and a job saved from the browser may have only the posting the user saved there.
@@ -85,7 +98,22 @@ export function ResumesSection({
           A resume for this job, every line traced to a fact.
         </Placeholder>
       ) : (
-        <Part title="Resume" actions={<ClaudeButton run={run} task={resume} label="New version" />}>
+        <Part
+          title="Resume"
+          summary={<SentPill job={job} kind="resume" />}
+          actions={
+            <>
+              <RequestChanges job={job} kind="resume" api={api} run={run} />
+              <NewVersionButton
+                job={job}
+                kind="resume"
+                api={api}
+                run={run}
+                onProblem={setProblem}
+              />
+            </>
+          }
+        >
           <ul className={panel.files} aria-label="The resume’s files">
             {job.files.map((file) => (
               <FileRow
@@ -98,11 +126,20 @@ export function ResumesSection({
               />
             ))}
           </ul>
+          <EarlierVersions
+            job={job}
+            kind="resume"
+            versions={versions}
+            api={api}
+            today={today}
+            onPreview={setPreview}
+            onProblem={setProblem}
+          />
         </Part>
       )}
-      <CoverLetterPart job={job} api={api} today={today} run={run} />
+      <CoverLetterPart job={job} api={api} today={today} run={run} versions={versions} />
       {(page || asksForWorkSamples(job)) && (
-        <ProjectsPagePart job={job} api={api} today={today} run={run} />
+        <ProjectsPagePart job={job} api={api} today={today} run={run} versions={versions} />
       )}
       {problem && (
         <p className={panel.problem} role="alert">

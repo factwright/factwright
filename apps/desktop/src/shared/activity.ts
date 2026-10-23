@@ -37,6 +37,7 @@ const TOOLS: Readonly<Record<string, StepWords>> = {
   search_focus: words('Reading this search’s focus', 'Read this search’s focus'),
   job_details: words('Reading what’s on file for the job', 'Read what’s on file for the job'),
   revision_findings: words('Reading what the ATS X-ray found', 'Read what the ATS X-ray found'),
+  requested_changes: words('Reading the changes you asked for', 'Read the changes you asked for'),
   read_posting: words('Reading the posting', 'Read the posting'),
   build_resume: words('Building the resume', 'Built the resume'),
   build_cover_letter: words('Building the cover letter', 'Built the cover letter'),

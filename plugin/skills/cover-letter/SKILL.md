@@ -22,6 +22,14 @@ Before starting, read:
 - `past_answers`: what the user actually sent on applications, in their own words. It shows how they sound when they write to an employer, and why they wanted other jobs.
 - `about_you`: their contact details, what they want, and when they can start, and Beyond work: their projects, with how much to show each, and who they are outside work.
 
+## Changes the user asked for
+When the command says `changes`, the user typed changes to the job's letter in the app. Make those, rather than a new letter:
+- Call `requested_changes`. It gives the job's folder, where the app kept the letter before the changes, and what the user asked for, in their own words. If it says this run wasn't started with Request changes, say in one line that changes start from a cover letter's Request changes in the app, and stop.
+- Call `job_details` with the job's id. If it shows the user applied (an applied date, or a status past applying), the letter stays as sent: say so in one line, and stop.
+- Read what step 1 reads, `cover-letter.json` first, and all of `facts/`.
+- Make the changes in `cover-letter.json`, keeping its `output_name`, so the new files take the old ones' place. Everything stays true, and in the user's voice: a change that would say more than the facts back goes through step 4's questions first, and what the user doesn't have stays out. A change that would break a rule in `guide/rules.md`, say so, and leave that part.
+- Then build, fit and verify as in steps 6 and 7, and reply in 4 lines or fewer: what changed, anything you couldn't change and why, and the facts you saved.
+
 ## 1. Load everything on file
 - For a job from the app (`job <id>`), call `job_details` with the id. Otherwise call `find_job` with what you have (the link alone is fine), then `job_details` if it's on file. It gives the status, the user's notes and calls, the application's questions with what they sent, their questions about the job, and every file in its folder with what it holds.
 - Read what bears on the letter:
@@ -33,7 +41,7 @@ Before starting, read:
   - The people to message at the company, when `job_details` lists an `outreach/` file: it may name the hiring manager.
   - What the user sent on the application, so the letter agrees with it.
   - `resume.json`: the tailored resume the letter goes with. The letter matches its header and template, agrees with it, and doesn't repeat it line for line.
-- If the folder already has a cover letter (`cover-letter.json`, or its PDF or Word file), tell the user in one line and ask whether to write a new one before going on. One that went out with the application stays as sent: before writing a new one, copy its `cover-letter.json` to `cover-letter-<its output_name>.json`, so the words that went out stay on file, and give the new one its own `output_name`.
+- If the folder already has a cover letter (`cover-letter.json`, or its PDF or Word file), tell the user in one line and ask whether to write a new one before going on. When the command says `new version`, the user asked the app for a new one, and the app kept the current letter as an earlier version: write the new one without asking, keeping its `output_name`. One that went out with the application stays as sent: before writing a new one, copy its `cover-letter.json` to `cover-letter-<its output_name>.json`, so the words that went out stay on file, and give the new one its own `output_name`.
 - No folder yet? Make one, as a tailored resume does:
   - `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
   - `posting.md`: when `job_details` names a posting saved from the user's browser, `save_posting` with the job's link and its id copies it in, with no reading, LinkedIn's included. Otherwise read the link with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name. For pasted text, save it as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.

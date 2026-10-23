@@ -8,6 +8,7 @@ import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { saveCallDoc } from './calls.ts';
+import { requestedChanges } from './changes.ts';
 import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
 import { searchFocusText } from './focus.ts';
 import { buildCoverLetter } from './letter.ts';
@@ -53,6 +54,7 @@ export const LOCAL_TOOLS = [
   'job_details',
   'search_focus',
   'revision_findings',
+  'requested_changes',
   'build_resume',
   'build_cover_letter',
   'build_projects_page',
@@ -256,6 +258,14 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READS,
       run: async (_input, call) => revisionFindings(call?.revision),
+    },
+    {
+      name: 'requested_changes',
+      description:
+        'What the user asked to change in a job’s resume or cover letter, in their own words, typed in the app for this run, with where the version before is kept. Only a run the user started with Request changes has them.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: READS,
+      run: async (_input, call) => requestedChanges(call?.changes),
     },
     {
       name: 'read_posting',

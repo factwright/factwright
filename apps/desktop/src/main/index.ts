@@ -28,6 +28,7 @@ import { registerIpc } from './ipc.ts';
 import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
+import { Versions } from './jobs/versions.ts';
 import { watchWorkspace, workspaceDir } from './jobs/workspace.ts';
 import { MainWindow } from './main-window.ts';
 import { notifyIfAway, notifyOfRequests, notifyRunDone, remindOfCall } from './notify.ts';
@@ -464,6 +465,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       setup,
       jobs,
       revisions: new Revisions({ workspace, jobs: () => jobs.list().jobs }),
+      versions: new Versions({
+        workspace,
+        jobs: () => jobs.list().jobs,
+        trash: (path) => shell.trashItem(path),
+      }),
       workspace,
       sync,
       dataDir,

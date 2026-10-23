@@ -212,7 +212,7 @@ async function work(text) {
   }
   // As Claude would for a cover letter: read what's on file, write the letter in the job's
   // folder, and build it with the tool that checks it.
-  const lettered = text.match(/^\/factwright:cover-letter job (\S+)$/);
+  const lettered = text.match(/^\/factwright:cover-letter job (\S+)(?: new version)?$/);
   if (lettered) {
     const details = await call('job_details', { job: lettered[1] });
     const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
@@ -241,7 +241,7 @@ async function work(text) {
   }
   // As Claude would for a Projects page: read what's on file, write the page in the job's folder,
   // and build it with the tool that checks it.
-  const paged = text.match(/^\/factwright:projects-page job (\S+)$/);
+  const paged = text.match(/^\/factwright:projects-page job (\S+)(?: new version)?$/);
   if (paged) {
     const details = await call('job_details', { job: paged[1] });
     const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
@@ -316,6 +316,38 @@ async function work(text) {
     show(
       `${await file('save_fact', { ...planted, keywords: 'GraphQL', questions: [GRAPHQL] }, { agent: 'fact-check' })}\n`,
     );
+  }
+  // As Claude would for changes the user asked for: read them through the tool, never from the
+  // prompt, then change the letter or resume in its folder and build it in the old one's place.
+  const changing = text.match(/^\/factwright:(cover-letter|revise-resume) job (\S+) changes$/);
+  if (changing) {
+    const asked = await call('requested_changes', {});
+    show(`${asked.split('\n')[0]}\n`);
+    const folder = asked.match(/ in applications\/([^/\s]+)\/$/m)?.[1];
+    const words = asked
+      .split('\n')
+      .filter((line) => line.startsWith('> '))
+      .map((line) => line.slice(2))
+      .join(' ');
+    if (folder) {
+      const letter = changing[1] === 'cover-letter';
+      const data = join(
+        process.cwd(),
+        'applications',
+        folder,
+        letter ? 'cover-letter.json' : 'resume.json',
+      );
+      const before = JSON.parse(readFileSync(data, 'utf8'));
+      const after = letter
+        ? { ...before, paragraphs: [`Changed as you asked (${words}), by the stand-in Claude.`] }
+        : { ...before, summary: `Changed as you asked (${words}), by the stand-in Claude.` };
+      writeFileSync(data, JSON.stringify(after));
+      const built = await call(letter ? 'build_cover_letter' : 'build_resume', {
+        folder,
+        ...(!letter && { format: 'both' }),
+      });
+      show(`${built.split('\n')[0]}\n`);
+    }
   }
   // As Claude would for a revision: read what the user picked in the X-ray through the tool,
   // never from the prompt, ask about the term the fact bank doesn't back, then change the resume

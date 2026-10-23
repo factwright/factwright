@@ -29,10 +29,11 @@ import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import type { PermissionAnswer, PermissionAsk } from '../shared/permission-asks.ts';
 import { parsePermissions } from '../shared/permissions.ts';
-import { parseRevisionRequest } from '../shared/revision.ts';
+import { parseRevisionRequest, REVISE_SKILL } from '../shared/revision.ts';
 import type { QuestionRound, RoundReply } from '../shared/rounds.ts';
 import { scopeOf } from '../shared/runs.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
+import { DOC_KINDS, type DocKind, parseChangesRequest } from '../shared/versions.ts';
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { AboutStore } from './about/store.ts';
@@ -60,6 +61,7 @@ import {
 } from './jobs/input.ts';
 import type { Revisions } from './jobs/revisions.ts';
 import type { JobsService } from './jobs/service.ts';
+import type { Versions } from './jobs/versions.ts';
 import type { JobOpener } from './open-job.ts';
 import {
   JOB_ID,
@@ -148,6 +150,8 @@ export interface IpcDeps {
   jobs: JobsService;
   /** The revisions of jobs' resumes the user sent from their X-rays. */
   revisions: Revisions;
+  /** The versions of jobs' resumes, cover letters and Projects pages. */
+  versions: Versions;
   workspace: string;
   sync: SyncAccount;
   /** The app's own data folder, which holds what Claude may do without asking. */
@@ -196,6 +200,7 @@ export function registerIpc({
   setup,
   jobs,
   revisions,
+  versions,
   workspace,
   sync,
   dataDir,
@@ -300,9 +305,15 @@ export function registerIpc({
     const valid = parseTerminalSize(size);
     const run = task === undefined ? undefined : knownTask(task);
     if (!valid || run === null) throw new Error('Refused a request to start Claude.');
-    // A revision runs only as the window prepared it, in one run, whose tool calls read it.
+    // A revision runs only as the window prepared it, in one run, whose tool calls read it, and
+    // so do the changes the user asked for.
     const revision = run && 'findings' in run ? revisions.claim(run) : undefined;
     if (revision === null) return Promise.resolve<StartResult>({ ok: false, reason: 'revision' });
+    const changes =
+      run && 'changes' in run
+        ? versions.claimChanges(run.jobId, run.skill === REVISE_SKILL ? 'resume' : 'letter')
+        : undefined;
+    if (changes === null) return Promise.resolve<StartResult>({ ok: false, reason: 'changes' });
     return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(
       async ([models, effort]) => {
         let started: StartResult;
@@ -315,16 +326,19 @@ export function registerIpc({
             }),
             scope: scopeOf(run),
             ...(revision && { revision }),
+            ...(changes && { changes }),
           });
         } catch (error) {
           // It didn't start, so starting it again finds it.
           if (revision) revisions.release(revision);
+          if (changes) versions.releaseChanges(changes);
           throw error;
         }
         // Once its run starts, the revision is kept for the before-and-after. If it didn't
         // start, starting it again finds it.
         if (revision && started.ok) await revisions.record(revision).catch(() => {});
         else if (revision) revisions.release(revision);
+        if (changes && !started.ok) versions.releaseChanges(changes);
         return started;
       },
     );
@@ -341,6 +355,31 @@ export function registerIpc({
     typeof jobId === 'string' && typeof resume === 'string' ? revisions.state(jobId, resume) : null,
   );
 
+  // Versions of what a job's folder holds to send. An earlier version is named by its folder,
+  // which the app finds among the job's own before it touches anything.
+  const isKind = (value: unknown): value is DocKind =>
+    (DOC_KINDS as readonly unknown[]).includes(value);
+  const isFolder = (value: unknown): value is string =>
+    typeof value === 'string' && value.length > 0 && value.length <= 500;
+  answer('versions:keep', async (jobId, kind) => {
+    if (!isId(jobId) || !isKind(kind)) throw new Error('Refused a version that isn’t on file.');
+    const kept = await versions.keep(jobId, kind, 'new');
+    return kept.ok ? { ok: true } : kept;
+  });
+  answer('versions:use', (jobId, folder) => {
+    if (!isId(jobId) || !isFolder(folder)) throw new Error('Refused a version that isn’t on file.');
+    return versions.use(jobId, folder);
+  });
+  answer('versions:remove', (jobId, folder) => {
+    if (!isId(jobId) || !isFolder(folder)) throw new Error('Refused a version that isn’t on file.');
+    return versions.remove(jobId, folder);
+  });
+  answer('versions:changes', (value) => {
+    const request = parseChangesRequest(value, JOB_ID);
+    if (!request) throw new Error('Refused changes that aren’t in the shape the app takes.');
+    return versions.prepareChanges(request);
+  });
+
   // A task for the run that's open. One that needs another model or more effort, or may change
   // other files without asking, starts a new run instead. One that needs less effort runs at the
   // open run's. A lighter model still gets a run of its own, as that's what saves the most of a
@@ -348,8 +387,8 @@ export function registerIpc({
   answer('claude:task', async (task): Promise<StartResult> => {
     const run = knownTask(task);
     if (!run) throw new Error('Refused a task for Claude.');
-    // A revision's findings belong to its own run, so it always starts one.
-    if ('findings' in run) return { ok: false, reason: 'new-run' };
+    // A revision's findings belong to its own run, so it always starts one, and so do changes.
+    if ('findings' in run || 'changes' in run) return { ok: false, reason: 'new-run' };
     const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
     const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
     const thinking = session.effort();
@@ -436,7 +475,11 @@ export function registerIpc({
 
   answer('jobs:docs', (jobId) => (isId(jobId) ? jobs.docs(jobId) : null));
 
-  answer('jobs:extras', (jobId) => (isId(jobId) && jobs.has(jobId) ? jobs.extras(jobId) : null));
+  answer('jobs:extras', async (jobId) =>
+    isId(jobId) && jobs.has(jobId)
+      ? { ...jobs.extras(jobId), versions: await versions.list(jobId) }
+      : null,
+  );
 
   answer('jobs:record-answer', (jobId, question, nth, text) =>
     isId(jobId) &&

@@ -53,6 +53,7 @@ import type {
   SyncStatus,
 } from './sync.ts';
 import type { UpdateStatus } from './updates.ts';
+import type { ChangesRequest, DocKind, DocVersion } from './versions.ts';
 
 /**
  * Where the user's Claude Code stands. The sidebar shows it, and runs start only when it's ready.
@@ -118,9 +119,10 @@ export type StartResult =
       /**
        * "new-run": the task needs a run of its own, since the open one is on another model, or
        * may change other files without asking. "revision": the app has no revision prepared for
-       * it, such as after a restart, so it needs sending again.
+       * it, such as after a restart, so it needs sending again. "changes": the same, for the
+       * changes the user asked for.
        */
-      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'new-run' | 'revision';
+      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'new-run' | 'revision' | 'changes';
       message?: string;
     };
 
@@ -237,6 +239,8 @@ export interface JobExtras {
   calls: Record<string, Partial<Record<CallDocKind, string>>>;
   /** Messages Claude drafted for people at the company, newest first. */
   outreach: OutreachDraft[];
+  /** Earlier versions of its resume, cover letter and Projects page, newest first. */
+  versions: DocVersion[];
 }
 
 /** A picture pasted into Claude's panel, saved where Claude can read it, by its full path. */
@@ -408,6 +412,21 @@ export interface FactwrightApi {
    * before-and-after, and why it can't be revised, if it can't.
    */
   revisionOf(jobId: string, resume: string): Promise<RevisionState | null>;
+  /**
+   * Keeps the current version of a job's resume, cover letter or Projects page as an earlier one,
+   * before the run the window starts makes a new one. Says why not when it can't, such as for one
+   * the user applied with.
+   */
+  keepVersion(jobId: string, kind: DocKind): Promise<EditResult>;
+  /** Makes an earlier version the job's again, putting the current one aside. */
+  useVersion(jobId: string, folder: string): Promise<EditResult>;
+  /** Moves an earlier version to the Trash. */
+  removeVersion(jobId: string, folder: string): Promise<EditResult>;
+  /**
+   * Keeps the current version and holds what the user asked to change for the run the window
+   * starts next, which reads it through a tool, never typed into it.
+   */
+  requestChanges(request: ChangesRequest): Promise<EditResult>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

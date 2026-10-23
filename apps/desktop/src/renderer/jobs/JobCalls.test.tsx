@@ -81,6 +81,7 @@ function panel(
       posting: null,
       calls: sampleCallDocs(job),
       outreach: [],
+      versions: [],
     })),
     copyText: vi.fn(async () => ({ ok: true })),
     openFile: answer,

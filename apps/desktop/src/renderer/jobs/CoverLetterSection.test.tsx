@@ -50,6 +50,7 @@ function apiStub(letter: string | undefined = LETTER) {
     jobDocs: vi.fn(async () => ({ letter })),
     copyText: vi.fn(async () => ({ ok: true }) as const),
     openFile: vi.fn(async () => ({ ok: true }) as const),
+    keepVersion: vi.fn(async () => ({ ok: true }) as const),
   } as unknown as FactwrightApi & {
     copyText: Mock<FactwrightApi['copyText']>;
     openFile: Mock<FactwrightApi['openFile']>;
@@ -115,11 +116,15 @@ describe('CoverLetterPart', () => {
     expect(screen.getByText('Claude is on it')).toBeTruthy();
   });
 
-  it('writes a new version', async () => {
+  it('keeps the letter as it is, then writes a new version', async () => {
     const run = controls();
-    render(<CoverLetterPart job={job} api={apiStub()} today={TODAY} run={run} />);
+    const api = apiStub();
+    render(<CoverLetterPart job={job} api={api} today={TODAY} run={run} />);
     await userEvent.click(screen.getByRole('button', { name: 'New version' }));
-    expect(run.start).toHaveBeenCalledWith({ skill: 'cover-letter', jobId: job.id });
+    expect(api.keepVersion).toHaveBeenCalledWith(job.id, 'letter');
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({ skill: 'cover-letter', jobId: job.id, again: true }),
+    );
   });
 
   it('opens a file in the user’s own app, and says when it can’t', async () => {

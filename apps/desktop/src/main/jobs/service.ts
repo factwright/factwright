@@ -156,7 +156,7 @@ export class JobsService {
    * the user saved, Claude's prep sheets and thank-you notes for its calls, and the messages
    * Claude drafted for people at the company.
    */
-  extras(jobId: string): JobExtras {
+  extras(jobId: string): Omit<JobExtras, 'versions'> {
     const workspace = diskWorkspace(this.deps.workspace);
     const outreach = readOutreach(workspace, this.found.get(jobId)?.outreach ?? []);
     return { ...readJobExtras(workspace, jobId), outreach };

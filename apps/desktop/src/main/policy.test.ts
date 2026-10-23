@@ -168,6 +168,31 @@ describe('saveableFileName', () => {
 });
 
 describe('parseRunTask', () => {
+  it('takes a new version of what the user sends, and changes to a resume or letter', () => {
+    const jobId = 'acme--staff-engineer';
+    for (const skill of ['focused-resume', 'cover-letter', 'projects-page']) {
+      expect(parseRunTask({ skill, jobId, again: true })).toEqual({ skill, jobId, again: true });
+    }
+    for (const skill of ['revise-resume', 'cover-letter']) {
+      expect(parseRunTask({ skill, jobId, changes: true })).toEqual({
+        skill,
+        jobId,
+        changes: true,
+      });
+    }
+    for (const value of [
+      { skill: 'fit-check', jobId, again: true },
+      { skill: 'projects-page', jobId, changes: true },
+      { skill: 'focused-resume', jobId, again: true, changes: true },
+      { skill: 'focused-resume', jobId, again: 'yes' },
+      { skill: 'revise-resume', jobId, changes: 'Shorter, please' },
+      { skill: 'cover-letter', jobId: 'Acme Robotics', changes: true },
+      { skill: 'cover-letter', jobId, changes: true, findings: ['check-dates'] },
+    ]) {
+      expect(parseRunTask(value)).toBeNull();
+    }
+  });
+
   it('takes a known skill and a job ID', () => {
     expect(parseRunTask({ skill: 'fit-check', jobId: 'acme-robotics--staff-engineer-2' })).toEqual({
       skill: 'fit-check',
@@ -383,6 +408,15 @@ describe('parseRunTask', () => {
 });
 
 describe('runPrompt', () => {
+  it('names a new version, or changes, by the app’s own words, never the user’s', () => {
+    expect(runPrompt({ skill: 'cover-letter', jobId: 'acme--staff-engineer', again: true })).toBe(
+      '/factwright:cover-letter job acme--staff-engineer new version',
+    );
+    expect(
+      runPrompt({ skill: 'revise-resume', jobId: 'acme--staff-engineer', changes: true }),
+    ).toBe('/factwright:revise-resume job acme--staff-engineer changes');
+  });
+
   it('names the skill and the job by its ID alone', () => {
     expect(runPrompt({ skill: 'focused-resume', jobId: 'acme--staff-engineer' })).toBe(
       '/factwright:focused-resume job acme--staff-engineer',
