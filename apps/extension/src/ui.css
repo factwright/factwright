@@ -344,10 +344,29 @@ body.panel {
   color: var(--fw-need);
 }
 
+/* Where an answer came from, with what to do about it, on one line. */
+.field .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-1);
+}
+
+.field .row .meta {
+  margin-top: 0;
+  min-width: 0;
+}
+
 .row-actions {
   display: flex;
   gap: var(--fw-space-2);
   margin-top: var(--fw-space-2);
+}
+
+.field .row .row-actions {
+  margin-top: 0;
+  flex: none;
 }
 
 button.small-button {

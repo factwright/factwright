@@ -25,9 +25,9 @@ import {
   SENT_STATUSES,
   type SentBefore,
 } from '@factwright/core';
+import { type Resume, readResume } from '@factwright/engine';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
 import type { EditResult, JobChanges } from '../../shared/api.ts';
-import { resumeIn } from '../tools/letter.ts';
 import { matchJobs } from '../tools/lookup.ts';
 
 /**
@@ -120,6 +120,16 @@ function onDisk(workspace: string, file: JobFile): string | null {
   const path = resolve(root, ...file.path.split('/'));
   const inside = relative(root, path);
   return inside && !inside.startsWith('..') && !inside.includes(`..${sep}`) ? path : null;
+}
+
+/** A job's resume.json, or null when it has none, or one that doesn't hold up. */
+async function resumeIn(folder: string): Promise<Resume | null> {
+  try {
+    const read = readResume(JSON.parse(await readFile(join(folder, 'resume.json'), 'utf8')));
+    return read.ok ? read.resume : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Where the job's own resume says you work now: the job that runs to the present. */

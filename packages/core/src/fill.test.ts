@@ -111,11 +111,17 @@ describe('answering a form from what’s on file', () => {
       'US',
       'U.S.',
     ]);
-    // Some forms ask for "your location" from a list of countries.
-    const countries = Array.from({ length: 50 }, (_, at) => `Country ${at}`);
-    expect(
-      answer('What is your location?', { control: 'choice', options: countries }).pick?.[0],
-    ).toBe('United States');
+    // Some forms ask for "your location" from a list of cities, and some from one of countries:
+    // the page picks the first of these it has.
+    expect(answer('What is your location?', { control: 'choice' }).pick).toEqual([
+      'Denver, CO',
+      'Denver',
+      'United States',
+      'United States of America',
+      'USA',
+      'US',
+      'U.S.',
+    ]);
   });
 
   it('gives only your user name where a form asks for one', () => {

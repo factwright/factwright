@@ -18,7 +18,7 @@ import { needsChecking, toSave } from './tab-job.ts';
 
 const MENU = 'save-job';
 const FILL = 'fill-form';
-const TITLE = 'Factwright';
+const TITLE = 'Save to Factwright';
 
 /** The right-click menu's items, made again whenever the background starts. */
 function menus(): void {

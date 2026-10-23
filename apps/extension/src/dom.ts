@@ -39,5 +39,5 @@ export function show(root: HTMLElement, ...children: Child[]): void {
 }
 
 /** The extension's name, with its icon, at the top of a page. */
-export const heading = (text = 'Factwright') =>
+export const heading = (text = 'Save to Factwright') =>
   h('h1', {}, h('img', { src: 'icons/32.png', alt: '', width: 24, height: 24 }), text);

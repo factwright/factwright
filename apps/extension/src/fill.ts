@@ -168,7 +168,7 @@ export function replyText(reply: FieldReply): string {
  * What's in a field, as last read: the field at its place with its key, or else the one field
  * with its key, as a form can add and take away fields as you go.
  */
-export function valueOf(field: PageField, values: readonly FieldValue[]): string {
+export function fieldValue(field: PageField, values: readonly FieldValue[]): string {
   const same = values.find((each) => each.ref === field.ref && each.key === field.key);
   if (same) return same.value;
   const keyed = values.filter((each) => each.key === field.key);
@@ -188,7 +188,7 @@ export function sentAnswers(
     const reply = replies[at];
     if (reply?.kind !== 'question') return [];
     if (field.control === 'file' || field.control === 'check' || !field.question) return [];
-    const value = valueOf(field, values);
+    const value = fieldValue(field, values);
     return value.trim() ? [{ question: field.question, text: value.trim() }] : [];
   });
 }
@@ -214,7 +214,7 @@ export function newAnswers(
   return form.fields.flatMap((field, at) => {
     const reply = replies[at];
     if (!reply || !isRemembered(reply.kind) || field.control === 'file') return [];
-    const text = valueOf(field, values).trim();
+    const text = fieldValue(field, values).trim();
     if (!text || text.length > 200) return [];
     const had = replyText(reply).trim();
     if (had && plainly(had) === plainly(text)) return [];

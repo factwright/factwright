@@ -536,14 +536,15 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
       return applications.country
         ? fromProfile(kind, field, ...countryNames(applications.country))
         : left(kind, 'unset');
-    case 'location':
-      // A list of countries, as some forms ask "your location" with, takes your country.
-      if (field.control === 'choice' && field.options.length > 30) {
-        return applications.country
-          ? fromProfile(kind, field, ...countryNames(applications.country))
-          : left(kind, 'unset');
+    case 'location': {
+      // A choice of places can be cities or countries, as some forms ask "your location" with a
+      // list of countries: your city first, then your country, by its names.
+      if (choosing(field)) {
+        const country = applications.country ? countryNames(applications.country) : [];
+        return fromProfile(kind, field, you.location, place.city, ...country);
       }
-      return fromProfile(kind, field, you.location, place.city);
+      return fromProfile(kind, field, you.location);
+    }
     case 'linkedin':
       return linkOrHandle(kind, field, you.linkedin);
     case 'github':

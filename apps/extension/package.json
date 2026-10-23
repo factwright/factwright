@@ -9,6 +9,7 @@
     "build": "node scripts/build.ts",
     "e2e": "node scripts/e2e.ts",
     "e2e:firefox": "node scripts/e2e-firefox.ts",
+    "e2e:fill": "node scripts/e2e-fill.ts",
     "icons": "node scripts/icons.ts",
     "typecheck": "tsc",
     "test": "vitest run"

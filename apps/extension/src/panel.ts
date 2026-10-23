@@ -1,6 +1,6 @@
 import 'virtual:theme.css';
 import './ui.css';
-import type { AskedJob, FieldReply, LeftFor } from '@factwright/core';
+import { type AskedJob, type FieldReply, isLinkedIn, type LeftFor } from '@factwright/core';
 import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
@@ -22,6 +22,7 @@ import {
 } from './fill.ts';
 import type { FieldFilled, FieldValue, PageForm } from './page/form.ts';
 import { isWebPage, readTab } from './read-tab.ts';
+import { settings } from './settings.ts';
 import { toSave } from './tab-job.ts';
 
 /**
@@ -148,8 +149,13 @@ function fieldRow(state: Filling, at: number): HTMLElement {
   const reply = state.plan.replies[at];
   if (!field || !reply) return h('li', {});
   const result = state.filled.get(field.key);
-  const text = replyText(reply);
-  const yours = reply.source === 'you' || (result !== undefined && !result.ok);
+  // A choice shows the option the page picked, which may be another name for Factwright's answer.
+  const picked =
+    result?.ok && result.shown && (field.control === 'choice' || field.control === 'choices');
+  const text = picked ? result.shown : replyText(reply);
+  // Orange, as the app marks what needs you: what didn't take, and what's needed and left for
+  // you. A field you may leave blank, with nothing on file for it, isn't.
+  const yours = (result !== undefined && !result.ok) || (reply.source === 'you' && field.required);
   const note = result && !result.ok && result.why ? NOT_FILLED[result.why] : '';
   const copyButton = text
     ? h(
@@ -175,22 +181,26 @@ function fieldRow(state: Filling, at: number): HTMLElement {
       field.required && h('span', { class: 'muted' }, ' (required)'),
     ),
     text && h('div', { class: 'answer' }, text),
-    h(
-      'div',
-      { class: 'meta' },
-      result?.ok && h('span', { class: 'ok', 'aria-label': 'Filled' }, '✓ '),
-      source(reply),
-    ),
     note && h('div', { class: 'meta bad' }, note),
     h(
       'div',
-      { class: 'row-actions' },
-      small(
-        'Go to',
-        () => void showField(state.tabId, field),
-        `Go to ${field.question || 'the field'} on the page`,
+      { class: 'row' },
+      h(
+        'div',
+        { class: 'meta' },
+        result?.ok && h('span', { class: 'ok', 'aria-label': 'Filled' }, '✓ '),
+        source(reply),
       ),
-      copyButton,
+      h(
+        'div',
+        { class: 'row-actions' },
+        small(
+          'Go to',
+          () => void showField(state.tabId, field),
+          `Go to ${field.question || 'the field'} on the page`,
+        ),
+        copyButton,
+      ),
     ),
   );
 }
@@ -500,6 +510,13 @@ async function begin(): Promise<void> {
           true,
         ),
       ),
+    );
+    return;
+  }
+  // LinkedIn's link-only setting keeps the extension from reading LinkedIn's pages, its forms too.
+  if (isLinkedIn(tab.url ?? '') && !(await settings()).linkedInText) {
+    message(
+      'You chose to save LinkedIn jobs by their link alone, so Save to Factwright doesn’t read LinkedIn’s pages. Change it in Settings.',
     );
     return;
   }

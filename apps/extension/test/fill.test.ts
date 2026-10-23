@@ -1,12 +1,12 @@
 import type { FieldReply } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
+  fieldValue,
   fillAnswers,
   isCopyOnly,
   looksLikeApplication,
   newAnswers,
   sentAnswers,
-  valueOf,
 } from '../src/fill.ts';
 import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
 
@@ -118,12 +118,12 @@ describe('what you sent', () => {
 
   it('finds a field’s value by its key once the form’s fields have moved', () => {
     const asked = field('Why us?', { ref: 4 });
-    expect(valueOf(asked, [{ ref: 2, key: asked.key, value: 'Gear that lasts.' }])).toBe(
+    expect(fieldValue(asked, [{ ref: 2, key: asked.key, value: 'Gear that lasts.' }])).toBe(
       'Gear that lasts.',
     );
     // Two fields with one key can't be told apart, so neither counts.
     expect(
-      valueOf(asked, [
+      fieldValue(asked, [
         { ref: 1, key: asked.key, value: 'One' },
         { ref: 2, key: asked.key, value: 'Two' },
       ]),

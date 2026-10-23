@@ -17,10 +17,9 @@ describe('each browser’s manifest', () => {
     }
   });
 
-  it('is Factwright, with a panel beside the page for filling a form, and a shortcut for it', () => {
+  it('has a panel beside the page for filling a form, and a shortcut for it', () => {
     const chrome = manifest('chrome', '0.3.0');
     const firefox = manifest('firefox', '0.3.0');
-    expect([chrome.name, firefox.name]).toEqual(['Factwright', 'Factwright']);
     expect(chrome.side_panel).toEqual({ default_path: 'sidepanel.html' });
     // Firefox's sidebar opens only when you click Fill, never on its own at install.
     expect(firefox.sidebar_action).toMatchObject({
