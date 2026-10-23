@@ -480,8 +480,12 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
 function linkOrHandle(kind: FieldKind, field: FormField, link: string): FieldReply {
   if (!link) return left(kind, 'unset');
   if (/\b(user ?name|handle)\b/.test(plain(`${field.question} ${field.hint}`))) {
-    // "https://github.com/you/" is "you".
-    const handle = (link.split(/[?#]/)[0] ?? '').replace(/\/+$/, '').split('/').at(-1) ?? '';
+    // "https://github.com/you/" is "you": the last part of its path.
+    const handle =
+      (link.split(/[?#]/)[0] ?? '')
+        .split('/')
+        .filter((part) => part !== '')
+        .at(-1) ?? '';
     return handle ? { kind, text: handle, source: 'profile' } : left(kind, 'unset');
   }
   return { kind, text: link, source: 'profile' };

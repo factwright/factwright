@@ -195,7 +195,8 @@ export async function formPage(
    * after its mark, as "Resume/CV ✱ Attach resume/CV" does, ends at the mark.
    */
   const cleanQuestion = (text: string) => {
-    const words = squash(text);
+    // A page's words are cut short first, so no label, however long, can slow what follows.
+    const words = squash(text).slice(0, MAX_TEXT * 2);
     const [before = ''] = words.split(/\s*[*✱]+(?:\s|$)/);
     return (before.trim() || words)
       .replace(/\s*[*✱]+\s*$/, '')
@@ -205,7 +206,8 @@ export async function formPage(
   };
 
   /** Whether the words around a field mark it as one you must answer. */
-  const marksRequired = (text: string) => /[*✱]\s*$|\(required\)\s*$/i.test(squash(text));
+  const marksRequired = (text: string) =>
+    /[*✱]\s*$|\(required\)\s*$/i.test(squash(text).slice(-MAX_TEXT));
 
   /** Elements named in an attribute such as aria-labelledby, by their IDs. */
   const named = (element: Element, attribute: string): Element[] =>
@@ -358,7 +360,7 @@ export async function formPage(
     if (Number.isInteger(max) && max > 0 && max < 1_000_000) return max;
     const said =
       /(\d[\d,]*)\s*(?:characters|chars)\b|max(?:imum)?\.?(?: of)?\s*(\d[\d,]*)\s*char/i.exec(
-        words,
+        words.slice(0, MAX_TEXT * 2),
       );
     const count = said ? Number((said[1] ?? said[2] ?? '').replace(/,/g, '')) : NaN;
     return Number.isInteger(count) && count > 0 ? count : null;
