@@ -1,7 +1,7 @@
 /*
  * Small parts of the app, drawn the way the app's design system draws them: buttons, status and
- * fit pills, Run buttons, Claude's run status, the terminal's text, and fact bank claims. The hero's
- * window and the steps below it share them.
+ * fit pills, what's up next, a job's areas, the bar that says what Claude is doing, the terminal's
+ * text, and fact bank claims. The hero's window and the steps below it share them.
  */
 
 .ui-button {
@@ -130,76 +130,253 @@
   color: var(--fw-tone-green-fg);
 }
 
-.runs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* While Claude works, a job's other runs wait, and so do the buttons that would start it. */
-.is-busy .run:not(.is-suggested) {
-  opacity: 0.6;
-}
-
+/* While Claude works, the buttons that would start it wait. */
 .is-waiting {
   opacity: 0.5;
 }
 
-.run {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
+/* First in a job: what to do next, in the list's words, with the button that does it, tinted by
+   how pressing it is. */
+.up-next {
+  margin: 16px 0;
+  padding: 12px 14px 14px;
   border: 1px solid var(--fw-border);
-  border-radius: 10px;
-  background: var(--fw-surface);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-bar);
   transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    background-color 160ms ease,
-    opacity 240ms ease;
+    background-color 240ms ease,
+    border-color 240ms ease;
 }
 
-.run.is-suggested {
-  border-color: var(--fw-accent);
+.up-next.is-action {
+  border-color: color-mix(in srgb, var(--fw-need) 40%, var(--fw-border));
+  background: var(--fw-need-soft);
+}
+
+.up-next.is-info {
+  border-color: color-mix(in srgb, var(--fw-accent) 40%, var(--fw-border));
   background: var(--fw-accent-soft);
 }
 
-.run.is-pressed {
-  transform: scale(0.98);
-  background: color-mix(in srgb, var(--fw-accent) 18%, var(--fw-surface));
+.up-next-title {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.run-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
+.up-next-step {
+  margin: 6px 0 10px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
-.run-text b {
-  font-size: 13.5px;
+.is-action .up-next-step {
+  color: var(--fw-need);
+}
+
+/* A button that started Claude says Claude is on it while it runs, with a spinner. */
+.on-it {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.on-it .icon {
+  width: 14px;
+  height: 14px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spin {
+    animation: spin 900ms linear infinite;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A job's areas come in two groups: what your Claude made, and how the job's going. */
+.area-group {
+  padding: 4px 0 10px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.area-group ~ .area-group {
+  padding-top: 28px;
+}
+
+/* How many things an area holds, beside its name. */
+.area-count {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-style: normal;
   font-weight: 600;
 }
 
-.run-text span {
-  color: var(--fw-muted);
-  font-size: var(--fw-text-sm);
+/* What goes in an area that holds nothing yet, in a few words, and the button that makes it. */
+.placeholder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border: 1px dashed var(--fw-control-border);
+  border-radius: var(--fw-radius-lg);
 }
 
-.run-state {
-  flex: none;
-  color: var(--fw-accent-text);
+.placeholder + .placeholder {
+  margin-top: 10px;
+}
+
+.placeholder-text {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--fw-muted);
   font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.placeholder-text b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--fw-text);
   font-weight: 650;
 }
 
-.run-state.is-quiet {
-  color: var(--fw-muted);
+.placeholder .icon {
+  width: 14px;
+  height: 14px;
 }
 
-.run-state.is-ok {
+/*
+ * The bar along the bottom while Claude has a task: where it stands, what Claude is doing, a step
+ * at a time, and once it's done, what it made, tinted, with Open it. Claude's work, the terminal,
+ * stays folded under it.
+ */
+.run-bar {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 16px;
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+  white-space: nowrap;
+  transition: background-color 240ms ease;
+}
+
+/* While Claude works, a light moves along the top of the bar. */
+.run-bar.is-busy::before {
+  position: absolute;
+  top: -1px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--fw-accent);
+  content: "";
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .run-bar.is-busy::before {
+    background: linear-gradient(90deg, transparent, var(--fw-accent), transparent) no-repeat;
+    background-size: 35% 100%;
+    animation: working 1.8s ease-in-out infinite;
+    opacity: 1;
+  }
+}
+
+@keyframes working {
+  from {
+    background-position: -40% 0;
+  }
+
+  to {
+    background-position: 140% 0;
+  }
+}
+
+.run-bar.is-finished {
+  background: var(--fw-ok-soft);
+}
+
+.run-title {
+  font-weight: 600;
+}
+
+/* What it made says which task it was. */
+.is-finished .run-title {
+  display: none;
+}
+
+/* What Claude is doing, or what it made, shortens first, so the buttons never move. */
+.run-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.is-finished .run-text {
+  color: var(--fw-text);
+  font-weight: 600;
+}
+
+/* The last step done, quietly, then the one Claude is on. */
+.run-did {
+  margin-right: 10px;
+}
+
+.run-did .icon {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
   color: var(--fw-ok);
+  vertical-align: -2px;
+  stroke-width: 2.6;
+}
+
+.is-busy .run-doing {
+  color: var(--fw-text);
+  font-weight: 550;
+}
+
+.run-elapsed {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Show Claude's work opens the terminal, folded under the bar. */
+.run-work-icon {
+  transform: rotate(180deg);
 }
 
 /* One part of a job's panel, under a heading that opens and closes it, with a few words on it. */
@@ -316,19 +493,6 @@
   white-space: nowrap;
 }
 
-.claude-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 9px 16px;
-  white-space: nowrap;
-}
-
-.claude-title {
-  font-weight: 600;
-}
-
 .run-status {
   display: inline-flex;
   flex: none;
@@ -390,69 +554,104 @@
   }
 }
 
-.term {
-  margin: 0;
-  overflow: hidden;
-  background: var(--fw-term);
-  color: var(--term-main);
-  font-family: var(--fw-font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
+/* Claude's question, in a box of its own, the way the app asks it: the hero's run, and step 2's. */
+.ask-box {
+  padding: 18px 20px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-xl);
+  background: var(--fw-surface);
 }
 
-.t-line {
-  overflow-wrap: anywhere;
+.ask-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fw-text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
-.t-line[hidden] {
-  display: none;
+.ask-title .icon {
+  width: 16px;
+  height: 16px;
+  color: var(--fw-muted);
 }
 
-.t-user {
-  padding: 1px 8px;
-  margin-inline: -8px;
-  background: var(--term-bar);
-  color: var(--term-main);
+.ask-from {
+  margin-top: 2px;
+  color: var(--fw-muted);
+  font-size: 13px;
 }
 
-.t-dim {
-  color: var(--term-dim);
-}
-
-.t-ok {
-  color: var(--term-ok);
-}
-
-.t-spin,
-.t-pick {
-  color: var(--term-pick);
-}
-
-.t-bold {
-  font-weight: 700;
-}
-
-.t-gap {
-  margin-top: 0.7em;
-}
-
-.t-indent {
-  padding-left: 2ch;
-}
-
-.t-caret {
+.ask-tag {
   display: inline-block;
-  width: 0.6em;
-  height: 1.05em;
-  vertical-align: -0.18em;
-  background: var(--term-main);
-  animation: caret 1.1s steps(1) infinite;
+  margin-top: 14px;
+  padding: 1px 9px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
 }
 
-@keyframes caret {
-  50% {
-    opacity: 0;
-  }
+.ask-question {
+  margin: 8px 0 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: 10px;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease;
+}
+
+.ask-option + .ask-option {
+  margin-top: 8px;
+}
+
+.ask-option > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.ask-option b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ask-option > span > span {
+  color: var(--fw-muted);
+}
+
+.radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: 50%;
+  background: var(--fw-surface);
+  transition: box-shadow 200ms ease;
+}
+
+.ask-option.is-picked {
+  border-color: var(--fw-accent);
+  background: var(--fw-accent-soft);
+}
+
+.is-picked .radio {
+  border-color: var(--fw-accent);
+  box-shadow: inset 0 0 0 4px var(--fw-surface);
+  background: var(--fw-accent);
 }
 
 .claim {

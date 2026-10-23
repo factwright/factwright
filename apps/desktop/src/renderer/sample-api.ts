@@ -12,7 +12,7 @@ import {
   type RoundQuestion,
   type RoundReply,
 } from '../shared/rounds.ts';
-import { type RunTask, taskJob } from '../shared/runs.ts';
+import { type RunTask, THANKS_SKILL, taskJob } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleSaveHelper } from './extension/sample-helper.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
@@ -428,6 +428,13 @@ function sampleSteps(task: RunTask): Omit<RunStep, 'id' | 'state'>[] {
         { tool: 'WebSearch', detail: 'Copperleaf Energy engineering team reviews' },
         { tool: 'Write', detail: `${folder}/fit-check.md` },
       ];
+    // A call's prep sheet, or the thank-you notes after it. A mock interview saves nothing.
+    case 'interview-prep':
+      return 'callId' in task && !('practice' in task)
+        ? [...reading, { tool: 'mcp__factwright__save_call_prep', detail: null }]
+        : reading;
+    case THANKS_SKILL:
+      return [...reading, { tool: 'mcp__factwright__save_thank_you', detail: null }];
     default:
       return reading;
   }

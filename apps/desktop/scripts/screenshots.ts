@@ -1,5 +1,5 @@
 // Takes the README's pictures of the app, each framed as a Mac window, in light and dark: the
-// jobs while Claude asks a question, the fact bank, and the journey. They come from the screens
+// jobs as Claude finishes a task, the fact bank, and the journey. They come from the screens
 // preview's made-up job hunt, so no one's real data is in them. Take them again after a change
 // they show, on a Mac so the app gets the system font: `pnpm --filter @factwright/desktop
 // screenshots`. It needs Playwright's Chromium, once:
@@ -30,16 +30,19 @@ const SHOTS: Shot[] = [
     name: 'jobs',
     width: 1280,
     height: 960,
-    path: '/?profile=done&run=asks',
+    path: '/?profile=done',
     show: async (page) => {
-      await page.getByRole('button', { name: /^Northwind Labs/ }).click();
-      // Prep for its panel interview, from the call's card under Calls and interviews.
-      await page.getByRole('button', { name: /^Prep again for / }).click();
-      // Claude's question opens in its dialog. The picture shows it in the terminal, behind it,
-      // under the line that says it's waiting there.
-      await page.getByRole('button', { name: 'Answer in the terminal' }).click();
-      await page.getByRole('button', { name: 'Got it' }).click();
-      await page.getByText('Needs your answer').first().waitFor();
+      await page.getByRole('button', { name: /^Tidewater Analytics/ }).click();
+      // Its fit folded away, so the areas for each kind of thing show under it.
+      const job = page.getByRole('complementary', { name: 'Job details' });
+      await job.getByRole('button', { name: /^Fit\b/ }).click();
+      // Up next's step: prep for its recruiter screen. Once Claude's done, the bar along the
+      // bottom says the prep sheet is ready, with Open it, and Up next moves on to practice.
+      await job.getByRole('button', { name: 'Prep for the call' }).click();
+      await page
+        .getByText(/^Your prep sheet for .+ is ready\.$/)
+        .first()
+        .waitFor();
     },
   },
   {

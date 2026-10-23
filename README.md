@@ -20,7 +20,7 @@ Every resume line and application answer traces back to a fact you've confirmed.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/jobs-dark.webp">
-  <img src="docs/images/jobs-light.webp" alt="Factwright on a Mac: the job hunt's numbers and its jobs in interviews, one job open at its next call, a panel interview, and Claude's panel underneath, where your own Claude Code is writing a prep sheet for that call and has stopped to ask about a gap the facts don't cover.">
+  <img src="docs/images/jobs-light.webp" alt="Factwright on a Mac: the job hunt's numbers and its jobs in interviews. One job is open, with what's up next at the top, practicing for its recruiter screen, then its fit and an area for each kind of thing, such as its resume and a cover letter still to write. Along the bottom, a bar says the prep sheet your own Claude Code wrote for the call is ready, with Open it.">
 </picture>
 
 Factwright is a desktop app that runs your job hunt on top of Claude Code, using your own Claude account. At its center is a **fact bank**: everything you've done, written as claims you can check. Every resume, answer and prep sheet is built from it, so what you send is tailored to the job and still true.
@@ -39,6 +39,7 @@ Factwright is a desktop app that runs your job hunt on top of Claude Code, using
 - **Answers and interview prep.** Application answers and prep sheets drafted from the same facts, in your voice. Keep what you actually sent beside each question, so it's there when the job moves on.
 - **Ask about a job.** Ask anything, such as what to expect from a call, with screenshots if you have them. Claude answers from everything on file for the job and the web, and the answer stays with the job.
 - **Calls and interviews.** Each step of a company's process, with who it's with, when, for how long and how to join. Fill one in from the company's calendar invite, add it to your own calendar, and get a reminder an hour before. Call prep writes a sheet for that call that builds on how the earlier rounds went: what to expect, who you're meeting, likely questions answered from your facts, and questions to ask each person. Practice it in a mock interview, note how it went afterward, and get thank-you notes to send.
+- **Up next.** Every job says what to do next, at every stage, with the button that does it, and has a place for each kind of thing, with a button to make the first. While your Claude works, a bar along the bottom says what it's doing, then what it made, with Open it.
 - **Tracking.** Every job's progress, calls, interviews and dated notes in one place, with your history with each company, on your computer and your phone, and your whole journey drawn as a flow chart.
 
 <table>
@@ -63,7 +64,7 @@ Factwright is a desktop app that runs your job hunt on top of Claude Code, using
 </table>
 
 ## How it's built
-- **Your Claude, untouched.** Factwright launches the Claude Code you've already installed and signed in to, in a panel you can watch. It never sees, stores or passes your login, and runs use your own plan or API key.
+- **Your Claude, untouched.** Factwright launches the Claude Code you've already installed and signed in to, in a terminal you can open and watch, folded under the bar that says what it's doing. It never sees, stores or passes your login, and runs use your own plan or API key.
 - **Your files, on your computer.** Claude works on plain files in a folder on your machine, using tools Factwright provides instead of a shell.
 - **Your data, encrypted.** Sync is optional. It encrypts your job hunt on your computer before it's uploaded, with a key our servers never see, so they store it only in a form they can't read. The web view on your phone runs code the server sends, which [docs/security.md](docs/security.md) explains.
 - **Out in the open.** All of its code is here, under the AGPL-3.0, so you can read what it does, or build the app yourself.
