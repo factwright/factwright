@@ -179,7 +179,7 @@ describe('signing in with a code', () => {
   it('signs in with a code only to the server it’s built for, never to one of your own', () => {
     expect(deviceSignIn(DEFAULT_SERVER)).toBeInstanceOf(DeviceSignIn);
     expect(() => deviceSignIn(OWN)).toThrow(
-      'Save to Factwright signs in to a server of your own through the browser’s window alone.',
+      'The extension signs in to a server of your own through the browser’s window alone.',
     );
   });
 });

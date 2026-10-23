@@ -578,7 +578,7 @@ async function begin(): Promise<void> {
   if (later()) return;
   if (linkOnly) {
     message(
-      'You chose to save LinkedIn jobs by their link alone, so Save to Factwright doesn’t read LinkedIn’s pages. Change it in Settings.',
+      'You chose to save LinkedIn jobs by their link alone, so the extension doesn’t read LinkedIn’s pages. Change it in Settings.',
     );
     return;
   }

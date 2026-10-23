@@ -74,15 +74,14 @@ export function manifest(
 ): Record<string, unknown> {
   const common = {
     manifest_version: 3,
-    name: 'Save to Factwright',
-    short_name: 'Factwright',
+    name: 'Factwright',
     description:
       'Save the job you’re looking at to your Factwright job hunt, and fill in its application for you to check.',
     version,
     homepage_url: 'https://factwright.com',
     icons,
     action: {
-      default_title: 'Save to Factwright',
+      default_title: 'Factwright',
       default_popup: 'popup.html',
       default_icon: icons,
     },
@@ -129,7 +128,7 @@ export function manifest(
     // Firefox's sidebar, as Chrome's side panel, which opens only when you click Fill.
     sidebar_action: {
       default_panel: 'sidepanel.html',
-      default_title: 'Save to Factwright',
+      default_title: 'Factwright',
       default_icon: icons,
       open_at_install: false,
     },

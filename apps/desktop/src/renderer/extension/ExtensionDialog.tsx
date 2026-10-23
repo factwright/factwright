@@ -42,7 +42,7 @@ function outcome(browser: HelperBrowserView, result: SetUpResult): string {
 }
 
 /**
- * The browser extension's window: what Save to Factwright does, where to get it, and saving
+ * The Browser extension window: what the extension does, where to get it, and saving
  * straight to Factwright on this computer. On a Mac, each browser is set up here, as macOS keeps
  * each browser's folder to that browser. Nothing touches a browser's folder until the user
  * chooses Set up.
@@ -103,8 +103,8 @@ export function ExtensionDialog({
 
   return (
     <Dialog
-      title="Save to Factwright"
-      description="A browser extension that saves the job you’re looking at, with its posting, to your job hunt."
+      title="Browser extension"
+      description="Factwright’s extension for Chrome and Firefox saves the job you’re looking at, with its posting, to your job hunt."
       onClose={onClose}
     >
       <p className={styles.intro}>
@@ -124,15 +124,15 @@ export function ExtensionDialog({
         {view && !view.unavailable && (
           <>
             <p className={styles.intro}>
-              From version 0.2, Save to Factwright can save straight to Factwright here, with no
-              account and no sync.
+              From version 0.2, the extension can save straight to Factwright here, with no account
+              and no sync.
               {view.onRequest
                 ? ' Each browser finds Factwright through a small file Factwright adds to that browser’s folder, which macOS keeps to that browser, so you set each one up here. macOS may ask you to allow it: choose Allow. If it blocks it instead, this window shows how to allow it.'
                 : ' Factwright tells each browser where to find it when it starts.'}
             </p>
             {view.browsers.length === 0 ? (
               <p className={styles.hint}>
-                Factwright didn’t find a browser Save to Factwright runs in: Chrome, Chromium, Edge,
+                Factwright didn’t find a browser the extension runs in: Chrome, Chromium, Edge,
                 Brave, Arc, Vivaldi or Firefox.
               </p>
             ) : (

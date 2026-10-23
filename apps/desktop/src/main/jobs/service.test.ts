@@ -269,7 +269,7 @@ describe('screenshots and questions for Claude', () => {
   });
 });
 
-describe('a job Save to Factwright saved on this computer', () => {
+describe('a job the extension saved on this computer', () => {
   const job = {
     url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
     site: 'jobs.lever.co',

@@ -305,7 +305,7 @@ describe('addJob', () => {
     expect(row('tidewater--general')?.kind).toBeNull();
   });
 
-  it('names a job whose company has no Latin letters by its link, as Save to Factwright does', () => {
+  it('names a job whose company has no Latin letters by its link, as the extension does', () => {
     const link = 'https://example.jp/jobs/1?utm_source=x';
     const added = tracker.addJob({ company: '株式会社', role: 'エンジニア', link }, AT);
     expect(added).toEqual({

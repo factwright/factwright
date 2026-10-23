@@ -1,5 +1,5 @@
 /**
- * Application forms, as Save to Factwright reads them on a page you've asked it to fill. This is
+ * Application forms, as the extension reads them on a page you've asked it to fill. This is
  * what each field asks for, by its words, which the extension and the app agree on: Factwright
  * answers a field it knows from what's on file, and leaves the rest for you or your Claude.
  */

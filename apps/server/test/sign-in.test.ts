@@ -480,15 +480,20 @@ describe('signing the browser extension in', () => {
       .clientFor(String(token.body.access_token), CHROME_ON_MAC)
       .account();
     expect(account.devices.find((device) => device.current)?.name).toBe(
-      'Save to Factwright in Chrome on Mac',
+      'Factwright in Chrome on Mac',
     );
   });
 
   it('keeps its name as it is, so its session stays named once it renews', () => {
-    expect(deviceName('Save to Factwright in Chrome on Mac')).toBe(
-      'Save to Factwright in Chrome on Mac',
-    );
-    expect(deviceName('Save to Factwright in Firefox')).toBe('Save to Factwright in Firefox');
+    expect(deviceName('Factwright in Chrome on Mac')).toBe('Factwright in Chrome on Mac');
+    expect(deviceName('Factwright in Firefox')).toBe('Factwright in Firefox');
+  });
+
+  it('names its sessions from when it was Save to Factwright as it’s called now', () => {
+    expect(deviceName('Save to Factwright in Chrome on Mac')).toBe('Factwright in Chrome on Mac');
+    expect(deviceName('Save to Factwright in Firefox')).toBe('Factwright in Firefox');
+    // Only a name the extension had: anything else after it is a browser's to read.
+    expect(deviceName('Save to Factwright in Factwright on Sam’s Mac')).toBe('A browser');
   });
 });
 

@@ -14,8 +14,8 @@ import { settings } from './settings.ts';
  * Saving straight to Factwright on this computer, with no account and no sync. The browser hands
  * each job to a small helper Factwright installs and registers with each browser it finds, through
  * the browser's native messaging. The helper drops the job in Factwright's data folder, and
- * Factwright adds it when it's open, or the next time it opens. Each browser lets only Save to
- * Factwright's own ID reach the helper, and the extension asks the browser for native messaging
+ * Factwright adds it when it's open, or the next time it opens. Each browser lets only the
+ * extension's own ID reach the helper, and the extension asks the browser for native messaging
  * only when you choose this in setup.
  */
 
@@ -78,7 +78,7 @@ function unreachable(error: unknown): { missing: boolean; message: string } {
     return {
       missing: true,
       message:
-        'Save to Factwright couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it. On a Mac, then choose Browser extension in its sidebar, and set up this browser.',
+        'The extension couldn’t find Factwright on this computer. Install it from factwright.com, or update it, and open it. On a Mac, then choose Browser extension in its sidebar, and set up this browser.',
     };
   }
   return { missing: false, message: 'Factwright on this computer didn’t answer. Try again.' };
@@ -194,7 +194,7 @@ export async function saveOnComputer(job: JobToSave): Promise<SaveResult> {
     return {
       ok: false,
       reason: 'no-access',
-      message: 'The browser doesn’t let Save to Factwright reach Factwright on this computer.',
+      message: 'The browser doesn’t let the extension reach Factwright on this computer.',
     };
   }
   if (!canSendNow()) {

@@ -3,7 +3,7 @@ import { FIELD_CONTROLS, type FieldControl, type FieldKind } from './forms.ts';
 import { JOB_LIMITS } from './new-job.ts';
 
 /**
- * Saving on this computer. Save to Factwright, the browser extension, can hand a job to Factwright
+ * Saving on this computer. The browser extension can hand a job to Factwright
  * on the same computer through the browser's native messaging, with no account and no sync. A small
  * helper the app installs drops each job, as the extension sent it, into a small inbox in the app's
  * data folder, for the profile open last, and the app adds it from there when it's open, or at its
@@ -29,7 +29,7 @@ export const INBOX_LIMIT = 200;
 /** The longest posting the app takes from the inbox, as long as the extension reads one. */
 export const SAVED_POSTING_LIMIT = 100_000;
 
-/** A job as Save to Factwright hands it over: only the job's own data, and nothing else. */
+/** A job as the extension hands it over: only the job's own data, and nothing else. */
 export interface SavedJob {
   /** The job's own address, http or https. */
   url: string;
@@ -45,7 +45,7 @@ export interface SavedJob {
 
 const FIELDS = ['url', 'site', 'company', 'role', 'pay', 'posting'] as const;
 
-/** The longest each field may be once it's read, as Add job and Save to Factwright cut them. */
+/** The longest each field may be once it's read, as Add job and the extension cut them. */
 const LIMITS: Record<(typeof FIELDS)[number], number> = {
   url: JOB_LIMITS.link,
   site: 200,
@@ -101,7 +101,7 @@ export type InboxAnswer =
   | { ok: false; reason: 'bad-message' | 'failed'; message: string };
 
 /**
- * Filling an application form, on this computer. Save to Factwright asks Factwright through the
+ * Filling an application form, on this computer. The extension asks Factwright through the
  * same helper, which passes each ask on as it came, as `{"type":"ask","request":"…"}`, with the
  * ask itself as JSON inside, and hands back the app's answer. The helper passes an ask only to an
  * app that's open, and the app checks each one here. An ask never waits for a later start: the

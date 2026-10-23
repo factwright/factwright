@@ -8,8 +8,8 @@ import {
 /**
  * What Profile keeps for applications on this computer alone: your street, your postal code and
  * your equal-opportunity answers. They're in the profile's data folder, beside the job tracker, not
- * in the workspace, so they never sync, and Claude's tools never reach them. Save to Factwright
- * fills forms with them, and only as you set them.
+ * in the workspace, so they never sync, and Claude's tools never reach them. The extension fills
+ * forms with them, and only as you set them.
  */
 
 /** The file, in the profile's data folder. */

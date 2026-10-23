@@ -604,7 +604,7 @@ describe('the extension page', () => {
     const mentions = (doc: Document) =>
       [...doc.querySelectorAll(`main a[href="${EXTENSION_PAGE}"], .ext-steps strong`)]
         .map((part) => part.closest('p, li')?.textContent?.replace(/\s+/g, ' ') ?? '')
-        .filter((text) => text.includes('Save to Factwright') || text.includes('extension'));
+        .filter((text) => text.includes('extension'));
     for (const page of [
       'index.html',
       'download/mac.html',
@@ -635,7 +635,7 @@ describe('the extension page', () => {
     expect(note?.querySelector('a[href="/"]')?.textContent).toBe('Factwright');
     expect(note?.querySelector(`a[href="${SYNC_PAGE}"]`)?.textContent).toBe('sync');
     expect(doc.querySelector('.ext-steps a[href="/download"]')?.textContent).toBe('Get Factwright');
-    // Since Factwright 0.9.1, a Mac sets each browser up from the app's Save to Factwright window.
+    // Since Factwright 0.9.1, a Mac sets each browser up from the app's Browser extension window.
     expect(said(doc.querySelector('.ext-steps .get-after'))).toContain(
       'On a Mac, saving to Factwright on this computer needs one more step, in Factwright: choose Browser extension in its sidebar, then Set up beside your browser',
     );
@@ -669,7 +669,7 @@ describe('the extension page', () => {
       'Factwright on this computer, with no account and no sync, or through sync, for Factwright on another computer.',
     );
     expect(said(doc.querySelector('.ext-steps .get-after'))).toContain(
-      'For Factwright on this computer, the browser asks once to let Save to Factwright talk to apps on your computer, and it talks only to a small helper that comes with Factwright.',
+      'For Factwright on this computer, the browser asks once to let the extension talk to apps on your computer, and it talks only to a small helper that comes with Factwright.',
     );
     // The download pages say so too, with nothing left from when it saved only through sync.
     for (const page of ['download/mac.html', 'download/windows.html']) {
@@ -727,7 +727,7 @@ describe('the own-server guide', () => {
     const text = (id: string) => doc.getElementById(id)?.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(text('address')).toContain('Cloudflare may ask for a payment method');
     expect(text('connect')).toContain(
-      'Save to Factwright, the browser extension, can save through your server too, from its version 0.2',
+      'The browser extension can save through your server too, from its version 0.2',
     );
     expect(text('updates')).toContain('Updates to your own server aren’t automatic yet');
   });
@@ -806,7 +806,7 @@ describe('the sync page', () => {
     expect([...(what?.querySelectorAll('h3') ?? [])].map(said)).toEqual([
       'Your other computers',
       'Your phone',
-      'Save to Factwright',
+      'Your browser',
     ]);
     expect(said(what)).toContain('even on a computer without Factwright');
     expect(said(what)).toContain('End-to-end encrypted');

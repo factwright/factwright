@@ -30,7 +30,7 @@ beforeAll(async () => {
 afterAll(() => server?.close());
 
 const NOW = new Date(2026, 9, 15, 20, 30);
-const DEVICE = 'Save to Factwright in Chrome';
+const DEVICE = 'Factwright in Chrome';
 
 const JOB: JobToSave = {
   url: 'https://www.linkedin.com/jobs/view/4012345678/',

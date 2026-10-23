@@ -88,7 +88,7 @@ export interface AboutYou extends BeyondWork {
   /** Each kind of job after the first, with its own titles, kinds of work, levels and pay. */
   otherKinds: JobKind[];
   /**
-   * What application forms ask that a resume doesn't say, for Save to Factwright to fill them
+   * What application forms ask that a resume doesn't say, for the extension to fill them
    * with. Your street, postal code and equal-opportunity answers are kept apart, on this computer
    * alone (private.ts).
    */

@@ -22,7 +22,7 @@ vi.mock('./register.ts', () => ({
 
 const deps = { platform: 'darwin' } as SaveHelperDeps;
 
-describe('the Save to Factwright window’s side of registering', () => {
+describe('the Browser extension window’s side of registering', () => {
   it('leaves the browsers alone in a copy run from the code, or driven by the tests', async () => {
     const helper = createSaveHelper(null, { platform: 'darwin', openExternal: vi.fn() });
     const leftAlone = { unavailable: 'development', onRequest: true, browsers: [] };

@@ -12,7 +12,7 @@ const cut = (key: string, length: number) => key.slice(0, length).replace(/-+$/,
 
 /**
  * A company's or a role's key, cut to its half of a job's ID, as every new job's ID is made: by
- * Add job, Save to Factwright and the jobs Claude's work finds.
+ * Add job, the browser extension and the jobs Claude's work finds.
  */
 export const idPart = (key: string, half: keyof typeof ID_PARTS) => cut(key, ID_PARTS[half]);
 

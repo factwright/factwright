@@ -593,7 +593,7 @@ export class Tracker {
       return { ok: false, message: 'Links start with https:// or http://.' };
     }
     const status = input.status ?? null;
-    // A company with no Latin letters gets an ID from its link, as Save to Factwright gives it.
+    // A company with no Latin letters gets an ID from its link, as the extension gives it.
     const base = jobIdFor(company, role, link ? shortCode(normalizeUrl(link)) : undefined);
     const taken = this.db.prepare('SELECT 1 FROM jobs WHERE id = ?');
     let id = base;
@@ -628,7 +628,7 @@ export class Tracker {
   }
 
   /**
-   * Adds a job Save to Factwright saved on this computer, as it adds one through sync: the same
+   * Adds a job the extension saved on this computer, as it adds one through sync: the same
    * rows, as New, with its history's first line, and an ID from its company and role. The same
    * job, by its link, is added once: when the ID it would take is held by a job with the same
    * link, that's the job, and nothing is added. When another job holds it, the next ID, "-2" on, is

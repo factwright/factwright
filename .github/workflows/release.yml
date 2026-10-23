@@ -220,7 +220,7 @@ jobs:
       - name: Check what's in the app
         run: pnpm --filter @factwright/desktop check-package
       # Every program and module signed, so Windows runs each one. The app, its installer and the
-      # helper Save to Factwright saves through are signed by the publisher installed copies check
+      # helper the extension saves through are signed by the publisher installed copies check
       # each update against, which their update settings name.
       - name: Check everything is signed
         if: env.SIGNED == 'true'

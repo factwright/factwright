@@ -24,7 +24,7 @@ import {
   profileToOpen,
 } from '../profiles.ts';
 
-// The helper Save to Factwright saves through on this computer (apps/desktop/helper), built for
+// The helper the extension saves through on this computer (apps/desktop/helper), built for
 // the tests, which give it a data folder of their own, then run as the browser runs it: a message
 // on stdin, an answer on stdout.
 
@@ -48,7 +48,7 @@ const compiler = (COMPILERS[process.platform] ?? ['cc']).find((name) =>
 /** The longest message the helper takes: 1 MiB. */
 const MESSAGE_LIMIT = 1_048_576;
 
-/** A job as Save to Factwright sends it. */
+/** A job as the extension sends it. */
 const JOB = {
   type: 'save',
   url: 'https://jobs.lever.co/harborpine/4f1c2b7e',
@@ -181,7 +181,7 @@ function openApp(answer: string): () => void {
   return () => clearInterval(timer);
 }
 
-/** An ask as Save to Factwright sends one, to fill a form: the ask itself, as JSON, inside. */
+/** An ask as the extension sends one, to fill a form: the ask itself, as JSON, inside. */
 const ASK = {
   type: 'ask',
   request: JSON.stringify({

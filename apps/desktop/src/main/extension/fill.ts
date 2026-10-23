@@ -33,7 +33,7 @@ import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.t
 import { matchJobs } from '../tools/lookup.ts';
 
 /**
- * What Factwright answers Save to Factwright with as it fills an application form on this
+ * What Factwright answers the extension with as it fills an application form on this
  * computer: the job a form is for, with an answer for each of its fields from what's on file, the
  * job's resume and cover letter in parts to upload, what you sent once you've applied, and new
  * answers you chose to keep in Profile. The helper passes each ask on only while the app is open,
@@ -379,7 +379,7 @@ function remember(ask: Extract<InboxAsk, { ask: 'remember' }>, deps: FillDeps): 
   return { ok: true, did: 'remember', saved };
 }
 
-/** Answers one ask from Save to Factwright. Nothing in it can stop the app: a failure says so. */
+/** Answers one ask from the extension. Nothing in it can stop the app: a failure says so. */
 export async function answerAsk(ask: InboxAsk, deps: FillDeps): Promise<InboxAskAnswer> {
   try {
     if (ask.ask === 'fill') return await fill(ask, deps);

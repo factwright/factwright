@@ -175,7 +175,7 @@ export const clientFor = (server: string, token: string) =>
 export function deviceSignIn(server: string): DeviceSignIn {
   if (isOwn(server)) {
     throw new Error(
-      'Save to Factwright signs in to a server of your own through the browser’s window alone.',
+      'The extension signs in to a server of your own through the browser’s window alone.',
     );
   }
   return new DeviceSignIn({ server, clientId: CLIENTS.extension, fetch: syncFetch });

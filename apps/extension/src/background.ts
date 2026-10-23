@@ -18,7 +18,7 @@ import { needsChecking, toSave } from './tab-job.ts';
 
 const MENU = 'save-job';
 const FILL = 'fill-form';
-const TITLE = 'Save to Factwright';
+const TITLE = 'Factwright';
 
 /** The right-click menu's items, made again whenever the background starts. */
 function menus(): void {
@@ -114,18 +114,18 @@ async function openSetup(): Promise<void> {
  */
 async function save(job: JobToSave): Promise<SaveResult> {
   const to = await destination();
-  if (!to) return { ok: false, reason: 'signed-out', message: 'Set up Save to Factwright first.' };
+  if (!to) return { ok: false, reason: 'signed-out', message: 'Set up the extension first.' };
   if (to.to === 'computer') return saveOnComputer(job);
   const { account } = to;
   if (!(await canReachSync(account.server))) {
     return {
       ok: false,
       reason: 'no-access',
-      message: `The browser doesn’t let Save to Factwright reach ${serverName(account.server)}.`,
+      message: `The browser doesn’t let the extension reach ${serverName(account.server)}.`,
     };
   }
   const result = await saveJob(clientFor(account.server, account.token), account.keys, job, {
-    device: `Save to Factwright in ${browserName()}`,
+    device: `Factwright in ${browserName()}`,
     server: serverName(account.server),
   });
   if (!result.ok && result.reason === 'signed-out') await forgetAccount();
@@ -138,7 +138,7 @@ async function mark(tab: Tab, ok: boolean, says: string): Promise<void> {
   if (tabId === undefined) return;
   await ext.action.setBadgeBackgroundColor({ color: ok ? LIGHT.ok : LIGHT.bad, tabId });
   await ext.action.setBadgeText({ text: ok ? '✓' : '!', tabId });
-  await ext.action.setTitle({ title: `Save to Factwright: ${says}`, tabId });
+  await ext.action.setTitle({ title: `${TITLE}: ${says}`, tabId });
   setTimeout(() => {
     void ext.action.setBadgeText({ text: '', tabId });
     void ext.action.setTitle({ title: TITLE, tabId });
@@ -176,7 +176,7 @@ async function saveTab(tab: Tab): Promise<void> {
   // Allowed native messaging since this background started, Chrome lets it send only once it
   // starts again, so the popup, which can, saves this job.
   if (to.to === 'computer' && !canSendNow() && (await canReachComputer())) {
-    await checkFirst(tab, 'Save to Factwright is ready to save it.');
+    await checkFirst(tab, 'Ready to save it.');
     return;
   }
   const { page, unread } = await readTab(tab);

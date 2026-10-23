@@ -76,7 +76,7 @@ jobs:
       - run: pnpm --filter @factwright/extension e2e:fill
 
   firefox:
-    name: Save to Factwright in Firefox
+    name: The extension in Firefox
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

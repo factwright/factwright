@@ -167,7 +167,7 @@ export interface IpcDeps {
   reminders: CallReminders;
   /** Opens a job in the window, such as from a reminder's click. */
   opener: JobOpener;
-  /** Save to Factwright saving to this computer: where each browser stands, and setting it up. */
+  /** The extension saving to this computer: where each browser stands, and setting it up. */
   saveHelper: SaveHelper;
   /** Tells the user a task is done, in the window's words, if they're looking elsewhere. */
   tellRunDone: (note: unknown) => void;
@@ -705,7 +705,7 @@ export function registerIpc({
   answer('profiles:remove', (id) => profiles.remove(id));
   answer('profiles:open', (id) => profiles.open(id));
 
-  // Save to Factwright saving to this computer, from its window: where each browser stands,
+  // The extension saving to this computer, from its window: where each browser stands,
   // setting browsers up, which macOS may ask the user about, and macOS's Files & Folders settings.
   answer('helper:status', () => saveHelper.status());
   answer('helper:set-up', (only) => {

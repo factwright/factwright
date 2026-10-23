@@ -313,10 +313,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     await server.start();
 
     jobs.watch();
-    // Jobs Save to Factwright saved on this computer, which the helper each browser starts drops
+    // Jobs the extension saved on this computer, which the helper each browser starts drops
     // in the profile's inbox: the ones that came while the app was closed now, the rest as they
     // come.
-    // Save to Factwright's asks as it fills an application form come the same way, while the app
+    // The extension's asks as it fills an application form come the same way, while the app
     // is open.
     const inbox = new JobInbox({
       folder: join(dataDir, INBOX_FOLDER),
@@ -329,9 +329,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     } catch {
       // The inbox never keeps the app from opening: what's in it waits for the next start.
     }
-    // Each browser on this computer may start the helper, for Save to Factwright alone, once the
+    // Each browser on this computer may start the helper, for the extension alone, once the
     // app has told it where the helper is. Windows tells each browser it finds as the app starts.
-    // On a Mac, the user sets each browser up in the Save to Factwright window, as macOS asks them
+    // On a Mac, the user sets each browser up in the Browser extension window, as macOS asks them
     // first, and a start keeps the ones set up current. A copy another program drives, as the tests
     // do, leaves the browsers as they are, and so does one run from the code, unless it's given an
     // unpacked extension's ID to allow too.

@@ -3,7 +3,7 @@ import type { BetterAuthPlugin } from 'better-auth';
 import { answerEndpoint, type CodeClient, tokenEndpoint } from './code-sign-in.ts';
 
 /**
- * Save to Factwright's sign-in through the browser's own window for extensions, with no code to
+ * The extension's sign-in through the browser's own window for extensions, with no code to
  * compare (packages/sync/src/extension-sign-in.ts has how it goes). The web view's page asks the
  * person, signed in here in their browser, and its answer goes to the extension's return address,
  * which only the extension that opened the window gets. With a yes, that carries a code, which the
@@ -17,7 +17,7 @@ export const ANSWER_PATH = '/extension/authorize';
 export const TOKEN_PATH = '/extension/token';
 
 /**
- * The return addresses the window may go back to: the stores' copies of Save to Factwright, and
+ * The return addresses the window may go back to: the stores' copies of the extension, and
  * the extension IDs a server's EXTENSION_IDS setting adds, such as a copy you built yourself, or a
  * test's. Anything in it that isn't an extension's ID is left out, so the setting can add only an
  * address that a browser hands to that one extension.
@@ -33,13 +33,13 @@ export async function extensionRedirects(setting: string | undefined): Promise<s
 }
 
 /**
- * Save to Factwright, as it signs in: to one of the return addresses `redirects` gives, with the
+ * The extension, as it signs in: to one of the return addresses `redirects` gives, with the
  * answer in the fragment, which the browser hands to the extension and never sends anywhere.
  */
 const extension = (redirects: () => Promise<readonly string[]>): CodeClient => ({
   id: CLIENTS.extension,
   kind: 'extension',
-  name: 'Save to Factwright',
+  name: 'the Factwright extension',
   readAsk,
   returnsTo: async (redirect) => (await redirects()).includes(redirect),
   answerAt: (redirect, answer) => `${redirect}#${answer}`,

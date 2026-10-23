@@ -74,7 +74,7 @@ const MAX_SAME = 50;
 const TRIES = 3;
 
 export interface SaveDeps {
-  /** What the job's records say made them, such as "Save to Factwright in Chrome". */
+  /** What the job's records say made them, such as "Factwright in Chrome". */
   device: string;
   /** The sync server as the person knows it, to name it when it can't be reached. */
   server?: string;
@@ -157,7 +157,7 @@ function hasLink(row: RowRecord['row'], url: string): boolean {
 function failed(error: unknown, server = 'Factwright’s sync'): SyncSaveResult {
   if (error instanceof SyncError) {
     if (error.kind === 'signed-out') {
-      return { ok: false, reason: 'signed-out', message: 'Save to Factwright was signed out.' };
+      return { ok: false, reason: 'signed-out', message: 'The extension was signed out.' };
     }
     if (error.kind === 'offline') {
       return {

@@ -171,16 +171,16 @@ export function signInWay(
   if (redirect === null) {
     return {
       problem:
-        'This browser has no sign-in window for extensions, which Save to Factwright needs to sign in to a server of your own.',
+        'This browser has no sign-in window for extensions, which the extension needs to sign in to a server of your own.',
     };
   }
   if (answer.redirects.length === 0) {
     return {
-      problem: `${host} needs an update for this version of Save to Factwright, which signs in to a server of your own through the browser’s window. Update it, then try again.`,
+      problem: `${host} needs an update for this version of the extension, which signs in to a server of your own through the browser’s window. Update it, then try again.`,
     };
   }
   return {
-    problem: `${host} doesn’t know this copy of Save to Factwright, so it can’t sign it in. Add its ID, ${id}, to EXTENSION_IDS in the server’s settings, then try again.`,
+    problem: `${host} doesn’t know this copy of the extension, so it can’t sign it in. Add its ID, ${id}, to EXTENSION_IDS in the server’s settings, then try again.`,
   };
 }
 
@@ -197,8 +197,8 @@ export function codePage(
   return {
     ok: false,
     problem: at?.host
-      ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so Save to Factwright didn’t open it.`
-      : `${hostOf(server)} didn’t give a sign-in page Save to Factwright can open.`,
+      ? `${hostOf(server)} sends its sign-in to another address, ${at.host}, so the extension didn’t open it.`
+      : `${hostOf(server)} didn’t give a sign-in page the extension can open.`,
   };
 }
 

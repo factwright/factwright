@@ -40,7 +40,7 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   /**
-   * Other copies of Save to Factwright that may sign in through the browser's own window, by
+   * Other copies of the browser extension that may sign in through the browser's own window, by
    * their extension ID, separated by commas: a Chrome extension's 32 letters, or a Firefox
    * add-on's ID. The stores' copies always may. Others sign in with a device code, as older
    * versions do (extension-sign-in.ts).

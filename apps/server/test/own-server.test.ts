@@ -77,7 +77,7 @@ describe('a server of your own', () => {
 
   it('names no terms or privacy policy', async () => {
     const response = await fetch(new URL('/api/sign-in-options', server.url));
-    // It knows the stores' copies of Save to Factwright, as Factwright's own server does.
+    // It knows the stores' copies of the extension, as Factwright's own server does.
     expect(await response.json()).toEqual({
       providers: ['github'],
       features: ['approve', 'loopback-sign-in'],

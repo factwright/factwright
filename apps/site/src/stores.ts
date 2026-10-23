@@ -1,7 +1,7 @@
-/** A browser's store that lists Save to Factwright, the browser extension. */
+/** A browser's store that lists the browser extension. */
 export type Store = 'chrome' | 'firefox';
 
-/** Save to Factwright's listing in a store. */
+/** The extension's listing in a store. */
 export interface Listing {
   /** Its address in the store. */
   url: string;
@@ -10,7 +10,7 @@ export interface Listing {
 }
 
 /**
- * Save to Factwright's listing in each store. The build writes them into the pages
+ * The extension's listing in each store. The build writes them into the pages
  * (vite.config.ts): a store that isn't live yet shows as coming soon, with no link, and so does
  * the site wherever it mentions the extension. Once a store approves it, set its `live` to true.
  * - Chrome Web Store: https://chromewebstore.google.com/detail/<its name>/<the item's ID>

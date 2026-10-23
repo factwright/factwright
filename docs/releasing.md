@@ -22,15 +22,15 @@ repository's Releases page.
   node-pty stops a terminal there through a helper started that way.
 - **Only the app.** The archive holds the built app, its package file and node-pty, without
   source maps: never the folder's sources, tests or settings. `check-package` checks it.
-- **The helper.** Save to Factwright saves to the app on the same computer through
+- **The helper.** The browser extension saves to the app on the same computer through
   `factwright-save`, a small program the browsers start, which `pnpm dist:mac` and `dist:win`
   build from `apps/desktop/helper` first. The installers put it in
   `Factwright.app/Contents/Resources/helper` on a Mac, one file for Apple silicon and Intel, and
   beside `Factwright.exe` on Windows. It's signed with the app, so the Gatekeeper and Windows signature
   checks below cover it. `check-package` checks it's there, on a Mac for both kinds, and each
   built app's tests check it answers with the app's version. The app registers it with the
-  browsers as it starts on Windows, and on a Mac when the user sets each browser up in its Save to
-  Factwright window; uninstalling on Windows takes that away again.
+  browsers as it starts on Windows, and on a Mac when the user sets each browser up in its Browser
+  extension window; uninstalling on Windows takes that away again.
 - **Signed.**
   - The Mac app is signed with Neatifai's Developer ID, then notarized and stapled by Apple, so
     Gatekeeper opens it.

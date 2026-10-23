@@ -178,7 +178,7 @@ Var pid
   FunctionEnd
 !endif
 
-; Save to Factwright saves to the app on this computer through its helper, factwright-save.exe,
+; The browser extension saves to the app on this computer through its helper, factwright-save.exe,
 ; which the app registers with each browser it finds as it starts: a key for each under HKCU,
 ; naming a manifest the app writes in its data folder, and a record of what it registered
 ; (src/main/extension/register.ts). Uninstalling takes it all away, so no browser is left starting
