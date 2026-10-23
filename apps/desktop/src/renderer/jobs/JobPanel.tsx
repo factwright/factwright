@@ -8,7 +8,6 @@ import {
   readApplySteps,
 } from '@factwright/core';
 import {
-  FIT_TIER_DISPLAY,
   FitBadge,
   IconButton,
   Markdown,
@@ -21,7 +20,6 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  Gauge,
   Maximize2,
   Minimize2,
   NotebookPen,
@@ -29,20 +27,19 @@ import {
 } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
-import { taskJob } from '../../shared/runs.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
-import { CoverLetterSection } from './CoverLetterSection.tsx';
-import { focusNext, PassedBox, SetAsideBox, SortButtons } from './Decide.tsx';
+import { focusNext, PassedBox, SetAsideBox } from './Decide.tsx';
+import { FitArea } from './FitArea.tsx';
 import { CallsSection, type InviteMe } from './JobCalls.tsx';
-import { FilesSection } from './JobFiles.tsx';
+import { SavedSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
-import { ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
-import { ArchiveFooter, HistorySection, ProgressSection, Reminder } from './JobTracking.tsx';
+import { ArchiveFooter, HistorySection, ProgressSection } from './JobTracking.tsx';
 import { PanelSection } from './PanelSection.tsx';
-import { ProjectsPageSection } from './ProjectsPageSection.tsx';
-import { BUSY, RunActions, type RunControls } from './RunActions.tsx';
+import { PeopleSection } from './PeopleSection.tsx';
+import { ResumesSection } from './ResumesSection.tsx';
+import type { RunControls } from './RunActions.tsx';
 import type { JobRow } from './rows.ts';
 import { UpNext } from './UpNext.tsx';
 import type { ReminderSwitch } from './useCallReminders.ts';
@@ -121,9 +118,10 @@ export interface JobPanelProps {
 }
 
 /**
- * Everything on file for the job picked in the list. At the top, what to do next and everything
- * Claude can do for it. Under them, in sections that open and close, what came from Claude, then
- * the user's own progress.
+ * Everything on file for the job picked in the list. At the top, what to do next, then how well
+ * the job fits. Under them, an area for each kind of thing, such as resumes and cover letters,
+ * where it shows or gets made, then the user's own progress. Areas with things in them open and
+ * close, and those with nothing yet say what goes there, with the button that makes it.
  */
 export function JobPanel({
   row,
@@ -179,9 +177,6 @@ export function JobPanel({
   const newest = job.search?.source ?? job.searches.at(-1)?.source;
   const found = newest && `${job.search?.again ? 'Found again in' : 'Found in'} ${newest}`;
   const meta = [job.location, pay, found].filter(Boolean).join(' · ');
-  const fit = progress.tier
-    ? `${FIT_TIER_DISPLAY[progress.tier].label}${progress.score !== null ? ` ${progress.score}` : ''}`
-    : 'Not scored yet';
   // A job nobody has put under a kind, and no search or fit check found as one, is under the first
   // kind until a fit check says. Picking that kind keeps it there.
   const decided = kindNamed(job.kind, kinds) ?? kindNamed(job.kindFound, kinds);
@@ -224,9 +219,7 @@ export function JobPanel({
 
   const upTop = (
     <div ref={top} className={styles.top}>
-      <UpNext row={row} api={api} run={run} onApplied={() => void move('applied')}>
-        {sorting && <SortButtons status={status} onMove={move} />}
-      </UpNext>
+      <UpNext row={row} api={api} run={run} sorting={sorting} onMove={(to) => void move(to)} />
       {status === 'later' && !progress.backFromLater && (
         <SetAsideBox
           job={job}
@@ -242,44 +235,17 @@ export function JobPanel({
           onUndo={undo}
         />
       )}
-      {run && <RunActions job={job} run={run} api={api} />}
       {job.apply && <ApplySection markdown={job.apply} />}
     </div>
   );
   const fromClaude: ReactNode[] = [
-    <FilesSection key={`files-${job.id}`} job={job} api={api} today={today} run={run} />,
-    <CoverLetterSection
-      key={`letter-${job.id}`}
-      job={job}
-      api={api}
-      today={today}
-      writing={
-        run?.task?.skill === 'cover-letter' &&
-        taskJob(run.task) === job.id &&
-        BUSY.includes(run.phase)
-      }
-    />,
-    <ProjectsPageSection
-      key={`projects-${job.id}`}
-      job={job}
-      api={api}
-      today={today}
-      making={
-        run?.task?.skill === 'projects-page' &&
-        taskJob(run.task) === job.id &&
-        BUSY.includes(run.phase)
-      }
-    />,
-    <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} />,
-    <PanelSection key="fit" id="fit" title="Fit" icon={<Gauge size={15} />} summary={fit}>
-      <ScoreSection job={job} today={today} />
-      <SentimentSection job={job} today={today} />
-      <SearchSection job={job} today={today} />
-    </PanelSection>,
+    <ResumesSection key={`files-${job.id}`} job={job} api={api} today={today} run={run} />,
+    <ApplicationSection key={`answers-${job.id}`} job={job} api={api} today={today} run={run} />,
+    <PeopleSection key={`people-${job.id}`} job={job} api={api} today={today} run={run} />,
     <AskSection key={`ask-${job.id}`} job={job} api={api} run={run} today={today} />,
+    <SavedSection key={`saved-${job.id}`} job={job} api={api} today={today} />,
   ];
   const yourProgress: ReactNode[] = [
-    <Reminder key={`reminder-${job.id}`} job={job} api={api} />,
     <ProgressSection
       key={`progress-${job.id}`}
       job={job}
@@ -414,6 +380,7 @@ export function JobPanel({
         </header>
 
         {upTop}
+        <FitArea job={job} progress={progress} run={run} today={today} />
         {/* The same two columns either way, side by side only when expanded, so expanding
             never loses what's being typed. */}
         <div className={styles.columns}>

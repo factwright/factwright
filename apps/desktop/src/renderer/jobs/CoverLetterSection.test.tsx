@@ -5,7 +5,9 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
-import { CoverLetterSection } from './CoverLetterSection.tsx';
+import type { RunTask } from '../../shared/runs.ts';
+import { CoverLetterPart } from './CoverLetterSection.tsx';
+import type { RunControls } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -54,11 +56,24 @@ function apiStub(letter: string | undefined = LETTER) {
   };
 }
 
-describe('CoverLetterSection', () => {
-  it('shows the letter, who it’s to, and its files', async () => {
-    const { container } = render(<CoverLetterSection job={job} api={apiStub()} today={TODAY} />);
+const controls = (task: RunTask | null = null): RunControls => ({
+  phase: task ? 'working' : 'idle',
+  task,
+  start: vi.fn(),
+  show: vi.fn(),
+});
+
+describe('CoverLetterPart', () => {
+  it('shows the letter, folded, who it’s to, and its files', async () => {
+    const { container } = render(
+      <CoverLetterPart job={job} api={apiStub()} today={TODAY} run={controls()} />,
+    );
     expect(screen.getByRole('heading', { name: 'Cover letter' })).toBeTruthy();
     const letter = await screen.findByRole('article', { name: 'Cover letter for Acme' });
+    const folded = letter.closest('details');
+    expect(folded?.open).toBe(false);
+    await userEvent.click(screen.getByText('Read the letter'));
+    expect(folded?.open).toBe(true);
     expect(within(letter).getByText('To Sam Lee · Engineering Manager · Acme')).toBeTruthy();
     expect(within(letter).getByText('Dear Sam Lee,')).toBeTruthy();
     // Its bold shows as bold, not as marks.
@@ -75,7 +90,7 @@ describe('CoverLetterSection', () => {
 
   it('copies the letter as plain text, for a form’s cover letter box', async () => {
     const api = apiStub();
-    render(<CoverLetterSection job={job} api={api} today={TODAY} />);
+    render(<CoverLetterPart job={job} api={api} today={TODAY} run={controls()} />);
     await screen.findByRole('article', { name: 'Cover letter for Acme' });
     await userEvent.click(screen.getByRole('button', { name: 'Copy text of the cover letter' }));
     expect(api.copyText).toHaveBeenCalledWith(
@@ -92,16 +107,25 @@ describe('CoverLetterSection', () => {
   });
 
   it('says the letter isn’t checked yet while Claude is writing it', async () => {
-    render(<CoverLetterSection job={job} api={apiStub()} today={TODAY} writing />);
+    const run = controls({ skill: 'cover-letter', jobId: job.id });
+    render(<CoverLetterPart job={job} api={apiStub()} today={TODAY} run={run} />);
     await screen.findByRole('article', { name: 'Cover letter for Acme' });
     expect(screen.getByText('Your Claude is still writing and checking this letter.')).toBeTruthy();
     expect(screen.getByText('Being written')).toBeTruthy();
+    expect(screen.getByText('Claude is on it')).toBeTruthy();
+  });
+
+  it('writes a new version', async () => {
+    const run = controls();
+    render(<CoverLetterPart job={job} api={apiStub()} today={TODAY} run={run} />);
+    await userEvent.click(screen.getByRole('button', { name: 'New version' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'cover-letter', jobId: job.id });
   });
 
   it('opens a file in the user’s own app, and says when it can’t', async () => {
     const api = apiStub();
     api.openFile.mockResolvedValueOnce({ ok: false, message: 'That file isn’t there anymore.' });
-    render(<CoverLetterSection job={job} api={api} today={TODAY} />);
+    render(<CoverLetterPart job={job} api={api} today={TODAY} run={controls()} />);
     await userEvent.click(
       screen.getByRole('button', { name: 'Open AlexRiveraCoverLetter_Acme.docx' }),
     );
@@ -109,24 +133,38 @@ describe('CoverLetterSection', () => {
     expect(screen.getByRole('alert').textContent).toBe('That file isn’t there anymore.');
   });
 
-  it('shows the files alone for a letter the user made, and nothing without a letter', async () => {
+  it('shows the files alone for a letter the user made, and the button to write one without', async () => {
     const own = { ...job, docKinds: [] };
-    render(<CoverLetterSection job={own} api={apiStub()} today={TODAY} />);
+    render(<CoverLetterPart job={own} api={apiStub()} today={TODAY} run={controls()} />);
     expect(screen.getByText('PDF and Word')).toBeTruthy();
     expect(screen.queryByRole('article')).toBeNull();
     expect(screen.queryByRole('button', { name: /Copy text/ })).toBeNull();
     cleanup();
     const none = { ...job, docKinds: [], letters: [] };
-    const { container } = render(<CoverLetterSection job={none} api={apiStub()} today={TODAY} />);
-    expect(container.textContent).toBe('');
+    const run = controls();
+    render(<CoverLetterPart job={none} api={apiStub()} today={TODAY} run={run} />);
+    expect(screen.getByText(/A letter for this job, from your facts/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Write a cover letter' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'cover-letter', jobId: job.id });
     cleanup();
-    // A letter still being written, which won't read yet, shows nothing until it does.
+    // A posting that asks for one says so.
+    const asked = { ...none, apply: '- Attach a cover letter.' };
+    render(<CoverLetterPart job={asked} api={apiStub()} today={TODAY} run={controls()} />);
+    expect(screen.getByText(/The posting asks for one/)).toBeTruthy();
+    cleanup();
+    // A letter still being written, which won't read yet, waits as the button that writes one.
     const writing = { ...job, letters: [] };
     const api = apiStub('{"greeting": "Dear');
-    const { container: half } = render(
-      <CoverLetterSection job={writing} api={api} today={TODAY} />,
+    render(
+      <CoverLetterPart
+        job={writing}
+        api={api}
+        today={TODAY}
+        run={controls({ skill: 'cover-letter', jobId: job.id })}
+      />,
     );
     await waitFor(() => expect(api.jobDocs).toHaveBeenCalled());
-    expect(half.textContent).toBe('');
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(screen.getByText('Claude is on it')).toBeTruthy();
   });
 });

@@ -191,22 +191,24 @@ test('X-rays a resume as applicant systems read it, its PDF and its Word file', 
 
 test('writes a cover letter, and shows it to read, copy, preview and open', async () => {
   const { app, window } = opened;
-  await jobPanel()
-    .getByRole('button', { name: /^Cover letter/ })
-    .click();
+  await jobPanel().getByRole('button', { name: 'Write a cover letter' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   // The bar says what Claude made, with Claude's work folded away under it, and opens it.
   await expect(claudePanel()).toContainText('Your cover letter for Acme Robotics is ready.');
   await expect(claudePanel().getByRole('button', { name: 'Show Claude’s work' })).toBeVisible();
   await claudePanel().getByRole('button', { name: 'Open it' }).click();
-  await expect(jobPanel().getByRole('region', { name: 'Cover letter' })).toBeInViewport();
+  await expect(
+    jobPanel().getByRole('region', { name: 'Resumes and cover letters' }),
+  ).toBeInViewport();
   // The app types only the skill and the job. A letter is writing, so it gets Opus at extra high.
   expect(await terminalText(window)).toContain(`/factwright:cover-letter job ${ACME_ID}`);
   await expect.poll(() => terminalStart(window)).toContain('opus · xhigh effort');
   expect(await terminalLines(window)).toContain('in the Classic template: 1 page');
   await closeRun();
 
-  const letter = jobPanel().getByRole('region', { name: 'Cover letter' });
+  const letter = jobPanel().getByRole('region', { name: 'Cover letter', exact: true });
+  // The letter reads folded, until it's opened.
+  await letter.getByText('Read the letter').click();
   await expect(
     letter.getByRole('article', { name: 'Cover letter for Acme Robotics' }),
   ).toContainText('I cut deploy time by ~40% at Tidewater');
@@ -252,7 +254,7 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
     letter.getByRole('button', { name: 'Open AlexRiveraCoverLetter10142026_Acme.docx' }),
   ).toBeVisible();
   // The resume is still the resume, and the letter is its own.
-  const files = jobPanel().getByRole('region', { name: 'Made for this job' });
+  const files = jobPanel().getByRole('region', { name: 'Resumes and cover letters' });
   await expect(files).toContainText('1 resume · 1 cover letter');
   expect(readdirSync(join(dataDir, 'workspace', ACME_FOLDER)).sort()).toEqual(
     expect.arrayContaining([
@@ -265,9 +267,14 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
 
 test('makes a Projects page, printed as cards in the resume’s template, to preview and open', async () => {
   const { window } = opened;
-  await jobPanel()
-    .getByRole('button', { name: /^Projects page/ })
-    .click();
+  // A Projects page is offered for a posting that asks for samples of the user's work.
+  const files = jobPanel().getByRole('region', { name: 'Resumes and cover letters' });
+  await expect(files.getByRole('button', { name: 'Make a Projects page' })).toHaveCount(0);
+  writeFileSync(
+    join(dataDir, 'workspace', ACME_FOLDER, 'apply.md'),
+    'Send links to your projects with the application.\n',
+  );
+  await files.getByRole('button', { name: 'Make a Projects page' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain(`/factwright:projects-page job ${ACME_ID}`);
   expect(await terminalLines(window)).toContain('in the Classic template, as cards: 1 page');
@@ -301,13 +308,15 @@ test('makes a Projects page, printed as cards in the resume’s template, to pre
     await loading.destroy();
   }
   // It's neither a resume nor a letter.
-  const files = jobPanel().getByRole('region', { name: 'Made for this job' });
   await expect(files).toContainText('1 resume · 1 cover letter · 1 Projects page');
 });
 
 test('asks for an application’s questions, then runs them in Claude’s panel', async () => {
   const { window } = opened;
-  await window.getByRole('button', { name: /^Application questions/ }).click();
+  await jobPanel()
+    .getByRole('region', { name: 'Application questions' })
+    .getByRole('button', { name: 'Answer the questions' })
+    .click();
   const dialog = window.getByRole('dialog', { name: 'Application questions' });
   await dialog.getByRole('textbox', { name: 'Question 1' }).fill('Why Acme?');
   await dialog.getByRole('button', { name: 'Answer with Claude' }).click();
@@ -325,7 +334,7 @@ test('asks for an application’s questions, then runs them in Claude’s panel'
 
 test('keeps what was actually sent for a question', async () => {
   const answers = jobPanel().locator('section', {
-    has: opened.window.getByRole('heading', { name: 'Application answers' }),
+    has: opened.window.getByRole('heading', { name: 'Application questions' }),
   });
   await answers.getByText('Why Acme?', { exact: true }).click();
   const box = answers.getByRole('textbox', { name: /What you sent/ });
@@ -767,7 +776,8 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   await pickView(/^All/);
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
   await jobPanel()
-    .getByRole('button', { name: /^Tailored resume/ })
+    .getByRole('region', { name: 'Resume', exact: true })
+    .getByRole('button', { name: 'New version' })
     .click();
   const panel = claudePanel();
   // The stand-in asks two questions in one round, which open in the app's dialog rather than the
@@ -902,9 +912,7 @@ test('suits Claude’s levels to a Pro plan, once Claude Code signs in on one', 
   // A fit check is one of the routine tasks, which start on Sonnet with Pro's levels.
   await pickView(/^All/);
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
-  await jobPanel()
-    .getByRole('button', { name: /^Fit check/ })
-    .click();
+  await jobPanel().getByRole('button', { name: 'Check again' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('sonnet · high effort');
   await closeRun();

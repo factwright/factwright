@@ -51,7 +51,7 @@ const item = (question: string) =>
 describe('ApplicationSection', () => {
   it('lists each question with where it stands: sent, suggested, or not answered', async () => {
     const { container } = render(<ApplicationSection job={job} api={apiStub()} today={TODAY} />);
-    expect(screen.getByRole('heading', { name: 'Application answers' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Application questions' })).toBeTruthy();
     await waitFor(() =>
       expect(
         within(item('Are you authorized to work in the US?')).getByText('Suggested'),
@@ -164,14 +164,18 @@ describe('ApplicationSection', () => {
     );
   });
 
-  it('shows nothing for a job with no questions or answers', () => {
-    const { container } = render(
+  it('says what goes here for a job with no questions or answers yet', () => {
+    render(
       <ApplicationSection
         job={{ ...job, questions: [], sent: [], docKinds: [] }}
         api={apiStub()}
         today={TODAY}
       />,
     );
-    expect(container.textContent).toBe('');
+    expect(screen.getByText(/Paste the application form’s questions/)).toBeTruthy();
+    // It waits for Claude Code to be ready.
+    expect(
+      (screen.getByRole('button', { name: 'Answer the questions' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

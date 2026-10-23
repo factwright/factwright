@@ -1,12 +1,14 @@
 import type { Job, JobFile } from '@factwright/core';
-import { LayoutGrid } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import type { RunTask } from '../../shared/runs.ts';
+import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
 import styles from './CoverLetter.module.css';
 import { FileRow } from './JobFiles.tsx';
 import panel from './JobPanel.module.css';
-import { PanelSection } from './PanelSection.tsx';
+import { Part, Placeholder } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
+import type { RunControls } from './RunActions.tsx';
 
 /** What a Projects page shows, as the panel lists it: its heading, shape and projects. */
 interface PageOutline {
@@ -52,19 +54,19 @@ export function readPageOutline(json: string | null | undefined): PageOutline | 
 
 /**
  * The job's Projects page, once Claude has made one: what's on it, and its files to preview, or
- * open and attach. It goes only where the user sends it.
+ * open and attach. It goes only where the user sends it. Before there's one, for a posting that
+ * asks for samples of the user's work, the button that makes it.
  */
-export function ProjectsPageSection({
+export function ProjectsPagePart({
   job,
   api,
   today,
-  making = false,
+  run,
 }: {
   job: Job;
   api: FactwrightApi;
   today: string;
-  /** Whether Claude is making this job's page now, so what shows isn't checked yet. */
-  making?: boolean;
+  run: RunControls | undefined;
 }) {
   const [outline, setOutline] = useState<PageOutline | null>(null);
   const [preview, setPreview] = useState<JobFile | null>(null);
@@ -86,7 +88,20 @@ export function ProjectsPageSection({
     };
   }, [api, job, written]);
 
-  if (!outline && job.projectPages.length === 0) return null;
+  const task: RunTask = { skill: 'projects-page', jobId: job.id };
+  // Whether Claude is making it now, so what shows isn't checked yet.
+  const making = isRunning(run, task);
+  if (!outline && job.projectPages.length === 0) {
+    return (
+      <Placeholder
+        title="Projects page"
+        action={<ClaudeButton run={run} task={task} label="Make a Projects page" adds />}
+      >
+        The posting asks for samples of your work. A Projects page shows your projects in depth, on
+        one page, to send with your application.
+      </Placeholder>
+    );
+  }
   const count = outline?.projects.length ?? 0;
   const summary = making
     ? 'Being made'
@@ -100,11 +115,10 @@ export function ProjectsPageSection({
   };
 
   return (
-    <PanelSection
-      id="projects"
+    <Part
       title="Projects page"
-      icon={<LayoutGrid size={15} />}
-      {...(summary && { summary })}
+      summary={summary}
+      actions={<ClaudeButton run={run} task={task} label="New version" />}
     >
       {making && (
         <p className={`${panel.quiet} ${styles.writing}`}>
@@ -139,6 +153,6 @@ export function ProjectsPageSection({
         </p>
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
-    </PanelSection>
+    </Part>
   );
 }

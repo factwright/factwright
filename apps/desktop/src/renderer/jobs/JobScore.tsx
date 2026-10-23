@@ -140,20 +140,13 @@ function Evidence({ part }: { part: ScorePart }) {
   );
 }
 
+/** Whether the job has a score to show, from a fit check or a job search. */
+export const isScored = (job: Job) => scoreModel(job) !== null;
+
 /** Why the job scored what it did, part by part, with the evidence behind the work. */
 export function ScoreSection({ job, today }: { job: Job; today: string }) {
   const model = scoreModel(job);
-  if (!model) {
-    return (
-      <section className={styles.part}>
-        <h4 className={styles.subheading}>Not scored yet</h4>
-        <p className={styles.quiet}>
-          A fit check scores this job against your fact bank, and looks up what people say about the
-          company. Ask your Claude to run one.
-        </p>
-      </section>
-    );
-  }
+  if (!model) return null;
   const lists = (
     [
       ['Why it fits', model.why],

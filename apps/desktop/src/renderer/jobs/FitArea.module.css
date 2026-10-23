@@ -1,0 +1,32 @@
+/* The pay, with its source, or the button that estimates it. */
+.pay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0 0 var(--fw-space-4);
+  font-size: var(--fw-text-sm);
+}
+
+.pay:last-child {
+  margin-bottom: 0;
+}
+
+.pay p {
+  margin: 0;
+}
+
+.source {
+  color: var(--fw-muted);
+}
+
+/* The score, then what people say and what the search noted: side by side once there's room. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 0 var(--fw-space-6);
+}
+
+.side:empty {
+  display: none;
+}

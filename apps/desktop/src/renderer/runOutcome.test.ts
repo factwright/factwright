@@ -59,7 +59,7 @@ describe('runOutcome', () => {
       })),
     ).toEqual({
       text: 'Your cover letter for Lumen Health is ready.',
-      place: { jobId: lumen.id, section: 'letter' },
+      place: { jobId: lumen.id, section: 'files' },
     });
     expect(
       outcome({ skill: 'projects-page', jobId: acme.id }, (job) => ({
@@ -68,7 +68,7 @@ describe('runOutcome', () => {
       })),
     ).toEqual({
       text: 'Your Projects page for Acme Robotics is ready.',
-      place: { jobId: acme.id, section: 'projects' },
+      place: { jobId: acme.id, section: 'files' },
     });
   });
 

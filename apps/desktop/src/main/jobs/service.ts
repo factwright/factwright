@@ -25,6 +25,7 @@ import {
   type PostingSaved,
   readAllCallDocs,
   readJobExtras,
+  readOutreach,
   readRecords,
   type SavedJob,
   savedPostingFile,
@@ -152,10 +153,13 @@ export class JobsService {
 
   /**
    * Claude's answers to the user's questions about a job, the job's screenshots, the posting
-   * the user saved, and Claude's prep sheets and thank-you notes for its calls.
+   * the user saved, Claude's prep sheets and thank-you notes for its calls, and the messages
+   * Claude drafted for people at the company.
    */
   extras(jobId: string): JobExtras {
-    return readJobExtras(diskWorkspace(this.deps.workspace), jobId);
+    const workspace = diskWorkspace(this.deps.workspace);
+    const outreach = readOutreach(workspace, this.found.get(jobId)?.outreach ?? []);
+    return { ...readJobExtras(workspace, jobId), outreach };
   }
 
   /**

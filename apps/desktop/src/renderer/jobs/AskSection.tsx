@@ -1,13 +1,13 @@
 import { type Ask, askAnswer, type Job, type JobShot, shortDate } from '@factwright/core';
 import { Button, Dialog, DialogActions, Markdown, Pill, TextArea } from '@factwright/ui';
-import { MessageCircleQuestionMark } from 'lucide-react';
+import { MessageCircleQuestionMark, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import { taskJob } from '../../shared/runs.ts';
 import styles from './AskSection.module.css';
 import panel from './JobPanel.module.css';
-import { PanelSection } from './PanelSection.tsx';
+import { PanelSection, Placeholder } from './PanelSection.tsx';
 import { BUSY, type RunControls } from './RunActions.tsx';
 import {
   type PickedShot,
@@ -304,8 +304,7 @@ function AskItem({
 
 /**
  * The user's own questions about a job, such as what to expect from a call, each with Claude's
- * answer, which stays here to come back to. They're asked from the row of Claude's skills at the
- * top of the panel, and the section shows once there's one.
+ * answer, which stays here to come back to, and the button to ask one.
  */
 export function AskSection({
   job,
@@ -319,6 +318,7 @@ export function AskSection({
   today: string;
 }) {
   const [extras, setExtras] = useState<JobExtras | null>(null);
+  const [asking, setAsking] = useState(false);
 
   // Claude saves its answers in the workspace, which changes the job list, so they follow it.
   useEffect(() => {
@@ -337,38 +337,71 @@ export function AskSection({
     mine && busy && (task && 'askId' in task ? task.askId === ask.id : !extras?.asked[ask.id]);
   const start = (askId: string) => run?.start({ skill: 'ask', jobId: job.id, askId });
   const asks = [...job.asks].reverse();
-  if (asks.length === 0) return null;
+  const empty = asks.length === 0;
   const waiting = asks.filter((ask) => !extras?.asked[ask.id]).length;
+  // While Claude answers one, another waits.
+  const askButton = (
+    <Button
+      size="sm"
+      icon={<Plus size={14} aria-hidden="true" />}
+      disabled={!run || busy}
+      onClick={() => setAsking(true)}
+    >
+      Ask a question
+    </Button>
+  );
 
   return (
     <PanelSection
       id="asks"
       title="Questions for Claude"
       icon={<MessageCircleQuestionMark size={15} />}
-      summary={[
-        asks.length === 1 ? '1 question' : `${asks.length} questions`,
-        extras && waiting > 0 && `${waiting} not answered yet`,
-      ]
-        .filter(Boolean)
-        .join(' · ')}
+      summary={
+        !empty &&
+        [
+          asks.length === 1 ? '1 question' : `${asks.length} questions`,
+          extras && waiting > 0 && `${waiting} not answered yet`,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      }
+      count={asks.length}
+      empty={empty}
+      actions={!empty && askButton}
     >
-      <ul className={styles.asks}>
-        {asks.map((ask, i) => (
-          <AskItem
-            key={ask.id}
-            job={job}
-            ask={ask}
-            newest={i === 0}
-            answer={extras?.asked[ask.id]}
-            shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
-            answering={answering(ask)}
-            canRun={Boolean(run) && !busy}
-            api={api}
-            onRun={() => start(ask.id)}
-            today={today}
-          />
-        ))}
-      </ul>
+      {empty && (
+        <Placeholder action={askButton}>
+          Anything about this job, such as what to expect from a call. Your Claude answers from
+          everything on file and the web, and the answer stays here.
+        </Placeholder>
+      )}
+      {asking && (
+        <AskDialog
+          job={job}
+          api={api}
+          onAsked={(askId) => start(askId)}
+          onClose={() => setAsking(false)}
+        />
+      )}
+      {!empty && (
+        <ul className={styles.asks}>
+          {asks.map((ask, i) => (
+            <AskItem
+              key={ask.id}
+              job={job}
+              ask={ask}
+              newest={i === 0}
+              answer={extras?.asked[ask.id]}
+              shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
+              answering={answering(ask)}
+              canRun={Boolean(run) && !busy}
+              api={api}
+              onRun={() => start(ask.id)}
+              today={today}
+            />
+          ))}
+        </ul>
+      )}
     </PanelSection>
   );
 }

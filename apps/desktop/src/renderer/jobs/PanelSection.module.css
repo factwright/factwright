@@ -61,6 +61,7 @@
 
 .chevron {
   flex: 0 0 auto;
+  width: 15px;
   margin-left: -3px;
   color: var(--fw-muted);
   transition: transform 120ms ease;
@@ -83,6 +84,20 @@
 
 .toggle:hover .title {
   color: var(--fw-accent-text);
+}
+
+/* How many things it holds, beside its title. */
+.count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  line-height: 20px;
+  text-align: center;
 }
 
 /* What's inside, in a few words, at the right. */
@@ -110,4 +125,83 @@
 
 .body > :first-child {
   margin-top: 0;
+}
+
+/* What goes in an area that holds nothing yet, with the button that makes it. */
+.placeholder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--fw-control-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.placeholder:last-child {
+  margin-bottom: 0;
+}
+
+.placeholderText {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.placeholderText p {
+  margin: 0;
+}
+
+.placeholderTitle {
+  margin: 0 0 2px;
+  color: var(--fw-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 650;
+}
+
+.placeholderAction {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* One kind of thing in an area, such as the resume, under a small heading of its own. */
+.part {
+  margin: 0 0 14px;
+}
+
+.part:last-child {
+  margin-bottom: 0;
+}
+
+.partHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--fw-space-3);
+  min-height: 32px;
+  margin-bottom: 6px;
+}
+
+.partTitle {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+  font-weight: 650;
+}
+
+.partSummary {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.partActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
 }

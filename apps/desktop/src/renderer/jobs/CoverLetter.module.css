@@ -1,3 +1,16 @@
+/* The letter to read, folded until it's opened. */
+.read > summary {
+  width: fit-content;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.read[open] > summary {
+  margin-bottom: var(--fw-space-2);
+}
+
 /* The letter as it reads, on the panel's sunken ground, as Claude's suggested answers are. */
 .letter {
   padding: 12px 14px;

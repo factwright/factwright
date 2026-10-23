@@ -76,6 +76,18 @@ describe('JobsService', () => {
     expect(jobs.docs('missing')).toBeNull();
   });
 
+  it('gives a job the messages Claude drafted for people at its company', () => {
+    write('outreach/2026-10-08-acme-robotics.md', '# Who to message at Acme\n\nDana Lee first.\n');
+    jobs.read();
+    expect(jobs.extras('acme-robotics--staff-engineer').outreach).toEqual([
+      {
+        path: 'outreach/2026-10-08-acme-robotics.md',
+        date: '2026-10-08',
+        text: '# Who to message at Acme\n\nDana Lee first.',
+      },
+    ]);
+  });
+
   it('saves edits with the user’s date, and sends the new list', () => {
     jobs.read();
     expect(jobs.updateJob('acme-robotics--staff-engineer', { status: 'applied' })).toEqual({

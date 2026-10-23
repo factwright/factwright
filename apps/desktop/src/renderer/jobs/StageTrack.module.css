@@ -30,6 +30,7 @@
 }
 
 .step.now::before,
+.step.upcoming::before,
 .step:has(+ .next)::before {
   background: var(--fw-border);
   opacity: 1;
@@ -54,6 +55,12 @@
 /* The step ahead: an empty dot. */
 .next .dot {
   border: 2px solid var(--fw-control-border);
+  background: var(--fw-surface);
+}
+
+/* Something ahead with a day, such as a call booked: an empty dot in its color. */
+.upcoming .dot {
+  border: 2px solid var(--step-tone);
   background: var(--fw-surface);
 }
 
@@ -103,4 +110,11 @@
 
 .undo {
   margin-right: 2px;
+}
+
+/* Done and Change, under a reminder. */
+.reminderActions {
+  display: flex;
+  gap: 2px;
+  margin: 2px 0 0 -8px;
 }

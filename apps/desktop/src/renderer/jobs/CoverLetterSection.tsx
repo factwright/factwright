@@ -1,4 +1,5 @@
 import {
+  asksForCoverLetter,
   type Job,
   type JobFile,
   type LetterText,
@@ -7,14 +8,17 @@ import {
   readLetterText,
 } from '@factwright/core';
 import { Button, MarkdownLine } from '@factwright/ui';
-import { Copy, Mail } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
+import type { RunTask } from '../../shared/runs.ts';
+import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
 import styles from './CoverLetter.module.css';
 import { FileRow } from './JobFiles.tsx';
 import panel from './JobPanel.module.css';
-import { PanelSection } from './PanelSection.tsx';
+import { Part, Placeholder } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
+import type { RunControls } from './RunActions.tsx';
 
 /** What a letter's files are, in a few words: "PDF and Word". */
 function formats(files: readonly JobFile[]): string | null {
@@ -25,19 +29,19 @@ function formats(files: readonly JobFile[]): string | null {
 
 /**
  * The job's cover letter, once Claude has written one: the letter to read, its text to copy into
- * an application form with a box for one, and its files to preview, or open and attach.
+ * an application form with a box for one, and its files to preview, or open and attach. Before
+ * there's one, the button that writes it.
  */
-export function CoverLetterSection({
+export function CoverLetterPart({
   job,
   api,
   today,
-  writing = false,
+  run,
 }: {
   job: Job;
   api: FactwrightApi;
   today: string;
-  /** Whether Claude is writing this job's letter now, so what shows isn't checked yet. */
-  writing?: boolean;
+  run: RunControls | undefined;
 }) {
   const [letter, setLetter] = useState<LetterText | null>(null);
   const [copied, setCopied] = useState(false);
@@ -60,8 +64,22 @@ export function CoverLetterSection({
     };
   }, [api, job, written]);
 
+  const task: RunTask = { skill: 'cover-letter', jobId: job.id };
+  // Whether Claude is writing it now, so what shows isn't checked yet.
+  const writing = isRunning(run, task);
   // Nothing to show yet: no letter that reads, such as one Claude is still writing, and no files.
-  if (!letter && job.letters.length === 0) return null;
+  if (!letter && job.letters.length === 0) {
+    return (
+      <Placeholder
+        title="Cover letter"
+        action={<ClaudeButton run={run} task={task} label="Write a cover letter" adds />}
+      >
+        {asksForCoverLetter(job)
+          ? 'The posting asks for one. Your Claude writes it for this job from your facts, in your voice.'
+          : 'A letter for this job, from your facts, in your voice, for when you want one.'}
+      </Placeholder>
+    );
+  }
   const summary = writing
     ? 'Being written'
     : letter
@@ -81,29 +99,36 @@ export function CoverLetterSection({
   };
 
   return (
-    <PanelSection id="letter" title="Cover letter" icon={<Mail size={15} />} summary={summary}>
+    <Part
+      title="Cover letter"
+      summary={summary}
+      actions={<ClaudeButton run={run} task={task} label="New version" />}
+    >
       {writing && (
         <p className={`${panel.quiet} ${styles.writing}`}>
           Your Claude is still writing and checking this letter.
         </p>
       )}
       {letter && (
-        <article className={styles.letter} aria-label={`Cover letter for ${job.company}`}>
-          {letter.recipient.length > 0 && (
-            <p className={styles.to}>To {letter.recipient.join(' · ')}</p>
-          )}
-          {letter.greeting && <p>{letter.greeting}</p>}
-          {letter.paragraphs.map((paragraph, i) => (
-            <p key={i}>
-              <MarkdownLine text={paragraph} />
+        <details className={styles.read}>
+          <summary>Read the letter</summary>
+          <article className={styles.letter} aria-label={`Cover letter for ${job.company}`}>
+            {letter.recipient.length > 0 && (
+              <p className={styles.to}>To {letter.recipient.join(' · ')}</p>
+            )}
+            {letter.greeting && <p>{letter.greeting}</p>}
+            {letter.paragraphs.map((paragraph, i) => (
+              <p key={i}>
+                <MarkdownLine text={paragraph} />
+              </p>
+            ))}
+            <p className={styles.sign}>
+              {letter.closing}
+              {letter.closing && letter.signature && <br />}
+              {letter.signature}
             </p>
-          ))}
-          <p className={styles.sign}>
-            {letter.closing}
-            {letter.closing && letter.signature && <br />}
-            {letter.signature}
-          </p>
-        </article>
+          </article>
+        </details>
       )}
       {letter && (
         <div className={styles.copy}>
@@ -140,6 +165,6 @@ export function CoverLetterSection({
         </p>
       )}
       {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
-    </PanelSection>
+    </Part>
   );
 }

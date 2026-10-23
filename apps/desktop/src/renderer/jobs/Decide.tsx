@@ -49,39 +49,6 @@ export function focusNext(within: HTMLElement | null): boolean {
   return false;
 }
 
-/**
- * A New job's quick choices, and a job's in To review: where it goes. Each is one click, and the
- * status menu has the rest. A fit check, when there's none yet, is the step above them.
- */
-export function SortButtons({
-  status,
-  onMove,
-}: {
-  /** Where the job is now, which isn't offered. */
-  status: JobStatus;
-  onMove: (status: JobStatus) => void;
-}) {
-  return (
-    <fieldset className={styles.sort}>
-      <legend className={styles.legend}>Sort this job</legend>
-      <span className={styles.sortLabel} aria-hidden="true">
-        Sort it
-      </span>
-      {SORT_MOVES.filter((move) => move.status !== status || status === 'later').map((move, i) => (
-        <Button
-          key={move.status}
-          size="sm"
-          onClick={() => onMove(move.status)}
-          // Next after the fit check, which can't take focus while Claude is busy.
-          {...(i === 0 && FOCUS_NEXT)}
-        >
-          {move.label}
-        </Button>
-      ))}
-    </fieldset>
-  );
-}
-
 /** The days a job set aside can come back on, as a click each, from today. */
 export function BackInChoices({
   today,

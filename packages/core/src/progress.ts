@@ -129,19 +129,29 @@ export function callPeople(people: readonly CallPerson[]): string {
 export type AttentionLevel = 'urgent' | 'action' | 'info';
 
 /**
- * What the user can do about a step in a click: mark their own reminder done, say how a call
- * went, prep for a call, have Claude check the fit, tailor a resume, write a cover letter or make
- * a Projects page, or mark the job applied. Steps like waiting to hear back have nothing to do.
+ * What the user can do about a step in a click, whatever the job's stage: mark their own reminder
+ * done; have Claude check the fit, tailor a resume, write a cover letter or make a Projects page;
+ * decide to apply, or pass; mark the job applied; add the call once they hear back, or find people
+ * to follow up with, or mark that no reply came; prep for a call, say how it went, and send thank-
+ * you notes after it; and accept an offer, or decline it.
  */
 export type StepAction =
   | { kind: 'reminder' }
-  | { kind: 'debrief'; callId: string }
-  | { kind: 'prep'; callId: string }
   | { kind: 'fit-check' }
+  | { kind: 'to-apply' }
+  | { kind: 'pass' }
   | { kind: 'resume' }
   | { kind: 'letter' }
   | { kind: 'projects' }
-  | { kind: 'apply' };
+  | { kind: 'apply' }
+  | { kind: 'add-call' }
+  | { kind: 'outreach' }
+  | { kind: 'no-reply' }
+  | { kind: 'prep'; callId: string }
+  | { kind: 'practice'; callId: string }
+  | { kind: 'debrief'; callId: string }
+  | { kind: 'thanks'; callId: string }
+  | { kind: 'offer' };
 
 export interface Attention {
   level: AttentionLevel;
@@ -215,6 +225,9 @@ const HIDDEN_EMPLOYER =
   /staffing|recruit|talent|confidential|unnamed|undisclosed|stealth|\bclient\b|executive search|search partners/i;
 const JOB_BOARD =
   /ladders|ziprecruiter|dice\.com|indeed\.|builtin|glassdoor|monster\.|careerbuilder|simplyhired|jobot|lensa|talent\.com|jooble|hired\.com/i;
+
+/** How many days after a call it's still worth sending thank-you notes for it. */
+const THANKS_DAYS = 3;
 
 /** Statuses that count as having applied, even though the job didn't get further. */
 const ENDED_AFTER_APPLYING: readonly JobStatus[] = ['rejected', 'ghosted', 'withdrawn'];
@@ -347,28 +360,43 @@ function attentionFor(
         action: { kind: 'prep', callId: nextCall.id },
       };
     }
+    // Prepped, a mock interview is what's left to get ready.
     return {
       level: 'info',
       text: `${CALL_KIND_LABELS[nextCall.kind]} ${when}`,
-      ...(!prepped && { action: { kind: 'prep', callId: nextCall.id } }),
+      action: { kind: prepped ? 'practice' : 'prep', callId: nextCall.id },
     };
   }
   const daysSince = (date: string | null) => (date ? daysBetween(date, today) : null);
   if (status === 'applied') {
     const days = daysSince(job.statusOn ?? job.appliedOn);
     if (days !== null && days >= 30) {
-      return { level: 'urgent', text: `No reply in ${days} days. Mark it “No reply”?` };
+      return {
+        level: 'urgent',
+        text: `No reply in ${days} days. Mark it “No reply”?`,
+        action: { kind: 'no-reply' },
+      };
     }
     if (days !== null && days >= 10) {
-      return { level: 'action', text: `Applied ${days} days ago. Follow up?` };
+      return {
+        level: 'action',
+        text: `Applied ${days} days ago. Follow up?`,
+        action: { kind: 'outreach' },
+      };
     }
   }
   if (status === 'screen' || status === 'interview') {
     const days = daysSince(job.statusOn);
-    if (days !== null && days >= 7) return { level: 'action', text: `No update in ${days} days` };
+    if (days !== null && days >= 7) {
+      return { level: 'action', text: `No update in ${days} days`, action: { kind: 'add-call' } };
+    }
   }
   if (status === 'later' && progress.backFromLater) {
-    return { level: 'action', text: 'Back from Later. Apply or pass?' };
+    return {
+      level: 'action',
+      text: 'Back from Later. Apply or pass?',
+      action: { kind: 'to-apply' },
+    };
   }
   if ((status === 'review' || status === 'apply') && job.files.length > 0) {
     const days = daysSince(progress.lastActivity);
@@ -377,7 +405,7 @@ function attentionFor(
       return {
         level: 'info',
         text: `Resume ready for ${days} days. ${ask}`,
-        ...(status === 'apply' && { action: { kind: 'apply' } }),
+        action: { kind: status === 'apply' ? 'apply' : 'to-apply' },
       };
     }
   }
@@ -466,18 +494,36 @@ export function looksHidden(job: Pick<Job, 'company' | 'role' | 'link'>): boolea
  */
 export function nextStep(job: Job, progress: JobProgress, today: string): Attention | null {
   if (progress.attention) return progress.attention;
-  if (job.nextAction) {
-    const by = job.nextOn ? ` · ${dayFrom(job.nextOn, today)}` : '';
-    return { level: 'info', text: `${job.nextAction}${by}`, action: { kind: 'reminder' } };
+  // A reminder waits in the job's progress until its day comes, when it needs the user. One from
+  // before reminders had a day is the next step until it's done.
+  if (job.nextAction && !job.nextOn) {
+    return { level: 'info', text: job.nextAction, action: { kind: 'reminder' } };
+  }
+  // A call just had, and said how it went, gets thank-you notes, before what's next.
+  const thanked = (callId: string) =>
+    job.callDocs.some((doc) => doc.callId === callId && doc.kind === 'thanks');
+  const had = job.calls.findLast(
+    (call) =>
+      call.state === 'done' &&
+      call.onDate <= today &&
+      daysBetween(call.onDate, today) <= THANKS_DAYS &&
+      !thanked(call.id),
+  );
+  if (had && !CLOSED_STATUSES.includes(progress.status)) {
+    return {
+      level: 'info',
+      text: `Send thank-you notes for the ${CALL_KIND_LABELS[had.kind].toLowerCase()}`,
+      action: { kind: 'thanks', callId: had.id },
+    };
   }
   if (progress.nextCall) {
     const call = progress.nextCall;
-    // A call can have its prep sheet any time before it.
+    // A call can have its prep sheet any time before it, then a mock interview.
     const prepped = job.callDocs.some((doc) => doc.callId === call.id && doc.kind === 'prep');
     return {
       level: 'info',
       text: `${CALL_KIND_LABELS[call.kind]} ${callWhen(call, today)}`,
-      ...(!prepped && { action: { kind: 'prep', callId: call.id } }),
+      action: { kind: prepped ? 'practice' : 'prep', callId: call.id },
     };
   }
   const step = (text: string, action?: StepAction): Attention => ({
@@ -494,9 +540,11 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
       return check();
     case 'review':
       if (!job.role) return null;
-      if (job.files.length > 0) return step('Resume ready. Apply or pass?');
+      if (job.files.length > 0) return step('Resume ready. Apply or pass?', { kind: 'to-apply' });
       if (!job.fit) return check();
-      return step(progress.tier === 'skip' ? 'Fit check says skip. Pass?' : 'Apply or pass?');
+      return progress.tier === 'skip'
+        ? step('Fit check says skip. Pass?', { kind: 'pass' })
+        : step('Apply or pass?', { kind: 'to-apply' });
     case 'apply': {
       // A posting that asks for a cover letter gets one before the job's ready, and one that asks
       // for samples of the user's work, a Projects page.
@@ -514,17 +562,19 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
     }
     case 'later':
       return job.backOn && job.backOn > today ? step(`Back ${dayFrom(job.backOn, today)}`) : null;
+    // Waiting to hear back, the next thing is the call that comes of it.
     case 'applied': {
-      if (!job.appliedOn) return step('Waiting to hear back');
+      const call = { kind: 'add-call' } as const;
+      if (!job.appliedOn) return step('Waiting to hear back', call);
       const days = daysBetween(job.appliedOn, today);
-      if (days <= 0) return step('Applied today');
-      return step(days === 1 ? 'Applied yesterday' : `Applied ${days} days ago`);
+      if (days <= 0) return step('Applied today', call);
+      return step(days === 1 ? 'Applied yesterday' : `Applied ${days} days ago`, call);
     }
     case 'screen':
     case 'interview':
-      return step('Waiting to hear back');
+      return step('Waiting to hear back', { kind: 'add-call' });
     case 'offer':
-      return step('Decide on the offer');
+      return step('Decide on the offer', { kind: 'offer' });
     default:
       return null;
   }

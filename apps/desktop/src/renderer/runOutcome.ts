@@ -135,11 +135,11 @@ export function runOutcome(
         : null;
     case 'cover-letter':
       return gained(now.letters, was.letters)
-        ? { text: `Your cover letter for ${company} is ready.`, place: at('letter') }
+        ? { text: `Your cover letter for ${company} is ready.`, place: at('files') }
         : null;
     case 'projects-page':
       return gained(now.projectPages, was.projectPages)
-        ? { text: `Your Projects page for ${company} is ready.`, place: at('projects') }
+        ? { text: `Your Projects page for ${company} is ready.`, place: at('files') }
         : null;
     case 'fit-check': {
       if (now.fit === was.fit || !job.fit) return null;
@@ -156,12 +156,12 @@ export function runOutcome(
       return now.pay !== was.pay && job.pay
         ? {
             text: `The salary check for ${company} is done: ${payLabel(job.pay) ?? job.pay.text}.`,
-            place: at(null),
+            place: at('fit'),
           }
         : null;
     case 'who-to-message':
       return gained(now.outreach, was.outreach)
-        ? { text: `Messages for people at ${company} are drafted.`, place: at(null) }
+        ? { text: `Messages for people at ${company} are drafted.`, place: at('people') }
         : null;
     case 'answer-questions':
       return gained(now.docKinds, was.docKinds) || wrote(steps, 'answers.md')
@@ -176,7 +176,7 @@ export function runOutcome(
       const callId = taskCall(task);
       if (!callId) {
         return gained(now.docKinds, was.docKinds) || wrote(steps, 'prep.md')
-          ? { text: `Your interview prep for ${company} is ready.`, place: at('files') }
+          ? { text: `Your interview prep for ${company} is ready.`, place: at('calls') }
           : null;
       }
       const kind = task.skill === THANKS_SKILL ? 'thanks' : 'prep';

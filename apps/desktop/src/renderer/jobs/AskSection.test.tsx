@@ -30,11 +30,14 @@ const job = sampleJob({ id: 'acme--staff-engineer', company: 'Acme', role: 'Staf
 const ASK = { id: '2026-10-12-what-should-i-expect', question: 'What should I expect?', on: TODAY };
 
 function apiStub(
-  extras: Omit<JobExtras, 'posting' | 'calls'> & Partial<JobExtras> = { asked: {}, shots: [] },
+  extras: Omit<JobExtras, 'posting' | 'calls' | 'outreach'> & Partial<JobExtras> = {
+    asked: {},
+    shots: [],
+  },
 ) {
   return {
     platform: 'darwin',
-    jobExtras: vi.fn(async () => ({ posting: null, calls: {}, ...extras })),
+    jobExtras: vi.fn(async () => ({ posting: null, calls: {}, outreach: [], ...extras })),
     askAboutJob: vi.fn(async () => ({ ok: true as const, askId: '2026-10-12-whats-their-stack' })),
     removeAsk: vi.fn(async () => ({ ok: true }) as const),
     addShot: vi.fn(async () => ({ ok: true as const, path: 'screenshots/x/ask-1.png' })),
@@ -124,11 +127,37 @@ describe('AskDialog', () => {
 });
 
 describe('AskSection', () => {
-  it('shows nothing until there’s a question, then the user’s questions', async () => {
-    const { container } = render(
-      <AskSection job={job} api={apiStub()} run={controls()} today={TODAY} />,
+  it('says what to ask until there’s a question, then the user’s questions', async () => {
+    const run = controls();
+    const api = apiStub();
+    render(<AskSection job={job} api={api} run={run} today={TODAY} />);
+    expect(screen.getByText(/such as what to expect from a call/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ask about Acme' });
+    await userEvent.type(
+      within(dialog).getByRole('textbox', { name: 'Your question' }),
+      'What’s their stack?',
     );
-    expect(container.textContent).toBe('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ask Claude' }));
+    expect(api.askAboutJob).toHaveBeenCalledWith(job.id, 'What’s their stack?');
+    expect(run.start).toHaveBeenCalledWith({
+      skill: 'ask',
+      jobId: job.id,
+      askId: '2026-10-12-whats-their-stack',
+    });
+    cleanup();
+    // While Claude answers one, another waits.
+    render(
+      <AskSection
+        job={job}
+        api={apiStub()}
+        run={controls('working', { skill: 'ask', jobId: job.id, askId: ASK.id })}
+        today={TODAY}
+      />,
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Ask a question' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     cleanup();
     const shown = render(
       <AskSection job={{ ...job, asks: [ASK] }} api={apiStub()} run={controls()} today={TODAY} />,

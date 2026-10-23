@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { type Job, localDate } from '@factwright/core';
+import { addDays, type Job, localDate } from '@factwright/core';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -38,7 +38,13 @@ function panel(job: Job, result: EditResult = { ok: true }) {
     updateNote: answer,
     deleteNote: answer,
     jobDocs: vi.fn(async () => null),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
+    jobExtras: vi.fn(async () => ({
+      asked: {},
+      shots: [],
+      posting: null,
+      calls: {},
+      outreach: [],
+    })),
     openFile: answer,
   } as unknown as FactwrightApi;
   const shown = (each: Job) => (
@@ -51,26 +57,58 @@ function panel(job: Job, result: EditResult = { ok: true }) {
 }
 
 describe('the reminder', () => {
-  it('saves the reminder when the box loses focus, and the date as soon as it’s picked', async () => {
-    const { api } = panel(byCompany('Acme Robotics'));
-    const step = screen.getByRole('textbox', { name: 'Reminder' });
-    await userEvent.type(step, 'Email the recruiter{Enter}');
-    expect(api.updateJob).toHaveBeenCalledWith('acme-robotics--staff-engineer-developer-tools', {
+  const ACME = 'acme-robotics--staff-engineer-developer-tools';
+
+  it('adds a reminder for tomorrow, or the day picked, and shows it ahead in Progress', async () => {
+    const job = byCompany('Acme Robotics');
+    const { api, update } = panel(job);
+    await userEvent.click(screen.getByRole('button', { name: 'Add a reminder' }));
+    const form = screen.getByRole('form', { name: 'Add a reminder' });
+    const what = within(form).getByRole('textbox', { name: 'What to do' });
+    expect(document.activeElement).toBe(what);
+    expect((within(form).getByLabelText('When') as HTMLInputElement).value).toBe(addDays(TODAY, 1));
+    const save = within(form).getByRole('button', { name: 'Save reminder' });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(what, 'Email the recruiter');
+    await userEvent.click(save);
+    expect(api.updateJob).toHaveBeenCalledWith(ACME, {
       nextAction: 'Email the recruiter',
+      nextOn: addDays(TODAY, 1),
     });
-    const date = screen.getByLabelText('Reminder date');
-    await userEvent.type(date, '2026-10-20');
-    expect(api.updateJob).toHaveBeenLastCalledWith(
-      'acme-robotics--staff-engineer-developer-tools',
-      { nextOn: '2026-10-20' },
-    );
+    expect(screen.queryByRole('form', { name: 'Add a reminder' })).toBeNull();
+    update({ ...job, nextAction: 'Email the recruiter', nextOn: addDays(TODAY, 1) });
+    const track = screen.getByRole('list', { name: 'Where it’s been, and what’s ahead' });
+    expect(within(track).getByText('Email the recruiter')).toBeTruthy();
+    expect(within(track).getByRole('img', { name: 'Coming up' })).toBeTruthy();
+    // One at a time: it's changed from here now.
+    expect(screen.queryByRole('button', { name: 'Add a reminder' })).toBeNull();
   });
 
-  it('doesn’t save when nothing changed', async () => {
-    const { api } = panel(byCompany('Acme Robotics'));
-    await userEvent.click(screen.getByRole('textbox', { name: 'Reminder' }));
-    await userEvent.tab();
-    expect(api.updateJob).not.toHaveBeenCalled();
+  it('changes the reminder, or clears it once it’s done', async () => {
+    const job = { ...byCompany('Acme Robotics'), nextAction: 'Email Sam', nextOn: '2026-12-01' };
+    const { api } = panel(job);
+    await userEvent.click(screen.getByRole('button', { name: 'Change the reminder' }));
+    const form = screen.getByRole('form', { name: 'Change the reminder' });
+    const what = within(form).getByRole('textbox', { name: 'What to do' });
+    expect((what as HTMLInputElement).value).toBe('Email Sam');
+    await userEvent.type(what, ' again');
+    fireEvent.change(within(form).getByLabelText('When'), { target: { value: '2026-12-03' } });
+    await userEvent.click(within(form).getByRole('button', { name: 'Save reminder' }));
+    expect(api.updateJob).toHaveBeenCalledWith(ACME, {
+      nextAction: 'Email Sam again',
+      nextOn: '2026-12-03',
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Done: clear the reminder' }));
+    expect(api.updateJob).toHaveBeenLastCalledWith(ACME, { nextAction: null, nextOn: null });
+  });
+
+  it('keeps the form open and says why when it can’t save', async () => {
+    panel(byCompany('Acme Robotics'), { ok: false, message: 'That job isn’t in your tracker.' });
+    await userEvent.click(screen.getByRole('button', { name: 'Add a reminder' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'What to do' }), 'Email Sam');
+    await userEvent.click(screen.getByRole('button', { name: 'Save reminder' }));
+    expect(screen.getByRole('form', { name: 'Add a reminder' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('That job isn’t in your tracker.');
   });
 });
 
@@ -184,12 +222,14 @@ describe('notes', () => {
 
 describe('progress', () => {
   const steps = () =>
-    within(screen.getByRole('list', { name: 'Where it’s been' }))
+    within(screen.getByRole('list', { name: 'Where it’s been, and what’s ahead' }))
       .getAllByRole('listitem')
       .map((step) => step.querySelector('[class*="label"]')?.firstChild?.textContent);
 
   it('shows each step the job took, where it is now, and the step ahead', () => {
-    panel(byCompany('Northwind Labs'));
+    const northwind = byCompany('Northwind Labs');
+    // With no call booked, the step after.
+    panel({ ...northwind, calls: northwind.calls.filter((call) => call.onDate <= TODAY) });
     expect(steps()).toEqual([
       'Found',
       'Fit check',
@@ -201,6 +241,24 @@ describe('progress', () => {
     ]);
     expect(screen.getAllByRole('img', { name: 'Where it is now' })).toHaveLength(1);
     expect(screen.getByRole('img', { name: 'Not yet' })).toBeTruthy();
+  });
+
+  it('shows the calls booked and the reminder ahead, by their days, in place of the step after', () => {
+    const northwind = byCompany('Northwind Labs');
+    panel({ ...northwind, nextAction: 'Send the cost numbers', nextOn: addDays(TODAY, 1) });
+    expect(steps()).toEqual([
+      'Found',
+      'Fit check',
+      'Resume built',
+      'Applied',
+      'Screen',
+      'Interview',
+      'Send the cost numbers',
+      'Panel interview',
+    ]);
+    expect(screen.getAllByRole('img', { name: 'Coming up' })).toHaveLength(2);
+    expect(screen.queryByRole('img', { name: 'Not yet' })).toBeNull();
+    expect(screen.getByText(/^\w+ at 2:00 PM with Dana Lee \(Hiring manager\)/)).toBeTruthy();
   });
 
   it('ends a closed job with how it ended', () => {
@@ -221,7 +279,7 @@ describe('progress', () => {
     // A job set aside says when it comes back.
     panel(byCompany('Ridgeline Analytics'));
     expect(steps()).toEqual(['Found', 'Later', 'Applied']);
-    const track = screen.getByRole('list', { name: 'Where it’s been' });
+    const track = screen.getByRole('list', { name: 'Where it’s been, and what’s ahead' });
     expect(within(track).getByText(/^Back \w{3} \d+$/)).toBeTruthy();
     cleanup();
     // Claude's work alone puts a job in To review, which isn't a step the user took.
@@ -399,6 +457,7 @@ describe('accessibility', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change the panel interview' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete the recruiter screen' }));
     await userEvent.click(screen.getByRole('button', { name: /^History/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add a reminder' }));
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
   });

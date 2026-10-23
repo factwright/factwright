@@ -1,4 +1,5 @@
 import {
+  addDays,
   CALL_KIND_LABELS,
   CALL_OUTCOME_LABELS,
   type Call,
@@ -9,9 +10,9 @@ import {
   type JobProgress,
   shortDate,
 } from '@factwright/core';
-import { Button, Input, JOB_STATUS_DISPLAY } from '@factwright/ui';
-import { History, Route } from 'lucide-react';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { Button, Field, Input, JOB_STATUS_DISPLAY } from '@factwright/ui';
+import { History, Plus, Route } from 'lucide-react';
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import panel from './JobPanel.module.css';
@@ -39,53 +40,77 @@ export function Problem({ message }: { message: string | null }) {
 }
 
 /**
- * Something the user means to do for the job, and by when, such as following up with someone. It's
- * the job's next step until it's done, and a date puts it in "Needs you" once it's due.
+ * The job's reminder, to add or change: something the user means to do, such as following up
+ * with someone, and the day to do it, tomorrow until they pick one. It shows ahead in Progress,
+ * and in Needs you once it's due.
  */
-export function Reminder({ job, api }: { job: Job; api: FactwrightApi }) {
+function ReminderForm({
+  job,
+  api,
+  today,
+  onDone,
+}: {
+  job: Job;
+  api: FactwrightApi;
+  today: string;
+  onDone: () => void;
+}) {
   const [text, setText] = useState(job.nextAction ?? '');
+  const [on, setOn] = useState(job.nextOn ?? addDays(today, 1));
+  const [saving, setSaving] = useState(false);
   const { problem, run } = useEdit();
-  const id = useId();
-  const hintId = useId();
-  useEffect(() => setText(job.nextAction ?? ''), [job.nextAction]);
-  const saveText = () => {
-    if (text.trim() !== (job.nextAction ?? ''))
-      void run(api.updateJob(job.id, { nextAction: text }));
+  const titleId = useId();
+  const first = useRef<HTMLInputElement>(null);
+  // The form takes the keyboard's focus as it opens, on what to do.
+  useEffect(() => first.current?.focus(), []);
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    const saved = await run(api.updateJob(job.id, { nextAction: text, nextOn: on }));
+    setSaving(false);
+    if (saved) onDone();
   };
   return (
-    <section className={styles.reminder}>
-      <label htmlFor={id} className={styles.boxTitle}>
-        Reminder
-      </label>
-      <div className={styles.reminderRow}>
-        <Input
-          id={id}
-          aria-describedby={hintId}
-          value={text}
-          maxLength={LIMITS.nextAction}
-          placeholder="Something to do, such as follow up with Sam"
-          onChange={(event) => setText(event.target.value)}
-          onBlur={saveText}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur();
-          }}
-        />
-        <Input
-          className={styles.reminderDate}
-          type="date"
-          aria-label="Reminder date"
-          value={job.nextOn ?? ''}
-          onChange={(event) =>
-            void run(api.updateJob(job.id, { nextOn: event.target.value || null }))
-          }
-        />
-      </div>
-      <p id={hintId} className={styles.hint}>
-        It’s the job’s next step until you clear it. With a date, it shows in Needs you when it’s
-        due.
+    <form className={styles.reminderForm} aria-labelledby={titleId} onSubmit={save}>
+      <p id={titleId} className={styles.boxTitle}>
+        {job.nextAction ? 'Change the reminder' : 'Add a reminder'}
       </p>
+      <div className={styles.reminderRow}>
+        <Field label="What to do">
+          {(control) => (
+            <Input
+              {...control}
+              ref={first}
+              required
+              maxLength={LIMITS.nextAction}
+              value={text}
+              placeholder="Such as follow up with Sam"
+              onChange={(event) => setText(event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label="When" className={styles.reminderDate}>
+          {(control) => (
+            <Input
+              {...control}
+              type="date"
+              required
+              value={on}
+              onChange={(event) => setOn(event.target.value)}
+            />
+          )}
+        </Field>
+      </div>
       <Problem message={problem} />
-    </section>
+      <div className={styles.formActions}>
+        <Button size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button size="sm" variant="primary" type="submit" disabled={saving || !text.trim()}>
+          Save reminder
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -100,8 +125,9 @@ export function progressSummary(job: Job, progress: JobProgress, today: string):
 }
 
 /**
- * How far the job has come, step by step with each date. Its calls and interviews have a section
- * of their own, and adding one moves the job along.
+ * How far the job has come, step by step with each date, then what's ahead: the calls booked and
+ * the user's reminder, which they add here. Its calls and interviews have a section of their own,
+ * and adding one moves the job along.
  */
 export function ProgressSection({
   job,
@@ -115,14 +141,59 @@ export function ProgressSection({
   today: string;
 }) {
   const { problem, run } = useEdit();
+  const [editing, setEditing] = useState(false);
+  // Once the form closes, the keyboard's focus goes to Add a reminder, or to the reminder's
+  // Change once there is one.
+  const add = useRef<HTMLButtonElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (editing || !refocus.current) return;
+    refocus.current = false;
+    (add.current ?? body.current?.querySelector<HTMLElement>('[data-reminder-change]'))?.focus();
+  }, [editing]);
   return (
     <PanelSection
       id="progress"
       title="Progress"
       icon={<Route size={15} />}
       summary={progressSummary(job, progress, today)}
+      actions={
+        !editing &&
+        !job.nextAction && (
+          <Button
+            ref={add}
+            size="sm"
+            icon={<Plus size={14} aria-hidden="true" />}
+            onClick={() => setEditing(true)}
+          >
+            Add a reminder
+          </Button>
+        )
+      }
     >
-      <StageTrack job={job} progress={progress} api={api} today={today} run={run} />
+      <div ref={body}>
+        <StageTrack
+          job={job}
+          progress={progress}
+          api={api}
+          today={today}
+          run={run}
+          onChangeReminder={() => setEditing(true)}
+        />
+        {editing && (
+          <ReminderForm
+            key={job.id}
+            job={job}
+            api={api}
+            today={today}
+            onDone={() => {
+              refocus.current = true;
+              setEditing(false);
+            }}
+          />
+        )}
+      </div>
       <Problem message={problem} />
     </PanelSection>
   );

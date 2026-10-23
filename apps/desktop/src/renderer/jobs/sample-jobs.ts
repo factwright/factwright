@@ -9,6 +9,7 @@ import {
   type JobStatus,
   localDate,
   type Note,
+  type OutreachDraft,
   type ScorePart,
   type SearchDetail,
   type Sentiment,
@@ -268,6 +269,7 @@ export function sampleJobs(): Job[] {
       status: 'interview',
       statusOn: day(-3),
       appliedOn: day(-16),
+      outreach: [`outreach/${day(-14)}-northwind-labs.md`],
       statusLog: changes('northwind', [
         ['applied', -16],
         ['screen', -10],
@@ -883,4 +885,38 @@ export function sampleCallDocs(job: Job): Record<string, Partial<Record<CallDocK
     docs[doc.callId] = { ...docs[doc.callId], [doc.kind]: text };
   }
   return docs;
+}
+
+/** People worth messaging at a sample job's company, as who-to-message saves them. */
+const PEOPLE = (company: string) =>
+  [
+    `# Who to message at ${company}`,
+    '',
+    'Message Dana first: she owns this hire. Then Sam, once you’ve applied.',
+    '',
+    '## 1. Dana Lee, Engineering Manager, Platform',
+    '',
+    '- **Why:** runs the team this role joins, and posted about the opening.',
+    '- **Warm path:** you both worked at Fabrikam, a year apart.',
+    '- **Where:** a LinkedIn connection note.',
+    '',
+    '**Note:** Hi Dana, I applied for the platform role on your team. I ran Fabrikam’s service platform for four years, just after your time there. I’d love to hear what the team builds next.',
+    '',
+    '## 2. Sam Ortiz, Staff Engineer',
+    '',
+    '- **Why:** the senior engineer on the team, who writes about its Go services.',
+    '- **Where:** email, to the work address on his blog.',
+    '',
+    '**Note:** Hi Sam, your post on moving every deploy to one pipeline matched what I did at Fabrikam, where deploys went from an hour to eight minutes. I’ve applied for the platform role and would value ten minutes on how the team works.',
+  ].join('\n');
+
+/** What Claude drafted for people at a sample job's company, newest first. */
+export function sampleOutreach(job: Job): OutreachDraft[] {
+  return job.outreach
+    .map((path) => ({
+      path,
+      date: path.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
+      text: PEOPLE(job.company),
+    }))
+    .reverse();
 }

@@ -1,32 +1,3 @@
-/* A job's quick choices: a row of small buttons, wrapping when the panel is narrow. */
-.sort {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-inline-size: 0;
-  margin: 0 0 var(--fw-space-4);
-  padding: 0;
-  border: 0;
-}
-
-.sortLabel {
-  align-self: center;
-  margin-right: 2px;
-  color: var(--fw-muted);
-  font-size: 13px;
-  font-weight: 550;
-}
-
-/* Named for screen readers; the buttons say what they do. */
-.legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* What goes with a status before or instead of applying, such as when a job comes back. */
 .box {
   margin: 0 0 var(--fw-space-4);

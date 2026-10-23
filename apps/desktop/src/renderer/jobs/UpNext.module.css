@@ -23,7 +23,7 @@
 }
 
 .kicker {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   color: var(--fw-muted);
   font-size: var(--fw-text-xs);
   font-weight: 650;
@@ -31,17 +31,9 @@
   text-transform: uppercase;
 }
 
-/* The step, and its button at the right, or under it when the panel is narrow. */
-.stepRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-}
-
+/* What the step is, when its button doesn't say it all, such as when a call is. */
 .step {
-  flex: 1 1 200px;
-  margin: 0;
+  margin: 0 0 10px;
   font-size: var(--fw-text-md);
   font-weight: 650;
   line-height: 1.35;
@@ -55,39 +47,32 @@
   color: var(--fw-bad);
 }
 
-/* Choices under the step, such as where to sort a new job. */
-.stepRow + * {
-  margin-top: 12px;
-}
-
-.box > :last-child {
-  margin-bottom: 0;
-}
-
-/* While Claude does the step, in place of its button. Claude's panel says how it's going. */
-.running {
-  display: inline-flex;
+/* The step's button first, then the moves to sort a job, in one row that wraps. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  color: var(--fw-accent-text);
-  font-size: 13px;
-  font-weight: 600;
 }
 
-.spin {
-  animation: spin 1.2s linear infinite;
+.moves {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation: none;
-  }
+/* Named for screen readers; the buttons say what they do. */
+.legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .hint {

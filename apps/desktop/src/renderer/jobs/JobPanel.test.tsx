@@ -44,7 +44,13 @@ function panel(
     updateJob: vi.fn(async () => ({ ok: true as const })),
     undoStatusChange: vi.fn(async () => ({ ok: true as const })),
     jobDocs: vi.fn(async () => (job ? sampleDocs(job) : null)),
-    jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
+    jobExtras: vi.fn(async () => ({
+      asked: {},
+      shots: [],
+      posting: null,
+      calls: {},
+      outreach: [],
+    })),
     openFile: vi.fn(async () => ({ ok: true as const })),
     ...api,
   } as unknown as FactwrightApi;
@@ -57,6 +63,10 @@ function panel(
 }
 
 const controls = (): RunControls => ({ phase: 'idle', task: null, start: vi.fn(), show: vi.fn() });
+
+/** Opens what's saved for the job, which waits folded at first, once it shows. */
+const openSaved = async () =>
+  userEvent.click(await screen.findByRole('button', { name: /^Saved for this job/ }));
 
 describe('sorting a job before applying', () => {
   const sortButtons = () =>
@@ -74,7 +84,7 @@ describe('sorting a job before applying', () => {
     expect(api.updateJob).toHaveBeenCalledWith('copperleaf-energy--principal-engineer', {
       status: 'apply',
     });
-    await userEvent.click(within(next).getByRole('button', { name: 'Start with Claude' }));
+    await userEvent.click(within(next).getByRole('button', { name: 'Run a fit check' }));
     expect(run.start).toHaveBeenCalledWith({
       skill: 'fit-check',
       jobId: 'copperleaf-energy--principal-engineer',
@@ -88,7 +98,13 @@ describe('sorting a job before applying', () => {
     const api = {
       updateJob: vi.fn(async () => ({ ok: true as const })),
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: null,
+        calls: {},
+        outreach: [],
+      })),
     } as unknown as FactwrightApi;
     const shown = (each: Job) => (
       <JobPanel
@@ -119,7 +135,13 @@ describe('sorting a job before applying', () => {
       updateJob: vi.fn(async () => ({ ok: true as const })),
       undoStatusChange: vi.fn(async () => ({ ok: true as const })),
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: null,
+        calls: {},
+        outreach: [],
+      })),
     } as unknown as FactwrightApi;
     // A fit check is running on another job, so its button here can't take focus.
     const run: RunControls = { ...controls(), phase: 'working' };
@@ -260,7 +282,7 @@ describe('JobPanel', () => {
 
   it('offers an ATS X-ray for a job’s resume, and none for its cover letter', async () => {
     panel(byCompany('Lumen Health'));
-    const files = screen.getByRole('region', { name: 'Made for this job' });
+    const files = screen.getByRole('region', { name: 'Resumes and cover letters' });
     expect(
       within(files).getByRole('button', { name: 'Open AlexRiveraCoverLetter_LumenHealth.pdf' }),
     ).toBeTruthy();
@@ -361,15 +383,54 @@ describe('JobPanel', () => {
     expect(onMerge).toHaveBeenCalled();
   });
 
-  it('says when a job isn’t scored yet', () => {
-    panel(byCompany('Bluewave Staffing'));
-    expect(screen.getByRole('heading', { name: 'Not scored yet' })).toBeTruthy();
-    expect(screen.getByText(/What your Claude makes for this job shows up here/)).toBeTruthy();
+  it('says what goes in each area before there’s anything, with the button that makes it', async () => {
+    const run = controls();
+    const { container } = panel(byCompany('Bluewave Staffing'), {}, { run });
+    const area = (name: string) => screen.getByRole('region', { name });
+    expect(within(area('Fit')).getByText(/A fit check scores this job/)).toBeTruthy();
+    expect(within(area('Fit')).getByText('not listed')).toBeTruthy();
+    expect(
+      within(area('Resumes and cover letters'))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Tailor a resume', 'Write a cover letter']);
+    expect(within(area('Application questions')).getByRole('button')).toBeTruthy();
+    expect(within(area('Questions for Claude')).getByRole('button')).toBeTruthy();
+    // Empty areas have nothing to close.
+    expect(screen.queryByRole('button', { name: /^Resumes and cover letters/ })).toBeNull();
+    await userEvent.click(within(area('People to contact')).getByRole('button'));
+    expect(run.start).toHaveBeenCalledWith({
+      skill: 'who-to-message',
+      jobId: 'bluewave-staffing--senior-engineer',
+    });
+    await userEvent.click(within(area('Fit')).getByRole('button', { name: 'Estimate the pay' }));
+    expect(run.start).toHaveBeenLastCalledWith({
+      skill: 'salary-check',
+      jobId: 'bluewave-staffing--senior-engineer',
+    });
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+  });
+
+  it('shows the people Claude found to message, newest first', async () => {
+    const job = byCompany('Northwind Labs');
+    const outreach = [
+      { path: job.outreach[0] ?? '', date: '2026-10-08', text: '# Who to message\n\nDana Lee.' },
+    ];
+    panel(job, {
+      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {}, outreach })),
+    });
+    const people = screen.getByRole('region', { name: 'People to contact' });
+    expect(await within(people).findByText('Dana Lee.')).toBeTruthy();
+    expect(within(people).getByText('Who to message')).toBeTruthy();
+    expect(within(people).getByText(/Your Claude never messages anyone/)).toBeTruthy();
   });
 
   it('opens documents in the app, and resumes in the user’s own app', async () => {
     const job = byCompany('Northwind Labs');
     const { api } = panel(job);
+    // What's saved for the job waits folded at first.
+    await openSaved();
     await userEvent.click(screen.getByRole('button', { name: 'Open Posting' }));
     const dialog = await screen.findByRole('dialog', { name: 'Posting: Northwind Labs' });
     expect(within(dialog).getByRole('heading', { name: 'What you’ll do' })).toBeTruthy();
@@ -388,8 +449,15 @@ describe('JobPanel', () => {
       text: '## About the job\n\nPlace engineers with clients.',
     };
     panel(job, {
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved, calls: {} })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: saved,
+        calls: {},
+        outreach: [],
+      })),
     });
+    await openSaved();
     await userEvent.click(
       await screen.findByRole('button', { name: 'Open the posting saved from your browser' }),
     );
@@ -402,8 +470,15 @@ describe('JobPanel', () => {
     const job = byCompany('Northwind Labs');
     const saved = { path: 'x', source: null, saved: null, text: 'From the browser.' };
     panel(job, {
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved, calls: {} })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: saved,
+        calls: {},
+        outreach: [],
+      })),
     });
+    await openSaved();
     await screen.findByRole('button', { name: 'Open Posting' });
     expect(
       screen.queryByRole('button', { name: 'Open the posting saved from your browser' }),
@@ -414,7 +489,13 @@ describe('JobPanel', () => {
     const job = byCompany('Bluewave Staffing');
     const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
     let posting: typeof saved | null = null;
-    const jobExtras = vi.fn(async () => ({ asked: {}, shots: [], posting, calls: {} }));
+    const jobExtras = vi.fn(async () => ({
+      asked: {},
+      shots: [],
+      posting,
+      calls: {},
+      outreach: [],
+    }));
     const { api, rerender } = panel(job, { jobExtras });
     await vi.waitFor(() => expect(jobExtras).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -424,6 +505,7 @@ describe('JobPanel', () => {
     posting = saved;
     const synced = jobRows([{ ...job }], TODAY)[0] ?? null;
     rerender(<JobPanel row={synced} api={api} today={TODAY} onClose={vi.fn()} />);
+    await openSaved();
     expect(
       await screen.findByRole('button', { name: 'Open the posting saved from your browser' }),
     ).toBeTruthy();
@@ -433,8 +515,15 @@ describe('JobPanel', () => {
     const job: Job = { ...byCompany('Bluewave Staffing'), docKinds: ['job'] };
     const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
     panel(job, {
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: saved, calls: {} })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: saved,
+        calls: {},
+        outreach: [],
+      })),
     });
+    await openSaved();
     await screen.findByRole('button', { name: 'Open the posting saved from your browser' });
     expect(screen.getByRole('button', { name: 'Open Job notes' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Open Posting' })).toBeNull();
@@ -502,7 +591,13 @@ describe('JobPanel', () => {
     const row = jobRows([job], TODAY)[0] ?? null;
     const api = {
       jobDocs: vi.fn(async () => sampleDocs(job)),
-      jobExtras: vi.fn(async () => ({ asked: {}, shots: [], posting: null, calls: {} })),
+      jobExtras: vi.fn(async () => ({
+        asked: {},
+        shots: [],
+        posting: null,
+        calls: {},
+        outreach: [],
+      })),
     } as unknown as FactwrightApi;
     const shown = (expanded: boolean) => (
       <JobPanel

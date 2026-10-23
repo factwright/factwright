@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EditResult, FactwrightApi, SaveFileResult } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { RunPhase } from '../useClaudeRun.ts';
-import { type InviteMe, plainNote, thanksNotes } from './JobCalls.tsx';
+import { type InviteMe, plainNote, requestAddCall, thanksNotes } from './JobCalls.tsx';
 import { JobPanel } from './JobPanel.tsx';
 import type { RunControls } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
@@ -80,6 +80,7 @@ function panel(
       shots: [],
       posting: null,
       calls: sampleCallDocs(job),
+      outreach: [],
     })),
     copyText: vi.fn(async () => ({ ok: true })),
     openFile: answer,
@@ -294,6 +295,44 @@ describe('calls and interviews', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add call' }));
     expect((await screen.findByRole('alert')).textContent).toBe('That job isn’t here anymore.');
     expect(screen.getByRole('form', { name: 'Add a call' })).toBeTruthy();
+  });
+});
+
+describe('before there’s a call', () => {
+  it('says what goes here, and opens the form to add one, here or from Up next', async () => {
+    const job = byCompany('Lumen Health');
+    panel(job);
+    const calls = screen.getByRole('region', { name: 'Calls and interviews' });
+    expect(within(calls).getByText(/When a company sets up a call/)).toBeTruthy();
+    // Nothing to close while it's empty.
+    expect(screen.queryByRole('button', { name: /^Calls and interviews/ })).toBeNull();
+    await userEvent.click(within(calls).getByRole('button', { name: 'Add a call' }));
+    expect(within(calls).getByRole('form', { name: 'Add a call' })).toBeTruthy();
+    await userEvent.click(within(calls).getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(within(calls).getByRole('button', { name: 'Add a call' }));
+    // Up next asks for it too, such as once the user hears back.
+    act(() => requestAddCall());
+    const form = within(calls).getByRole('form', { name: 'Add a call' });
+    expect(form.contains(document.activeElement)).toBe(true);
+  });
+
+  it('offers interview prep for the calls once the user has applied, and opens it', async () => {
+    const run = controls();
+    const job = byCompany('Lumen Health');
+    panel(job, { run });
+    await userEvent.click(screen.getByRole('button', { name: 'Interview prep' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'interview-prep', jobId: job.id });
+    cleanup();
+    const prepped: Job = { ...job, docKinds: [...job.docKinds, 'prep'] };
+    const { api } = panel(prepped);
+    vi.mocked(api.jobDocs).mockResolvedValue({ prep: '# Prep\n\nAsk about on-call.' });
+    await userEvent.click(screen.getByRole('button', { name: 'Open Interview prep' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Interview prep: Lumen Health' });
+    expect(within(dialog).getByText('Ask about on-call.')).toBeTruthy();
+    cleanup();
+    // Not before applying.
+    panel(byCompany('Copperleaf Energy'));
+    expect(screen.queryByRole('button', { name: 'Interview prep' })).toBeNull();
   });
 });
 
