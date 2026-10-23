@@ -9,7 +9,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { savedPostingFile, savedPostingMarkdown } from '@factwright/core';
+import {
+  NO_HISTORY,
+  readHistory,
+  savedPostingFile,
+  savedPostingMarkdown,
+  type WorkHistory,
+} from '@factwright/core';
 import { builtInTemplate, type Template, templateFile } from '@factwright/engine';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import {
@@ -49,12 +55,19 @@ let facts: FactBankFiles;
 let printer: { print: Mock<ResumePrinter['print']>; measure: Mock<ResumePrinter['measure']> };
 // What the user told Factwright about themselves, which save_about_you changes.
 let answers: AboutYou;
+// And the work history and education, which save_work_history saves.
+let history: WorkHistory = NO_HISTORY;
 const about = {
   answers: () => answers,
   saveAnswers: vi.fn((changes: AnswerChanges) => {
     answers = applyChanges(answers, changes);
     return answers;
   }),
+  history: () => history,
+  saveHistory: (saved: WorkHistory) => {
+    history = readHistory(saved);
+    return history;
+  },
 };
 
 const tool = (name: string) => {
@@ -508,6 +521,46 @@ describe('job_details', () => {
     );
   });
 
+  it('says how the form in the user’s browser asks each question it read, its options word for word', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.keepForm(id, {
+      url: 'https://jobs.lever.co/acme/1/apply',
+      read: '2026-10-11T16:00:00.000Z',
+      questions: [
+        {
+          question: 'Why Acme?',
+          hint: 'A few sentences.',
+          section: 'Additional information',
+          control: 'long',
+          options: [],
+          required: true,
+          limit: 1000,
+        },
+        {
+          question: 'Are you open to travel?',
+          hint: '',
+          section: '',
+          control: 'choice',
+          options: ['Yes', 'No', 'Sometimes'],
+          required: false,
+          limit: null,
+        },
+      ],
+    });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      [
+        "The extension read 2 of them from the form in the user's browser on 2026-10-11 (https://jobs.lever.co/acme/1/apply): each says how the form takes its answer.",
+        '1. Why Acme?',
+        '   On the form: a box for paragraphs, required, up to 1,000 characters. In its part “Additional information”. It says: “A few sentences.”',
+        '   What the user sent: not recorded.',
+        '2. Are you open to travel?',
+        '   On the form: one of its options.',
+        '   Its options, word for word: “Yes” · “No” · “Sometimes”',
+        '   What the user sent: not recorded.',
+      ].join('\n'),
+    );
+  });
+
   it('lists the screenshots the user added, saying what each was added with', async () => {
     const id = 'acme-robotics--staff-engineer';
     const shots = join(root, 'screenshots', id);
@@ -801,6 +854,39 @@ describe('about_you', () => {
     expect(await tool('about_you').run({})).toContain(
       'The user hasn’t told Factwright about themselves yet.',
     );
+  });
+});
+
+describe('save_work_history', () => {
+  it('keeps every position at a company apart, newest first, and about_you shows them', async () => {
+    history = NO_HISTORY;
+    const said = await tool('save_work_history').run({
+      jobs: [
+        {
+          company: 'Harbor & Pine',
+          location: 'Oakland, CA',
+          positions: [
+            { title: 'Director of Guest Experience', start: '2023-02', end: 'present' },
+            { title: 'Guest Experience Manager', start: '2020-08', end: '2023-02' },
+            { title: 'Store Lead', start: 'May 2018', end: '2020-08' },
+          ],
+        },
+      ],
+      schools: [{ school: 'SF State', degree: 'B.A.', field: 'Hospitality', end: '2016' }],
+    });
+    expect(said).toBe(
+      'Saved the work history: 1 company with 3 positions, and 1 school. Left out: 1 date that wasn’t YYYY-MM, YYYY or present, left blank. Give them again, whole, to keep them.',
+    );
+    expect(history.jobs[0]?.positions.map((each) => each.title)).toEqual([
+      'Director of Guest Experience',
+      'Guest Experience Manager',
+      'Store Lead',
+    ]);
+    const shown = String(await tool('about_you').run({}));
+    expect(shown).toContain('- Harbor & Pine, Oakland, CA');
+    expect(shown).toContain('  - Guest Experience Manager, 2020-08 to 2023-02');
+    expect(shown).toContain('- SF State: B.A., Hospitality, start not known to 2016');
+    history = NO_HISTORY;
   });
 });
 

@@ -16,6 +16,16 @@ Before starting, read:
 - all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` are unverified: offer one in step 3 before an answer uses it.
 - `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation and pay, and Beyond work: their projects, and their interests, what they're learning, their communities and what they care about.
 
+## From the form in the user's browser
+
+When the input ends with `form`, the browser extension asked for these drafts while the user fills in the form in their browser. It fills in each draft once you've saved them, and the user isn't watching this run. So the steps below change like this:
+- **Which questions:** only the ones `job_details` says the extension read from the form, each with an "On the form" line that says how the form takes its answer. The job's other questions wait for another run.
+- **A choice:** one of its options, word for word as `job_details` lists them, without quotes or words of your own. For one that takes any of its options, give each pick word for word, separated by `; `. Save choices in a table, `| Question | Pick | Why |`, so the pick stands alone.
+- **A limit:** keep under it, counting every character, spaces included. A box with no limit is still about 4 sentences, and a line of text is a few words.
+- **Never ask.** Skip step 3: no AskUserQuestion round, and nothing saved to the fact bank or Profile. A question only the user can answer, which `about_you` doesn't, gets `For you: <why, in a few words>` as its whole answer, such as `For you: your notice period isn't on file.` The extension leaves it for them with that reason. So does an experience question the facts don't settle.
+- **Answered before:** leave out a question answers.md answers already, if that answer fits the form: under its limit, and for a choice, word for word one of its options. Draft the others again.
+- **Reply** in one line: how many you drafted, and how many are the user's to answer.
+
 ## 1. Load everything on file
 - Call `job_details` with the job's id, or its company and role. It gives the status, the user's notes, calls and history, and lists everything on file with what each holds. It also gives the application's questions, with what the user actually sent for any they've answered already. Use the notes for context only.
 - Read the job's folder: `posting.md` (older folders keep the posting in `job.md`), `job.md`, `fit-check.md`, `unmask.md`, `notes.md`, `apply.md`, and `answers.md` if it exists. Also read any answers to the user's own questions about the job that bear on these. Keep new answers consistent with old ones, and with what they actually sent.

@@ -62,6 +62,7 @@ describe('the plugin’s skills', () => {
       'thank-you',
       'unmask-job',
       'who-to-message',
+      'work-history',
     ]);
   });
 

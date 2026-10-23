@@ -95,13 +95,20 @@ export const FACTS_SKILL = 'add-facts';
 export const TEMPLATE_SKILL = 'make-template';
 
 /**
+ * The skill that fills in Profile's work history and education from the user's facts and
+ * resumes, for forms that ask for each job and school.
+ */
+export const HISTORY_SKILL = 'work-history';
+
+/**
  * A resume the user wants a template copied from, by the name the app gave it when it kept it
  * in templates/sources: the day it was added, and a number.
  */
 export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)$/;
 
 /**
- * What the window asks the app to run: a skill on one job, or one of the user's questions about
+ * What the window asks the app to run: a skill on one job, its application form's questions in
+ * the user's browser, or one of the user's questions about
  * it, prep for one of its calls or practice for it, thank-you notes after one, a job search
  * (where the user picked, or wherever Claude asks), getting started (or only its starting
  * resumes), more facts, from an interview or from new files and notes, a template in the look of
@@ -111,6 +118,11 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
+  /**
+   * Drafting the questions of a job's application form in the user's browser, which the browser
+   * extension asked for: the run reads them, with their options and limits, in job_details.
+   */
+  | { skill: 'answer-questions'; jobId: string; form: true }
   | { skill: VersionSkill; jobId: string; again: true }
   | { skill: typeof REVISE_SKILL | 'cover-letter'; jobId: string; changes: true }
   | { skill: 'ask'; jobId: string; askId: string }
@@ -120,6 +132,7 @@ export type RunTask =
   | { skill: typeof GET_STARTED_SKILL; mode?: 'resumes' }
   | { skill: typeof FACTS_SKILL; mode: 'interview' | 'new' }
   | { skill: typeof TEMPLATE_SKILL; source: string }
+  | { skill: typeof HISTORY_SKILL }
   | {
       skill: typeof REVISE_SKILL;
       jobId: string;
@@ -130,8 +143,27 @@ export type RunTask =
       template?: TemplateChoice;
     };
 
+/**
+ * The app asking the window to start a run on a task, as when the browser extension asks for
+ * drafts of a form's questions: only the window has Claude's panel, so the window starts it, and
+ * says whether it could.
+ */
+export interface RunRequest {
+  id: string;
+  task: RunTask;
+}
+
+/** Whether the window started a requested run, or why not: Claude was busy, or isn't ready. */
+export type RunRequestAnswer = 'started' | 'busy' | 'not-ready';
+
 /** The skills the app starts that aren't for one job. */
-export const HUNT_SKILLS = [SEARCH_SKILL, GET_STARTED_SKILL, FACTS_SKILL, TEMPLATE_SKILL] as const;
+export const HUNT_SKILLS = [
+  SEARCH_SKILL,
+  GET_STARTED_SKILL,
+  FACTS_SKILL,
+  TEMPLATE_SKILL,
+  HISTORY_SKILL,
+] as const;
 
 /**
  * What a run may change without asking. A run started to get to know the user, or to add facts,
@@ -144,7 +176,13 @@ export const HUNT_SKILLS = [SEARCH_SKILL, GET_STARTED_SKILL, FACTS_SKILL, TEMPLA
 export type RunScope = 'hunt' | 'profile' | 'template' | 'revise';
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
-  if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
+  if (
+    task?.skill === GET_STARTED_SKILL ||
+    task?.skill === FACTS_SKILL ||
+    task?.skill === HISTORY_SKILL
+  ) {
+    return 'profile';
+  }
   if (task?.skill === REVISE_SKILL) return 'revise';
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }

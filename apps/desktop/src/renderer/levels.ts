@@ -31,6 +31,7 @@ const TASK_NAMES: Readonly<Record<ModelTask, string>> = {
   'get-started': 'Getting started',
   'add-facts': 'Fact bank interviews',
   'make-template': 'Making templates',
+  'work-history': 'Work history',
 };
 
 /** A level Claude runs a task at: its model, and how hard it thinks. */

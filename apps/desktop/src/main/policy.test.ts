@@ -200,6 +200,23 @@ describe('parseRunTask', () => {
     });
   });
 
+  it('takes drafting a job’s form’s questions, which the browser extension asks for', () => {
+    expect(parseRunTask({ skill: 'answer-questions', jobId: 'acme--staff', form: true })).toEqual({
+      skill: 'answer-questions',
+      jobId: 'acme--staff',
+      form: true,
+    });
+    for (const task of [
+      { skill: 'cover-letter', jobId: 'acme--staff', form: true },
+      { skill: 'answer-questions', jobId: 'acme--staff', form: 'yes' },
+      { skill: 'answer-questions', jobId: '../acme', form: true },
+      { skill: 'answer-questions', form: true },
+      { skill: 'answer-questions', jobId: 'acme--staff', form: true, mode: 'interview' },
+    ]) {
+      expect(parseRunTask(task)).toBeNull();
+    }
+  });
+
   it('takes one of the user’s questions about a job, by its ID', () => {
     expect(
       parseRunTask({
@@ -420,6 +437,12 @@ describe('runPrompt', () => {
   it('names the skill and the job by its ID alone', () => {
     expect(runPrompt({ skill: 'focused-resume', jobId: 'acme--staff-engineer' })).toBe(
       '/factwright:focused-resume job acme--staff-engineer',
+    );
+  });
+
+  it('names the form’s questions by a word of its own, which the run reads in job_details', () => {
+    expect(runPrompt({ skill: 'answer-questions', jobId: 'acme--staff', form: true })).toBe(
+      '/factwright:answer-questions job acme--staff form',
     );
   });
 

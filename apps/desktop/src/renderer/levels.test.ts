@@ -68,14 +68,15 @@ describe('the levels Claude runs at', () => {
             'interview-prep': 'opus',
             'answer-questions': 'opus',
             ask: 'opus',
+            'work-history': 'sonnet',
           },
         },
         { main: 'low', tasks: {} },
         'best',
       ),
     );
-    // Five each on Opus, with tailored resumes, and on Haiku, and three on Sonnet.
+    // Five each on Opus, with tailored resumes, and on Haiku, and four on Sonnet.
     expect(levelName(most)).toBe('Opus · Low');
-    expect(others).toBe('Lighter for 8 tasks');
+    expect(others).toBe('Lighter for 9 tasks');
   });
 });

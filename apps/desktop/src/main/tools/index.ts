@@ -11,6 +11,7 @@ import { saveCallDoc } from './calls.ts';
 import { requestedChanges } from './changes.ts';
 import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
 import { searchFocusText } from './focus.ts';
+import { historyText, saveHistory } from './history.ts';
 import { buildCoverLetter } from './letter.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool } from './mcp.ts';
@@ -23,8 +24,11 @@ import { listTemplates, readTemplateFile, saveTemplate } from './templates.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
-  /** What the user told Factwright about themselves, which save_about_you adds to. */
-  about: Pick<AboutStore, 'answers' | 'saveAnswers'>;
+  /**
+   * What the user told Factwright about themselves, which save_about_you adds to, and the work
+   * history and education save_work_history saves.
+   */
+  about: Pick<AboutStore, 'answers' | 'saveAnswers' | 'history' | 'saveHistory'>;
   /** The fact bank's files, which the user's answers in a run add to. */
   facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm'>;
   workspace: string;
@@ -80,7 +84,7 @@ export const FACT_TOOLS = ['save_fact', 'save_gap', 'verify_fact'];
  * computer, but like the user's facts, Claude asks before using them unless the user chose
  * otherwise, or started a run to get to know them.
  */
-export const PROFILE_TOOLS = ['save_about_you'];
+export const PROFILE_TOOLS = ['save_about_you', 'save_work_history'];
 
 /**
  * The tool that adds to the user's templates. It stays on this computer, but a template is
@@ -585,10 +589,11 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'about_you',
       description:
-        'What the user told Factwright about themselves, when they started and in Profile since: their contact details, the roles, places and companies they want, pay, work authorization, when they can start, must-haves and deal-breakers, and Beyond work: their projects with how much to show each and how projects look on their resumes, their interests, what they’re learning, their communities and what they care about. Check it before asking the user anything an application or a recruiter asks.',
+        'What the user told Factwright about themselves, when they started and in Profile since: their contact details, the roles, places and companies they want, pay, work authorization, when they can start, must-haves and deal-breakers, Beyond work: their projects with how much to show each and how projects look on their resumes, their interests, what they’re learning, their communities and what they care about, and their work history and education: each position they held, newest first, under its company, and each school. Check it before asking the user anything an application or a recruiter asks.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READS,
-      run: async () => aboutYouText(deps.about.answers()),
+      run: async () =>
+        [aboutYouText(deps.about.answers()), historyText(deps.about.history())].join('\n\n'),
     },
     {
       name: 'past_answers',
@@ -850,6 +855,69 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         deps.about.saveAnswers(read.changes);
         return `Saved to the user’s profile: ${read.saved.join('; ')}.`;
       },
+    },
+    {
+      name: 'save_work_history',
+      description:
+        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, and leave a date blank rather than guess it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          jobs: {
+            type: 'array',
+            description: 'Each company, by its newest position, newest first.',
+            items: {
+              type: 'object',
+              properties: {
+                company: { type: 'string' },
+                location: { type: 'string', description: 'Such as “Denver, CO” or “Remote”.' },
+                positions: {
+                  type: 'array',
+                  description: 'Each position held there, newest first.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string', description: 'Exactly as the facts have it.' },
+                      start: { type: 'string', description: 'YYYY-MM or YYYY.' },
+                      end: { type: 'string', description: 'YYYY-MM, YYYY, or present.' },
+                      summary: {
+                        type: 'string',
+                        description:
+                          'What they did, in a sentence or two, for a form’s box that asks, traced to the facts.',
+                      },
+                    },
+                    required: ['title'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['company', 'positions'],
+              additionalProperties: false,
+            },
+          },
+          schools: {
+            type: 'array',
+            description: 'Each school, newest first.',
+            items: {
+              type: 'object',
+              properties: {
+                school: { type: 'string' },
+                degree: { type: 'string', description: 'Such as “B.S.” or “MBA”.' },
+                field: { type: 'string', description: 'What they studied, such as “Biology”.' },
+                start: { type: 'string', description: 'YYYY-MM or YYYY.' },
+                end: { type: 'string', description: 'YYYY-MM, YYYY, or present.' },
+              },
+              required: ['school'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['jobs', 'schools'],
+        additionalProperties: false,
+      },
+      // It changes the user's profile on this computer, which they OK unless they chose otherwise.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input) => saveHistory(input, deps.about),
     },
   ];
 }

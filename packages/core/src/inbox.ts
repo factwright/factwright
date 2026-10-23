@@ -114,6 +114,9 @@ export const INBOX_ASK = /^(\d{13})-[0-9a-f]{16}\.ask$/;
 /** The most fields an ask may carry: a long application has a hundred or so. */
 export const ASK_FIELDS = 300;
 
+/** The most of a form's own questions one ask for drafts may carry: as many as a job keeps. */
+export const DRAFT_QUESTIONS = 50;
+
 /**
  * The most of a file one answer carries: 384 KiB, which is 512 KiB as base64, as an answer the
  * helper passes on holds under 1 MB. It's a multiple of 3 bytes, so each part's base64 ends whole,
@@ -134,6 +137,11 @@ const ANSWER_TEXT = 10_000;
 export interface AskedField {
   question: string;
   hint: string;
+  /**
+   * The part of the form it's in, as the page names it, such as "Work experience". An extension
+   * from before it read them sends none.
+   */
+  section?: string;
   control: FieldControl;
   type: string;
   autocomplete: string;
@@ -160,23 +168,37 @@ export type InboxAsk =
   /** What you sent, once you've applied: the answers to the form's own questions. */
   | { ask: 'sent'; job: string; url: string; answers: { question: string; text: string }[] }
   /** New answers to keep in Profile, each one you chose to save. */
-  | { ask: 'remember'; answers: { kind: FieldKind; text: string }[] };
+  | { ask: 'remember'; answers: { kind: FieldKind; text: string }[] }
+  /**
+   * The form's own questions that nothing on file answers, for your Claude to draft answers to
+   * in Factwright, for a job you saved: each as the field asks it, never what's in it.
+   */
+  | { ask: 'draft'; job: string; url: string; questions: AskedField[] }
+  /** How your Claude's drafts for a job are coming along. */
+  | { ask: 'drafts'; job: string };
 
 const isText = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length <= max;
 
-/** A field's keys, in order: what it asks and how, and never what's in it. */
-const FIELD_KEYS = 'autocomplete control hint limit name options question required type';
+/**
+ * A field's keys, in order: what it asks and how, and never what's in it, with the part of the
+ * form it's in, or without, as an extension from before it read them sends.
+ */
+const FIELD_KEYS = [
+  'autocomplete control hint limit name options question required section type',
+  'autocomplete control hint limit name options question required type',
+];
 
 /** A field as an ask carries it, or null when it isn't one. */
 function askedField(value: unknown): AskedField | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const field = value as Record<string, unknown>;
-  const { options, limit } = field;
+  const { options, limit, section = '' } = field;
   if (
-    Object.keys(field).sort().join(' ') !== FIELD_KEYS ||
+    !FIELD_KEYS.includes(Object.keys(field).sort().join(' ')) ||
     !isText(field.question, FIELD_TEXT) ||
     !isText(field.hint, FIELD_TEXT) ||
+    !isText(section, FIELD_TEXT) ||
     !FIELD_CONTROLS.includes(field.control as FieldControl) ||
     !isText(field.type, 40) ||
     !isText(field.autocomplete, 200) ||
@@ -192,6 +214,7 @@ function askedField(value: unknown): AskedField | null {
   return {
     question: field.question,
     hint: field.hint,
+    section,
     control: field.control as FieldControl,
     type: field.type,
     autocomplete: field.autocomplete,
@@ -291,6 +314,17 @@ export function readInboxAsk(text: string): InboxAsk | null {
       return null;
     return { ask: 'remember', answers: read };
   }
+  if (asked.ask === 'draft' && keys === 'ask job questions url') {
+    const { job, url, questions } = asked;
+    if (!isJobId(job) || !isPage(url) || !Array.isArray(questions)) return null;
+    if (questions.length === 0 || questions.length > DRAFT_QUESTIONS) return null;
+    const read = questions.map(askedField);
+    if (!read.every((field): field is AskedField => field !== null)) return null;
+    return { ask: 'draft', job, url, questions: read };
+  }
+  if (asked.ask === 'drafts' && keys === 'ask job') {
+    return isJobId(asked.job) ? { ask: 'drafts', job: asked.job } : null;
+  }
   return null;
 }
 
@@ -329,6 +363,18 @@ export type InboxAskAnswer =
   | { ok: true; did: 'file'; part: number; parts: number; base64: string }
   | { ok: true; did: 'sent'; job: AskedJob; recorded: number }
   | { ok: true; did: 'remember'; saved: number }
+  /** Your Claude has started on the form's questions, in Factwright. */
+  | { ok: true; did: 'draft' }
+  | {
+      ok: true;
+      did: 'drafts';
+      /** Whether your Claude is still at the drafts. */
+      drafting: boolean;
+      /** Whether it's waiting on you in Factwright, for an answer or a permission. */
+      waiting: boolean;
+      /** How many of the form's questions have a draft now. */
+      drafted: number;
+    }
   | {
       ok: false;
       /**

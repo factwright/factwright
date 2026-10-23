@@ -1,16 +1,30 @@
-import type { FieldReply } from '@factwright/core';
-import { describe, expect, it } from 'vitest';
+import type { FieldReply, InboxAsk } from '@factwright/core';
+import { describe, expect, it, vi } from 'vitest';
 import {
   askedFields,
+  draftable,
   fieldsToRead,
   fieldValue,
   fillAnswers,
   isCopyOnly,
   looksLikeApplication,
   newAnswers,
+  planFill,
   sentAnswers,
 } from '../src/fill.ts';
 import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
+
+/** Factwright on this computer, as the extension asks it: what it was asked, and its answers. */
+const computer = vi.hoisted(() => ({
+  asked: [] as unknown[],
+  answers: [] as unknown[],
+}));
+vi.mock('../src/computer.ts', () => ({
+  askComputer: async (ask: unknown) => {
+    computer.asked.push(ask);
+    return computer.answers.shift();
+  },
+}));
 
 let place = 0;
 /** A field as the page function reads one, with only what a test sets. */
@@ -21,6 +35,7 @@ const field = (question: string, more: Partial<PageField> = {}): PageField => {
     key: `INPUT|text|${ref}||${question}`,
     question,
     hint: '',
+    section: '',
     control: 'text',
     type: 'text',
     autocomplete: '',
@@ -227,5 +242,73 @@ describe('where Factwright fills', () => {
         form([field('First'), field('Last'), field('Resume', { control: 'file', type: 'file' })]),
       ),
     ).toBe(true);
+  });
+});
+
+describe('asking Factwright how to fill a form', () => {
+  const plan = { ok: true, did: 'fill', job: null, replies: [], files: {} };
+  const job = { company: 'Harbor & Pine', role: 'Account Executive' };
+
+  it('says which part of the form each field is in', async () => {
+    computer.asked = [];
+    computer.answers = [plan];
+    const fields = [field('Company', { section: 'Work Experience 1' })];
+    expect(await planFill(form(fields), job)).toBe(plan);
+    expect((computer.asked as InboxAsk[]).map((ask) => ask.ask === 'fill' && ask.fields)).toEqual([
+      [expect.objectContaining({ question: 'Company', section: 'Work Experience 1' })],
+    ]);
+  });
+
+  it('asks an app from before it took them again, without them', async () => {
+    computer.asked = [];
+    computer.answers = [{ ok: false, reason: 'bad-message', message: 'No.' }, plan];
+    const fields = [field('Company', { section: 'Work Experience 1' })];
+    expect(await planFill(form(fields), job)).toBe(plan);
+    const [, again] = computer.asked as InboxAsk[];
+    expect(again?.ask === 'fill' && again.fields[0]).not.toHaveProperty('section');
+    expect(again?.ask === 'fill' && again.fields[0]?.question).toBe('Company');
+  });
+
+  it('gives up when the app can’t take it for another reason', async () => {
+    computer.asked = [];
+    const closed = { ok: false, reason: 'closed', message: 'Open Factwright.' };
+    computer.answers = [closed];
+    expect(await planFill(form([field('Company')]), job)).toBe(closed);
+    expect(computer.asked).toHaveLength(1);
+  });
+});
+
+describe('what your Claude can draft', () => {
+  it('is each of the form’s own questions left for you, never a file, a box to tick, or one it said is yours', () => {
+    const fields = [
+      field('Why Harbor & Pine?', { ref: 0, control: 'long' }),
+      field('Portfolio', { ref: 1, control: 'file', type: 'file' }),
+      field('Willing to relocate', { ref: 2, control: 'check', type: 'checkbox' }),
+      field('Tell us about HL7.', { ref: 3, control: 'long' }),
+      field('Gender', { ref: 4, control: 'combo' }),
+      field('Are you open to travel?', { ref: 5, control: 'choice', options: ['Yes', 'No'] }),
+      field('Email', { ref: 6 }),
+    ];
+    const left = { kind: 'question', source: 'you', left: 'new' } as const;
+    const replies: FieldReply[] = [
+      left,
+      left,
+      left,
+      { ...left, from: 'For you: the facts don’t say.' },
+      { kind: 'gender', source: 'you', left: 'sensitive' },
+      left,
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+    ];
+    expect(draftable(form(fields), replies, new Map()).map((each) => each.question)).toEqual([
+      'Why Harbor & Pine?',
+      'Are you open to travel?',
+    ]);
+    // One the panel filled already isn't.
+    const filled = new Map([
+      [fields[5]?.key ?? '', { ref: 5, ok: true, shown: 'No', why: '' as const }],
+    ]);
+    expect(draftable(form(fields), replies, filled).map((each) => each.question)).toEqual([
+      'Why Harbor & Pine?',
+    ]);
   });
 });

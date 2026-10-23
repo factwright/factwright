@@ -79,7 +79,10 @@ describe('an ask from the inbox', () => {
     JSON.stringify({ type: 'ask', request: JSON.stringify(request) });
 
   it('reads a form to fill, with its fields and nothing in them', () => {
-    expect(readInboxAsk(message(fill))).toEqual(fill);
+    const parted = { ...fill, fields: [{ ...field, section: 'Contact details' }] };
+    expect(readInboxAsk(message(parted))).toEqual(parted);
+    // An extension from before it read the parts of a form sends none.
+    expect(readInboxAsk(message(fill))).toEqual({ ...fill, fields: [{ ...field, section: '' }] });
   });
 
   it('reads asks for a part of a file, what was sent, and answers to keep', () => {
@@ -100,6 +103,26 @@ describe('an ask from the inbox', () => {
     expect(readInboxAsk(message(sent))).toEqual(sent);
     const remember = { ask: 'remember', answers: [{ kind: 'phone', text: '(303) 555-0142' }] };
     expect(readInboxAsk(message(remember))).toEqual(remember);
+  });
+
+  it('reads an ask for drafts of a form’s own questions, and one for how they’re coming', () => {
+    const draft = {
+      ask: 'draft',
+      job: 'harbor-pine--account-executive',
+      url: fill.url,
+      questions: [{ ...field, question: 'Why Harbor & Pine?', control: 'long', section: '' }],
+    };
+    expect(readInboxAsk(message(draft))).toEqual(draft);
+    const drafts = { ask: 'drafts', job: 'harbor-pine--account-executive' };
+    expect(readInboxAsk(message(drafts))).toEqual(drafts);
+    expect(readInboxAsk(message({ ...draft, questions: [] }))).toBeNull();
+    expect(readInboxAsk(message({ ...draft, questions: Array(51).fill(field) }))).toBeNull();
+    expect(readInboxAsk(message({ ...draft, job: '../../etc' }))).toBeNull();
+    expect(readInboxAsk(message({ ...draft, url: 'file:///etc/passwd' }))).toBeNull();
+    expect(
+      readInboxAsk(message({ ...draft, questions: [{ ...field, value: 'Gear that lasts.' }] })),
+    ).toBeNull();
+    expect(readInboxAsk(message({ ...drafts, answers: [] }))).toBeNull();
   });
 
   it('takes only an ask, as the helper passes it on', () => {
@@ -127,6 +150,10 @@ describe('an ask from the inbox', () => {
       null,
     );
     expect(readInboxAsk(message({ ...fill, fields: Array(301).fill(field) }))).toBeNull();
+    expect(readInboxAsk(message({ ...fill, fields: [{ ...field, section: 3 }] }))).toBeNull();
+    expect(
+      readInboxAsk(message({ ...fill, fields: [{ ...field, section: 'x'.repeat(501) }] })),
+    ).toBeNull();
     const file = {
       ask: 'file',
       job: 'harbor-pine--account-executive',

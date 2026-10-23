@@ -12,9 +12,19 @@ import {
   type FieldKind,
   type FormField,
   fieldKind,
+  fieldPart,
   isEqualOpportunity,
   WITHOUT_SPONSORSHIP,
 } from './forms.ts';
+import {
+  type HeldPosition,
+  monthNames,
+  positionsOf,
+  type School,
+  typedDate,
+  type WorkHistory,
+  yearOf,
+} from './history.ts';
 import { parsePay } from './pay.ts';
 
 /**
@@ -125,6 +135,8 @@ export interface ResumeOnFile {
   company: string;
   title: string;
   since: string;
+  /** Every position the resume lists, newest first, with its company, and when, as it says. */
+  positions: { company: string; title: string; location: string; start: string; end: string }[];
   /** Your schools, as the resume lists them, newest first. */
   education: { school: string; degree: string; start: string; end: string }[];
   /** Your skills, by their category. */
@@ -167,6 +179,8 @@ export interface OnFile {
   targetPay: string;
   /** What the job's own resume, or your newest, says of you, or null when you have none yet. */
   resume: ResumeOnFile | null;
+  /** Profile's work history and education, for forms that ask for each job and school. */
+  history: WorkHistory;
   /**
    * The job the form is for: who it's with, where you found it, such as "LinkedIn", and where
    * it's based, as its posting says, such as "Denver, CO".
@@ -203,7 +217,12 @@ export type LeftFor =
    */
   | 'sensitive'
   /** Nothing on file answers it: a question for you or your Claude. */
-  | 'new';
+  | 'new'
+  /**
+   * What's on file answers it, but not as the field takes it: a date to pick on a calendar, the
+   * end of a job you still hold, or a box to tick.
+   */
+  | 'pick';
 
 /** Factwright's answer for a field: what to put in it and where that came from, or why it's yours. */
 export interface FieldReply {
@@ -347,6 +366,153 @@ function fieldOfStudy(degree: string): string {
   if (comma >= 0) return degree.slice(comma + 1).trim();
   const at = degree.toLowerCase().lastIndexOf(' in ');
   return at >= 0 ? degree.slice(at + 4).trim() : '';
+}
+
+/** Where an answer came from: Profile's work history, or a resume. */
+interface Said {
+  source: AnswerSource;
+  from: string;
+}
+
+/** A position, as a form asks for it, with where it came from. */
+type HeldAt = HeldPosition & Said;
+
+/**
+ * The position a form asks for, the nth time it asks, newest first: from Profile's work history,
+ * or else the resume, as it lists them.
+ */
+function positionAt(onFile: OnFile, nth: number): HeldAt | null {
+  const fromHistory = positionsOf(onFile.history)[nth];
+  if (fromHistory) return { ...fromHistory, source: 'profile', from: 'From your work history' };
+  const resume = onFile.resume;
+  const listed = resume?.positions[nth];
+  if (!resume || !listed) return null;
+  return {
+    ...listed,
+    start: datedAs(listed.start),
+    end: datedAs(listed.end),
+    summary: '',
+    source: 'resume',
+    from: fromResume(resume),
+  };
+}
+
+/** The position you hold now, from Profile's work history, or else the resume. */
+function currentPosition(onFile: OnFile): HeldAt | null {
+  const now = positionsOf(onFile.history).find((each) => each.end === 'present');
+  if (now) return { ...now, source: 'profile', from: 'From your work history' };
+  const resume = onFile.resume;
+  if (!resume?.company && !resume?.title) return null;
+  return {
+    company: resume.company,
+    title: resume.title,
+    location: '',
+    start: datedAs(resume.since),
+    end: 'present',
+    summary: '',
+    source: 'resume',
+    from: fromResume(resume),
+  };
+}
+
+/** The school a form asks for, the nth time it asks: from Profile, or else the resume. */
+function schoolAt(onFile: OnFile, nth: number): (School & Said) | null {
+  const fromHistory = onFile.history.schools[nth];
+  if (fromHistory) return { ...fromHistory, source: 'profile', from: 'From your work history' };
+  const resume = onFile.resume;
+  const listed = resume?.education[nth];
+  if (!resume || !listed) return null;
+  return {
+    school: listed.school,
+    degree: listed.degree,
+    field: fieldOfStudy(listed.degree),
+    start: datedAs(listed.start),
+    end: datedAs(listed.end),
+    source: 'resume',
+    from: fromResume(resume),
+  };
+}
+
+/** The months, by the words a resume may use for them. */
+const MONTH_WORDS = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+];
+
+/**
+ * A date as a resume words it, such as "Mar 2021", "03/2021", "2021" or "Present", as the work
+ * history keeps it: "2021-03", "2021" or "present", or "" for one it can't read.
+ */
+export function datedAs(text: string): string {
+  const said = text.trim().toLowerCase();
+  if (/^(present|current|now|today)$/.test(said)) return 'present';
+  const year = /\b(19|20)\d{2}\b/.exec(said)?.[0];
+  if (!year) return '';
+  const numbered = /^(\d{1,2})[/.-](19|20)\d{2}$/.exec(said)?.[1];
+  const named = MONTH_WORDS.findIndex((month) => said.startsWith(month));
+  const month = numbered ? Number(numbered) : named >= 0 ? named + 1 : 0;
+  return month >= 1 && month <= 12 ? `${year}-${String(month).padStart(2, '0')}` : year;
+}
+
+/**
+ * A start or an end, as the field takes it: a month or a year where a form asks for one alone, a
+ * month a month box takes, or the date as typed, "03/2021". One that's still going is "Present"
+ * to type or pick, and where a form asks for its month or year, yours, as its own box says so.
+ */
+function dateReply(kind: FieldKind, field: FormField, date: string, said: Said): FieldReply {
+  if (!date) return left(kind, 'unset');
+  const question = plain(`${field.question} ${field.hint}`);
+  const month = /\bmonth\b/.test(question);
+  const year = /\byear\b/.test(question);
+  const reply = (words: string[]): FieldReply =>
+    words.some(Boolean) ? { ...fromProfile(kind, field, ...words), ...said } : left(kind, 'unset');
+  if (date === 'present') {
+    return month || year || field.control === 'date'
+      ? left(kind, 'pick')
+      : reply(['Present', 'Current']);
+  }
+  if (month) {
+    const names = monthNames(date);
+    return choosing(field)
+      ? reply(names)
+      : reply([field.control === 'number' ? (names[2] ?? '') : (names[0] ?? '')]);
+  }
+  if (year) return reply([yearOf(date)]);
+  // A calendar wants a day, which a job's dates never say.
+  if (field.control === 'date') return left(kind, 'pick');
+  if (field.type === 'month')
+    return /^\d{4}-\d{2}$/.test(date) ? reply([date]) : left(kind, 'pick');
+  return reply([typedDate(date), yearOf(date)]);
+}
+
+/**
+ * Factwright's answers for a form's fields, in order: each part of the form for a job or a
+ * school takes the next one, newest first, as a form asks for one job, then another.
+ */
+export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldReply[] {
+  const asked = new Map<string, number>();
+  return fields.map((field) => {
+    const part = fieldPart(field);
+    if (!part) return answerField(field, onFile);
+    const kind = fieldKind(field);
+    // A date's month and its year are two fields of one job, each asked once a job.
+    const question = plain(field.question);
+    const piece = /\bmonth\b/.test(question) ? 'month' : /\byear\b/.test(question) ? 'year' : '';
+    const key = `${part}:${kind}:${piece}`;
+    const nth = asked.get(key) ?? 0;
+    asked.set(key, nth + 1);
+    return answerField(field, onFile, nth);
+  });
 }
 
 /** An answer that fits the field's limit, or left for you when it doesn't. */
@@ -519,10 +685,22 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
   }
   const drafts = onFile.suggested.filter((each) => questionKey(each.question) === key);
   const draft = drafts.at(-1);
+  // A draft that says only you can answer it, and why, leaves it for you, saying why.
+  if (draft && /^\s*for you:/i.test(draft.answer)) {
+    return { ...left('question', 'new'), from: draft.answer.trim() };
+  }
   if (draft?.answer.trim()) {
     const from = 'Your Claude’s draft for this job';
+    // A question that takes any of its options takes each the draft picks, as "SQL; Python".
+    const picks =
+      field.control === 'choices'
+        ? draft.answer
+            .split(/\s*;\s*|\n+/)
+            .map((each) => each.replace(/^\s*[-*]\s+/, '').trim())
+            .filter(Boolean)
+        : [draft.answer.trim()];
     if (choosing(field))
-      return { kind: 'question', pick: [draft.answer], exact: true, source: 'claude', from };
+      return { kind: 'question', pick: picks, exact: true, source: 'claude', from };
     if (!field.limit || draft.answer.length <= field.limit) {
       return { kind: 'question', text: draft.answer, source: 'claude', from };
     }
@@ -574,7 +752,7 @@ function yearlyPay(field: FormField, targetPay: string): number | null {
  * never agrees to anything for you, and answers an equal-opportunity question only as you set it
  * in Profile, and only by picking one of its options.
  */
-export function answerField(field: FormField, onFile: OnFile): FieldReply {
+export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldReply {
   const kind = fieldKind(field);
   const { you, applications } = onFile;
   const place = placeParts(you.location);
@@ -678,25 +856,53 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
     case 'website':
       return linkOrHandle(kind, field, you.website, resume, resume?.website);
     case 'current-company':
-      return resumeSays(kind, field, onFile, resume?.company ?? '');
     case 'current-title':
-      return resumeSays(kind, field, onFile, resume?.title ?? '');
-    case 'school':
-      return resumeSays(kind, field, onFile, resume?.education[0]?.school ?? '');
-    case 'degree': {
-      const degree = resume?.education[0]?.degree ?? '';
-      return choosing(field)
-        ? resumeSays(kind, field, onFile, ...degreeNames(degree))
-        : resumeSays(kind, field, onFile, degree);
+    case 'job-start':
+    case 'job-end':
+    case 'job-location':
+    case 'job-summary': {
+      // In a part of the form for each job, the job it's asking for; asked once, the one you
+      // hold now.
+      const held = fieldPart(field) === 'job' ? positionAt(onFile, nth) : currentPosition(onFile);
+      if (!held) return left(kind, 'unset');
+      const said = { source: held.source, from: held.from };
+      if (kind === 'job-start' || kind === 'job-end') {
+        return dateReply(kind, field, kind === 'job-start' ? held.start : held.end, said);
+      }
+      const words =
+        kind === 'current-company'
+          ? held.company
+          : kind === 'current-title'
+            ? held.title
+            : kind === 'job-location'
+              ? held.location
+              : held.summary;
+      if (!words) return left(kind, 'unset');
+      return withinLimit(kind, field, { ...fromProfile(kind, field, words), ...said });
     }
+    case 'school':
+    case 'degree':
     case 'discipline':
-      return resumeSays(kind, field, onFile, fieldOfStudy(resume?.education[0]?.degree ?? ''));
-    case 'graduation': {
-      // A year a box takes as text, never a date a picker reads its own way.
-      const end = resume?.education[0]?.end ?? '';
-      return field.control === 'date' || !/^\d{4}$/.test(end.trim())
-        ? left(kind, 'unset')
-        : resumeSays(kind, field, onFile, end.trim());
+    case 'graduation':
+    case 'edu-start': {
+      const studied = schoolAt(onFile, nth);
+      if (!studied) return left(kind, 'unset');
+      const said = { source: studied.source, from: studied.from };
+      if (kind === 'edu-start' || kind === 'graduation') {
+        const date = kind === 'edu-start' ? studied.start : studied.end;
+        // A school's end, asked as a year to type, as a resume gives it.
+        return dateReply(kind, field, date, said);
+      }
+      const words =
+        kind === 'school'
+          ? [studied.school]
+          : kind === 'discipline'
+            ? [studied.field]
+            : choosing(field)
+              ? degreeNames(studied.degree)
+              : [studied.degree];
+      if (!words.some(Boolean)) return left(kind, 'unset');
+      return { ...fromProfile(kind, field, ...words), ...said };
     }
     case 'skills': {
       const items = resume?.skills.flatMap((each) => each.items) ?? [];
@@ -740,6 +946,13 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
     case 'street-2':
     case 'gpa':
       return left(kind, 'unset');
+    // Factwright never ticks a box: whether you work there now is yours to tick.
+    case 'job-current':
+      return left(kind, 'pick');
+    // Nothing on file says where a school is, or whose a date is with nothing saying.
+    case 'edu-location':
+    case 'block-date':
+      return left(kind, 'new');
     case 'authorized': {
       const can = authorizedFor(field, onFile);
       if (!/\bsponsor/.test(plain(field.question))) return yesNo(kind, field, can);

@@ -1,6 +1,7 @@
 import {
   ASK_FIELDS,
   type AskedField,
+  DRAFT_QUESTIONS,
   type FieldReply,
   fieldKind,
   type InboxAskAnswer,
@@ -133,20 +134,70 @@ function asked(url: string): string {
 /** What Factwright answered for a form: the job, a reply for each field, and files to upload. */
 export type FillPlan = Extract<InboxAskAnswer, { did: 'fill' }>;
 
-/** Asks Factwright on this computer how to fill a form. */
-export function planFill(
+/**
+ * Asks Factwright on this computer how to fill a form. Factwright 0.13 takes a form's fields
+ * without the part of the form each is in, so it's asked again without them, when it refuses.
+ */
+export async function planFill(
   form: PageForm,
   job: { company: string; role: string },
 ): ReturnType<typeof askComputer> {
-  return askComputer({
-    ask: 'fill',
-    url: asked(form.url),
-    title: form.title.slice(0, 1000),
-    company: job.company.slice(0, JOB_LIMITS.company),
-    role: job.role.slice(0, JOB_LIMITS.role),
-    fields: askedFields(form),
-  });
+  const ask = (fields: AskedField[]) =>
+    askComputer({
+      ask: 'fill',
+      url: asked(form.url),
+      title: form.title.slice(0, 1000),
+      company: job.company.slice(0, JOB_LIMITS.company),
+      role: job.role.slice(0, JOB_LIMITS.role),
+      fields,
+    });
+  const fields = askedFields(form);
+  const answer = await ask(fields);
+  if (answer.ok || answer.reason !== 'bad-message') return answer;
+  return ask(fields.map(({ section: _, ...field }) => field));
 }
+
+/**
+ * The form's own questions that nothing on file answers, which your Claude can draft: ones it
+ * asks in words or with options, left for you and not filled. A file, a box to tick, and a
+ * question your Claude said is yours to answer, with why, aren't.
+ */
+export function draftable(
+  form: PageForm,
+  replies: readonly FieldReply[],
+  filled: ReadonlyMap<string, FieldFilled>,
+): PageField[] {
+  return form.fields
+    .filter((field, at) => {
+      const reply = replies[at];
+      return (
+        reply?.kind === 'question' &&
+        reply.source === 'you' &&
+        reply.left === 'new' &&
+        !reply.from &&
+        field.question.trim() !== '' &&
+        field.control !== 'file' &&
+        field.control !== 'check' &&
+        !filled.get(field.key)?.ok
+      );
+    })
+    .slice(0, DRAFT_QUESTIONS);
+}
+
+/**
+ * Asks Factwright on this computer to have your Claude draft answers to some of a form's own
+ * questions, in its window, for the job the form is for.
+ */
+export const askForDrafts = (form: PageForm, jobId: string, fields: PageField[]) =>
+  askComputer({
+    ask: 'draft',
+    job: jobId,
+    url: asked(form.url),
+    questions: askedFields({ ...form, fields }),
+  });
+
+/** How your Claude's drafts for a job are coming along, as Factwright on this computer says. */
+export const draftsSoFar = (jobId: string) => askComputer({ ask: 'drafts', job: jobId });
 
 /** One of a job's files, fetched from Factwright on this computer in its parts, as base64. */
 export async function fetchFile(

@@ -730,6 +730,9 @@ export function sampleApi(): FactwrightApi {
       firstRunListeners.add(listener);
       return () => firstRunListeners.delete(listener);
     },
+    // The screens never have the browser extension ask for anything.
+    onRunRequest: () => () => {},
+    answerRunRequest: () => {},
     // Claude's questions, in their dialog: answered there, or sent to the terminal.
     claudeQuestion: async () => asking?.round ?? null,
     onClaudeQuestion: (listener) => {

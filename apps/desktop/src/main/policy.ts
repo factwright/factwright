@@ -12,6 +12,7 @@ import {
 import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
+  HISTORY_SKILL,
   MONTH,
   RUN_SKILLS,
   type RunSkill,
@@ -164,6 +165,17 @@ export function parseRunTask(value: unknown): RunTask | null {
   // A new version, or the changes the user asked for, on one job.
   if (fields.again !== undefined || fields.changes !== undefined) return parseVersionTask(fields);
   if (fields.skill === REVISE_SKILL) return parseRevision(value);
+  // The questions of a job's application form, which the browser extension asked to draft.
+  if (fields.form !== undefined) {
+    const { skill, jobId, form, ...rest } = fields;
+    const valid =
+      Object.keys(rest).length === 0 &&
+      skill === 'answer-questions' &&
+      form === true &&
+      typeof jobId === 'string' &&
+      JOB_ID.test(jobId);
+    return valid ? { skill, jobId, form } : null;
+  }
   const { skill, jobId, mode, askId, source, sources, callId, practice, ...rest } = value as Record<
     string,
     unknown
@@ -219,6 +231,7 @@ export function parseRunTask(value: unknown): RunTask | null {
   if (skill === FACTS_SKILL && jobId === undefined) {
     return mode === 'interview' || mode === 'new' ? { skill, mode } : null;
   }
+  if (skill === HISTORY_SKILL) return jobId === undefined && mode === undefined ? { skill } : null;
   if (typeof skill !== 'string' || !(RUN_SKILLS as readonly string[]).includes(skill)) return null;
   if (mode !== undefined || typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
   return { skill: skill as RunSkill, jobId };
@@ -313,6 +326,8 @@ export function runPrompt(task: RunTask): string {
   if ('again' in task) return `/factwright:${task.skill} job ${task.jobId} new version`;
   if ('changes' in task) return `/factwright:${task.skill} job ${task.jobId} changes`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
+  // The form's questions by a word of the app's own: the run reads them in job_details.
+  if ('form' in task) return `/factwright:${task.skill} job ${task.jobId} form`;
   if ('callId' in task) {
     const practice = 'practice' in task && task.practice ? ' practice' : '';
     return `/factwright:${task.skill} job ${task.jobId} call ${task.callId}${practice}`;
