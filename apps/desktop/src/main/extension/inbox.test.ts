@@ -313,9 +313,9 @@ describe('asks in the inbox', () => {
     expect(asked(named(NOW))).toMatchObject({ ok: false, reason: 'failed' });
   });
 
-  it('only takes away an ask older than the helper waits for', async () => {
+  it('leaves an ask too old to answer in time for the helper to take back', async () => {
     mkdirSync(folder);
-    dropAsk(named(NOW - 60_000));
+    dropAsk(named(NOW - 9_000));
     let answered = 0;
     open({
       answer: async () => {
@@ -325,6 +325,28 @@ describe('asks in the inbox', () => {
     });
     await settle();
     expect(answered).toBe(0);
+    expect(files()).toEqual([LISTENING, `${named(NOW - 9_000)}.ask`]);
+    // Once it's long left over, as by a helper that stopped, it's cleaned away.
+    const then = (NOW - 120_000) / 1000;
+    utimesSync(join(folder, `${named(NOW - 9_000)}.ask`), then, then);
+    inbox.take();
     expect(files()).toEqual([LISTENING]);
+    expect(answered).toBe(0);
+  });
+
+  it('says an answer is too big when it’s more than the helper passes on', async () => {
+    mkdirSync(folder);
+    dropAsk(named(NOW));
+    open({
+      answer: async () => ({
+        ok: true,
+        did: 'file',
+        part: 0,
+        parts: 1,
+        base64: 'A'.repeat(1_000_001),
+      }),
+    });
+    await settle();
+    expect(asked(named(NOW))).toMatchObject({ ok: false, reason: 'too-big' });
   });
 });

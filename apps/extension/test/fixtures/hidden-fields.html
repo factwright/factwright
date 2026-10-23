@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply: Analyst | Fernway</title>
+    <style>
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      .choice input {
+        opacity: 0;
+        position: absolute;
+      }
+      .scroller {
+        height: 120px;
+        overflow-y: auto;
+      }
+      .tall {
+        height: 400px;
+      }
+      .shut {
+        height: 0;
+        overflow: hidden;
+      }
+      .off {
+        position: absolute;
+        left: -9999px;
+      }
+      .select-control {
+        border: 1px solid #888;
+        padding: 4px;
+        width: 240px;
+      }
+      .select-control input {
+        opacity: 0;
+        width: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <form id="apply" action="/apply" method="post">
+        <label for="name">Full name</label>
+        <input id="name" name="name" />
+        <!-- Radio buttons hidden behind their labels, as the page draws its own. -->
+        <fieldset>
+          <legend>Are you willing to relocate?</legend>
+          <label class="choice"><input type="radio" name="move" value="yes" /> Yes</label>
+          <label class="choice"><input type="radio" name="move" value="no" /> No</label>
+        </fieldset>
+        <!-- A box that offers choices, its input see-through inside the box it shows as. -->
+        <label id="country-label">Country</label>
+        <div class="select-control">
+          <input id="country" role="combobox" aria-labelledby="country-label" readonly />
+        </div>
+        <!-- Out of view in a box that scrolls, and still the form's. -->
+        <div class="scroller">
+          <div class="tall"></div>
+          <label for="city">City</label>
+          <input id="city" name="city" />
+        </div>
+        <!-- Traps for bots, and boxes kept from you: none of them yours to see. -->
+        <label for="site" class="off">Website</label>
+        <input id="site" name="website" class="off" />
+        <div class="shut">
+          <label for="street">Street address</label>
+          <input id="street" name="street" />
+        </div>
+        <input id="zip" name="zip" class="sr-only" aria-label="Postal code" />
+        <input id="nick" name="nickname" aria-label="Nickname" style="opacity: 0" />
+        <div aria-hidden="true">
+          <label for="mail">Email</label>
+          <input id="mail" name="email" />
+        </div>
+        <div inert>
+          <label for="tel">Phone</label>
+          <input id="tel" name="phone" />
+        </div>
+        <button>Submit application</button>
+      </form>
+    </main>
+  </body>
+</html>

@@ -2,14 +2,23 @@
 // panel reads a form on a page served here, asks Factwright through the desktop app's helper,
 // built for testing, and the app's own inbox and fill code, over a made-up job hunt, then fills
 // the form and uploads the job's resume. Once the form is done, Mark as applied records what was
-// sent, marks the job Applied, and offers to keep a new answer in Profile. Nothing is submitted,
+// sent, marks the job Applied, and offers to keep a new answer in Profile. On a form with fields
+// you can't see, as a page's traps for bots, it reads only those you can. Nothing is submitted,
 // and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
@@ -46,14 +55,22 @@ const unpackedId = (folder: string) =>
 /** The job's application, as Lever shows its form, served on this computer. */
 const FORM_PATH = '/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
 
-/** A site on this computer: the application form, and "Not found" for anything else. */
+/** A form with fields you can't see, and the questions of the ones you can. */
+const TRAPS_PATH = '/fernway/apply';
+const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
+
+/** A site on this computer: the application forms, and "Not found" for anything else. */
 async function site() {
-  const form = readFileSync(join(FIXTURES, 'lever-application.html'));
+  const pages: Record<string, Buffer> = {
+    [FORM_PATH]: readFileSync(join(FIXTURES, 'lever-application.html')),
+    [TRAPS_PATH]: readFileSync(join(FIXTURES, 'hidden-fields.html')),
+  };
   let requests = 0;
   const server = createServer((request, response) => {
-    if (request.url === FORM_PATH) {
+    const page = pages[request.url ?? ''];
+    if (page) {
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(form);
+      response.end(page);
       return;
     }
     // The browser asks every site for its icon itself.
@@ -301,7 +318,7 @@ try {
   check(!(await checked('No')), 'and leaves the form’s own questions for you');
   check(
     (await panel.getByText('From the job’s resume').count()) >= 1 &&
-      (await panel.getByText('Left for you, as Profile says').count()) >= 1,
+      (await panel.getByText('An equal-opportunity question, for you').count()) >= 1,
     'the panel says where each answer came from, and what’s left for you',
   );
   await shoot(panel, 'fill-1-panel');
@@ -333,6 +350,27 @@ try {
   check(
     about.you.phone === '(720) 555-0199',
     'it keeps the new phone in Profile, once you choose to',
+  );
+  // The built form function, as the panel sends it into a page, on a form with traps for bots.
+  const built = readdirSync(join(extension, 'assets'))
+    .filter((name) => name.endsWith('.js'))
+    .map((name) => readFileSync(join(extension, 'assets', name), 'utf8'))
+    .find((text) => text.includes('async function formPage('));
+  if (!built) throw new Error('The built extension has no formPage.');
+  const start = built.indexOf('async function formPage(');
+  let end = built.indexOf('{', built.indexOf(')', start));
+  for (let depth = 0; end < built.length; end++) {
+    if (built[end] === '{') depth++;
+    else if (built[end] === '}' && --depth === 0) break;
+  }
+  const traps = await context.newPage();
+  await traps.goto(`${local.origin}${TRAPS_PATH}`);
+  const questions = await traps.evaluate(
+    `(${built.slice(start, end + 1)})({ do: 'read' }).then((answer) => answer.form.fields.map((field) => field.question))`,
+  );
+  check(
+    JSON.stringify(questions) === JSON.stringify(SEEN),
+    `it reads only the fields you can see, never a trap for bots (${String(questions)})`,
   );
   check(local.requests() === 0, 'nothing reached any other site');
   check(

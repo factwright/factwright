@@ -1,7 +1,7 @@
 // Fills a form in a real Firefox, headless, with the built extension's own form function: sent
 // into a page served here by the extension's scripting.executeScript, as its sidebar does it, it
 // reads the form, fills it, uploads a file through Firefox's content-script sandbox, and reads
-// what's in it. Nothing is submitted. As e2e:firefox does, it needs Mozilla's Firefox 158 or
+// what's in it. It reads no field you can't see, as a page's traps for bots. Nothing is submitted. As e2e:firefox does, it needs Mozilla's Firefox 158 or
 // later, which FIREFOX names, or on a Mac the one in Applications.
 // `pnpm --filter @factwright/extension e2e:firefox-fill`.
 import { execFileSync } from 'node:child_process';
@@ -54,8 +54,12 @@ const PAGES: Record<string, string> = {
   '/lever/apply': 'lever-application.html',
 };
 
+/** A form with fields you can't see, and the questions of the ones you can. */
+const TRAPS = '/traps/apply';
+const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
+
 const site = createServer((request, response) => {
-  const name = PAGES[request.url ?? ''];
+  const name = request.url === TRAPS ? 'hidden-fields.html' : PAGES[request.url ?? ''];
   response.writeHead(name ? 200 : 404, { 'content-type': 'text/html' });
   response.end(name ? readFileSync(join(FIXTURES, name)) : 'Not found');
 });
@@ -180,7 +184,11 @@ try {
       const field = at(question);
       return field ? [{ ref: field.ref, key: field.key, ...answer }] : [];
     });
-    const { filled } = await inPage<{ filled: FieldFilled[] }>(address, { do: 'fill', answers });
+    const { filled } = await inPage<{ filled: FieldFilled[] }>(address, {
+      do: 'fill',
+      url: address,
+      answers,
+    });
     const took = (question: string) =>
       filled.find((each) => each.ref === at(question)?.ref)?.ok === true;
     const files = fields.filter((field) => field.control === 'file');
@@ -190,13 +198,24 @@ try {
       `${path}: each field takes what it's given, as typing would`,
     );
     check(!at('Create a password') || !took('Create a password'), `${path}: but never a password`);
-    const { values } = await inPage<{ values: FieldValue[] }>(address, { do: 'values' });
+    const { values } = await inPage<{ values: FieldValue[] }>(address, {
+      do: 'values',
+      fields: files.map(({ ref, key }) => ({ ref, key })),
+    });
     const inFile = values.find((each) => files.some((field) => field.key === each.key))?.value;
     check(
       inFile === 'Ana Ruiz - Resume.pdf',
       `${path}: the resume goes in through Firefox's content-script sandbox`,
     );
   }
+  const traps = `${origin}${TRAPS}`;
+  await running.send('browsingContext.navigate', { context: tab, url: traps, wait: 'complete' });
+  const seen = await inPage<{ form: { fields: PageField[] } }>(traps, { do: 'read' });
+  const questions = seen.form.fields.map((field) => field.question);
+  check(
+    JSON.stringify(questions) === JSON.stringify(SEEN),
+    `it reads only the fields you can see, never a trap for bots (${questions.join(', ')})`,
+  );
 } catch (error) {
   failed = true;
   console.error(error);

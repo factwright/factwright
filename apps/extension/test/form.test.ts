@@ -16,7 +16,10 @@ const fixture = (name: string) =>
     'text/html',
   );
 
-const run = (task: FormTask, doc: Document) => formPage(task, doc, 'https://jobs.example/apply');
+/** Where the tests' forms are, as the page's address. */
+const HERE = 'https://jobs.example/apply';
+
+const run = (task: FormTask, doc: Document) => formPage(task, doc, HERE);
 
 async function read(doc: Document): Promise<PageForm> {
   const answer = await run({ do: 'read' }, doc);
@@ -138,6 +141,17 @@ describe('reading an application form', () => {
     expect(form.fields.filter((field) => field.control === 'file')).toHaveLength(1);
   });
 
+  it('reads no field kept from you, or see-through, as a page keeps traps for bots', async () => {
+    const form = await read(fixture('hidden-fields'));
+    const questions = form.fields.map((field) => field.question);
+    expect(questions).toEqual(
+      expect.arrayContaining(['Full name', 'Are you willing to relocate?']),
+    );
+    // Without layout, as here, a page can only say so on the field or around it; a browser,
+    // which lays the page out, leaves out the rest too (scripts/e2e-fill.ts).
+    for (const hidden of ['Nickname', 'Email', 'Phone']) expect(questions).not.toContain(hidden);
+  });
+
   it('reads only the form’s own fields: none hidden, in a header or footer, or a search', async () => {
     const form = await read(fixture('plain-application'));
     expect(asked(form)).toEqual([
@@ -185,6 +199,7 @@ describe('filling a form', () => {
   it('types into boxes, picks options, and checks each took, as the page shows them', async () => {
     const { doc, filled } = await fillPlain((form) => ({
       do: 'fill',
+      url: HERE,
       answers: [
         { ...at(form, 'Full name'), text: 'Ana María Ruiz' },
         { ...at(form, 'Email address'), text: 'ana@example.com' },
@@ -211,6 +226,7 @@ describe('filling a form', () => {
   it('says when no option is the answer, and changes nothing there', async () => {
     const { doc, filled } = await fillPlain((form) => ({
       do: 'fill',
+      url: HERE,
       answers: [{ ...at(form, 'State'), pick: ['Texas', 'TX'] }],
     }));
     expect(filled).toEqual([{ ref: 3, ok: false, shown: '', why: 'no-option' }]);
@@ -220,6 +236,7 @@ describe('filling a form', () => {
   it('picks only an option with the same words, for an answer given to another form', async () => {
     const { filled } = await fillPlain((form) => ({
       do: 'fill',
+      url: HERE,
       answers: [{ ...at(form, 'State'), pick: ['Color'], exact: true }],
     }));
     expect(filled[0]).toMatchObject({ ok: false, why: 'no-option' });
@@ -228,6 +245,7 @@ describe('filling a form', () => {
   it('never fills a password or agrees to anything, whatever it’s asked to put there', async () => {
     const { doc, filled } = await fillPlain((form) => ({
       do: 'fill',
+      url: HERE,
       answers: [
         { ...at(form, 'Create a password'), text: 'hunter2' },
         { ...at(form, 'I agree to the privacy policy'), text: 'yes' },
@@ -248,7 +266,11 @@ describe('filling a form', () => {
       '<label for="pref">Preferred name</label><input id="pref" name="preferred" />';
     doc.getElementById('apply')?.prepend(added);
     const filled = (await run(
-      { do: 'fill', answers: [{ ref: email.ref, key: email.key, text: 'ana@example.com' }] },
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [{ ref: email.ref, key: email.key, text: 'ana@example.com' }],
+      },
       doc,
     )) as Extract<FormAnswer, { did: 'fill' }>;
     expect(filled.filled[0]?.ok).toBe(true);
@@ -256,20 +278,134 @@ describe('filling a form', () => {
     expect((doc.getElementById('pref') as HTMLInputElement).value).toBe('');
     // A key no field has is never filled at all.
     const gone = (await run(
-      { do: 'fill', answers: [{ ref: 2, key: 'gone', text: 'x' }] },
+      { do: 'fill', url: HERE, answers: [{ ref: 2, key: 'gone', text: 'x' }] },
       doc,
     )) as Extract<FormAnswer, { did: 'fill' }>;
     expect(gone.filled).toEqual([{ ref: 2, ok: false, shown: '', why: 'moved' }]);
   });
 
-  it('reads what’s in each field, never a password’s', async () => {
+  it('reads what’s in the fields it’s asked about, whole, and never a password’s', async () => {
     const doc = fixture('plain-application');
+    const form = await read(doc);
     (doc.getElementById('mail') as HTMLInputElement).value = 'ana@example.com';
     (doc.getElementById('pw') as HTMLInputElement).value = 'hunter2';
-    const values = (await run({ do: 'values' }, doc)) as Extract<FormAnswer, { did: 'values' }>;
-    expect(values.values.find((each) => each.ref === 1)?.value).toBe('ana@example.com');
-    expect(values.values.find((each) => each.ref === 9)?.value).toBe('');
+    const long = 'A long answer. '.repeat(100).trim();
+    (doc.getElementById('why') as HTMLTextAreaElement).value = long;
+    const named = (questions: string[]) =>
+      form.fields
+        .filter((field) => questions.includes(field.question))
+        .map(({ ref, key }) => ({ ref, key }));
+    const values = (await run(
+      {
+        do: 'values',
+        fields: named([
+          'Email address',
+          'Create a password',
+          'Why do you want to work at Fernway?',
+        ]),
+      },
+      doc,
+    )) as Extract<FormAnswer, { did: 'values' }>;
+    expect(values.values.map((each) => each.value)).toEqual(['ana@example.com', long, '']);
     expect(JSON.stringify(values)).not.toContain('hunter2');
+    expect(values.submitted).toBe(false);
+    // Only those: the phone it wasn't asked about isn't read.
+    (doc.getElementById('tel') as HTMLInputElement).value = '(303) 555-0142';
+    const one = (await run({ do: 'values', fields: named(['Email address']) }, doc)) as Extract<
+      FormAnswer,
+      { did: 'values' }
+    >;
+    expect(JSON.stringify(one)).not.toContain('555-0142');
+  });
+
+  it('fills only the form at the address it read it at', async () => {
+    const doc = fixture('plain-application');
+    const form = await read(doc);
+    const answer = await run(
+      {
+        do: 'fill',
+        url: 'https://jobs.example/other/apply',
+        answers: [{ ...at(form, 'Full name'), text: 'Ana María Ruiz' }],
+      },
+      doc,
+    );
+    expect(answer).toEqual({ did: 'elsewhere' });
+    expect((doc.getElementById('full') as HTMLInputElement).value).toBe('');
+    // What's after a # can change as a page goes through its own steps.
+    const same = await run(
+      {
+        do: 'fill',
+        url: `${HERE}#step-2`,
+        answers: [{ ...at(form, 'Full name'), text: 'Ana María Ruiz' }],
+      },
+      doc,
+    );
+    expect(same).toMatchObject({ did: 'fill', filled: [{ ok: true }] });
+  });
+
+  it('says how each field went by the place it was asked about, though the field moved', async () => {
+    const doc = fixture('plain-application');
+    const form = await read(doc);
+    const added = doc.createElement('div');
+    added.innerHTML =
+      '<label for="pref">Preferred name</label><input id="pref" name="preferred" />';
+    doc.getElementById('apply')?.prepend(added);
+    const email = at(form, 'Email address');
+    const filled = (await run(
+      { do: 'fill', url: HERE, answers: [{ ...email, text: 'ana@example.com' }] },
+      doc,
+    )) as Extract<FormAnswer, { did: 'fill' }>;
+    expect(filled.filled).toEqual([
+      { ref: email.ref, ok: true, shown: 'ana@example.com', why: '' },
+    ]);
+  });
+
+  it('never clicks a button that submits, and stops anything submitting the form as it fills', async () => {
+    document.body.innerHTML = `
+      <form id="apply" action="/apply">
+        <label id="country">Country</label>
+        <button role="combobox" aria-labelledby="country" aria-controls="countries">Pick one</button>
+        <div role="listbox" id="countries"><div role="option">Canada</div></div>
+        <label for="name">Full name</label>
+        <input id="name" name="name" />
+        <button type="submit">Submit application</button>
+      </form>`;
+    const apply = document.getElementById('apply') as HTMLFormElement;
+    // A page that submits its form once a box changes.
+    (document.getElementById('name') as HTMLInputElement).addEventListener('change', () =>
+      apply.requestSubmit(),
+    );
+    let submitted = 0;
+    let clicked = 0;
+    apply.addEventListener('submit', (event) => {
+      submitted += 1;
+      event.preventDefault();
+    });
+    document.querySelector('button[role="combobox"]')?.addEventListener('click', () => {
+      clicked += 1;
+    });
+    const form = await formPage({ do: 'read' }, document, HERE);
+    if (form.did !== 'read') throw new Error('It didn’t read the form.');
+    const [country, name] = form.form.fields;
+    if (!country || !name) throw new Error('No fields');
+    await formPage(
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [
+          { ref: country.ref, key: country.key, pick: ['Canada'] },
+          { ref: name.ref, key: name.key, text: 'Ana María Ruiz' },
+        ],
+      },
+      document,
+      HERE,
+    );
+    expect(clicked).toBe(0);
+    expect(submitted).toBe(0);
+    // Once it's done, the page is as it was: you submit it.
+    apply.requestSubmit();
+    expect(submitted).toBe(1);
+    document.body.innerHTML = '';
   });
 
   it('outlines what’s left for you in orange, until it has an answer', async () => {

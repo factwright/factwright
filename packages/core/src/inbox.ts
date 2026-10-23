@@ -155,8 +155,8 @@ export type InboxAsk =
       role: string;
       fields: AskedField[];
     }
-  /** A part of one of a job's files, to upload. */
-  | { ask: 'file'; job: string; file: 'resume' | 'cover-letter'; part: number }
+  /** A part of one of a job's files, to upload: the one offered, by its version. */
+  | { ask: 'file'; job: string; file: 'resume' | 'cover-letter'; version: string; part: number }
   /** What you sent, once you've applied: the answers to the form's own questions. */
   | { ask: 'sent'; job: string; url: string; answers: { question: string; text: string }[] }
   /** New answers to keep in Profile, each one you chose to save. */
@@ -246,9 +246,10 @@ export function readInboxAsk(text: string): InboxAsk | null {
     if (!fields.every((field): field is AskedField => field !== null)) return null;
     return { ask: 'fill', url, title, company, role, fields };
   }
-  if (asked.ask === 'file' && keys === 'ask file job part') {
-    const { job, file, part } = asked;
+  if (asked.ask === 'file' && keys === 'ask file job part version') {
+    const { job, file, part, version } = asked;
     if (!isJobId(job) || (file !== 'resume' && file !== 'cover-letter')) return null;
+    if (typeof version !== 'string' || !/^[0-9a-f]{16}$/.test(version)) return null;
     if (
       !Number.isInteger(part) ||
       (part as number) < 0 ||
@@ -256,7 +257,7 @@ export function readInboxAsk(text: string): InboxAsk | null {
     ) {
       return null;
     }
-    return { ask: 'file', job, file, part: part as number };
+    return { ask: 'file', job, file, version, part: part as number };
   }
   if (asked.ask === 'sent' && keys === 'answers ask job url') {
     const { job, url, answers } = asked;
@@ -303,11 +304,15 @@ export interface AskedJob {
   appliedOn: string | null;
 }
 
-/** One of a job's files, as the app offers it: its name, its size, and how many parts it's in. */
+/**
+ * One of a job's files, as the app offers it: its name, its size, how many parts it's in, and
+ * its version, which each part is asked for by, so every part is of the same file as it was.
+ */
 export interface OfferedFile {
   name: string;
   size: number;
   parts: number;
+  version: string;
 }
 
 /** What the app answers an ask with, or why it couldn't. */
@@ -328,8 +333,9 @@ export type InboxAskAnswer =
       ok: false;
       /**
        * Why: the app isn't open, it didn't answer in time, the ask wasn't one, it's for a job or
-       * file that isn't there, or it couldn't be done.
+       * file that isn't there, the answer is more than the browser takes at once, or it couldn't
+       * be done.
        */
-      reason: 'closed' | 'busy' | 'bad-message' | 'not-found' | 'failed';
+      reason: 'closed' | 'busy' | 'bad-message' | 'not-found' | 'too-big' | 'failed';
       message?: string;
     };

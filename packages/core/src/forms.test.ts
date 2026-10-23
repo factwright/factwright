@@ -201,19 +201,91 @@ describe('what a field asks for', () => {
         ['Bank account number'],
       ]),
     ).toEqual(Array(10).fill('never'));
-    // A question about having one is a question, not the number.
-    expect(kinds([['Do you have a valid driver’s license?', { control: 'choice' }]])).toEqual([
-      'question',
-    ]);
+    expect(
+      kinds([
+        ['ID number'],
+        ['Government ID number'],
+        ['Passport #'],
+        ['PIN'],
+        ['Security question answer'],
+        ['Year of birth', { control: 'number', type: 'number' }],
+      ]),
+    ).toEqual(Array(6).fill('never'));
+    // A question about having one is a question, not the number, and a PIN code is a postal code.
+    expect(
+      kinds([
+        ['Do you have a valid driver’s license?', { control: 'choice' }],
+        ['Do you hold a valid passport?', { control: 'choice' }],
+        ['PIN code'],
+        ['Do you have a security clearance?', { control: 'choice' }],
+      ]),
+    ).toEqual(['question', 'question', 'postal-code', 'question']);
   });
 
-  it('leaves agreeing to anything for you', () => {
+  it('keeps personal questions for you', () => {
+    expect(
+      kinds([
+        ['Sexual orientation', { control: 'choice' }],
+        ['Do you identify as transgender?', { control: 'choice' }],
+        ['Do you identify as LGBTQ+?', { control: 'choice' }],
+        ['What is your age?'],
+        ['Do you need an accommodation for your interview?', { control: 'choice' }],
+        ['Have you ever been convicted of a felony?', { control: 'choice' }],
+        ['Marital status', { control: 'choice' }],
+        ['Religion', { control: 'combo' }],
+      ]),
+    ).toEqual(Array(8).fill('personal'));
+  });
+
+  it('takes equal-opportunity questions only as a self-identification form asks them', () => {
+    expect(
+      kinds([
+        ['Do you have a disability?', { control: 'choice' }],
+        ['Are you a protected veteran?', { control: 'choice' }],
+        ['Hispanic or Latino', { control: 'choice' }],
+        ['What is your gender identity?', { control: 'combo' }],
+      ]),
+    ).toEqual(['disability', 'veteran', 'hispanic', 'gender']);
+    expect(
+      kinds([
+        ['Do you need a disability accommodation for your interview?', { control: 'choice' }],
+        ['Describe your military service, if any.', { control: 'long' }],
+        ['Are you a military spouse?', { control: 'choice' }],
+        ['Are you fluent in Spanish for our Latino customers?', { control: 'choice' }],
+        ['Have you ever been convicted of a sex offense?', { control: 'choice' }],
+      ]),
+    ).toEqual(['personal', 'question', 'personal', 'question', 'personal']);
+  });
+
+  it('tells working where you are from working without sponsorship', () => {
+    expect(
+      kinds([
+        [
+          'Are you legally authorized to work in the United States without the need for employer sponsorship?',
+          { control: 'choice' },
+        ],
+        ['Are you authorized to work in the US? If you need sponsorship, answer No.'],
+        ['Can you work here without sponsorship?', { control: 'choice' }],
+        ['Are you located in the Denver area or willing to relocate?', { control: 'choice' }],
+        ['Will you require relocation assistance?', { control: 'choice' }],
+      ]),
+    ).toEqual(['authorized', 'question', 'sponsorship', 'question', 'question']);
+  });
+
+  it('leaves agreeing to anything for you, however it’s asked', () => {
     expect(
       kinds([
         ['I agree to the privacy policy', { control: 'check', type: 'checkbox' }],
         ['I certify that the information above is true', { control: 'check', type: 'checkbox' }],
+        ['Do you acknowledge our applicant privacy notice?', { control: 'choice' }],
+        ['Do you consent to a background check?', { control: 'combo' }],
+        ['Which of these do you agree to?', { control: 'choices', type: 'checkbox' }],
+        ['Type your full name as your signature'],
+        ['May we keep your information for future roles?', { control: 'long' }],
       ]),
-    ).toEqual(['consent', 'consent']);
+    ).toEqual(Array(7).fill('consent'));
+    // Confirming your email isn't agreeing to anything.
+    expect(kinds([['Confirm email', { type: 'email' }]])).toEqual(['email']);
   });
 
   it('keeps someone else’s name, email and phone apart from yours', () => {

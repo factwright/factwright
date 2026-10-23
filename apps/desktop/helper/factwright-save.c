@@ -484,8 +484,11 @@ static int path_add(Path *path, const char *name) {
   return 1;
 }
 
-/** How reading a small file went: read whole, not there, or refused, such as for a link. */
-typedef enum { READ_WHOLE, READ_MISSING, READ_REFUSED } ReadResult;
+/**
+ * How reading a small file went: read whole, not there, longer than the most it takes, or
+ * refused, such as for a link.
+ */
+typedef enum { READ_WHOLE, READ_MISSING, READ_TOO_BIG, READ_REFUSED } ReadResult;
 
 // What the helper asks of the Mac and Linux. Each file in the inbox is reached through the inbox
 // folder, opened once, so a link put in the folder's place can't send a file anywhere else.
@@ -598,7 +601,7 @@ static ReadResult read_open_file(int file, unsigned char *bytes, size_t room, si
     }
     total += (size_t)got;
   }
-  return READ_REFUSED;
+  return READ_TOO_BIG;
 }
 
 /**
@@ -641,6 +644,14 @@ static ReadResult read_inbox_file(const Inbox *inbox, const char *name, unsigned
 /** Removes a file from the inbox. One that's a link goes itself, never what it points to. */
 static void remove_inbox_file(const Inbox *inbox, const char *name) {
   unlinkat(inbox->folder, name, 0);
+}
+
+/**
+ * Takes an ask back from the inbox, and says whether the app is without it: it is, unless the app
+ * took it first, as removing it is how the app takes one.
+ */
+static int take_back(const Inbox *inbox, const char *name) {
+  return unlinkat(inbox->folder, name, 0) == 0 || errno != ENOENT;
 }
 
 static int is_job_file(const char *name);
@@ -846,6 +857,7 @@ static ReadResult read_file(const Path *path, unsigned char *bytes, size_t room,
       }
       total += got;
     }
+    if (total >= room) result = READ_TOO_BIG;
   }
   CloseHandle(file);
   return result;
@@ -872,6 +884,16 @@ static ReadResult read_inbox_file(const Inbox *inbox, const char *name, unsigned
   Path path = inbox->folder;
   if (!path_add(&path, name)) return READ_REFUSED;
   return read_file(&path, bytes, room, length);
+}
+
+/**
+ * Takes an ask back from the inbox, and says whether the app is without it: it is, unless the app
+ * took it first, as removing it is how the app takes one.
+ */
+static int take_back(const Inbox *inbox, const char *name) {
+  Path path = inbox->folder;
+  if (!path_add(&path, name)) return 1;
+  return DeleteFileW(path.text) || GetLastError() != ERROR_FILE_NOT_FOUND;
 }
 
 /** Removes a file from the inbox. One that's a link goes itself, never what it points to. */
@@ -1128,36 +1150,48 @@ static int send_text(const char *answer) {
   return send_answer((const unsigned char *)answer, strlen(answer));
 }
 
-/** How the helper waits for the app's answer: how long, the most it takes, and what it says without one. */
+/**
+ * How the helper waits for the app's answer: how long, the most it takes, what it says without
+ * one, and what it says of one that's longer than it takes.
+ */
 typedef struct {
   unsigned wait_ms;
   size_t limit;
   const char *without;
+  const char *too_big;
 } Waiting;
 
 /** A job waits for the app if no answer comes: the app, busy, adds it in a moment. */
-static const Waiting FOR_JOB = {ANSWER_WAIT_MS, APP_ANSWER_LIMIT, ANSWER_LATER_OPEN};
+static const Waiting FOR_JOB = {ANSWER_WAIT_MS, APP_ANSWER_LIMIT, ANSWER_LATER_OPEN,
+                                ANSWER_LATER_OPEN};
 
 /** An ask has no answer without the app's, so it says the app was busy. */
-static const Waiting FOR_ASK = {ASK_WAIT_MS, ASK_ANSWER_LIMIT, ANSWER_BUSY};
+static const Waiting FOR_ASK = {ASK_WAIT_MS, ASK_ANSWER_LIMIT, ANSWER_BUSY, ANSWER_TOO_BIG};
 
 /**
  * Waits for the open app's answer, and passes it on: for a job up to 3 seconds, and for an ask up
  * to 10, looking every 50 milliseconds. The app's answer is removed once it's read, as no one else
  * needs it. One that isn't a JSON object of at most the most it takes, 4096 bytes for a job, isn't
  * passed on, nor is a link. Without an answer it can pass on, a job waits for the app, which is
- * open, so it says so: the app adds it in a moment, as once it's done starting. An ask says the
- * app was busy.
+ * open, so it says so: the app adds it in a moment, as once it's done starting. An ask the app
+ * hasn't taken by then is taken back before the helper says the app was busy, so the app never
+ * acts on one nobody waits for, and one it has taken gets as long again for its answer.
  */
-static int pass_on_answer(const Inbox *inbox, const char *name, const Waiting *waiting) {
+static int pass_on_answer(const Inbox *inbox, const char *name, const char *ask,
+                          const Waiting *waiting) {
   static unsigned char answer[ASK_ANSWER_LIMIT + 1];
   char done[FILE_NAME_ROOM];
-  if (!file_name(done, "", name, ".done")) return send_text(waiting->without);
+  if (!file_name(done, "", name, ".done")) {
+    if (ask != NULL) take_back(inbox, ask);
+    return send_text(waiting->without);
+  }
+  int longer = 0;
   for (unsigned look = 0;; look++) {
     size_t length = 0;
     ReadResult found = read_inbox_file(inbox, done, answer, waiting->limit + 1, &length);
     if (found != READ_MISSING) {
       remove_inbox_file(inbox, done);
+      if (found == READ_TOO_BIG) return send_text(waiting->too_big);
       if (found != READ_WHOLE || !is_json_object(answer, length)) {
         return send_text(waiting->without);
       }
@@ -1169,7 +1203,11 @@ static int pass_on_answer(const Inbox *inbox, const char *name, const Waiting *w
       }
       return send_answer(answer + trimmed.at, length - trimmed.at);
     }
-    if (look >= waiting->wait_ms / LOOK_EVERY_MS) return send_text(waiting->without);
+    if (look >= waiting->wait_ms / LOOK_EVERY_MS) {
+      if (ask == NULL || longer || take_back(inbox, ask)) return send_text(waiting->without);
+      longer = 1;
+      look = 0;
+    }
     pause_briefly();
   }
 }
@@ -1190,7 +1228,7 @@ static int deliver(const Inbox *inbox, const unsigned char *job, size_t length) 
     return send_text(ANSWER_FAILED);
   }
   if (!app_listening(inbox)) return send_text(ANSWER_LATER);
-  return pass_on_answer(inbox, name, &FOR_JOB);
+  return pass_on_answer(inbox, name, NULL, &FOR_JOB);
 }
 
 /**
@@ -1208,9 +1246,7 @@ static int deliver_ask(const Inbox *inbox, const unsigned char *message, size_t 
       !write_inbox_file(inbox, draft, file, message, length)) {
     return send_text(ANSWER_FAILED);
   }
-  int sent = pass_on_answer(inbox, name, &FOR_ASK);
-  remove_inbox_file(inbox, file);
-  return sent;
+  return pass_on_answer(inbox, name, file, &FOR_ASK);
 }
 
 /** Saves a job for the profile open last, and answers. */
@@ -1248,6 +1284,10 @@ static unsigned char message[MESSAGE_LIMIT];
  * registration is what decides who may start the helper.
  */
 int main(void) {
+#if !defined(_WIN32)
+  // A browser that stops listening makes writing fail, rather than stopping the helper mid-way.
+  signal(SIGPIPE, SIG_IGN);
+#endif
   if (!prepare_streams()) return 1;
   unsigned char header[4];
   if (!read_input(header, sizeof header)) return 1;

@@ -88,19 +88,32 @@ export interface FieldValue {
   value: string;
 }
 
-/** What the extension asks of the page: to read the form, fill it, read what's in it, or show a field. */
+/** A field, by its place and key, as the extension names one to the page. */
+export interface FieldRef {
+  ref: number;
+  key: string;
+}
+
+/**
+ * What the extension asks of the page: to read the form, fill it, read what's in some of its
+ * fields, or show a field. It fills only the form at the address it read it at.
+ */
 export type FormTask =
   | { do: 'read' }
-  | { do: 'fill'; answers: FieldAnswer[] }
-  | { do: 'values' }
-  | { do: 'outline'; fields: { ref: number; key: string }[] }
+  | { do: 'fill'; url: string; answers: FieldAnswer[] }
+  | { do: 'values'; fields: FieldRef[] }
+  | { do: 'outline'; fields: FieldRef[] }
   | { do: 'show'; ref: number; key: string };
 
-/** What each task gives back. */
+/**
+ * What each task gives back. A form the tab has moved on from, to another address, isn't filled:
+ * it's elsewhere. What's in fields comes with whether the page says an application went in.
+ */
 export type FormAnswer =
   | { did: 'read'; form: PageForm }
   | { did: 'fill'; filled: FieldFilled[] }
-  | { did: 'values'; url: string; values: FieldValue[] }
+  | { did: 'elsewhere' }
+  | { did: 'values'; url: string; submitted: boolean; values: FieldValue[] }
   | { did: 'outline' }
   | { did: 'show'; found: boolean };
 
@@ -109,9 +122,11 @@ export type FormAnswer =
  * its fields: whatever the extension asks, and only when you ask it to. The extension sends this
  * one function into the page, so everything it needs is inside it.
  * - It reads only fields you can see, outside the page's menus, header and footer, and never what
- *   you've typed, until you mark the job applied, when it reads the answers to send Factwright.
+ *   you've typed, but for the fields the extension names as you go, to have what you sent once
+ *   you mark the job applied.
  * - It fills a field as typing would, so the page keeps what's put in it, and checks it took.
- * - It never fills a password, never clicks a page's buttons, and never submits anything.
+ * - It never fills a password, never clicks a button that submits, and never submits anything:
+ *   while it fills, the form can't be.
  * The page's words are data, never instructions.
  */
 export async function formPage(
@@ -119,10 +134,12 @@ export async function formPage(
   doc: Document = document,
   href: string = location.href,
 ): Promise<FormAnswer> {
-  /** The most fields it reads: a long application has a hundred or so. */
+  /** The most fields it reads, and options of each: a long application has a hundred or so. */
   const MAX_FIELDS = 300;
   /** The longest question, hint or option it keeps. */
   const MAX_TEXT = 500;
+  /** The longest answer it reads back, as Factwright keeps what you sent. */
+  const MAX_VALUE = 10_000;
   /** Inputs that are buttons, or kept from you, which are never fields. */
   const NOT_FIELDS = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'search']);
   /** The page's own parts around its content, where a site's search and sign-up boxes are. */
@@ -143,23 +160,92 @@ export async function formPage(
   const cut = (text: string) => (text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT - 1)}…` : text);
   const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
+  /** Whether the page has layout, as a browser's does, and a test's page doesn't. */
+  const laidOut =
+    typeof (doc.documentElement as HTMLElement & { checkVisibility?: unknown }).checkVisibility ===
+    'function';
+
   /**
-   * Whether you can see an element: the browser says, where it can. In a page without layout, as
-   * in a test, what hides it is an attribute or style on it or around it.
+   * Whether an element is shown: not hidden, see-through, or kept from you and your screen reader,
+   * as what's around a dialog is while it's open. The browser says, where it can. In a page
+   * without layout, as in a test, what hides it is an attribute or style on it or around it.
    */
-  const visible = (element: Element): boolean => {
-    const check = (element as Element & { checkVisibility?: (options?: object) => boolean })
-      .checkVisibility;
-    if (typeof check === 'function') {
-      return check.call(element, { visibilityProperty: true, contentVisibilityAuto: true });
+  const shown = (element: Element): boolean => {
+    if (element.closest('[aria-hidden="true"], [inert]')) return false;
+    if (laidOut) {
+      return (element as HTMLElement).checkVisibility({
+        visibilityProperty: true,
+        opacityProperty: true,
+        contentVisibilityAuto: true,
+        checkVisibilityCSS: true,
+        checkOpacity: true,
+      } as CheckVisibilityOptions);
     }
     for (let up: Element | null = element; up; up = up.parentElement) {
       if (up.hasAttribute('hidden')) return false;
       const style = (up as HTMLElement).style;
       if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+      if (style && style.opacity !== '' && Number(style.opacity) === 0) return false;
     }
     return true;
   };
+
+  /** Whether a box's clip, as one placed absolutely may have, cuts all of it away. */
+  const clipsAll = (style: CSSStyleDeclaration): boolean => {
+    const sides = /^rect\((.*)\)$/
+      .exec(style.getPropertyValue('clip'))?.[1]
+      ?.split(/[\s,]+/)
+      .map((side) => (side === 'auto' ? null : Number.parseFloat(side)));
+    if (sides?.length !== 4) return false;
+    const [top = null, right = null, bottom = null, left = null] = sides;
+    return (
+      (right !== null && left !== null && right <= left) ||
+      (bottom !== null && top !== null && bottom <= top)
+    );
+  };
+
+  /**
+   * Whether an element has room on the page: a box of some size, not put off the page, and not
+   * cut away by a box around it that hides what overflows it, or by a clip, as a page hides a box
+   * that's a trap for bots. A box that scrolls holds all it scrolls through, and one placed
+   * absolutely is cut away only by the box it's placed in and those around that.
+   */
+  const hasRoom = (element: Element): boolean => {
+    const view = doc.defaultView;
+    if (!laidOut || !view) return true;
+    let { left, top, right, bottom } = element.getBoundingClientRect();
+    const roomy = () => right - left >= 2 && bottom - top >= 2;
+    if (!roomy()) return false;
+    const own = view.getComputedStyle(element);
+    if (clipsAll(own)) return false;
+    let placed = own.position;
+    for (let up = element.parentElement; up && up !== doc.body; up = up.parentElement) {
+      if (placed === 'fixed') break;
+      const style = view.getComputedStyle(up);
+      if (placed === 'absolute' && style.position === 'static') continue;
+      if (clipsAll(style)) return false;
+      placed = style.position;
+      const box = up.getBoundingClientRect();
+      if (style.overflowX !== 'visible') {
+        const scrolls = style.overflowX === 'auto' || style.overflowX === 'scroll';
+        const from = scrolls ? box.left - up.scrollLeft : box.left;
+        left = Math.max(left, from);
+        right = Math.min(right, scrolls ? from + up.scrollWidth : box.right);
+      }
+      if (style.overflowY !== 'visible') {
+        const scrolls = style.overflowY === 'auto' || style.overflowY === 'scroll';
+        const from = scrolls ? box.top - up.scrollTop : box.top;
+        top = Math.max(top, from);
+        bottom = Math.min(bottom, scrolls ? from + up.scrollHeight : box.bottom);
+      }
+      if (!roomy()) return false;
+    }
+    // The page starts at its top left corner: a box put above it or left of it is off it.
+    return right > -view.scrollX && bottom > -view.scrollY;
+  };
+
+  /** Whether you can see an element: shown, with room on the page. */
+  const visible = (element: Element): boolean => shown(element) && hasRoom(element);
 
   /** An element's words, without the controls, options and scripts inside it. */
   const wordsOf = (element: Element | null): string => {
@@ -270,7 +356,7 @@ export async function formPage(
     let up: Element | null = element;
     for (let level = 0; level < 5 && up && up !== doc.body; level++) {
       for (let before = up.previousElementSibling; before; before = before.previousElementSibling) {
-        if (!visible(before)) continue;
+        if (!shown(before)) continue;
         if (before.matches('input, select, textarea')) return '';
         const holds = before.querySelector('input:not([type="hidden"]), select, textarea');
         if (holds) return '';
@@ -346,7 +432,7 @@ export async function formPage(
       let between = '';
       for (let next = label.nextElementSibling; next; next = next.nextElementSibling) {
         if (next.contains(control) || next.matches('input, select, textarea')) break;
-        if (visible(next)) between += ` ${wordsOf(next)}`;
+        if (shown(next)) between += ` ${wordsOf(next)}`;
       }
       const words = squash(between);
       if (words && words !== question && !PLACEHOLDERS.test(words)) return cut(words);
@@ -387,6 +473,7 @@ export async function formPage(
         (text, at, all) =>
           text && !(at === 0 && PLACEHOLDERS.test(text)) && all.indexOf(text) === at,
       )
+      .slice(0, MAX_FIELDS)
       .map(cut);
 
   /** The list a box that offers choices shows once it's open, and the options in it. */
@@ -401,10 +488,29 @@ export async function formPage(
       ],
     ];
     for (const list of lists) {
-      const options = [...list.querySelectorAll('[role="option"]')].filter(visible);
+      const options = [...list.querySelectorAll('[role="option"]')].filter(shown);
       if (options.length > 0) return options;
     }
     return [];
+  };
+
+  /** The box a box that offers choices shows as, around its own input, which may be see-through. */
+  const comboBox = (control: Element): Element | null =>
+    control.closest(
+      '[class*="control"], [class*="select"], [class*="combobox"], [class*="dropdown"]',
+    );
+
+  /** Whether clicking an element would submit its form: it is, or is inside, a button that submits. */
+  const submits = (element: Element): boolean => {
+    const button =
+      element.closest('button') ?? (element instanceof HTMLInputElement ? element : null);
+    if (button instanceof HTMLButtonElement)
+      return button.type === 'submit' && button.form !== null;
+    return (
+      button instanceof HTMLInputElement &&
+      (button.type === 'submit' || button.type === 'image') &&
+      button.form !== null
+    );
   };
 
   /** A field, found by reading the page, with the elements it's made of. */
@@ -427,7 +533,6 @@ export async function formPage(
     ) {
       return false;
     }
-    if (control.getAttribute('aria-hidden') === 'true') return false;
     // A box with no name and nothing naming it, such as one a page keeps for dropping files on
     // anywhere, is the page's own, not a question.
     const nameless =
@@ -437,9 +542,17 @@ export async function formPage(
       !control.getAttribute('aria-labelledby') &&
       !control.closest('label');
     if (nameless && (type === 'file' || control.getAttribute('tabindex') === '-1')) return false;
-    if (type === 'file') {
-      // A file field is often hidden behind a button of the page's own: its label is shown.
+    // Kept from you, as what's around a dialog is while it's open, it's never a field.
+    if (control.closest('[aria-hidden="true"], [inert]')) return false;
+    // A file field, a radio button or a checkbox is often hidden behind the page's own button or
+    // box, and its label is what you see. A box that offers choices may be see-through, inside
+    // the box it shows as.
+    if (type === 'file' || type === 'radio' || type === 'checkbox') {
       return visible(control) || labelsOf(control).some(visible);
+    }
+    if (control.getAttribute('role') === 'combobox' && !visible(control)) {
+      const box = comboBox(control);
+      return box !== null && visible(box);
     }
     return visible(control);
   };
@@ -490,10 +603,10 @@ export async function formPage(
           question: cut(cleanQuestion(raw)),
           hint: '',
           control: type === 'radio' ? 'choice' : 'choices',
-          type,
+          type: type.slice(0, 40),
           autocomplete: '',
           name: cut(squash(`${name} ${id}`)),
-          options: group.map(optionWords),
+          options: group.slice(0, MAX_FIELDS).map(optionWords),
           required: group.some((each) => (each as HTMLInputElement).required) || marksRequired(raw),
           limit: null,
         };
@@ -529,14 +642,16 @@ export async function formPage(
           ),
           hint,
           control: control_,
-          type,
-          autocomplete: (control.getAttribute('autocomplete') ?? '').toLowerCase(),
+          type: type.slice(0, 40),
+          autocomplete: (control.getAttribute('autocomplete') ?? '').toLowerCase().slice(0, 200),
           name: cut(squash(`${name} ${id}`)),
           options:
             tag === 'SELECT'
               ? selectOptions(control as HTMLSelectElement)
               : control_ === 'combo'
-                ? listOf(control).map((option) => cut(squash(option.textContent ?? '')))
+                ? listOf(control)
+                    .slice(0, MAX_FIELDS)
+                    .map((option) => cut(squash(option.textContent ?? '')))
                 : [],
           required:
             (control as HTMLInputElement).required ||
@@ -608,15 +723,32 @@ export async function formPage(
     if (leave) box.blur();
   };
 
-  /** Clicks an element as a person would: the mouse goes down, comes up, then it's a click. */
+  /**
+   * Clicks an element as a person would: the mouse goes down, comes up, then it's a click. A
+   * button that would submit its form only has the mouse go down and up on it, never the click.
+   */
   const press = (element: Element) => {
+    const view = doc.defaultView;
     const Pointer = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
-    const like = { bubbles: true, cancelable: true, button: 0, view: doc.defaultView };
+    const like = {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      pointerType: 'mouse',
+      isPrimary: true,
+    };
     for (const kind of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
       const Kind = kind.startsWith('pointer') ? Pointer : MouseEvent;
-      element.dispatchEvent(new Kind(kind, { ...like, pointerType: 'mouse', isPrimary: true }));
+      let event: MouseEvent;
+      try {
+        event = new Kind(kind, { ...like, view });
+      } catch {
+        // A window events don't take as theirs, as a test's can be: the event goes without it.
+        event = new Kind(kind, like);
+      }
+      element.dispatchEvent(event);
     }
-    (element as HTMLElement).click();
+    if (!submits(element)) (element as HTMLElement).click();
   };
 
   /** Waits for something to show, looking every so often, up to a limit. */
@@ -685,7 +817,7 @@ export async function formPage(
     const { field, controls } = found;
     const [control] = controls;
     const done = (ok: boolean, why: FieldFilled['why'] = '') => ({
-      ref: field.ref,
+      ref: answer.ref,
       ok,
       shown: cut(shownIn(found)),
       why: ok ? ('' as const) : why || ('not-taken' as const),
@@ -752,9 +884,10 @@ export async function formPage(
         800,
       );
       if (listed && (await choose(listed))) return done(true);
-      // A list that comes from the site's own server, such as of places, shows as you type.
+      // A list that comes from the site's own server, such as of places, shows as you type, in a
+      // box you can see.
       for (const pick of picks.slice(0, 3)) {
-        if (!pick || !(box instanceof HTMLInputElement)) continue;
+        if (!pick || !(box instanceof HTMLInputElement) || !visible(box)) continue;
         if (box.getAttribute('aria-expanded') !== 'true') press(box);
         typeInto(box, pick, false);
         const option = await waitFor(
@@ -827,26 +960,40 @@ export async function formPage(
     };
   }
   if (task.do === 'fill') {
-    const filled: FieldFilled[] = [];
-    for (const answer of task.answers) {
-      const found = findField(fields, answer.ref, answer.key);
-      if (!found) {
-        filled.push({ ref: answer.ref, ok: false, shown: '', why: 'moved' });
-        continue;
+    // Only the form it read, at the same address, but for what's after its #.
+    if (task.url.split('#')[0] !== href.split('#')[0]) return { did: 'elsewhere' };
+    // Nothing done here submits the form: a page's own code that would is stopped meanwhile.
+    const view = doc.defaultView;
+    const stop = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    view?.addEventListener('submit', stop, true);
+    try {
+      const filled: FieldFilled[] = [];
+      for (const answer of task.answers) {
+        const found = findField(fields, answer.ref, answer.key);
+        if (!found) {
+          filled.push({ ref: answer.ref, ok: false, shown: '', why: 'moved' });
+          continue;
+        }
+        filled.push(await fill(found, answer));
       }
-      filled.push(await fill(found, answer));
+      return { did: 'fill', filled };
+    } finally {
+      view?.removeEventListener('submit', stop, true);
     }
-    return { did: 'fill', filled };
   }
   if (task.do === 'values') {
+    const words = squash(doc.body?.innerText ?? doc.body?.textContent ?? '');
     return {
       did: 'values',
       url: href,
-      values: fields.map((found) => ({
-        ref: found.field.ref,
-        key: found.field.key,
-        value: cut(found.field.control === 'long' ? shownIn(found) : shownIn(found)),
-      })),
+      submitted: SUBMITTED.test(words.slice(0, 20_000)),
+      values: task.fields.flatMap((each) => {
+        const found = findField(fields, each.ref, each.key);
+        return found ? [{ ...each, value: shownIn(found).slice(0, MAX_VALUE) }] : [];
+      }),
     };
   }
   if (task.do === 'outline') {

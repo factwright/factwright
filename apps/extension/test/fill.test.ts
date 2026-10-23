@@ -1,6 +1,8 @@
 import type { FieldReply } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
+  askedFields,
+  fieldsToRead,
   fieldValue,
   fillAnswers,
   isCopyOnly,
@@ -113,6 +115,39 @@ describe('what you sent', () => {
     ]);
     expect(sentAnswers(form(fields), replies, typed)).toEqual([
       { question: 'Why do you want to join Harbor & Pine?', text: 'Gear that lasts.' },
+    ]);
+  });
+
+  it('reads only the form’s own questions and what Profile can keep, never a personal one', () => {
+    const fields = [
+      field('Email', { ref: 0 }),
+      field('Why do you want to join Harbor & Pine?', { ref: 1, control: 'long' }),
+      field('Social Security Number', { ref: 2 }),
+      field('What is your age?', { ref: 3 }),
+      field('Gender', { ref: 4, control: 'combo' }),
+      field('Full name', { ref: 5 }),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+      { kind: 'question', source: 'you', left: 'new' },
+      { kind: 'never', source: 'you', left: 'never' },
+      { kind: 'personal', source: 'you', left: 'personal' },
+      { kind: 'gender', source: 'you', left: 'sensitive' },
+      { kind: 'full-name', text: 'Ana María Ruiz', source: 'profile' },
+    ];
+    expect(fieldsToRead(form(fields), replies).map((each) => each.ref)).toEqual([0, 1, 4]);
+  });
+
+  it('asks only within what the app takes', () => {
+    const many = field('Time zone', {
+      control: 'choice',
+      type: 'x'.repeat(60),
+      autocomplete: 'y'.repeat(300),
+      options: Array.from({ length: 450 }, (_, at) => `Zone ${at}`),
+    });
+    const [asked] = askedFields(form([many]));
+    expect([asked?.type.length, asked?.autocomplete.length, asked?.options.length]).toEqual([
+      40, 200, 300,
     ]);
   });
 

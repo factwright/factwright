@@ -7,6 +7,7 @@ import { ext } from './ext.ts';
 import {
   type FillPlan,
   fetchFile,
+  fieldsToRead,
   fillAnswers,
   fillForm,
   formValues,
@@ -64,22 +65,27 @@ interface Filling {
   moved: boolean;
   /** Whether another tab is in front, so the panel says which page it's for. */
   elsewhere: boolean;
+  /** Whether it's filling the form now, when its buttons wait. */
+  busy: boolean;
   /** What's happening now, said above the fields. */
   status: string;
   /** The job once you've marked it applied, and the answers it offers to keep. */
-  applied: { job: AskedJob; offers: NewAnswer[]; saved: Set<number> } | null;
+  applied: { job: AskedJob; offers: NewAnswer[]; saved: Set<string> } | null;
 }
 
+/** The form being filled, and only it: whatever an earlier start of filling was doing stops. */
 let filling: Filling | null = null;
 let looking: ReturnType<typeof setInterval> | null = null;
+/** How many times filling has started, so an earlier start that's still going stops there. */
+let starts = 0;
 
-const button = (text: string, click: () => void, primary = false, label?: string) =>
+const button = (text: string, click: () => void, primary = false, disabled = false) =>
   h(
     'button',
     {
       type: 'button',
       class: primary ? 'primary' : '',
-      ...(label && { 'aria-label': label }),
+      disabled,
       on: { click },
     },
     text,
@@ -105,10 +111,20 @@ const day = (on: string) =>
 const LEFT: Record<LeftFor, string> = {
   never: 'Factwright never fills this',
   consent: 'Yours to agree to',
+  personal: 'Yours to answer. Factwright doesn’t keep it',
   unset: 'Not in Profile yet',
-  sensitive: 'Left for you, as Profile says',
+  sensitive: 'An equal-opportunity question, for you',
   new: 'A question for you',
 };
+
+/** Whether two addresses are the same page, but for what's after their #. */
+const samePage = (a: string, b: string) => a.split('#')[0] === b.split('#')[0];
+
+/** What the form held, as read before, with what it holds now in place of it, field by field. */
+function merged(before: readonly FieldValue[] | null, now: readonly FieldValue[]): FieldValue[] {
+  const keys = new Set(now.map((each) => each.key));
+  return [...(before ?? []).filter((each) => !keys.has(each.key)), ...now];
+}
 
 /** Where an answer came from, in words. */
 function source(reply: FieldReply): string {
@@ -275,8 +291,8 @@ function render(state: Filling): void {
     h(
       'div',
       { class: 'actions' },
-      button('Mark as applied', () => void markApplied(state), state.moved),
-      !state.copyOnly && button('Fill again', () => void begin()),
+      button('Mark as applied', () => void markApplied(state), state.moved, state.busy),
+      !state.copyOnly && button('Fill again', () => void begin(), false, state.busy),
     ),
     h(
       'p',
@@ -312,7 +328,7 @@ function renderApplied(state: Filling): void {
         'ul',
         { class: 'fields' },
         ...offers.map((offer) => {
-          const saved = applied.saved.has(offer.field.ref);
+          const saved = applied.saved.has(offer.field.key);
           return h(
             'li',
             { class: 'field' },
@@ -344,7 +360,7 @@ async function keep(state: Filling, offer: NewAnswer): Promise<void> {
     answers: [{ kind: offer.kind, text: offer.text }],
   });
   if (answer.ok && state.applied) {
-    state.applied.saved.add(offer.field.ref);
+    state.applied.saved.add(offer.field.key);
     render(state);
   }
 }
@@ -361,6 +377,7 @@ async function saveFirst(state: Filling): Promise<void> {
   }
   const { page } = await readTab(tab);
   const saved = await saveOnComputer(toSave(page));
+  if (filling !== state) return;
   if (!saved.ok) {
     state.status = saved.message;
     render(state);
@@ -377,17 +394,22 @@ async function markApplied(state: Filling): Promise<void> {
     render(state);
     return;
   }
-  const latest = state.moved ? null : await formValues(state.tabId);
-  const values =
-    latest && latest.url === state.form.url
-      ? latest.values
-      : (state.values ?? latest?.values ?? []);
+  const latest = state.moved
+    ? null
+    : await formValues(state.tabId, fieldsToRead(state.form, state.plan.replies));
+  if (filling !== state) return;
+  // What it read as you went, with what's there now, when it's still the form.
+  const values = merged(
+    state.values,
+    latest && samePage(latest.url, state.form.url) ? latest.values : [],
+  );
   const answer = await askComputer({
     ask: 'sent',
     job: job.id,
     url: state.form.url,
     answers: sentAnswers(state.form, state.plan.replies, values),
   });
+  if (filling !== state) return;
   if (!answer.ok || answer.did !== 'sent') {
     state.status = answer.ok ? 'Factwright didn’t answer. Try again.' : answer.message;
     render(state);
@@ -408,27 +430,57 @@ function stopLooking(): void {
 }
 
 /**
- * Reads what's in the form every few seconds while the panel shows, so it has what you sent once
- * you submit it. Once the tab leaves the form, as after submitting, the browser stops letting the
- * extension reach it, and the panel keeps what it read last.
+ * Reads what's in the form's own questions every few seconds while the panel shows, so it has
+ * what you sent once you submit it, field by field: a field the form takes away, as a form of
+ * steps does, keeps what it held. Once the tab leaves the form, as after submitting, or the page
+ * says the application went in, the panel keeps what it read last.
  */
 function keepLooking(state: Filling): void {
   stopLooking();
+  const fields = fieldsToRead(state.form, state.plan.replies);
   looking = setInterval(() => {
     if (document.visibilityState !== 'visible' || state.moved || state.applied) return;
-    void formValues(state.tabId).then((read) => {
-      if (!read || read.url !== state.form.url) {
+    void formValues(state.tabId, fields).then((read) => {
+      if (filling !== state || state.moved || state.applied) return;
+      if (!read || !samePage(read.url, state.form.url)) {
         state.moved = true;
         render(state);
         return;
       }
-      state.values = read.values;
+      state.values = merged(state.values, read.values);
+      if (read.submitted && !state.form.submitted) {
+        state.moved = true;
+        render(state);
+      }
     });
   }, LOOK_EVERY_MS);
 }
 
-/** Fills the form with Factwright's answers, fetching the job's files to upload first. */
-async function fill(state: Filling): Promise<void> {
+/**
+ * Fills the form with Factwright's answers, fetching the job's files to upload first, and says
+ * whether it could. A form the tab has moved on from isn't filled.
+ */
+async function fill(state: Filling): Promise<boolean> {
+  state.busy = true;
+  const filled = await fillPasses(state).finally(() => {
+    state.busy = false;
+  });
+  if (filling !== state) return false;
+  if (filled !== true) {
+    message(
+      filled === 'elsewhere'
+        ? 'This tab has moved on from the form. Go back to the application, then click Fill again.'
+        : 'The browser doesn’t let Factwright reach this page anymore. Click the Factwright button on the application’s tab, then Fill this application again.',
+    );
+    return false;
+  }
+  state.status = '';
+  render(state);
+  return true;
+}
+
+/** Each pass of filling the form, then the outlines for what's left: or why it stopped. */
+async function fillPasses(state: Filling): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> {
   const { job, files } = state.plan;
   const replies = state.plan.replies;
   const fetched: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>> = {};
@@ -440,6 +492,7 @@ async function fill(state: Filling): Promise<void> {
         kind === 'resume' ? 'Getting the job’s resume…' : 'Getting the job’s cover letter…';
       render(state);
       const base64 = await fetchFile(job.id, kind, offered);
+      if (filling !== state) return 'stale';
       if (base64) fetched[kind] = { name: offered.name, base64 };
     }
   }
@@ -449,23 +502,23 @@ async function fill(state: Filling): Promise<void> {
   for (let pass = 0; pass < PASSES; pass++) {
     const fields = state.form.fields.slice(from);
     const answers = fillAnswers({ ...state.form, fields }, replies.slice(from), fetched);
-    const filled = await fillForm(state.tabId, answers);
-    if (!filled) {
-      message(
-        'The browser doesn’t let Factwright reach this page anymore. Click the Factwright button on the application’s tab, then Fill this application again.',
-      );
-      return;
-    }
+    const filled = await fillForm(state.tabId, state.form.url, answers);
+    if (filling !== state) return 'stale';
+    if (filled === null) return 'unreachable';
+    if (filled === 'elsewhere') return 'elsewhere';
     for (const each of filled) {
       const field = fields.find((one) => one.ref === each.ref);
       if (field) state.filled.set(field.key, each);
     }
     // Fields the form showed once others were answered, filled in the next pass.
     const again = await readForm(state.tabId);
+    if (filling !== state) return 'stale';
+    if (!again || !samePage(again.url, state.form.url)) break;
     const known = new Set(state.form.fields.map((field) => field.key));
-    const added = again?.fields.filter((field) => !known.has(field.key)) ?? [];
-    if (!again || added.length === 0) break;
+    const added = again.fields.filter((field) => !known.has(field.key));
+    if (added.length === 0) break;
     const planned = await planFill({ ...again, fields: added }, state.shows);
+    if (filling !== state) return 'stale';
     if (!planned.ok || planned.did !== 'fill') break;
     from = state.form.fields.length;
     state.form.fields.push(...added);
@@ -477,23 +530,30 @@ async function fill(state: Filling): Promise<void> {
     (field) => field.required && !state.filled.get(field.key)?.ok,
   );
   await outlineFields(state.tabId, left);
-  state.status = '';
-  render(state);
+  return filling === state ? true : 'stale';
 }
 
-/** Starts filling the form in the tab that's in front, from reading it to filling it. */
+/**
+ * Starts filling the form in the tab that's in front, from reading it to filling it. A start
+ * made after it, as by Fill again, takes over: this one stops at what it's waiting on.
+ */
 async function begin(): Promise<void> {
   stopLooking();
   filling = null;
+  const start = ++starts;
+  const later = () => start !== starts;
   show(app, heading('Fill this application'), h('p', { class: 'muted' }, 'Reading the form…'));
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
+  if (later()) return;
   if (!tab?.id || !isWebPage(tab.url)) {
     message(
       'Open an application form, then click the Factwright button and Fill this application.',
     );
     return;
   }
-  if (!(await canReachComputer())) {
+  const reachable = await canReachComputer();
+  if (later()) return;
+  if (!reachable) {
     message(
       'Filling a form needs Factwright on this computer, which the browser asks you to let Factwright reach.',
       h(
@@ -514,13 +574,16 @@ async function begin(): Promise<void> {
     return;
   }
   // LinkedIn's link-only setting keeps the extension from reading LinkedIn's pages, its forms too.
-  if (isLinkedIn(tab.url ?? '') && !(await settings()).linkedInText) {
+  const linkOnly = isLinkedIn(tab.url ?? '') && !(await settings()).linkedInText;
+  if (later()) return;
+  if (linkOnly) {
     message(
       'You chose to save LinkedIn jobs by their link alone, so Save to Factwright doesn’t read LinkedIn’s pages. Change it in Settings.',
     );
     return;
   }
   const form = await readForm(tab.id);
+  if (later()) return;
   if (!form) {
     message(
       'Factwright can’t read this page. Click the Factwright button on the application’s tab, then Fill this application.',
@@ -534,7 +597,9 @@ async function begin(): Promise<void> {
     return;
   }
   const { page } = await readTab(tab);
+  if (later()) return;
   const planned = await planFill(form, { company: page.company, role: page.title });
+  if (later()) return;
   if (!planned.ok || planned.did !== 'fill') {
     message(
       planned.ok ? 'Factwright didn’t answer. Try again.' : planned.message,
@@ -556,13 +621,14 @@ async function begin(): Promise<void> {
     values: null,
     moved: false,
     elsewhere: false,
+    busy: false,
     status: '',
     applied: null,
   };
   filling = state;
   render(state);
-  if (!state.copyOnly) await fill(state);
-  keepLooking(state);
+  // A form it couldn't fill isn't one you submitted: it only looks once it's filled.
+  if (state.copyOnly || (await fill(state))) keepLooking(state);
 }
 
 // Another tab in front: the panel says which page it's for, until that tab's back.

@@ -210,6 +210,9 @@ export interface CallChanges {
 /** Whether an edit was saved, and if not, why, in words the user can act on. */
 export type EditResult = { ok: true } | { ok: false; message: string };
 
+/** Whether answers sent for a job's questions were kept, and how many, or why they weren't. */
+export type RecordedAnswers = { ok: true; recorded: number } | { ok: false; message: string };
+
 /** Whether a file was saved, or the user canceled, or why it couldn't be. */
 export type SaveFileResult = { ok: true; saved: boolean } | { ok: false; message: string };
 

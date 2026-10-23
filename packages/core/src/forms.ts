@@ -89,6 +89,9 @@ export type FieldKind =
   | 'consent'
   // What Factwright never fills: passwords, payment details, ID numbers and dates of birth.
   | 'never'
+  // Personal questions only you answer, each time, such as your sexual orientation, your age or a
+  // criminal record: Factwright never fills them, and never keeps or reuses what you say.
+  | 'personal'
   // Anything else: a question of the form's own.
   | 'question';
 
@@ -145,51 +148,95 @@ const AUTOCOMPLETE: Record<string, FieldKind> = {
   'one-time-code': 'never',
 };
 
-/** Words that ask for what's never filled: passwords, payment details, ID numbers, birthdays. */
+/**
+ * Words that ask for what's never filled: passwords and codes, payment details, ID numbers, and
+ * birthdays. A PIN code, as India's postal codes are called, is a postal code.
+ */
 const NEVER =
-  /\b(password|passcode|social security|ssn|social insurance|sin number|national (id|insurance)( number)?|passport (number|no)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|card number|credit card|debit card|cvv|cvc|security code|expiry date|expiration date|date of birth|birth ?date|birthday|dob|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b/;
+  /\b(password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$/;
+
+/** Words a single checkbox asks you to agree to something with, as "I agree to the terms" does. */
+const AGREE =
+  /\b(agree|consent|acknowledge|accept|certify|confirm|understand|terms|privacy|authori[sz]e)\b/;
+
+/**
+ * The same asked any other way: by a choice, as "Do you acknowledge our privacy notice?" asks it,
+ * or by typing your name as a signature. Agreeing is yours to do, whatever you said before.
+ */
+const CONSENT =
+  /\b(i|you|do you|we) (hereby )?(agree|consent|acknowledge|certify|attest|accept the)\b|\bconsent\b|\backnowledg(e|es|ed|ement)\b|\battest(ation)?\b|\bterms (and conditions|of (use|service|employment))\b|\bprivacy (policy|notice|statement)\b|\b(applicant|candidate|recruitment) privacy\b|\bdata (processing|retention|protection)\b|\bgdpr\b|\b(e ?)?signature\b|\bsign (here|below)\b|\b(keep|retain|store) (your|my) (data|information|details|application)\b/;
+
+/** Words that ask whether you may work somewhere. */
+const AUTHORIZED =
+  /\b(legally )?(authori[sz]ed|eligible|permitted|entitled|able) to (lawfully )?work\b|\bright to work\b|\bwork (authori[sz]ation|permit|eligibility)\b|\bwork legally\b/;
+
+/** Words that ask whether you can work without sponsorship, which is asking it the other way round. */
+export const WITHOUT_SPONSORSHIP =
+  /\bwithout (the need for |needing |requiring |any )*(visa |employer |company )?sponsor/;
 
 /**
  * Rules that say what a field asks, by its question, in order: the first that fits is it. Each
- * has the words it looks for, and words that make it something else, as "company name" isn't
- * yours.
+ * has the words it looks for, any others it needs as well, and words that make it something
+ * else, as "company name" isn't yours.
  */
-const RULES: { kind: FieldKind; words: RegExp; not?: RegExp; short?: number }[] = [
-  // Equal-opportunity questions come first: "Are you Hispanic or Latino?" isn't a name.
+const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] = [
+  // Equal-opportunity questions come first: "Are you Hispanic or Latino?" isn't a name. Each is
+  // asked as a self-identification form asks it: "Do you need an accommodation for a disability?"
+  // and "Describe your military service" aren't.
   {
     kind: 'hispanic',
-    words: /\b(hispanic|latin[oax]|latine)\b/,
+    words:
+      /\b(are you|identify as|of) (hispanic|latin[oax]|latine)\b|\bhispanic (or |and )?latin[oax]\b|\bhispanic (ethnicity|origin|heritage)\b|^(hispanic|latin[oax]|latine)( ethnicity)?$/,
     not: /\brace\b.*\b(white|black|asian)\b/,
   },
   { kind: 'race', words: /\b(race|racial|ethnicity|ethnic (group|background|origin))\b/ },
   {
     kind: 'gender',
     words: /\b(gender|sex)\b/,
-    not: /\b(orientation|identity as transgender|transgender|offender|harass)/,
+    not: /\b(orientation|transgender|offen[cs]es?|offenders?|harass|crimes?|criminal|pay|diversity|diverse|balance|equality|discrimination)/,
   },
   {
     kind: 'veteran',
-    words: /\b(veteran|military service|served in the (military|armed forces)|armed forces)\b/,
+    words:
+      /\bveteran (status|classification|self identification)\b|\b(are|were) you (a |an )?(protected |us |u s |military )?veteran\b|\bprotected veterans?\b|\bidentify as (a |an |one or more of the classifications of )?(protected )?veteran\b|^(protected )?veterans?( status)?$|\bhave you (ever )?served in the (us |u s |united states )?(military|armed forces)\b|\bmilitary (or )?veteran\b/,
+    not: /\b(spouse|family|dependent|describe|tell us|explain|branch|rank|discharge|friendly|experience|program|benefits)\b/,
   },
-  { kind: 'disability', words: /\bdisabilit(y|ies)|disabled\b/ },
+  {
+    kind: 'disability',
+    words:
+      /\bdisability (status|self identification|identification)\b|\b(do|did) you (have|had) (a |any )?disabilit(y|ies)\b|\bhave you (ever )?had a disability\b|\bare you disabled\b|\b(person|individual|someone) with a disability\b|\bidentify as (a person with a disability|having a disability|disabled)\b|\bconsider yourself (to have a disability|disabled)\b|^(disabilit(y|ies)|disabled)( status)?$|\bself identification of disability\b/,
+    not: /\b(accommodat|adjustment|assist|support|describe|tell us|explain|need|require|help|interview|benefit)/,
+  },
   { kind: 'pronouns', words: /\bpronouns?\b/ },
   {
     kind: 'over-18',
     words:
       /\b(18|eighteen) (years|or older|\+)|\bat least 18\b|\bover (the age of )?18\b|\blegal (working )?age\b/,
   },
-  // Work questions Profile answers.
+  // Personal questions, which only you answer: who you love, your age, your health, your faith,
+  // your family, or a criminal record. Factwright never keeps what you say to them.
+  {
+    kind: 'personal',
+    words:
+      /\bsexual(ity| orientation| identity)?\b|\borientation\b|\btransgender\b|\bcisgender\b|\blgbt[a-z]*\b|\bqueer\b|\bgender (expression|assigned)\b|^age$|\byour age\b|\bhow old\b|\bage (range|group|bracket)\b|\baccommodat(e|ion|ions)\b|\breasonable adjustments?\b|\b(health|medical) (conditions?|history|issues?|problems?|information|records?)\b|\bpregnan(t|cy)\b|\bvaccinat(ed|ion|ions)\b|\breligio(n|us)\b|\bmarital\b|\bmarried\b|\bspouse\b|\b(do you have|number of|how many) (children|kids|dependents)\b|\b(family|parental) status\b|\bnational origin\b|\b(convicted|conviction|convictions|criminal|felony|felonies|misdemeanou?rs?|arrested)\b|\b(union membership|trade union)\b|\bpolitical (affiliation|party|opinions?|views)\b/,
+  },
+  // Work questions Profile answers. Whether you're authorized and whether you need sponsorship,
+  // asked together, take reading, as "Are you authorized to work here? If you need sponsorship,
+  // answer No." does, so it's a question for you, unless it asks if you can work without it.
+  { kind: 'authorized', words: AUTHORIZED, also: WITHOUT_SPONSORSHIP },
   {
     kind: 'sponsorship',
     words:
       /\bsponsor(ship|ed)?\b|\b(require|need) (a |an )?(work )?visa\b|\bvisa (support|sponsorship)\b/,
+    not: /\b(authori[sz]ed|eligible|permitted|entitled|able) to (lawfully )?work\b|\bright to work\b|\bwork (authori[sz]ation|permit|eligibility)\b|\bhave you (ever )?been sponsored\b|\bpreviously sponsored\b/,
   },
+  { kind: 'authorized', words: AUTHORIZED, not: /\bsponsor/ },
   {
-    kind: 'authorized',
-    words:
-      /\b(legally )?(authori[sz]ed|eligible|permitted|entitled|able) to (lawfully )?work\b|\bright to work\b|\bwork (authori[sz]ation|permit|eligibility)\b|\bwork legally\b/,
+    kind: 'relocation',
+    words: /\brelocat(e|ion|ing)\b/,
+    // Where you live now, or help with moving, isn't whether you'd move.
+    not: /\b(located|live|living|based|reside|residing|local|commut(e|ing)|currently in|assistance|package|support|benefits?|stipend|reimburse)/,
   },
-  { kind: 'relocation', words: /\brelocat(e|ion|ing)\b/ },
   {
     kind: 'start-date',
     words:
@@ -265,7 +312,7 @@ const RULES: { kind: FieldKind; words: RegExp; not?: RegExp; short?: number }[] 
     words:
       /\b(street|address line|mailing address|home address|street address)\b|^address( 1| line 1)?$/,
   },
-  { kind: 'postal-code', words: /\b(zip|postal|post) ?(code)?\b|\bpostcode\b/ },
+  { kind: 'postal-code', words: /\b(zip|postal|post) ?(code)?\b|\bpostcode\b|\bpin ?code\b/ },
   { kind: 'city', words: /^(city|town)$|^(city|town) (of residence|you live in)$/ },
   {
     kind: 'region',
@@ -311,7 +358,8 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
 /**
  * What a field asks for, by its type, the browser's words for it, its question and its name. A
  * field it can't tell is a question of the form's own. One that asks for a password, payment
- * details, an ID number or a date of birth is never filled, whatever else it says.
+ * details, an ID number or a date of birth is never filled, whatever else it says, and one that
+ * asks you to agree to something is yours to answer, however it asks.
  */
 export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): FieldKind {
   const question = plain(field.question);
@@ -331,20 +379,17 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
     }
     return 'question';
   }
-  if (field.control === 'check') {
-    if (
-      /\b(agree|consent|acknowledge|accept|certify|confirm|understand|terms|privacy|authori[sz]e)\b/.test(
-        question,
-      )
-    ) {
-      return 'consent';
-    }
-  }
+  if (field.control === 'check' && AGREE.test(question)) return 'consent';
   if (auto) return auto;
   if (type === 'email') return 'email';
   if (type === 'tel') return 'phone';
+  if (CONSENT.test(question)) return 'consent';
   for (const rule of RULES) {
-    if (rule.words.test(question) && !rule.not?.test(question)) {
+    if (
+      rule.words.test(question) &&
+      rule.also?.test(question) !== false &&
+      !rule.not?.test(question)
+    ) {
       if (rule.kind === 'cover-letter')
         return field.control === 'long' ? 'cover-letter-text' : 'question';
       return rule.kind;

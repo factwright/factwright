@@ -194,25 +194,37 @@ const ASK = {
 
 /**
  * Stands in for the open app, for asks: it marks the inbox as the app does, and answers each ask
- * that comes, as the app does: it takes the ask away, then writes its answer beside it, whole.
- * What it took is kept, to check. It stops when what it gives back is called.
+ * that comes, as the app does: it takes the ask away, then writes its answer beside it, whole, a
+ * while later when a test says. What it took is kept, to check. It stops when what it gives back
+ * is called.
  */
-function answerAsks(answer: string): { took: string[]; close: () => void } {
+function answerAsks(answer: string, after = 0): { took: string[]; close: () => void } {
   const inbox = inboxOf(home);
   mkdirSync(inbox, { recursive: true });
   writeFileSync(join(inbox, '.listening'), String(process.pid));
   const took: string[] = [];
+  const later: ReturnType<typeof setTimeout>[] = [];
   const timer = setInterval(() => {
     for (const file of readdirSync(inbox).filter((name) => INBOX_ASK.test(name))) {
       const name = file.slice(0, -'.ask'.length);
       took.push(readFileSync(join(inbox, file), 'utf8'));
       rmSync(join(inbox, file));
-      const draft = join(inbox, `.${name}.done.tmp`);
-      writeFileSync(draft, answer);
-      renameSync(draft, join(inbox, `${name}.done`));
+      const reply = () => {
+        const draft = join(inbox, `.${name}.done.tmp`);
+        writeFileSync(draft, answer);
+        renameSync(draft, join(inbox, `${name}.done`));
+      };
+      if (after > 0) later.push(setTimeout(reply, after));
+      else reply();
     }
   }, 10);
-  return { took, close: () => clearInterval(timer) };
+  return {
+    took,
+    close: () => {
+      clearInterval(timer);
+      for (const each of later) clearTimeout(each);
+    },
+  };
 }
 
 describe.skipIf(!compiler)(
@@ -630,16 +642,16 @@ describe.skipIf(!compiler)(
         }
       });
 
-      it('says the app was busy when its answer can’t be passed on, or is over 1 MB', async () => {
-        for (const answer of [
-          'not JSON',
-          '[1]',
-          JSON.stringify({ base64: 'A'.repeat(1_000_000) }),
-        ]) {
+      it('says the app was busy when its answer can’t be passed on, and so when it’s over 1 MB', async () => {
+        for (const [answer, reason] of [
+          ['not JSON', 'busy'],
+          ['[1]', 'busy'],
+          [JSON.stringify({ base64: 'A'.repeat(1_000_000) }), 'too-big'],
+        ] as const) {
           const app = answerAsks(answer);
           try {
             expect((await runAlongside(framed(JSON.stringify(ASK)))).answer).toEqual(
-              refused('busy'),
+              refused(reason),
             );
           } finally {
             app.close();
@@ -647,6 +659,18 @@ describe.skipIf(!compiler)(
           expect(inboxFiles(home)).toEqual(['.listening']);
         }
       });
+
+      it('waits as long again for an ask the app took, so its answer is passed on', async () => {
+        const answer = { ok: true, did: 'sent', recorded: 3 };
+        // The testing build waits 3 seconds, then takes back an ask the app hasn't taken.
+        const app = answerAsks(JSON.stringify(answer), 4000);
+        try {
+          expect(await runAlongside(framed(JSON.stringify(ASK)))).toEqual({ answer, status: 0 });
+        } finally {
+          app.close();
+        }
+        expect(inboxFiles(home)).toEqual(['.listening']);
+      }, 20_000);
 
       it('is taken back when the app doesn’t answer in time, so the app never acts on it', () => {
         mkdirSync(inboxOf(home));

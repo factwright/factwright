@@ -6,6 +6,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  unlinkSync,
   watch,
   writeFileSync,
 } from 'node:fs';
@@ -44,8 +45,15 @@ export const LISTENING = '.listening';
 /** How old a job may be, by its name, for its answer to be written: the helper waits 3 seconds. */
 const ANSWER_MS = 30_000;
 
-/** How old an ask may be, by its name, to be answered: the helper waits 10 seconds for it. */
-const ASK_MS = 15_000;
+/**
+ * How old an ask may be, by its name, to be taken: less than the 10 seconds the helper waits
+ * before it takes an ask back, so it never takes back one the app has started on. Once the app
+ * has taken one, the helper waits for its answer as long again.
+ */
+const ASK_MS = 8_000;
+
+/** The longest answer to an ask the helper passes on: ASK_ANSWER_LIMIT in the helper. */
+const ASK_ANSWER_BYTES = 1_000_000;
 
 /** How old a half-written job or an answer nobody took must be before it's cleaned away. */
 const LEFTOVER_MS = 60_000;
@@ -282,12 +290,17 @@ export class JobInbox {
   }
 
   /**
-   * Answers an ask. It's taken away first, so the helper, waiting for the answer, can't take it
-   * back once the app has it, then answered beside where it was. One older than the helper waits
-   * for is only taken away, and one that isn't an ask is turned away.
+   * Answers an ask. It's taken away first, which is what takes it: should the helper have taken
+   * it back already, nobody waits for it, and it's left. Then it's answered beside where it was.
+   * One too old to answer in time is left for the helper to take back, or cleaned away once it's
+   * long left over, and one that isn't an ask is turned away.
    */
   private takeAsk(name: string, at: number, now: number): void {
     const file = join(this.deps.folder, name);
+    if (now - at > ASK_MS) {
+      this.cleanAway(name, now);
+      return;
+    }
     let text: string | null = null;
     try {
       const stats = lstatSync(file);
@@ -297,15 +310,23 @@ export class JobInbox {
       return;
     }
     try {
-      rmSync(file, { force: true });
-    } catch {
-      this.stuck.add(name);
+      unlinkSync(file);
+    } catch (error) {
+      // Gone already, as the helper took it back just now, or one that can't be taken.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.stuck.add(name);
       return;
     }
-    if (now - at > ASK_MS) return;
     const reply = (answer: InboxAskAnswer) => {
+      let said = JSON.stringify(answer);
+      if (Buffer.byteLength(said) > ASK_ANSWER_BYTES) {
+        said = JSON.stringify({
+          ok: false,
+          reason: 'too-big',
+          message: 'That’s more than Factwright on this computer can answer at once.',
+        } satisfies InboxAskAnswer);
+      }
       try {
-        writeWhole(join(this.deps.folder, name.replace(/\.ask$/, '.done')), JSON.stringify(answer));
+        writeWhole(join(this.deps.folder, name.replace(/\.ask$/, '.done')), said);
       } catch {
         // The helper says the app was busy.
       }

@@ -31,7 +31,7 @@ const ON_FILE: OnFile = {
   relocate: 'no',
   targetPay: '$165,000',
   resume: { company: 'Tidewater Analytics', title: 'Senior Product Manager' },
-  job: { company: 'Harbor & Pine', foundOn: 'LinkedIn' },
+  job: { company: 'Harbor & Pine', foundOn: 'LinkedIn', location: 'Denver, CO' },
   sent: [
     {
       question: 'What’s the biggest product bet you’ve made?',
@@ -110,6 +110,7 @@ describe('answering a form from what’s on file', () => {
       'USA',
       'US',
       'U.S.',
+      'U.S.A.',
     ]);
     // Some forms ask for "your location" from a list of cities, and some from one of countries:
     // the page picks the first of these it has.
@@ -121,6 +122,7 @@ describe('answering a form from what’s on file', () => {
       'USA',
       'US',
       'U.S.',
+      'U.S.A.',
     ]);
   });
 
@@ -155,6 +157,14 @@ describe('answering a form from what’s on file', () => {
     ).toEqual(['Yes']);
     expect(answer('Do you currently require sponsorship?', choice, later).pick).toEqual(['No']);
     expect(answer('Can you work here without sponsorship?', choice, later).pick).toEqual(['Yes']);
+    // Only the question asks it the other way round, never what's said beside it.
+    expect(
+      answer(
+        'Will you now or in the future require visa sponsorship?',
+        { ...choice, hint: 'Choose No if you can work without sponsorship.' },
+        ON_FILE,
+      ).pick,
+    ).toEqual(['No']);
     const unset = {
       ...ON_FILE,
       applications: { ...ON_FILE.applications, sponsorship: '' as const },
@@ -162,20 +172,71 @@ describe('answering a form from what’s on file', () => {
     expect(answer('Do you require sponsorship?', choice, unset)).toMatchObject({ left: 'unset' });
   });
 
-  it('says you can work in the countries Profile lists, and only those', () => {
+  it('says you can work in the countries Profile lists, and leaves the rest for you', () => {
     const choice = { control: 'choice' as const, options: ['Yes', 'No'] };
-    expect(answer('Are you legally authorized to work in the United States?', choice).pick).toEqual(
-      ['Yes'],
-    );
-    expect(answer('Do you have the right to work in the United Kingdom?', choice).pick).toEqual([
-      'No',
-    ]);
-    expect(
-      answer('Are you authorized to work in the country for which you applied?', choice).pick,
-    ).toEqual(['Yes']);
+    const yes = (question: string, onFile = ON_FILE) => answer(question, choice, onFile).pick;
+    expect(yes('Are you legally authorized to work in the United States?')).toEqual(['Yes']);
+    expect(yes('Are you legally authorized to work in the US?')).toEqual(['Yes']);
+    expect(yes('Are you authorized to work in the U.S.?')).toEqual(['Yes']);
+    // Elsewhere you may be able to, with a visa: it's yours to say.
+    for (const question of [
+      'Do you have the right to work in the United Kingdom?',
+      'Do you have the right to work in the UK?',
+      'Are you legally authorized to work in Spain?',
+      'Are you authorized to work in the EU?',
+      'Are you authorized to work in the US or Canada?',
+    ]) {
+      expect(answer(question, choice)).toMatchObject({ source: 'you', left: 'unset' });
+    }
+    const canada = { ...ON_FILE, applications: { ...ON_FILE.applications, countries: ['Canada'] } };
+    expect(answer('Are you legally authorized to work in the US?', choice, canada)).toMatchObject({
+      left: 'unset',
+    });
+    expect(yes('Are you legally authorized to work in Canada?', canada)).toEqual(['Yes']);
+  });
+
+  it('asks where the job is when a question names no country', () => {
+    const choice = { control: 'choice' as const, options: ['Yes', 'No'] };
+    const question = 'Are you authorized to work in the country for which you applied?';
+    expect(answer(question, choice).pick).toEqual(['Yes']);
+    const at = (location: string) => ({
+      ...ON_FILE,
+      job: { company: 'Harbor & Pine', foundOn: 'LinkedIn', location },
+    });
+    expect(answer(question, choice, at('Remote - US')).pick).toEqual(['Yes']);
+    expect(answer(question, choice, at('London, UK'))).toMatchObject({ left: 'unset' });
+    expect(answer(question, choice, at('Remote'))).toMatchObject({ left: 'unset' });
+    expect(answer(question, choice, { ...ON_FILE, job: null })).toMatchObject({ left: 'unset' });
     const none = { ...ON_FILE, applications: { ...ON_FILE.applications, countries: [] } };
     expect(answer('Are you authorized to work in the US?', choice, none)).toMatchObject({
       left: 'unset',
+    });
+  });
+
+  it('answers whether you can work without sponsorship from both', () => {
+    const choice = { control: 'choice' as const, options: ['Yes', 'No'] };
+    const question =
+      'Are you legally authorized to work in the United States without the need for employer sponsorship, now or at any time in the future?';
+    expect(answer(question, choice).pick).toEqual(['Yes']);
+    const later = {
+      ...ON_FILE,
+      applications: { ...ON_FILE.applications, sponsorship: 'later' as const },
+    };
+    expect(answer(question, choice, later).pick).toEqual(['No']);
+    // Asked together any other way, it's yours to read.
+    expect(
+      answer('Are you authorized to work in the US? If you need sponsorship, answer No.', choice),
+    ).toMatchObject({ kind: 'question', left: 'new' });
+  });
+
+  it('leaves whether you live near the job, or need help moving, for you', () => {
+    const choice = { control: 'choice' as const, options: ['Yes', 'No'] };
+    expect(answer('Are you willing to relocate?', choice).pick).toEqual(['No']);
+    expect(
+      answer('Are you located in the Denver area or willing to relocate?', choice),
+    ).toMatchObject({ kind: 'question', left: 'new' });
+    expect(answer('Will you require relocation assistance?', choice)).toMatchObject({
+      kind: 'question',
     });
   });
 
@@ -184,9 +245,20 @@ describe('answering a form from what’s on file', () => {
     expect(answer('How did you hear about us?')).toMatchObject({ text: 'LinkedIn', source: 'job' });
   });
 
-  it('fills pay only as you put it, and only as digits in a number box', () => {
+  it('fills pay only as you put it, and only as one yearly amount in a number box', () => {
     expect(answer('Salary expectations').text).toBe('$165,000');
-    expect(answer('Desired salary', { control: 'number', type: 'number' }).text).toBe('165000');
+    const number = { control: 'number' as const, type: 'number' };
+    expect(answer('Desired salary', number).text).toBe('165000');
+    const pay = (targetPay: string, question = 'Desired salary') =>
+      answer(question, number, { ...ON_FILE, targetPay });
+    expect(pay('$150k').text).toBe('150000');
+    for (const left of [
+      pay('$150-170k'),
+      pay('$60 an hour'),
+      pay('$165,000', 'Desired salary (in thousands)'),
+    ]) {
+      expect(left).toMatchObject({ source: 'you', left: 'unset' });
+    }
     expect(
       answer('Desired salary', { control: 'choice', options: ['$100k–$150k', '$150k+'] }),
     ).toMatchObject({
@@ -217,6 +289,68 @@ describe('answering a form from what’s on file', () => {
     });
   });
 
+  it('never types an equal-opportunity answer, or gives one to a question that isn’t asking it', () => {
+    const set = {
+      ...ON_FILE,
+      kept: {
+        ...ON_FILE.kept,
+        equalOpportunity: {
+          ...NO_EQUAL_OPPORTUNITY,
+          disability: 'yes' as const,
+          veteran: 'yes' as const,
+        },
+      },
+    };
+    const choice = { control: 'choice' as const, options: ['Yes', 'No'] };
+    expect(answer('Disability Status', { control: 'combo' }, set).pick?.[0]).toBe(
+      'Yes, I have a disability (or previously had a disability)',
+    );
+    expect(answer('Disability Status', { control: 'long' }, set)).toMatchObject({
+      left: 'sensitive',
+    });
+    for (const [question, more] of [
+      ['Do you need a disability accommodation for your interview?', choice],
+      [
+        'If you need an accommodation because of a disability, tell us how we can help.',
+        { control: 'long' as const },
+      ],
+      ['Describe your military service, if any.', { control: 'long' as const }],
+      ['Are you a military spouse?', choice],
+    ] as const) {
+      const reply = answer(question, more, set);
+      expect(reply.pick ?? []).not.toContain('Yes');
+      expect(reply.text).toBeUndefined();
+      expect(reply.source).toBe('you');
+    }
+  });
+
+  it('never answers a personal question, even with what you sent before', () => {
+    const sent = {
+      ...ON_FILE,
+      sent: [
+        { question: 'Sexual orientation', text: 'Bisexual', on: '2026-10-01', company: 'Acme' },
+        { question: 'What is your age?', text: '34', on: '2026-10-01', company: 'Acme' },
+        {
+          question: 'Have you ever been convicted of a felony?',
+          text: 'No',
+          on: '2026-10-01',
+          company: 'Acme',
+        },
+      ],
+    };
+    for (const question of [
+      'Sexual orientation',
+      'What is your age?',
+      'Have you ever been convicted of a felony?',
+    ]) {
+      expect(answer(question, { control: 'choice', options: ['Yes', 'No'] }, sent)).toMatchObject({
+        kind: 'personal',
+        source: 'you',
+        left: 'personal',
+      });
+    }
+  });
+
   it('uploads the job’s own resume, and says there’s none when there isn’t', () => {
     expect(answer('Resume/CV', { control: 'file', type: 'file' })).toMatchObject({
       file: 'resume',
@@ -239,6 +373,26 @@ describe('answering a form from what’s on file', () => {
     expect(answer('Why do you want to work at Lumen Health?', { control: 'long' })).toMatchObject({
       left: 'new',
     });
+  });
+
+  it('never reuses words about another company, whatever the question', () => {
+    const sent = {
+      ...ON_FILE,
+      sent: [
+        {
+          question: 'Why do you want to work here?',
+          text: 'I’d love to bring my background to Lumen Health.',
+          on: '2026-10-12',
+          company: 'Lumen Health',
+        },
+      ],
+    };
+    expect(answer('Why do you want to work here?', { control: 'long' }, sent)).toMatchObject({
+      left: 'new',
+    });
+    // At the same company, it fits.
+    const again = { ...sent, job: { company: 'Lumen Health', foundOn: '', location: '' } };
+    expect(answer('Why do you want to work here?', { control: 'long' }, again).source).toBe('sent');
   });
 
   it('takes your Claude’s draft for this job next', () => {
@@ -280,6 +434,25 @@ describe('answering a form from what’s on file', () => {
     expect(answer('I agree to the terms', { control: 'check', type: 'checkbox' })).toMatchObject({
       left: 'consent',
     });
+    // However it's asked, and whatever you said before.
+    const sent = {
+      ...ON_FILE,
+      sent: [
+        {
+          question: 'Do you acknowledge our applicant privacy notice?',
+          text: 'Yes',
+          on: '2026-10-01',
+          company: 'Acme',
+        },
+      ],
+    };
+    expect(
+      answer(
+        'Do you acknowledge our applicant privacy notice?',
+        { control: 'choice', options: ['Yes', 'No'] },
+        sent,
+      ),
+    ).toMatchObject({ kind: 'consent', left: 'consent' });
   });
 
   it('leaves a question nothing on file answers for you', () => {

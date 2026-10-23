@@ -43,6 +43,7 @@ import type {
   NewJob,
   NewNote,
   NoteChanges,
+  RecordedAnswers,
 } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 
@@ -493,6 +494,38 @@ export class Tracker {
       .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(sent), context.now, jobId);
     return DONE;
+  }
+
+  /**
+   * Keeps what the user sent for several of an application's questions at once, as recordAnswer
+   * does for one, in one change. Answers past what a job can keep are left out, and a question
+   * with no words to keep it by is too.
+   */
+  recordAnswers(
+    jobId: string,
+    answers: readonly { question: string; nth: number; text: string }[],
+    context: EditContext,
+  ): RecordedAnswers {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    let sent = job.sent;
+    let recorded = 0;
+    for (const { question, nth, text } of answers) {
+      const key = questionKey(question);
+      if (!key || !text.trim()) continue;
+      const same = (each: SentAnswer) => questionKey(each.question) === key && each.nth === nth;
+      const at = sent.findIndex(same);
+      if (at < 0 && sent.length >= LIMITS.questions) continue;
+      const answer = { question, nth, text, on: context.today, at: context.now };
+      sent = at < 0 ? [...sent, answer] : sent.map((each, index) => (index === at ? answer : each));
+      recorded += 1;
+    }
+    if (recorded > 0) {
+      this.db
+        .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(sent), context.now, jobId);
+    }
+    return { ok: true, recorded };
   }
 
   /** Keeps a question the user asked Claude about a job, under a new ID for its answer. */

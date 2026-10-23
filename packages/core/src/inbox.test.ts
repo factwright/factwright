@@ -83,7 +83,13 @@ describe('an ask from the inbox', () => {
   });
 
   it('reads asks for a part of a file, what was sent, and answers to keep', () => {
-    const file = { ask: 'file', job: 'harbor-pine--account-executive', file: 'resume', part: 0 };
+    const file = {
+      ask: 'file',
+      job: 'harbor-pine--account-executive',
+      file: 'resume',
+      version: '0f1e2d3c4b5a6978',
+      part: 0,
+    };
     expect(readInboxAsk(message(file))).toEqual(file);
     const sent = {
       ask: 'sent',
@@ -121,11 +127,20 @@ describe('an ask from the inbox', () => {
       null,
     );
     expect(readInboxAsk(message({ ...fill, fields: Array(301).fill(field) }))).toBeNull();
-    const file = { ask: 'file', job: 'harbor-pine--account-executive', file: 'resume', part: 0 };
+    const file = {
+      ask: 'file',
+      job: 'harbor-pine--account-executive',
+      file: 'resume',
+      version: '0f1e2d3c4b5a6978',
+      part: 0,
+    };
     expect(readInboxAsk(message({ ...file, file: '../tracker.db' }))).toBeNull();
     expect(readInboxAsk(message({ ...file, job: '../../etc' }))).toBeNull();
     expect(readInboxAsk(message({ ...file, part: 30 }))).toBeNull();
     expect(readInboxAsk(message({ ...file, part: 1.5 }))).toBeNull();
+    expect(readInboxAsk(message({ ...file, version: '../resume.pdf' }))).toBeNull();
+    const { version: _, ...unversioned } = file;
+    expect(readInboxAsk(message(unversioned))).toBeNull();
     expect(
       readInboxAsk(
         message({

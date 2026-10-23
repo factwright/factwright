@@ -1,10 +1,12 @@
 import {
+  ASK_FIELDS,
   type AskedField,
   type FieldReply,
   fieldKind,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
+  JOB_LIMITS,
   type OfferedFile,
   type RememberedKind,
 } from '@factwright/core';
@@ -13,6 +15,7 @@ import { ext } from './ext.ts';
 import {
   type FieldAnswer,
   type FieldFilled,
+  type FieldRef,
   type FieldValue,
   type FormAnswer,
   type FormTask,
@@ -74,21 +77,27 @@ export async function readForm(tabId: number): Promise<PageForm | null> {
   return answer?.did === 'read' ? answer.form : null;
 }
 
-/** Fills a form's fields, and says how each went, or null when the tab can't be reached. */
+/**
+ * Fills a form's fields, as it was read at its address, and says how each went: or that the tab
+ * has moved on to another address, or null when the tab can't be reached.
+ */
 export async function fillForm(
   tabId: number,
+  url: string,
   answers: FieldAnswer[],
-): Promise<FieldFilled[] | null> {
-  const answer = await inPage(tabId, { do: 'fill', answers });
+): Promise<FieldFilled[] | 'elsewhere' | null> {
+  const answer = await inPage(tabId, { do: 'fill', url, answers });
+  if (answer?.did === 'elsewhere') return 'elsewhere';
   return answer?.did === 'fill' ? answer.filled : null;
 }
 
-/** What's in a form's fields now, and the page's address, or null when it can't be read. */
+/** What some of a form's fields hold now, and the page's address, or null when it can't be read. */
 export async function formValues(
   tabId: number,
-): Promise<{ url: string; values: FieldValue[] } | null> {
-  const answer = await inPage(tabId, { do: 'values' });
-  return answer?.did === 'values' ? { url: answer.url, values: answer.values } : null;
+  fields: FieldRef[],
+): Promise<{ url: string; submitted: boolean; values: FieldValue[] } | null> {
+  const answer = await inPage(tabId, { do: 'values', fields });
+  return answer?.did === 'values' ? answer : null;
 }
 
 /** Outlines fields in orange on the page, as left for you. */
@@ -102,9 +111,24 @@ export async function showField(tabId: number, field: PageField): Promise<boolea
   return answer?.did === 'show' && answer.found;
 }
 
-/** A form's fields as an ask carries them: what each asks and how, never what's in it. */
+/**
+ * A form's fields as an ask carries them: what each asks and how, never what's in it, and within
+ * what the app takes.
+ */
 export const askedFields = (form: PageForm): AskedField[] =>
-  form.fields.map(({ ref: _, key: __, ...field }) => field);
+  form.fields.map(({ ref: _, key: __, ...field }) => ({
+    ...field,
+    type: field.type.slice(0, 40),
+    autocomplete: field.autocomplete.slice(0, 200),
+    options: field.options.slice(0, ASK_FIELDS),
+  }));
+
+/** A page's address within what the app takes: one that long goes without what follows its ?. */
+function asked(url: string): string {
+  if (url.length <= JOB_LIMITS.link) return url;
+  const [path = ''] = url.split(/[?#]/);
+  return path.slice(0, JOB_LIMITS.link);
+}
 
 /** What Factwright answered for a form: the job, a reply for each field, and files to upload. */
 export type FillPlan = Extract<InboxAskAnswer, { did: 'fill' }>;
@@ -116,10 +140,10 @@ export function planFill(
 ): ReturnType<typeof askComputer> {
   return askComputer({
     ask: 'fill',
-    url: form.url,
-    title: form.title,
-    company: job.company,
-    role: job.role,
+    url: asked(form.url),
+    title: form.title.slice(0, 1000),
+    company: job.company.slice(0, JOB_LIMITS.company),
+    role: job.role.slice(0, JOB_LIMITS.role),
     fields: askedFields(form),
   });
 }
@@ -132,7 +156,13 @@ export async function fetchFile(
 ): Promise<string | null> {
   let base64 = '';
   for (let part = 0; part < offered.parts; part++) {
-    const answer = await askComputer({ ask: 'file', job: jobId, file: kind, part });
+    const answer = await askComputer({
+      ask: 'file',
+      job: jobId,
+      file: kind,
+      version: offered.version,
+      part,
+    });
     if (!answer.ok || answer.did !== 'file' || answer.part !== part) return null;
     base64 += answer.base64;
   }
@@ -176,21 +206,35 @@ export function fieldValue(field: PageField, values: readonly FieldValue[]): str
 }
 
 /**
+ * The fields whose answers are read as you go, to have what you sent: the form's own questions,
+ * and those Profile can keep your answer to. Never one that's never filled, or a personal one.
+ */
+export function fieldsToRead(form: PageForm, replies: readonly FieldReply[]): FieldRef[] {
+  return form.fields.flatMap(({ ref, key }, at) => {
+    const kind = replies[at]?.kind;
+    return kind === 'question' || (kind && isRemembered(kind)) ? [{ ref, key }] : [];
+  });
+}
+
+/**
  * The answers to send once you've applied: what's in each of the form's own questions, as typed
- * or picked. Never what Profile fills, a file, a checkbox or an equal-opportunity answer.
+ * or picked. Never what Profile fills, a file, a checkbox, agreeing to something, or an
+ * equal-opportunity or personal answer.
  */
 export function sentAnswers(
   form: PageForm,
   replies: readonly FieldReply[],
   values: readonly FieldValue[],
 ): { question: string; text: string }[] {
-  return form.fields.flatMap((field, at) => {
-    const reply = replies[at];
-    if (reply?.kind !== 'question') return [];
-    if (field.control === 'file' || field.control === 'check' || !field.question) return [];
-    const value = fieldValue(field, values);
-    return value.trim() ? [{ question: field.question, text: value.trim() }] : [];
-  });
+  return form.fields
+    .flatMap((field, at) => {
+      const reply = replies[at];
+      if (reply?.kind !== 'question') return [];
+      if (field.control === 'file' || field.control === 'check' || !field.question) return [];
+      const value = fieldValue(field, values);
+      return value.trim() ? [{ question: field.question, text: value.trim() }] : [];
+    })
+    .slice(0, ASK_FIELDS);
 }
 
 /** An answer you typed that Factwright didn't have, which it offers to keep in Profile. */

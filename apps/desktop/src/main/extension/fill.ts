@@ -1,5 +1,7 @@
-import { readFile, stat } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
+import { type FileHandle, open, readFile, realpath } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import {
   type AskedJob,
   answerField,
@@ -27,7 +29,7 @@ import {
 } from '@factwright/core';
 import { type Resume, readResume } from '@factwright/engine';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
-import type { EditResult, JobChanges } from '../../shared/api.ts';
+import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.ts';
 import { matchJobs } from '../tools/lookup.ts';
 
 /**
@@ -43,7 +45,11 @@ export interface FillDeps {
     list(): { jobs: Job[] };
     job(jobId: string): Job | null;
     docs(jobId: string): { answers?: string; letter?: string } | null;
-    recordAnswer(jobId: string, question: string, nth: number, text: string): EditResult;
+    /** Keeps what was sent for each of a job's questions at once, as one change. */
+    recordAnswers(
+      jobId: string,
+      answers: readonly { question: string; nth: number; text: string }[],
+    ): RecordedAnswers;
     updateJob(jobId: string, changes: JobChanges): EditResult;
   };
   about: { answers(): AboutYou; saveAnswers(changes: AnswerChanges): AboutYou };
@@ -94,18 +100,11 @@ function foundOn(job: Job): string {
   return known.find(([pattern]) => pattern.test(site))?.[1] ?? 'Company website';
 }
 
-/** A job's newest PDF of a kind: its resume or its cover letter. */
-function newestPdf(files: readonly JobFile[]): JobFile | null {
-  return (
-    files
-      .filter((file) => file.format === 'pdf')
-      .sort((a, b) => b.modified.localeCompare(a.modified))[0] ?? null
-  );
-}
-
-/** A job's file to upload, of a kind. */
-const fileOf = (job: Job, kind: 'resume' | 'cover-letter') =>
-  newestPdf(kind === 'resume' ? job.files : job.letters);
+/** A job's PDFs of a kind, its resume or its cover letter, newest first: the first is uploaded. */
+const pdfsOf = (job: Job, kind: 'resume' | 'cover-letter') =>
+  (kind === 'resume' ? job.files : job.letters)
+    .filter((file) => file.format === 'pdf')
+    .sort((a, b) => b.modified.localeCompare(a.modified));
 
 /** A plain name for an upload, as a person would name it: "Ana Ruiz - Resume.pdf". */
 function uploadName(you: string, kind: 'resume' | 'cover-letter', file: JobFile): string {
@@ -114,12 +113,47 @@ function uploadName(you: string, kind: 'resume' | 'cover-letter', file: JobFile)
   return `${name} - ${kind === 'resume' ? 'Resume' : 'Cover Letter'}.pdf`;
 }
 
-/** Where a job's file is on disk, while it's inside the workspace. */
-function onDisk(workspace: string, file: JobFile): string | null {
+/** Whether a path is inside a folder, and not the folder itself. */
+function isInside(folder: string, path: string): boolean {
+  const inside = relative(folder, path);
+  return inside !== '' && !isAbsolute(inside) && !inside.split(/[\\/]/).includes('..');
+}
+
+/** A file's version: of where it is in the workspace, its size and when it last changed. */
+const versionOf = (file: JobFile, stats: { size: number; mtimeMs: number }) =>
+  createHash('sha256')
+    .update(`${file.path}\n${stats.size}\n${stats.mtimeMs}`)
+    .digest('hex')
+    .slice(0, 16);
+
+/** A job's file, opened to read, with its size and the version it's offered by. */
+interface Opened {
+  handle: FileHandle;
+  size: number;
+  version: string;
+}
+
+/**
+ * Opens one of a job's files, while it's inside the workspace, where it is once links are
+ * followed too, so a link can't lead out of it, with its version, so each part of an upload is of
+ * the same file as it was offered.
+ */
+async function openInside(workspace: string, file: JobFile): Promise<Opened | null> {
   const root = resolve(workspace);
   const path = resolve(root, ...file.path.split('/'));
-  const inside = relative(root, path);
-  return inside && !inside.startsWith('..') && !inside.includes(`..${sep}`) ? path : null;
+  if (!isInside(root, path)) return null;
+  let handle: FileHandle | null = null;
+  try {
+    const real = await realpath(path);
+    if (!isInside(await realpath(root), real)) return null;
+    handle = await open(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const stats = await handle.stat();
+    if (!stats.isFile()) throw new Error('Not a file.');
+    return { handle, size: stats.size, version: versionOf(file, stats) };
+  } catch {
+    await handle?.close();
+    return null;
+  }
 }
 
 /** A job's resume.json, or null when it has none, or one that doesn't hold up. */
@@ -156,23 +190,25 @@ function sentBefore(jobs: readonly Job[]): SentBefore[] {
     .sort((a, b) => b.on.localeCompare(a.on));
 }
 
-/** An offer of one of a job's files: its plain name, its size, and its parts. */
+/** An offer of one of a job's files: its plain name, its size, its parts and its version. */
 async function offer(
   deps: FillDeps,
   job: Job,
   kind: 'resume' | 'cover-letter',
   you: string,
 ): Promise<OfferedFile | null> {
-  const file = fileOf(job, kind);
-  const path = file && onDisk(deps.workspace, file);
-  if (!file || !path) return null;
-  try {
-    const { size } = await stat(path);
-    if (size === 0 || size > FILE_LIMIT) return null;
-    return { name: uploadName(you, kind, file), size, parts: Math.ceil(size / FILE_PART_BYTES) };
-  } catch {
-    return null;
-  }
+  const [file] = pdfsOf(job, kind);
+  const opened = file ? await openInside(deps.workspace, file) : null;
+  if (!file || !opened) return null;
+  await opened.handle.close();
+  const { size, version } = opened;
+  if (size === 0 || size > FILE_LIMIT) return null;
+  return {
+    name: uploadName(you, kind, file),
+    size,
+    parts: Math.ceil(size / FILE_PART_BYTES),
+    version,
+  };
 }
 
 /** Answers for a form's fields, with the job it's for and the files there are to upload. */
@@ -201,7 +237,7 @@ async function fill(
     relocate: about.relocate,
     targetPay: about.targetPay,
     resume,
-    job: job ? { company: job.company, foundOn: foundOn(job) } : null,
+    job: job ? { company: job.company, foundOn: foundOn(job), location: job.location ?? '' } : null,
     sent: sentBefore(jobs),
     suggested: readSuggestedAnswers(docs?.answers),
     files: { resume: cv?.name ?? null, coverLetter: coverLetter?.name ?? null },
@@ -217,39 +253,53 @@ async function fill(
   };
 }
 
-/** A part of a job's resume or cover letter, as base64, for the extension to upload. */
+/**
+ * A part of a job's resume or cover letter, as base64, for the extension to upload: of the file
+ * it was offered, by its version, or none, once that file has changed or gone.
+ */
 async function filePart(
   ask: Extract<InboxAsk, { ask: 'file' }>,
   deps: FillDeps,
 ): Promise<InboxAskAnswer> {
   const job = deps.jobs.job(ask.job);
   if (!job) return notFound('That job isn’t in Factwright anymore.');
-  const file = fileOf(job, ask.file);
-  const path = file && onDisk(deps.workspace, file);
-  if (!file || !path) return notFound('That job has no such file anymore.');
-  try {
-    const bytes = await readFile(path);
-    if (bytes.length === 0 || bytes.length > FILE_LIMIT)
-      return failed('That file is too big to upload.');
-    const parts = Math.ceil(bytes.length / FILE_PART_BYTES);
-    if (ask.part >= parts) return notFound('That file has no such part.');
-    const part = bytes.subarray(ask.part * FILE_PART_BYTES, (ask.part + 1) * FILE_PART_BYTES);
-    return { ok: true, did: 'file', part: ask.part, parts, base64: part.toString('base64') };
-  } catch {
-    return failed('Factwright couldn’t read that file.');
+  for (const file of pdfsOf(job, ask.file)) {
+    const opened = await openInside(deps.workspace, file);
+    if (!opened) continue;
+    const { handle, size, version } = opened;
+    try {
+      if (version !== ask.version) continue;
+      if (size === 0 || size > FILE_LIMIT) return failed('That file is too big to upload.');
+      const parts = Math.ceil(size / FILE_PART_BYTES);
+      if (ask.part >= parts) return notFound('That file has no such part.');
+      const at = ask.part * FILE_PART_BYTES;
+      const part = Buffer.alloc(Math.min(FILE_PART_BYTES, size - at));
+      const { bytesRead } = await handle.read(part, 0, part.length, at);
+      if (bytesRead !== part.length) return failed('Factwright couldn’t read that file.');
+      // Written to as it was read, it's changed.
+      if (versionOf(file, await handle.stat()) !== version) break;
+      return { ok: true, did: 'file', part: ask.part, parts, base64: part.toString('base64') };
+    } catch {
+      return failed('Factwright couldn’t read that file.');
+    } finally {
+      await handle.close();
+    }
   }
+  return notFound('That file changed since Factwright offered it. Click Fill again.');
 }
 
 /**
  * What you sent, once you've applied: each answer to the form's own questions, recorded as sent
- * for its job, and the job marked Applied, which keeps its resume and cover letter as they went
- * out. Never an equal-opportunity answer, or what's never filled, whatever the extension sent.
+ * for its job, all at once, and the job marked Applied, which keeps its resume and cover letter
+ * as they went out. Only the form's own questions, whatever the extension sent: never what
+ * Profile answers, an equal-opportunity or personal answer, agreeing to something, or what's
+ * never filled.
  */
 function sent(ask: Extract<InboxAsk, { ask: 'sent' }>, deps: FillDeps): InboxAskAnswer {
   const job = deps.jobs.job(ask.job);
   if (!job) return notFound('That job isn’t in Factwright anymore.');
   const seen = new Map<string, number>();
-  let recorded = 0;
+  const answers: { question: string; nth: number; text: string }[] = [];
   for (const { question, text } of ask.answers) {
     const key = questionKey(question);
     if (!key || !text.trim()) continue;
@@ -261,11 +311,14 @@ function sent(ask: Extract<InboxAsk, { ask: 'sent' }>, deps: FillDeps): InboxAsk
       autocomplete: '',
       name: '',
     });
-    if (isEqualOpportunity(kind) || kind === 'never' || kind === 'consent') continue;
+    if (kind !== 'question') continue;
     const nth = seen.get(key) ?? 0;
     seen.set(key, nth + 1);
-    if (deps.jobs.recordAnswer(job.id, question, nth, text.trim()).ok) recorded += 1;
+    answers.push({ question, nth, text: text.trim() });
   }
+  const kept = answers.length > 0 ? deps.jobs.recordAnswers(job.id, answers) : null;
+  if (kept && !kept.ok) return failed(kept.message);
+  const recorded = kept?.recorded ?? 0;
   const applied = job.status && SENT_STATUSES.includes(job.status);
   if (!applied) {
     const result = deps.jobs.updateJob(job.id, { status: 'applied' });

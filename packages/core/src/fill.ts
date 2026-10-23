@@ -1,12 +1,21 @@
 import { questionKey, type SuggestedAnswer } from './answers.ts';
+import { countriesOfPlace, countryCode, countryNames, placesIn, US_STATES } from './countries.ts';
 import { shortDate } from './format.ts';
-import { type FieldKind, type FormField, fieldKind, isEqualOpportunity } from './forms.ts';
+import {
+  type FieldKind,
+  type FormField,
+  fieldKind,
+  isEqualOpportunity,
+  WITHOUT_SPONSORSHIP,
+} from './forms.ts';
+import { parsePay } from './pay.ts';
 
 /**
  * Answering an application form from what's on file, field by field: Profile first, then the
  * job's own resume and letter, then what you sent before, then your Claude's drafts for the job.
  * Anything else is left for you. Equal-opportunity questions are answered only from what you set
- * in Profile, and passwords, payment details, ID numbers and dates of birth never.
+ * in Profile, personal questions never, and passwords, payment details, ID numbers and dates of
+ * birth never.
  */
 
 /**
@@ -123,8 +132,11 @@ export interface OnFile {
   targetPay: string;
   /** Where the job's own resume says you work now. */
   resume: { company: string; title: string } | null;
-  /** The job the form is for: who it's with, and where you found it, such as "LinkedIn". */
-  job: { company: string; foundOn: string } | null;
+  /**
+   * The job the form is for: who it's with, where you found it, such as "LinkedIn", and where
+   * it's based, as its posting says, such as "Denver, CO".
+   */
+  job: { company: string; foundOn: string; location: string } | null;
   /** What you sent before, newest first. */
   sent: readonly SentBefore[];
   /** Your Claude's drafts for this job's questions. */
@@ -146,9 +158,14 @@ export type LeftFor =
   | 'never'
   /** Agreeing to something, which is yours to do. */
   | 'consent'
+  /** A personal question, such as your age, which only you answer, each time. */
+  | 'personal'
   /** Profile has nothing for it yet. */
   | 'unset'
-  /** An equal-opportunity question you haven't set an answer for: "Leave for me". */
+  /**
+   * An equal-opportunity question you haven't set an answer for, "Leave for me", or one to type
+   * an answer in, which you answer yourself.
+   */
   | 'sensitive'
   /** Nothing on file answers it: a question for you or your Claude. */
   | 'new';
@@ -253,73 +270,6 @@ const EQUAL_OPPORTUNITY_PICKS: {
   },
 };
 
-/** Other names forms give a country, so "United States" picks "United States of America". */
-const COUNTRY_NAMES: string[][] = [
-  ['United States', 'United States of America', 'USA', 'US', 'U.S.'],
-  ['United Kingdom', 'UK', 'Great Britain', 'United Kingdom of Great Britain and Northern Ireland'],
-  ['Canada', 'CA'],
-  ['Germany', 'Deutschland', 'DE'],
-  ['Netherlands', 'The Netherlands', 'NL'],
-  ['Ireland', 'Republic of Ireland', 'IE'],
-  ['Australia', 'AU'],
-  ['India', 'IN'],
-];
-
-/** US states by their two letters, so "CO" picks "Colorado", and "Colorado" picks "CO". */
-const US_STATES: Record<string, string> = {
-  AL: 'Alabama',
-  AK: 'Alaska',
-  AZ: 'Arizona',
-  AR: 'Arkansas',
-  CA: 'California',
-  CO: 'Colorado',
-  CT: 'Connecticut',
-  DE: 'Delaware',
-  DC: 'District of Columbia',
-  FL: 'Florida',
-  GA: 'Georgia',
-  HI: 'Hawaii',
-  ID: 'Idaho',
-  IL: 'Illinois',
-  IN: 'Indiana',
-  IA: 'Iowa',
-  KS: 'Kansas',
-  KY: 'Kentucky',
-  LA: 'Louisiana',
-  ME: 'Maine',
-  MD: 'Maryland',
-  MA: 'Massachusetts',
-  MI: 'Michigan',
-  MN: 'Minnesota',
-  MS: 'Mississippi',
-  MO: 'Missouri',
-  MT: 'Montana',
-  NE: 'Nebraska',
-  NV: 'Nevada',
-  NH: 'New Hampshire',
-  NJ: 'New Jersey',
-  NM: 'New Mexico',
-  NY: 'New York',
-  NC: 'North Carolina',
-  ND: 'North Dakota',
-  OH: 'Ohio',
-  OK: 'Oklahoma',
-  OR: 'Oregon',
-  PA: 'Pennsylvania',
-  RI: 'Rhode Island',
-  SC: 'South Carolina',
-  SD: 'South Dakota',
-  TN: 'Tennessee',
-  TX: 'Texas',
-  UT: 'Utah',
-  VT: 'Vermont',
-  VA: 'Virginia',
-  WA: 'Washington',
-  WV: 'West Virginia',
-  WI: 'Wisconsin',
-  WY: 'Wyoming',
-};
-
 /** Words, compared: lowercase, letters and digits. */
 const plain = (text: string) =>
   text
@@ -329,12 +279,6 @@ const plain = (text: string) =>
     .replace(/['’]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
-
-/** A country's names forms use, its own first. */
-function countryNames(country: string): string[] {
-  const known = COUNTRY_NAMES.find((names) => names.some((name) => plain(name) === plain(country)));
-  return known ? [country, ...known.filter((name) => plain(name) !== plain(country))] : [country];
-}
 
 /** A state's other name: "CO" for "Colorado", and "Colorado" for "CO". */
 function regionNames(region: string): string[] {
@@ -394,25 +338,23 @@ function needsSponsorship(
   if (!sponsorship) return null;
   const said = plain(`${field.question} ${field.hint}`);
   const later = /\b(future|later|will you|ever|at any time|eventually)\b/.test(said);
-  const needs = sponsorship === 'now' || (later && sponsorship === 'later');
-  // "Can you work without sponsorship?" asks the other way round.
-  return /\bwithout\b/.test(said) ? !needs : needs;
+  return sponsorship === 'now' || (later && sponsorship === 'later');
 }
 
 /**
- * Whether you can work where a question asks: in the countries Profile lists. A question that
- * names no country, such as "in the country you applied for", takes your first.
+ * Whether you can work where a question asks: yes, when Profile lists every country it names,
+ * and otherwise it's for you, as you may be able to with a visa. A question that names none, such
+ * as "in the country you applied for", asks about where the job is, when its location says. One
+ * that names a region, such as "the EU", is for you too.
  */
-function authorizedFor(field: FormField, countries: readonly string[]): boolean | null {
-  if (countries.length === 0) return null;
-  const said = plain(`${field.question} ${field.hint}`);
-  const named = COUNTRY_NAMES.flat().filter(
-    (name) => name.length > 3 && new RegExp(`\\b${plain(name)}\\b`).test(said),
-  );
-  if (named.length === 0) return true;
-  return countries.some((country) =>
-    countryNames(country).some((name) => named.some((each) => plain(each) === plain(name))),
-  );
+function authorizedFor(field: FormField, onFile: OnFile): boolean | null {
+  const listed = new Set(onFile.applications.countries.map(countryCode).filter(Boolean));
+  if (listed.size === 0) return null;
+  const named = placesIn(`${field.question} ${field.hint}`);
+  if (named.region) return null;
+  const where =
+    named.countries.length > 0 ? named.countries : countriesOfPlace(onFile.job?.location ?? '');
+  return where.length > 0 && where.every((code) => listed.has(code)) ? true : null;
 }
 
 /** "How did you hear about us?": where you found the job, or Profile's default. */
@@ -441,6 +383,16 @@ function namesCompany(question: string, companies: readonly string[]): boolean {
   });
 }
 
+/**
+ * Whether an answer you wrote for one company's form is about that company, so it fits only its
+ * own: one to "Why do you want to work at Lumen Health?", or one that says "…bring my background
+ * to Lumen Health", whatever it was asked.
+ */
+function aboutCompany(each: SentBefore, company: string): boolean {
+  if (namesCompany(each.question, [each.company, company])) return true;
+  return plain(each.company) !== plain(company) && namesCompany(each.text, [each.company]);
+}
+
 /** A question of the form's own: what you sent before, then your Claude's draft for the job. */
 function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
   const key = questionKey(field.question);
@@ -451,8 +403,7 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
     (each) =>
       questionKey(each.question) === key &&
       each.text.trim() &&
-      // A written answer that's about a company fits only that company's form.
-      !(written && namesCompany(each.question, [each.company, job])),
+      !(written && aboutCompany(each, job)),
   );
   if (before) {
     const from = `From your ${before.company || 'earlier'} application, ${shortDate(before.on, onFile.today)}`;
@@ -491,27 +442,37 @@ function linkOrHandle(kind: FieldKind, field: FormField, link: string): FieldRep
   return { kind, text: link, source: 'profile' };
 }
 
+/** Pay as one amount a year, for a box that takes a number, or null when it isn't one, clearly. */
+function yearlyPay(field: FormField, targetPay: string): number | null {
+  // By the hour, week or month, or in thousands, a number says something else.
+  const other = /\b(hour|hourly|hr|week|weekly|month|monthly|day|daily|thousands?|in k)\b/;
+  if (other.test(plain(`${field.question} ${field.hint} ${targetPay}`))) return null;
+  const pay = parsePay(targetPay);
+  return pay && pay.min === pay.max ? pay.min : null;
+}
+
 /**
  * Factwright's answer for one field, from what's on file, or why it's left for you. It never
- * answers a password, payment details, an ID number or a date of birth, never agrees to anything
- * for you, and answers an equal-opportunity question only as you set it in Profile.
+ * answers a password, payment details, an ID number, a date of birth or a personal question,
+ * never agrees to anything for you, and answers an equal-opportunity question only as you set it
+ * in Profile, and only by picking one of its options.
  */
 export function answerField(field: FormField, onFile: OnFile): FieldReply {
   const kind = fieldKind(field);
   const { you, applications } = onFile;
   const place = placeParts(you.location);
   const name = nameParts(you.name);
-  if (kind === 'never') return left(kind, 'never');
+  if (kind === 'never' || kind === 'personal') return left(kind, kind);
   if (kind === 'consent' || (field.control === 'check' && kind === 'question')) {
     return left(kind, kind === 'consent' ? 'consent' : 'new');
   }
   if (isEqualOpportunity(kind)) {
     const answer = onFile.kept.equalOpportunity[kind];
-    if (!answer) return left(kind, 'sensitive');
+    // Only a choice among a form's options takes Profile's answer: a box to type in is for your
+    // own words.
+    if (!answer || !choosing(field)) return left(kind, 'sensitive');
     const picks = (EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>)[answer] ?? [];
-    return choosing(field)
-      ? { kind, pick: picks, source: 'profile' }
-      : { kind, text: picks[0] ?? '', source: 'profile' };
+    return { kind, pick: picks, source: 'profile' };
   }
   switch (kind) {
     case 'first-name':
@@ -563,10 +524,19 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
       return onFile.resume?.title
         ? { ...fromProfile(kind, field, onFile.resume.title), source: 'resume' }
         : left(kind, 'unset');
-    case 'authorized':
-      return yesNo(kind, field, authorizedFor(field, applications.countries));
-    case 'sponsorship':
-      return yesNo(kind, field, needsSponsorship(field, applications.sponsorship));
+    case 'authorized': {
+      const can = authorizedFor(field, onFile);
+      if (!/\bsponsor/.test(plain(field.question))) return yesNo(kind, field, can);
+      // "Are you authorized to work here without sponsorship?" asks both.
+      const needs = needsSponsorship(field, applications.sponsorship);
+      return yesNo(kind, field, can === null || needs === null ? null : can && !needs);
+    }
+    case 'sponsorship': {
+      const needs = needsSponsorship(field, applications.sponsorship);
+      // "Can you work here without sponsorship?" asks the other way round.
+      const without = WITHOUT_SPONSORSHIP.test(plain(field.question));
+      return yesNo(kind, field, needs === null ? null : without ? !needs : needs);
+    }
     case 'relocation':
       if (onFile.relocate === 'yes' || onFile.relocate === 'no') {
         return yesNo(kind, field, onFile.relocate === 'yes');
@@ -582,12 +552,9 @@ export function answerField(field: FormField, onFile: OnFile): FieldReply {
       return heardFrom(field, onFile);
     case 'pay': {
       if (!onFile.targetPay || choosing(field)) return left(kind, 'unset');
-      const digits = onFile.targetPay.replace(/[^\d]/g, '');
-      return field.control === 'number'
-        ? digits
-          ? { kind, text: digits, source: 'profile' }
-          : left(kind, 'unset')
-        : { kind, text: onFile.targetPay, source: 'profile' };
+      if (field.control !== 'number') return { kind, text: onFile.targetPay, source: 'profile' };
+      const yearly = yearlyPay(field, onFile.targetPay);
+      return yearly ? { kind, text: String(yearly), source: 'profile' } : left(kind, 'unset');
     }
     case 'resume':
       return onFile.files.resume

@@ -944,6 +944,29 @@ describe('answers the user sent', () => {
     expect(row()?.sent).toEqual([]);
   });
 
+  it('keeps several at once, as one change, as a form’s answers are', () => {
+    tracker.recordAnswer('acme--staff', 'Why Acme?', 0, 'Deploys.', AT);
+    expect(
+      tracker.recordAnswers(
+        'acme--staff',
+        [
+          { question: 'Why Acme?', nth: 0, text: 'Deploys, mostly.' },
+          { question: 'If yes, please explain', nth: 0, text: 'First.' },
+          { question: 'If yes, please explain', nth: 1, text: 'Second.' },
+          { question: '???', nth: 0, text: 'No words to keep it by.' },
+          { question: 'Anything else?', nth: 0, text: ' ' },
+        ],
+        AT,
+      ),
+    ).toEqual({ ok: true, recorded: 3 });
+    expect(row()?.sent.map((answer) => [answer.question, answer.nth, answer.text])).toEqual([
+      ['Why Acme?', 0, 'Deploys, mostly.'],
+      ['If yes, please explain', 0, 'First.'],
+      ['If yes, please explain', 1, 'Second.'],
+    ]);
+    expect(tracker.recordAnswers('nope', [], AT)).toMatchObject({ ok: false });
+  });
+
   it('says so when the job is gone, or the question has no words', () => {
     expect(tracker.recordAnswer('nope', 'Why?', 0, 'Because.', AT)).toMatchObject({ ok: false });
     expect(tracker.recordAnswer('acme--staff', '???', 0, 'Because.', AT)).toMatchObject({

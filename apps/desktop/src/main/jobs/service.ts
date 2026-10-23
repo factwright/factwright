@@ -43,6 +43,7 @@ import type {
   NewJob,
   NewNote,
   NoteChanges,
+  RecordedAnswers,
   ShotFor,
   ShotResult,
 } from '../../shared/api.ts';
@@ -366,6 +367,15 @@ export class JobsService {
   /** Keeps what the user actually sent for one of the application's questions. */
   recordAnswer(jobId: string, question: string, nth: number, text: string): EditResult {
     return this.saved(this.deps.tracker.recordAnswer(jobId, question, nth, text, this.context()));
+  }
+
+  /** Keeps what the user sent for several of the application's questions, as one change. */
+  recordAnswers(
+    jobId: string,
+    answers: readonly { question: string; nth: number; text: string }[],
+  ): RecordedAnswers {
+    const result = this.deps.tracker.recordAnswers(jobId, answers, this.context());
+    return result.ok && result.recorded === 0 ? result : this.saved(result);
   }
 
   /** Keeps a question the user asked Claude about a job. */

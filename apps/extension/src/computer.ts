@@ -230,6 +230,7 @@ const ASK_REASONS: Record<string, string> = {
   closed: 'Open Factwright on this computer to fill this page, then click Fill again.',
   busy: 'Factwright on this computer is busy. Try again in a moment.',
   'not-found': 'That isn’t in Factwright anymore. Click Fill again.',
+  'too-big': 'That’s more than Factwright on this computer can answer at once.',
   'bad-message': 'Factwright on this computer couldn’t take that. Update it, then try again.',
   failed: 'Factwright on this computer couldn’t do that. Try again.',
 };
