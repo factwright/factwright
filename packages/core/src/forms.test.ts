@@ -297,7 +297,57 @@ describe('what a field asks for', () => {
         ['Emergency contact phone'],
         ['School name'],
       ]),
-    ).toEqual(['current-company', 'question', 'question', 'question', 'question']);
+    ).toEqual(['current-company', 'question', 'question', 'question', 'school']);
+  });
+
+  it('knows what a resume answers: schools, skills, a summary', () => {
+    expect(
+      kinds([
+        ['School'],
+        ['Name of your university'],
+        ['Degree', { control: 'combo' }],
+        ['Highest level of education', { control: 'choice' }],
+        ['Discipline', { control: 'combo' }],
+        ['Field of study'],
+        ['Graduation year'],
+        ['GPA'],
+        ['Skills', { control: 'long' }],
+        ['Licenses & certifications'],
+        ['Professional summary', { control: 'long' }],
+      ]),
+    ).toEqual([
+      'school',
+      'school',
+      'degree',
+      'degree',
+      'discipline',
+      'discipline',
+      'graduation',
+      'gpa',
+      'skills',
+      'certifications',
+      'summary',
+    ]);
+    // Whether you have one is a question for you.
+    expect(
+      kinds([
+        ['Do you have a bachelor’s degree?', { control: 'choice' }],
+        ['Have you graduated?', { control: 'choice' }],
+        ['Which of your skills make you a fit for this role?', { control: 'long' }],
+      ]),
+    ).toEqual(['question', 'question', 'question']);
+  });
+
+  it('knows a middle name, an address’s second line and a phone’s country code apart', () => {
+    expect(
+      kinds([
+        ['Middle name'],
+        ['Address line 2'],
+        ['Apartment, suite, etc.'],
+        ['Country code', { control: 'combo' }],
+        ['Address line 1'],
+      ]),
+    ).toEqual(['middle-name', 'street-2', 'street-2', 'phone-country', 'street']);
   });
 
   it('goes by the browser’s own words for a field, and its name, when its question says little', () => {

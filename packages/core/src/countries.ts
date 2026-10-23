@@ -401,6 +401,11 @@ export function countryCode(name: string): string | null {
   );
 }
 
+/** A country's usual name, by its two letters: "US" is "United States". */
+export function countryName(code: string): string {
+  return COUNTRIES.find((each) => each.code === code)?.names[0] ?? '';
+}
+
 /** The names forms list a country by, as it's put first: "United States" is also "USA". */
 export function countryNames(country: string): string[] {
   const code = countryCode(country);

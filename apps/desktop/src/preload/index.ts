@@ -115,6 +115,7 @@ const api: FactwrightApi = {
   saveAnswers: (changes) => ipcRenderer.invoke('about:save', changes),
   privateAnswers: () => ipcRenderer.invoke('about:private'),
   savePrivateAnswers: (changes) => ipcRenderer.invoke('about:save-private', changes),
+  contactFromResume: () => ipcRenderer.invoke('about:from-resume'),
   saveNotes: (text) => ipcRenderer.invoke('about:notes', text),
   changeConfidential: (changes) => ipcRenderer.invoke('about:confidential', changes),
   addFile: (upload) => ipcRenderer.invoke('about:add-file', upload),

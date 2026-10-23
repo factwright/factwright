@@ -126,10 +126,38 @@ function merged(before: readonly FieldValue[] | null, now: readonly FieldValue[]
   return [...(before ?? []).filter((each) => !keys.has(each.key)), ...now];
 }
 
+/** What only a resume answers, which a field Profile can't fill is left for when none says. */
+const FROM_RESUMES = new Set<FieldReply['kind']>([
+  'current-company',
+  'current-title',
+  'school',
+  'degree',
+  'discipline',
+  'graduation',
+  'skills',
+  'certifications',
+  'summary',
+]);
+
+/** Why a field is left for you, in words, as the field's kind says it best. */
+function leftFor(reply: FieldReply): string {
+  if (reply.left === 'unset') {
+    if (reply.kind === 'resume') return 'This job has no resume yet';
+    if (reply.kind === 'cover-letter') return 'This job has no cover letter yet';
+    if (FROM_RESUMES.has(reply.kind)) return 'Not on your resumes yet';
+  }
+  return LEFT[reply.left ?? 'new'];
+}
+
 /** Where an answer came from, in words. */
 function source(reply: FieldReply): string {
-  if (reply.source === 'you') return LEFT[reply.left ?? 'new'];
-  if (reply.from && (reply.source === 'sent' || reply.source === 'claude')) return reply.from;
+  if (reply.source === 'you') return leftFor(reply);
+  if (
+    reply.from &&
+    (reply.source === 'sent' || reply.source === 'claude' || reply.source === 'resume')
+  ) {
+    return reply.from;
+  }
   if (reply.file) return reply.file === 'resume' ? 'The job’s resume' : 'The job’s cover letter';
   if (reply.source === 'resume') return 'From the job’s resume';
   if (reply.source === 'job')

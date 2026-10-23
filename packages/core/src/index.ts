@@ -89,6 +89,7 @@ export {
   type OnFile,
   REMEMBERED_KINDS,
   type RememberedKind,
+  type ResumeOnFile,
   readEqualOpportunity,
   type SentBefore,
 } from './fill.ts';

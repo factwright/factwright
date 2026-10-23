@@ -48,13 +48,18 @@ export interface FormField {
 export type FieldKind =
   // Who you are, from Profile.
   | 'first-name'
+  | 'middle-name'
   | 'last-name'
   | 'full-name'
   | 'preferred-name'
   | 'pronouns'
   | 'email'
   | 'phone'
+  // The country a phone number is in, as a form's box for its code asks it.
+  | 'phone-country'
   | 'street'
+  // A second line for an address, such as an apartment, which is yours to fill.
+  | 'street-2'
   | 'city'
   | 'region'
   | 'postal-code'
@@ -63,9 +68,18 @@ export type FieldKind =
   | 'linkedin'
   | 'github'
   | 'website'
-  // Where you work now, from the job's own resume.
+  // Where you work now, from the job's own resume, or your newest.
   | 'current-company'
   | 'current-title'
+  // What your resumes say of your schools, your skills and you.
+  | 'school'
+  | 'degree'
+  | 'discipline'
+  | 'graduation'
+  | 'gpa'
+  | 'skills'
+  | 'certifications'
+  | 'summary'
   // Questions Profile answers.
   | 'authorized'
   | 'sponsorship'
@@ -255,6 +269,49 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
   },
   // Cover letters, to type or upload.
   { kind: 'cover-letter', words: /\b(cover|motivation(al)?) letter\b/ },
+  // Schools, as a resume lists them, asked one field at a time. Whether you have a degree, or
+  // have graduated, is a question for you.
+  {
+    kind: 'school',
+    words:
+      /^(school|university|college|institution|school name|university name|college name)$|\b(school|university|college|institution) (name|attended)\b|\bname of (your )?(school|university|college|institution)\b|\bwhere did you (study|go to school)\b/,
+    not: /\b(high school diploma|do you|did you|have you|are you)\b/,
+  },
+  {
+    kind: 'degree',
+    words:
+      /^(degree|degree type|degree level|qualification|highest degree)$|\bhighest (level of education|degree|qualification|education)\b|\b(level of education|education level)\b|\bdegree (obtained|earned|completed|attained|received)\b/,
+    not: /\b(do you|did you|have you|are you|field|major|discipline|area)\b/,
+  },
+  {
+    kind: 'discipline',
+    words:
+      /^(discipline|major|academic discipline|concentration|field of study|area of study|major field of study)$|\b(your|college|university|degree) major\b|\bfield of study\b|\barea of study\b/,
+    not: /\b(minor|do you|did you|have you)\b/,
+  },
+  {
+    kind: 'graduation',
+    words:
+      /\bgraduat(ion|ed) (date|year|month)\b|\b(date|year|month) (of )?graduat(ion|ed)\b|\bwhen did you graduate\b|^(expected )?graduation$|\bexpected graduation\b/,
+    not: /\b(have you|did you|are you)\b/,
+  },
+  { kind: 'gpa', words: /\bgpa\b|\bgrade point average\b/ },
+  // What a resume says, asked by name alone: "Skills", "Certifications", "Summary".
+  {
+    kind: 'skills',
+    words:
+      /^((key|technical|core|relevant|top|professional) )?skills( (and )?(expertise|competencies|technologies))?$|^(skill set|skillset|competencies|core competencies|areas of expertise)$/,
+  },
+  {
+    kind: 'certifications',
+    words:
+      /^(licen[cs]es?( (and )?certifications?)?|certifications?( (and )?licen[cs]es?)?|professional certifications?|certificates)$/,
+  },
+  {
+    kind: 'summary',
+    words:
+      /^(professional |career |executive )?summary$|^(professional profile|profile summary|short bio|bio)$/,
+  },
   // Links.
   { kind: 'linkedin', words: /\blinked ?in\b/ },
   { kind: 'github', words: /\bgit ?hub\b/ },
@@ -264,6 +321,7 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     not: /\b(other|company|employer|referr)/,
   },
   // Names: "company name" or "name of your school" are someone else's.
+  { kind: 'middle-name', words: /\bmiddle (name|initial)s?\b/ },
   {
     kind: 'preferred-name',
     words:
@@ -295,7 +353,12 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
       /^(your )?(full |legal |complete )?name$|^name and surname$|\bfull name\b|\blegal name\b/,
     not: /\b(company|employer|school|university|referr|emergency|reference|manager|recruiter|contact|preferred)/,
   },
-  // Contact.
+  // Contact. A box for a phone number's country code, before the phone itself.
+  {
+    kind: 'phone-country',
+    words:
+      /\b(phone|mobile|dialing|calling) (number )?(country )?code\b|^country code$|^phone country$|\bcountry code\b/,
+  },
   {
     kind: 'email',
     words: /\be ?mail\b/,
@@ -306,7 +369,12 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     words: /\b(phone|mobile|cell ?phone|cell|telephone|tel)\b/,
     not: /\b(referr|reference|manager|recruiter|emergency|screen|interview)/,
   },
-  // Where you live.
+  // Where you live, an apartment or suite apart from the street.
+  {
+    kind: 'street-2',
+    words:
+      /\baddress (line )?(2|two)\b|\bsecond address line\b|\b(apartment|apt|suite|unit)( number| no)?\b/,
+  },
   {
     kind: 'street',
     words:
@@ -336,6 +404,7 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
 /** What a name or id says a field is: "first_name", "urls[LinkedIn]", "_systemfield_email". */
 const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'first-name', name: /\b(first ?name|fname|given ?name)\b/ },
+  { kind: 'middle-name', name: /\bmiddle ?name\b/ },
   { kind: 'last-name', name: /\b(last ?name|lname|surname|family ?name)\b/ },
   { kind: 'preferred-name', name: /\bpreferred ?name\b/ },
   { kind: 'email', name: /\be ?mail\b/ },
@@ -351,6 +420,9 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'race', name: /^race\b/ },
   { kind: 'veteran', name: /^veteran/ },
   { kind: 'disability', name: /^disability/ },
+  { kind: 'school', name: /\b(school|university|college)\b/ },
+  { kind: 'degree', name: /\bdegree\b/ },
+  { kind: 'discipline', name: /\b(discipline|major)\b/ },
   { kind: 'full-name', name: /^(name|full ?name|systemfield name)\b/ },
   { kind: 'location', name: /^(location|candidate location)\b/ },
 ];

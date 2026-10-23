@@ -48,6 +48,23 @@
   border-radius: var(--fw-radius-lg);
 }
 
+/* What a resume Factwright made can fill in, above the fields it fills. */
+.fromResume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-3);
+  padding: var(--fw-space-3) var(--fw-space-4);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+}
+
+.fromResume p {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
 .fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

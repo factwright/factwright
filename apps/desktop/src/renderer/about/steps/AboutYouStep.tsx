@@ -1,4 +1,4 @@
-import { Field, Input } from '@factwright/ui';
+import { Button, Field, Input } from '@factwright/ui';
 import { useId } from 'react';
 import { ANSWER_LIMITS, type AnswerChanges, type Contact } from '../../../shared/about.ts';
 import styles from './steps.module.css';
@@ -35,15 +35,54 @@ const FIELDS: readonly {
   { key: 'website', label: 'Website or portfolio', autoComplete: 'url' },
 ];
 
-/** Who the user is, as their resumes should show it. Only the name is needed. */
+/**
+ * What a resume says that Profile leaves blank: each blank field the resume has, or null when it
+ * has none of them.
+ */
+export function resumeFillIns(you: Contact, resume: Contact | null): Partial<Contact> | null {
+  if (!resume) return null;
+  const fills: Partial<Contact> = {};
+  for (const { key } of FIELDS) {
+    if (!you[key].trim() && resume[key].trim()) fills[key] = resume[key].trim();
+  }
+  return Object.keys(fills).length > 0 ? fills : null;
+}
+
+/** Each field, as a sentence names it. */
+const FIELD_WORDS: Record<keyof Contact, string> = {
+  name: 'name',
+  email: 'email',
+  phone: 'phone',
+  location: 'where you live',
+  linkedin: 'LinkedIn',
+  website: 'website',
+};
+
+/** What a resume fills in, in words: "your name, email and phone". */
+export function fillInWords(fills: Partial<Contact>): string {
+  const words = FIELDS.filter(({ key }) => fills[key] !== undefined).map(
+    ({ key }) => FIELD_WORDS[key],
+  );
+  if (words.length < 2) return `your ${words[0] ?? ''}`;
+  return `your ${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
+
+/**
+ * Who the user is, as their resumes should show it. Only the name is needed. Once Factwright has
+ * made a resume, what it shows can fill in what's blank here, with one click.
+ */
 export function AboutYouStep({
   you,
   update,
+  fromResume = null,
 }: {
   you: Contact;
   update: (changes: AnswerChanges) => void;
+  /** The contact details on the newest resume Factwright made, if it's made one. */
+  fromResume?: Contact | null;
 }) {
   const titleId = useId();
+  const fills = resumeFillIns(you, fromResume);
   return (
     <section className={styles.step} aria-labelledby={titleId}>
       <div>
@@ -55,6 +94,14 @@ export function AboutYouStep({
           you’d rather not share; Claude can find the rest in your resumes.
         </p>
       </div>
+      {fills && (
+        <div className={styles.fromResume}>
+          <p>Your newest resume has {fillInWords(fills)}.</p>
+          <Button size="sm" onClick={() => update({ you: { ...you, ...fills } })}>
+            Fill in from your resume
+          </Button>
+        </div>
+      )}
       <div className={styles.fields}>
         {FIELDS.map((field) => (
           <Field

@@ -11,6 +11,7 @@ type ProfileApi = Pick<
   | 'saveAnswers'
   | 'privateAnswers'
   | 'savePrivateAnswers'
+  | 'contactFromResume'
   | 'saveNotes'
   | 'changeConfidential'
   | 'addFile'
@@ -260,6 +261,14 @@ export function sampleProfile(state: string | null): ProfileApi {
       return answers;
     },
     privateAnswers: async () => kept,
+    contactFromResume: async () => ({
+      name: 'Alex Rivera',
+      email: 'alex.rivera@example.com',
+      phone: '(415) 555-0137',
+      location: 'Oakland, CA',
+      linkedin: 'linkedin.com/in/alexrivera',
+      website: '',
+    }),
     savePrivateAnswers: async (changes) => {
       kept = { ...kept, ...changes };
       return kept;

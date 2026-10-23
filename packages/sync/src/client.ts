@@ -83,11 +83,29 @@ export interface ClientOptions {
   token?: () => string | null;
   /** Sent with every request, such as the app's name and version. */
   headers?: Readonly<Record<string, string>>;
+  /** How long a request may take, in milliseconds, before it's given up on. Tests set it. */
+  timeoutMs?: number;
   /** For tests. */
   fetch?: typeof fetch;
 }
 
-type Init = Omit<RequestInit, 'body'> & { json?: unknown; body?: Bytes };
+/**
+ * How long a request may take before it's given up on, as the server not answering, so a request
+ * that stalls is tried again instead of leaving sync waiting for good.
+ */
+const TIMEOUT_MS = 60_000;
+
+/** The longer a file's upload or download may take, for each megabyte of it. */
+const PER_MEGABYTE_MS = 30_000;
+
+/** The size taken for a file whose size isn't known, for how long it may take to come down. */
+const UNKNOWN_FILE_BYTES = 10_000_000;
+
+type Init = Omit<RequestInit, 'body'> & { json?: unknown; body?: Bytes; timeoutMs?: number };
+
+/** Whether something went wrong as a request ran out of time, or was stopped. */
+const stopped = (error: unknown) =>
+  error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
 
 /** Talks to the sync server. It only ever sends locked data and opaque IDs. */
 export class SyncClient {
@@ -103,7 +121,7 @@ export class SyncClient {
   }
 
   private async request(path: string, init: Init = {}): Promise<Response> {
-    const { json, body, ...rest } = init;
+    const { json, body, timeoutMs, ...rest } = init;
     const headers = new Headers(this.options.headers);
     const token = this.options.token?.();
     if (token) headers.set('authorization', `Bearer ${token}`);
@@ -114,11 +132,18 @@ export class SyncClient {
       response = await (this.options.fetch ?? fetch)(this.url(path), {
         ...rest,
         headers,
+        // Reading the answer counts too: a body that stops coming gives up as a request does.
+        signal: AbortSignal.timeout(timeoutMs ?? this.options.timeoutMs ?? TIMEOUT_MS),
         ...(json !== undefined && { body: JSON.stringify(json) }),
         ...(body !== undefined && { body }),
       });
     } catch (error) {
-      throw new SyncError('offline', `Couldn’t reach the sync server: ${String(error)}`);
+      throw new SyncError(
+        'offline',
+        stopped(error)
+          ? 'The sync server didn’t answer in time.'
+          : `Couldn’t reach the sync server: ${String(error)}`,
+      );
     }
     if (response.ok) return response;
     const answer = (await response.json().catch(() => null)) as ErrorBody | null;
@@ -133,7 +158,19 @@ export class SyncClient {
   }
 
   private async json<T>(path: string, init: Init = {}): Promise<T> {
-    return (await (await this.request(path, init)).json()) as T;
+    const response = await this.request(path, init);
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      if (stopped(error)) throw new SyncError('offline', 'The sync server didn’t answer in time.');
+      throw error;
+    }
+  }
+
+  /** How long a file of so many bytes may take to go up or come down. */
+  private fileTimeout(bytes: number): number {
+    const base = this.options.timeoutMs ?? TIMEOUT_MS;
+    return base + Math.ceil(bytes / 1_000_000) * PER_MEGABYTE_MS;
   }
 
   /**
@@ -188,16 +225,26 @@ export class SyncClient {
   }
 
   async putFile(id: string, data: Bytes): Promise<void> {
-    await this.request(`${API.files}/${id}`, { method: 'PUT', body: data });
+    await this.request(`${API.files}/${id}`, {
+      method: 'PUT',
+      body: data,
+      timeoutMs: this.fileTimeout(data.length),
+    });
   }
 
-  /** A file's locked contents, or null when the server doesn't have them. */
-  async getFile(id: string): Promise<Bytes | null> {
+  /**
+   * A file's locked contents, or null when the server doesn't have them. Its size, when it's
+   * known, says how long it may take to come down.
+   */
+  async getFile(id: string, size?: number): Promise<Bytes | null> {
     try {
-      const response = await this.request(`${API.files}/${id}`);
+      const response = await this.request(`${API.files}/${id}`, {
+        timeoutMs: this.fileTimeout(size ?? UNKNOWN_FILE_BYTES),
+      });
       return new Uint8Array(await response.arrayBuffer());
     } catch (error) {
       if (error instanceof SyncError && error.kind === 'not-found') return null;
+      if (stopped(error)) throw new SyncError('offline', 'The sync server didn’t answer in time.');
       throw error;
     }
   }
