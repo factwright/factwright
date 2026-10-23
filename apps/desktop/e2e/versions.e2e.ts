@@ -18,9 +18,20 @@ const letter = () => jobPanel().getByRole('region', { name: 'Cover letter', exac
 const earlier = () => letter().getByRole('list', { name: 'Earlier versions of the cover letter' });
 /** The earlier versions the job's folder keeps. */
 const kept = () => readdirSync(join(dataDir, 'workspace', ACME_FOLDER, 'previous')).sort();
-const words = () =>
-  JSON.parse(readFileSync(join(dataDir, 'workspace', ACME_FOLDER, 'cover-letter.json'), 'utf8'))
-    .paragraphs[0];
+/**
+ * The letter's first paragraph, or null for the moment Use this has the job's letter aside,
+ * before the earlier one takes its place.
+ */
+const words = () => {
+  try {
+    return JSON.parse(
+      readFileSync(join(dataDir, 'workspace', ACME_FOLDER, 'cover-letter.json'), 'utf8'),
+    ).paragraphs[0];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+};
 
 async function finishRun() {
   const panel = claudePanel();
