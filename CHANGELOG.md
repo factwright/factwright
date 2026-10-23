@@ -4,6 +4,11 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Fixed
+- When you've held more than one title at one company, such as after a promotion, your resumes show each role as it was: a job of its own, with the same company and its own title, dates and bullets, never merged into one, and never with an older title made a heading over bullets. Getting started asks about every title you held at each employer, and your fact bank keeps one file for each employer, with a section for each role, newest first, and that role's facts under it. The exact titles your resumes must show list every title you held at each company, and building a resume checks each of its jobs there against them. Before, it checked only the first job at a company, against one title, so a right title could be flagged as wrong and your Claude could change it. A rule from before, with one title, still reads as it did.
+- A fact your Claude saves from your answer while it works on a job goes under the role it's about, in the file of an employer where you held more than one title. Before, it went after the file's last fact, under your earliest role there. A section for a role the file doesn't have yet is started only in words the file or your answer has, so a run can't give you a title you never held.
+- The ATS X-ray finds the company of each job on a resume that names the company once, above the titles held there, with or without the company's own dates. Before, it said No company found for each of those jobs, or listed the company as a job of its own. A bullet with no full stop is never read as a job's company either.
+
 ## 0.13.0 - 2026-10-23
 
 ### Added
