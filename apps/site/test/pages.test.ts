@@ -401,15 +401,47 @@ describe('the home page', () => {
     for (const name of MADE_UP) expect(text, name).toContain(name);
   });
 
-  it('has a card for each Run button on a job in the app, by the name the app gives it', () => {
+  it('has a card for each task Claude does on a job, by the name the app gives it', () => {
+    // The names the bar along the app's bottom and Claude's settings give the tasks.
     const source = appSources().find((text) => text.includes('export const RUN_ACTIONS')) ?? '';
     const actions = source.slice(source.indexOf('export const RUN_ACTIONS'));
-    const runs = [...actions.slice(0, actions.indexOf('];')).matchAll(/label: '([^']+)'/g)].map(
+    const tasks = [...actions.slice(0, actions.indexOf('];')).matchAll(/label: '([^']+)'/g)].map(
       ([, label]) => label,
     );
-    expect(runs.length).toBeGreaterThan(5);
+    expect(tasks.length).toBeGreaterThan(5);
     const cards = [...open('index.html').querySelectorAll('#tasks .task h3')].map(said);
-    expect(cards).toEqual(expect.arrayContaining(runs));
+    expect(cards).toEqual(expect.arrayContaining(tasks));
+  });
+
+  it('says where each card’s task is done in the app, in the words on its buttons', () => {
+    const sources = appSources();
+    // Words the app puts on a button: a Button's own text, a ClaudeButton's label, a step Up
+    // next starts Claude on, or the button that asks for the application's questions. Not a
+    // step's words, a task's name or a dialog's title.
+    const onButton = (words: string) => {
+      const exact = words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ways = [
+        `>\\s*${exact}\\s*</Button>`,
+        `<ClaudeButton\\b[^<]*?\\blabel="${exact}"`,
+        `\\btask: \\{[^}]*\\},\\s*label: '${exact}'`,
+        `\\bstart\\('${exact}'\\)`,
+      ].map((way) => new RegExp(way));
+      return sources.some((text) => ways.some((way) => way.test(text)));
+    };
+    expect(onButton('Tailor a resume')).toBe(true);
+    expect(onButton('Tailored resume')).toBe(false);
+    const doc = open('index.html');
+    const cards = [...doc.querySelectorAll('#tasks .task')];
+    expect(cards.length).toBeGreaterThan(5);
+    for (const card of cards) {
+      const words = [...card.querySelectorAll('.task-where b')].map(said);
+      expect(words, said(card.querySelector('h3'))).not.toHaveLength(0);
+      for (const each of words) expect(onButton(each), each).toBe(true);
+    }
+    // And the way to ask about anything else.
+    for (const each of [...doc.querySelectorAll('.tasks-note b')].map(said)) {
+      expect(onButton(each), each).toBe(true);
+    }
   });
 
   it('shows the fact behind each resume line it offers', () => {

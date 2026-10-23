@@ -1,5 +1,5 @@
+import { themeCss } from '@factwright/ui/theme';
 import { defineConfig, type Plugin } from 'vite';
-import { siteThemeCss } from './scripts/theme.ts';
 import { fillStores } from './src/stores.ts';
 
 /** The design system's colors, type and spacing, as a stylesheet the page imports. */
@@ -9,7 +9,7 @@ function theme(): Plugin {
   return {
     name: 'factwright-theme',
     resolveId: (id) => (id === THEME ? `\0${THEME}` : undefined),
-    load: (id) => (id === `\0${THEME}` ? siteThemeCss() : undefined),
+    load: (id) => (id === `\0${THEME}` ? themeCss() : undefined),
   };
 }
 

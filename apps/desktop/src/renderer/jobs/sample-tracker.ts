@@ -3,6 +3,7 @@ import {
   askId,
   CALL_STAGE,
   type Call,
+  callDocFile,
   type Job,
   type JobShot,
   type JobStatus,
@@ -25,7 +26,7 @@ import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import { REVISE_SKILL, type Revision } from '../../shared/revision.ts';
-import { type RunTask, taskJob } from '../../shared/runs.ts';
+import { type RunTask, THANKS_SKILL, taskCall, taskJob } from '../../shared/runs.ts';
 import type { DocKind, DocVersion } from '../../shared/versions.ts';
 import {
   sampleCallDocs,
@@ -543,6 +544,19 @@ export function sampleTracker(
               return job.outreach.includes(path)
                 ? job
                 : { ...job, outreach: [...job.outreach, path] };
+            }
+            // A call's prep sheet, or the thank-you notes after it, written again or for the
+            // first time. A mock interview writes nothing.
+            case 'interview-prep':
+            case THANKS_SKILL: {
+              const callId = taskCall(task);
+              if (!callId || 'practice' in task) return job;
+              const kind = task.skill === THANKS_SKILL ? 'thanks' : 'prep';
+              const others = job.callDocs.filter(
+                (doc) => doc.callId !== callId || doc.kind !== kind,
+              );
+              const path = callDocFile(job.id, callId, kind);
+              return { ...job, callDocs: [...others, { callId, kind, path, modified }] };
             }
             default:
               return job;

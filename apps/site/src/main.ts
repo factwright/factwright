@@ -38,146 +38,194 @@ function header(): void {
 
 type RunPhase = 'working' | 'need' | 'done';
 
-const PHASES: Readonly<Record<RunPhase, { label: string; hint: string }>> = {
-  working: { label: 'Working', hint: 'Keep working. You’ll hear when Claude needs you.' },
-  need: {
-    label: 'Needs your answer',
-    hint: 'Claude has a question. Answer it in the panel below.',
-  },
-  done: { label: 'Done', hint: 'Claude is done. Type to keep going, or close the panel.' },
+const PHASES: Readonly<Record<RunPhase, string>> = {
+  working: 'Working',
+  need: 'Needs your answer',
+  done: 'Done',
 };
 
-/** Claude Code's spinner, as it turns while Claude works. */
-const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+/** What the bar says while Claude works: the last step it finished, and the one it's on. */
+interface BarLine {
+  did?: string;
+  doing: string;
+}
+
+/** The drawing's run, a step at a time, in the words the app's bar uses for each. */
+const BEFORE_QUESTION: readonly BarLine[] = [
+  { doing: 'Reading what’s on file for the job…' },
+  { did: 'Read what’s on file for the job', doing: 'Reading your fact bank…' },
+  { did: 'Read your fact bank', doing: 'Thinking…' },
+];
+const AFTER_QUESTION: readonly BarLine[] = [
+  { did: 'Read your fact bank', doing: 'Searching the web for “Lumen Health panel interview”…' },
+  {
+    did: 'Searched the web for “Lumen Health panel interview”',
+    doing: 'Saving the prep sheet…',
+  },
+];
+
+/** What the bar says once the prep sheet is saved. */
+const READY = 'Your prep sheet for the panel interview at Lumen Health is ready.';
+
+/** How long the run has taken so far, as the bar shows it. */
+const clock = (seconds: number) =>
+  `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 /**
- * The app drawing at the top: Call prep runs for the job's next call in Claude's panel, asks one
- * question, and the prep sheet lands on the call. Its buttons change the way the app's do, what
- * would start Claude waits while it works, and what the job needs next moves on once it's done.
- * With reduced motion, it shows the finished run.
+ * The app drawing at the top: Up next's Prep for the call starts Claude, the bar along the bottom
+ * says what it's doing, a step at a time, Claude asks one question in a box of its own, and once
+ * the prep sheet is saved, the bar says so, with Open it, which goes to the call it's for. The
+ * buttons change the way the app's do, what would start Claude waits while it works, and what the
+ * job needs next moves on once it's done. With reduced motion, it shows the finished run.
  */
 function heroRun(root: HTMLElement): void {
   const find = (selector: string) => root.querySelector<HTMLElement>(selector);
-  const claude = find('[data-demo-claude]');
+  const bar = find('[data-demo-bar]');
   const status = find('[data-demo-status]');
   const statusLabel = find('[data-demo-status-label]');
-  const title = find('[data-demo-title]');
-  const hint = find('[data-demo-hint]');
-  const toggle = find('[data-demo-toggle]');
+  const did = find('[data-demo-did]');
+  const didText = find('[data-demo-did-text]');
+  const doing = find('[data-demo-doing]');
+  const elapsed = find('[data-demo-elapsed]');
+  const openIt = find('[data-demo-open]');
   const run = find('[data-demo-run]');
   const runState = find('[data-demo-run-state]');
-  const calls = find('[data-demo-calls]');
+  const callRun = find('[data-demo-call-run]');
+  const callRunState = find('[data-demo-call-run-state]');
   const call = find('[data-demo-call]');
-  const sections = find('[data-demo-scroll]');
-  if (!claude || !status || !statusLabel || !title || !hint || !toggle || !run || !runState) return;
-  const lines = [...root.querySelectorAll<HTMLElement>('[data-at]')];
-  const spinners = [...root.querySelectorAll<HTMLElement>('.t-spin')];
+  const ask = find('[data-demo-ask]');
+  const pick = find('[data-demo-pick]');
+  const send = find('[data-demo-send]');
+  const areas = find('[data-demo-scroll]');
+  if (!bar || !status || !statusLabel || !did || !didText || !doing || !elapsed || !openIt) return;
+  if (!run || !runState || !ask || !pick || !send) return;
   const waiting = [...root.querySelectorAll<HTMLElement>('[data-demo-wait]')];
   const made = [...root.querySelectorAll<HTMLElement>('[data-demo-doc]')];
-  const after = [...root.querySelectorAll<HTMLElement>('[data-demo-then]')];
-  const term = claude.querySelector<HTMLElement>('.term');
+  const after = [...root.querySelectorAll<HTMLElement>('[data-demo-then], [data-demo-then-class]')];
 
-  const show = (stage: number) => {
-    for (const line of lines) {
-      const from = Number(line.dataset.at);
-      const until = line.dataset.until ? Number(line.dataset.until) : Number.POSITIVE_INFINITY;
-      line.hidden = stage < from || stage >= until;
-    }
-    // Like a real terminal, it keeps the newest lines in view.
-    if (term) term.scrollTop = term.scrollHeight;
-  };
   const phase = (next: RunPhase) => {
     status.classList.remove('is-working', 'is-need', 'is-done');
     status.classList.add(`is-${next}`);
-    statusLabel.textContent = PHASES[next].label;
-    hint.textContent = PHASES[next].hint;
+    statusLabel.textContent = PHASES[next];
+    bar.classList.toggle('is-busy', next === 'working');
   };
-  // The job's sections scroll to a part of them, with a little room above it, the way you would.
-  const scrollSections = (part: HTMLElement | null, room: number, smooth = !still) => {
-    if (!sections || !part) return;
-    const top = part.getBoundingClientRect().top - sections.getBoundingClientRect().top;
-    sections.scrollTo({
-      top: Math.max(0, sections.scrollTop + top - room),
+  const say = (line: BarLine) => {
+    did.hidden = !line.did;
+    didText.textContent = line.did ?? '';
+    doing.textContent = line.doing;
+  };
+  // The job's areas scroll to a part of them, with a little room above it, the way you would.
+  const scrollAreas = (part: HTMLElement | null, room: number, smooth = !still) => {
+    if (!areas || !part) return;
+    const top = part.getBoundingClientRect().top - areas.getBoundingClientRect().top;
+    areas.scrollTo({
+      top: Math.max(0, areas.scrollTop + top - room),
       behavior: smooth ? 'smooth' : 'auto',
     });
   };
-  // Until the run starts, the sections show the job's calls, once laid out and whenever their
-  // size changes, such as when a tablet turns.
-  const settle = new ResizeObserver(() => scrollSections(calls, 0, false));
-  if (sections) settle.observe(sections);
-  const open = () => {
-    claude.classList.add('is-open');
-    toggle.textContent = 'Hide';
-    title.textContent = 'Call prep · Lumen Health';
+  // The button gives a little, as a real one does.
+  const press = async (button: HTMLElement) => {
+    button.classList.add('is-pressed');
+    await wait(220);
+    button.classList.remove('is-pressed');
   };
-  // While Claude works, anything else that would start it waits.
-  const busy = (on: boolean) => {
-    for (const part of waiting) part.classList.toggle('is-waiting', on);
-  };
+  let seconds = 0;
+  let timer = 0;
   const start = () => {
-    settle.disconnect();
-    runState.textContent = 'Preparing…';
-    busy(true);
-    open();
+    // Up next's button says Claude is on it, and the call's says it's preparing.
+    run.classList.add('is-running');
+    runState.textContent = 'Claude is on it';
+    if (callRunState) callRunState.textContent = 'Preparing…';
+    for (const part of waiting) part.classList.add('is-waiting');
+    // The bar that said what Claude made last time says what it's doing now.
+    bar.classList.remove('is-finished', 'is-arriving');
+    openIt.hidden = true;
+    elapsed.hidden = false;
+    elapsed.textContent = clock(0);
     phase('working');
-    // Claude's panel takes room from the job's, so the call it's prepping for stays in view.
-    scrollSections(call, 12);
+    say(BEFORE_QUESTION[0] ?? { doing: 'Thinking…' });
+    if (!still) {
+      timer = window.setInterval(() => {
+        seconds += 1;
+        elapsed.textContent = clock(seconds);
+      }, 1000);
+    }
+  };
+  const asking = (on: boolean) => {
+    ask.hidden = !on;
+    if (on) {
+      phase('need');
+      say({ doing: 'Claude has a question for you.' });
+    } else {
+      phase('working');
+    }
   };
   const finish = () => {
-    show(7);
+    window.clearInterval(timer);
     phase('done');
-    busy(false);
+    say({ doing: READY });
+    bar.classList.add('is-finished');
+    if (!still) bar.classList.add('is-arriving');
+    elapsed.hidden = true;
+    openIt.hidden = false;
+    for (const part of waiting) part.classList.remove('is-waiting');
+    // Up next moves on, to practicing for the call.
+    run.classList.remove('is-running');
+    runState.textContent = 'Practice for the call';
     // The call has its prep sheet, so its button preps again, as the app's does.
-    runState.textContent = 'Prep again';
-    run.classList.replace('ui-primary', 'ui-quiet');
+    if (callRun && callRunState) {
+      callRunState.textContent = 'Prep again';
+      callRun.classList.replace('ui-primary', 'ui-quiet');
+    }
     for (const part of made) part.classList.add('is-shown');
-    // What the job needs next moves on: the panel is prepped for, so it no longer needs you.
+    // What the job needs next moves on, from prepping for the panel to practicing for it.
     for (const part of after) {
-      part.textContent = part.dataset.demoThen ?? part.textContent;
+      if (part.dataset.demoThen !== undefined) part.textContent = part.dataset.demoThen;
       if (part.dataset.demoThenClass) part.className = part.dataset.demoThenClass;
     }
-    // The prep sheet is on the call. The sections keep it in view once laid out, and again
-    // whenever their size changes.
-    if (sections) new ResizeObserver(() => scrollSections(call, 12)).observe(sections);
+  };
+  // Open it goes to the call, where the prep sheet is, as soon as the areas are laid out, and
+  // keeps it in view whenever their size changes, such as when a tablet turns.
+  const openCall = () => {
+    if (areas) new ResizeObserver(() => scrollAreas(call, 12)).observe(areas);
   };
 
-  show(0);
   if (still) {
     start();
     finish();
+    openCall();
     return;
   }
 
-  // It starts once Claude's panel is in view, so the run plays where it can be seen.
+  // It starts once the bar is in view, so the run plays where it can be seen.
   whenSeen(
-    claude,
+    bar,
     async () => {
-      let turn = 0;
-      const spin = window.setInterval(() => {
-        turn = (turn + 1) % SPINNER.length;
-        for (const spinner of spinners) spinner.textContent = SPINNER[turn] ?? '✻';
-      }, 110);
       await wait(900);
-      run.classList.add('is-pressed');
-      await wait(220);
-      run.classList.remove('is-pressed');
+      await press(run);
       start();
-      show(1);
+      for (const line of BEFORE_QUESTION.slice(1)) {
+        await wait(1300);
+        say(line);
+      }
+      await wait(900);
+      asking(true);
+      await wait(1400);
+      pick.classList.add('is-picked');
+      send.classList.add('is-ready');
       await wait(700);
-      show(2);
-      await wait(1500);
-      show(3);
-      await wait(800);
-      show(4);
-      phase('need');
-      await wait(2300);
-      show(5);
-      phase('working');
-      await wait(600);
-      show(6);
-      await wait(1900);
+      await press(send);
+      asking(false);
+      say({ did: 'Read your fact bank', doing: 'Thinking…' });
+      for (const line of AFTER_QUESTION) {
+        await wait(1200);
+        say(line);
+      }
+      await wait(1300);
       finish();
-      window.clearInterval(spin);
+      await wait(1900);
+      await press(openIt);
+      openCall();
     },
     0.9,
   );

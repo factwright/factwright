@@ -1,6 +1,6 @@
 /*
- * The rest of the page: the Run buttons, the templates, whose Claude does the work, questions,
- * and the closing call.
+ * The rest of the page: the tasks your Claude does, the templates, whose Claude does the work,
+ * questions, and the closing call.
  */
 
 .task-icon,
@@ -27,6 +27,8 @@
 }
 
 .task {
+  display: flex;
+  flex-direction: column;
   padding: 24px;
   border: 1px solid var(--fw-border);
   border-radius: 18px;
@@ -52,9 +54,24 @@
 
 .task p {
   margin-top: 6px;
+  padding-bottom: 16px;
   color: var(--fw-muted);
   font-size: 15px;
   text-wrap: pretty;
+}
+
+/* Where the task is done in the app, at the foot of its card: Up next, or the job's button for it. */
+.task .task-where {
+  margin-top: auto;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--fw-border);
+  font-size: 13.5px;
+}
+
+.task-where b,
+.tasks-note b {
+  color: var(--fw-text);
+  font-weight: 600;
 }
 
 .tasks-note {
@@ -69,6 +86,7 @@
 }
 
 .tasks-note .icon {
+  flex: none;
   color: var(--fw-accent-text);
 }
 

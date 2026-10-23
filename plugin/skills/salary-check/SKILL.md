@@ -6,7 +6,7 @@ argument-hint: "[posting link or text]"
 
 # Salary check
 
-Input: the listing (a link or pasted text), plus the company if the listing hides it. The app's Run buttons name a job instead, as `job <id>`: call `job_details` with that id, and work from its folder's posting or its link. Run `/factwright:unmask-job` first if the employer is unknown. The user's location and remote setup are in `searches/criteria.md` or `facts/profile.md`.
+Input: the listing (a link or pasted text), plus the company if the listing hides it. The app's buttons name a job instead, as `job <id>`: call `job_details` with that id, and work from its folder's posting or its link. Run `/factwright:unmask-job` first if the employer is unknown. The user's location and remote setup are in `searches/criteria.md` or `facts/profile.md`.
 
 Research only, and never sign in anywhere. Pay never changes a fit score. This is information for the user.
 

@@ -13,8 +13,8 @@ import {
   TEMPLATES,
 } from '@factwright/engine';
 import { MARK, MARK_VIEWBOX, markSvg } from '@factwright/ui/brand';
+import { themeCss } from '@factwright/ui/theme';
 import { type Browser, chromium } from '@playwright/test';
-import { siteThemeCss } from './theme.ts';
 
 const PUBLIC = new URL('../public/', import.meta.url);
 
@@ -95,7 +95,7 @@ function siteStyles(): string {
 
 /** What every card shares: the site's look, the card's size and background, and the brand. */
 function cardStyles(): string {
-  return `${siteThemeCss()}
+  return `${themeCss()}
 ${siteStyles()}
 html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
 .og {

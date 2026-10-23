@@ -1,9 +1,11 @@
 /*
- * The app's window in the hero: the sidebar, the jobs, a job's panel, and Claude's panel, which
- * opens when the drawing's run starts. Narrower windows drop what the app drops first.
+ * The app's window in the hero: the sidebar, the jobs, a job's panel, and the bar that says what
+ * Claude is doing once the drawing's run starts, with Claude's question in a box over the window.
+ * Narrower windows drop what the app drops first.
  */
 
 .window {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 720px;
@@ -586,7 +588,7 @@
   }
 }
 
-/* The job picked in the list: its name and status stay put while its sections scroll. */
+/* The job picked in the list: its name and status stay put while its areas scroll. */
 .win-panel {
   display: flex;
   flex: 0 0 340px;
@@ -678,56 +680,21 @@
   overflow: hidden;
 }
 
-/* Above the sections: what the job needs next, in the list's words, and the user's own next step. */
-.panel-start {
-  padding: 16px 0 20px;
+/* While Claude does Up next's step, its button says so, with a spinner where the sparkles were. */
+[data-demo-run] .spin,
+[data-demo-run].is-running > .icon:first-child {
+  display: none;
 }
 
-.panel-next {
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  transition:
-    background-color 240ms ease,
-    color 240ms ease;
-}
-
-.panel-next.is-action {
-  background: var(--fw-need-soft);
-  color: var(--fw-need);
-}
-
-.panel-next.is-info {
-  background: var(--fw-accent-soft);
+[data-demo-run].is-running {
+  padding-inline: 0;
+  border-color: transparent;
+  background: none;
   color: var(--fw-accent-text);
 }
 
-.next-box {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--fw-border);
-  border-radius: var(--fw-radius-lg);
-  background: var(--fw-bar);
-}
-
-.next-box-title {
-  font-weight: 650;
-}
-
-.next-box-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.next-box-row .ui-input {
-  flex: 1 1 140px;
-}
-
-.next-box-row .next-box-date {
-  flex: 0 0 112px;
+[data-demo-run].is-running .spin {
+  display: block;
 }
 
 /* The job's calls, one card each. The next one booked stands out, as the one to get ready for. */
@@ -867,12 +834,12 @@
   animation: pop 420ms var(--ease-out);
 }
 
-/* The button the drawing presses gives a little, as a real one does. */
-[data-demo-run] {
+/* The buttons the drawing presses give a little, as real ones do. */
+:is([data-demo-run], [data-demo-open], [data-demo-send]) {
   transition: transform 160ms ease;
 }
 
-[data-demo-run].is-pressed {
+.is-pressed {
   transform: scale(0.96);
 }
 
@@ -880,77 +847,57 @@
   transition: opacity 240ms ease;
 }
 
-/* Claude's panel: a slim bar until a run starts, then the terminal opens under it. */
-.claude-panel {
-  flex: none;
-  border-top: 1px solid var(--fw-border);
-  background: var(--fw-surface);
+/* Done, with something to show for it: the bar turns green for a moment, then stays tinted. */
+.run-bar.is-arriving {
+  animation: finished 900ms ease-out;
 }
 
-.is-open > .claude-head {
-  border-bottom: 1px solid var(--fw-border);
-}
-
-.claude-hint {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--fw-muted);
-  font-size: 13px;
-  text-overflow: ellipsis;
-}
-
-.claude-plan {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--fw-muted);
-  font-size: var(--fw-text-sm);
-}
-
-.claude-plan .dot {
-  width: 6px;
-  height: 6px;
-}
-
-[data-demo-toggle] {
-  margin-left: auto;
-}
-
-.claude-panel:not(.is-open) :is(.claude-hint, .claude-plan, .claude-stop) {
-  display: none;
-}
-
-.claude-panel.is-open [data-demo-toggle] {
-  margin-left: 0;
-}
-
-.claude-panel .term {
-  height: 0;
-  padding: 0 16px;
-}
-
-/* With reduced motion, it opens at once, so the job's sections scroll to where they end up. */
-@media (prefers-reduced-motion: no-preference) {
-  .claude-panel .term {
-    transition:
-      height 520ms var(--ease-out),
-      padding 520ms var(--ease-out);
+@keyframes finished {
+  from {
+    box-shadow: inset 0 0 0 2px var(--fw-ok);
   }
 }
 
-.is-open > .term {
-  height: 184px;
-  padding-block: 12px;
+[data-demo-bar] [hidden] {
+  display: none;
 }
 
-.claude-panel .t-line:not([hidden]) {
-  animation: line-in 240ms ease-out;
+/* Claude's question, in a box of its own over the window, as the app asks it. */
+.ask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(20 20 18 / 0.28);
+  animation: fade-in 240ms ease-out;
 }
 
-@keyframes line-in {
+.ask[hidden] {
+  display: none;
+}
+
+.ask .ask-box {
+  width: min(440px, 100%);
+  box-shadow: var(--shadow-window);
+  animation: pop 320ms var(--ease-out);
+}
+
+.ask-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Send answer waits for an answer, as the app's does. */
+[data-demo-send]:not(.is-ready) {
+  opacity: 0.55;
+}
+
+@keyframes fade-in {
   from {
-    transform: translateY(3px);
     opacity: 0;
   }
 }
@@ -980,27 +927,20 @@
   }
 }
 
-@container win (max-width: 900px) {
-  .claude-plan,
-  .claude-stop {
-    display: none;
-  }
-}
-
 @container win (max-width: 760px) {
   .win-search,
-  .claude-hint {
+  .run-elapsed,
+  .run-work-label {
     display: none;
-  }
-
-  .claude-panel.is-open [data-demo-toggle] {
-    margin-left: auto;
   }
 }
 
+/* On a phone, what Claude is doing, or what it made, gets a line of its own. */
 @container win (max-width: 480px) {
   .lights,
-  .win-add {
+  .win-add,
+  .run-title,
+  .run-stop {
     display: none;
   }
 
@@ -1009,21 +949,19 @@
     padding-inline: 16px;
   }
 
-  .claude-head {
+  .run-bar {
+    flex-wrap: wrap;
     padding-inline: 12px;
   }
 
-  .claude-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .run-text {
+    flex-basis: 100%;
+    order: 1;
+    white-space: normal;
   }
 
-  .claude-panel .term {
-    padding-inline: 12px;
-  }
-
-  .is-open > .term {
-    height: 300px;
+  .run-status {
+    margin-right: auto;
   }
 }
 
@@ -1042,5 +980,29 @@
 
   .extra {
     display: none;
+  }
+
+  /* Claude's question sits just above the bar, where the run plays, however tall the job is. */
+  .ask {
+    align-items: flex-end;
+    padding-bottom: 64px;
+  }
+}
+
+/* On a phone, the bar takes two lines, so the question sits a little higher. */
+@container win (max-width: 480px) {
+  .ask {
+    padding-bottom: 96px;
+  }
+}
+
+/* On a short screen, such as a phone on its side, the question keeps to its words and answers. */
+@media (max-height: 520px) {
+  .ask :is(.ask-from, .ask-option > span > span) {
+    display: none;
+  }
+
+  .ask .ask-tag {
+    margin-top: 8px;
   }
 }
