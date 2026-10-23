@@ -474,6 +474,23 @@ describe('answering a form from what’s on file', () => {
     expect(
       answer('Which tools do you use?', { control: 'choice', options: ['SQL; Python'] }, picked),
     ).toMatchObject({ pick: ['SQL; Python'] });
+    // Picks on lines of their own, as a list, and a long run of spaces, read in one pass.
+    const listed: OnFile = {
+      ...ON_FILE,
+      suggested: [
+        {
+          question: 'Which tools do you use?',
+          answer: `- SQL\n- Python\n\n${' \t'.repeat(50_000)}`,
+          why: null,
+          batch: 1,
+        },
+      ],
+    };
+    const started = Date.now();
+    expect(
+      answer('Which tools do you use?', { control: 'choices', options: ['SQL', 'Python'] }, listed),
+    ).toMatchObject({ pick: ['SQL', 'Python'] });
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it('keeps to a field’s limit, leaving a longer answer for you', () => {

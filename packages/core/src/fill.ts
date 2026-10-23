@@ -695,8 +695,8 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
     const picks =
       field.control === 'choices'
         ? draft.answer
-            .split(/\s*;\s*|\n+/)
-            .map((each) => each.replace(/^\s*[-*]\s+/, '').trim())
+            .split(/[;\n]/)
+            .map((each) => each.trim().replace(/^[-*]\s+/, ''))
             .filter(Boolean)
         : [draft.answer.trim()];
     if (choosing(field))
