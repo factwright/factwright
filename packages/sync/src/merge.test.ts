@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type MergeRules, mergeRows, mergeText, sameRow } from './merge.ts';
+import { conflictCopyPath, type MergeRules, mergeRows, mergeText, sameRow } from './merge.ts';
 
 const JOBS: MergeRules = {
   lists: {
@@ -101,6 +101,30 @@ describe('mergeRows', () => {
       status: 'interview',
       salary: '180000',
     });
+  });
+});
+
+describe('conflictCopyPath', () => {
+  const when = new Date(2026, 9, 24, 9, 30);
+
+  it('names a device’s copy beside the file, numbered once that’s taken', () => {
+    const taken = new Set(['about-me/answers (Factwright in Chrome, Oct 24).json']);
+    const free = (candidate: string) => !taken.has(candidate);
+    expect(conflictCopyPath('about-me/notes.md', 'Sam’s Mac', when, free)).toBe(
+      'about-me/notes (Sam’s Mac, Oct 24).md',
+    );
+    expect(conflictCopyPath('about-me/answers.json', 'Factwright in Chrome', when, free)).toBe(
+      'about-me/answers (Factwright in Chrome, Oct 24 2).json',
+    );
+    expect(conflictCopyPath('README', 'PC', when, free)).toBe('README (PC, Oct 24)');
+  });
+
+  it('names it by number where the device can’t hold the name, the first that’s free', () => {
+    const taken = new Set(['facts/skills (conflict 1).md']);
+    const free = (candidate: string) => (candidate.includes('Sam:') ? null : !taken.has(candidate));
+    expect(conflictCopyPath('facts/skills.md', 'Sam:', when, free)).toBe(
+      'facts/skills (conflict 2).md',
+    );
   });
 });
 

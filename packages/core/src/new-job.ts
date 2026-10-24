@@ -102,6 +102,7 @@ export function newJobRows(job: {
       pass_reason: null,
       kind: null,
       merged_into: null,
+      folder: null,
     },
     status: { id: job.statusId, job_id: job.id, status: job.status, at: job.today },
   };

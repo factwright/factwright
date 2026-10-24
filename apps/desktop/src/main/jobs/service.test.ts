@@ -77,6 +77,22 @@ describe('JobsService', () => {
     expect(jobs.docs('missing')).toBeNull();
   });
 
+  it('keeps each job’s folder in its row, so it syncs, and follows the folder', () => {
+    jobs.read();
+    expect(tracker.syncRow('jobs', 'acme-robotics--staff-engineer')).toMatchObject({
+      folder: '2026-10-07-acme-staff-engineer',
+    });
+    rmSync(join(root, ACME), { recursive: true });
+    write(
+      'applications/2026-10-09-acme-robotics-staff/job.md',
+      '# Acme Robotics: Staff Engineer\n\n- **Date:** 2026-10-09',
+    );
+    jobs.read();
+    expect(tracker.syncRow('jobs', 'acme-robotics--staff-engineer')).toMatchObject({
+      folder: '2026-10-09-acme-robotics-staff',
+    });
+  });
+
   it('gives a job the messages Claude drafted for people at its company', () => {
     write('outreach/2026-10-08-acme-robotics.md', '# Who to message at Acme\n\nDana Lee first.\n');
     jobs.read();

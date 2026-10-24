@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { NO_APPLICATIONS } from './fill.ts';
+import { NO_APPLICATIONS, REMEMBERED_KINDS } from './fill.ts';
+import { isEqualOpportunity } from './forms.ts';
 import { matchJobs } from './matching.ts';
 import {
   foundOn,
+  isSyncedAnswer,
   MOST_QUESTIONS,
   NO_CONTACT,
+  profileAnswer,
   profileForForms,
   sentAnswersOf,
   uploadName,
   withFormQuestions,
+  withProfileAnswers,
   withSentAnswers,
 } from './on-file.ts';
 
@@ -58,6 +62,59 @@ describe('what forms ask, from Profile’s answers.json', () => {
       targetPay: '',
     });
     expect(profileForForms(null)).toEqual(profileForForms({}));
+  });
+});
+
+describe('new answers kept in Profile’s answers.json', () => {
+  it('are every kind Profile keeps for forms, but those that never sync', () => {
+    expect(REMEMBERED_KINDS.filter((kind) => !isSyncedAnswer(kind))).toEqual([
+      'street',
+      'postal-code',
+      ...REMEMBERED_KINDS.filter(isEqualOpportunity),
+    ]);
+  });
+
+  it('each go in their place, as the app reads them, and leave the rest of the file as it is', () => {
+    const file = {
+      you: { name: 'Ana María Ruiz', email: 'ana@example.com', phone: '', later: 'kept' },
+      applications: { pronouns: 'She/her', countries: ['United States'] },
+      roles: ['Product Manager'],
+      fromLater: { kept: true },
+    };
+    const kept = withProfileAnswers(file, [
+      { kind: 'phone', text: '(303) 555-0199' },
+      { kind: 'city', text: 'Denver' },
+      { kind: 'how-heard', text: 'A friend' },
+      { kind: 'start-date', text: 'Two weeks' },
+    ]);
+    expect(kept).toEqual({
+      you: {
+        ...NO_CONTACT,
+        name: 'Ana María Ruiz',
+        email: 'ana@example.com',
+        phone: '(303) 555-0199',
+        later: 'kept',
+      },
+      applications: {
+        ...NO_APPLICATIONS,
+        pronouns: 'She/her',
+        countries: ['United States'],
+        city: 'Denver',
+        howHeard: 'A friend',
+      },
+      roles: ['Product Manager'],
+      fromLater: { kept: true },
+      start: 'Two weeks',
+    });
+    expect(profileAnswer(kept, 'phone')).toBe('(303) 555-0199');
+    expect(profileAnswer(kept, 'city')).toBe('Denver');
+    expect(profileAnswer(kept, 'start-date')).toBe('Two weeks');
+    expect(profileAnswer(kept, 'github')).toBe('');
+    // A part that doesn't hold up reads as nothing told, as the app reads it.
+    expect(withProfileAnswers({ you: { email: 42 } }, [{ kind: 'phone', text: '1' }])).toEqual({
+      you: { ...NO_CONTACT, phone: '1' },
+    });
+    expect(withProfileAnswers(file, [])).toEqual(file);
   });
 });
 

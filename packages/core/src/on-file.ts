@@ -3,10 +3,11 @@ import {
   type ForApplications,
   NO_APPLICATIONS,
   type OnFile,
+  type RememberedKind,
   type ResumeOnFile,
   type SentBefore,
 } from './fill.ts';
-import { fieldKind } from './forms.ts';
+import { type FieldKind, fieldKind } from './forms.ts';
 import type { AskedJob } from './inbox.ts';
 import type { Job } from './jobs.ts';
 import { hostOf } from './links.ts';
@@ -349,4 +350,79 @@ export function profileForForms(value: unknown): ProfileForForms {
       '',
     ),
   };
+}
+
+/** The parts of Profile's answers that are a line of For applications. */
+type ApplicationsLine = Exclude<keyof ForApplications, 'countries' | 'sponsorship' | 'over18'>;
+
+/** Where in Profile's answers.json an answer goes: a part of it and a field there, or the start. */
+type ProfilePlace =
+  | { part: 'you'; key: keyof ProfileContact }
+  | { part: 'applications'; key: ApplicationsLine }
+  | { part: 'start' };
+
+/**
+ * Where Profile keeps each kind of answer a form asks that it offers to keep for next time, in
+ * answers.json, which syncs: your contact details and links, where you live, the answers For
+ * applications keeps, and when you can start. Your street, postal code and equal-opportunity
+ * answers aren't here: the app keeps them on its computer alone, never in sync.
+ */
+export const SYNCED_ANSWERS = {
+  email: { part: 'you', key: 'email' },
+  phone: { part: 'you', key: 'phone' },
+  location: { part: 'you', key: 'location' },
+  linkedin: { part: 'you', key: 'linkedin' },
+  website: { part: 'you', key: 'website' },
+  'preferred-name': { part: 'applications', key: 'preferredName' },
+  pronouns: { part: 'applications', key: 'pronouns' },
+  city: { part: 'applications', key: 'city' },
+  region: { part: 'applications', key: 'region' },
+  country: { part: 'applications', key: 'country' },
+  github: { part: 'applications', key: 'github' },
+  'how-heard': { part: 'applications', key: 'howHeard' },
+  'start-date': { part: 'start' },
+} as const satisfies Partial<Record<RememberedKind, ProfilePlace>>;
+
+export type SyncedAnswerKind = keyof typeof SYNCED_ANSWERS;
+
+/** Whether Profile keeps a kind of answer in answers.json, which syncs. */
+export const isSyncedAnswer = (kind: FieldKind): kind is SyncedAnswerKind =>
+  Object.hasOwn(SYNCED_ANSWERS, kind);
+
+/** What Profile's answers.json says for a kind of answer it keeps there, as the app reads it. */
+export function profileAnswer(value: unknown, kind: SyncedAnswerKind): string {
+  const profile = profileForForms(value);
+  const place: ProfilePlace = SYNCED_ANSWERS[kind];
+  if (place.part === 'you') return profile.you[place.key];
+  if (place.part === 'applications') return profile.applications[place.key];
+  return profile.start;
+}
+
+/**
+ * Profile's answers.json with new answers in it, each in its place, as the app keeps them: a part
+ * an answer goes in is read as the app reads it, so what doesn't hold up there is nothing told,
+ * and the rest of the file stays as it is, what this version doesn't know included.
+ */
+export function withProfileAnswers(
+  value: Record<string, unknown>,
+  answers: readonly { kind: SyncedAnswerKind; text: string }[],
+): Record<string, unknown> {
+  const profile = profileForForms(value);
+  const object = (part: unknown) =>
+    typeof part === 'object' && part !== null && !Array.isArray(part) ? part : {};
+  const changed: Record<string, unknown> = {};
+  for (const { kind, text } of answers) {
+    const place: ProfilePlace = SYNCED_ANSWERS[kind];
+    if (place.part === 'start') {
+      changed.start = text;
+    } else {
+      const part = (changed[place.part] ?? {
+        ...object(value[place.part]),
+        ...profile[place.part],
+      }) as Record<string, unknown>;
+      part[place.key] = text;
+      changed[place.part] = part;
+    }
+  }
+  return { ...value, ...changed };
 }

@@ -317,6 +317,7 @@ export {
   askedJob,
   formJob,
   foundOn,
+  isSyncedAnswer,
   jobPdfs,
   MOST_QUESTIONS,
   NO_CONTACT,
@@ -324,15 +325,19 @@ export {
   PROFILE_FILES,
   type ProfileContact,
   type ProfileForForms,
+  profileAnswer,
   profileForForms,
   type ResumeShape,
   readContact,
   readForApplications,
   resumeDetails,
+  SYNCED_ANSWERS,
+  type SyncedAnswerKind,
   sentAnswersOf,
   sentBefore,
   uploadName,
   withFormQuestions,
+  withProfileAnswers,
   withSentAnswers,
 } from './on-file.ts';
 export { type PayRange, parsePay } from './pay.ts';
@@ -385,6 +390,7 @@ export {
   viewOf,
 } from './progress.ts';
 export {
+  folderFiles,
   JOB_DOCS,
   type JobDocKind,
   type JobDocs,

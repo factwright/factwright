@@ -50,6 +50,16 @@ const STORED_JOB = {
 };
 
 describe('tracker rows', () => {
+  it('read the folder a job’s row names, and none that isn’t one folder', () => {
+    const folder = '2026-10-07-acme-robotics-staff-engineer';
+    expect(trackedRow({ ...STORED_JOB, folder }).folder).toBe(folder);
+    for (const not of [null, 42, '', '.', '..', 'a/b', 'a\\b', 'x'.repeat(256)]) {
+      expect(trackedRow({ ...STORED_JOB, folder: not }).folder).toBeNull();
+    }
+    // A row from an app before rows named their folder.
+    expect(trackedRow(STORED_JOB).folder).toBeNull();
+  });
+
   it('read a job, a call and a change of status as stored', () => {
     expect(trackedRow(STORED_JOB)).toMatchObject({
       id: 'acme--staff',

@@ -87,6 +87,25 @@ describe('an application that runs over several pages', () => {
     expect(later.job).toBe('larkspur--pm');
   });
 
+  it('keeps the version of Profile its first page was filled from, through sync', () => {
+    const phone = field('Phone Number', { type: 'tel' });
+    const page = (step: string, profile?: string) => ({
+      form: form(step, [phone]),
+      replies: [{ kind: 'phone', text: '(303) 555-0142', source: 'profile' } as FieldReply],
+      filled: new Map(),
+      values: valuesOf([phone], ['(720) 555-0199']),
+      job: 'larkspur--pm',
+      copyOnly: false,
+      ...(profile !== undefined && { profile }),
+    });
+    const first = carriedOn(page('My Information', 'first'), NO_EARLIER);
+    expect(first.profile).toBe('first');
+    // A later page filled from a newer Profile: saving one of the new answers goes by the first.
+    expect(carriedOn(page('Application Questions', 'later'), first).profile).toBe('first');
+    // With Factwright on this computer, there's none.
+    expect(carriedOn(page('My Information'), NO_EARLIER)).not.toHaveProperty('profile');
+  });
+
   it('keeps nothing for a form on one page, or one it only gives answers to copy for', () => {
     const why = field('Why us?', { control: 'long' });
     const page = {

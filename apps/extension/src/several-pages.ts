@@ -28,6 +28,11 @@ export interface Earlier {
   url: string;
   sent: SentAnswer[];
   offers: NewAnswer[];
+  /**
+   * Through sync, the version of Profile the first of them was filled from, which saving one of
+   * those new answers goes by.
+   */
+  profile?: string;
 }
 
 export const NO_EARLIER: Earlier = { job: null, url: '', sent: [], offers: [] };
@@ -85,6 +90,8 @@ export interface FilledPage {
   job: string | null;
   /** Whether it's a form the panel only gives answers to copy for, as LinkedIn's. */
   copyOnly: boolean;
+  /** Through sync, the version of Profile it was filled from. */
+  profile?: string;
 }
 
 /**
@@ -95,11 +102,13 @@ export interface FilledPage {
 export function carriedOn(page: FilledPage, earlier: Earlier): Earlier {
   if (!page.form.step || page.copyOnly) return NO_EARLIER;
   const values = page.values ?? [];
+  const profile = earlier.profile ?? page.profile;
   return {
     job: page.job ?? earlier.job,
     url: page.form.url,
     sent: joinSent(earlier.sent, sentAnswers(page.form, page.replies, values)),
     offers: joinOffers(earlier.offers, newAnswers(page.form, page.replies, values, page.filled)),
+    ...(profile !== undefined && { profile }),
   };
 }
 
