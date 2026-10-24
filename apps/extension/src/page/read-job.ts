@@ -119,6 +119,8 @@ export function readJobPage(
     aroundTitle?: RegExp;
     /** The job's title in the tab's title, for pages that show it nowhere else. */
     titleInTitle?: RegExp;
+    /** The job's title in the page's words, as a banner says it, for pages with no heading for it. */
+    titleInPage?: RegExp;
     company: string[];
     /** The company in the tab's title, for a site that shows its name nowhere else as text. */
     companyInTitle?: RegExp;
@@ -247,6 +249,18 @@ export function readJobPage(
       titleInTitle: /^(?:.+ - )?(?:candidate profile|basic information) - (.+)$/i,
       company: [],
       companyInHost: /^(?:[a-z0-9]+-)*([a-z0-9]+)\.icims\.com$/i,
+      location: [],
+    },
+    {
+      // Taleo's career sections, each at a company's own name at taleo.net: each step of its
+      // application names the job only in its banner, "Applying for: Data Analyst (Job Number:
+      // 2600123)", and the company only in the site's name.
+      host: /(^|\.)taleo\.net$/,
+      posting: [],
+      title: [],
+      titleInPage: /\bApplying for:\s*(.+?)\s*\(Job Number:/i,
+      company: [],
+      companyInHost: /^([a-z0-9]+)\.taleo\.net$/i,
       location: [],
     },
     {
@@ -645,7 +659,8 @@ export function readJobPage(
     fromSite(known?.title)
       .replace(JOB_POST, '')
       .replace(known?.aroundTitle ?? JOB_POST, '') ||
-    oneLine(known?.titleInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]);
+    oneLine(known?.titleInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
+    oneLine(known?.titleInPage?.exec(oneLine(doc.body?.textContent ?? '').slice(0, 5000))?.[1]);
 
   /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
   const titleOf = (posting: Record<string, unknown>) =>

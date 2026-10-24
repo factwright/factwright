@@ -443,6 +443,17 @@ describe('what a field asks for', () => {
     ).toEqual(Array(9).fill('consent'));
     // Confirming your email isn't agreeing to anything.
     expect(kinds([['Confirm email', { type: 'email' }]])).toEqual(['email']);
+    // Nor is a box for new jobs by email, nor a list of which phone to call, your address or number.
+    expect(
+      kinds([
+        [
+          'Send an email notification whenever a new position matching this profile is posted.',
+          { control: 'check', type: 'checkbox' },
+        ],
+        ['Preferred Phone', { control: 'choice' }],
+        ['Preferred Phone Number'],
+      ]),
+    ).toEqual(['question', 'question', 'phone']);
   });
 
   it('keeps someone else’s name, email and phone apart from yours', () => {

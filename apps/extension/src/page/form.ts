@@ -224,10 +224,11 @@ export async function formPage(
     /^(please )?(check|select|choose|tick|mark|pick)( only)?( one| all| any)?( of)?( the| that)?( boxes| options| following| answers?)?( below| apply| that apply)?:?$/i;
   /**
    * Words a box shows before you type, or a list before you pick, which say nothing of what it
-   * asks, nor what's in it, as "— Make a Selection —" and SuccessFactors' "No Selection".
+   * asks, nor what's in it, as "— Make a Selection —", SuccessFactors' "No Selection" and Taleo's
+   * "Not specified".
    */
   const PLACEHOLDERS =
-    /^[-–—\s]*(type here|select|choose|start typing|please select|please choose|search|enter|write here|make a selection|no selection|type to search)\b|\.\.\.$|…$|^[-–—]+$/i;
+    /^[-–—\s]*(type here|select|choose|start typing|please select|please choose|search|enter|write here|make a selection|no selection|not specified|type to search)\b|\.\.\.$|…$|^[-–—]+$/i;
   /** What a page says once an application went in. */
   const SUBMITTED =
     /thank(s| you) for (applying|your application|submitting)|application (has been |was )?(submitted|received|sent)|we(’|')?ve received your application|we have received your application|you(’|')?ve (successfully )?applied|your application is (in|complete)|\bview my submissions\b/i;
@@ -749,6 +750,32 @@ export async function formPage(
     for (let set = closestOf(control, SET); set; set = aroundOf(set, SET)) {
       const words = groupWords(set);
       if (words) return words;
+    }
+    return '';
+  };
+
+  /**
+   * The part of a date a list is by what it offers, as Taleo's lists for a date's month and year
+   * say nothing else: all twelve months, the days of a month, or years and little else.
+   */
+  const datePartBy = (control: Element): string => {
+    if (!(control instanceof HTMLSelectElement)) return '';
+    const options = [...control.options].map((option) => squash(option.text)).filter(Boolean);
+    const count = (test: RegExp) => options.filter((text) => test.test(text)).length;
+    if (count(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?$/i) >= 12)
+      return 'Month';
+    const most = Math.max(options.length - 2, 1);
+    if (count(/^(19|20)\d\d$/) >= Math.min(5, most)) return 'Year';
+    const days = options.filter((text) => /^\d{1,2}$/.test(text) && Number(text) <= 31).length;
+    return days >= 28 && days >= most ? 'Day' : '';
+  };
+
+  /** The words of the label of the first field beside a control, as a date's first part has the date's. */
+  const labelBeside = (control: Element): string => {
+    for (const each of control.parentElement?.children ?? []) {
+      if (each === control || !each.matches('input, select, textarea')) continue;
+      const [label] = labelsOf(each);
+      if (label) return wordsOf(label);
     }
     return '';
   };
@@ -1401,11 +1428,19 @@ export async function formPage(
       } else {
         done.add(control);
         const own = questionOf(control);
+        // A date's part a page names only by what it offers, as Taleo's month and year lists are,
+        // is asked by the date's label, which only its first part may have.
+        const piece = /\b(day|month|year)s?\b/i.test(own.question) ? '' : datePartBy(control);
+        const date = piece ? own.question || datePartOf(control) || labelBeside(control) : '';
         // A date's parts, such as "Month" and "Year", are asked by the set they're in, such as
         // "Start date *", which may mark them as required.
         const set = /^(day|month|year)$/i.test(own.question) ? datePartOf(control) : '';
-        const question = set ? `${cleanQuestion(set)} ${own.question}` : own.question;
-        const raw = set ? `${own.raw} ${set}` : own.raw;
+        const question = piece
+          ? squash(`${cleanQuestion(date)} ${piece}`)
+          : set
+            ? `${cleanQuestion(set)} ${own.question}`
+            : own.question;
+        const raw = piece ? `${own.raw} ${date}` : set ? `${own.raw} ${set}` : own.raw;
         const tag = control.tagName;
         const role = control.getAttribute('role');
         const control_: FieldControl =

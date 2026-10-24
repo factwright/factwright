@@ -587,7 +587,10 @@ const SCHOOL_FIELDS: [FieldKind, RegExp][] = [
     'discipline',
     /\b(field of study|major|discipline|area of study|concentration|branch of study)\b|^program(me)?$/,
   ],
-  ['degree', /^(degree|degree type|degree level|qualification)$/],
+  [
+    'degree',
+    /^(degree|degree type|degree level|qualification|education level|study level|level of education)$/,
+  ],
   ['edu-start', /^(start|from|begin)\b|\b(start|begin) (date|month|year)\b|\bdate begin\b/],
   ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate end\b|\bgraduat/],
   ['gpa', /\bgpa\b|\bgrade point average\b/],
@@ -701,6 +704,20 @@ function kindAsked(field: FieldToTell): FieldKind {
     return 'question';
   }
   if (field.control === 'check' && AGREE.test(question)) return 'consent';
+  // A box that signs you up for emails or alerts, as Taleo's for new jobs does, is no address.
+  if (
+    field.control === 'check' &&
+    /\b(e ?mails?|notifications?|notify|alerts?|newsletters?|text messages?|sms)\b/.test(question)
+  ) {
+    return 'question';
+  }
+  // Which of your phones to call, as Taleo's Preferred Phone list asks, is no number.
+  if (
+    (field.control === 'choice' || field.control === 'combo') &&
+    /\bpreferred (phone|contact|method)\b/.test(question)
+  ) {
+    return 'question';
+  }
   // A box among several that agrees to something is yours to tick too, as "I agree to a
   // background check" is under "Please confirm the following:".
   if (

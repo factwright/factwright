@@ -651,6 +651,15 @@ describe('reading a job page', () => {
     expect(postingKey(job.url)).toBe('icims:careers-bramblecrest:4821');
   });
 
+  it('reads which job Taleo’s application is for, from its banner and its site', () => {
+    const job = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'taleo-personal.html'), 'utf8')),
+      'https://bramblecote.taleo.net/careersection/careersection/candidateacquisition/flow.jsf',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Fleet Data Analyst', company: 'Bramblecote' });
+  });
+
   it('never takes a job board’s or an applicant system’s name as the company', () => {
     for (const site of ['LinkedIn', 'Indeed', 'Glassdoor', 'Lever', 'Greenhouse', 'Workday']) {
       const board = page(`<html><head><meta property="og:site_name" content="${site}"></head>
