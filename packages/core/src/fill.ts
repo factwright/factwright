@@ -222,7 +222,12 @@ export type LeftFor =
    * What's on file answers it, but not as the field takes it: a date to pick on a calendar, the
    * end of a job you still hold, or a box to tick.
    */
-  | 'pick';
+  | 'pick'
+  /**
+   * Your street or postal code, which Profile keeps on the computer Factwright's on alone, as a
+   * browser filling from your job hunt through sync has neither.
+   */
+  | 'private';
 
 /** Factwright's answer for a field: what to put in it and where that came from, or why it's yours. */
 export interface FieldReply {

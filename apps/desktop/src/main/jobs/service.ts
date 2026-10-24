@@ -24,7 +24,6 @@ import {
   jobList,
   localDate,
   type PostingSaved,
-  questionKey,
   readAllCallDocs,
   readJobExtras,
   readOutreach,
@@ -36,6 +35,7 @@ import {
   savedFormJson,
   savedPostingFile,
   savedPostingMarkdown,
+  withFormQuestions,
 } from '@factwright/core';
 import type {
   AddJobResult,
@@ -53,7 +53,6 @@ import type {
   ShotFor,
   ShotResult,
 } from '../../shared/api.ts';
-import { LIMITS } from '../../shared/limits.ts';
 import { readShot, saveShot, shotFile } from './shots.ts';
 import type { EditContext, Tracker } from './tracker.ts';
 import { diskWorkspace, watchWorkspace } from './workspace.ts';
@@ -277,28 +276,11 @@ export class JobsService {
     } catch {
       return { ok: false, message: 'Factwright couldn’t keep the form’s questions.' };
     }
-    const count = (questions: readonly string[]) => {
-      const counted = new Map<string, number>();
-      for (const question of questions) {
-        const key = questionKey(question);
-        if (key) counted.set(key, (counted.get(key) ?? 0) + 1);
-      }
-      return counted;
-    };
-    const had = count(job.questions);
-    const seen = new Map<string, number>();
-    const added = form.questions
-      .map((each) => each.question)
-      .filter((question) => {
-        const key = questionKey(question);
-        const times = (seen.get(key) ?? 0) + 1;
-        seen.set(key, times);
-        return key !== '' && times > (had.get(key) ?? 0);
-      });
-    if (added.length === 0) return { ok: true };
-    return this.updateJob(job.id, {
-      questions: [...job.questions, ...added].slice(0, LIMITS.questions),
-    });
+    const questions = withFormQuestions(
+      job.questions,
+      form.questions.map((each) => each.question),
+    );
+    return questions ? this.updateJob(job.id, { questions }) : { ok: true };
   }
 
   /** The questions of a job's application form, as the extension read them, or null. */

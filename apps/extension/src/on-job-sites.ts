@@ -6,7 +6,6 @@ import {
 } from '@factwright/core';
 import { isCopyOnlySite } from './applicant-systems.ts';
 import { forgetFrame, isAllowedPage, keepFrame, keptFrame } from './application-sites.ts';
-import { askComputer, canReachComputer, canSendNow } from './computer.ts';
 import { ext, type Sender, type Tab } from './ext.ts';
 import {
   answerSource,
@@ -21,6 +20,7 @@ import {
   planFill,
   readForm,
 } from './fill.ts';
+import { type FillWay, fillWays, firstAnswer, type NoWay } from './fill-way.ts';
 import { MENU_ROWS } from './frame-size.ts';
 import {
   type FieldMenu,
@@ -38,11 +38,13 @@ import {
 import type { FieldAnswer, FieldFilled, PageField, PageForm } from './page/form.ts';
 import { openPanel } from './panel-open.ts';
 import { readFormJob } from './read-tab.ts';
+import { serverName } from './server.ts';
 
 /**
  * The background's side of the job sites you allowed: what each field's menu offers, from
- * Factwright's answers for the form, which it asks Factwright on this computer for the first time
- * you're in one of its fields; the new answers you gave, which it offers to keep; and the Fill
+ * Factwright's answers for the form, which it asks Factwright on this computer, or reads from
+ * your job hunt through sync (src/fill-way.ts), the first time you're in one of its fields; the new
+ * answers you gave, which it offers to keep, with Factwright on this computer; and the Fill
  * button. The answers stay here, and in the extension's own frame, which shows them: the script in
  * the page gets only the one you pick, to put in its field. Each message is checked, and answered
  * only for a site you allowed. The script runs in each frame of a tab from such a site, as a
@@ -216,6 +218,8 @@ interface OnPage {
   place: FormPlace;
   /** The page's address, but for what's after its #. */
   url: string;
+  /** The way its answers came: Factwright on this computer, or your job hunt through sync. */
+  way: FillWay;
   form: PageForm;
   plan: FillPlan;
   menu: Menu | null;
@@ -248,7 +252,8 @@ const menusOf = (page: OnPage): FieldMenu[] =>
     ref: field.ref,
     key: field.key,
     answers: menuAnswers(field, page.plan.replies[at]).length,
-    keeps: keepsAnswer(field, page.plan.replies[at]),
+    // Profile keeps new answers through Factwright on this computer alone.
+    keeps: page.way.via === 'computer' && keepsAnswer(field, page.plan.replies[at]),
   }));
 
 /** Sends the script in a frame of a tab a message, and its answer, or null. */
@@ -282,7 +287,13 @@ function frameSender(sender: Sender): { tab: Tab & { id: number } } | null {
   return { tab: { ...tab, id: tab.id } };
 }
 
-/** Asks Factwright on this computer for the form's answers, keeping those it has, by field. */
+/** Why the background can't answer a form here, in words, as there's no way to fill now. */
+const noWay = (way: NoWay) =>
+  way.why === 'sync'
+    ? `Click Factwright’s button, then Fill this application, to let it reach ${serverName(way.server)}.`
+    : 'Click Factwright’s button, then Fill this application, to have Factwright answer here.';
+
+/** Asks for the form's answers, the way there is to fill now, keeping those it has, by field. */
 async function answer(
   place: FormPlace,
   form: PageForm,
@@ -305,16 +316,23 @@ async function answer(
       return page;
     }
   }
-  if (!(await canReachComputer()) || !canSendNow()) {
-    return 'Click Factwright’s button, then Fill this application, to have Factwright answer here.';
-  }
-  const planned = await planFill(form, job);
+  const ways = await fillWays();
+  if (!Array.isArray(ways)) return noWay(ways);
+  // Fields the page added keep the way its first answers came, and what it read for them.
+  const same = before?.url === url ? ways.find((each) => each.via === before.way.via) : undefined;
+  const { way, answer: planned } = await firstAnswer(same && before ? [before.way] : ways, (each) =>
+    planFill(form, job, each),
+  );
+  for (const each of ways) if (each !== way) each.forget();
   if (!planned.ok || planned.did !== 'fill') {
+    way.forget();
     return planned.ok ? 'Factwright didn’t answer.' : planned.message;
   }
+  if (before && before.way !== way) before.way.forget();
   const page: OnPage = {
     place,
     url,
+    way,
     form,
     plan: planned,
     menu: null,
@@ -333,8 +351,9 @@ async function answer(
 const inCopyOnly = (top: string, around: readonly string[]) =>
   [top, ...around].some((url) => url !== '' && isCopyOnlySite(url));
 
-/** Forgets what the background knows of a frame's page. */
+/** Forgets what the background knows of a frame's page, and what it read for it through sync. */
 function forgetPage(place: FormPlace): void {
+  pages.get(keyOf(place))?.way.forget();
   pages.delete(keyOf(place));
   scripts.delete(keyOf(place));
 }
@@ -380,9 +399,10 @@ export async function answerScript(
   if (!field) return { answers: 0, save: false, offer: false };
   const reply = page.plan.replies[at];
   if (message.do === 'left') {
-    const saving = page.offered.has(field.key)
-      ? null
-      : newAnswerFor(page.form, at, reply, message.value);
+    const saving =
+      page.offered.has(field.key) || page.way.via !== 'computer'
+        ? null
+        : newAnswerFor(page.form, at, reply, message.value);
     if (saving) page.saving = saving;
     return { offer: Boolean(saving) };
   }
@@ -452,9 +472,12 @@ async function fillButton(
 /** Fills the form in a tab's frame as the panel would, without it, and says how it went. */
 async function fillHere(tab: Tab & { id: number }, place: FormPlace): Promise<FilledHere> {
   const problem = (says: string) => ({ did: 'problem', says }) as const;
-  if (!(await canReachComputer()) || !canSendNow()) {
+  const ways = await fillWays();
+  if (!Array.isArray(ways)) {
     return problem(
-      'Filling needs your OK to reach Factwright on this computer: click Factwright’s button, then Fill this application.',
+      ways.why === 'sync'
+        ? `Filling needs your OK to reach ${serverName(ways.server)}: click Factwright’s button, then Fill this application.`
+        : 'Filling needs your OK to reach Factwright on this computer: click Factwright’s button, then Fill this application.',
     );
   }
   const form = await readForm(place);
@@ -463,12 +486,22 @@ async function fillHere(tab: Tab & { id: number }, place: FormPlace): Promise<Fi
     return problem('There’s no form here. Open the application itself, then click Fill again.');
   }
   const shows = await readFormJob(tab, place.frameId);
-  const plan = await planFill(form, shows);
+  const { way, answer: plan } = await firstAnswer(ways, (each) => planFill(form, shows, each));
   if (!plan.ok || plan.did !== 'fill') {
+    way.forget();
     return problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message);
   }
   const filled = new Map<string, FieldFilled>();
-  const done = await fillInPasses({ place, form, plan, shows, filled, stale: () => false });
+  // What it read through sync is for this fill alone.
+  const done = await fillInPasses({
+    place,
+    way,
+    form,
+    plan,
+    shows,
+    filled,
+    stale: () => false,
+  }).finally(() => way.forget());
   if (done === 'elsewhere') return problem('This tab has moved on from the form.');
   if (done !== true) return problem('Factwright can’t reach this page anymore.');
   const unsaved = plan.job ? '' : ' Save the job first to upload its resume.';
@@ -527,7 +560,7 @@ export async function answerFrame(
   if (message.do === 'save') {
     const save = menu.save;
     if (!save) return { ok: false };
-    const kept = await askComputer({
+    const kept = await page.way.ask({
       ask: 'remember',
       answers: [{ kind: save.kind, text: save.text }],
     });
@@ -578,7 +611,11 @@ export function onJobSiteMessage(
 
 /** Forgets a tab's forms, in each of its frames, once it closes. */
 export function forgetTab(tabId: number): void {
-  for (const [key, page] of pages) if (page.place.tabId === tabId) pages.delete(key);
+  for (const [key, page] of pages) {
+    if (page.place.tabId !== tabId) continue;
+    page.way.forget();
+    pages.delete(key);
+  }
   for (const [key, script] of scripts) if (script.tabId === tabId) scripts.delete(key);
   void forgetFrame(tabId);
 }

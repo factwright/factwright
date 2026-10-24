@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ResumeOnFile } from '@factwright/core';
+import { type ResumeOnFile, resumeDetails } from '@factwright/core';
 import { type Resume, readResume } from '@factwright/engine';
 import type { Contact } from '../../shared/about.ts';
 
@@ -62,42 +62,6 @@ export async function newestResume(workspace: string): Promise<Resume | null> {
 /** A job's own resume.json, or null when it has none yet, or one that doesn't hold up. */
 export const jobResume = (workspace: string, folder: string) =>
   readOne(join(workspace, 'applications', folder, 'resume.json'));
-
-/** What a resume says of you, as the form filler takes it. */
-export function resumeDetails(resume: Resume, from: ResumeOnFile['from']): ResumeOnFile {
-  const contact = resume.contact ?? {};
-  const now = resume.experience.find((each) =>
-    /^(present|current|now|today)$/i.test(each.end.trim()),
-  );
-  return {
-    from,
-    name: resume.name.trim(),
-    email: contact.email?.trim() ?? '',
-    phone: contact.phone?.trim() ?? '',
-    location: contact.location?.trim() ?? '',
-    linkedin: contact.linkedin?.trim() ?? '',
-    website: contact.website?.trim() ?? '',
-    company: now?.company ?? '',
-    title: now?.title ?? '',
-    since: now?.start ?? '',
-    positions: resume.experience.map((each) => ({
-      company: each.company,
-      title: each.title,
-      location: each.location ?? '',
-      start: each.start,
-      end: each.end,
-    })),
-    education: (resume.education ?? []).map((each) => ({
-      school: each.school,
-      degree: each.degree,
-      start: each.start ?? '',
-      end: each.end ?? '',
-    })),
-    skills: resume.skills ?? [],
-    sections: resume.extra_sections ?? [],
-    summary: resume.summary,
-  };
-}
 
 /**
  * What a form asks of you that the resumes say: the job's own resume when it has one, or else

@@ -85,7 +85,7 @@ export interface SaveDeps {
 }
 
 /** Who made a change, and when. */
-interface Made {
+export interface Made {
   device: string;
   at: string;
 }
@@ -99,7 +99,7 @@ interface Posting {
 }
 
 /** A change that makes a record the given row, as the version after `base`, 0 for a new record. */
-async function rowChange(
+export async function rowChange(
   keys: AccountKeys,
   table: string,
   id: string,
