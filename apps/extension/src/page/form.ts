@@ -480,6 +480,10 @@ export async function formPage(
     return [...element.childNodes];
   };
 
+  /** Whether an element has no box of its own, and only shows its children, as a slot does. */
+  const passesOn = (element: Element): boolean =>
+    element.tagName === 'SLOT' || doc.defaultView?.getComputedStyle(element).display === 'contents';
+
   /**
    * An element's words, without the controls, options, tooltips and scripts inside it. A heading's
    * words are its button's too, as a section that opens and closes names itself with one, as
@@ -506,8 +510,10 @@ export async function formPage(
       }
       // Words the page hides, such as a status it shows only after an upload, aren't the label's.
       if (each !== element && each.hasAttribute('hidden')) return;
+      // A slot, or an element that only passes its children on (display: contents), has no box
+      // of its own, which the browser says doesn't show: its children say whether they do.
       if (each !== element && typeof (each as HTMLElement).checkVisibility === 'function') {
-        if (!(each as HTMLElement).checkVisibility()) return;
+        if (!(each as HTMLElement).checkVisibility() && !passesOn(each)) return;
       }
       if (/^(P|DIV|LI|BR|H[1-6]|LABEL|LEGEND)$/.test(tag)) text += ' ';
       for (const child of shownChildren(each)) walk(child);

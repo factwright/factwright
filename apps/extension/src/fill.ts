@@ -399,6 +399,13 @@ export function answerSource(reply: FieldReply): string {
  */
 const PASSES = 3;
 
+/**
+ * How long a form gets to show the fields it shows once others are answered, when a pass finds
+ * none at once: a list a site fills from its server once the one before is picked, as Taleo's
+ * state's once its country is, takes a moment.
+ */
+const SETTLE_MS = 700;
+
 /** A form being filled, as filling it in passes goes along. */
 export interface Passes {
   place: FormPlace;
@@ -467,12 +474,21 @@ export async function fillInPasses(
       if (field) filled.set(field.key, each);
     }
     // Fields the form showed once others were answered, filled in the next pass.
-    const again = await readForm(place);
-    if (stale()) return 'stale';
-    if (!again || again.url.split('#')[0] !== form.url.split('#')[0]) break;
     const known = new Set(form.fields.map((field) => field.key));
-    const added = again.fields.filter((field) => !known.has(field.key));
-    if (added.length === 0) break;
+    const newFields = async () => {
+      const read = await readForm(place);
+      if (!read || read.url.split('#')[0] !== form.url.split('#')[0]) return null;
+      return { read, added: read.fields.filter((field) => !known.has(field.key)) };
+    };
+    let found = await newFields();
+    if (stale()) return 'stale';
+    if (found && found.added.length === 0) {
+      await new Promise((done) => setTimeout(done, SETTLE_MS));
+      found = await newFields();
+      if (stale()) return 'stale';
+    }
+    if (!found || found.added.length === 0) break;
+    const { read: again, added } = found;
     const planned = await planFill({ ...again, fields: added }, shows, way);
     if (stale()) return 'stale';
     if (!planned.ok || planned.did !== 'fill') break;

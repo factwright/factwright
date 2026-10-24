@@ -47,7 +47,7 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { type AboutYou, applyChanges, NO_ANSWERS } from '../../desktop/src/shared/about.ts';
 import { PRIVATE_FILE } from '../../desktop/src/shared/private.ts';
-import type { ServedFlow } from './served-flow.ts';
+import { fillSystems, type SystemsSite, systemsJobs, systemsSite } from './e2e-fill-systems.ts';
 import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -97,12 +97,14 @@ const WORKDAY_STEPS = [
 ];
 
 /**
- * A site on this computer: the application forms, the applications whose pages load anew
- * (`flows`), and "Not found" for anything else.
+ * A site on this computer: the application forms, the other applicant systems' pages and their
+ * applications whose pages load anew (`systems`), and "Not found" for anything else.
  */
-async function site(flows: readonly ServedFlow[] = []) {
+async function site(systems: SystemsSite) {
+  const { flows } = systems;
   const lever = readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8');
   const pages: Record<string, Buffer> = {
+    ...systems.pages,
     [FORM_PATH]: Buffer.from(withOwnCode(lever, LEVER_LOOKS_UP)),
     [TRAPS_PATH]: readFileSync(join(FIXTURES, 'hidden-fields.html')),
     [WORKDAY_PATH]: Buffer.from(
@@ -160,7 +162,8 @@ async function site(flows: readonly ServedFlow[] = []) {
 const work = mkdtempSync(join(tmpdir(), 'fw-fill-'));
 const contexts: BrowserContext[] = [];
 let failed = false;
-const local = await site();
+const systems = systemsSite(FIXTURES);
+const local = await site(systems);
 const extension = join(ROOT, 'dist', 'chrome');
 try {
   // Built for this computer's site as its sync server, which it may reach, so the panel may read
@@ -237,6 +240,8 @@ try {
       `- **Links:** Workday ${local.origin}${WORKDAY_PATH}`,
     ].join('\n'),
   );
+  // The other applicant systems' jobs, each with its application's address.
+  systemsJobs(workspace, local.origin);
   const tracker = new Tracker(join(home, 'tracker.db'));
   const jobs = new JobsService({ workspace, tracker, onChange: () => {} });
   jobs.read();
@@ -1051,6 +1056,35 @@ try {
   );
   await workdayPanel.close();
   await workday.close();
+
+  // SmartRecruiters', SuccessFactors', iCIMS's and Taleo's applications, each a page at a time.
+  await fillSystems({
+    context,
+    origin: local.origin,
+    site: systems,
+    tabOf: async (page) => {
+      const url = page.url();
+      const tabs = await setup.evaluate(() =>
+        (
+          globalThis as unknown as {
+            chrome: {
+              tabs: {
+                query(query: object): Promise<{ id: number; windowId: number; url: string }[]>;
+              };
+            };
+          }
+        ).chrome.tabs.query({}),
+      );
+      const tab = tabs.find((each) => each.url === url);
+      if (!tab) throw new Error(`No tab with ${url}.`);
+      return { id: tab.id, windowId: tab.windowId, url, title: await page.title() };
+    },
+    panelOn,
+    check,
+    phone: () => about.you.phone,
+    errors,
+    shoot,
+  });
 
   // Turned off in setup, the Fill button and the menus are gone, there and then.
   await setup.reload();

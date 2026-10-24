@@ -13,11 +13,11 @@
  * only option, and closes when the mouse goes down elsewhere; a country's state starts over once
  * the country changes; Add More adds a block for another job or school in place, as iCIMS fetches
  * it, and hides its own row; and the form's sending, as Enter in a box or its buttons do, and its
- * resume box's, which sends the form to read the resume into it, only count how often they happen,
- * in `icimsSubmits` and `icimsResumePosts`. The options are made up. It holds everything it needs,
- * as the page runs it.
+ * resume box's, which sends the form to read the resume into it, count how often they happen, in
+ * `icimsSubmits` and `icimsResumePosts`, and the form goes only where `posts` says it may. The
+ * options are made up. It holds everything it needs, as the page runs it.
  */
-export function icimsActs(doc: Document): void {
+export function icimsActs(doc: Document, posts = false): void {
   // A page a test parsed has no window: what's counted goes on the document.
   const page = (doc.defaultView ?? doc) as {
     icimsSubmits?: number;
@@ -449,10 +449,10 @@ export function icimsActs(doc: Document): void {
       page.icimsResumePosts = (page.icimsResumePosts ?? 0) + 1;
     }
   });
-  // The form's own sending, as Enter in a box or its buttons do: counted, and never sent.
+  // The form's own sending, as Enter in a box or its buttons do: counted, and sent where it may.
   for (const form of doc.querySelectorAll('form')) {
     form.addEventListener('submit', (event) => {
-      event.preventDefault();
+      if (!posts) event.preventDefault();
       page.icimsSubmits = (page.icimsSubmits ?? 0) + 1;
     });
   }
@@ -460,5 +460,5 @@ export function icimsActs(doc: Document): void {
   buildAll(doc);
 }
 
-/** iCIMS's own code, as its application's pages run it. */
-export const icimsCode = () => `<script>(${icimsActs.toString()})(document);</script>`;
+/** iCIMS's own code, as its application's pages run it, each step's form posting to the next. */
+export const icimsCode = () => `<script>(${icimsActs.toString()})(document, true);</script>`;

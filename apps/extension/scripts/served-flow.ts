@@ -18,12 +18,22 @@ export interface ServedFlow {
   restart(): void;
 }
 
-/** The buttons of an application's pages, by the names each posts with the page's form. */
+/**
+ * A button of an application's pages: the name it posts with the page's form, or what tells it
+ * from the form it posts, as Taleo's buttons name themselves in a field the form keeps.
+ */
+type FlowButton = string | ((form: URLSearchParams) => boolean);
+
+/** The buttons of an application's pages. */
 export interface FlowButtons {
-  next: string;
-  back?: string;
-  submit: string;
+  next: FlowButton;
+  back?: FlowButton;
+  submit: FlowButton;
 }
+
+/** Whether a page's post pressed a button. */
+const pressedIn = (form: URLSearchParams, button: FlowButton | undefined) =>
+  typeof button === 'function' ? button(form) : button !== undefined && form.has(button);
 
 /** A request's form, as a page's own post sends it. */
 async function postedForm(request: IncomingMessage): Promise<URLSearchParams> {
@@ -64,12 +74,12 @@ export function servedFlow(
       if (address !== path) return false;
       if (request.method === 'POST') {
         const form = await postedForm(request);
-        if (form.has(buttons.submit)) {
+        if (pressedIn(form, buttons.submit)) {
           pressed.submit += 1;
-        } else if (form.has(buttons.next)) {
+        } else if (pressedIn(form, buttons.next)) {
           pressed.next += 1;
           at = Math.min(at + 1, pages.length - 1);
-        } else if (buttons.back && form.has(buttons.back)) {
+        } else if (pressedIn(form, buttons.back)) {
           pressed.back += 1;
           at = Math.max(at - 1, 0);
         }
