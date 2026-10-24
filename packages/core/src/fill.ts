@@ -222,7 +222,12 @@ export type LeftFor =
    * What's on file answers it, but not as the field takes it: a date to pick on a calendar, the
    * end of a job you still hold, or a box to tick.
    */
-  | 'pick';
+  | 'pick'
+  /**
+   * Your street or postal code, which Profile keeps on the computer Factwright's on alone, as a
+   * browser filling from your job hunt through sync has neither.
+   */
+  | 'private';
 
 /** Factwright's answer for a field: what to put in it and where that came from, or why it's yours. */
 export interface FieldReply {
@@ -442,6 +447,19 @@ function schoolAt(onFile: OnFile, nth: number): (School & Said) | null {
     end: datedAs(listed.end),
     source: 'resume',
     from: fromResume(resume),
+  };
+}
+
+/**
+ * How many jobs and schools on file a form that asks for each one can take, one to a part:
+ * Profile's work history, then the resume's, past what the history lists, as each part takes the
+ * next. The extension adds a part for each on a form with a button that adds another, as
+ * Workday's My Experience has, when you choose to.
+ */
+export function blocksOnFile(onFile: OnFile): { jobs: number; schools: number } {
+  return {
+    jobs: Math.max(positionsOf(onFile.history).length, onFile.resume?.positions.length ?? 0),
+    schools: Math.max(onFile.history.schools.length, onFile.resume?.education.length ?? 0),
   };
 }
 
@@ -830,6 +848,9 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
     const picks = (EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>)[answer] ?? [];
     return { kind, pick: picks, source: 'profile' };
   }
+  // Factwright never ticks a box of its own: one that says what Profile knows, as Workday's "I
+  // have a preferred name", is yours to tick.
+  if (field.control === 'check') return left(kind, 'pick');
   const resume = onFile.resume;
   const theirs = nameParts(resume?.name ?? '');
   const theirPlace = placeParts(resume?.location ?? '');

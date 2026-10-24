@@ -124,8 +124,10 @@ describe('Work history and education, in Profile', () => {
     expect(started).toHaveProperty('value', '2015-1');
     expect(started.getAttribute('aria-invalid')).toBe('true');
     expect(within(fernway).getByText('Type it as 2021-03, or 2021.')).toBeTruthy();
-    await waitFor(() => expect(api.saveHistory).toHaveBeenCalled(), { timeout: 2000 });
-    expect(lastSaved(api)?.jobs[1]?.positions[0]?.start).toBe('');
+    // The last save: a busy computer can save part of the way too, such as at 2015.
+    await waitFor(() => expect(lastSaved(api)?.jobs[1]?.positions[0]?.start).toBe(''), {
+      timeout: 2000,
+    });
     await userEvent.type(started, '1');
     expect(started.getAttribute('aria-invalid')).toBe('false');
     await waitFor(() => expect(lastSaved(api)?.jobs[1]?.positions[0]?.start).toBe('2015-11'), {
@@ -150,15 +152,20 @@ describe('Work history and education, in Profile', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add a school' }));
     expect(screen.getByRole('group', { name: 'School 2' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Remove CU Boulder' }));
-    await waitFor(() => expect(api.saveHistory).toHaveBeenCalled(), { timeout: 2000 });
-    const saved = lastSaved(api);
-    expect(saved?.jobs.map((job) => job.positions.map((each) => each.title))).toEqual([
-      ['Director of Product', 'Product Manager'],
-      ['Analyst', 'Junior Analyst'],
-      ['Intern'],
-    ]);
-    // A school with no name yet waits until it has one.
-    expect(saved?.schools).toEqual([]);
+    // The save after the last change: a busy computer can save between changes too.
+    await waitFor(
+      () => {
+        const saved = lastSaved(api);
+        expect(saved?.jobs.map((job) => job.positions.map((each) => each.title))).toEqual([
+          ['Director of Product', 'Product Manager'],
+          ['Analyst', 'Junior Analyst'],
+          ['Intern'],
+        ]);
+        // A school with no name yet waits until it has one.
+        expect(saved?.schools).toEqual([]);
+      },
+      { timeout: 2000 },
+    );
     expect(screen.getByRole('group', { name: 'School 1' })).toBeTruthy();
   });
 

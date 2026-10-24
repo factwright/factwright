@@ -359,6 +359,11 @@ export type InboxAskAnswer =
       /** An answer for each field, in the ask's order. */
       replies: FieldReply[];
       files: { resume: OfferedFile | null; 'cover-letter': OfferedFile | null };
+      /**
+       * How many jobs and schools on file a form that asks for each one can take, for a form
+       * with a button that adds a part for another. An app from before it says none.
+       */
+      blocks?: { jobs: number; schools: number };
     }
   | { ok: true; did: 'file'; part: number; parts: number; base64: string }
   | { ok: true; did: 'sent'; job: AskedJob; recorded: number }

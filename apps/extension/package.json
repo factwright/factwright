@@ -11,12 +11,14 @@
     "e2e:firefox": "node scripts/e2e-firefox.ts",
     "e2e:firefox-fill": "node scripts/e2e-firefox-fill.ts",
     "e2e:fill": "node scripts/e2e-fill.ts",
+    "e2e:sync-fill": "node scripts/e2e-sync-fill.ts",
     "icons": "node scripts/icons.ts",
     "typecheck": "tsc",
     "test": "vitest run"
   },
   "devDependencies": {
     "@factwright/core": "workspace:*",
+    "@factwright/engine": "workspace:*",
     "@factwright/server": "workspace:*",
     "@factwright/sync": "workspace:*",
     "@factwright/ui": "workspace:*",

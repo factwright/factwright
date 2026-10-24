@@ -17,6 +17,9 @@ import { WithdrawDialog } from './WithdrawDialog.tsx';
 
 const TODAY = localDate();
 
+// With every package's tests at once, the first test here took 3.3 of vitest's usual 5 seconds.
+vi.setConfig({ testTimeout: 20_000 });
+
 const KINDS = [
   { id: 'developer', name: 'Developer' },
   { id: 'project-manager', name: 'Project manager' },

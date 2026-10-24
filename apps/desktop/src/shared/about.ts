@@ -5,6 +5,8 @@ import {
   type KindName,
   kindNameText,
   NO_APPLICATIONS,
+  readContact,
+  readForApplications,
   readKindName,
   sameKind,
   unnamedFirstKind,
@@ -358,40 +360,6 @@ function choice<T extends string>(
   return options.some(([each]) => each === value) ? (value as T) : undefined;
 }
 
-function contact(value: unknown): Contact | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const fields = value as Record<string, unknown>;
-  const read: Partial<Contact> = {};
-  for (const key of Object.keys(NO_ANSWERS.you) as (keyof Contact)[]) {
-    const field = fields[key] ?? '';
-    if (!isText(field, ANSWER_LIMITS.line)) return undefined;
-    read[key] = field;
-  }
-  return read as Contact;
-}
-
-/** Profile's answers for applications, each checked, with nothing told for any not there yet. */
-function forApplications(value: unknown): ForApplications | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const fields = value as Record<string, unknown>;
-  const line = (key: keyof ForApplications) => text(fields[key] ?? '');
-  const read = {
-    preferredName: line('preferredName'),
-    pronouns: line('pronouns'),
-    city: line('city'),
-    region: line('region'),
-    country: line('country'),
-    github: line('github'),
-    countries: entries(fields.countries ?? []),
-    sponsorship: choice(fields.sponsorship ?? '', SPONSORSHIP),
-    over18: choice(fields.over18 ?? '', OVER_18),
-    howHeard: line('howHeard'),
-  };
-  return Object.values(read).every((each) => each !== undefined)
-    ? (read as ForApplications)
-    : undefined;
-}
-
 function looks(value: unknown): Look[] | undefined {
   if (!Array.isArray(value) || value.length > ANSWER_LIMITS.entries) return undefined;
   const kept: Look[] = [];
@@ -536,7 +504,7 @@ function stepNumber(value: unknown): number | undefined {
 }
 
 const READERS: { [K in keyof AboutYou]: (value: unknown) => AboutYou[K] | undefined } = {
-  you: contact,
+  you: readContact,
   roles: entries,
   fields: (value) => choices(value, FIELDS),
   levels: (value) => choices(value, LEVELS),
@@ -576,7 +544,7 @@ const READERS: { [K in keyof AboutYou]: (value: unknown) => AboutYou[K] | undefi
   communities: entries,
   cares: (value) => text(value, ANSWER_LIMITS.text),
   interestsOnResumes: (value) => choice(value, INTERESTS_ON_RESUMES),
-  applications: forApplications,
+  applications: readForApplications,
 };
 
 /**

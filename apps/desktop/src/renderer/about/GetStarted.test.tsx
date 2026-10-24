@@ -18,6 +18,10 @@ import type { ClaudeStatusView } from '../useClaudeStatus.ts';
 import { GetStarted } from './GetStarted.tsx';
 import { useProfile } from './useProfile.ts';
 
+// Each test draws getting started's whole page: with every package's tests at once, the first
+// here took half of vitest's usual 5 seconds.
+vi.setConfig({ testTimeout: 20_000 });
+
 beforeAll(() => {
   // jsdom doesn't scroll, or open dialogs, on its own.
   Element.prototype.scrollTo ??= () => {};
@@ -148,7 +152,11 @@ describe('GetStarted', () => {
   it('welcomes the user, says whose Claude does the work, and can be skipped', async () => {
     const onSkip = vi.fn();
     const { container } = render(<Harness api={profileApi()} onSkip={onSkip} />);
-    expect(await screen.findByRole('heading', { name: 'Let’s get you set up' })).toBeTruthy();
+    // The file's first page takes longest to draw: over a second, with every package's tests at
+    // once.
+    expect(
+      await screen.findByRole('heading', { name: 'Let’s get you set up' }, { timeout: 5000 }),
+    ).toBeTruthy();
     expect(screen.getByText(/It never sees your Claude login/)).toBeTruthy();
     // Using the app agrees to its terms, with both a click away in the browser.
     expect(screen.getByRole('link', { name: 'terms of service' }).getAttribute('href')).toBe(
@@ -367,20 +375,19 @@ describe('GetStarted', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Remote from' }), 'the US');
     await userEvent.click(screen.getByRole('button', { name: 'Startups' }));
     await userEvent.click(screen.getByRole('checkbox', { name: /Keep my search quiet/ }));
+    // What's saved, which a busy computer can save in more than one go.
     await waitFor(
-      () =>
-        expect(api.saveAnswers).toHaveBeenLastCalledWith(
-          expect.objectContaining({ quiet: true, remoteFrom: 'the US' }),
-        ),
+      async () =>
+        expect((await api.profile()).answers).toMatchObject({
+          roles: ['Product Manager'],
+          levels: ['senior'],
+          workplaces: ['remote'],
+          remoteFrom: 'the US',
+          companies: ['startup'],
+          quiet: true,
+        }),
       SAVED,
     );
-    const saved = await api.profile();
-    expect(saved.answers).toMatchObject({
-      roles: ['Product Manager'],
-      levels: ['senior'],
-      workplaces: ['remote'],
-      companies: ['startup'],
-    });
     expect((await axe.run(container)).violations).toEqual([]);
   });
 

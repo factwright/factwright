@@ -153,12 +153,19 @@ function Harness({
   );
 }
 
+/** Answers save half a second after the last change, which a busy computer can stretch. */
+const SAVED = { timeout: 4000 };
+
 describe('ProfilePage', () => {
   it('opens the fact bank, to read and change each fact', async () => {
     const user = userEvent.setup();
     const onOpenFacts = vi.fn();
     render(<Harness api={profileApi()} onOpenFacts={onOpenFacts} />);
-    await user.click(await screen.findByRole('button', { name: 'See and change them' }));
+    // The file's first page takes longest to draw: over a second, with every package's tests at
+    // once.
+    await user.click(
+      await screen.findByRole('button', { name: 'See and change them' }, { timeout: 5000 }),
+    );
     expect(onOpenFacts).toHaveBeenCalled();
   });
 
@@ -214,7 +221,8 @@ describe('ProfilePage', () => {
     await userEvent.click(
       within(card).getByRole('button', { name: 'ATS X-ray of Senior Product Manager' }),
     );
-    const xray = await screen.findByRole('dialog', { name: 'ATS X-ray' });
+    // The X-ray's code loads the first time it opens.
+    const xray = await screen.findByRole('dialog', { name: 'ATS X-ray' }, { timeout: 5000 });
     expect((await within(xray).findByRole('alert')).textContent).toBe('No preview here');
     expect(api.readPdf).toHaveBeenLastCalledWith('base/JordanAveryResume_Startups.pdf');
   });
@@ -290,16 +298,22 @@ describe('ProfilePage', () => {
     // The browser's modal leaves only the dialog to reach, as jsdom doesn't, so it's what's checked.
     expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    // What the saves come to: on a busy computer, the project can save before its name is typed.
     await waitFor(() =>
-      expect(api.saveAnswers).toHaveBeenCalledWith(
-        expect.objectContaining({
-          addedProjects: [expect.objectContaining({ name: 'Denver Devs' })],
-          projectPrefs: expect.objectContaining({
-            resumes: 'experience',
-            heading: 'Selected Work',
-          }),
-        }),
-      ),
+      expect(
+        api.saveAnswers.mock.calls.reduce(
+          (saved, [changes]) => applyChanges(saved, changes),
+          answers,
+        ),
+      ).toMatchObject({
+        projects: [
+          { name: 'Code Club' },
+          { name: 'Trailhead' },
+          { name: 'Rivera Woodworks' },
+          { name: 'Denver Devs' },
+        ],
+        projectPrefs: { resumes: 'experience', heading: 'Selected Work' },
+      }),
     );
   });
 
@@ -319,17 +333,19 @@ describe('ProfilePage', () => {
       await within(about).findByRole('button', { name: 'Fill in from your resume' }),
     );
     // Only what's blank: the email Profile has stays as it is.
-    await waitFor(() =>
-      expect(api.saveAnswers).toHaveBeenCalledWith({
-        you: {
-          name: 'Jordan Avery',
-          email: 'jordan@example.com',
-          phone: '(555) 555-0123',
-          location: 'Austin, TX',
-          linkedin: 'linkedin.com/in/jordanavery',
-          website: '',
-        },
-      }),
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenCalledWith({
+          you: {
+            name: 'Jordan Avery',
+            email: 'jordan@example.com',
+            phone: '(555) 555-0123',
+            location: 'Austin, TX',
+            linkedin: 'linkedin.com/in/jordanavery',
+            website: '',
+          },
+        }),
+      SAVED,
     );
   });
 
@@ -580,10 +596,12 @@ describe('ProfilePage', () => {
     expect(api.saveAnswers).not.toHaveBeenCalled();
     await userEvent.clear(name);
     await userEvent.type(name, 'UX design{Enter}');
-    await waitFor(() =>
-      expect(api.saveAnswers).toHaveBeenLastCalledWith({
-        kindChanges: [{ id: 'design', name: 'UX design' }],
-      }),
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenLastCalledWith({
+          kindChanges: [{ id: 'design', name: 'UX design' }],
+        }),
+      SAVED,
     );
     const kinds = within(dialog).getByRole('group', { name: 'Kinds of job' });
     expect(within(kinds).getByRole('radio', { name: 'UX design' })).toBeTruthy();

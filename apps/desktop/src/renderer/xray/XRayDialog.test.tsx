@@ -119,7 +119,9 @@ describe('XRayDialog', () => {
         onClose={vi.fn()}
       />,
     );
-    expect(await screen.findByText('Reads cleanly')).toBeTruthy();
+    // The X-ray's code loads as it reads its first file, which takes longest in the file's first
+    // test: half a second, with every package's tests at once.
+    expect(await screen.findByText('Reads cleanly', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText('2 of 4 key terms · Nothing to fix')).toBeTruthy();
     const text = screen.getByRole('region', { name: 'The text' });
     expect(within(text).getByText('JORDAN AVERY')).toBeTruthy();

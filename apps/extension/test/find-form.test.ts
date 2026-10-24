@@ -80,6 +80,8 @@ const application = (url: string, count = 3): PageForm => ({
   url,
   title: 'Apply',
   submitted: false,
+  step: '',
+  adders: [],
   fields: [
     field(0, 'Name'),
     field(1, 'Email', { type: 'email' }),
@@ -93,6 +95,8 @@ const careers: PageForm = {
   url: PAGE,
   title: 'Careers',
   submitted: false,
+  step: '',
+  adders: [],
   fields: [field(0, 'Email', { type: 'email' })],
 };
 const LEVER = 'https://jobs.lever.co/acme/7a1c9e40/apply';

@@ -3,38 +3,40 @@ import { constants } from 'node:fs';
 import { type FileHandle, open, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import {
-  type AskedJob,
   answerForm,
   applicationAnswers,
+  askedJob,
+  blocksOnFile,
   FILE_LIMIT,
   FILE_PART_BYTES,
-  fieldKind,
-  hostOf,
+  formJob,
   type InboxAsk,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
   type Job,
   type JobFile,
+  jobPdfs,
   type KeptPrivate,
   letterPlainText,
   localDate,
   type OfferedFile,
   type OnFile,
-  questionKey,
+  onFileJob,
   readEqualOpportunity,
   readLetterText,
   readSuggestedAnswers,
   type SavedForm,
   SENT_STATUSES,
-  type SentBefore,
+  sentAnswersOf,
+  sentBefore,
+  uploadName,
   type WorkHistory,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
 import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.ts';
 import type { RunRequestAnswer } from '../../shared/runs.ts';
 import { resumeOnFile } from '../about/from-resume.ts';
-import { matchJobs } from '../tools/lookup.ts';
 
 /**
  * What Factwright answers the extension with as it fills an application form on this
@@ -83,57 +85,6 @@ export interface FillDeps {
 const failed = (message: string): InboxAskAnswer => ({ ok: false, reason: 'failed', message });
 const notFound = (message: string): InboxAskAnswer => ({ ok: false, reason: 'not-found', message });
 
-/** A job, as the extension is told of it. */
-const asked = (job: Job): AskedJob => ({
-  id: job.id,
-  company: job.company,
-  role: job.role,
-  status: job.status ?? 'new',
-  appliedOn: job.appliedOn,
-});
-
-/**
- * The job a form is for: the one saved from the same posting, which a Greenhouse, Lever or Ashby
- * form shares with its posting's page, or else the one job at the company with the title the
- * page shows.
- */
-function jobFor(jobs: readonly Job[], url: string, company: string, role: string): Job | null {
-  const matches = matchJobs(jobs, { company, role, link: url });
-  const posting = matches.find(({ match }) => match === 'posting');
-  if (posting) return posting.job;
-  const roles = matches.filter(({ match }) => match === 'role');
-  return roles.length === 1 ? (roles[0]?.job ?? null) : null;
-}
-
-/** Where you found a job, as "How did you hear about us?" asks it, by where it was saved from. */
-function foundOn(job: Job): string {
-  const site = hostOf(job.links[0]?.url ?? job.link ?? '');
-  const known: [RegExp, string][] = [
-    [/(^|\.)linkedin\.com$/, 'LinkedIn'],
-    [/(^|\.)indeed\.[a-z.]+$/, 'Indeed'],
-    [/(^|\.)glassdoor\.[a-z.]+$/, 'Glassdoor'],
-    [/(^|\.)ziprecruiter\.[a-z.]+$/, 'ZipRecruiter'],
-    [/(^|\.)wellfound\.com$/, 'Wellfound'],
-    [/(^|\.)builtin[a-z]*\.(com|org)$/, 'Built In'],
-    [/^news\.ycombinator\.com$/, 'Hacker News'],
-  ];
-  if (!site) return '';
-  return known.find(([pattern]) => pattern.test(site))?.[1] ?? 'Company website';
-}
-
-/** A job's PDFs of a kind, its resume or its cover letter, newest first: the first is uploaded. */
-const pdfsOf = (job: Job, kind: 'resume' | 'cover-letter') =>
-  (kind === 'resume' ? job.files : job.letters)
-    .filter((file) => file.format === 'pdf')
-    .sort((a, b) => b.modified.localeCompare(a.modified));
-
-/** A plain name for an upload, as a person would name it: "Ana Ruiz - Resume.pdf". */
-function uploadName(you: string, kind: 'resume' | 'cover-letter', file: JobFile): string {
-  const name = you.replace(/[\\/:*?"<>|]+/g, ' ').trim();
-  if (!name) return file.name;
-  return `${name} - ${kind === 'resume' ? 'Resume' : 'Cover Letter'}.pdf`;
-}
-
 /** Whether a path is inside a folder, and not the folder itself. */
 function isInside(folder: string, path: string): boolean {
   const inside = relative(folder, path);
@@ -177,20 +128,6 @@ async function openInside(workspace: string, file: JobFile): Promise<Opened | nu
   }
 }
 
-/** Everything you sent before, newest first, with whose application each was in. */
-function sentBefore(jobs: readonly Job[]): SentBefore[] {
-  return jobs
-    .flatMap((job) =>
-      job.sent.map((each) => ({
-        question: each.question,
-        text: each.text,
-        on: each.on,
-        company: job.company,
-      })),
-    )
-    .sort((a, b) => b.on.localeCompare(a.on));
-}
-
 /** An offer of one of a job's files: its plain name, its size, its parts and its version. */
 async function offer(
   deps: FillDeps,
@@ -198,7 +135,7 @@ async function offer(
   kind: 'resume' | 'cover-letter',
   you: string,
 ): Promise<OfferedFile | null> {
-  const [file] = pdfsOf(job, kind);
+  const [file] = jobPdfs(job, kind);
   const opened = file ? await openInside(deps.workspace, file) : null;
   if (!file || !opened) return null;
   await opened.handle.close();
@@ -218,7 +155,7 @@ async function fill(
   deps: FillDeps,
 ): Promise<InboxAskAnswer> {
   const { jobs } = deps.jobs.list();
-  const job = jobFor(jobs, ask.url, ask.company, ask.role);
+  const job = formJob(jobs, ask.url, ask.company, ask.role);
   const about = deps.about.answers();
   const docs = job ? deps.jobs.docs(job.id) : null;
   const letter = readLetterText(docs?.letter);
@@ -238,7 +175,7 @@ async function fill(
     targetPay: about.targetPay,
     resume,
     history: deps.about.history(),
-    job: job ? { company: job.company, foundOn: foundOn(job), location: job.location ?? '' } : null,
+    job: job ? onFileJob(job) : null,
     sent: sentBefore(jobs),
     suggested: readSuggestedAnswers(docs?.answers),
     files: { resume: cv?.name ?? null, coverLetter: coverLetter?.name ?? null },
@@ -248,9 +185,10 @@ async function fill(
   return {
     ok: true,
     did: 'fill',
-    job: job ? asked(job) : null,
+    job: job ? askedJob(job) : null,
     replies: answerForm(ask.fields, onFile),
     files: { resume: cv, 'cover-letter': coverLetter },
+    blocks: blocksOnFile(onFile),
   };
 }
 
@@ -264,7 +202,7 @@ async function filePart(
 ): Promise<InboxAskAnswer> {
   const job = deps.jobs.job(ask.job);
   if (!job) return notFound('That job isn’t in Factwright anymore.');
-  for (const file of pdfsOf(job, ask.file)) {
+  for (const file of jobPdfs(job, ask.file)) {
     const opened = await openInside(deps.workspace, file);
     if (!opened) continue;
     const { handle, size, version } = opened;
@@ -299,24 +237,7 @@ async function filePart(
 function sent(ask: Extract<InboxAsk, { ask: 'sent' }>, deps: FillDeps): InboxAskAnswer {
   const job = deps.jobs.job(ask.job);
   if (!job) return notFound('That job isn’t in Factwright anymore.');
-  const seen = new Map<string, number>();
-  const answers: { question: string; nth: number; text: string }[] = [];
-  for (const { question, text } of ask.answers) {
-    const key = questionKey(question);
-    if (!key || !text.trim()) continue;
-    const kind = fieldKind({
-      question,
-      hint: '',
-      control: 'long',
-      type: '',
-      autocomplete: '',
-      name: '',
-    });
-    if (kind !== 'question') continue;
-    const nth = seen.get(key) ?? 0;
-    seen.set(key, nth + 1);
-    answers.push({ question, nth, text: text.trim() });
-  }
+  const answers = sentAnswersOf(ask.answers);
   const kept = answers.length > 0 ? deps.jobs.recordAnswers(job.id, answers) : null;
   if (kept && !kept.ok) return failed(kept.message);
   const recorded = kept?.recorded ?? 0;
@@ -326,7 +247,7 @@ function sent(ask: Extract<InboxAsk, { ask: 'sent' }>, deps: FillDeps): InboxAsk
     if (!result.ok) return failed(result.message);
   }
   const now = deps.jobs.job(job.id) ?? job;
-  return { ok: true, did: 'sent', job: asked(now), recorded };
+  return { ok: true, did: 'sent', job: askedJob(now), recorded };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { JOB_LIMITS } from '@factwright/core';
+import { JOB_LIMITS, MOST_QUESTIONS } from '@factwright/core';
 
 /** The longest text each tracker field takes. The main process checks them, and the window's inputs stop there. */
 export const LIMITS = {
@@ -21,7 +21,7 @@ export const LIMITS = {
   /** One question from an application form, which can carry instructions and a word limit. */
   question: 4000,
   /** How many questions one application can have. */
-  questions: 50,
+  questions: MOST_QUESTIONS,
   /** What the user sent for one of them, which can run long for an essay question. */
   answer: 10_000,
   /** One question for Claude about a job. */

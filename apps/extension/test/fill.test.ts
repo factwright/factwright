@@ -1,5 +1,5 @@
 import type { FieldReply, InboxAsk } from '@factwright/core';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   askedFields,
   draftable,
@@ -13,19 +13,19 @@ import {
   planFill,
   sentAnswers,
 } from '../src/fill.ts';
+import type { FillWay } from '../src/fill-way.ts';
 import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
+import { adderPart, partsOf } from '../src/several-pages.ts';
 
 /** Factwright on this computer, as the extension asks it: what it was asked, and its answers. */
-const computer = vi.hoisted(() => ({
-  asked: [] as unknown[],
-  answers: [] as unknown[],
-}));
-vi.mock('../src/computer.ts', () => ({
-  askComputer: async (ask: unknown) => {
+const computer = { asked: [] as unknown[], answers: [] as unknown[] };
+const onComputer: FillWay = {
+  via: 'computer',
+  ask: async (ask) => {
     computer.asked.push(ask);
-    return computer.answers.shift();
+    return computer.answers.shift() as Awaited<ReturnType<FillWay['ask']>>;
   },
-}));
+};
 
 let place = 0;
 /** A field as the page function reads one, with only what a test sets. */
@@ -53,6 +53,8 @@ const form = (fields: PageField[]): PageForm => ({
   title: 'Job Application for Account Executive at Harbor & Pine',
   fields,
   submitted: false,
+  step: '',
+  adders: [],
 });
 
 const values = (fields: PageField[], texts: string[]): FieldValue[] =>
@@ -127,6 +129,53 @@ describe('what Factwright puts in a form', () => {
       { ref: 1, key: fields[1]?.key, pick: ['Denver, CO', 'Denver, Colorado'], place: true },
       // A box to type in takes it as you'd type it.
       { ref: 2, key: fields[2]?.key, text: 'Denver, CO' },
+    ]);
+  });
+
+  it('fills only what’s empty on a page of an application that runs over several, or once asked', () => {
+    const fields = [field('Email', { ref: 0 }), field('Phone', { ref: 1 })];
+    const replies: FieldReply[] = [
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+      { kind: 'phone', text: '(303) 555-0142', source: 'profile' },
+    ];
+    // Workday's My Information, which Workday may have filled in from your resume.
+    const workday = { ...form(fields), step: 'My Information' };
+    expect(fillAnswers(workday, replies, {}).map((answer) => answer.ifEmpty)).toEqual([true, true]);
+    expect(fillAnswers(form(fields), replies, {}).map((answer) => answer.ifEmpty)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(fillAnswers(form(fields), replies, {}, true).every((answer) => answer.ifEmpty)).toBe(
+      true,
+    );
+  });
+
+  it('says the part for a job or school each answer is in, and which name the part', () => {
+    const job = (question: string, n: number) =>
+      field(question, { section: `My Experience › Work Experience ${n}` });
+    const fields = [
+      job('Job Title', 1),
+      job('Company', 1),
+      job('Company', 2),
+      field('School or University', { section: 'Education 1' }),
+      field('Email'),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'current-title', text: 'Senior Product Manager', source: 'profile' },
+      { kind: 'current-company', text: 'Tidewater Analytics', source: 'profile' },
+      { kind: 'current-company', text: 'Fernway', source: 'profile' },
+      { kind: 'school', text: 'CU Boulder', source: 'profile' },
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+    ];
+    const workday = { ...form(fields), step: 'My Experience' };
+    expect(
+      fillAnswers(workday, replies, {}).map(({ part, names }) => [part, names ?? false]),
+    ).toEqual([
+      ['My Experience › Work Experience 1', false],
+      ['My Experience › Work Experience 1', true],
+      ['My Experience › Work Experience 2', true],
+      ['Education 1', true],
+      [undefined, false],
     ]);
   });
 
@@ -279,6 +328,69 @@ describe('where Factwright fills', () => {
       ),
     ).toBe(true);
   });
+
+  it('offers to fill each page of an application that runs over several, but not its sign-in', () => {
+    const page = (step: string, fields: PageField[]) => ({ ...form(fields), step });
+    // Workday's Voluntary Disclosures: no file, no email, but a page of the application.
+    expect(
+      looksLikeApplication(page('Voluntary Disclosures', [field('Gender', { control: 'combo' })])),
+    ).toBe(true);
+    // Its Review has nothing to fill.
+    expect(looksLikeApplication(page('Review', []))).toBe(false);
+    // Making an account to apply with, or signing in: yours to do, with a password.
+    const account = [
+      field('Email Address', { type: 'email' }),
+      field('Password', { type: 'password' }),
+      field('Verify New Password', { type: 'password' }),
+      field('I agree to the terms', { control: 'check', type: 'checkbox' }),
+    ];
+    expect(looksLikeApplication(form(account))).toBe(false);
+    // An application that asks you to make a password along the way is still one.
+    expect(
+      looksLikeApplication(form([...account, field('Full name'), field('Phone', { type: 'tel' })])),
+    ).toBe(true);
+  });
+});
+
+describe('a form’s parts for each job and school', () => {
+  /** One of Workday's Work Experience parts, as its fields read. */
+  const job = (n: number) =>
+    ['Job Title', 'Company', 'Location', 'From Month', 'From Year'].map((question) =>
+      field(question, { section: `My Experience › Work Experience ${n}` }),
+    );
+  const school = (n: number) =>
+    ['School or University', 'Degree', 'Field of Study'].map((question) =>
+      field(question, { section: `My Experience › Education ${n}`, control: 'combo' }),
+    );
+
+  it('counts the parts a form has for jobs and schools', () => {
+    const page = form([
+      ...job(1),
+      ...job(2),
+      ...school(1),
+      field('LinkedIn', { section: 'My Experience' }),
+    ]);
+    expect([partsOf(page, 'job'), partsOf(page, 'school')]).toEqual([2, 1]);
+    expect(partsOf(form([field('Email')]), 'job')).toBe(0);
+    // Greenhouse's names each job's part the same: one for each title it asks.
+    const greenhouse = form(
+      [0, 1, 2].flatMap((n) => [
+        field('Company name', { section: 'Employment', name: `employment_company_${n}` }),
+        field('Title', { section: 'Employment', name: `employment_title_${n}` }),
+      ]),
+    );
+    expect(partsOf(greenhouse, 'job')).toBe(3);
+  });
+
+  it('knows which part a button that adds one adds to, by the part it’s in itself', () => {
+    expect(adderPart({ section: 'My Experience › Work Experience', words: 'Add Another' })).toBe(
+      'job',
+    );
+    expect(adderPart({ section: 'Education', words: 'Add' })).toBe('school');
+    // Websites, inside My Experience, is neither.
+    expect(adderPart({ section: 'My Experience › Websites', words: 'Add' })).toBeNull();
+    expect(adderPart({ section: 'Languages', words: 'Add' })).toBeNull();
+  });
 });
 
 describe('asking Factwright how to fill a form', () => {
@@ -289,7 +401,7 @@ describe('asking Factwright how to fill a form', () => {
     computer.asked = [];
     computer.answers = [plan];
     const fields = [field('Company', { section: 'Work Experience 1' })];
-    expect(await planFill(form(fields), job)).toBe(plan);
+    expect(await planFill(form(fields), job, onComputer)).toBe(plan);
     expect((computer.asked as InboxAsk[]).map((ask) => ask.ask === 'fill' && ask.fields)).toEqual([
       [expect.objectContaining({ question: 'Company', section: 'Work Experience 1' })],
     ]);
@@ -299,7 +411,7 @@ describe('asking Factwright how to fill a form', () => {
     computer.asked = [];
     computer.answers = [{ ok: false, reason: 'bad-message', message: 'No.' }, plan];
     const fields = [field('Company', { section: 'Work Experience 1' })];
-    expect(await planFill(form(fields), job)).toBe(plan);
+    expect(await planFill(form(fields), job, onComputer)).toBe(plan);
     const [, again] = computer.asked as InboxAsk[];
     expect(again?.ask === 'fill' && again.fields[0]).not.toHaveProperty('section');
     expect(again?.ask === 'fill' && again.fields[0]?.question).toBe('Company');
@@ -309,7 +421,7 @@ describe('asking Factwright how to fill a form', () => {
     computer.asked = [];
     const closed = { ok: false, reason: 'closed', message: 'Open Factwright.' };
     computer.answers = [closed];
-    expect(await planFill(form([field('Company')]), job)).toBe(closed);
+    expect(await planFill(form([field('Company')]), job, onComputer)).toBe(closed);
     expect(computer.asked).toHaveLength(1);
   });
 });
@@ -345,6 +457,30 @@ describe('what your Claude can draft', () => {
     ]);
     expect(draftable(form(fields), replies, filled).map((each) => each.question)).toEqual([
       'Why Harbor & Pine?',
+    ]);
+  });
+
+  it('is never a box for part of a date, as a self-identification form’s date to sign it', () => {
+    const fields = [
+      'Date Month',
+      'Date Day',
+      'Date Year',
+      'What year did you start coding?',
+      'How many hours can you work per day',
+    ].map((question, ref) => field(question, { ref, control: 'number' }));
+    // In words, a question that ends in a part of a date is a question of the form's own.
+    fields.push(field('What would you most like to learn this year', { ref: 5, control: 'long' }));
+    const left = { kind: 'question', source: 'you', left: 'new' } as const;
+    expect(
+      draftable(
+        form(fields),
+        fields.map(() => left),
+        new Map(),
+      ).map((each) => each.question),
+    ).toEqual([
+      'What year did you start coding?',
+      'How many hours can you work per day',
+      'What would you most like to learn this year',
     ]);
   });
 });

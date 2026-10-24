@@ -1,5 +1,5 @@
 import { boardPostingId, boardSource } from './boards.ts';
-import { slug } from './keys.ts';
+import { companyKey, slug } from './keys.ts';
 import { isJobLink, normalizeUrl } from './links.ts';
 
 /**
@@ -40,6 +40,8 @@ export function postingKey(address: string): string | null {
     if (board.kind === 'gem') return `gem:${board.board.toLowerCase()}:${id}`;
     return `${board.kind}:${id.toLowerCase()}`;
   }
+  const workday = workdayPosting(host, url.pathname);
+  if (workday) return workday;
   if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
     // jobs/view/<id>, or jobs/view/<its title>-<id>.
     const view = url.pathname.match(/^\/jobs\/view\/([^/]+)/)?.[1];
@@ -51,6 +53,30 @@ export function postingKey(address: string): string | null {
     return id && OPAQUE_ID.test(id) ? `indeed:${id.toLowerCase()}` : null;
   }
   return null;
+}
+
+/**
+ * A Workday posting's key, by the company's own site on Workday and the posting's ID, which ends
+ * its job's part of the address, after the last "_": the same for the posting and its
+ * application, as "…/job/Denver/Product-Manager_R101" and "…/Product-Manager_R101/apply" are. A
+ * company's site is its own name at myworkdayjobs.com, or the part after "recruiting" at
+ * myworkdaysite.com.
+ */
+function workdayPosting(host: string, path: string): string | null {
+  const parts = path.split('/').filter(Boolean);
+  let site = '';
+  if (/^[a-z0-9-]+\.wd\d+\.myworkdayjobs\.com$/.test(host)) site = host.split('.')[0] ?? '';
+  else if (/^(wd\d+\.)?myworkdaysite\.com$/.test(host)) {
+    const at = parts.indexOf('recruiting');
+    site = at < 0 ? '' : (parts[at + 1] ?? '');
+  } else return null;
+  const job = parts.findIndex((part) => part === 'job' || part === 'details');
+  if (!site || job < 0) return null;
+  const after = parts.slice(job + 1);
+  const ends = after.indexOf('apply');
+  const posting = (ends < 0 ? after : after.slice(0, ends)).at(-1) ?? '';
+  const id = /_([A-Za-z0-9-]{1,40})$/.exec(posting)?.[1];
+  return id ? `workday:${site.toLowerCase()}:${id.toLowerCase()}` : null;
 }
 
 /** The site a posting's key is on, such as "greenhouse" or "linkedin". */
@@ -460,4 +486,40 @@ export function jobLikeness(a: JobIdentity, b: JobIdentity): 'posting' | 'role' 
   const fit = titleFit(readTitle(a.role), readTitle(b.role));
   const alike = fit === 'same' || (company === 'same' && fit === 'more');
   return alike && !otherPostings(postings(a), theirPostings) ? 'role' : 'company';
+}
+
+/** What identifies a job when the user or a skill names it. */
+export interface JobQuery {
+  company: string;
+  role?: string;
+  link?: string;
+}
+
+/**
+ * How a job on file matches what a skill asked about, as the app tells one job from another: by
+ * a link to the same posting, at any company; by the same role, at the same company or one whose
+ * name holds the other's; or as another job at the company.
+ */
+export type JobMatch = 'posting' | 'role' | 'company';
+
+const MATCH_ORDER: Readonly<Record<JobMatch, number>> = { posting: 0, role: 1, company: 2 };
+
+/** The jobs that match a company, or a link, best match first, with how each matches. */
+export function matchJobs<T extends JobIdentity>(
+  jobs: readonly T[],
+  query: JobQuery,
+): { job: T; match: JobMatch }[] {
+  const asked = {
+    company: query.company,
+    companyKey: companyKey(query.company),
+    role: query.role ?? '',
+    links: query.link ? [{ url: query.link }] : [],
+  };
+  return jobs
+    .flatMap((job) => {
+      const known = { ...job, companyKey: job.companyKey || companyKey(job.company) };
+      const match = jobLikeness(known, asked);
+      return match ? [{ job, match }] : [];
+    })
+    .sort((a, b) => MATCH_ORDER[a.match] - MATCH_ORDER[b.match]);
 }
