@@ -29,6 +29,8 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { SyncEngine } from '../../desktop/src/main/sync/engine.ts';
 import { SyncState } from '../../desktop/src/main/sync/state.ts';
+import type { Account } from '../src/account.ts';
+import { signInWatch } from '../src/fill-way.ts';
 import { KEEP_FOR_MS, type SyncAnswer, SyncFill, type SyncFillDeps } from '../src/sync-fill.ts';
 import { readSynced, syncedWorkspace } from '../src/synced.ts';
 
@@ -47,6 +49,8 @@ afterAll(() => {
 const NOW = new Date(2026, 9, 23, 18, 30);
 const FORM_URL = 'https://jobs.lever.co/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
 const FOLDER = '2026-10-20-northwind-labs-senior-product-manager';
+/** A job a job search turned up, which only the search's files say anything of. */
+const SEARCHED = 'https://job-boards.greenhouse.io/harborandpine/jobs/5426468004';
 /**
  * A made-up resume the engine printed, as the desktop app's tests use, with room after it, so it
  * uploads in a few parts.
@@ -189,6 +193,22 @@ async function computer() {
       'Tidewater’s forecasting product, from first sketch to 40 customers.',
       '',
     ].join('\n'),
+  );
+  write(
+    'searches/2026-10-21-greenhouse/jobs.json',
+    JSON.stringify({
+      meta: { checked: '2026-10-21', source: 'Greenhouse' },
+      jobs: [
+        {
+          company: 'Harbor & Pine',
+          role: 'Account Executive',
+          posting: SEARCHED,
+          remote: 'Remote, US',
+          tier: 'good',
+          score: 74,
+        },
+      ],
+    }),
   );
   const tracker = new Tracker(join(home, 'tracker.db'));
   const jobs = new JobsService({ workspace, tracker, onChange: () => {}, now: () => NOW });
@@ -504,24 +524,151 @@ describe('filling a form from your job hunt through sync', () => {
     const synced = await readSynced(client, keys);
     expect(synced.files.get('about-me/answers.json')?.id).not.toBe('A'.repeat(43));
     expect(synced.files.has('about-me/other.json')).toBe(false);
-    expect(synced.rows.jobs.size).toBe(2);
+    expect(synced.rows.jobs.size).toBe(3);
   });
 
-  it('reads sync again once a few minutes have passed since it was last used', async () => {
-    const { keys, client } = await account();
-    const changes = vi.spyOn(client, 'changes');
+  it('reads only what changed since the last fill, and all of it again a few minutes after', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const files = vi.spyOn(client, 'getFile');
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const fill = fillFor(client, keys);
       ok(await fill.ask(FILL));
+      const first = files.mock.calls.length;
+      expect(first).toBeGreaterThan(3);
       ok(await fill.ask(FILL));
-      expect(changes).toHaveBeenCalledTimes(1);
+      expect(files.mock.calls.length).toBe(first);
+      // Your Claude drafts another answer in Factwright, which syncs.
+      writeFileSync(
+        join(desktop.workspace, 'applications', FOLDER, 'answers.md'),
+        [
+          '# Application questions: Northwind Labs, Senior Product Manager, Data',
+          '',
+          '## Why Northwind Labs?',
+          '',
+          'Its data products reach the people I build for.',
+          '',
+        ].join('\n'),
+      );
+      await engine.syncOnce();
+      const again = ok(await fill.ask(FILL));
+      expect(files.mock.calls.length).toBe(first + 1);
+      if (again.did !== 'fill') throw new Error('No plan.');
+      expect(byKind(again.replies)['Why Northwind Labs?']).toMatchObject({ source: 'claude' });
       vi.advanceTimersByTime(KEEP_FOR_MS);
       ok(await fill.ask(FILL));
-      expect(changes).toHaveBeenCalledTimes(2);
+      expect(files.mock.calls.length).toBeGreaterThanOrEqual(2 * first);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('finds a job only a job search turned up, by its row, as the app finds it', async () => {
+    const { desktop, keys, client } = await account();
+    const ask = {
+      ...FILL,
+      url: SEARCHED,
+      company: 'Harbor & Pine',
+      role: 'Account Executive',
+      fields: [asked('Email', { type: 'email' })],
+    };
+    const app = await answerAsk(ask, desktop.deps);
+    const synced = ok(await fillFor(client, keys).ask(ask));
+    if (!app.ok || app.did !== 'fill' || synced.did !== 'fill') throw new Error('No plan.');
+    expect(app.job).toMatchObject({ company: 'Harbor & Pine', role: 'Account Executive' });
+    expect(synced.job).toEqual(app.job);
+  });
+
+  it('records what you sent on the job kept, for one merged into another meanwhile', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const fill = fillFor(client, keys);
+    const plan = ok(await fill.ask(FILL));
+    if (plan.did !== 'fill' || !plan.job) throw new Error('No job.');
+    const at = { today: '2026-10-23', now: '2026-10-23T18:00:00.000Z' };
+    const kept = desktop.tracker.addJob({ company: 'Northwind Labs', role: 'Data PM' }, at);
+    if (!kept.ok) throw new Error(kept.message);
+    desktop.tracker.mergeJobs(kept.jobId, plan.job.id, at);
+    await engine.syncOnce();
+    const sent = ok(
+      await fill.ask({
+        ask: 'sent',
+        job: plan.job.id,
+        url: FORM_URL,
+        answers: [{ question: 'Why Northwind Labs?', text: 'Data products.' }],
+      }),
+    );
+    expect(sent).toMatchObject({ did: 'sent', job: { id: kept.jobId, status: 'applied' } });
+    await engine.syncOnce();
+    desktop.jobs.read();
+    expect(desktop.jobs.job(kept.jobId)?.sent.map((each) => each.text)).toEqual(['Data products.']);
+  });
+
+  it('leaves nothing for a job deleted since the form was read', async () => {
+    const { keys, client, sam } = await account();
+    const fill = fillFor(client, keys);
+    const plan = ok(await fill.ask(FILL));
+    if (plan.did !== 'fill' || !plan.job) throw new Error('No job.');
+    const record = await recordId(keys, `row:jobs:${plan.job.id}`);
+    const [latest] = await sam.client.versions(record);
+    const body = {
+      kind: 'row' as const,
+      table: 'jobs',
+      id: plan.job.id,
+      row: null,
+      device: 'Sam’s Mac',
+      at: NOW.toISOString(),
+    };
+    const version = (latest?.version ?? 0) + 1;
+    await sam.client.push([
+      {
+        record,
+        base: latest?.version ?? 0,
+        data: await sealRecord(keys, record, version, encodeRecord(body)),
+        file: null,
+        deleted: true,
+      },
+    ]);
+    expect(
+      await fill.ask({
+        ask: 'draft',
+        job: plan.job.id,
+        url: FORM_URL,
+        questions: [FIELDS[16] as AskedField],
+      }),
+    ).toMatchObject({ ok: false, reason: 'not-found' });
+    const synced = await readSynced(client, keys);
+    expect([...synced.files.keys()].some((path) => path.startsWith('saved/'))).toBe(false);
+  });
+
+  it('puts a change back as new on a server restored from a backup, which has no version', async () => {
+    const { keys, client } = await account();
+    const fill = fillFor(client, keys);
+    const plan = ok(await fill.ask(FILL));
+    if (plan.did !== 'fill' || !plan.job) throw new Error('No job.');
+    const push = vi.spyOn(client, 'push');
+    push
+      .mockImplementationOnce(async (changes) => ({
+        results: [
+          { record: changes[0]?.record ?? '', ok: false, reason: 'conflict', current: null },
+        ],
+      }))
+      .mockImplementationOnce(async (changes) => ({
+        results: changes.map((change) => ({
+          record: change.record,
+          ok: true as const,
+          version: change.base + 1,
+          seq: 1,
+        })),
+      }));
+    ok(
+      await fill.ask({
+        ask: 'sent',
+        job: plan.job.id,
+        url: FORM_URL,
+        answers: [{ question: 'Why Northwind Labs?', text: 'Data products.' }],
+      }),
+    );
+    expect(push.mock.calls[1]?.[0][0]?.base).toBe(0);
   });
 
   it('forgets what it read, and answers nothing more, once the extension is signed out', async () => {
@@ -543,6 +690,43 @@ describe('filling a form from your job hunt through sync', () => {
     const fill = fillFor(server.clientFor('not-a-session'), keys, { signedOut });
     expect(await fill.ask(FILL)).toMatchObject({ ok: false, reason: 'failed' });
     expect(signedOut).toHaveBeenCalled();
+  });
+});
+
+describe('the sign-in a fill goes on with', () => {
+  const account = (token: string, id = 'key-1', server = 'https://sync.example') =>
+    ({
+      server,
+      user: 'u1',
+      email: 'sam@example.com',
+      token,
+      keys: { id } as AccountKeys,
+    }) as Account & { keys: AccountKeys };
+
+  it('follows a new sign-in to the same account, and stops at another', async () => {
+    let now: Account | null = account('second');
+    const watch = signInWatch(account('first'), async () => now);
+    expect(watch.token()).toBe('first');
+    expect(await watch.signedIn()).toBe(true);
+    expect(watch.token()).toBe('second');
+    now = account('third', 'key-2');
+    expect(await watch.signedIn()).toBe(false);
+    now = account('third', 'key-1', 'https://other.example');
+    expect(await watch.signedIn()).toBe(false);
+    now = null;
+    expect(await watch.signedIn()).toBe(false);
+  });
+
+  it('forgets the sign-in the server turned down, never a newer one', async () => {
+    const forget = vi.fn(async () => {});
+    let now: Account | null = account('first');
+    const watch = signInWatch(account('first'), async () => now, forget);
+    now = account('second');
+    await watch.signedOut();
+    expect(forget).not.toHaveBeenCalled();
+    now = account('first');
+    await watch.signedOut();
+    expect(forget).toHaveBeenCalledTimes(1);
   });
 });
 

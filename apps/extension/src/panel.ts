@@ -925,8 +925,6 @@ const fillPasses = (state: Filling) =>
 async function begin(): Promise<void> {
   stopLooking();
   stopFollowing();
-  // What an earlier fill read through sync goes with it.
-  filling?.way.forget();
   filling = null;
   const start = ++starts;
   startedAt = Date.now();
@@ -1016,12 +1014,8 @@ async function begin(): Promise<void> {
     answer: planned,
     instead,
   } = await firstAnswer(ways, (each) => planFill(form, shows, each));
-  if (later()) {
-    way.forget();
-    return;
-  }
+  if (later()) return;
   const site = await siteChoice(form.url);
-  if (later() || !planned.ok || planned.did !== 'fill') way.forget();
   if (later()) return;
   if (!planned.ok || planned.did !== 'fill') {
     message(

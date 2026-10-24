@@ -24,7 +24,6 @@ const onComputer: FillWay = {
     computer.asked.push(ask);
     return computer.answers.shift() as Awaited<ReturnType<FillWay['ask']>>;
   },
-  forget: () => {},
 };
 
 let place = 0;

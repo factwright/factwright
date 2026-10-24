@@ -45,11 +45,22 @@ type Table = (typeof TABLES)[number];
 
 const isTable = (table: string): table is Table => (TABLES as readonly string[]).includes(table);
 
-/** What sync holds of a job hunt: each file by its path, and each row of the tables a fill reads. */
+/**
+ * What sync holds of a job hunt: each file by its path, each row of the tables a fill reads, and
+ * where in the account's changes it's read to.
+ */
 export interface Synced {
   files: Map<string, SyncedFile>;
   rows: Record<Table, Map<string, RowValues>>;
+  cursor: number;
 }
+
+/** Nothing read yet. */
+export const nothingSynced = (): Synced => ({
+  files: new Map(),
+  rows: { jobs: new Map(), calls: new Map(), notes: new Map() },
+  cursor: 0,
+});
 
 /**
  * One version of a record, opened, or null when it doesn't open: locked with another key, damaged,
@@ -63,28 +74,42 @@ export async function openChange(keys: AccountKeys, change: Change): Promise<Syn
 }
 
 /**
- * Reads what sync holds now: each record's latest version, a page at a time, from the start of the
- * account's changes. Deleted records, and rows of tables a fill doesn't read, are passed over.
+ * Reads what's changed in sync since `synced` was read, into it: each changed record's latest
+ * version, a page at a time, from where it left off, or from the start of the account's changes
+ * for nothing read yet. What was deleted is taken out, and rows of tables a fill doesn't read are
+ * passed over. A server that starts over, as after a restore from a backup, is read again whole.
  */
-export async function readSynced(client: SyncClient, keys: AccountKeys): Promise<Synced> {
-  const synced: Synced = {
-    files: new Map(),
-    rows: { jobs: new Map(), calls: new Map(), notes: new Map() },
-  };
-  for (let cursor = 0; ; ) {
-    const page = await client.changes(cursor);
-    const live = page.changes.filter((change) => !change.deleted);
-    const records = await Promise.all(live.map((change) => openChange(keys, change)));
+export async function pullSynced(
+  client: SyncClient,
+  keys: AccountKeys,
+  synced: Synced,
+): Promise<void> {
+  for (;;) {
+    const from = synced.cursor;
+    const page = await client.changes(from);
+    if (page.cursor < from) {
+      synced.files.clear();
+      for (const rows of Object.values(synced.rows)) rows.clear();
+    }
+    const records = await Promise.all(page.changes.map((change) => openChange(keys, change)));
     for (const record of records) {
-      if (record?.kind === 'file' && record.file) synced.files.set(record.path, record.file);
-      if (record?.kind === 'row' && record.row && isTable(record.table)) {
-        synced.rows[record.table].set(record.id, record.row);
+      if (record?.kind === 'file') {
+        if (record.file) synced.files.set(record.path, record.file);
+        else synced.files.delete(record.path);
+      } else if (record && isTable(record.table)) {
+        if (record.row) synced.rows[record.table].set(record.id, record.row);
+        else synced.rows[record.table].delete(record.id);
       }
     }
-    // A page that ends where it started would never end.
-    if (!page.more || page.cursor <= cursor) break;
-    cursor = page.cursor;
+    synced.cursor = page.cursor;
+    if (!page.more || page.changes.length === 0) break;
   }
+}
+
+/** Reads what sync holds now, from the start of the account's changes. */
+export async function readSynced(client: SyncClient, keys: AccountKeys): Promise<Synced> {
+  const synced = nothingSynced();
+  await pullSynced(client, keys, synced);
   return synced;
 }
 
@@ -175,19 +200,28 @@ export const jobNotesPaths = (synced: Synced): string[] =>
  * files say, by the app's own matching, so a job has the folder, resumes and cover letters the app
  * shows for it. `notes` holds each job.md's text, by its path. A job the user merged into another
  * isn't listed, and one whose files are gone stays only while the user tracks something about it.
+ * The app also lists a job a job search turned up, from the search's files, which a fill doesn't
+ * read: those are `others`, each by its row alone, with the rest the app wouldn't list.
  */
-export function syncedJobs(synced: Synced, notes: ReadonlyMap<string, string>): Job[] {
+export function syncedJobs(
+  synced: Synced,
+  notes: ReadonlyMap<string, string>,
+): { listed: Job[]; others: Job[] } {
   const workspace = syncedWorkspace(synced.files, notes);
   const rows = [...synced.rows.jobs.values()].map((row) => trackedRow(row as StoredRow));
   const found = new Map(
     collectJobs(readRecords(workspace), knownJobsOf(rows)).map((job) => [job.id, job]),
   );
   const rowsOf = (table: 'calls' | 'notes') => [...synced.rows[table].values()] as StoredRow[];
-  return jobList(rows, found, {
+  const items = {
     calls: byJob(rowsOf('calls'), trackedCall),
     history: new Map(),
     notes: byJob(rowsOf('notes'), trackedNote),
-  });
+  };
+  const listed = jobList(rows, found, items);
+  const ids = new Set(listed.map((job) => job.id));
+  const others = jobList(rows, found, items, { untracked: true }).filter((job) => !ids.has(job.id));
+  return { listed, others };
 }
 
 /**

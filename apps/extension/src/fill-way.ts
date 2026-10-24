@@ -1,12 +1,12 @@
 import type { InboxAsk } from '@factwright/core';
-import type { AccountKeys } from '@factwright/sync';
+import { type AccountKeys, SyncClient } from '@factwright/sync';
 import {
   type Account,
   browserName,
   canReachSync,
-  clientFor,
   forgetAccount,
   loadAccount,
+  syncFetch,
 } from './account.ts';
 import { askComputer, canReachComputer, canSendNow, destination } from './computer.ts';
 import { serverName } from './server.ts';
@@ -25,24 +25,62 @@ export interface FillWay {
   via: 'computer' | 'sync';
   /** Asks for what filling needs, as the helper passes an ask to Factwright. */
   ask(ask: InboxAsk): Promise<SyncAnswer>;
-  /** Forgets what it read for the fill, once the fill's over. */
-  forget(): void;
 }
 
 /** Filling from Factwright on this computer. */
-export const onComputer: FillWay = { via: 'computer', ask: askComputer, forget: () => {} };
+export const onComputer: FillWay = { via: 'computer', ask: askComputer };
+
+/**
+ * The extension's sign-in, as a fill that started with it goes on: the token to send, which follows
+ * a new sign-in to the same account on the same server, as setting it up again makes. Signed out,
+ * or to another account or server, it's done. The server saying it's signed out forgets the sign-in
+ * only while it's still the one the server turned down, never a newer one.
+ */
+export function signInWatch(
+  account: Account & { keys: AccountKeys },
+  load: () => Promise<Account | null> = loadAccount,
+  forget: () => Promise<void> = forgetAccount,
+) {
+  let token = account.token;
+  return {
+    token: () => token,
+    signedIn: async () => {
+      const now = await load();
+      if (!now?.keys || now.server !== account.server || now.keys.id !== account.keys.id) {
+        return false;
+      }
+      token = now.token;
+      return true;
+    },
+    signedOut: async () => {
+      if ((await load())?.token === token) await forget();
+    },
+  };
+}
+
+/**
+ * The way through sync this page or the background fills with, for the account it's for, so each
+ * fill reads only what's changed since the last, until what they read is forgotten.
+ */
+let shared: { key: string; fill: SyncFill; way: FillWay } | null = null;
 
 /** Filling from your job hunt through sync, with the extension's sign-in and the account's keys. */
 export function throughSync(account: Account & { keys: AccountKeys }): FillWay {
+  const key = `${account.server}\n${account.keys.id}`;
+  if (shared?.key === key) return shared.way;
+  shared?.fill.forget();
+  const watch = signInWatch(account);
   const fill = new SyncFill({
-    client: clientFor(account.server, account.token),
+    client: new SyncClient({ server: account.server, token: watch.token, fetch: syncFetch }),
     keys: account.keys,
     device: `Factwright in ${browserName()}`,
     server: serverName(account.server),
-    signedOut: forgetAccount,
-    signedIn: async () => (await loadAccount())?.keys?.id === account.keys.id,
+    signedIn: watch.signedIn,
+    signedOut: watch.signedOut,
   });
-  return { via: 'sync', ask: (ask) => fill.ask(ask), forget: () => fill.forget() };
+  const way: FillWay = { via: 'sync', ask: (ask) => fill.ask(ask) };
+  shared = { key, fill, way };
+  return way;
 }
 
 /**
@@ -81,7 +119,6 @@ export async function firstAnswer(
       instead = true;
       continue;
     }
-    for (const other of ways) if (other !== way) other.forget();
     return { way, answer, instead };
   }
   throw new Error('There’s no way to fill.');

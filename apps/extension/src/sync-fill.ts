@@ -63,13 +63,13 @@ import {
   fileContents,
   inTurns,
   jobNotesPaths,
+  nothingSynced,
   openChange,
-  readSynced,
+  pullSynced,
   resumePaths,
   type Synced,
   type SyncedFile,
   syncedJobs,
-  textOf,
 } from './synced.ts';
 
 /**
@@ -78,22 +78,26 @@ import {
  * app's own code from @factwright/core, from what sync holds. Your street, postal code and
  * equal-opportunity answers never sync, so they're left for you. A form's new questions are left
  * with the job, for your Claude in Factwright to draft, and Mark as applied records what you sent.
- * What it reads stays in memory, for the fill, and is forgotten a few minutes after its last use.
+ * What it reads stays in memory, and each fill reads only what changed since, until it's forgotten
+ * a few minutes after its last use.
  */
 
-/** How long what a fill read stays in memory after it's last used. */
+/** How long what fills read stays in memory after it's last used. */
 export const KEEP_FOR_MS = 5 * 60 * 1000;
 
 /** How many times a change to a job is made again, on another device's newer version of it. */
 const TRIES = 5;
 
-/** What a fill read through sync, while it's kept. */
+/** What fills read through sync, while it's kept. */
 interface Read {
   synced: Synced;
+  /** Every job, as the app lists them. */
   jobs: Job[];
+  /** The jobs the app lists only from job searches' files, which a fill doesn't read. */
+  others: Job[];
   profile: ProfileForForms;
   history: WorkHistory;
-  /** Files' contents fetched for this fill, by their IDs, or null for one the store hasn't. */
+  /** Files' contents fetched, by their IDs, each once, or null for one the store hasn't. */
   contents: Map<string, Promise<Bytes | null>>;
 }
 
@@ -115,6 +119,13 @@ export interface SyncFillDeps {
   uuid?: () => string;
   /** Waits before trying again: a second, then two. */
   pause?: (ms: number) => Promise<void>;
+}
+
+/** A job's row, as a version of its record has it: the job's ID, the version and the row. */
+interface CurrentJob {
+  id: string;
+  version: number;
+  row: RowValues;
 }
 
 /** What answering an ask through sync comes to: what Factwright on a computer would answer. */
@@ -197,44 +208,70 @@ export class SyncFill {
     return { device: this.deps.device.slice(0, 200), at: this.now().toISOString() };
   }
 
-  /** What sync holds, read once for this fill, and kept a few minutes past its last use. */
-  private reading(): Promise<Read> {
+  /** Keeps what it read for a few minutes more. */
+  private keep(): void {
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.forget(), KEEP_FOR_MS);
-    if (!this.read) {
-      const read = this.readAll();
-      this.read = read;
-      read.catch(() => {
-        if (this.read === read) this.read = null;
-      });
-    }
-    return this.read;
   }
 
-  private async readAll(): Promise<Read> {
+  /** What sync holds, as fills last read it, or as it reads it now, for the first. */
+  private reading(): Promise<Read> {
+    this.keep();
+    return this.read ?? this.latest();
+  }
+
+  /**
+   * What sync holds now: what fills read before, with only what's changed since read again, one
+   * read after another.
+   */
+  private latest(): Promise<Read> {
+    this.keep();
+    const before = this.read;
+    const read = (before ?? Promise.resolve(null))
+      .catch(() => null)
+      .then((last) => this.readAgain(last));
+    this.read = read;
+    read.catch(() => {
+      if (this.read === read) this.read = null;
+    });
+    return read;
+  }
+
+  private async readAgain(last: Read | null): Promise<Read> {
     const { client, keys } = this.deps;
-    const synced = await readSynced(client, keys);
+    const synced = last?.synced ?? nothingSynced();
+    await pullSynced(client, keys, synced);
+    // Contents are kept by their IDs: only what changed is fetched again, and what's gone goes.
+    const current = new Set([...synced.files.values()].map((file) => file.id));
+    const contents = last?.contents ?? new Map<string, Promise<Bytes | null>>();
+    for (const id of contents.keys()) if (!current.has(id)) contents.delete(id);
+    const read = { synced, contents } as Read;
     const paths = jobNotesPaths(synced);
     const [notes, answers, history] = await Promise.all([
-      inTurns(paths, (path) => textOf(client, keys, synced, path)),
-      textOf(client, keys, synced, PROFILE_FILES.answers),
-      textOf(client, keys, synced, PROFILE_FILES.history),
+      inTurns(paths, (path) => this.text(read, path)),
+      this.text(read, PROFILE_FILES.answers),
+      this.text(read, PROFILE_FILES.history),
     ]);
     const texts = new Map<string, string>();
     paths.forEach((path, at) => {
       const text = notes[at];
       if (text) texts.set(path, text);
     });
+    const { listed, others } = syncedJobs(synced, texts);
     return {
-      synced,
-      jobs: syncedJobs(synced, texts),
+      ...read,
+      jobs: listed,
+      others,
       profile: profileForForms(json(answers)),
       history: readHistory(json(history)),
-      contents: new Map(),
     };
   }
 
-  /** A file's contents, fetched once for this fill. */
+  /** A job by its ID, among all the jobs read. */
+  private jobOf = (read: Read, id: string) =>
+    read.jobs.find((job) => job.id === id) ?? read.others.find((job) => job.id === id) ?? null;
+
+  /** A file's contents, fetched once. */
   private contents(read: Read, file: SyncedFile): Promise<Bytes | null> {
     const { client, keys } = this.deps;
     let contents = read.contents.get(file.id);
@@ -303,8 +340,11 @@ export class SyncFill {
 
   /** Answers for a form's fields, with the job it's for and the files there are to upload. */
   private async fill(ask: Extract<InboxAsk, { ask: 'fill' }>): Promise<SyncAnswer> {
-    const read = await this.reading();
-    const job = formJob(read.jobs, ask.url, ask.company, ask.role);
+    const read = await this.latest();
+    // The app's own list first, then a job a job search turned up, by its row.
+    const job =
+      formJob(read.jobs, ask.url, ask.company, ask.role) ??
+      formJob(read.others, ask.url, ask.company, ask.role);
     const folder = job?.folder ?? null;
     const [answers, letterJson, resume] = await Promise.all([
       folder ? this.text(read, `applications/${folder}/answers.md`) : null,
@@ -346,7 +386,7 @@ export class SyncFill {
    */
   private async file(ask: Extract<InboxAsk, { ask: 'file' }>): Promise<SyncAnswer> {
     const read = await this.reading();
-    const job = read.jobs.find((each) => each.id === ask.job);
+    const job = this.jobOf(read, ask.job);
     if (!job) return notFound('That job isn’t in your job hunt anymore.');
     for (const file of jobPdfs(job, ask.file)) {
       const synced = read.synced.files.get(file.path);
@@ -364,26 +404,37 @@ export class SyncFill {
     return notFound('That file changed since Factwright offered it. Click Fill again.');
   }
 
-  /**
-   * The latest version of a job's row, opened, or null once the job's gone: deleted, or never
-   * synced.
-   */
-  private async currentJob(jobId: string): Promise<{ change: Change; row: RowValues } | null> {
+  /** A job's row, as its latest version has it, with the version. */
+  private async currentJob(jobId: string): Promise<CurrentJob | null> {
     const { client, keys } = this.deps;
     const record = await recordId(keys, rowName('jobs', jobId));
     const [latest] = await client.versions(record);
     if (!latest || latest.deleted) return null;
     const change = await client.version(record, latest.version);
-    return change ? this.jobIn(change) : null;
+    return change ? this.jobIn(jobId, change) : null;
   }
 
   /** A job's row in a version of its record, opened, or null when it's deleted or doesn't open. */
-  private async jobIn(change: Change): Promise<{ change: Change; row: RowValues } | null> {
+  private async jobIn(id: string, change: Change): Promise<CurrentJob | null> {
     if (change.deleted) return null;
     const record = await openChange(this.deps.keys, change);
-    return record?.kind === 'row' && record.table === 'jobs' && record.row
-      ? { change, row: record.row }
+    return record?.kind === 'row' && record.table === 'jobs' && record.id === id && record.row
+      ? { id, version: change.version, row: record.row }
       : null;
+  }
+
+  /**
+   * The job an ID names now, as the app finds it: the job itself, or for one you merged into
+   * another, the job kept, as its latest version says. Null once it's gone.
+   */
+  private async jobNow(jobId: string): Promise<CurrentJob | null> {
+    let current = await this.currentJob(jobId);
+    for (let hop = 0; hop < TRIES && current; hop++) {
+      const into = trackedRow(current.row as StoredRow).mergedInto;
+      if (!into) return current;
+      current = await this.currentJob(into);
+    }
+    return null;
   }
 
   /**
@@ -393,20 +444,23 @@ export class SyncFill {
    * job's gone.
    */
   private async changeJob(
-    jobId: string,
+    job: CurrentJob,
     change: (row: RowValues) => RowValues | null,
   ): Promise<{ row: RowValues; changed: boolean } | null> {
     const { client, keys } = this.deps;
-    let current = await this.currentJob(jobId);
+    let current: CurrentJob | null = job;
     for (let attempt = 0; attempt < TRIES && current; attempt++) {
       const row = change(current.row);
       if (!row) return { row: current.row, changed: false };
-      const pushed = await rowChange(keys, 'jobs', jobId, row, this.made(), current.change.version);
+      const pushed = await rowChange(keys, 'jobs', job.id, row, this.made(), current.version);
       const [result] = (await client.push([pushed])).results;
       if (result?.ok) return { row, changed: true };
       if (result?.reason === 'full') throw new SyncError('full', 'full');
       if (result?.reason !== 'conflict') throw new Error('Sync turned the change away.');
-      current = result.current ? await this.jobIn(result.current) : null;
+      // The server has no version at all, as after a restore from a backup: it goes up as new.
+      current = result.current
+        ? await this.jobIn(job.id, result.current)
+        : { ...current, version: 0 };
     }
     if (current) throw new Error('The job kept changing in sync. Try again.');
     return null;
@@ -459,10 +513,8 @@ export class SyncFill {
    * keeps them: the form as its saved/<job>/form.json, and its questions added to the job's.
    */
   private async leave(ask: Extract<InboxAsk, { ask: 'draft' }>): Promise<SyncAnswer> {
-    const read = await this.reading();
-    if (!read.jobs.some((job) => job.id === ask.job)) {
-      return notFound('That job isn’t in your job hunt anymore.');
-    }
+    const job = await this.jobNow(ask.job);
+    if (!job) return notFound('That job isn’t in your job hunt anymore.');
     const form: SavedForm = {
       url: ask.url,
       read: this.now().toISOString(),
@@ -477,10 +529,10 @@ export class SyncFill {
         limit: each.limit,
       })),
     };
-    await this.keepFile(savedFormFile(ask.job), savedFormJson(form));
+    await this.keepFile(savedFormFile(job.id), savedFormJson(form));
     const questions = form.questions.map((each) => each.question);
     const at = this.made().at;
-    const changed = await this.changeJob(ask.job, (row) => {
+    const changed = await this.changeJob(job, (row) => {
       const added = withFormQuestions(trackedRow(row as StoredRow).questions, questions);
       return added ? { ...row, questions: JSON.stringify(added), updated_at: at } : null;
     });
@@ -499,25 +551,28 @@ export class SyncFill {
     const today = localDate(this.now());
     let recorded = 0;
     let applied = false;
-    const changed = await this.changeJob(ask.job, (row) => {
-      const job = trackedRow(row as StoredRow);
-      const sent = withSentAnswers(job.sent, answers, { today, now: made.at });
-      recorded = sent.recorded;
-      applied = !(job.status && SENT_STATUSES.includes(job.status));
-      if (recorded === 0 && !applied) return null;
-      return {
-        ...row,
-        ...(recorded > 0 && { sent: JSON.stringify(sent.sent) }),
-        ...(applied && {
-          status: 'applied',
-          status_on: today,
-          applied_on: job.appliedOn || today,
-        }),
-        updated_at: made.at,
-      };
-    });
-    if (!changed) return notFound('That job isn’t in your job hunt anymore.');
-    if (changed.changed && applied) await this.logApplied(ask.job, today, made);
+    const job = await this.jobNow(ask.job);
+    const changed =
+      job &&
+      (await this.changeJob(job, (row) => {
+        const job = trackedRow(row as StoredRow);
+        const sent = withSentAnswers(job.sent, answers, { today, now: made.at });
+        recorded = sent.recorded;
+        applied = !(job.status && SENT_STATUSES.includes(job.status));
+        if (recorded === 0 && !applied) return null;
+        return {
+          ...row,
+          ...(recorded > 0 && { sent: JSON.stringify(sent.sent) }),
+          ...(applied && {
+            status: 'applied',
+            status_on: today,
+            applied_on: job.appliedOn || today,
+          }),
+          updated_at: made.at,
+        };
+      }));
+    if (!job || !changed) return notFound('That job isn’t in your job hunt anymore.');
+    if (changed.changed && applied) await this.logApplied(job.id, today, made);
     return { ok: true, did: 'sent', job: askedRow(changed.row), recorded };
   }
 

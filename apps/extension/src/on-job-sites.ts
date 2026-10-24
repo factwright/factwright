@@ -318,17 +318,10 @@ async function answer(
   }
   const ways = await fillWays();
   if (!Array.isArray(ways)) return noWay(ways);
-  // Fields the page added keep the way its first answers came, and what it read for them.
-  const same = before?.url === url ? ways.find((each) => each.via === before.way.via) : undefined;
-  const { way, answer: planned } = await firstAnswer(same && before ? [before.way] : ways, (each) =>
-    planFill(form, job, each),
-  );
-  for (const each of ways) if (each !== way) each.forget();
+  const { way, answer: planned } = await firstAnswer(ways, (each) => planFill(form, job, each));
   if (!planned.ok || planned.did !== 'fill') {
-    way.forget();
     return planned.ok ? 'Factwright didn’t answer.' : planned.message;
   }
-  if (before && before.way !== way) before.way.forget();
   const page: OnPage = {
     place,
     url,
@@ -351,9 +344,8 @@ async function answer(
 const inCopyOnly = (top: string, around: readonly string[]) =>
   [top, ...around].some((url) => url !== '' && isCopyOnlySite(url));
 
-/** Forgets what the background knows of a frame's page, and what it read for it through sync. */
+/** Forgets what the background knows of a frame's page. */
 function forgetPage(place: FormPlace): void {
-  pages.get(keyOf(place))?.way.forget();
   pages.delete(keyOf(place));
   scripts.delete(keyOf(place));
 }
@@ -488,20 +480,10 @@ async function fillHere(tab: Tab & { id: number }, place: FormPlace): Promise<Fi
   const shows = await readFormJob(tab, place.frameId);
   const { way, answer: plan } = await firstAnswer(ways, (each) => planFill(form, shows, each));
   if (!plan.ok || plan.did !== 'fill') {
-    way.forget();
     return problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message);
   }
   const filled = new Map<string, FieldFilled>();
-  // What it read through sync is for this fill alone.
-  const done = await fillInPasses({
-    place,
-    way,
-    form,
-    plan,
-    shows,
-    filled,
-    stale: () => false,
-  }).finally(() => way.forget());
+  const done = await fillInPasses({ place, way, form, plan, shows, filled, stale: () => false });
   if (done === 'elsewhere') return problem('This tab has moved on from the form.');
   if (done !== true) return problem('Factwright can’t reach this page anymore.');
   const unsaved = plan.job ? '' : ' Save the job first to upload its resume.';
@@ -611,11 +593,7 @@ export function onJobSiteMessage(
 
 /** Forgets a tab's forms, in each of its frames, once it closes. */
 export function forgetTab(tabId: number): void {
-  for (const [key, page] of pages) {
-    if (page.place.tabId !== tabId) continue;
-    page.way.forget();
-    pages.delete(key);
-  }
+  for (const [key, page] of pages) if (page.place.tabId === tabId) pages.delete(key);
   for (const [key, script] of scripts) if (script.tabId === tabId) scripts.delete(key);
   void forgetFrame(tabId);
 }
