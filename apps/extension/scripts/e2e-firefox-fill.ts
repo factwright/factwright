@@ -306,6 +306,8 @@ try {
   if (!('error' in helper) || !/no such native application/i.test(helper.error ?? '')) {
     throw new Error(`Firefox found a helper the run didn’t register: ${JSON.stringify(helper)}`);
   }
+  // The frame takes a click only once it's shown for half a second, as a person sees it first.
+  await new Promise((resolve) => setTimeout(resolve, 600));
   await click(fillButton, 'Fill');
   await says(fillButton, 'couldn’t find Factwright');
   check(

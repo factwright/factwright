@@ -187,7 +187,7 @@ await build({
     outDir: join(DIST, 'build'),
     emptyOutDir: false,
     minify: false,
-    target: ['chrome127', 'firefox140'],
+    target: ['chrome130', 'firefox140'],
     lib: {
       entry: join(ROOT, 'src', 'content.ts'),
       formats: ['iife'],

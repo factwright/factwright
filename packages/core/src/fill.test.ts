@@ -525,6 +525,77 @@ describe('answering a form from what’s on file', () => {
     expect(answer(question, { control: 'long' })).not.toHaveProperty('others');
   });
 
+  it('answers as before when the newest you sent is too long, offering an older one beside it', () => {
+    const question = 'What’s the biggest product bet you’ve made?';
+    const sent = [
+      { question, text: 'x'.repeat(300), on: '2026-10-20', company: 'Northwind' },
+      { question, text: 'A pricing change.', on: '2026-10-12', company: 'Lumen Health' },
+    ];
+    const older = {
+      text: 'A pricing change.',
+      source: 'sent',
+      from: 'From your Lumen Health application, Oct 12',
+    };
+    // With your Claude's draft, the draft is the answer, as it was.
+    const drafted: OnFile = {
+      ...ON_FILE,
+      sent,
+      suggested: [{ question, answer: 'Your Claude’s take.', why: null, batch: 1 }],
+    };
+    expect(answer(question, { control: 'long', limit: 200 }, drafted)).toEqual({
+      kind: 'question',
+      text: 'Your Claude’s take.',
+      source: 'claude',
+      from: 'Your Claude’s draft for this job',
+      others: [older],
+    });
+    // With none, it's left for you, as it was, and with one that says it's yours, with why.
+    expect(
+      answer(question, { control: 'long', limit: 200 }, { ...ON_FILE, sent, suggested: [] }),
+    ).toEqual({ kind: 'question', source: 'you', left: 'new' });
+    const yours: OnFile = {
+      ...ON_FILE,
+      sent,
+      suggested: [{ question, answer: 'For you: not on file.', why: null, batch: 1 }],
+    };
+    expect(answer(question, { control: 'long', limit: 200 }, yours)).toEqual({
+      kind: 'question',
+      source: 'you',
+      left: 'new',
+      from: 'For you: not on file.',
+    });
+  });
+
+  it('keeps a long form’s other answers within what the extension’s helper takes', () => {
+    const questions = Array.from({ length: 40 }, (_, at) => `Question ${at}: tell us more?`);
+    const many: OnFile = {
+      ...ON_FILE,
+      sent: questions.flatMap((question) =>
+        ['Acme', 'Fernway', 'Lumen'].map((company, at) => ({
+          question,
+          text: `Take ${at + 1}: ${'words '.repeat(500)}`,
+          on: '2026-10-12',
+          company,
+        })),
+      ),
+    };
+    const replies = answerForm(
+      questions.map((question) => field(question, { control: 'long' })),
+      many,
+    );
+    const carried = replies.reduce(
+      (sum, reply) =>
+        sum + (reply.others ?? []).reduce((all, other) => all + (other.text?.length ?? 0), 0),
+      0,
+    );
+    expect(carried).toBeGreaterThan(0);
+    expect(carried).toBeLessThanOrEqual(100_000);
+    // Each field keeps its own answer, whatever its others.
+    expect(
+      replies.every((reply) => reply.source === 'sent' && reply.text?.startsWith('Take 1')),
+    ).toBe(true);
+  });
+
   it('gives what you sent before over a draft that says the question is yours', () => {
     const question = 'Tell us about a time you used HL7.';
     const both: OnFile = {

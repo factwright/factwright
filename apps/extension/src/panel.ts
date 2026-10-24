@@ -923,11 +923,15 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
   render(filling);
 });
 
-// The Fill button on a job site you allowed, clicked while the panel shows: it fills that form,
-// unless it started filling since, as it does when the click is what opened it.
+// The Fill button on a job site you allowed, clicked while the panel shows: the panel beside that
+// tab fills its form, unless it started filling since, as it does when the click is what opened
+// it. A panel in another window, beside another tab, carries on with its own form.
 ext.runtime.onMessage.addListener((message, sender) => {
   if (sender.id !== ext.runtime.id || sender.tab || !isToPanel(message)) return undefined;
-  if (message.at > startedAt) void begin();
+  if (message.at <= startedAt) return undefined;
+  void ext.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+    if (tab?.id === message.tabId && message.at > startedAt) void begin();
+  });
   return undefined;
 });
 

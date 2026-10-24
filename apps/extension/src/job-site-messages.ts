@@ -105,6 +105,9 @@ const MAX_TEXT = 500;
 const MAX_VALUE = 10_000;
 const MAX_URL = 4000;
 
+/** The longest address the script asks about a page at: no job's is longer. */
+export const MOST_URL = MAX_URL;
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 

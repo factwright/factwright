@@ -93,7 +93,10 @@ body.frame main {
   font-size: 12px;
 }
 
-/* A menu: its heading, each answer in a row of a fixed height, and the offer to save. */
+/*
+ * A menu: its heading, its answers in room for two rows of a fixed height, where more scroll, so
+ * the frame is the same size however many there are, and the offer to save.
+ */
 .menu {
   height: 100%;
   box-sizing: border-box;
@@ -119,10 +122,31 @@ body.frame main {
   border-bottom: 1px solid var(--fw-border);
 }
 
+.menu .head .count {
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.menu .rows {
+  height: 112px;
+  flex: none;
+  overflow-y: auto;
+}
+
 .menu ul {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.menu .hint {
+  margin: 0;
+  height: 56px;
+  box-sizing: border-box;
+  padding: 10px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--fw-muted);
 }
 
 .menu .answer {
@@ -178,7 +202,7 @@ body.frame main {
   gap: 2px;
 }
 
-.menu ul + .save {
+.menu .rows + .save {
   border-top: 1px solid var(--fw-border);
 }
 

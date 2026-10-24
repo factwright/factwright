@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { menuHeight } from '../src/frame-size.ts';
 import type { FieldMenu } from '../src/job-site-messages.ts';
 import type { PageForm } from '../src/page/form.ts';
 
@@ -19,6 +20,8 @@ const extension = vi.hoisted(() => {
     ) => unknown)[],
     /** Each field's menu, by its question: how many answers, and whether Profile keeps it. */
     menus: {} as Record<string, { answers: number; keeps: boolean }>,
+    /** How many answers a menu the script opens has. */
+    shown: 1,
   };
   const answer = (message: Record<string, unknown>): unknown => {
     switch (message.do) {
@@ -36,7 +39,7 @@ const extension = vi.hoisted(() => {
           ),
         };
       case 'menu':
-        return { answers: message.answers ? 1 : 0, save: message.save };
+        return { answers: message.answers ? state.shown : 0, save: message.save };
       case 'left':
         return { offer: false };
       default:
@@ -97,6 +100,7 @@ beforeEach(() => {
   });
   roots.clear();
   extension.allowed = true;
+  extension.shown = 1;
   extension.sent.length = 0;
   extension.menus = {
     'Full name': { answers: 1, keeps: false },
@@ -183,6 +187,40 @@ describe('the script on a job site you allowed', () => {
     expect(input('name').value).toBe('');
     // Nothing the script sends has an answer: the frame gets them from the background.
     expect(JSON.stringify(extension.sent)).not.toContain('Ana');
+  });
+
+  it('is the same size however many answers it has, so the page can’t count them', async () => {
+    script = startScript(() => true);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    clickIn('name');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    const one = frames()[1]?.host.style.getPropertyValue('height');
+    extension.shown = 3;
+    clickIn('email');
+    await vi.waitFor(() => expect(sentOf('menu')).toHaveLength(2));
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    expect(frames()[1]?.host.style.getPropertyValue('height')).toBe(one);
+    expect(one).toBe(`${menuHeight(false)}px`);
+  });
+
+  it('opens where you tab to, or click a field’s label, and nowhere the page moves the cursor as you type', async () => {
+    script = startScript(() => true);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    // You type in one field, and the page puts the cursor in another.
+    input('note').dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    input('email').focus();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('menu')).toEqual([]);
+    // You click the name's label, and the browser puts the cursor in its field.
+    const label = document.querySelector('label[for="name"]') as HTMLLabelElement;
+    label.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    input('name').focus();
+    await vi.waitFor(() => expect(sentOf('menu')).toHaveLength(1));
+    // You press Tab to the next field.
+    input('name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    input('phone').focus();
+    await vi.waitFor(() => expect(sentOf('menu')).toHaveLength(2));
+    expect(sentOf('menu')[1]).toMatchObject({ ref: 2 });
   });
 
   it('opens nothing where the page puts the cursor itself', async () => {

@@ -158,7 +158,7 @@ export interface Ext {
     setBadgeText(details: { text: string; tabId?: number }): Promise<void>;
     setBadgeBackgroundColor(details: { color: string; tabId?: number }): Promise<void>;
     setTitle(details: { title: string; tabId?: number }): Promise<void>;
-    /** Opens the popup, where the browser allows it: Chrome 127 on, and Firefox on a click. */
+    /** Opens the popup, where the browser allows it: Chrome, and Firefox on a click. */
     openPopup?(): Promise<void>;
   };
   contextMenus: {

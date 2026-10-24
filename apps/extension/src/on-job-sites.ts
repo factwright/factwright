@@ -82,16 +82,15 @@ const choosing = (field: PageField) => field.control === 'choice' || field.contr
 
 /**
  * The answers a field's menu offers: Factwright's answer for it, and any others on file it gave
- * with it, as the panel would fill them. None for a field that's left for you, a file, a box to
- * tick, or a password. An equal-opportunity answer is offered only as one of the question's own
- * options to pick, never as words to type, and only as you set it in Profile, which leaves it for
- * you unless you chose one.
+ * with it, as the panel would fill them, each in the form's own words for the options it would
+ * pick. None for a field that's left for you, a file, a box to tick, or a password. None for an
+ * equal-opportunity question either, which keeps the panel's rules: Fill picks your answer among
+ * its options, as you set it in Profile, and a menu that showed only where you set one would tell
+ * the site you had.
  */
 export function menuAnswers(field: PageField, reply: FieldReply | undefined): Offered[] {
-  if (!reply || reply.source === 'you' || reply.file) return [];
+  if (!reply || reply.source === 'you' || reply.file || isEqualOpportunity(reply.kind)) return [];
   if (field.control === 'check' || field.control === 'file' || field.type === 'password') return [];
-  const sensitive = isEqualOpportunity(reply.kind);
-  if (sensitive && !choosing(field)) return [];
   const asked: FieldReply[] = [
     reply,
     ...(reply.others ?? []).map((other) => ({ kind: reply.kind, ...other })),
@@ -99,19 +98,28 @@ export function menuAnswers(field: PageField, reply: FieldReply | undefined): Of
   const offered = asked.flatMap((each): Offered[] => {
     const from = answerSource(each);
     if (each.pick?.length) {
-      // The form's own words for the option, where the form shows its options.
-      const option =
-        field.options.length > 0 ? optionFor(field.options, each.pick, each.exact) : each.pick[0];
-      if (!option) return [];
+      // The form's own words for each option it would pick: one of a choice's, or each of a set
+      // of boxes' that one of the picks names, as filling it ticks them all.
+      const options =
+        field.options.length === 0
+          ? each.pick.slice(0, 1)
+          : field.control === 'choices'
+            ? [
+                ...new Set(
+                  each.pick.flatMap((pick) => optionFor(field.options, [pick], each.exact) ?? []),
+                ),
+              ]
+            : [optionFor(field.options, each.pick, each.exact) ?? ''].filter(Boolean);
+      if (options.length === 0) return [];
       return [
         {
-          shown: { text: option, from },
+          shown: { text: options.join(', '), from },
           answer: { pick: each.pick, ...(each.exact && { exact: true }) },
         },
       ];
     }
-    // An equal-opportunity answer is never typed, and a choice takes only its own options.
-    if (sensitive || choosing(field) || !each.text?.trim()) return [];
+    // A choice takes only its own options.
+    if (choosing(field) || !each.text?.trim()) return [];
     return [{ shown: { text: each.text, from }, answer: { text: each.text } }];
   });
   // The same words twice are one answer.
@@ -128,15 +136,13 @@ export function menuAnswers(field: PageField, reply: FieldReply | undefined): Of
 
 /**
  * Whether what you give a field is one Profile can keep, so leaving it may offer to save it: a
- * kind Profile keeps, never a file or a password, and an equal-opportunity answer only as you
- * picked it among the question's options.
+ * kind Profile keeps, never a file or a password. Never an equal-opportunity answer, which the
+ * panel offers to keep when you mark the job applied, as the menu's offer would show the site
+ * whether Profile had it.
  */
 export function keepsAnswer(field: PageField, reply: FieldReply | undefined): boolean {
-  if (!reply || !isRemembered(reply.kind)) return false;
-  if (field.control === 'file' || field.control === 'check' || field.type === 'password') {
-    return false;
-  }
-  return isEqualOpportunity(reply.kind) ? choosing(field) : true;
+  if (!reply || !isRemembered(reply.kind) || isEqualOpportunity(reply.kind)) return false;
+  return field.control !== 'file' && field.control !== 'check' && field.type !== 'password';
 }
 
 /** A new answer you gave a field, which the menu offers to keep, once. */

@@ -15,8 +15,12 @@ export interface ApplicantSystem {
 }
 
 /**
- * The applicant systems most companies' application forms are on, each by the sites only its
- * job pages and forms are on, never its own home page or the one its customers sign in to.
+ * The applicant systems most companies' application forms are on, each by the sites its job pages
+ * and forms are on, never its own home page. Those that give each company a site under one name,
+ * as Workday, iCIMS and Taleo do, take in the whole name: iCIMS and Taleo keep more there than job
+ * pages, such as their customers' own sign-ins, which the script then runs on too, but for iCIMS's
+ * home page. There, as anywhere it runs, it shows its Fill button only on a page with an
+ * application form, and a menu only in a field you go to that Factwright has an answer for.
  */
 export const APPLICANT_SYSTEMS: readonly ApplicantSystem[] = [
   {

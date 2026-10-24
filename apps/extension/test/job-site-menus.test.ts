@@ -165,22 +165,44 @@ describe('what a field’s menu offers', () => {
     ).toEqual([]);
   });
 
-  it('an equal-opportunity answer only to pick, in the form’s own words, as set in Profile', () => {
+  it('nothing for an equal-opportunity question, whatever’s on file, which Fill answers as the panel does', () => {
     const gender = FORM.fields[2] as PageField;
-    expect(menuAnswers(gender, REPLIES[2])).toEqual([
-      {
-        shown: { text: 'Female', from: 'From Profile' },
-        answer: { pick: ['Woman', 'Female'] },
-      },
-    ]);
-    // Never typed into a box, whatever's on file, and nothing where Profile says "Leave for me".
+    // Set in Profile, picked among its options by Fill: a menu showing only where you set one
+    // would tell the site you had.
+    expect(menuAnswers(gender, REPLIES[2])).toEqual([]);
     expect(
       menuAnswers(field(0, 'Your gender'), { kind: 'gender', text: 'Woman', source: 'profile' }),
     ).toEqual([]);
-    expect(
-      menuAnswers(field(0, 'Your gender'), { kind: 'gender', pick: ['Woman'], source: 'profile' }),
-    ).toEqual([]);
     expect(menuAnswers(gender, { kind: 'gender', source: 'you', left: 'sensitive' })).toEqual([]);
+  });
+
+  it('a choice in the form’s own words, and for a set of boxes, each one picking it ticks', () => {
+    const pick = field(0, 'Will you need sponsorship?', {
+      control: 'choice',
+      type: 'radio',
+      options: ['Yes, now', 'No, never'],
+    });
+    expect(
+      menuAnswers(pick, { kind: 'sponsorship', pick: ['No'], source: 'profile' })[0]?.shown,
+    ).toEqual({ text: 'No, never', from: 'From Profile' });
+    const tools = field(0, 'Which tools do you use?', {
+      control: 'choices',
+      type: 'checkbox',
+      options: ['SQL', 'Python', 'Excel'],
+    });
+    const drafted: FieldReply = {
+      kind: 'question',
+      pick: ['SQL', 'Python'],
+      exact: true,
+      source: 'claude',
+      from: 'Your Claude’s draft for this job',
+    };
+    expect(menuAnswers(tools, drafted)).toEqual([
+      {
+        shown: { text: 'SQL, Python', from: 'Your Claude’s draft for this job' },
+        answer: { pick: ['SQL', 'Python'], exact: true },
+      },
+    ]);
   });
 
   it('a choice only as one of its own options', () => {
@@ -222,9 +244,10 @@ describe('what a field’s menu offers', () => {
 });
 
 describe('what you give a field, offered to keep', () => {
-  it('only for a field whose answer Profile keeps, and an equal-opportunity one only as picked', () => {
+  it('only for a field whose answer Profile keeps, never an equal-opportunity one', () => {
     expect(keepsAnswer(FORM.fields[1] as PageField, REPLIES[1])).toBe(true);
-    expect(keepsAnswer(FORM.fields[2] as PageField, REPLIES[2])).toBe(true);
+    // The panel offers that one when you mark the job applied, out of the site's sight.
+    expect(keepsAnswer(FORM.fields[2] as PageField, REPLIES[2])).toBe(false);
     expect(keepsAnswer(field(0, 'Your gender'), { kind: 'gender', source: 'you' })).toBe(false);
     expect(keepsAnswer(FORM.fields[3] as PageField, REPLIES[3])).toBe(false);
     expect(keepsAnswer(field(0, 'Name'), REPLIES[0])).toBe(false);
@@ -233,7 +256,7 @@ describe('what you give a field, offered to keep', () => {
     ).toBe(false);
   });
 
-  it('only when it’s new, and an equal-opportunity answer kept on this computer alone', () => {
+  it('only when it’s new, and kept on this computer alone where Profile keeps it there', () => {
     expect(newAnswerFor(FORM, 1, REPLIES[1], '(303) 555-0142')).toBeNull();
     expect(newAnswerFor(FORM, 1, REPLIES[1], '(720) 555-0123')).toMatchObject({
       kind: 'phone',
@@ -245,7 +268,11 @@ describe('what you give a field, offered to keep', () => {
     expect(newAnswerFor(FORM, 3, REPLIES[3], 'Because.')).toBeNull();
     expect(
       newAnswerFor(FORM, 2, { kind: 'gender', source: 'you', left: 'sensitive' }, 'Female'),
-    ).toMatchObject({ kind: 'gender', text: 'Female', private: true });
+    ).toBeNull();
+    const street: PageForm = { ...FORM, fields: [field(0, 'Street address')] };
+    expect(
+      newAnswerFor(street, 0, { kind: 'street', source: 'you', left: 'unset' }, '1420 Larimer St'),
+    ).toMatchObject({ kind: 'street', text: '1420 Larimer St', private: true });
   });
 });
 
@@ -273,7 +300,7 @@ describe('the script and the frame, as the background answers them', () => {
       menus: [
         { ref: 0, key: FORM.fields[0]?.key, answers: 1, keeps: false },
         { ref: 1, key: FORM.fields[1]?.key, answers: 1, keeps: true },
-        { ref: 2, key: FORM.fields[2]?.key, answers: 1, keeps: true },
+        { ref: 2, key: FORM.fields[2]?.key, answers: 0, keeps: false },
         { ref: 3, key: FORM.fields[3]?.key, answers: 0, keeps: false },
       ],
     });

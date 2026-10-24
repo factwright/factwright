@@ -489,6 +489,8 @@ try {
    * another process, as it does in a window as big as its page.
    */
   const press = async (button: ReturnType<Page['locator']>) => {
+    // The frame takes a click only once it's shown for half a second, as a person sees it first.
+    await form.waitForTimeout(600);
     await button.focus();
     await form.keyboard.press('Enter');
   };

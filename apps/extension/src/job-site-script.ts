@@ -1,7 +1,13 @@
 import { looksLikeApplication } from './application-form.ts';
 import { ext } from './ext.ts';
 import { BUTTON, BUTTON_CARD, MENU_WIDTH, menuHeight } from './frame-size.ts';
-import { type FieldMenu, type FromScript, isToScript, type Written } from './job-site-messages.ts';
+import {
+  type FieldMenu,
+  type FromScript,
+  isToScript,
+  MOST_URL,
+  type Written,
+} from './job-site-messages.ts';
 import { type FieldAnswer, type FormAnswer, formPage, type PageForm } from './page/form.ts';
 import { readJobPage } from './page/read-job.ts';
 import { type Box, EDGE, placeButton, placeMenu, type Size } from './place.ts';
@@ -20,8 +26,11 @@ import { type Box, EDGE, placeButton, placeMenu, type Size } from './place.ts';
  * to save it. It never fills a password, never submits, and never clicks a button that would.
  */
 
-/** How soon after your own click or key press a field you land in counts as one you chose. */
+/** How soon after your own click, or your Tab, a field you land in counts as one you chose. */
 const YOURS_MS = 1000;
+
+/** How far up from a field your click may be, on a box around it, and count as on it. */
+const AROUND = 3;
 
 /**
  * How long it waits for the page to settle after it changes, before reading the form again, and
@@ -35,6 +44,9 @@ const CARD_MS = 15_000;
 
 /** How long it waits before asking Factwright for answers again, once it couldn't. */
 const AGAIN_MS = 30_000;
+
+/** How long after the page's look changes, as a list opening, it places the frame again. */
+const RESTYLED_MS = 100;
 
 /** What the page's own controls are, which the frame never covers. */
 const CONTROLS = [
@@ -70,9 +82,28 @@ const CONTROLS = [
   ].map((role) => `[role="${role}"]`),
 ].join(', ');
 
+/**
+ * What may be a control the page made itself, which it can be clicked on, and takes the keyboard:
+ * one as small as a control, never a box that holds the page's parts.
+ */
+const MAYBE_CONTROLS = '[tabindex]:not([tabindex="-1"]), [onclick]';
+
+/** What a page's own control looks like, at most: no wider than half the window, nor taller than a quarter. */
+const controlSized = (box: Box) => box.width <= innerWidth / 2 && box.height <= innerHeight / 4;
+
+/** The options a label can be for, which clicking anywhere on the label picks. */
+const OPTIONS = 'input[type="checkbox"], input[type="radio"]';
+
 interface Frame {
   host: HTMLElement;
   frame: HTMLIFrameElement;
+}
+
+/** The page's own controls, those it may have made itself, and its labels and legends. */
+interface Found {
+  controls: Element[];
+  maybe: Element[];
+  labels: Element[];
 }
 
 /** The script, running on a page, which stops when the extension tells it to. */
@@ -106,8 +137,12 @@ export function startScript(
   let pendingSave: number | null = null;
   /** The fields you've typed in or picked an answer in, by their keys. */
   const typed = new Set<string>();
-  /** When you last clicked or pressed a key in the page. */
-  let lastInput = 0;
+  /** Your last click in the page, when and on what, and your last Tab. */
+  let lastPointer: { at: number; target: EventTarget | null } = { at: 0, target: null };
+  let lastTab = 0;
+  /** The page's own controls, and its labels and legends, as last found, until the page changes. */
+  let found: Found | null = null;
+  let restyled: ReturnType<typeof setTimeout> | null = null;
   /**
    * The field it's putting your pick in, and the control it puts the cursor in itself: landing
    * there is its own doing, not yours, so neither opens a menu.
@@ -131,8 +166,9 @@ export function startScript(
     try {
       return ((await ext.runtime.sendMessage(message)) as Answer | undefined) ?? null;
     } catch {
-      // The extension was updated or turned off: this copy of the script is done.
-      stop();
+      // The extension was updated or turned off: this copy of the script is done. Any other
+      // failure is only this message's.
+      if (!ext.runtime?.id) stop();
       return null;
     }
   };
@@ -202,12 +238,14 @@ export function startScript(
     if (menus && !again) return Promise.resolve(menus);
     if (planning && !again) return planning;
     if (!form || (!again && Date.now() - failedAt < AGAIN_MS)) return Promise.resolve(null);
+    // A page at an address longer than any job's gets no menus: the panel has its answers.
+    if (form.url.length > MOST_URL) return Promise.resolve(null);
     const asked = form;
     const job = readJobPage(document, location.href, '');
     planning = ask<{ menus: FieldMenu[] | null }>({
       type: 'job-site',
       do: 'form',
-      form: asked,
+      form: { ...asked, title: asked.title.slice(0, 1000) },
       job: { company: job.company.slice(0, 500), role: job.title.slice(0, 500) },
     }).then((said) => {
       stopIf(said);
@@ -255,23 +293,58 @@ export function startScript(
     box.top + box.height > 0;
 
   /**
-   * The page's own controls in the window, as boxes: each control, and the words of each label,
-   * as a label can be as wide as its row, around its field.
+   * The page's own controls, and its labels and legends: in the page, and in each part of it that
+   * keeps its own elements, as a component does, where the page leaves that open.
+   */
+  function controlElements(): Found {
+    if (found) return found;
+    const all: Found = { controls: [], maybe: [], labels: [] };
+    const collect = (root: Document | ShadowRoot) => {
+      all.controls.push(...root.querySelectorAll(CONTROLS));
+      all.maybe.push(...root.querySelectorAll(MAYBE_CONTROLS));
+      all.labels.push(...root.querySelectorAll('label, legend'));
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const inner = (node as Element).shadowRoot;
+        if (inner && !mine.has(node)) collect(inner);
+      }
+    };
+    collect(document);
+    found = all;
+    return all;
+  }
+
+  /** Whether the page shows an element, see-through or not: a box you can't see may still take a click. */
+  const showsIt = (element: Element) =>
+    (element as HTMLElement).checkVisibility?.({ visibilityProperty: true }) !== false;
+
+  /**
+   * The page's own controls in the window, as boxes: each control, and one the page made itself,
+   * as small as a control; each option's label, which picks it, whole; and the words of each other
+   * label and legend, as one can be as wide as its row, around its field.
    */
   function controlBoxes(): Box[] {
     const boxes: Box[] = [];
-    for (const element of document.querySelectorAll(CONTROLS)) {
+    const { controls, maybe, labels } = controlElements();
+    for (const element of controls) {
       const box = boxOf(element);
-      if (!inView(box)) continue;
-      const visible = (element as HTMLElement).checkVisibility?.({
-        visibilityProperty: true,
-        opacityProperty: true,
-      });
-      if (visible === false) continue;
-      boxes.push(box);
+      if (inView(box) && showsIt(element)) boxes.push(box);
+    }
+    for (const element of maybe) {
+      const box = boxOf(element);
+      if (inView(box) && controlSized(box) && showsIt(element)) boxes.push(box);
     }
     const range = document.createRange();
-    for (const label of document.querySelectorAll('label, legend')) {
+    for (const label of labels) {
+      const option =
+        label.matches('label') &&
+        (label.querySelector(OPTIONS) !== null ||
+          (label as HTMLLabelElement).control?.matches(OPTIONS) === true);
+      if (option) {
+        const box = boxOf(label);
+        if (inView(box) && showsIt(label)) boxes.push(box);
+        continue;
+      }
       const words = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
       for (let node = words.nextNode(); node; node = words.nextNode()) {
         if (!node.textContent?.trim()) continue;
@@ -297,6 +370,7 @@ export function startScript(
     frame.src = src;
     root.append(style, frame);
     mine.add(host);
+    // The page's styles can't hide it, fade it or cut it, or let a click go through it.
     for (const [name, value] of Object.entries({
       position: 'fixed',
       'z-index': '2147483647',
@@ -307,6 +381,15 @@ export function startScript(
       opacity: '1',
       visibility: 'visible',
       transform: 'none',
+      translate: 'none',
+      rotate: 'none',
+      scale: 'none',
+      filter: 'none',
+      'backdrop-filter': 'none',
+      'clip-path': 'none',
+      mask: 'none',
+      'mix-blend-mode': 'normal',
+      'pointer-events': 'auto',
     })) {
       host.style.setProperty(name, value, 'important');
     }
@@ -354,10 +437,10 @@ export function startScript(
     save: boolean;
   }
 
-  /** The menu's size, for some answers, with or without the offer to keep one. */
-  const sizeFor = (answers: number, save: boolean): Size => ({
+  /** The menu's size, with or without the offer to keep an answer, however many answers it has. */
+  const sizeFor = (save: boolean): Size => ({
     width: Math.min(MENU_WIDTH, innerWidth - 2 * EDGE),
-    height: menuHeight(answers, save),
+    height: menuHeight(save),
   });
 
   /** Where a menu goes beside a field, or null where there's no room that covers nothing. */
@@ -386,9 +469,7 @@ export function startScript(
       tries.push({ at, answers: true, save: true });
     if (saveAt !== null) tries.push({ at: saveAt, answers: false, save: true });
     if (at !== null && answers > 0) tries.push({ at, answers: true, save: false });
-    const fits = tries.find(
-      (each) => placeFor(each.at, sizeFor(each.answers ? answers : 0, each.save)) !== null,
-    );
+    const fits = tries.find((each) => placeFor(each.at, sizeFor(each.save)) !== null);
     const field = fits ? form?.fields[fits.at] : null;
     if (!fits || !field) {
       closeMenu();
@@ -418,7 +499,7 @@ export function startScript(
     if (said.save) pendingSave = null;
     closeMenu();
     // What the background has to show, which is what it was asked for, unless that's changed.
-    const size = sizeFor(said.answers, said.save);
+    const size = sizeFor(said.save);
     const place = placeFor(fits.at, size);
     if (!place) {
       void ask({ type: 'job-site', do: 'closed', token });
@@ -469,7 +550,25 @@ export function startScript(
 
   // --- Where you are --------------------------------------------------------------------------
 
-  const yours = () => Date.now() - lastInput < YOURS_MS;
+  /**
+   * Whether you put the cursor in an element yourself: you pressed Tab, or clicked on it, its
+   * label, or a box just around it, a moment ago. Never the page's own doing, as a page putting
+   * the cursor in a field as you type elsewhere.
+   */
+  const yours = (element: Element): boolean => {
+    const now = Date.now();
+    if (now - lastTab < YOURS_MS) return true;
+    const { at, target } = lastPointer;
+    if (now - at >= YOURS_MS || !(target instanceof Node)) return false;
+    if (target === element || element.contains(target)) return true;
+    let up: Element | null = element;
+    for (let level = 0; level < AROUND && up; level++) {
+      up = up.parentElement;
+      if (up === target) return true;
+    }
+    const label = (target instanceof Element ? target : target.parentElement)?.closest('label');
+    return label instanceof HTMLLabelElement && label.control === element;
+  };
 
   /** You're in a field: its menu, if Factwright has answers, or the offer to keep a new one. */
   async function arrived(element: Element): Promise<void> {
@@ -565,14 +664,14 @@ export function startScript(
 
   // --- Listening ------------------------------------------------------------------------------
 
-  const onInput = (event: Event) => {
+  const onPointer = (event: Event) => {
     if (!yourOwn(event)) return;
-    lastInput = Date.now();
+    lastPointer = { at: Date.now(), target: event.composedPath?.()[0] ?? event.target };
   };
   const onFocusIn = (event: FocusEvent) => {
     const target = event.target;
     if (!(target instanceof Element) || mine.has(target) || target === ownFocus) return;
-    if (!yours() || (writing !== null && fieldOf(target) === writing)) return;
+    if (!yours(target) || (writing !== null && fieldOf(target) === writing)) return;
     void arrived(target);
   };
   const onFocusOut = (event: FocusEvent) => {
@@ -593,8 +692,9 @@ export function startScript(
     if (field) typed.add(field.key);
   };
   const onKey = (event: KeyboardEvent) => {
-    onInput(event);
-    if (!menu || !yourOwn(event)) return;
+    if (!yourOwn(event)) return;
+    if (event.key === 'Tab') lastTab = Date.now();
+    if (!menu) return;
     if (event.key === 'Escape') {
       closeMenu();
       return;
@@ -626,15 +726,26 @@ export function startScript(
       placeTheButton();
     });
   };
+  /** Places the frame again a moment after the page's look changes, as a list of its own opens. */
+  const onRestyled = () => {
+    if (restyled) return;
+    restyled = setTimeout(() => {
+      restyled = null;
+      onMove();
+    }, RESTYLED_MS);
+  };
   const observer = new MutationObserver((changes) => {
     const ours = (node: Node) => mine.has(node);
-    if (
-      changes.every(
-        (change) => [...change.addedNodes].every(ours) && [...change.removedNodes].every(ours),
-      )
-    ) {
-      return;
+    const added = changes.filter(
+      (change) =>
+        change.type === 'childList' &&
+        !([...change.addedNodes].every(ours) && [...change.removedNodes].every(ours)),
+    );
+    if (changes.some((change) => change.type === 'attributes' && !ours(change.target))) {
+      onRestyled();
     }
+    if (added.length === 0) return;
+    found = null;
     onMove();
     // The form is read again once the page settles, or every couple of seconds while it doesn't.
     const now = Date.now();
@@ -679,10 +790,11 @@ export function startScript(
     stopped = true;
     observer.disconnect();
     if (settle) clearTimeout(settle);
+    if (restyled) clearTimeout(restyled);
     removeButton();
     menu?.host.remove();
     menu = null;
-    removeEventListener('pointerdown', onInput, true);
+    removeEventListener('pointerdown', onPointer, true);
     removeEventListener('keydown', onKey, true);
     removeEventListener('focusin', onFocusIn, true);
     removeEventListener('focusout', onFocusOut, true);
@@ -698,7 +810,7 @@ export function startScript(
   }
 
   const script: Script = { stop };
-  addEventListener('pointerdown', onInput, true);
+  addEventListener('pointerdown', onPointer, true);
   addEventListener('keydown', onKey, true);
   addEventListener('focusin', onFocusIn, true);
   addEventListener('focusout', onFocusOut, true);
@@ -707,7 +819,12 @@ export function startScript(
   addEventListener('scroll', onMove, { capture: true, passive: true });
   addEventListener('resize', onMove, { passive: true });
   ext.runtime.onMessage.addListener(onMessage);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-expanded', 'aria-hidden'],
+  });
   void ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello' }).then((said) => {
     if (said?.allowed) void look();
     else stop();

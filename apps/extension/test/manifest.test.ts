@@ -55,6 +55,10 @@ describe('each browser’s manifest', () => {
     expect(built).not.toHaveProperty('optional_permissions');
   });
 
+  it('needs Chrome 130, the first to keep its frame at an address of each session’s own', () => {
+    expect(manifest('chrome', '0.3.0').minimum_chrome_version).toBe('130');
+  });
+
   it('asks for the job application sites when you turn them on, never at install', () => {
     for (const target of ['chrome', 'firefox'] as const) {
       const built = manifest(target, '0.3.0');

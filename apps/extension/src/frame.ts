@@ -18,6 +18,36 @@ const [mode = '', token = ''] = location.hash.slice(1).split(':');
 const ask = (message: FromFrame): Promise<unknown> =>
   ext.runtime.sendMessage(message).catch(() => null);
 
+/** How long the frame shows before it takes a click: one meant for the page can't land on it. */
+const SETTLE_MS = 500;
+
+/**
+ * Whether a click is yours, on the frame as you see it: one the browser says came from you, once
+ * the frame has shown for a moment, and, where the browser can say, while nothing of the page
+ * covers it, fades it or moves it, as a page that would trick you into a click might.
+ */
+const takes = (() => {
+  let since = performance.now();
+  let seen = true;
+  try {
+    new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const visible = (entry as IntersectionObserverEntry & { isVisible?: boolean }).isVisible;
+          // A browser that can't say, as Firefox, leaves it to the time it's shown.
+          if (visible === undefined) return;
+          if (visible && !seen) since = performance.now();
+          seen = visible;
+        }
+      },
+      { threshold: [0, 1], trackVisibility: true, delay: 100 } as IntersectionObserverInit,
+    ).observe(document.documentElement);
+  } catch {
+    // No such observer: the time it's shown alone.
+  }
+  return (event: Event) => event.isTrusted && seen && performance.now() - since >= SETTLE_MS;
+})();
+
 const logo = () => h('img', { src: 'icons/32.png', alt: '', width: 16, height: 16 });
 
 /** The Fill button: it fills the form as clicking Fill does, and says how it went where it fills it here. */
@@ -56,7 +86,7 @@ function fillButton(): void {
             title: 'Hide on this page',
             on: {
               click: (event) => {
-                if (event.isTrusted) void ask({ type: 'job-site', do: 'hide-button' });
+                if (takes(event)) void ask({ type: 'job-site', do: 'hide-button' });
               },
             },
           },
@@ -66,7 +96,7 @@ function fillButton(): void {
     );
   };
   const click = (event: Event) => {
-    if (!event.isTrusted || busy) return;
+    if (!takes(event) || busy) return;
     busy = true;
     render();
     void ask({ type: 'job-site', do: 'fill' }).then((said) => {
@@ -105,7 +135,7 @@ async function menu(): Promise<void> {
           title: answer.text,
           on: {
             click: (event) => {
-              if (event.isTrusted) void ask({ type: 'job-site', do: 'pick', token, at });
+              if (takes(event)) void ask({ type: 'job-site', do: 'pick', token, at });
             },
           },
         },
@@ -139,7 +169,7 @@ async function menu(): Promise<void> {
             class: 'primary',
             on: {
               click: (event) => {
-                if (!event.isTrusted) return;
+                if (!takes(event)) return;
                 void ask({ type: 'job-site', do: 'save', token }).then((said) => {
                   const ok = (said as { ok?: boolean } | null)?.ok === true;
                   saving?.replaceChildren(
@@ -162,7 +192,7 @@ async function menu(): Promise<void> {
             type: 'button',
             on: {
               click: (event) => {
-                if (event.isTrusted) dismiss(false);
+                if (takes(event)) dismiss(false);
               },
             },
           },
@@ -170,14 +200,27 @@ async function menu(): Promise<void> {
         ),
       ),
     );
+  const count = shows.answers.length;
   show(
     app,
     h(
       'div',
       { class: 'menu' },
-      h('div', { class: 'head' }, logo(), 'Factwright'),
-      rows.length > 0 &&
-        h('ul', { 'aria-label': `Answers for ${shows.question || 'this field'}` }, ...rows),
+      h(
+        'div',
+        { class: 'head' },
+        logo(),
+        'Factwright',
+        count > 1 && h('span', { class: 'count' }, `${count} answers`),
+      ),
+      count > 0 &&
+        h(
+          'div',
+          { class: 'rows' },
+          h('ul', { 'aria-label': `Answers for ${shows.question || 'this field'}` }, ...rows),
+          // One answer leaves room under it, which says how picking works.
+          count === 1 && h('p', { class: 'hint' }, 'Nothing goes in the field until you pick it.'),
+        ),
       saving,
     ),
   );

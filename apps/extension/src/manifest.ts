@@ -157,8 +157,10 @@ export function manifest(
         { resources: [FRAME_PAGE], matches: frameSites(forStores), use_dynamic_url: true },
       ],
       background: { service_worker: 'background.js', type: 'module' },
-      // Chrome 127 is the first to let an extension open its popup, as a save that needs checking does.
-      minimum_chrome_version: '127',
+      // Chrome 130 is the first to keep the frame at an address of each session's own
+      // (use_dynamic_url): before it, any site could load the frame to tell the extension's there.
+      // Chrome 127 was the first to let an extension open its popup, as a save that needs checking does.
+      minimum_chrome_version: '130',
     };
   }
   return {
