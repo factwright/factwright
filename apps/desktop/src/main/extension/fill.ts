@@ -14,6 +14,7 @@ import {
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
+  isSyncedAnswer,
   type Job,
   type JobFile,
   jobPdfs,
@@ -28,6 +29,7 @@ import {
   readSuggestedAnswers,
   type SavedForm,
   SENT_STATUSES,
+  SYNCED_ANSWERS,
   sentAnswersOf,
   sentBefore,
   uploadName,
@@ -268,24 +270,12 @@ function remember(ask: Extract<InboxAsk, { ask: 'remember' }>, deps: FillDeps): 
     const value = text.trim();
     if (!value || !isRemembered(kind) || value.length > 200) continue;
     saved += 1;
-    if (kind === 'email' || kind === 'phone' || kind === 'linkedin' || kind === 'website') {
-      you[kind] = value;
-    } else if (kind === 'location') {
-      you.location = value;
-    } else if (kind === 'preferred-name') {
-      applications.preferredName = value;
-    } else if (
-      kind === 'pronouns' ||
-      kind === 'city' ||
-      kind === 'region' ||
-      kind === 'country' ||
-      kind === 'github'
-    ) {
-      applications[kind] = value;
-    } else if (kind === 'how-heard') {
-      applications.howHeard = value;
-    } else if (kind === 'start-date') {
-      start = value;
+    if (isSyncedAnswer(kind)) {
+      // In answers.json, where a browser filling through sync keeps them too.
+      const place = SYNCED_ANSWERS[kind];
+      if (place.part === 'you') you[place.key] = value;
+      else if (place.part === 'applications') applications[place.key] = value;
+      else start = value;
     } else if (kind === 'street') {
       privately.street = value;
     } else if (kind === 'postal-code') {

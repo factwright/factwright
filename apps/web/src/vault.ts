@@ -161,6 +161,7 @@ function untracked(job: CollectedJob): TrackedRow {
     payText: null,
     firstSeen: job.firstSeen,
     mergedInto: null,
+    folder: job.folder,
     status: null,
     statusOn: null,
     backOn: null,

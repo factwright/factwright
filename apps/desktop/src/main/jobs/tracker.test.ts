@@ -97,6 +97,51 @@ describe('saveCollected', () => {
   });
 });
 
+describe('saveFolders', () => {
+  const FIRST = '2026-10-07-acme-robotics-staff-engineer';
+  const LATER = '2026-10-09-acme-robotics-staff-engineer';
+
+  it('keeps each job’s folder in its row, follows it to another, and has none once it’s gone', () => {
+    expect(row()?.folder).toBeNull();
+    tracker.saveFolders([collected('acme--staff', { folder: FIRST })], new Set([FIRST]));
+    expect(row()?.folder).toBe(FIRST);
+    expect(tracker.syncRow('jobs', 'acme--staff')).toMatchObject({ folder: FIRST });
+    tracker.saveFolders([collected('acme--staff', { folder: LATER })], new Set([FIRST, LATER]));
+    expect(row()?.folder).toBe(LATER);
+    // The folder's another job's now, or the job's files are gone.
+    tracker.saveFolders([], new Set([LATER]));
+    expect(row()?.folder).toBeNull();
+  });
+
+  it('gives a job the skills haven’t found a folder for none, and one merged into another none', () => {
+    tracker.addJob({ company: 'Fernway', role: 'Project Manager' }, AT);
+    tracker.saveCollected([collected('acme--staff-2', { folder: LATER })], NOW);
+    tracker.saveFolders(
+      [collected('acme--staff', { folder: FIRST }), collected('acme--staff-2', { folder: LATER })],
+      new Set([FIRST, LATER]),
+    );
+    tracker.mergeJobs('acme--staff', 'acme--staff-2', AT);
+    // Merged, the job kept has both folders, and its newest is its folder.
+    tracker.saveFolders([collected('acme--staff', { folder: LATER })], new Set([FIRST, LATER]));
+    expect(row()?.folder).toBe(LATER);
+    expect(row('acme--staff-2')?.folder).toBeNull();
+    expect(row('fernway--project-manager')?.folder).toBeNull();
+  });
+
+  it('leaves a folder another computer named, which this one doesn’t have', () => {
+    const synced = tracker.syncRow('jobs', 'acme--staff') ?? {};
+    tracker.applySyncRow('jobs', 'acme--staff', { ...synced, folder: LATER });
+    // It may be on its way here, or never sync here: this computer can't tell it's wrong.
+    tracker.saveFolders([collected('acme--staff', { folder: FIRST })], new Set([FIRST]));
+    expect(row()?.folder).toBe(LATER);
+    tracker.saveFolders([], new Set([FIRST]));
+    expect(row()?.folder).toBe(LATER);
+    // Once it's had it, this computer goes by what it finds.
+    tracker.saveFolders([collected('acme--staff', { folder: FIRST })], new Set([FIRST, LATER]));
+    expect(row()?.folder).toBe(FIRST);
+  });
+});
+
 describe('updateJob', () => {
   it('dates a new status today, logs it, and sets the applied date', () => {
     expect(tracker.updateJob('acme--staff', { status: 'applied' }, AT)).toEqual({ ok: true });
@@ -782,7 +827,7 @@ describe('the database file', () => {
     // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind', 'merged_into']],
+        ['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind', 'merged_into', 'folder']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -801,7 +846,7 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['kind', 'merged_into']],
+        ['jobs', ['kind', 'merged_into', 'folder']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -829,7 +874,7 @@ describe('the database file', () => {
     ).toEqual(['Screen went well']);
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into']],
+        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -859,7 +904,7 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into']],
+        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );

@@ -25,6 +25,39 @@ export function sameRow(a: RowValues, b: RowValues, ignore: readonly string[] = 
   );
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Where a device keeps its copy of a file another device changed at the same time, such as
+ * "notes (Sam’s MacBook Pro, Oct 12).md" beside "notes.md". A number keeps it unique, by what
+ * `free` says of each name: whether it's free, or null for a name the device can't hold, as with
+ * a device's name a file's can't have, which takes "(conflict 1)" and on in its place.
+ */
+export function conflictCopyPath(
+  path: string,
+  device: string,
+  when: Date,
+  free: (candidate: string) => boolean | null,
+): string {
+  const slash = path.lastIndexOf('/');
+  const folder = path.slice(0, slash + 1);
+  const name = path.slice(slash + 1);
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const extension = dot > 0 ? name.slice(dot) : '';
+  const label = `${device}, ${MONTHS[when.getMonth()]} ${when.getDate()}`;
+  for (let n = 1; ; n++) {
+    const candidate = `${folder}${stem} (${label}${n > 1 ? ` ${n}` : ''})${extension}`;
+    const isFree = free(candidate);
+    if (isFree) return candidate;
+    if (isFree === null) break;
+  }
+  for (let n = 1; ; n++) {
+    const candidate = `${folder}${stem} (conflict ${n})${extension}`;
+    if (free(candidate) !== false) return candidate;
+  }
+}
+
 /**
  * Keeps both texts when two devices changed the same one. When one already holds the other,
  * such as notes one device only added to, that one is enough.
