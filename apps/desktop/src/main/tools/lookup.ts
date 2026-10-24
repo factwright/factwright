@@ -10,7 +10,6 @@ import {
   type CallMode,
   callLength,
   callPeople,
-  companyKey,
   type FieldControl,
   type FormQuestion,
   JOB_DOCS,
@@ -18,13 +17,15 @@ import {
   type Job,
   type JobDocKind,
   type JobFile,
+  type JobMatch,
+  type JobQuery,
   type JobShot,
   type JobStatus,
-  jobLikeness,
   jobProgress,
   type KindName,
   kindNamed,
   localDate,
+  matchJobs,
   PASS_REASON_LABELS,
   PASS_REASONS,
   type PassReason,
@@ -37,38 +38,7 @@ import {
 } from '@factwright/core';
 import { diskWorkspace } from '../jobs/workspace.ts';
 
-/** What identifies a job when the user or a skill names it. */
-export interface JobQuery {
-  company: string;
-  role?: string;
-  link?: string;
-}
-
-/**
- * How a job on file matches what a skill asked about, as the app tells one job from another: by
- * a link to the same posting, at any company; by the same role, at the same company or one whose
- * name holds the other's; or as another job at the company.
- */
-type Match = 'posting' | 'role' | 'company';
-
-const MATCH_ORDER: Readonly<Record<Match, number>> = { posting: 0, role: 1, company: 2 };
-
-/** The jobs that match a company, or a link, best match first, with how each matches. */
-export function matchJobs(jobs: readonly Job[], query: JobQuery): { job: Job; match: Match }[] {
-  const asked = {
-    company: query.company,
-    companyKey: companyKey(query.company),
-    role: query.role ?? '',
-    links: query.link ? [{ url: query.link }] : [],
-  };
-  return jobs
-    .flatMap((job) => {
-      const known = { ...job, companyKey: job.companyKey || companyKey(job.company) };
-      const match = jobLikeness(known, asked);
-      return match ? [{ job, match }] : [];
-    })
-    .sort((a, b) => MATCH_ORDER[a.match] - MATCH_ORDER[b.match]);
-}
+export type { JobQuery } from '@factwright/core';
 
 /** The jobs that match a company, or a link, best match first. */
 export const findJobs = (jobs: readonly Job[], query: JobQuery): Job[] =>
@@ -173,7 +143,7 @@ export function findJob(
   const passes = reasons ? [`Why the user passed on jobs before: ${reasons}.`] : [];
   const same = found.filter(({ match }) => match !== 'company');
   const others = found.filter(({ match }) => match === 'company').map(({ job }) => job);
-  const by: Readonly<Record<Match, string>> = {
+  const by: Readonly<Record<JobMatch, string>> = {
     posting: 'the same posting',
     role: 'the same role',
     company: '',

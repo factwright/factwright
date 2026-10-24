@@ -1,8 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resumeDetails } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { contactFromResume, newestResume, resumeDetails, resumeOnFile } from './from-resume.ts';
+import { contactFromResume, newestResume, resumeOnFile } from './from-resume.ts';
 
 let workspace: string;
 
