@@ -4,6 +4,10 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- The browser extension is version 0.3.0, ready for its next upload to the Chrome Web Store and Firefox Add-ons, which list 0.2.0. It's the first they list as Factwright, and the first that fills in applications, with Factwright on the same computer: your Claude's drafts of a form's own questions, and, on the job application sites you allow, the Fill button and field menus, in a careers page's frame too. It needs Chrome 130 or later, so Chrome keeps 0.2.0 on an older one. In Firefox, it also declares personally identifying information, which filling a form hands on: your details in the form, and a new answer you keep in Profile. So Firefox asks people with 0.2.0 to accept that before it updates them. Its listing and its answers to each store name no other company, since the Chrome Web Store turned down a listing that named job sites as keyword spam.
+- factwright.com's extension page says what the extension does now: it saves jobs, fills in applications with Factwright on the same computer, has your Claude draft a form's own questions, and puts a Fill button and field menus on the job application sites you allow. The privacy policy covers filling applications, what the extension's script sees and does on the job application sites, forms in another site's frame, and Get the form's questions reading Greenhouse's public job API, and says the extension keeps to the Chrome Web Store's Limited Use rules.
+
 ## 0.15.0 - 2026-10-23
 
 ### Added

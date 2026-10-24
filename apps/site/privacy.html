@@ -35,7 +35,7 @@
     <main id="main" class="wrap legal">
       <div class="legal-head">
         <h1>Privacy policy</h1>
-        <p class="legal-date">Effective <time datetime="2026-10-19">October 19, 2026</time></p>
+        <p class="legal-date">Effective <time datetime="2026-10-23">October 23, 2026</time></p>
         <p class="lede">
           Factwright is built so your job hunt stays yours. This policy says what we collect, what
           we never see, and the choices you have.
@@ -89,6 +89,11 @@
                 <a href="#sync">Sync and the web view</a> explains.
               </li>
               <li>
+                <b>The browser extension reads a page only when you ask it to,</b> or, on the job
+                application sites you turn on, the application forms on their pages. It fills
+                applications from the app on your computer, never through us.
+              </li>
+              <li>
                 <b>We keep only what sync needs:</b> your name, email and account ID from the account
                 you sign in with, the devices you sign in on, and your encrypted job hunt with its
                 sizes and times.
@@ -110,8 +115,8 @@
             <p>
               Factwright is made by Neatifai LLC, a company in Illinois, in the United States. In
               this policy, “we” and “us” mean Neatifai LLC. This policy covers the Factwright app for
-              Mac and Windows, this website, the app’s downloads and updates, and the optional sync
-              service and web view at app.factwright.com.
+              Mac and Windows, its browser extension for Chrome and Firefox, this website, the app’s
+              downloads and updates, and the optional sync service and web view at app.factwright.com.
             </p>
             <p>
               For anything about your privacy, email
@@ -166,6 +171,14 @@
               search, and other web pages, straight from your computer. Those sites see your
               computer’s IP address, as with any visit, and that Factwright is asking. Claude’s web
               searches go to Anthropic, under your account.
+            </p>
+            <p>
+              For a job saved from a posting on Greenhouse, Get the form’s questions asks
+              Greenhouse’s public job API for that job’s application questions, straight from your
+              computer, only when you click it. It sends only the board’s name and the job’s ID,
+              from the posting’s link, and Greenhouse sees your IP address, as with any visit.
+              Factwright keeps the questions with the job, in your job hunt, for your Claude to
+              draft.
             </p>
             <p>Factwright never signs in to LinkedIn, or to any job site, for you.</p>
           </section>
@@ -328,28 +341,20 @@
             <h2>The browser extension</h2>
             <p>
               Factwright’s extension for Chrome and Firefox saves a job you’re looking at to your
-              job hunt: straight to the Factwright app on the same computer, or through
-              sync. It reads a page only when you click its button, its menu item or its shortcut,
-              and sends nothing until you save. It reads the job’s address, its title, company,
-              place and pay, and the posting’s text, or the text you
-              selected. On a site it doesn’t know, the posting it reads is the page’s main text,
-              which it shows you to check before you save it. It reads nothing as you browse. A
-              LinkedIn job is read the same way, when you click to save it, unless you turn that off
-              in its settings, which then saves the link and title alone.
+              job hunt, and, with the Factwright app on the same computer, fills in a job’s
+              application form for you to check. It has no analytics or tracking, and it never
+              submits a form. Our use of what it reads complies with the Chrome Web Store User Data
+              Policy, including its Limited Use requirements.
             </p>
+
+            <h3>Saving a job</h3>
             <p>
-              It also fills in a job’s application form for you, with the Factwright app on the same
-              computer, when you click Fill this application. It reads the form’s questions, and
-              not what’s in them, and the app answers them from what you’ve told it, which the
-              extension puts in the form for you to check. It fills only fields you can see, and
-              never answers personal questions, such as your age, which it never keeps either. While
-              its panel shows that form, it reads what’s in the form’s own questions, so it has what
-              you sent once you submit it on the site, and when you mark the job applied, it gives
-              the app those answers, to keep with the job. All of this stays on your computer,
-              between your browser and the app. It never submits a form, and on LinkedIn and Indeed
-              it only gives you answers to copy. Your equal-opportunity answers, street and postal
-              code stay in the app’s own folder on your computer: they never sync, and Claude never
-              sees them.
+              It reads a page only when you click its button, its menu item or its shortcut, and
+              sends nothing until you save. It reads the job’s address, its title, company, place
+              and pay, and the posting’s text, or the text you selected. On a site it doesn’t know,
+              the posting it reads is the page’s main text, which it shows you to check before you
+              save it. A LinkedIn job is read the same way, when you click to save it, unless you
+              turn that off in its settings, which then saves the link and title alone.
             </p>
             <p>
               Saved to Factwright on the same computer, a job goes from your browser to the app
@@ -365,9 +370,81 @@
               until you sign it out. Those keys open your whole job hunt, as they do on each device
               you link, so the extension keeps them where they can’t be copied out, and uses them
               only to lock what it saves, and to open the job already at the ID it would save to,
-              which may be one you added in the app, to tell whether it’s the same job. It has no
-              analytics or tracking, and it reaches no site but app.factwright.com, or a sync server
-              you run yourself, if you choose one in its setup.
+              which may be one you added in the app, to tell whether it’s the same job. It reaches
+              no site but app.factwright.com, or a sync server you run yourself, if you choose one in
+              its setup.
+            </p>
+
+            <h3>Filling an application</h3>
+            <p>
+              When you click Fill this application, it reads the application form on that page:
+              each field you can see, with its question, its options and its limits, and not what’s
+              in it. It asks the Factwright app on the same computer for an answer to each, through
+              the same helper, and the app answers from what you’ve told it: Profile, your resumes,
+              what you sent before, and your Claude’s drafts. The extension puts the answers in the
+              form for you to check, and its panel lists each one with where it came from. It fills
+              only fields you can see, never a password or payment details, never answers personal
+              questions, such as your age, which it never keeps either, and never agrees to anything
+              for you. All of this stays on your computer, between your browser and the app. On
+              LinkedIn and Indeed it only gives you answers to copy.
+            </p>
+            <p>
+              What it fills reaches the site when you submit the form, as what you type does, and
+              the page’s own code can read a field before that. Some boxes look up places as you
+              type, such as where you live: there, the page’s code sends what the extension types to
+              its site, to find matching places, as it would what you type.
+            </p>
+            <p>
+              While its panel shows the form, it reads what’s in the form’s own questions, and in
+              the fields Profile keeps, so it has what you sent once you submit it on the site. When
+              you mark the job applied, it gives the app your answers to the form’s own questions, to
+              keep with the job, and offers to keep each new answer you gave a field Profile keeps,
+              such as a new phone number, which it does only if you choose Save. Your
+              equal-opportunity answers, street and postal code stay in the app’s own folder on your
+              computer: they never sync, and Claude never sees them.
+            </p>
+            <p>
+              For the questions nothing on file answers, the panel offers Draft them with your
+              Claude. If you click it, the extension gives the app those questions, as the form asks
+              them, and never what’s in them. The app keeps them with the job, in your job
+              hunt, and starts your Claude on them, so what Claude reads goes to Anthropic under your
+              account, as <a href="#claude">Your Claude</a> says. The panel fills in each draft once
+              it’s done.
+            </p>
+
+            <h3>On the job application sites you allow</h3>
+            <p>
+              The extension runs no script of its own in pages unless you turn on the job
+              application sites, in its setup or its panel: one permission for the sites where the
+              applicant systems most companies use show their jobs and forms, and any other careers
+              site you add, one at a time. Your browser asks you first. It’s never every site, and
+              never LinkedIn or Indeed. Turning them off, in the extension or in your browser’s
+              settings, takes its script away.
+            </p>
+            <p>
+              On those sites, and only there, its script reads each field you can see, with its
+              question and options, to put a small Fill button on a page with an application form.
+              The first time you click or tab into one of the form’s fields, the extension asks the
+              app on your computer for the form’s answers, with its fields and never what’s in them,
+              and a field you go to shows a menu of its answers on file. The menu is the extension’s
+              own, and the page can’t read it: the page gets only the answer you pick, which the
+              script puts in the field only then. The script reads what’s in a field only once
+              you’ve typed in it and left it, and only for a field whose answer Profile keeps, to
+              offer to keep a new answer, which it does only if you choose Save. It never reads a
+              password or an equal-opportunity answer. Those sites can tell the extension is there,
+              as its button and menus are on their pages, and whether Factwright has an answer for a
+              field, as a menu shows, but not what the answer is.
+            </p>
+
+            <h3>Forms in another site’s page</h3>
+            <p>
+              A company’s careers page may show an application form in a frame from an applicant
+              system’s site. Where that’s one of the sites you allowed, the extension’s script runs
+              in the frame, never in the page around it, and Fill this application reads and fills
+              the form there. What it reads in the frame goes to the extension, never to the page
+              around it, which can’t see into the frame, nor into the extension’s menus. To find the
+              form again after the extension restarts in the background, it keeps which frames its
+              script is in while your browser runs, and never on your disk.
             </p>
           </section>
 

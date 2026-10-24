@@ -1,6 +1,6 @@
 /*
- * The browser extension's page: what it does, how it treats what it reads, and
- * setting it up, with its store buttons and a drawing of its popup on a job's page.
+ * The browser extension's page: saving jobs and filling applications, how it treats what it
+ * reads, and setting it up, with its store buttons and a drawing of its popup on a job's page.
  */
 
 .ext-hero {
@@ -422,6 +422,23 @@
   .tasks.ext-ways {
     grid-template-columns: minmax(0, 1fr);
     max-width: 560px;
+  }
+}
+
+/* What it promises: six, three to a row. */
+.promises.ext-promises {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1000px) {
+  .promises.ext-promises {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .promises.ext-promises {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
