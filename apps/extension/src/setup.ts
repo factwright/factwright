@@ -34,6 +34,15 @@ import {
   syncFetch,
   windowSignIn,
 } from './account.ts';
+import { APPLICANT_SYSTEMS } from './applicant-systems.ts';
+import {
+  allowedSites,
+  allowJobSites,
+  chosen,
+  JOB_SITES,
+  removeCareersSite,
+  stopJobSites,
+} from './application-sites.ts';
 import {
   allowComputer,
   canReachComputer,
@@ -1136,6 +1145,88 @@ function linkedInSetting(checked: boolean): Child[] {
   ];
 }
 
+/** A careers site you added, as setup lists it: its address alone. */
+const siteName = (site: string) => site.replace(/^https?:\/\//, '').replace(/\/\*$/, '');
+
+/**
+ * The job application sites, where Factwright's menus and Fill button show on application forms,
+ * as you allowed them, and the careers sites you added, each to take away. The browser is asked on
+ * the click itself, before anything is waited on, as Firefox wants.
+ */
+function jobSitesSetting(): Child[] {
+  const box = h('div', {}, h('p', { class: 'small muted' }, 'Checking…'));
+  void showJobSites(box);
+  return [h('h2', {}, 'Job application sites'), box];
+}
+
+async function showJobSites(box: HTMLElement): Promise<void> {
+  const { all, sites } = await chosen();
+  const allowed = new Set(await allowedSites());
+  const on = all && JOB_SITES.some((site) => allowed.has(site));
+  const again = () => void showJobSites(box);
+  box.replaceChildren(
+    h(
+      'p',
+      { class: 'small' },
+      'On the job application sites you allow, Factwright shows its answers in a form’s fields as you fill it in, offers to keep a new answer you type, and puts a Fill button on the form. Nothing goes in a field until you pick it. The answers come from Factwright on this computer, as Fill’s do. Everywhere else, click Fill this application, as now.',
+    ),
+    h(
+      'p',
+      { role: 'status' },
+      on ? 'On for job application sites.' : 'Off for job application sites.',
+    ),
+    actions(
+      on
+        ? button('Turn off', () => void stopJobSites().then(again))
+        : button('Turn on for job application sites', () => void allowJobSites().then(again), true),
+    ),
+    h(
+      'details',
+      {},
+      h('summary', {}, 'Which sites they are'),
+      h(
+        'p',
+        { class: 'small muted' },
+        `The sites where these applicant systems show companies’ jobs and application forms: ${APPLICANT_SYSTEMS.map((system) => system.name).join(', ')}. Never LinkedIn or Indeed, where Factwright only gives answers to copy. Another careers site can be added from the panel, when you fill in a form there.`,
+      ),
+    ),
+    ...(sites.length === 0
+      ? []
+      : [
+          h('h3', {}, 'Careers sites you added'),
+          h(
+            'ul',
+            { class: 'sites' },
+            ...sites.map((site) =>
+              h(
+                'li',
+                {},
+                h('span', {}, siteName(site)),
+                !allowed.has(site) &&
+                  h('span', { class: 'muted small' }, ' (the browser has it turned off)'),
+                ' ',
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'small-button',
+                    'aria-label': `Remove ${siteName(site)}`,
+                    on: { click: () => void removeCareersSite(site).then(again) },
+                  },
+                  'Remove',
+                ),
+              ),
+            ),
+          ),
+        ]),
+    h(
+      'p',
+      { class: 'small muted' },
+      'There, its script sees a form’s fields and their questions, as Fill does, and what you type in a field Profile can keep, once you leave it, to offer to save it. Your answers show in its own menu, which the site can’t read, and the site can tell the extension is there. It never fills a password and never submits a form.',
+    ),
+  );
+}
+
 async function linked(account: Account): Promise<void> {
   const { linkedInText } = await settings();
   show(
@@ -1149,6 +1240,7 @@ async function linked(account: Account): Promise<void> {
       'What it saves is locked with your job hunt’s key, which it keeps in this browser where it can’t be copied out.',
     ),
     ...linkedInSetting(linkedInText),
+    ...jobSitesSetting(),
     h('h2', {}, 'Account'),
     h('p', {}, account.email),
     h(
@@ -1192,6 +1284,7 @@ async function onComputer(): Promise<void> {
       'What it saves goes from this browser straight to Factwright on this computer, and nowhere else.',
     ),
     ...linkedInSetting(linkedInText),
+    ...jobSitesSetting(),
     h('h2', {}, 'Where jobs go'),
     h('p', {}, 'Factwright on this computer'),
     h(

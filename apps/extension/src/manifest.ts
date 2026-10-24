@@ -1,4 +1,5 @@
 import { EXTENSION_IDS } from '@factwright/sync';
+import { jobSites } from './applicant-systems.ts';
 
 /** The browsers the extension is built for, each with a manifest of its own. */
 export type Target = 'chrome' | 'firefox';
@@ -27,6 +28,20 @@ export const ownServers = (forStores: boolean): string[] =>
   forStores ? ['https://*/*'] : ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
 
 /**
+ * The sites whose pages may show the extension's own frame (frame.html): its Fill button and its
+ * menus, which its script on the job sites you allowed puts there. Any https site, as a careers
+ * site you add can be any, and in a build for testing this computer's over http too. The frame's
+ * address is one no site can guess: Chrome's changes each time Chrome starts, and Firefox's is the
+ * one Firefox gave the extension at install. So a site where it never shows can't load it to tell
+ * the extension's there, unless a site where it shows passes the address on.
+ */
+export const frameSites = (forStores: boolean): string[] =>
+  forStores ? ['https://*/*'] : ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
+
+/** The extension's own frame, which its script shows on the job sites you allowed. */
+export const FRAME_PAGE = 'frame.html';
+
+/**
  * The extension's ID on Firefox, which Firefox needs to sign it and to keep its data, and which
  * its sign-in window's return address comes from, as sync servers know it (@factwright/sync),
  * and which Factwright's helper lets reach it on this computer.
@@ -45,6 +60,12 @@ export interface Asks {
    * that asks for it when setup does. Never in the stores' build.
    */
   nativeAtInstall?: boolean;
+  /**
+   * The job application sites at install, for the end-to-end run in Chromium, which can't answer
+   * the prompt that asks for them when you turn them on: turning them on then finds them allowed.
+   * Never in the stores' build.
+   */
+  jobSitesAtInstall?: boolean;
 }
 
 /**
@@ -64,7 +85,14 @@ export interface Asks {
  *   rules for lighting its button up on pages that look like an application form, which Chrome
  *   checks itself (declarativeContent). Firefox has a sidebar instead, and no such rules. Neither
  *   shows a warning, at install or on an update.
- * It has no content scripts and nothing pages can load, so sites can't tell it's installed.
+ * - the job application sites, asked for only when you turn them on in setup or the panel, and a
+ *   careers site of your choice, asked for when you add it, its address alone (optional host
+ *   permissions): there, and only there, it registers a script of its own, which puts a Fill button
+ *   and menus with its answers on application forms (src/application-sites.ts)
+ * - its own frame, for that button and those menus, which no site can load without its address
+ *   (web-accessible resources)
+ * It has no content scripts but the one it registers on the job sites you allowed, so elsewhere
+ * sites can't tell it's installed.
  */
 export function manifest(
   target: Target,
@@ -72,6 +100,10 @@ export function manifest(
   server: string = FACTWRIGHT_SYNC,
   asks: Asks = {},
 ): Record<string, unknown> {
+  const forStores = server === FACTWRIGHT_SYNC;
+  const atInstall = [
+    ...new Set([hostPattern(server), ...(asks.jobSitesAtInstall ? jobSites(!forStores) : [])]),
+  ];
   const common = {
     manifest_version: 3,
     name: 'Factwright',
@@ -97,11 +129,13 @@ export function manifest(
     // it asks nothing of anyone: a new permission the extension needs from install would turn it
     // off in Chrome until accepted.
     ...(asks.nativeAtInstall ? {} : { optional_permissions: ['nativeMessaging'] }),
-    host_permissions: [hostPattern(server)],
-    // The server it's built for is asked for at install, so it's never asked for again.
-    optional_host_permissions: ownServers(server === FACTWRIGHT_SYNC).filter(
-      (pattern) => pattern !== hostPattern(server),
-    ),
+    host_permissions: atInstall,
+    // The server it's built for is asked for at install, so it's never asked for again. The job
+    // application sites are named on their own, though all https sites take them in, so the
+    // browser's settings list them.
+    optional_host_permissions: [
+      ...new Set([...ownServers(forStores), ...jobSites(!forStores)]),
+    ].filter((pattern) => !atInstall.includes(pattern)),
     commands: {
       'save-job': {
         suggested_key: { default: 'Alt+Shift+S' },
@@ -118,9 +152,15 @@ export function manifest(
       ...common,
       permissions: [...common.permissions, 'sidePanel', 'declarativeContent'],
       side_panel: { default_path: 'sidepanel.html' },
+      // Only at an address of the session's own, which changes each time Chrome starts.
+      web_accessible_resources: [
+        { resources: [FRAME_PAGE], matches: frameSites(forStores), use_dynamic_url: true },
+      ],
       background: { service_worker: 'background.js', type: 'module' },
-      // Chrome 127 is the first to let an extension open its popup, as a save that needs checking does.
-      minimum_chrome_version: '127',
+      // Chrome 130 is the first to keep the frame at an address of each session's own
+      // (use_dynamic_url): before it, any site could load the frame to tell the extension's there.
+      // Chrome 127 was the first to let an extension open its popup, as a save that needs checking does.
+      minimum_chrome_version: '130',
     };
   }
   return {
@@ -132,6 +172,8 @@ export function manifest(
       default_icon: icons,
       open_at_install: false,
     },
+    // Firefox's address for it is this browser's own, which no site knows.
+    web_accessible_resources: [{ resources: [FRAME_PAGE], matches: frameSites(forStores) }],
     background: { scripts: ['background.js'], type: 'module' },
     browser_specific_settings: {
       gecko: {

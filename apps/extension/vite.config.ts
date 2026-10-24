@@ -28,12 +28,14 @@ export default defineConfig({
     // outside it, and the stores' reviewers read the code as it's built.
     minify: false,
     // Browsers that run Manifest V3 extensions, as far back as each manifest allows.
-    target: ['chrome127', 'firefox140'],
+    target: ['chrome130', 'firefox140'],
     rolldownOptions: {
       input: {
         popup: 'popup.html',
         setup: 'setup.html',
         sidepanel: 'sidepanel.html',
+        // Its own frame, for the Fill button and the menus on the job sites you allowed.
+        frame: 'frame.html',
         background: 'src/background.ts',
       },
       output: {

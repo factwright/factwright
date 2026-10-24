@@ -240,7 +240,19 @@ export interface FieldReply {
   from?: string;
   /** Why it's left for you. */
   left?: LeftFor;
+  /**
+   * Other answers on file that fit as well, best first, such as what you sent another company to
+   * the same question, or your Claude's draft for this job: the extension's menus in a form's
+   * fields offer them beside this one. Filling a form puts in this one alone.
+   */
+  others?: OtherAnswer[];
 }
+
+/** Another answer on file for a field, as a menu in the field offers it. */
+export type OtherAnswer = Pick<FieldReply, 'text' | 'pick' | 'exact' | 'source' | 'from'>;
+
+/** The most other answers a field's reply carries. */
+export const MOST_OTHERS = 3;
 
 /** The words that mean "I'd rather not say", as forms put them. */
 const DECLINE = [
@@ -501,7 +513,7 @@ function dateReply(kind: FieldKind, field: FormField, date: string, said: Said):
  */
 export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldReply[] {
   const asked = new Map<string, number>();
-  return fields.map((field) => {
+  const replies = fields.map((field) => {
     const part = fieldPart(field);
     if (!part) return answerField(field, onFile);
     const kind = fieldKind(field);
@@ -513,6 +525,36 @@ export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldR
     asked.set(key, nth + 1);
     return answerField(field, onFile, nth);
   });
+  return withinOthers(replies);
+}
+
+/**
+ * The most a form's other answers carry, all told, in characters, so the app's answer for a long
+ * form stays well within what the extension's helper takes.
+ */
+const MOST_OTHER_WORDS = 100_000;
+
+/** A form's replies, without the other answers of the fields that carry most, past the most. */
+function withinOthers(replies: FieldReply[]): FieldReply[] {
+  const size = (reply: FieldReply) =>
+    (reply.others ?? []).reduce(
+      (sum, other) => sum + (other.text?.length ?? 0) + (other.pick?.join('').length ?? 0),
+      0,
+    );
+  let total = replies.reduce((sum, reply) => sum + size(reply), 0);
+  if (total <= MOST_OTHER_WORDS) return replies;
+  const kept = [...replies];
+  const largest = replies
+    .map((reply, at) => ({ at, size: size(reply) }))
+    .filter((each) => each.size > 0)
+    .sort((a, b) => b.size - a.size);
+  for (const { at, size: dropped } of largest) {
+    if (total <= MOST_OTHER_WORDS) break;
+    const { others: _, ...reply } = kept[at] as FieldReply;
+    kept[at] = reply;
+    total -= dropped;
+  }
+  return kept;
 }
 
 /** An answer that fits the field's limit, or left for you when it doesn't. */
@@ -668,28 +710,28 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
   if (!key) return left('question', 'new');
   const job = onFile.job?.company ?? '';
   const written = field.control === 'long' || field.control === 'text';
-  const before = onFile.sent.find(
+  const fits = (text: string) => !field.limit || text.length <= field.limit;
+  // Each answer you sent to the same question, newest first.
+  const sent = onFile.sent.filter(
     (each) =>
       questionKey(each.question) === key &&
       each.text.trim() &&
       !(written && aboutCompany(each, job)),
   );
-  if (before) {
+  /** An answer you sent, as this field takes it, or null when it's longer than the field takes. */
+  const fromSent = (before: SentBefore): FieldReply | null => {
     const from = `From your ${before.company || 'earlier'} application, ${shortDate(before.on, onFile.today)}`;
     if (choosing(field)) {
       return { kind: 'question', pick: [before.text], exact: true, source: 'sent', from };
     }
-    if (!field.limit || before.text.length <= field.limit) {
-      return { kind: 'question', text: before.text, source: 'sent', from };
-    }
-  }
+    return fits(before.text) ? { kind: 'question', text: before.text, source: 'sent', from } : null;
+  };
   const drafts = onFile.suggested.filter((each) => questionKey(each.question) === key);
   const draft = drafts.at(-1);
   // A draft that says only you can answer it, and why, leaves it for you, saying why.
-  if (draft && /^\s*for you:/i.test(draft.answer)) {
-    return { ...left('question', 'new'), from: draft.answer.trim() };
-  }
-  if (draft?.answer.trim()) {
+  const forYou = draft !== undefined && /^\s*for you:/i.test(draft.answer);
+  const drafted = ((): FieldReply | null => {
+    if (forYou || !draft?.answer.trim()) return null;
     const from = 'Your Claude’s draft for this job';
     // A question that takes any of its options takes each the draft picks, as "SQL; Python".
     const picks =
@@ -701,11 +743,30 @@ function ownQuestion(field: FormField, onFile: OnFile): FieldReply {
         : [draft.answer.trim()];
     if (choosing(field))
       return { kind: 'question', pick: picks, exact: true, source: 'claude', from };
-    if (!field.limit || draft.answer.length <= field.limit) {
-      return { kind: 'question', text: draft.answer, source: 'claude', from };
-    }
-  }
-  return left('question', 'new');
+    return fits(draft.answer)
+      ? { kind: 'question', text: draft.answer, source: 'claude', from }
+      : null;
+  })();
+  // The answer: the newest you sent, where it fits, or else your Claude's draft.
+  const newest = sent[0] ? fromSent(sent[0]) : null;
+  if (!newest && draft && forYou) return { ...left('question', 'new'), from: draft.answer.trim() };
+  const first = newest ?? drafted;
+  if (!first) return left('question', 'new');
+  // Beside it, for the field menus, the others on file that fit too: what you sent before that,
+  // then your Claude's draft. The same words twice are one.
+  const words = (reply: FieldReply) => plain(reply.text ?? reply.pick?.join(' ') ?? '');
+  const said = new Set([words(first)]);
+  const others = [...sent.slice(1).map(fromSent), first === drafted ? null : drafted]
+    .filter((each): each is FieldReply => each !== null)
+    .filter((each) => {
+      const these = words(each);
+      if (said.has(these)) return false;
+      said.add(these);
+      return true;
+    })
+    .slice(0, MOST_OTHERS);
+  if (others.length === 0) return first;
+  return { ...first, others: others.map(({ kind: _, ...other }) => other) };
 }
 
 /**

@@ -49,6 +49,16 @@ if (nativeAtInstall && forStores) {
   throw new Error('The stores’ build asks for native messaging in setup, never at install.');
 }
 
+/**
+ * For the end-to-end run in Chromium alone: the job application sites at install, as its browser
+ * can't answer the prompt that asks for them when they're turned on. The stores' build always asks
+ * when you turn them on.
+ */
+const jobSitesAtInstall = process.env.FACTWRIGHT_JOB_SITES_AT_INSTALL === '1';
+if (jobSitesAtInstall && forStores) {
+  throw new Error('The stores’ build asks for the job application sites when they’re turned on.');
+}
+
 /** Every file under a folder, by its path inside it. */
 function filesIn(folder: string): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
@@ -146,16 +156,49 @@ async function checkFormReader(folder: string): Promise<void> {
   }
 }
 
+/**
+ * The script on the job sites you allowed, as built: one file the browser runs as it is, since a
+ * page's scripts can't be modules, so it imports nothing.
+ */
+function checkJobSiteScript(folder: string): void {
+  const code = readFileSync(join(folder, 'content.js'), 'utf8');
+  if (/^\s*(import|export)\b/m.test(code)) {
+    throw new Error('The built script for job sites imports or exports something.');
+  }
+  if (!code.includes('async function formPage(')) {
+    throw new Error('The built script for job sites has no formPage.');
+  }
+}
+
 rmSync(DIST, { recursive: true, force: true });
+/** What both builds take: the checked server, and nothing from a .env file, which would skip the checks above. */
+const env = {
+  envDir: false as const,
+  define: { 'import.meta.env.VITE_FACTWRIGHT_SYNC_SERVER': JSON.stringify(server) },
+};
+await build({ root: ROOT, logLevel: 'warn', ...env });
 await build({
   root: ROOT,
   logLevel: 'warn',
-  // The checked server, and nothing from a .env file, which would skip the checks above.
-  envDir: false,
-  define: { 'import.meta.env.VITE_FACTWRIGHT_SYNC_SERVER': JSON.stringify(server) },
+  ...env,
+  // Only what this build says: the extension's pages' config would add its pages.
+  configFile: false,
+  build: {
+    outDir: join(DIST, 'build'),
+    emptyOutDir: false,
+    minify: false,
+    target: ['chrome130', 'firefox140'],
+    lib: {
+      entry: join(ROOT, 'src', 'content.ts'),
+      formats: ['iife'],
+      name: 'factwrightJobSite',
+      fileName: () => 'content.js',
+    },
+  },
 });
 checkPageReader(join(DIST, 'build'));
 await checkFormReader(join(DIST, 'build'));
+checkJobSiteScript(join(DIST, 'build'));
 
 for (const target of ['chrome', 'firefox'] as const satisfies readonly Target[]) {
   const out = join(DIST, target);
@@ -163,7 +206,7 @@ for (const target of ['chrome', 'firefox'] as const satisfies readonly Target[])
   cpSync(join(DIST, 'build'), out, { recursive: true });
   writeFileSync(
     join(out, 'manifest.json'),
-    `${JSON.stringify(manifest(target, version, server, { nativeAtInstall }), null, 2)}\n`,
+    `${JSON.stringify(manifest(target, version, server, { nativeAtInstall, jobSitesAtInstall }), null, 2)}\n`,
   );
   if (!forStores) {
     console.log(`dist/${target}, for ${server}: no zip, since it's not for the stores`);
