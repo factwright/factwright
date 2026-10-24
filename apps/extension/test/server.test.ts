@@ -1,5 +1,6 @@
 import { returnAddress, STORE_RETURNS } from '@factwright/sync';
 import { describe, expect, it } from 'vitest';
+import { jobSites } from '../src/applicant-systems.ts';
 import { FACTWRIGHT_SYNC, hostPattern, manifest } from '../src/manifest.ts';
 import {
   askServer,
@@ -282,13 +283,22 @@ describe('the manifest’s permissions', () => {
     expect(await returnAddress(gecko.id)).toBe(STORE_RETURNS[1]);
   });
 
-  it('has no content scripts, and nothing a page can load or message', () => {
+  it('has no content scripts of its own, and nothing a page can message', () => {
     for (const target of ['chrome', 'firefox'] as const) {
       const built = manifest(target, '1.0.0');
+      // Its script for the job sites you allowed is registered once you allow them.
       expect(built.content_scripts).toBeUndefined();
-      expect(built.web_accessible_resources).toBeUndefined();
       expect(built.externally_connectable).toBeUndefined();
     }
+  });
+
+  it('lets pages show only its own frame, which Chrome gives an address of each session’s own', () => {
+    expect(manifest('chrome', '1.0.0').web_accessible_resources).toEqual([
+      { resources: ['frame.html'], matches: ['https://*/*'], use_dynamic_url: true },
+    ]);
+    expect(manifest('firefox', '1.0.0').web_accessible_resources).toEqual([
+      { resources: ['frame.html'], matches: ['https://*/*'] },
+    ]);
   });
 });
 
@@ -297,14 +307,19 @@ describe('the manifest’s sites', () => {
     for (const target of ['chrome', 'firefox'] as const) {
       const built = manifest(target, '1.0.0');
       expect(built.host_permissions).toEqual(['https://app.factwright.com/*']);
-      expect(built.optional_host_permissions).toEqual(['https://*/*']);
+      // And the job application sites, each named, though all https sites take them in.
+      expect(built.optional_host_permissions).toEqual(['https://*/*', ...jobSites(false)]);
     }
   });
 
   it('in a build for a local server, may also ask for this computer over http', () => {
     const built = manifest('chrome', '1.0.0', 'http://localhost:8787');
     expect(built.host_permissions).toEqual(['http://localhost/*']);
-    expect(built.optional_host_permissions).toEqual(['https://*/*', 'http://127.0.0.1/*']);
+    expect(built.optional_host_permissions).toEqual([
+      'https://*/*',
+      'http://127.0.0.1/*',
+      ...jobSites(false),
+    ]);
   });
 
   it('names a server’s site on any port, as permissions leave ports out', () => {

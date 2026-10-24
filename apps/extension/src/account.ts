@@ -6,6 +6,7 @@ import {
   SyncClient,
   WindowSignIn,
 } from '@factwright/sync';
+import { isChosenSite } from './application-sites.ts';
 import { ext } from './ext.ts';
 import { hostPattern } from './manifest.ts';
 import { DEFAULT_SERVER, isOwn } from './server.ts';
@@ -120,8 +121,9 @@ export const allowSync = (server: string): Promise<boolean> =>
  */
 const ONE_SITE = /^https?:\/\/[^/*]+\/\*$/;
 
-/** Gives back a site, if the browser will. */
+/** Gives back a site, if the browser will, unless it's a job site you chose (application-sites.ts). */
 async function giveBackSite(site: string): Promise<void> {
+  if (await isChosenSite(site)) return;
   try {
     await ext.permissions.remove({ origins: [site] });
   } catch {
@@ -133,8 +135,8 @@ async function giveBackSite(site: string): Promise<void> {
  * Gives back the browser's permission for each server of your own the extension isn't signed in
  * to, once its account changes: one it signed out of, or one a sign-in elsewhere asked for. It
  * keeps the server its sign-in is for, if it has one, and the one it was built for, which its
- * manifest asks for. Each is given back on its own, so one the browser won't give back stops none
- * of the others.
+ * manifest asks for, and the job sites you allowed. Each is given back on its own, so one the
+ * browser won't give back stops none of the others.
  */
 export async function reachOnly(server: string | null): Promise<void> {
   const keep = new Set([DEFAULT_SERVER, ...(server ? [server] : [])].map(hostPattern));

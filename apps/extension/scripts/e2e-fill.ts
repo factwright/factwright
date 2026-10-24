@@ -4,8 +4,11 @@
 // the form and uploads the job's resume. Your Claude drafts the form's own questions, as a
 // stand-in here, and the panel fills its drafts in once it's done. Once the form is done, Mark as
 // applied records what was sent, marks the job Applied, and offers to keep a new answer in
-// Profile. On a form with fields you can't see, as a page's traps for bots, it reads only those
-// you can. Nothing is submitted, and nothing leaves this computer.
+// Profile. Then the job application sites: turned on from the panel, they put a Fill button on
+// the form, which opens Chromium's side panel and fills it, and menus in its fields, whose answers
+// go in a field only once you pick one, and which offer to keep a new answer you typed; turned off
+// in setup, they're gone. On a form with fields you can't see, as a page's traps for bots, it
+// reads only those you can. Nothing is submitted, and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change.
@@ -97,14 +100,16 @@ const local = await site();
 const extension = join(ROOT, 'dist', 'chrome');
 try {
   // Built for this computer's site as its sync server, which it may reach, so the panel may read
-  // the form there without a click on its button, and with native messaging at install, as a
-  // test can't answer the browser's prompt for it.
+  // the form there without a click on its button, and with native messaging and the job
+  // application sites at install, as a test can't answer the browser's prompt for either. A build
+  // for testing counts this computer's site among the job application sites.
   execFileSync('node', ['scripts/build.ts'], {
     cwd: ROOT,
     env: {
       ...process.env,
       VITE_FACTWRIGHT_SYNC_SERVER: local.origin,
       FACTWRIGHT_NATIVE_AT_INSTALL: '1',
+      FACTWRIGHT_JOB_SITES_AT_INSTALL: '1',
     },
     stdio: 'ignore',
   });
@@ -250,6 +255,21 @@ try {
     env: { ...process.env, FACTWRIGHT_HELPER_HOME: home } as Record<string, string>,
   });
   contexts.push(context);
+  // What the extension's pages ask the browser for, each time, which the browser then answers.
+  await context.addInitScript(() => {
+    const page = globalThis as unknown as {
+      asked?: string[][];
+      chrome?: { permissions?: { request(asked: { origins?: string[] }): Promise<boolean> } };
+    };
+    const api = page.chrome?.permissions;
+    if (!api) return;
+    const request = api.request.bind(api);
+    page.asked = [];
+    api.request = (asked) => {
+      page.asked?.push(asked.origins ?? []);
+      return request(asked);
+    };
+  });
   const worker =
     context.serviceWorkers()[0] ??
     (await context.waitForEvent('serviceworker', { timeout: 15_000 }));
@@ -272,6 +292,13 @@ try {
 
   const form = await context.newPage();
   form.on('pageerror', (error) => errors.push(error.message));
+  // The extension's script on the page says what went wrong in it here.
+  form.on('console', (message) => {
+    // The site here answers "Not found" for its icon, which the browser asks for itself.
+    if (message.type() === 'error' && !/^Failed to load resource/.test(message.text())) {
+      errors.push(message.text());
+    }
+  });
   await form.goto(`${local.origin}${FORM_PATH}`);
   const formTab = (
     await setup.evaluate(
@@ -306,10 +333,11 @@ try {
     await panel.goto(`chrome-extension://${id}/sidepanel.html`);
     return panel;
   };
-  const shoot = async (page: Page, name: string) => {
+  /** A picture of a page, whole, or as the window shows it, with the extension's frame on it. */
+  const shoot = async (page: Page, name: string, fullPage = true) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
-    await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+    await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage });
   };
 
   // With Factwright closed, the panel says to open it, and fills nothing.
@@ -411,6 +439,175 @@ try {
     about.you.phone === '(720) 555-0199',
     'it keeps the new phone in Profile, once you choose to',
   );
+  // The job application sites, turned on from the panel, which asks the browser for them alone.
+  const offering = await panelOn();
+  await offering.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  await offering.getByRole('button', { name: 'Turn on for job application sites' }).click();
+  await offering
+    .getByText('Factwright’s menus and Fill button are on for job application sites.')
+    .waitFor({ timeout: 20_000 });
+  const asked = (await offering.evaluate(
+    () => (globalThis as unknown as { asked: string[][] }).asked,
+  )) as string[][];
+  const jobSites = asked.at(-1) ?? [];
+  console.log(`  Asked for: ${jobSites.join(' ')}`);
+  check(
+    jobSites.includes('https://jobs.lever.co/*') &&
+      jobSites.includes('http://127.0.0.1/*') &&
+      !jobSites.some((site) => /<all_urls>|^\*:|linkedin|indeed|^https:\/\/\*\/\*$/.test(site)),
+    'the panel turns on the job application sites, asking for them alone, never every site',
+  );
+  await offering.close();
+
+  /** The extension's frame on the form, its Fill button or a menu, once it shows `words`. */
+  const frameOn = async (mode: 'button' | 'menu', words = '', ms = 20_000) => {
+    const until = Date.now() + ms;
+    for (;;) {
+      for (const frame of form.frames()) {
+        if (!frame.url().includes(`/frame.html#${mode}`) || frame.isDetached()) continue;
+        const text = await frame
+          .locator('body')
+          .innerText()
+          .catch(() => '');
+        if (
+          (await frame
+            .locator('button')
+            .count()
+            .catch(() => 0)) > 0 &&
+          text.includes(words)
+        ) {
+          return frame;
+        }
+      }
+      if (Date.now() > until) throw new Error(`No ${mode} frame on the form with ${words}.`);
+      await form.waitForTimeout(100);
+    }
+  };
+  /**
+   * Presses a button in the extension's frame, from the keyboard, as you can: the panels here make
+   * the window narrower than the form's page, so a click by place wouldn't reach a frame from
+   * another process, as it does in a window as big as its page.
+   */
+  const press = async (button: ReturnType<Page['locator']>) => {
+    // The frame takes a click only once it's shown for half a second, as a person sees it first.
+    await form.waitForTimeout(600);
+    await button.focus();
+    await form.keyboard.press('Enter');
+  };
+  const fieldValue = (name: string) =>
+    form.locator(`[name="${name}"]`).evaluate((input) => (input as HTMLInputElement).value);
+  const waitForValue = async (name: string, wanted: string, ms = 30_000) => {
+    const until = Date.now() + ms;
+    while ((await fieldValue(name)) !== wanted) {
+      if (Date.now() > until) throw new Error(`${name} never held ${wanted}.`);
+      await form.waitForTimeout(100);
+    }
+  };
+  // The page that was open gets the script at once: its Fill button.
+  await frameOn('button');
+  check(true, 'the form that’s open gets its Fill button at once');
+  const scripts = (await setup.evaluate(() =>
+    (
+      globalThis as unknown as {
+        chrome: { scripting: { getRegisteredContentScripts(): Promise<{ matches: string[] }[]> } };
+      }
+    ).chrome.scripting.getRegisteredContentScripts(),
+  )) as { matches: string[]; excludeMatches?: string[] }[];
+  check(
+    scripts.length === 1 &&
+      scripts[0]?.matches.includes('https://jobs.lever.co/*') === true &&
+      scripts[0]?.excludeMatches?.includes('*://*.linkedin.com/*') === true,
+    'its script is registered for the job application sites, and never LinkedIn or Indeed',
+  );
+
+  // The Fill button opens Chromium's side panel, which fills the form, as Fill does.
+  await form.reload();
+  await form.bringToFront();
+  const fillButton = await frameOn('button');
+  check((await fieldValue('email')) === '', 'a form loaded again is empty');
+  await shoot(form, 'fill-4-button', false);
+  await press(fillButton.getByRole('button', { name: 'Fill', exact: true }));
+  await waitForValue('email', 'ana@example.com');
+  check(
+    (await fieldValue('name')) === 'Ana María Ruiz',
+    'its Fill button opens the side panel, which fills the form',
+  );
+
+  // A field's menu offers Factwright's answer, and puts it in the field only once you pick it.
+  await form.reload();
+  await frameOn('button');
+  await form.locator('input[name="name"]').click();
+  const nameMenu = await frameOn('menu');
+  const answer = nameMenu.getByRole('button', { name: /Ana María Ruiz/ });
+  await answer.waitFor({ timeout: 20_000 });
+  check(
+    (await answer.textContent())?.includes('From Profile') === true,
+    'a field’s menu offers Factwright’s answer, and says where it came from',
+  );
+  check((await fieldValue('name')) === '', 'nothing is in the field until you pick it');
+  check(
+    !(await form.content()).includes('ana@example.com'),
+    'and the page never has an answer it shows, which are in the extension’s own frame',
+  );
+  await shoot(form, 'fill-5-menu', false);
+  // A page that fades the menu, as one that would trick you into a click might, gets no pick.
+  await form.evaluate(() => {
+    document.documentElement.style.filter = 'opacity(0.3)';
+  });
+  await press(answer);
+  await form.waitForTimeout(500);
+  check((await fieldValue('name')) === '', 'a menu the page fades or covers takes no click');
+  await form.evaluate(() => {
+    document.documentElement.style.filter = '';
+  });
+  // A pick the page hid goes nowhere, and its menu closes: it opens again as you click back in.
+  await form.locator('input[name="email"]').click();
+  await form.locator('input[name="name"]').click();
+  const again = await frameOn('menu', 'Ana María Ruiz');
+  await press(again.getByRole('button', { name: /Ana María Ruiz/ }));
+  await waitForValue('name', 'Ana María Ruiz', 10_000);
+  check(true, 'picking it, as the page shows it, puts it in the field');
+
+  // A new answer you type, for a field Profile keeps, is offered to keep as you leave it.
+  const before = about.you.phone;
+  await form.locator('input[name="phone"]').click();
+  await frameOn('menu');
+  await form.locator('input[name="phone"]').pressSequentially('(720) 555-0123');
+  await form.keyboard.press('Tab');
+  const saving = await frameOn('menu', 'Save to Factwright?');
+  check(
+    (await saving.getByText('Phone: (720) 555-0123').count()) === 1,
+    'leaving a field with a new answer offers to keep it',
+  );
+  await shoot(form, 'fill-6-save', false);
+  check(about.you.phone === before, 'and keeps nothing until you choose to');
+  await press(saving.getByRole('button', { name: 'Save', exact: true }));
+  await saving.getByText('Saved to Factwright.').waitFor({ timeout: 20_000 });
+  check(about.you.phone === '(720) 555-0123', 'Save keeps it in Profile');
+
+  // Turned off in setup, the Fill button and the menus are gone, there and then.
+  await setup.reload();
+  await setup.getByRole('button', { name: 'Turn off', exact: true }).click();
+  await setup.getByText('Off for job application sites.').waitFor({ timeout: 20_000 });
+  const until = Date.now() + 10_000;
+  while (form.frames().some((each) => each.url().includes('/frame.html'))) {
+    if (Date.now() > until) throw new Error('The Fill button stayed after turning them off.');
+    await form.waitForTimeout(100);
+  }
+  await form.reload();
+  await form.waitForTimeout(1500);
+  const left = (await setup.evaluate(() =>
+    (
+      globalThis as unknown as {
+        chrome: { scripting: { getRegisteredContentScripts(): Promise<unknown[]> } };
+      }
+    ).chrome.scripting.getRegisteredContentScripts(),
+  )) as unknown[];
+  check(
+    left.length === 0 && !form.frames().some((each) => each.url().includes('/frame.html')),
+    'turned off in setup, its script is unregistered, and its button and menus are gone',
+  );
+
   // The built form function, as the panel sends it into a page, on a form with traps for bots.
   const built = readdirSync(join(extension, 'assets'))
     .filter((name) => name.endsWith('.js'))

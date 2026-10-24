@@ -19,6 +19,8 @@ const browser = vi.hoisted(() => {
   const granted = new Set<string>();
   const calls: { call: string; origins: string[] }[] = [];
   const answers = { allow: true, fails: false, wontGiveBack: new Set<string>() };
+  /** What you chose of the job application sites, as the extension keeps it. */
+  const items: Record<string, unknown> = {};
   const fail = () => {
     throw new Error('Only permissions specified in the manifest may be requested.');
   };
@@ -46,8 +48,16 @@ const browser = vi.hoisted(() => {
         return { origins: [...granted], permissions: ['activeTab', 'storage'] };
       },
     },
+    storage: {
+      local: {
+        get: async (key: string) => (key in items ? { [key]: structuredClone(items[key]) } : {}),
+        set: async (more: Record<string, unknown>) => {
+          Object.assign(items, structuredClone(more));
+        },
+      },
+    },
   };
-  return { granted, calls, answers };
+  return { granted, calls, answers, items };
 });
 
 const OWN = 'https://factwright-sync.sam.workers.dev:8443';
@@ -59,6 +69,7 @@ beforeEach(() => {
   browser.granted.add(BUILT_FOR);
   browser.calls.length = 0;
   Object.assign(browser.answers, { allow: true, fails: false, wontGiveBack: new Set() });
+  for (const key of Object.keys(browser.items)) delete browser.items[key];
 });
 
 describe('the account it keeps', () => {
@@ -135,6 +146,16 @@ describe('reaching only the server it’s signed in to', () => {
   it('carries on when the browser can’t say what it has', async () => {
     browser.answers.fails = true;
     await expect(reachOnly(null)).resolves.toBeUndefined();
+  });
+
+  it('never gives back a job site you allowed, signing in or out', async () => {
+    const lever = 'https://jobs.lever.co/*';
+    const careers = 'https://careers.example.com/*';
+    for (const site of [lever, careers, ...STRAYS]) browser.granted.add(site);
+    browser.items.jobSites = { all: true, sites: [careers] };
+    await reachOnly(OWN);
+    await reachOnly(null);
+    expect([...browser.granted].sort()).toEqual([BUILT_FOR, careers, lever].sort());
   });
 
   it('never gives back a wildcard you allowed yourself, which Firefox reaches your server through', async () => {
