@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { postingKey } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import { type PageJob, readJobPage } from '../src/page/read-job.ts';
 
@@ -619,6 +620,25 @@ describe('reading a job page', () => {
         location: 'Denver, CO, USA',
       });
     }
+  });
+
+  it('gives SuccessFactors’ application, at your session’s address, its posting’s own', () => {
+    const job = readJobPage(
+      page(
+        readFileSync(
+          join(import.meta.dirname, 'fixtures', 'successfactors-application.html'),
+          'utf8',
+        ),
+      ),
+      'https://career17.sapsf.com/portalcareer?_s.crb=sample',
+      '',
+    );
+    expect(job).toMatchObject({
+      url: 'https://career17.sapsf.com/sfcareer/jobreqcareer?jobId=1042&company=copperlineP',
+      pageUrl: 'https://career17.sapsf.com/portalcareer?_s.crb=sample',
+      title: 'Field Data Analyst',
+    });
+    expect(postingKey(job.url)).toBe('successfactors:copperlinep:1042');
   });
 
   it('never takes a job board’s or an applicant system’s name as the company', () => {

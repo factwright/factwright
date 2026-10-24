@@ -107,11 +107,16 @@ export function readJobPage(
     'HR',
   ]);
 
+  /** The sites SuccessFactors' career pages are on, by its data centers' names. */
+  const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
+
   /** Each big job site's own places for the posting and its details, newest layouts first. */
   const SITES: {
     host: RegExp;
     posting: string[];
     title: string[];
+    /** Words its heading puts around a job's title, which aren't the title's. */
+    aroundTitle?: RegExp;
     company: string[];
     /** The company in the tab's title, for a site that shows its name nowhere else as text. */
     companyInTitle?: RegExp;
@@ -227,6 +232,16 @@ export function readJobPage(
       // Engineer - Acme", then "Preliminary questions - Robotics Engineer - Acme".
       companyInTitle: /^(?:easy apply|preliminary questions|assessment) - .+ - (.+)$/i,
       location: ['.job-detail', '[data-test="topbar-location"]'],
+    },
+    {
+      // SuccessFactors' career pages, where its applications are: its heading says the job, with
+      // its requisition's number, "Data Analyst (1042)", or "Career Opportunities: …" before it.
+      host: SUCCESSFACTORS,
+      posting: ['.joqReqDescription'],
+      title: ['#pageTitle_ h1', '#jobAppPageTitle h1', '.pagetitle h1'],
+      aroundTitle: /^career opportunities:\s*(apply for\s+)?|\s*\([\w-]{1,40}\)$/gi,
+      company: [],
+      location: [],
     },
   ];
 
@@ -502,6 +517,16 @@ export function readJobPage(
       const key = param('vjk') ?? param('jk');
       if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
     }
+    // SuccessFactors' application, once you've signed in, is at your session's address, which
+    // names neither the company nor the job: its form keeps both, which make the posting's own.
+    if (SUCCESSFACTORS.test(host)) {
+      const kept = (id: string) => (doc.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+      const company = kept('career_company');
+      const job = kept('career_job_req_id');
+      if (/^[\w-]{1,40}$/.test(company) && /^[\w-]{1,40}$/.test(job)) {
+        return `https://${url.hostname}/sfcareer/jobreqcareer?jobId=${job}&company=${company}`;
+      }
+    }
     url.search = untracked(url.search);
     // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
     const hash = url.hash.replace(/:~:.*$/s, '');
@@ -600,7 +625,9 @@ export function readJobPage(
     first(selectors ?? [], (element) => oneLine(textOf(element)));
   /** Indeed's title ends with words only screen readers hear. */
   const JOB_POST = /\s*-\s*job post\s*$/i;
-  const shownTitle = fromSite(known?.title).replace(JOB_POST, '');
+  const shownTitle = fromSite(known?.title)
+    .replace(JOB_POST, '')
+    .replace(known?.aroundTitle ?? JOB_POST, '');
 
   /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
   const titleOf = (posting: Record<string, unknown>) =>

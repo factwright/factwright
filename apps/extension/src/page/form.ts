@@ -839,6 +839,17 @@ export async function formPage(
   /** A set of fields, which may name a part of the form, or a question. */
   const SETS = 'fieldset, [role="group"], [role="region"]';
 
+  /** How many fields the page's form has, outside the page's own parts, once counted. */
+  let formFields: number | null = null;
+  /**
+   * Whether a set holds every field of the form, so it names the form, not a part of it, as
+   * SuccessFactors' region around its whole application, "Job Application Form", does.
+   */
+  const wholeForm = (set: Element) => {
+    formFields ??= everyOf(CONTROLS).filter((each) => !closestOf(each, AROUND)).length;
+    return everyOf(CONTROLS, set).length >= formFields;
+  };
+
   /**
    * The part of the form a field is in, as the page names it, such as "Work experience" or
    * "Education 2": the nearest heading before it, in the box the heading names, and the name of
@@ -854,7 +865,7 @@ export async function formPage(
     let named = '';
     for (; set; set = aroundOf(set, SETS)) {
       const others = everyOf<HTMLElement>(CONTROLS, set).filter((each) => !members.includes(each));
-      named = others.length >= 3 ? groupWords(set) : '';
+      named = others.length >= 3 && !wholeForm(set) ? groupWords(set) : '';
       if (named && named.length <= MAX_SECTION) break;
       named = '';
     }
