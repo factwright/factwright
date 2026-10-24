@@ -42,10 +42,11 @@ function menus(): void {
 
 /**
  * Pages that look like an application form, by what Chrome sees on them itself: a file to upload
- * and an email address to give, a file to upload on an applicant system's site, or a company's
- * page that shows an applicant system's application form in a frame, by the frame's address, as
- * Chrome looks only at frames of the page's own site. Chrome checks these rules, so the extension
- * never reads a page to light its button up.
+ * and an email address to give, a file to upload on an applicant system's site, each page of a
+ * Workday application, by the step its progress bar marks, or a company's page that shows an
+ * applicant system's application form in a frame, by the frame's address, as Chrome looks only at
+ * frames of the page's own site. Chrome checks these rules, so the extension never reads a page to
+ * light its button up.
  */
 const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
   { css: ['input[type="file"]', 'input[type="email"]'] },
@@ -63,6 +64,10 @@ const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
     'workable.com',
     'jobvite.com',
   ].map((host) => ({ pageUrl: { hostSuffix: host }, css: ['input[type="file"]'] })),
+  ...['myworkdayjobs.com', 'myworkdaysite.com'].map((host) => ({
+    pageUrl: { hostSuffix: host },
+    css: ['[data-automation-id="progressBarActiveStep"]'],
+  })),
 ];
 
 /** The toolbar button's icon with a dot in Factwright's accent, at each size it shows. */

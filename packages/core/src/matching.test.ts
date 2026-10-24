@@ -39,6 +39,33 @@ describe('postingKey', () => {
     );
   });
 
+  it('reads a Workday posting’s ID, the same on its application, at the company’s own site', () => {
+    expect(
+      [
+        'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Denver-CO/Product-Manager_R101',
+        'https://acme.wd5.myworkdayjobs.com/External/job/Denver-CO/Product-Manager_R101?source=LinkedIn',
+        'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Denver-CO/Product-Manager_R101/apply/applyManually',
+        'https://acme.wd1.myworkdayjobs.com/en-US/External/details/Product-Manager_R101',
+        'https://wd5.myworkdaysite.com/en-US/recruiting/acme/External/job/Denver-CO/Product-Manager_R101/apply',
+      ].map(postingKey),
+    ).toEqual(Array(5).fill('workday:acme:r101'));
+    // A place with "_" in it isn't the posting: its ID ends the part after it.
+    expect(
+      postingKey('https://acme.wd5.myworkdayjobs.com/External/job/US_CO_Denver/Engineer_JR-0042'),
+    ).toBe('workday:acme:jr-0042');
+    // Another company's site on Workday is another posting, whatever its ID.
+    expect(
+      postingKey('https://globex.wd5.myworkdayjobs.com/en-US/Careers/job/Austin/Engineer_R101'),
+    ).toBe('workday:globex:r101');
+    expect(
+      [
+        'https://acme.wd5.myworkdayjobs.com/en-US/External',
+        'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Denver-CO/Product-Manager',
+        'https://www.myworkday.com/acme/d/home.htmld',
+      ].map(postingKey),
+    ).toEqual([null, null, null]);
+  });
+
   it('gives none for a whole board, or a site it doesn’t know', () => {
     expect(
       [

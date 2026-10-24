@@ -28,10 +28,11 @@ import type {
   FieldFilled,
   FieldValue,
   FormTask,
+  PageAdder,
   PageField,
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
-import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
+import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 import { PDF, syncedHunt } from './synced-hunt.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -78,9 +79,27 @@ const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
 /** A company's careers page, which shows Lever's form in a frame. */
 const CAREERS = '/careers/northwind';
 
+/**
+ * Workday's application, a page of it at each address, as its pages are built from Workday's
+ * markup, with its own code acted out, and the pages it swaps in from here.
+ */
+const WORKDAY: Record<string, string> = {
+  '/workday/my-information': 'workday-my-information.html',
+  '/workday/my-experience': 'workday-my-experience.html',
+};
+const WORKDAY_PAGES = '/workday-pages/';
+
 let origin = '';
 const site = createServer((request, response) => {
   const url = request.url ?? '';
+  const workday = WORKDAY[url];
+  if (workday || url.startsWith(WORKDAY_PAGES)) {
+    const file = workday ?? url.slice(WORKDAY_PAGES.length).replace(/[^a-z-.]/g, '');
+    const html = readFileSync(join(FIXTURES, file), 'utf8');
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(workday ? withOwnCode(html, workdayCode(WORKDAY_PAGES)) : html);
+    return;
+  }
   const page = url === TRAPS ? { file: 'hidden-fields.html' } : PAGES[url];
   if (url === CAREERS) {
     response.writeHead(200, { 'content-type': 'text/html' });
@@ -269,6 +288,88 @@ try {
       `${path}: the resume goes in through Firefox's content-script sandbox`,
     );
   }
+  // Workday's application: its dropdowns, its lists you search, a date's month and year typed a
+  // key at a time, and its Add Another, through Firefox's content-script sandbox.
+  const information = `${origin}/workday/my-information`;
+  await running.send('browsingContext.navigate', {
+    context: tab,
+    url: information,
+    wait: 'complete',
+  });
+  type Read = { did: 'read'; form: { step: string; fields: PageField[]; adders: PageAdder[] } };
+  const myInformation = await inPage<Read>(information, { do: 'read' });
+  const workdayAt = (
+    form: Read['form'],
+    question: string,
+    answer: Omit<FieldAnswer, 'ref' | 'key'>,
+  ) => {
+    const field = form.fields.find((each) => each.question === question);
+    if (!field) throw new Error(`No ${question} on Workday’s page`);
+    return { ref: field.ref, key: field.key, ...answer };
+  };
+  const country = ['United States', 'United States of America', 'USA'];
+  const { filled: informed } = await inPage<{ filled: FieldFilled[] }>(information, {
+    do: 'fill',
+    url: information,
+    answers: [
+      workdayAt(myInformation.form, 'How Did You Hear About Us?', { pick: ['LinkedIn'] }),
+      workdayAt(myInformation.form, 'Country/Region', { pick: country }),
+      workdayAt(myInformation.form, 'First Name', { text: 'Ana María' }),
+      workdayAt(myInformation.form, 'Address Line 1', { text: '1420 Larimer St' }),
+      workdayAt(myInformation.form, 'State', { pick: ['CO', 'Colorado'] }),
+    ],
+  });
+  check(
+    myInformation.form.step === 'My Information' &&
+      JSON.stringify(informed.map((each) => each.shown)) ===
+        JSON.stringify([
+          'LinkedIn',
+          'United States of America',
+          'Ana María',
+          '1420 Larimer St',
+          'Colorado',
+        ]) &&
+      informed.every((each) => each.ok),
+    'Workday’s My Information: its dropdowns, and a list you search, through its groups',
+  );
+  const experience = `${origin}/workday/my-experience`;
+  await running.send('browsingContext.navigate', {
+    context: tab,
+    url: experience,
+    wait: 'complete',
+  });
+  const myExperience = await inPage<Read>(experience, { do: 'read' });
+  const { filled: experienced } = await inPage<{ filled: FieldFilled[] }>(experience, {
+    do: 'fill',
+    url: experience,
+    answers: [
+      workdayAt(myExperience.form, 'From Month', { text: '03' }),
+      workdayAt(myExperience.form, 'From Year', { text: '2021' }),
+      workdayAt(myExperience.form, 'Degree', { pick: ["Bachelor's Degree", "Bachelor's"] }),
+      workdayAt(myExperience.form, 'Field of Study', { pick: ['Psychology'] }),
+    ],
+  });
+  check(
+    JSON.stringify(experienced.map((each) => each.shown)) ===
+      JSON.stringify(['03', '2021', 'Bachelors', 'Psychology']) &&
+      experienced.every((each) => each.ok),
+    'Workday’s My Experience: a date’s month and year a key at a time, a dropdown, and a list you search by Enter',
+  );
+  const [jobs] = myExperience.form.adders;
+  if (!jobs) throw new Error('No Add Another on Workday’s My Experience');
+  const added = await inPage<{ did: 'add'; added: number }>(experience, {
+    do: 'add',
+    url: experience,
+    adder: jobs,
+    times: 1,
+  });
+  const after = await inPage<Read>(experience, { do: 'read' });
+  check(
+    added.added === 1 &&
+      after.form.fields.filter((field) => field.question === 'Job Title').length === 2,
+    'and its Add Another, pressed once, adds a second Work Experience',
+  );
+
   const traps = `${origin}${TRAPS}`;
   await running.send('browsingContext.navigate', { context: tab, url: traps, wait: 'complete' });
   const seen = await inPage<{ form: { fields: PageField[] } }>(traps, { do: 'read' });

@@ -239,6 +239,11 @@ export function startScript(
     const before = form;
     form = answer.form;
     elements = seen;
+    // Another page of an application that runs over several, as Workday swaps its own in: the
+    // panel filling it, if it's open, looks at it now, to offer to fill this one.
+    if (before !== null && form.step && form.step !== before.step) {
+      void send({ type: 'job-site', do: 'look', doc });
+    }
     // Another page, or the same with other fields: the background is asked again for its answers.
     const same =
       before !== null &&
@@ -850,6 +855,9 @@ export function startScript(
   const onFocusOut = (event: FocusEvent) => {
     const target = event.target;
     if (!(target instanceof Element) || mine.has(target)) return;
+    // On a page of an application that runs over several, the panel filling it reads what you
+    // gave the field now, before the page can go on, as when you press its Save and Continue.
+    if (form?.step && fieldOf(target) >= 0) void send({ type: 'job-site', do: 'look', doc });
     left(target);
     // Into the menu, it stays open; into another field, that field's menu follows; anywhere
     // else, it closes, unless it offers to keep what you gave the field you left.

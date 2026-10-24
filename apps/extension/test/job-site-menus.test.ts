@@ -2,7 +2,7 @@ import type { FieldReply } from '@factwright/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { allowedFrames, JOB_SITES } from '../src/application-sites.ts';
 import { MENU_ROWS } from '../src/frame-size.ts';
-import { isFromFrame, isFromScript, isToScript } from '../src/job-site-messages.ts';
+import { isFromFrame, isFromScript, isToPanel, isToScript } from '../src/job-site-messages.ts';
 import {
   answerFrame,
   answerScript,
@@ -26,12 +26,17 @@ const browser = vi.hoisted(() => {
     asks: [] as Record<string, unknown>[],
     replies: [] as FieldReply[],
     told: [] as { tabId: number; message: Record<string, unknown>; frameId?: number }[],
+    /** What the background told the panel. */
+    panel: [] as unknown[],
     session: {} as Record<string, unknown>,
   };
   (globalThis as { chrome?: unknown }).chrome = {
     runtime: {
       id: 'factwright',
       getURL: (path: string) => `chrome-extension://factwright/${path}`,
+      sendMessage: async (message: unknown) => {
+        state.panel.push(message);
+      },
       sendNativeMessage: async (_helper: string, message: { request: string }) => {
         const ask = JSON.parse(message.request) as Record<string, unknown>;
         state.asks.push(ask);
@@ -117,6 +122,8 @@ const FORM: PageForm = {
   url: PAGE,
   title: 'Acme - Engineer',
   submitted: false,
+  step: '',
+  adders: [],
   fields: [
     field(0, 'Full name'),
     field(1, 'Phone', { type: 'tel' }),
@@ -144,6 +151,7 @@ beforeEach(() => {
   browser.granted = new Set(JOB_SITES);
   browser.asks.length = 0;
   browser.told.length = 0;
+  browser.panel.length = 0;
   browser.replies = REPLIES;
 });
 
@@ -479,6 +487,21 @@ describe('the script and the frame, as the background answers them', () => {
     ).toEqual({ offer: false });
   });
 
+  it('has the panel look at an application of several pages now, from its script alone', async () => {
+    await answerScript(hello, fromScript);
+    expect(await answerScript({ type: 'job-site', do: 'look', doc: DOC }, fromScript)).toEqual({});
+    expect(browser.panel).toEqual([{ type: 'panel', do: 'look', tabId: TAB }]);
+    // A name the script in that frame didn't say hello by tells it nothing.
+    await answerScript({ type: 'job-site', do: 'look', doc: TOKEN }, fromScript);
+    expect(browser.panel).toHaveLength(1);
+    // Nor a site you didn't allow.
+    browser.items.jobSites = { all: false, sites: [] };
+    expect(await answerScript({ type: 'job-site', do: 'look', doc: DOC }, fromScript)).toEqual({
+      stop: true,
+    });
+    expect(browser.panel).toHaveLength(1);
+  });
+
   it('asks the script to read the form again once the background has forgotten it', async () => {
     expect(
       await answerScript(
@@ -601,7 +624,20 @@ describe('each message, checked', () => {
     expect(isFromScript({ ...hello, around: ['https://careers.example.com'] })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'bye', doc: DOC })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'form', form: FORM, job })).toBe(true);
+    expect(isFromScript({ type: 'job-site', do: 'look', doc: DOC })).toBe(true);
+    const workday = {
+      ...FORM,
+      step: 'My Experience',
+      adders: [{ section: 'Work Experience', words: 'Add Another' }],
+    };
+    expect(isFromScript({ type: 'job-site', do: 'form', form: workday, job })).toBe(true);
     for (const bad of [
+      { type: 'job-site', do: 'look' },
+      { type: 'job-site', do: 'look', doc: 'mine' },
+      { type: 'job-site', do: 'form', form: { ...workday, step: 7 }, job },
+      { type: 'job-site', do: 'form', form: { ...workday, adders: 'all' }, job },
+      { type: 'job-site', do: 'form', form: { ...workday, adders: [{ words: 'Add' }] }, job },
+      { type: 'job-site', do: 'form', form: { ...FORM, step: undefined }, job },
       null,
       { type: 'save', do: 'hello' },
       { type: 'job-site', do: 'write' },
@@ -644,5 +680,9 @@ describe('each message, checked', () => {
     ).toBe(true);
     expect(isToScript({ type: 'job-site', do: 'write', answer: { key: 'k' } })).toBe(false);
     expect(isToScript({ type: 'job-site', do: 'hello' })).toBe(false);
+    expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB, at: 1 })).toBe(true);
+    expect(isToPanel({ type: 'panel', do: 'look', tabId: TAB })).toBe(true);
+    expect(isToPanel({ type: 'panel', do: 'look' })).toBe(false);
+    expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB })).toBe(false);
   });
 });

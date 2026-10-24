@@ -257,6 +257,158 @@ describe('what a field asks for', () => {
     ).toEqual(['personal', 'question', 'personal', 'question', 'personal']);
   });
 
+  it('takes an equal-opportunity question by its options, or Workday’s names, whatever it says', () => {
+    const asked = (
+      question: string,
+      more: { options?: string[]; name?: string; section?: string },
+    ) => fieldKind({ ...field(question, { control: 'choices', name: more.name }), ...more });
+    // Workday's Self Identify asks about a disability with boxes, as "Please check one".
+    expect(
+      asked('Please check one of the boxes below:', {
+        options: [
+          'Yes, I have a disability, or have had one in the past',
+          'No, I do not have a disability and have not had one in the past',
+          'I do not want to answer',
+        ],
+      }),
+    ).toBe('disability');
+    expect(
+      asked('Please select all that apply.', {
+        options: [
+          'American Indian or Alaska Native (United States of America)',
+          'Asian (United States of America)',
+          'Black or African American (United States of America)',
+        ],
+      }),
+    ).toBe('race');
+    expect(
+      asked('Please select one of the options below:', {
+        options: ['I AM NOT A VETERAN', 'I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN'],
+      }),
+    ).toBe('veteran');
+    // A dropdown shows no options until it's open: Workday names each one.
+    for (const [name, kind] of [
+      ['veteranStatus personalInfoUS--veteranStatus', 'veteran'],
+      ['ethnicity personalInfoUS--ethnicity', 'race'],
+      ['hispanicOrLatino personalInfoUS--hispanicOrLatino', 'hispanic'],
+      ['gender personalInfoUS--gender', 'gender'],
+    ] as const) {
+      expect(asked('Please select one of the options below:', { name })).toBe(kind);
+    }
+    // What a part of the form names first, before "--", isn't the field's own name.
+    expect(
+      fieldKind(
+        field('Date Month', {
+          control: 'number',
+          name: 'selfIdentifiedDisabilityData--dateSignedOn-dateSectionMonth-input',
+        }),
+      ),
+    ).toBe('question');
+    // A name that says only which one it is after "--" says what it asks before.
+    expect(asked('Please select one of the options below:', { name: 'gender--0' })).toBe('gender');
+    expect(asked('Please select one of the options below:', { name: 'race--select' })).toBe('race');
+    // Options that only happen to name one aren't enough.
+    expect(asked('Which colors do you like?', { options: ['White', 'Blue'] })).toBe('question');
+  });
+
+  it('never lets options make a question that says what it asks an equal-opportunity one', () => {
+    const asked = (question: string, options: string[], section = '') =>
+      fieldKind({ ...field(question, { control: 'choice' }), options, section });
+    // Its words make it something else, whatever its options say, in any part of the form.
+    for (const section of ['', 'Voluntary Disclosures']) {
+      expect(
+        asked(
+          'Are you the spouse of a protected veteran?',
+          [
+            'Yes, I am the spouse of a protected veteran',
+            'No, I am not the spouse of a protected veteran',
+          ],
+          section,
+        ),
+      ).toBe('personal');
+      expect(
+        asked(
+          'Do you require a reasonable accommodation to take part in the hiring process?',
+          ['Yes, I have a disability and need an accommodation', 'No, I do not have a disability'],
+          section,
+        ),
+      ).toBe('personal');
+    }
+    // Options that name races, as communities, ask no one's race.
+    const served = [
+      'Black or African American communities',
+      'American Indian or Alaska Native communities',
+      'Asian communities',
+    ];
+    expect(asked('Which populations have you worked with?', served)).toBe('question');
+    expect(asked('Please select all that apply.', served)).toBe('question');
+    // A question that asks something of its own keeps it, outside a part for self-identification.
+    expect(asked('Which of these teams would you like to coach?', ['Men', 'Women', 'Mixed'])).toBe(
+      'question',
+    );
+  });
+
+  it('leaves boxes that agree to something, among several, for you to tick', () => {
+    const boxes = (question: string, options: string[]) =>
+      fieldKind({ ...field(question, { control: 'choices' }), options });
+    expect(
+      boxes('Please confirm the following:', [
+        'I certify that the information I have given is true',
+        'I agree to a background check',
+      ]),
+    ).toBe('consent');
+    expect(
+      boxes('Please select all that apply.', [
+        'Remote',
+        'I have read the Applicant Privacy Notice',
+      ]),
+    ).toBe('consent');
+    // Boxes that agree to nothing are a question of the form's own.
+    expect(boxes('Which shifts can you work?', ['Mornings', 'Evenings', 'Weekends'])).toBe(
+      'question',
+    );
+  });
+
+  it('keeps what it can’t tell in a part for self-identification for you, never to keep or draft', () => {
+    const inPart = (question: string, section: string, control: FieldControl = 'combo') =>
+      fieldKind({ ...field(question, { control }), section });
+    expect(
+      inPart('Please select one of the options below:', 'Voluntary Demographic Information'),
+    ).toBe('personal');
+    expect(inPart('Date Month', 'Self Identify', 'number')).toBe('personal');
+    expect(inPart('Language', 'Voluntary Self-Identification of Disability')).toBe('personal');
+    // Your name there signs the form, as the disability form's "Name" beside its date does:
+    // that's yours to do, as agreeing to the terms is.
+    expect(inPart('Name', 'Self Identify', 'text')).toBe('consent');
+    expect(inPart('Name', 'My Information › Legal Name', 'text')).toBe('full-name');
+    expect(
+      inPart(
+        'Yes, I have read and consent to the terms and conditions',
+        'Voluntary Disclosures',
+        'check',
+      ),
+    ).toBe('consent');
+    // Elsewhere, a question of the form's own.
+    expect(inPart('How much travel are you open to?', 'Application Questions', 'choice')).toBe(
+      'question',
+    );
+  });
+
+  it('never fills a box only robots would, as a page’s trap for bots', () => {
+    expect(
+      kinds([
+        [
+          'Enter website. This input is for robots only, do not enter if you’re human.',
+          { name: 'website' },
+        ],
+        ['Leave this field blank'],
+        ['If you are human, leave this field blank.'],
+        // A field you may leave blank isn't a trap.
+        ['Middle name (leave it blank if you have none)'],
+      ]),
+    ).toEqual(['never', 'never', 'never', 'middle-name']);
+  });
+
   it('tells working where you are from working without sponsorship', () => {
     expect(
       kinds([
@@ -346,8 +498,32 @@ describe('what a field asks for', () => {
         ['Apartment, suite, etc.'],
         ['Country code', { control: 'combo' }],
         ['Address line 1'],
+        // Workday asks the kind of phone, its country's code and its extension beside the number,
+        // each with a name that says phone.
+        ['Phone Device Type', { control: 'combo', name: 'phoneNumber--phoneType' }],
+        ['Country Phone Code', { control: 'combo', name: 'phoneNumber--countryPhoneCode' }],
+        ['Phone Number', { name: 'phoneNumber--phoneNumber' }],
+        ['Phone Extension', { name: 'phoneNumber--extension' }],
+        ['Country/Region', { control: 'combo', name: 'country country--country' }],
+        [
+          'Language',
+          { control: 'combo', name: 'disabilityForm selfIdentifiedDisabilityData--disabilityForm' },
+        ],
       ]),
-    ).toEqual(['middle-name', 'street-2', 'street-2', 'phone-country', 'street']);
+    ).toEqual([
+      'middle-name',
+      'street-2',
+      'street-2',
+      'phone-country',
+      'street',
+      'question',
+      'phone-country',
+      'phone',
+      'question',
+      'country',
+      // Self Identify's language, which Workday names "disabilityForm", asks no one's disability.
+      'question',
+    ]);
   });
 
   it('knows what a part of the form for each job or school asks, by its heading or name', () => {
