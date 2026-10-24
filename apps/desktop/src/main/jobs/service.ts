@@ -161,13 +161,13 @@ export class JobsService {
 
   /**
    * Claude's answers to the user's questions about a job, the job's screenshots, the posting
-   * the user saved, Claude's prep sheets and thank-you notes for its calls, and the messages
-   * Claude drafted for people at the company.
+   * the user saved, its application form's questions, Claude's prep sheets and thank-you notes
+   * for its calls, and the messages Claude drafted for people at the company.
    */
   extras(jobId: string): Omit<JobExtras, 'versions'> {
     const workspace = diskWorkspace(this.deps.workspace);
     const outreach = readOutreach(workspace, this.found.get(jobId)?.outreach ?? []);
-    return { ...readJobExtras(workspace, jobId), outreach };
+    return { ...readJobExtras(workspace, jobId), form: this.savedForm(jobId), outreach };
   }
 
   /**

@@ -52,6 +52,7 @@ import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
 import { BROWSERS } from './extension/browsers.ts';
 import type { SaveHelper } from './extension/save-helper.ts';
 import { hasFocus, parseFocus, saveFocus } from './jobs/focus.ts';
+import { getFormQuestions } from './jobs/form-feed.ts';
 import {
   parseCallChanges,
   parseDate,
@@ -80,6 +81,7 @@ import { markFirstRunDone, type Profiles } from './profiles.ts';
 import type { CallReminders } from './reminders.ts';
 import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
+import type { FetchDeps } from './tools/posting.ts';
 import type { UpdateWatcher } from './updates.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
@@ -174,6 +176,8 @@ export interface IpcDeps {
   tellRunDone: (note: unknown) => void;
   /** The app's requests to the window to start a run, which the window answers. */
   runRequests: RunRequests;
+  /** Stands in for Greenhouse's job API, as the tests' copy has it, or undefined to ask it. */
+  formFeed?: FetchDeps['fetch'] | undefined;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -218,6 +222,7 @@ export function registerIpc({
   saveHelper,
   tellRunDone,
   runRequests,
+  formFeed,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -503,6 +508,12 @@ export function registerIpc({
     isTextUpTo(text, LIMITS.answer)
       ? jobs.recordAnswer(jobId, question, nth as number, text)
       : REFUSED,
+  );
+
+  // The questions of a job's application form, from Greenhouse before the form is open, kept
+  // with the job for its Claude to draft.
+  answer('jobs:form-questions', (jobId) =>
+    isId(jobId) ? getFormQuestions(jobId, { jobs, ...(formFeed && { fetch: formFeed }) }) : REFUSED,
   );
 
   answer('jobs:ask', (jobId, question) =>

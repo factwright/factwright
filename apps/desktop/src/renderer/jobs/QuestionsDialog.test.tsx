@@ -154,6 +154,7 @@ describe('the application questions', () => {
     vi.mocked(api.jobExtras).mockResolvedValue({
       asked: {},
       posting: null,
+      form: null,
       calls: {},
       outreach: [],
       versions: [],

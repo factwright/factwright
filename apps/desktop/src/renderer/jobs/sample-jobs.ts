@@ -10,6 +10,7 @@ import {
   localDate,
   type Note,
   type OutreachDraft,
+  type SavedForm,
   type ScorePart,
   type SearchDetail,
   type Sentiment,
@@ -362,6 +363,8 @@ export function sampleJobs(): Job[] {
       id: 'acme-robotics--staff-engineer-developer-tools',
       company: 'Acme Robotics',
       role: 'Staff Engineer, Developer Tools',
+      // On Greenhouse, which lists its form's questions before it's open.
+      link: 'https://job-boards.greenhouse.io/acmerobotics/jobs/4012345',
       pay: { text: '$185k–$215k', min: 185_000, max: 215_000, source: 'estimate' },
       stage: 'review',
       fit: { verdict: 'Good', score: 78, date: day(-1) },
@@ -912,6 +915,40 @@ const PEOPLE = (company: string) =>
   ].join('\n');
 
 /** What Claude drafted for people at a sample job's company, newest first. */
+/**
+ * A sample job's application form's questions for your Claude to draft, as Factwright gets them
+ * from Greenhouse for a job with a posting there.
+ */
+export function sampleForm(job: Job): SavedForm {
+  const asked = (question: string, more: Partial<SavedForm['questions'][number]> = {}) => ({
+    question,
+    hint: '',
+    section: '',
+    control: 'long' as const,
+    options: [],
+    required: true,
+    limit: null,
+    ...more,
+  });
+  return {
+    url: job.link ?? '',
+    read: new Date().toISOString(),
+    from: 'greenhouse',
+    questions: [
+      asked(`Why do you want to join ${job.company}?`, {
+        hint: 'A few sentences, up to 1,000 characters.',
+        limit: 1000,
+      }),
+      asked('Tell us about a developer tool you built, and who used it.'),
+      asked('Have you run build systems for more than 100 engineers?', {
+        control: 'choice',
+        options: ['Yes', 'No'],
+        required: false,
+      }),
+    ],
+  };
+}
+
 export function sampleOutreach(job: Job): OutreachDraft[] {
   return job.outreach
     .map((path) => ({

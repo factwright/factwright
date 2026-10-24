@@ -1,16 +1,18 @@
 import {
   type ApplicationAnswer,
   applicationAnswers,
+  formFeed,
   type Job,
   questionKey,
   readSuggestedAnswers,
+  type SavedForm,
   type SuggestedAnswer,
   shortDate,
 } from '@factwright/core';
 import { Button, Markdown, Pill, TextArea } from '@factwright/ui';
-import { ClipboardList, Copy } from 'lucide-react';
+import { ClipboardList, Copy, Download } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { FactwrightApi } from '../../shared/api.ts';
+import type { FactwrightApi, FormQuestionsResult } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import styles from './ApplicationSection.module.css';
@@ -194,10 +196,78 @@ function AnswerItem({
 }
 
 /**
+ * Where the application form's own questions stand, once they're kept with the job: how many
+ * have a draft from your Claude, and the button to draft the rest, as the browser extension's
+ * Draft does. The extension fills each draft in when the form is open.
+ */
+function FormNote({
+  job,
+  form,
+  suggested,
+  today,
+  run,
+}: {
+  job: Job;
+  form: SavedForm;
+  suggested: readonly SuggestedAnswer[];
+  today: string;
+  run?: RunControls | undefined;
+}) {
+  const asked = form.questions.map((each) => each.question);
+  // The form's questions come first, each with its draft, if it has one.
+  const left = applicationAnswers(asked, suggested, [])
+    .slice(0, asked.length)
+    .filter((each) => each.suggested === null).length;
+  const task: RunTask = { skill: 'answer-questions', jobId: job.id, form: true };
+  const where =
+    form.from === 'greenhouse' ? 'From the form on Greenhouse' : 'From the form in your browser';
+  // A file that doesn't say when, as one edited by hand might, says where alone.
+  const on = Number.isNaN(Date.parse(form.read)) ? '' : `, ${shortDate(form.read, today)}`;
+  const which =
+    left === asked.length
+      ? `The form’s ${asked.length === 1 ? 'question needs a draft' : `${asked.length} questions need drafts`}`
+      : `${left} of the form’s ${asked.length} questions ${left === 1 ? 'needs a draft' : 'need drafts'}`;
+  return (
+    <div className={styles.form}>
+      <p className={styles.formText}>
+        <span className={styles.formFrom}>
+          {where}
+          {on}.
+        </span>{' '}
+        {left > 0
+          ? `${which}. Your Claude writes ${left === 1 ? 'it' : 'them'} from your facts, and the extension fills ${left === 1 ? 'it' : 'them'} in when you open the form.`
+          : 'Your Claude drafted its questions, and the extension fills them in when you open the form.'}
+      </p>
+      {left > 0 && <ClaudeButton run={run} task={task} label="Draft them with your Claude" />}
+    </div>
+  );
+}
+
+/** What getting the form's questions said: none for your Claude, or why not. */
+function GotSaid({ got }: { got: FormQuestionsResult | null }) {
+  if (!got) return null;
+  if (!got.ok) {
+    return (
+      <p className={panel.problem} role="alert">
+        {got.message}
+      </p>
+    );
+  }
+  return got.questions === 0 ? (
+    <p className={panel.quiet} role="status">
+      The form asks nothing of its own for your Claude to draft. The extension fills in the rest
+      from Profile and your resume.
+    </p>
+  ) : null;
+}
+
+/**
  * The application's questions, each with Claude's suggested answer and what the user actually
  * sent, which they record here after applying. It's all here to look back on when the job moves
  * on, and Claude reads what they sent before an interview. The questions get pasted in first,
- * and before there are any, what goes here and the button to start.
+ * and before there are any, what goes here and the button to start. For a job saved from a
+ * posting on Greenhouse, which lists its form's questions, Factwright gets them, for your Claude
+ * to draft before the form is open.
  */
 export function ApplicationSection({
   job,
@@ -212,7 +282,12 @@ export function ApplicationSection({
 }) {
   const [suggested, setSuggested] = useState<SuggestedAnswer[]>([]);
   const [pasting, setPasting] = useState(false);
+  const [form, setForm] = useState<SavedForm | null>(null);
+  const [getting, setGetting] = useState(false);
+  const [got, setGot] = useState<FormQuestionsResult | null>(null);
   const hasAnswers = job.docKinds.includes('answers');
+  // A posting on Greenhouse, whose form's questions Factwright can get before it's open.
+  const feed = formFeed([job.link, ...job.links.map((link) => link.url)]);
 
   // Claude's answers come from answers.md, which changes the job list when it's saved.
   useEffect(() => {
@@ -229,12 +304,52 @@ export function ApplicationSection({
     };
   }, [api, job, hasAnswers]);
 
+  // The form's questions kept with the job, which change the job list when they're added.
+  useEffect(() => {
+    let live = true;
+    void api.jobExtras(job.id).then((extras) => {
+      if (live) setForm(extras?.form ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [api, job]);
+
+  const getQuestions = async () => {
+    setGetting(true);
+    setGot(null);
+    try {
+      const result = await api.getFormQuestions(job.id);
+      // Questions the job had already change nothing in the list, so the form is read again.
+      const extras = result.ok ? await api.jobExtras(job.id) : null;
+      if (extras) setForm(extras.form);
+      setGot(result);
+    } catch {
+      setGot({ ok: false, message: 'Factwright couldn’t get the form’s questions. Try again.' });
+    } finally {
+      setGetting(false);
+    }
+  };
+
   const answers = applicationAnswers(job.questions, suggested, job.sent);
   const empty = answers.length === 0 && !hasAnswers;
   const sent = answers.filter((answer) => answer.sent).length;
   const task: RunTask = { skill: 'answer-questions', jobId: job.id };
   const start = (label: string) => (
     <ClaudeButton run={run} task={task} label={label} adds onStart={() => setPasting(true)} />
+  );
+  // A form that asks nothing for your Claude has nothing more to get.
+  const asksNothing = got?.ok === true && got.questions === 0;
+  const get = feed && (
+    <Button
+      size="sm"
+      variant="secondary"
+      icon={<Download size={14} aria-hidden="true" />}
+      disabled={getting}
+      onClick={() => void getQuestions()}
+    >
+      {getting ? 'Getting the form’s questions…' : 'Get the form’s questions'}
+    </Button>
   );
 
   return (
@@ -248,12 +363,38 @@ export function ApplicationSection({
       actions={!empty && start('Add questions')}
     >
       {empty ? (
-        <Placeholder action={start('Answer the questions')}>
-          Paste the application form’s questions, and your Claude drafts answers from your facts, in
-          your own voice.
-        </Placeholder>
+        <>
+          <Placeholder
+            action={
+              <>
+                {get}
+                {start('Answer the questions')}
+              </>
+            }
+          >
+            Paste the application form’s questions, and your Claude drafts answers from your facts,
+            in your own voice.
+            {feed && ' The form is on Greenhouse, so Factwright can get its questions for you.'}
+          </Placeholder>
+          <GotSaid got={got} />
+        </>
       ) : (
         <>
+          <GotSaid got={got} />
+          {form && form.questions.length > 0 ? (
+            <FormNote job={job} form={form} suggested={suggested} today={today} run={run} />
+          ) : (
+            get &&
+            !asksNothing && (
+              <div className={styles.form}>
+                <p className={styles.formText}>
+                  The form is on Greenhouse, so Factwright can get its questions for your Claude to
+                  draft before you open it.
+                </p>
+                {get}
+              </div>
+            )
+          )}
           <p className={panel.quiet}>
             Keep what you actually sent, so it’s here when the job moves on. Claude reads it before
             your interviews.

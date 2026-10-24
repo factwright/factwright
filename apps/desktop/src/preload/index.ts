@@ -62,6 +62,7 @@ const api: FactwrightApi = {
   jobExtras: (jobId) => ipcRenderer.invoke('jobs:extras', jobId),
   recordAnswer: (jobId, question, nth, text) =>
     ipcRenderer.invoke('jobs:record-answer', jobId, question, nth, text),
+  getFormQuestions: (jobId) => ipcRenderer.invoke('jobs:form-questions', jobId),
   askAboutJob: (jobId, question) => ipcRenderer.invoke('jobs:ask', jobId, question),
   removeAsk: (jobId, askId) => ipcRenderer.invoke('jobs:remove-ask', jobId, askId),
   addShot: (jobId, shot, purpose) => ipcRenderer.invoke('jobs:add-shot', jobId, shot, purpose),

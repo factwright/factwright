@@ -526,6 +526,7 @@ describe('job_details', () => {
     jobs.keepForm(id, {
       url: 'https://jobs.lever.co/acme/1/apply',
       read: '2026-10-11T16:00:00.000Z',
+      from: 'browser',
       questions: [
         {
           question: 'Why Acme?',
@@ -556,6 +557,34 @@ describe('job_details', () => {
         '2. Are you open to travel?',
         '   On the form: one of its options.',
         '   Its options, word for word: “Yes” · “No” · “Sometimes”',
+        '   What the user sent: not recorded.',
+      ].join('\n'),
+    );
+  });
+
+  it('says when Factwright got the form’s questions from Greenhouse, before the user opened it', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.keepForm(id, {
+      url: 'https://job-boards.greenhouse.io/acme/jobs/4012345',
+      read: '2026-10-11T16:00:00.000Z',
+      from: 'greenhouse',
+      questions: [
+        {
+          question: 'Why Acme?',
+          hint: '',
+          section: '',
+          control: 'long',
+          options: [],
+          required: true,
+          limit: null,
+        },
+      ],
+    });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      [
+        'Factwright got one of them from the form on Greenhouse on 2026-10-11 (https://job-boards.greenhouse.io/acme/jobs/4012345), before the user opened it: each says how the form takes its answer.',
+        '1. Why Acme?',
+        '   On the form: a box for paragraphs, required.',
         '   What the user sent: not recorded.',
       ].join('\n'),
     );

@@ -193,6 +193,19 @@ async function work(text) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
   }
+  // As Claude would for the questions of a job's application form: read in job_details how the
+  // form asks each one, and say so.
+  const drafting = text.match(/^\/factwright:answer-questions job (\S+) form$/);
+  if (drafting) {
+    const details = await call('job_details', { job: drafting[1] });
+    const form = details
+      .split('\n')
+      .filter(
+        (line) =>
+          /^(Factwright got|The extension read) /.test(line) || /^ {3}On the form: /.test(line),
+      );
+    show(`${form.join('\n')}\n`);
+  }
   // As Claude would for a call's prep: read what's on file, find the call by its ID, and save a
   // sheet for it with the tool that keeps it with the call. Practice writes nothing.
   const prepping = text.match(/^\/factwright:interview-prep job (\S+) call (\S+)( practice)?$/);

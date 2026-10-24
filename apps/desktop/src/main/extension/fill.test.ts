@@ -434,6 +434,7 @@ describe('drafts of a form’s own questions', () => {
     expect(deps.jobs.keepForm).toHaveBeenCalledWith(JOB, {
       url: POSTING,
       read: '2026-10-23T15:00:00.000Z',
+      from: 'browser',
       questions: [
         {
           question: 'Why do you want to join Harbor & Pine?',

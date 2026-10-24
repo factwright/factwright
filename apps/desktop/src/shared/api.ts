@@ -12,6 +12,7 @@ import type {
   KeptPrivate,
   OutreachDraft,
   PassReason,
+  SavedForm,
   SavedPosting,
   SearchFocus,
   WorkHistory,
@@ -220,6 +221,12 @@ export type SaveFileResult = { ok: true; saved: boolean } | { ok: false; message
 /** Whether a job was added, and its ID if so. */
 export type AddJobResult = { ok: true; jobId: string } | { ok: false; message: string };
 
+/**
+ * Whether the questions of a job's application form were got from Greenhouse and kept with the
+ * job, and how many of them are for its Claude to draft, or why not.
+ */
+export type FormQuestionsResult = { ok: true; questions: number } | { ok: false; message: string };
+
 /** Whether a search's focus was kept, and the ID the search reads it by if so. */
 export type SaveFocusResult = { ok: true; id: string } | { ok: false; message: string };
 
@@ -234,13 +241,18 @@ export type ShotResult = { ok: true; path: string } | { ok: false; message: stri
 
 /**
  * Claude's answers to the user's questions about a job, by the question's ID, its screenshots,
- * the posting the user saved from their browser, and Claude's prep sheets and thank-you notes
- * for its calls, by the call's ID.
+ * the posting the user saved from their browser, its application form's questions, and Claude's
+ * prep sheets and thank-you notes for its calls, by the call's ID.
  */
 export interface JobExtras {
   asked: Record<string, string>;
   shots: JobShot[];
   posting: SavedPosting | null;
+  /**
+   * The questions of its application form for its Claude to draft, as the extension read them or
+   * Greenhouse gave them.
+   */
+  form: SavedForm | null;
   calls: Record<string, Partial<Record<CallDocKind, string>>>;
   /** Messages Claude drafted for people at the company, newest first. */
   outreach: OutreachDraft[];
@@ -396,6 +408,12 @@ export interface FactwrightApi {
    * form asks it, counting from 0. Blank forgets it.
    */
   recordAnswer(jobId: string, question: string, nth: number, text: string): Promise<EditResult>;
+  /**
+   * Gets the questions of a job's application form from Greenhouse, for a job saved from a
+   * posting there, before the form is open, and keeps the ones for its Claude to draft with the
+   * job, among its application questions. The extension fills in their drafts once it's open.
+   */
+  getFormQuestions(jobId: string): Promise<FormQuestionsResult>;
   /** Keeps a question for Claude about a job, ready for a run to answer it. */
   askAboutJob(jobId: string, question: string): Promise<AskResult>;
   /** Forgets a question about a job, and puts its answer and screenshots in the trash. */
