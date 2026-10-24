@@ -30,10 +30,10 @@ export const ownServers = (forStores: boolean): string[] =>
 /**
  * The sites whose pages may show the extension's own frame (frame.html): its Fill button and its
  * menus, which its script on the job sites you allowed puts there. Any https site, as a careers
- * site you add can be any, and in a build for testing this computer's over http too. Chrome
- * gives the frame an address that changes each time it starts, which only the script knows, so
- * no site can load it to tell the extension's there. Firefox's address for it is this browser's
- * own, which no site knows either.
+ * site you add can be any, and in a build for testing this computer's over http too. The frame's
+ * address is one no site can guess: Chrome's changes each time Chrome starts, and Firefox's is the
+ * one Firefox gave the extension at install. So a site where it never shows can't load it to tell
+ * the extension's there, unless a site where it shows passes the address on.
  */
 export const frameSites = (forStores: boolean): string[] =>
   forStores ? ['https://*/*'] : ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
