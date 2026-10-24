@@ -425,18 +425,21 @@
   }
 }
 
-/* What it promises: six, three to a row. */
+/* How it fills and what it promises: six of each, three to a row. */
+.tasks.ext-fill-ways,
 .promises.ext-promises {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 @media (max-width: 1000px) {
+  .tasks.ext-fill-ways,
   .promises.ext-promises {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 520px) {
+  .tasks.ext-fill-ways,
   .promises.ext-promises {
     grid-template-columns: minmax(0, 1fr);
   }

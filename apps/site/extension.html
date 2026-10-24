@@ -51,6 +51,8 @@
       <symbol id="i-frame" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5" /><path d="M3.5 8h17" /><rect x="7" y="11" width="10" height="6" rx="1.5" /></symbol>
       <symbol id="i-toggle" viewBox="0 0 24 24"><rect x="3" y="7.5" width="18" height="9" rx="4.5" /><circle cx="16.5" cy="12" r="2.5" /></symbol>
       <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="2" /><path d="M2.5 18.5h19" /></symbol>
+      <symbol id="i-pages" viewBox="0 0 24 24"><rect x="8" y="3.5" width="11.5" height="14.5" rx="2" /><path d="M5 7v11.5a2 2 0 0 0 2 2h9M11 8h5.5M11 11.5h5.5M11 15h3" /></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.25a4.25 4.25 0 0 0 .5-8.47A6 6 0 0 0 6.2 9.6 4.5 4.5 0 0 0 7 18.5z" /></symbol>
     </svg>
 
     <a class="skip" href="#main">Skip to content</a>
@@ -190,14 +192,15 @@
             <p class="eyebrow">Filling applications</p>
             <h2 id="fill-title">Fill in the application, then check it.</h2>
             <p class="lede">
-              With Factwright on the same computer, it fills in a job’s application form from what
-              you’ve told Factwright: Profile, your resumes and what you sent before. It uploads the
-              job’s own resume and cover letter, and a panel beside the page lists every field with
-              its answer and where it came from. It never submits: you check the form, and send it
-              yourself.
+              It fills in a job’s application form from what you’ve told Factwright: Profile, your
+              work history and resumes, and what you sent before. It asks Factwright on the same
+              computer, or, on a computer without it, reads your job hunt through sync. It uploads
+              the job’s own resume and cover letter, and a panel beside the page lists every field
+              with its answer and where it came from. It never submits: you check the form, and send
+              it yourself.
             </p>
           </header>
-          <ul class="tasks">
+          <ul class="tasks ext-fill-ways">
             <li class="task reveal">
               <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard" /></svg></span>
               <h3>Fill this application</h3>
@@ -211,8 +214,8 @@
               <h3>Your Claude drafts the rest</h3>
               <p>
                 Questions nothing on file answers, such as why you want the job, your Claude drafts
-                in Factwright, and the panel fills each one in. What only you can answer, it leaves
-                for you.
+                in Factwright, and the panel fills each one in once it’s done, or through sync at
+                your next Fill. What only you can answer, it leaves for you.
               </p>
             </li>
             <li class="task reveal">
@@ -224,11 +227,29 @@
               </p>
             </li>
             <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-pages" /></svg></span>
+              <h3>A page at a time</h3>
+              <p>
+                An application that runs over several pages fills each one as you go on with its own
+                button. What the site filled in from your resume stays, and the panel adds a part for
+                each job or school only if you choose.
+              </p>
+            </li>
+            <li class="task reveal">
               <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-frame" /></svg></span>
               <h3>Forms inside a careers page</h3>
               <p>
                 A form a company’s careers page shows in a frame fills like any other. A box that
                 suggests places gets one of its own, and Yes and No buttons are pressed for you.
+              </p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg></span>
+              <h3>Without Factwright here</h3>
+              <p>
+                Set up through sync, it fills from your job hunt, opened in your browser’s memory
+                alone. Your street, postal code and equal-opportunity answers never sync, so it
+                leaves those for you.
               </p>
             </li>
           </ul>
@@ -248,10 +269,11 @@
             <h2 id="private-title">It reads a page only when you ask it to.</h2>
             <p class="lede">
               Saved to Factwright on the same computer, a job goes straight to the app, through a
-              small helper that comes with it, and never to a server. Filling an application stays
-              between your browser and the app too. Through sync, a job is locked with your job
-              hunt’s own key before it leaves your browser, as everything you sync is, so our
-              servers store it only in a form they can’t read.
+              small helper that comes with it, and never to a server. Filling an application there
+              stays between your browser and the app too. Through sync, what it saves is locked with
+              your job hunt’s own key before it leaves your browser, as everything you sync is, so
+              our servers store it only in a form they can’t read, and it fills from your job hunt
+              in your browser alone.
             </p>
           </header>
           <ul class="promises ext-promises">
@@ -275,11 +297,11 @@
             </li>
             <li class="promise reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-laptop" /></svg>
-              <h3>Answers from your computer</h3>
+              <h3>Answers from your job hunt</h3>
               <p>
-                Filling a form, it asks Factwright on the same computer for the answers, with the
-                form’s questions and never what’s in them. It never fills a password, and never
-                submits a form.
+                Filling a form, it asks Factwright on the same computer, with the form’s questions and
+                never what’s in them, or reads your job hunt through sync, which it keeps only in
+                memory, for a few minutes. It never fills a password, and never submits a form.
               </p>
             </li>
             <li class="promise reveal">
@@ -296,8 +318,9 @@
               <h3>Your keys, in your browser</h3>
               <p>
                 Through sync, it keeps your job hunt’s keys in your browser, where they can’t be
-                copied out. They open your whole job hunt, so it’s only as trustworthy as its code, which is public
-                and reviewed by each store. Link it only in a browser you use yourself.
+                copied out, to lock what it saves and read what it fills from. They open your whole
+                job hunt, so it’s only as trustworthy as its code, which is public and reviewed by
+                each store. Link it only in a browser you use yourself.
               </p>
             </li>
             <li class="promise reveal">
@@ -338,7 +361,7 @@
               <li><span><strong><a href="/download">Get Factwright</a></strong> for your Mac or Windows PC, and open it.</span></li>
               <li><span><strong>Add the Factwright extension</strong> to Chrome or Firefox<span data-soon>, once it’s in their stores</span>. Its setup opens on its own.</span></li>
               <li><span><strong>Choose where saved jobs go:</strong> Factwright on this computer, with no account and no sync, or through sync, for Factwright on another computer. Through sync, sign in, then approve linking it in Factwright, once both show the same emoji.</span></li>
-              <li><span><strong>To fill an application</strong> with Factwright on the same computer, click Fill this application on its page: in the popup or the right-click menu, or with Alt+Shift+F. For a Fill button and field menus right in the form, turn on the job application sites, in setup or in the panel that opens.</span></li>
+              <li><span><strong>To fill an application,</strong> click Fill this application on its page: in the popup or the right-click menu, or with Alt+Shift+F. It fills from Factwright on the same computer, or through sync on a computer without it. For a Fill button and field menus right in the form, turn on the job application sites, in setup or in the panel that opens.</span></li>
             </ol>
             <p class="get-after">
               For Factwright on this computer, the browser asks once to let the extension talk to apps

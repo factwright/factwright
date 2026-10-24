@@ -184,10 +184,10 @@ export function manifest(
           // Sent only as you save a job or fill a form: through sync, end-to-end encrypted, to
           // your own sync account, or to Factwright on this computer. The address of a job you
           // save or a form you fill, the posting's text and a form's questions, and the sign-in
-          // that saves through sync. Filling a form also puts your details from Factwright in it,
-          // and gives Factwright a new answer you choose to keep, such as a phone number. Firefox
-          // asks people with a version that didn't declare one of these before it updates them
-          // (store/README.md, Data collection in 0.3.0).
+          // that saves through sync. Filling a form also puts your details from your job hunt in
+          // it, and keeps what you sent with the job, or a new answer you choose to keep, such as
+          // a phone number. Firefox asks people with a version that didn't declare one of these
+          // before it updates them (store/README.md, Data collection in 0.3.0).
           required: [
             'browsingActivity',
             'websiteContent',

@@ -91,7 +91,8 @@
               <li>
                 <b>The browser extension reads a page only when you ask it to,</b> or, on the job
                 application sites you turn on, the application forms on their pages. It fills
-                applications from the app on your computer, never through us.
+                applications from the app on your computer, or, through sync, from your job hunt,
+                which it opens in your browser alone.
               </li>
               <li>
                 <b>We keep only what sync needs:</b> your name, email and account ID from the account
@@ -341,9 +342,9 @@
             <h2>The browser extension</h2>
             <p>
               Factwright’s extension for Chrome and Firefox saves a job you’re looking at to your
-              job hunt, and, with the Factwright app on the same computer, fills in a job’s
-              application form for you to check. It has no analytics or tracking, and it never
-              submits a form. Our use of what it reads complies with the Chrome Web Store User Data
+              job hunt, and fills in a job’s application form for you to check, from the Factwright
+              app on the same computer or from your job hunt through sync. It has no analytics or
+              tracking, and it never submits a form. Our use of what it reads complies with the Chrome Web Store User Data
               Policy, including its Limited Use requirements.
             </p>
 
@@ -369,8 +370,9 @@
               sync. The extension keeps its own sign-in to sync, and your job hunt’s keys, in your browser
               until you sign it out. Those keys open your whole job hunt, as they do on each device
               you link, so the extension keeps them where they can’t be copied out, and uses them
-              only to lock what it saves, and to open the job already at the ID it would save to,
-              which may be one you added in the app, to tell whether it’s the same job. It reaches
+              only to lock what it saves, to open the job already at the ID it would save to, which
+              may be one you added in the app, to tell whether it’s the same job, and to read your
+              job hunt when you fill a form through sync, below. It reaches
               no site but app.factwright.com, or a sync server you run yourself, if you choose one in
               its setup.
             </p>
@@ -379,14 +381,24 @@
             <p>
               When you click Fill this application, it reads the application form on that page:
               each field you can see, with its question, its options and its limits, and not what’s
-              in it. It asks the Factwright app on the same computer for an answer to each, through
-              the same helper, and the app answers from what you’ve told it: Profile, your resumes,
-              what you sent before, and your Claude’s drafts. The extension puts the answers in the
-              form for you to check, and its panel lists each one with where it came from. It fills
-              only fields you can see, never a password or payment details, never answers personal
-              questions, such as your age, which it never keeps either, and never agrees to anything
-              for you. All of this stays on your computer, between your browser and the app. On
-              LinkedIn and Indeed it only gives you answers to copy.
+              in it. With the Factwright app on the same computer, it asks the app for an answer to
+              each, through the same helper, and the app answers from what you’ve told it: Profile,
+              your work history and resumes, what you sent before, and your Claude’s drafts. Without
+              it, the extension answers from your job hunt through sync, below. It puts the answers
+              in the form for you to check, and its panel lists each one with where it came from. It
+              fills only fields you can see, never a password or payment details, never answers
+              personal questions, such as your age, which it never keeps either, and never agrees to
+              anything for you. With the app, all of this stays on your computer, between your
+              browser and the app. On LinkedIn and Indeed it only gives you answers to copy.
+            </p>
+            <p>
+              It fills an application that runs over several pages a page at a time, each only when
+              you choose, as you go on with the form’s own button: it never presses one that goes on
+              or submits. There, it leaves a field that already holds an answer as it is, as
+              some sites fill one in from your resume, and adds a part to the form for each job or
+              school you have on file only if you choose that. It keeps what you sent on each page
+              for when you mark the job applied. A page to sign in or make an account gets nothing
+              from it, and never your password.
             </p>
             <p>
               What it fills reaches the site when you submit the form, as what you type does, and
@@ -412,6 +424,25 @@
               it’s done.
             </p>
 
+            <h3>Filling through sync</h3>
+            <p>
+              In a browser set up to save through sync, on a computer without the Factwright app, or
+              with it closed, the extension answers a form itself, from your job hunt, as the app
+              would. It reads what sync holds from the sync server and opens it with your job hunt’s
+              keys, in your browser: the job tracker, Profile, your work history, and only the files
+              a form needs, such as the job’s resume, cover letter and your Claude’s drafts. What it
+              opens stays in your browser’s memory for the fill, goes 5 minutes after its last use,
+              and is never stored. Your street, postal code and equal-opportunity answers never
+              sync, so it leaves those for you.
+            </p>
+            <p>
+              Instead of starting your Claude, the panel offers to leave a form’s new questions with
+              the job, for your Claude to draft in the app, and fills in the drafts at your next
+              Fill, once they’ve synced. When you mark the job applied, it keeps what you sent with
+              the job. Each of these is locked in your browser before it’s sent, as everything you
+              sync is. Through sync, it never keeps a new answer in Profile: that needs the app.
+            </p>
+
             <h3>On the job application sites you allow</h3>
             <p>
               The extension runs no script of its own in pages unless you turn on the job
@@ -426,12 +457,13 @@
               question and options, to put a small Fill button on a page with an application form.
               The first time you click or tab into one of the form’s fields, the extension asks the
               app on your computer for the form’s answers, with its fields and never what’s in them,
-              and a field you go to shows a menu of its answers on file. The menu is the extension’s
-              own, and the page can’t read it: the page gets only the answer you pick, which the
-              script puts in the field only then. The script reads what’s in a field only once
-              you’ve typed in it and left it, and only for a field whose answer Profile keeps, to
-              offer to keep a new answer, which it does only if you choose Save. It never reads a
-              password or an equal-opportunity answer. Those sites can tell the extension is there,
+              or reads them from your job hunt through sync, and a field you go to shows a menu of
+              its answers on file. The menu is the extension’s own, and the page can’t read it: the
+              page gets only the answer you pick, which the script puts in the field only then. With
+              the app on your computer, the script reads what’s in a field only once you’ve typed in
+              it and left it, and only for a field whose answer Profile keeps, to offer to keep a new
+              answer, which it does only if you choose Save. Through sync, it reads none. It never
+              reads a password or an equal-opportunity answer. Those sites can tell the extension is there,
               as its button and menus are on their pages, and whether Factwright has an answer for a
               field, as a menu shows, but not what the answer is.
             </p>
