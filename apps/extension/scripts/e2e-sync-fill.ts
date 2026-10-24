@@ -163,8 +163,25 @@ try {
     panel.on('pageerror', (error) => errors.push(error.message));
     await panel.setViewportSize({ width: 380, height: 900 });
     await panel.addInitScript((tab) => {
-      const api = (globalThis as unknown as { chrome: { tabs: { query: unknown } } }).chrome;
-      api.tabs.query = async () => [tab];
+      type Asked = { origins?: string[]; permissions?: string[] };
+      const page = globalThis as unknown as {
+        asked: string[][];
+        chrome: {
+          tabs: { query: unknown };
+          permissions: { request(asked: Asked): Promise<boolean> };
+        };
+      };
+      page.chrome.tabs.query = async () => [tab];
+      // What the panel asks the browser for, each time. Native messaging is declined, as a test
+      // can't answer the browser's prompt for it, and there's no Factwright here to reach.
+      const request = page.chrome.permissions.request.bind(page.chrome.permissions);
+      page.asked = [];
+      page.chrome.permissions.request = (asked) => {
+        page.asked.push(asked.permissions ?? asked.origins ?? []);
+        return asked.permissions?.includes('nativeMessaging')
+          ? Promise.resolve(false)
+          : request(asked);
+      };
     }, formTabAt);
     await panel.goto(`chrome-extension://${id}/sidepanel.html`);
     return panel;
@@ -222,6 +239,29 @@ try {
   );
   await shoot(panel, 'sync-1-panel');
   await shoot(page, 'sync-2-form');
+
+  // Factwright on this computer answers more of a form: the panel offers it, and asks the browser
+  // for native messaging only on that click.
+  const asked = () =>
+    panel.evaluate(() => (globalThis as unknown as { asked: string[][] }).asked) as Promise<
+      string[][]
+    >;
+  check(
+    (await asked()).length === 0,
+    'filling through sync asks the browser for nothing, native messaging included',
+  );
+  await panel.getByRole('button', { name: 'Use Factwright on this computer' }).click();
+  await panel.waitForFunction(
+    () => (globalThis as unknown as { asked: string[][] }).asked.length > 0,
+  );
+  check(
+    JSON.stringify(await asked()) === JSON.stringify([['nativeMessaging']]),
+    'it offers Factwright on this computer, asking for native messaging alone, on the click',
+  );
+  check(
+    (await panel.getByText('From your job hunt, through sync.').count()) === 1,
+    'and declined, the form stays filled through sync',
+  );
 
   // The form's own question nothing on file answers is left with the job, for your Claude.
   check(

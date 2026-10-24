@@ -14,7 +14,7 @@ import {
   runInFrames,
   stopJobSites,
 } from './application-sites.ts';
-import { saveOnComputer } from './computer.ts';
+import { canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
@@ -94,6 +94,11 @@ interface Filling {
   way: FillWay;
   /** Whether sync answered because Factwright on this computer wasn't there to. */
   instead: boolean;
+  /**
+   * Through sync, whether to offer Factwright on this computer, which the browser doesn't let the
+   * extension reach yet.
+   */
+  offerComputer: boolean;
   form: PageForm;
   plan: FillPlan;
   /** The company and job title the page shows, which the job the form is for is found by. */
@@ -440,6 +445,36 @@ function summary(state: Filling): string {
   return filledSummary(state.form, state.filled);
 }
 
+/**
+ * Asks the browser to let the extension reach Factwright on this computer, straight from the
+ * click, before anything is waited on, as Firefox wants, and once it does, fills the form again. A
+ * page Chrome opened before then can't reach Factwright's helper, so the panel opens again first.
+ */
+const askForComputer = () =>
+  void ext.permissions.request(NATIVE).then((allowed) => {
+    if (allowed) location.reload();
+  });
+
+/**
+ * Through sync, the offer of Factwright on this computer, where the browser doesn't let the
+ * extension reach it yet: it answers more of a form.
+ */
+function computerLine(state: Filling): Child[] {
+  if (!state.offerComputer) return [];
+  return [
+    h(
+      'div',
+      { class: 'card' },
+      h(
+        'p',
+        { class: 'small' },
+        'Is Factwright on this computer? Filling from it adds your street, postal code and equal-opportunity answers, and your Claude drafts new questions at once.',
+      ),
+      h('div', { class: 'actions' }, button('Use Factwright on this computer', askForComputer)),
+    ),
+  ];
+}
+
 /** The form's site, as the panel offers Factwright's menus and Fill button on it. */
 async function siteChoice(url: string): Promise<SiteChoice> {
   if (isCopyOnly(url)) return { is: 'never' };
@@ -557,6 +592,7 @@ function render(state: Filling): void {
       { class: 'small muted' },
       'Factwright never submits a form. Check each answer, then submit it on the page yourself.',
     ),
+    ...computerLine(state),
     ...siteLine(state),
   );
 }
@@ -954,9 +990,12 @@ async function begin(): Promise<void> {
         button(
           'Allow it',
           () => {
+            if (why !== 'sync') {
+              askForComputer();
+              return;
+            }
             // The browser asks only straight from a click, before anything is waited on.
-            const asked = why === 'sync' ? allowSync(ways.server) : ext.permissions.request(NATIVE);
-            void asked.then((allowed) => {
+            void allowSync(ways.server).then((allowed) => {
               if (allowed) void begin();
             });
           },
@@ -1016,6 +1055,7 @@ async function begin(): Promise<void> {
   } = await firstAnswer(ways, (each) => planFill(form, shows, each));
   if (later()) return;
   const site = await siteChoice(form.url);
+  const offerComputer = way.via === 'sync' && !(await canReachComputer());
   if (later()) return;
   if (!planned.ok || planned.did !== 'fill') {
     message(
@@ -1033,6 +1073,7 @@ async function begin(): Promise<void> {
     place,
     way,
     instead,
+    offerComputer,
     form,
     plan: planned,
     shows,
