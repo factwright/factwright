@@ -348,6 +348,7 @@ describe('a form’s questions, for your Claude to draft', () => {
   const form: SavedForm = {
     url: 'https://jobs.lever.co/acme/1/apply',
     read: '2026-10-10T16:30:00.000Z',
+    from: 'browser',
     questions: [
       asked('Why Acme?', { limit: 500 }),
       asked('If yes, please explain'),
@@ -365,6 +366,9 @@ describe('a form’s questions, for your Claude to draft', () => {
     expect(JSON.parse(readFileSync(join(root, 'saved', id, 'form.json'), 'utf8'))).toEqual(form);
     expect(jobs.savedForm(id)).toEqual(form);
     expect(jobs.savedForm('missing')).toBeNull();
+    // The job's panel reads them with what else is on file for it.
+    expect(jobs.extras(id).form).toEqual(form);
+    expect(jobs.extras('missing').form).toBeNull();
   });
 
   it('adds each to the job’s application questions it doesn’t have, as many times as the form asks it', () => {

@@ -39,6 +39,7 @@ export {
   type CallDoc,
   type CallDocKind,
   callDocFile,
+  type FormFrom,
   type FormQuestion,
   JOB_EXTRAS,
   type JobShot,
@@ -145,6 +146,7 @@ export {
   readFocus,
   type SearchFocus,
 } from './focus.ts';
+export { type FormFeed, formFeed, formFeedRequests, readFormFeed } from './form-feed.ts';
 export { fileSize, payLabel, shortDate } from './format.ts';
 export {
   EQUAL_OPPORTUNITY_KINDS,

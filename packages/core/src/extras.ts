@@ -15,7 +15,8 @@ export const JOB_EXTRAS = {
   screenshots: 'screenshots',
   /**
    * The posting as the user saw it, saved with the extension: saved/<job ID>/posting.md, and the
-   * application form's questions it read for the user's Claude to draft: saved/<job ID>/form.json.
+   * application form's questions for the user's Claude to draft, as the extension read them or
+   * Greenhouse's job API gave them: saved/<job ID>/form.json.
    */
   saved: 'saved',
   /** Claude's work for each of the job's calls: calls/<job ID>/<call ID>/prep.md, and so on. */
@@ -93,7 +94,7 @@ export const savedPostingFile = (jobId: string) => `${JOB_EXTRAS.saved}/${jobId}
 
 /**
  * Where the questions of a job's application form are kept, as the extension read them in the
- * user's browser, for their Claude to draft answers to.
+ * user's browser or Greenhouse's job API gave them, for their Claude to draft answers to.
  */
 export const savedFormFile = (jobId: string) => `${JOB_EXTRAS.saved}/${jobId}/form.json`;
 
@@ -112,17 +113,27 @@ export interface FormQuestion {
   limit: number | null;
 }
 
-/** An application form's own questions, as the extension read them in the user's browser. */
+/**
+ * Where a form's questions were read: on the form in the user's browser, by the extension, or
+ * from Greenhouse's job API, before the form was open.
+ */
+export type FormFrom = 'browser' | 'greenhouse';
+
+/**
+ * An application form's own questions, as the extension read them in the user's browser, or
+ * Greenhouse's job API gave them.
+ */
 export interface SavedForm {
   /** The form's page. */
   url: string;
   /** When it was read, as an ISO time. */
   read: string;
+  from: FormFrom;
   questions: FormQuestion[];
 }
 
 /** The most a form keeps: its questions, a question's options, and the longest of its words. */
-const FORM_LIMITS = { questions: 50, options: 300, text: 500 } as const;
+export const FORM_LIMITS = { questions: 50, options: 300, text: 500 } as const;
 
 const formText = (value: unknown) =>
   typeof value === 'string' ? value.slice(0, FORM_LIMITS.text) : '';
@@ -164,6 +175,8 @@ export function readSavedForm(text: string | null | undefined): SavedForm | null
   return {
     url: formText(file.url),
     read: formText(file.read),
+    // One that doesn't say was read in the browser, as every form was before Greenhouse's.
+    from: file.from === 'greenhouse' ? 'greenhouse' : 'browser',
     questions,
   };
 }

@@ -11,6 +11,7 @@ import {
   parsePay,
   questionKey,
   resumeSent,
+  type SavedForm,
   SETTLED_STATUSES,
   STATUS_RANK,
   shotsFolder,
@@ -32,6 +33,7 @@ import {
   sampleCallDocs,
   sampleDocs,
   sampleDuplicate,
+  sampleForm,
   sampleJob,
   sampleJobs,
   sampleOutreach,
@@ -81,6 +83,7 @@ type TrackerApi = Pick<
   | 'saveFile'
   | 'jobExtras'
   | 'recordAnswer'
+  | 'getFormQuestions'
   | 'askAboutJob'
   | 'removeAsk'
   | 'addShot'
@@ -196,6 +199,8 @@ export function sampleTracker(
   };
   for (const [jobId, kept] of sampleVersions(list.jobs)) versions.set(jobId, kept);
   const listeners = new Set<(list: JobList) => void>();
+  // The questions got from the form of a job on Greenhouse, by the job's ID.
+  const forms = new Map<string, SavedForm>();
   // Screenshots added in the sample screens, by path, and Claude's answers to questions.
   const shots = new Map<string, { shot: JobShot; bytes: Uint8Array }>();
   const asked = new Map<string, string>(
@@ -578,6 +583,7 @@ export function sampleTracker(
           .map((each) => each.shot)
           .filter((shot) => shot.path.startsWith(`${shotsFolder(jobId)}/`)),
         posting: null,
+        form: forms.get(jobId) ?? null,
         calls: sampleCallDocs(job),
         outreach: sampleOutreach(job),
         versions: versions.get(jobId) ?? [],
@@ -594,6 +600,23 @@ export function sampleTracker(
           return { ...job, sent: text.trim() ? [...others, answer] : others };
         },
       ),
+    // A moment later, as Greenhouse answers, the form's questions join the job's.
+    getFormQuestions: async (jobId) => {
+      const job = list.jobs.find((each) => each.id === jobId);
+      if (!job) return { ok: false, message: 'That job isn’t in Factwright anymore.' };
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const form = sampleForm(job);
+      forms.set(jobId, form);
+      const have = new Set(job.questions.map(questionKey));
+      const added = form.questions
+        .map((each) => each.question)
+        .filter((question) => !have.has(questionKey(question)));
+      change(
+        (each) => each.id === jobId,
+        (each) => ({ ...each, questions: [...each.questions, ...added] }),
+      );
+      return { ok: true, questions: form.questions.length };
+    },
     askAboutJob: async (jobId, question) => {
       const job = list.jobs.find((each) => each.id === jobId);
       if (!job) return { ok: false, message: 'That job isn’t in your tracker anymore.' };

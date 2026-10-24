@@ -168,6 +168,8 @@
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 6px;
+  /* Its buttons wrap, rather than run past the panel's edge, when they're more than fit. */
+  max-width: 100%;
 }
 
 /* One kind of thing in an area, such as the resume, under a small heading of its own. */

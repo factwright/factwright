@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { INBOX_FOLDER } from '@factwright/core';
@@ -78,6 +79,12 @@ const startUrl = devUrl ?? `${APP_ORIGIN}/index.html`;
  * the sync dialog, and kept with sync's sign-in in the profile's folder (sync/account.ts).
  */
 const syncServer = develop('FACTWRIGHT_SERVER_URL') || __SYNC_SERVER__ || null;
+
+/**
+ * A file holding what Greenhouse's job API answers for a job's form, which the tests' copy reads
+ * in its place, so the tests never reach Greenhouse.
+ */
+const formFeedFile = develop('FACTWRIGHT_FORM_FEED');
 
 /** The most an update's log keeps before it starts again, as it only helps with the latest problem. */
 const UPDATE_LOG_BYTES = 200_000;
@@ -509,6 +516,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       saveHelper,
       tellRunDone: (note) => notifyRunDone(window, note, () => window.send('claude:open-result')),
       runRequests,
+      formFeed: formFeedFile
+        ? async () => JSON.parse(await readFile(formFeedFile, 'utf8')) as unknown
+        : undefined,
     });
     void sync.start();
     // Coming back to the app, or the computer waking, asks a paused computer's account whether it

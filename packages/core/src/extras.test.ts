@@ -229,6 +229,7 @@ describe('a form’s questions saved from the browser', () => {
   const form: SavedForm = {
     url: 'https://jobs.lever.co/northwind/7a1c9e40/apply',
     read: '2026-10-23T15:00:00.000Z',
+    from: 'browser',
     questions: [
       {
         question: 'Why Northwind?',
@@ -254,6 +255,15 @@ describe('a form’s questions saved from the browser', () => {
   it('is kept beside the job’s saved posting, and read back as it was', () => {
     expect(savedFormFile('northwind--senior-pm')).toBe('saved/northwind--senior-pm/form.json');
     expect(readSavedForm(savedFormJson(form))).toEqual(form);
+  });
+
+  it('says where it was read: from Greenhouse’s job API, or else in the browser', () => {
+    const greenhouse = { ...form, from: 'greenhouse' } as const;
+    expect(readSavedForm(savedFormJson(greenhouse))).toEqual(greenhouse);
+    // One kept before Greenhouse's forms came, which doesn't say, was read in the browser.
+    const { from: _, ...older } = form;
+    expect(readSavedForm(JSON.stringify(older))?.from).toBe('browser');
+    expect(readSavedForm(JSON.stringify({ ...form, from: 'lever' }))?.from).toBe('browser');
   });
 
   it('keeps each question that holds up, whatever else the file says', () => {

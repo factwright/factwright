@@ -47,6 +47,61 @@ const FILES: Readonly<Record<string, string | Uint8Array>> = {
   }),
 };
 
+/** A made-up company's job on Greenhouse, whose form lists its questions before it's open. */
+export const HARBOR_POSTING = 'https://job-boards.greenhouse.io/harborpine/jobs/4012345';
+
+/** A field of a question, as Greenhouse's job API names it. */
+const field = (name: string, type: string, values: { label: string; value: number }[] = []) => ({
+  name,
+  type,
+  values,
+});
+
+/**
+ * What Greenhouse's job API answers with questions=true for that job, which the tests' copy of
+ * the app reads in its place (FACTWRIGHT_FORM_FEED): fields every form has, a question Profile
+ * answers, two questions of the form's own, and its compliance questions.
+ */
+export const HARBOR_FORM = {
+  id: 4012345,
+  title: 'Account Executive',
+  company_name: 'Harbor & Pine Outfitters',
+  questions: [
+    { label: 'First Name', required: true, fields: [field('first_name', 'input_text')] },
+    { label: 'Email', required: true, fields: [field('email', 'input_text')] },
+    { label: 'Resume/CV', required: true, fields: [field('resume', 'input_file')] },
+    { label: 'LinkedIn Profile', required: false, fields: [field('question_1101', 'input_text')] },
+    {
+      label: 'Why do you want to join Harbor & Pine?',
+      required: true,
+      description: '<p>Up to 1,000 characters.</p>',
+      fields: [field('question_1102', 'textarea')],
+    },
+    {
+      label: 'Have you sold outdoor gear before?',
+      required: false,
+      fields: [
+        field('question_1104', 'multi_value_single_select', [
+          { label: 'Yes', value: 1 },
+          { label: 'No', value: 0 },
+        ]),
+      ],
+    },
+  ],
+  compliance: [
+    {
+      type: 'eeoc',
+      questions: [
+        {
+          label: 'Gender',
+          required: false,
+          fields: [field('gender', 'multi_value_single_select')],
+        },
+      ],
+    },
+  ],
+};
+
 /**
  * The Claude Code folder the first profile runs with, standing in for the user's own, which no
  * test reaches: one in its data folder, signed in, as `claude auth login` would sign it in.

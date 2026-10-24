@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- A job saved from a posting on Greenhouse has Get the form's questions in its Application questions area. Factwright reads the application form's questions from Greenhouse's public job API, before you open the form, with each one's options, its limit when it says one, whether it's required, and what the form says under it. It keeps only the questions for your Claude to draft: never the fields every form has, such as your name, email, phone, resume and cover letter, nor what Profile answers, nor the demographic and compliance questions. They join the job's application questions, and Draft them with your Claude has your Claude draft them, as the extension's Draft does. So when you open the form and click Fill, the extension fills the drafts in straight away. Lever, Ashby and Gem show a form's questions only on the form itself, where the extension reads them when you click Fill.
+
 ## 0.14.0 - 2026-10-23
 
 ### Added

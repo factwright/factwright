@@ -1,3 +1,28 @@
+/* Where the form's own questions stand, and the button to draft them. */
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: var(--fw-space-2) 0 0;
+  padding: 10px 12px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+}
+
+.formText {
+  flex: 1 1 220px;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}
+
+.formFrom {
+  color: var(--fw-muted);
+}
+
 .list {
   display: flex;
   flex-direction: column;

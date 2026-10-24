@@ -12,7 +12,15 @@ import {
   terminalText,
 } from './app.ts';
 import { version } from './paths.ts';
-import { ACME_FOLDER, ACME_RESUME, ACME_WORD, newDataFolder, usersClaude } from './workspace.ts';
+import {
+  ACME_FOLDER,
+  ACME_RESUME,
+  ACME_WORD,
+  HARBOR_FORM,
+  HARBOR_POSTING,
+  newDataFolder,
+  usersClaude,
+} from './workspace.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -990,5 +998,48 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   });
   await card.getByRole('button', { name: 'Check again' }).click();
   await expect(card.getByText('Signed in', { exact: true })).toBeVisible();
+  await closeRun();
+});
+
+// Greenhouse lists a form's questions before it's open. The tests' copy of the app reads a
+// made-up answer from a file in Greenhouse's place, so no test reaches Greenhouse.
+test('gets a Greenhouse form’s questions before it’s open, and has your Claude draft them', async () => {
+  await opened.app.close();
+  const feed = join(dataDir, 'greenhouse-form.json');
+  writeFileSync(feed, JSON.stringify(HARBOR_FORM));
+  opened = await openApp(dataDir, { FACTWRIGHT_FORM_FEED: feed });
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Add job' }).click();
+  const add = window.getByRole('dialog', { name: 'Add a job' });
+  await add.getByRole('textbox', { name: 'Company' }).fill('Harbor & Pine Outfitters');
+  await add.getByRole('textbox', { name: 'Role' }).fill('Account Executive');
+  await add.getByRole('textbox', { name: 'Link to the posting' }).fill(HARBOR_POSTING);
+  await add.getByRole('button', { name: 'Add job' }).click();
+  const answers = jobPanel().getByRole('region', { name: 'Application questions' });
+  await answers.getByRole('button', { name: 'Get the form’s questions' }).click();
+  // Only the form's own questions, for your Claude: not what every form asks, what Profile
+  // answers, or the compliance questions.
+  for (const asked of [
+    'Why do you want to join Harbor & Pine?',
+    'Have you sold outdoor gear before?',
+  ]) {
+    await expect(answers.getByText(asked, { exact: true })).toBeVisible();
+  }
+  for (const left of ['First Name', 'Email', 'Resume/CV', 'LinkedIn Profile', 'Gender']) {
+    await expect(answers.getByText(left, { exact: true })).toHaveCount(0);
+  }
+  await expect(answers).toContainText('From the form on Greenhouse');
+  await expect(answers).toContainText('The form’s 2 questions need drafts.');
+  await answers.getByRole('button', { name: 'Draft them with your Claude' }).click();
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  // The app types the skill, the job and "form", at the top of what the run printed.
+  expect((await terminalStart(window)).replace(/\n/g, '')).toMatch(
+    /\/factwright:answer-questions job harbor-and-pine-outfitters--account-executive form/,
+  );
+  // The run reads the questions, and how the form asks each one, in job_details.
+  const read = await terminalLines(window);
+  expect(read).toContain('Factwright got 2 of them from the form on Greenhouse');
+  expect(read).toContain('On the form: a box for paragraphs, required, up to 1,000 characters.');
+  expect(read).toContain('On the form: one of its options.');
   await closeRun();
 });

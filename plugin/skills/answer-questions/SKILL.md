@@ -16,10 +16,10 @@ Before starting, read:
 - all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` are unverified: offer one in step 3 before an answer uses it.
 - `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation and pay, and Beyond work: their projects, and their interests, what they're learning, their communities and what they care about.
 
-## From the form in the user's browser
+## From the application form
 
-When the input ends with `form`, the browser extension asked for these drafts while the user fills in the form in their browser. It fills in each draft once you've saved them, and the user isn't watching this run. So the steps below change like this:
-- **Which questions:** only the ones `job_details` says the extension read from the form, each with an "On the form" line that says how the form takes its answer. The job's other questions wait for another run.
+When the input ends with `form`, these drafts are for the questions on the job's application form. The browser extension asked for them while the user fills in the form in their browser, or Factwright got the form's questions from Greenhouse before the user opened it. Either way, the extension fills in each draft once you've saved them, and the user may not be watching this run. So the steps below change like this:
+- **Which questions:** only the ones `job_details` says came from the form, each with an "On the form" line that says how the form takes its answer. The job's other questions wait for another run.
 - **A choice:** one of its options, word for word as `job_details` lists them, without quotes or words of your own. For one that takes any of its options, give each pick word for word, separated by `; `. Save choices in a table, `| Question | Pick | Why |`, so the pick stands alone.
 - **A limit:** keep under it, counting every character, spaces included. A box with no limit is still about 4 sentences, and a line of text is a few words.
 - **Never ask.** Skip step 3: no AskUserQuestion round, and nothing saved to the fact bank or Profile. A question only the user can answer, which `about_you` doesn't, gets `For you: <why, in a few words>` as its whole answer, such as `For you: your notice period isn't on file.` The extension leaves it for them with that reason. So does an experience question the facts don't settle.

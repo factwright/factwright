@@ -402,6 +402,7 @@ async function draft(
   const kept = deps.jobs.keepForm(job.id, {
     url: ask.url,
     read: (deps.now?.() ?? new Date()).toISOString(),
+    from: 'browser',
     questions: ask.questions.map((each) => ({
       question: each.question,
       hint: each.hint,
