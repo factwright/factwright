@@ -42,6 +42,12 @@ export function postingKey(address: string): string | null {
   }
   const workday = workdayPosting(host, url.pathname);
   if (workday) return workday;
+  const icims = icimsPosting(host, url.pathname);
+  if (icims) return icims;
+  const taleo = taleoPosting(host, url);
+  if (taleo) return taleo;
+  const successFactors = successFactorsPosting(host, url);
+  if (successFactors) return successFactors;
   if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
     // jobs/view/<id>, or jobs/view/<its title>-<id>.
     const view = url.pathname.match(/^\/jobs\/view\/([^/]+)/)?.[1];
@@ -77,6 +83,63 @@ function workdayPosting(host: string, path: string): string | null {
   const posting = (ends < 0 ? after : after.slice(0, ends)).at(-1) ?? '';
   const id = /_([A-Za-z0-9-]{1,40})$/.exec(posting)?.[1];
   return id ? `workday:${site.toLowerCase()}:${id.toLowerCase()}` : null;
+}
+
+/**
+ * An iCIMS posting's key, by the company's site on iCIMS and the job's number, which follows
+ * "/jobs/" in the posting's address and its application's alike, as
+ * "careers-acme.icims.com/jobs/1234/engineer/job" and "…/jobs/1234/engineer/candidate" are.
+ */
+function icimsPosting(host: string, path: string): string | null {
+  if (!/^[a-z0-9-]+\.icims\.com$/.test(host) || host === 'www.icims.com') return null;
+  const id = /^\/jobs\/(\d{1,12})(?:\/|$)/.exec(path)?.[1];
+  return id ? `icims:${host.split('.')[0]}:${id}` : null;
+}
+
+/** An ID as Taleo and SuccessFactors give a posting or a requisition: letters, digits and dashes. */
+const REQUISITION = /^[\w-]{1,40}$/;
+
+/**
+ * A Taleo posting's key, by the company's site and the job's number: on Taleo Enterprise, its
+ * "job" in a career section's posting and application alike, as
+ * "acme.taleo.net/careersection/2/jobdetail.ftl?job=2600123" and "…/jobapply.ftl?job=2600123"
+ * are, on the company's own name at taleo.net or its own site; on Taleo Business Edition, the
+ * company's code and the requisition's, as "…/ats/careers/v2/applyRequisition?org=ACME&rid=4321".
+ */
+function taleoPosting(host: string, url: URL): string | null {
+  const taleo = /^[a-z0-9-]+\.taleo\.net$/.test(host);
+  if (/^\/careersection\//.test(url.pathname) && (taleo || /\.ftl$/.test(url.pathname))) {
+    const job = url.searchParams.get('job') ?? '';
+    const site = taleo ? (host.split('.')[0] ?? '') : host;
+    return REQUISITION.test(job) ? `taleo:${site}:${job.toLowerCase()}` : null;
+  }
+  if (/(^|\.)tbe\.taleo\.net$/.test(host) && /\/ats\/careers\//.test(url.pathname)) {
+    const org = url.searchParams.get('org') ?? '';
+    const rid = url.searchParams.get('rid') ?? '';
+    return REQUISITION.test(org) && REQUISITION.test(rid)
+      ? `taleo:${org.toLowerCase()}:${rid.toLowerCase()}`
+      : null;
+  }
+  return null;
+}
+
+/** The sites SuccessFactors' career pages are on, by their data centers' names. */
+const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
+
+/**
+ * A SuccessFactors posting's key, by the company's ID and the requisition's, which its posting
+ * and its application on a career site name alike, as
+ * "career4.successfactors.com/career?company=acme&career_job_req_id=1000" and
+ * "…/sfcareer/jobreqcareer?jobId=1000&company=acme" do. A company's own career site, which names
+ * its postings by IDs of its own, gives none.
+ */
+function successFactorsPosting(host: string, url: URL): string | null {
+  if (!SUCCESSFACTORS.test(host)) return null;
+  const company = url.searchParams.get('company') ?? url.searchParams.get('career_company') ?? '';
+  const job = url.searchParams.get('career_job_req_id') ?? url.searchParams.get('jobId') ?? '';
+  return REQUISITION.test(company) && REQUISITION.test(job)
+    ? `successfactors:${company.toLowerCase()}:${job.toLowerCase()}`
+    : null;
 }
 
 /** The site a posting's key is on, such as "greenhouse" or "linkedin". */

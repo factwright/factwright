@@ -65,6 +65,7 @@ import {
   type NextPage,
   NO_EARLIER,
   nextPageOf,
+  onSamePage,
   partsOffers,
 } from './several-pages.ts';
 import { toSave } from './tab-job.ts';
@@ -151,6 +152,11 @@ interface Filling {
    * the name its steps give it, with how many fields it has: the panel offers to fill it.
    */
   next: NextPage | null;
+  /**
+   * How many looks in a row couldn't read the tab, on an application that runs over several
+   * pages: one whose next page loads anew may leave the browser not letting the panel read it.
+   */
+  missed: number;
 }
 
 /** A job you marked applied, and the new answers you typed, which the panel offers to keep. */
@@ -173,6 +179,12 @@ interface Applied {
    */
   since?: string;
 }
+
+/**
+ * How many looks in a row that can't read an application of several pages say the browser doesn't
+ * let the panel read it now: more than a page takes to load.
+ */
+const MISSES = 3;
 
 /**
  * The form's site, as the panel offers Factwright's menus and Fill button on it: one of the job
@@ -234,9 +246,6 @@ const LEFT: Record<LeftFor, string> = {
   pick: 'Yours to pick on the page',
   private: 'Kept on your computer alone, not in sync',
 };
-
-/** Whether two addresses are the same page, but for what's after their #. */
-const samePage = (a: string, b: string) => a.split('#')[0] === b.split('#')[0];
 
 /** What the form held, as read before, with what it holds now in place of it, field by field. */
 function merged(before: readonly FieldValue[] | null, now: readonly FieldValue[]): FieldValue[] {
@@ -305,6 +314,8 @@ const NOT_FILLED: Record<Exclude<FieldFilled['why'], ''>, string> = {
   'not-taken': 'The page didn’t take it. Copy it in.',
   'other-part':
     'This part has another job or school in it, as the site filled it in. Fill it in yourself.',
+  reloads:
+    'The page sends itself when this changes, which would stop filling midway. Fill it in yourself, then Fill again.',
 };
 
 /** Copies an answer, and says so on the button for a moment. */
@@ -631,6 +642,15 @@ function siteLine(state: Filling): Child[] {
  */
 function nextLine(state: Filling): Child[] {
   const { next } = state;
+  if (!next && state.missed >= MISSES) {
+    return [
+      h(
+        'p',
+        { class: 'note', role: 'status' },
+        'The application loaded another page, which the browser doesn’t let Factwright read yet. Click the Factwright button on the application’s tab, then Fill this application.',
+      ),
+    ];
+  }
   if (!next) return [];
   if (next.fields === 0) {
     return [
@@ -863,7 +883,7 @@ async function markApplied(state: Filling): Promise<void> {
   // What it read as you went, with what's there now, when it's still the form.
   const values = merged(
     state.values,
-    latest && samePage(latest.url, state.form.url) ? latest.values : [],
+    latest && onSamePage(state.form, latest) ? latest.values : [],
   );
   // With what the application's earlier pages gave, for one that runs over several.
   const earlier = forApplication(state.earlier, job.id, state.form.url);
@@ -1118,6 +1138,20 @@ function keepLooking(state: Filling): void {
  */
 function heard(state: Filling, read: FormValues | null): void {
   if (filling !== state || state.moved || state.applied) return;
+  // An application that runs over several pages, whose next one loads anew, as Taleo's does once
+  // you press its Save and Continue, can't be read while it loads: that says nothing of where it
+  // is. Some browsers don't let the panel read a page the tab loaded since you clicked Fill, which
+  // the panel says once it's missed a few looks.
+  if (!read && state.form.step) {
+    state.missed += 1;
+    if (state.missed === MISSES) render(state);
+    return;
+  }
+  if (state.missed > 0) {
+    const said = state.missed >= MISSES;
+    state.missed = 0;
+    if (said) render(state);
+  }
   // Another page of the application: the panel offers to fill it, and keeps what it last read of
   // this one.
   const next = nextPageOf(state.form, read);
@@ -1133,7 +1167,7 @@ function heard(state: Filling, read: FormValues | null): void {
     state.next = null;
     render(state);
   }
-  if (!read || !samePage(read.url, state.form.url)) {
+  if (!read || !onSamePage(state.form, read)) {
     state.moved = true;
     render(state);
     return;
@@ -1337,6 +1371,7 @@ async function begin(how: Start = {}): Promise<void> {
     site,
     earlier: form.step ? forApplication(earlier, planned.job?.id ?? null, form.url) : NO_EARLIER,
     next: null,
+    missed: 0,
   };
   filling = state;
   render(state);

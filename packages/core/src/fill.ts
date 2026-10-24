@@ -504,6 +504,8 @@ function dateReply(kind: FieldKind, field: FormField, date: string, said: Said):
   const question = plain(`${field.question} ${field.hint}`);
   const month = /\bmonth\b/.test(question);
   const year = /\byear\b/.test(question);
+  // A date's day, as iCIMS asks it beside the month and year, which a job's dates never say.
+  if (!month && !year && /\bday\b/.test(question)) return left(kind, 'pick');
   const reply = (words: string[]): FieldReply =>
     words.some(Boolean) ? { ...fromProfile(kind, field, ...words), ...said } : left(kind, 'unset');
   if (date === 'present') {
@@ -527,7 +529,9 @@ function dateReply(kind: FieldKind, field: FormField, date: string, said: Said):
 
 /**
  * Factwright's answers for a form's fields, in order: each part of the form for a job or a
- * school takes the next one, newest first, as a form asks for one job, then another.
+ * school takes the next one, newest first, as a form asks for one job, then another. A part the
+ * form numbers itself, as "Experience 3", takes that one: the ones before it are on the form
+ * already, as SmartRecruiters lists the jobs you saved, and only shows a part to fill for the next.
  */
 export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldReply[] {
   const asked = new Map<string, number>();
@@ -539,7 +543,10 @@ export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldR
     const question = plain(field.question);
     const piece = /\bmonth\b/.test(question) ? 'month' : /\byear\b/.test(question) ? 'year' : '';
     const key = `${part}:${kind}:${piece}`;
-    const nth = asked.get(key) ?? 0;
+    const numbered = Number(
+      /\b(\d{1,2})$/.exec(plain(field.section?.split(' › ').at(-1) ?? ''))?.[1],
+    );
+    const nth = Math.max(asked.get(key) ?? 0, numbered > 0 ? numbered - 1 : 0);
     asked.set(key, nth + 1);
     return answerField(field, onFile, nth);
   });

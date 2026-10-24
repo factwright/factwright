@@ -382,18 +382,23 @@ describe('the script on a job site you allowed', () => {
       '<label for="why">Why us?</label><textarea id="why"></textarea>',
     );
     script = startScript(() => true, 0);
-    // A page of the application, with no file or email on it: its Fill button shows.
+    // A page of the application, with no file or email on it: its Fill button shows. A page of
+    // one loaded anew, as the next page of an application that loads each is, has the panel
+    // filling it, if it's open, look at once.
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
-    expect(sentOf('look')).toEqual([]);
     const [{ doc }] = sentOf('hello') as [{ doc: string }];
+    expect(sentOf('look')).toEqual([{ type: 'job-site', do: 'look', doc }]);
     // Leaving one of its fields has the panel read it at once, before the page can go on, as
     // when you press Save and Continue straight after typing.
     const why = document.getElementById('why') as HTMLTextAreaElement;
     why.focus();
     why.value = 'Your grid work.';
     why.blur();
-    await vi.waitFor(() => expect(sentOf('look')).toHaveLength(1));
-    expect(sentOf('look')).toEqual([{ type: 'job-site', do: 'look', doc }]);
+    await vi.waitFor(() => expect(sentOf('look')).toHaveLength(2));
+    expect(sentOf('look')).toEqual([
+      { type: 'job-site', do: 'look', doc },
+      { type: 'job-site', do: 'look', doc },
+    ]);
     // What you typed goes nowhere: the panel reads it, if it's filling the form.
     expect(JSON.stringify(extension.sent)).not.toContain('Your grid work.');
     // Workday swaps its next page in, in the same tab, as you press its Save and Continue.
@@ -402,12 +407,37 @@ describe('the script on a job site you allowed', () => {
       'Voluntary Disclosures',
       '<label for="gender">Gender</label><button id="gender" type="button" aria-haspopup="listbox">Select One</button>',
     );
-    await vi.waitFor(() => expect(sentOf('look')).toHaveLength(2));
+    await vi.waitFor(() => expect(sentOf('look')).toHaveLength(3));
     expect(frames()).toHaveLength(1);
     // Its Review, with nothing to fill, has no Fill button.
     document.body.innerHTML = step(6, 'Review', '<p>Check your application.</p>');
     await vi.waitFor(() => expect(frames()).toHaveLength(0));
-    expect(sentOf('look')).toHaveLength(3);
+    expect(sentOf('look')).toHaveLength(4);
+  });
+
+  it('opens a menu in a field inside a component, where the page leaves it open', async () => {
+    document.body.innerHTML = '<form><x-field></x-field></form>';
+    const host = document.querySelector('x-field') as HTMLElement;
+    const inside = host.attachShadow({ mode: 'open' });
+    inside.innerHTML = '<label for="work-email">Email</label><input id="work-email" type="email">';
+    boxes.set('work-email', new DOMRect(40, 100, 200, 24));
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    // You click in the field: the page hears it as the component, and the script finds the field.
+    const box = inside.getElementById('work-email') as HTMLInputElement;
+    box.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+    box.focus();
+    await vi.waitFor(() => expect(sentOf('menu')).toHaveLength(1));
+    expect(sentOf('form')[0]).toMatchObject({
+      form: { fields: [expect.objectContaining({ question: 'Email' })] },
+    });
+  });
+
+  it('never has the panel look at a form on one page as it loads', async () => {
+    script = startScript(() => true, 0);
+    // The form this file starts with, on one page: its Fill button shows, and the panel isn't told.
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(sentOf('look')).toEqual([]);
   });
 
   it('stops when the background says so, taking its frames away', async () => {

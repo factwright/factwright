@@ -125,6 +125,26 @@ export interface NextPage {
 export const nextPageOf = (form: PageForm, read: FormValues | null): NextPage | null =>
   read?.step && read.step !== form.step ? { step: read.step, fields: read.fields } : null;
 
+/** A page's site, as its address says, or "" for one that isn't an address. */
+function siteOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Whether what the panel read of the tab is still the form it filled: the page at the form's
+ * address, but for what's after its #, or on an application that runs over several pages, the
+ * same step of it on the same site, as one that loads each page anew may give the same page
+ * another address each time you come back to it.
+ */
+export function onSamePage(form: PageForm, read: Pick<FormValues, 'url' | 'step'>): boolean {
+  if (read.url.split('#')[0] === form.url.split('#')[0]) return true;
+  return form.step !== '' && read.step === form.step && siteOf(read.url) === siteOf(form.url);
+}
+
 /** A part of a form for each job, or for each school. */
 export type Part = 'job' | 'school';
 
@@ -194,7 +214,8 @@ export function partsOffers(
   if (!blocks) return [];
   return (['job', 'school'] as const).flatMap((part) => {
     const adder = form.adders.find((each) => adderPart(each) === part);
-    const has = partsOf(form, part);
+    // With the parts it saved, that are no fields anymore, as SmartRecruiters' jobs.
+    const has = partsOf(form, part) + (adder?.saved ?? 0);
     const want = part === 'job' ? blocks.jobs : blocks.schools;
     if (!adder || want <= has) return [];
     const more = Math.min(want - has, MOST_PARTS);

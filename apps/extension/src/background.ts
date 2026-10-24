@@ -43,10 +43,12 @@ function menus(): void {
 /**
  * Pages that look like an application form, by what Chrome sees on them itself: a file to upload
  * and an email address to give, a file to upload on an applicant system's site, each page of a
- * Workday application, by the step its progress bar marks, or a company's page that shows an
- * applicant system's application form in a frame, by the frame's address, as Chrome looks only at
- * frames of the page's own site. Chrome checks these rules, so the extension never reads a page to
- * light its button up.
+ * Workday, iCIMS or Taleo application, by the step it marks, or its Save and Continue, a
+ * SuccessFactors application, or SmartRecruiters' newer form, by its own elements, as its fields
+ * are inside its components, where Chrome doesn't look, or a company's page that shows an
+ * applicant system's application form in a frame, by the frame's address, as Chrome looks only
+ * at frames of the page's own site. Chrome checks these rules, so the extension never reads a
+ * page to light its button up.
  */
 const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
   { css: ['input[type="file"]', 'input[type="email"]'] },
@@ -67,6 +69,20 @@ const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
   ...['myworkdayjobs.com', 'myworkdaysite.com'].map((host) => ({
     pageUrl: { hostSuffix: host },
     css: ['[data-automation-id="progressBarActiveStep"]'],
+  })),
+  { pageUrl: { hostSuffix: 'icims.com' }, css: ['li.iCIMS_Steps_Current'] },
+  { pageUrl: { hostSuffix: 'taleo.net' }, css: ['input[id$="saveContinueCmdBottom"]'] },
+  ...[
+    'successfactors.com',
+    'successfactors.eu',
+    'sapsf.com',
+    'sapsf.eu',
+    'sapsf.cn',
+    'hr.cloud.sap',
+  ].map((host) => ({ pageUrl: { hostSuffix: host }, css: ['#rcmJobApplicationCtr'] })),
+  ...['oc-oneclick-form', 'oc-screening-questions'].map((form) => ({
+    pageUrl: { hostSuffix: 'smartrecruiters.com' },
+    css: [form],
   })),
 ];
 

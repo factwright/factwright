@@ -32,8 +32,12 @@ import type {
   PageField,
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
+import { icimsCode } from './icims-own-code.ts';
 import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
+import { smartRecruitersCode } from './smartrecruiters-own-code.ts';
+import { successFactorsCode } from './successfactors-own-code.ts';
 import { PDF, syncedHunt } from './synced-hunt.ts';
+import { taleoCode } from './taleo-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const FIXTURES = join(ROOT, 'test', 'fixtures');
@@ -89,6 +93,24 @@ const WORKDAY: Record<string, string> = {
 };
 const WORKDAY_PAGES = '/workday-pages/';
 
+/**
+ * A page of each other applicant system's application, built from its markup, with its own code
+ * acted out: SmartRecruiters' components, SuccessFactors' picklists and radios, iCIMS's
+ * dropdowns, and Taleo's lists that fill from its server.
+ */
+const SYSTEMS: Record<string, { file: string; code: string }> = {
+  '/smartrecruiters/apply': {
+    file: 'smartrecruiters-application.html',
+    code: smartRecruitersCode(''),
+  },
+  '/successfactors/apply': {
+    file: 'successfactors-application.html',
+    code: successFactorsCode(),
+  },
+  '/icims/candidate': { file: 'icims-candidate.html', code: icimsCode() },
+  '/taleo/personal': { file: 'taleo-personal.html', code: taleoCode() },
+};
+
 let origin = '';
 const site = createServer((request, response) => {
   const url = request.url ?? '';
@@ -98,6 +120,12 @@ const site = createServer((request, response) => {
     const html = readFileSync(join(FIXTURES, file), 'utf8');
     response.writeHead(200, { 'content-type': 'text/html' });
     response.end(workday ? withOwnCode(html, workdayCode(WORKDAY_PAGES)) : html);
+    return;
+  }
+  const system = SYSTEMS[url];
+  if (system) {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(withOwnCode(readFileSync(join(FIXTURES, system.file), 'utf8'), system.code));
     return;
   }
   const page = url === TRAPS ? { file: 'hidden-fields.html' } : PAGES[url];
@@ -368,6 +396,93 @@ try {
     added.added === 1 &&
       after.form.fields.filter((field) => field.question === 'Job Title').length === 2,
     'and its Add Another, pressed once, adds a second Work Experience',
+  );
+
+  // The other applicant systems' pages, through Firefox's content-script sandbox: fields inside
+  // SmartRecruiters' components, a place from its list, its phone's country code, SuccessFactors'
+  // picklists past their first page and its own radio buttons, iCIMS's dropdowns, and Taleo's
+  // state list, once its site fills it for the country picked.
+  const systemAt = (
+    form: Read['form'],
+    question: string,
+    answer: Omit<FieldAnswer, 'ref' | 'key'>,
+  ) => {
+    const field = form.fields.find((each) => each.question === question);
+    if (!field) throw new Error(`No ${question} on the page`);
+    return { ref: field.ref, key: field.key, ...answer };
+  };
+  const fillSystem = async (path: string, asked: [string, Omit<FieldAnswer, 'ref' | 'key'>][]) => {
+    const address = `${origin}${path}`;
+    await running.send('browsingContext.navigate', {
+      context: tab,
+      url: address,
+      wait: 'complete',
+    });
+    const read = await inPage<Read>(address, { do: 'read' });
+    const { filled } = await inPage<{ filled: FieldFilled[] }>(address, {
+      do: 'fill',
+      url: address,
+      answers: asked.map(([question, answer]) => systemAt(read.form, question, answer)),
+    });
+    return { read, filled, address };
+  };
+  const smart = await fillSystem('/smartrecruiters/apply', [
+    ['First name', { text: 'Ana María' }],
+    ['City', { pick: ['Denver, CO', 'Denver'], place: true }],
+    ['Country code', { pick: ['Canada'] }],
+  ]);
+  check(
+    smart.read.form.step === 'Easy apply' &&
+      JSON.stringify(smart.filled.map((each) => [each.ok, each.shown])) ===
+        JSON.stringify([
+          [true, 'Ana María'],
+          [true, 'Denver, CO, US'],
+          [true, '+1'],
+        ]),
+    'SmartRecruiters’ form: the fields inside its components, a place from its list, and its country code',
+  );
+  const sf = await fillSystem('/successfactors/apply', [
+    ['State/Province', { pick: ['Wyoming', 'WY'] }],
+    [
+      'Do you currently have the right to work in the location/country the position is offered?',
+      { pick: ['Yes'] },
+    ],
+  ]);
+  check(
+    sf.read.form.step === 'Job Application Form' &&
+      JSON.stringify(sf.filled.map((each) => [each.ok, each.shown])) ===
+        JSON.stringify([
+          [true, 'Wyoming'],
+          [true, 'Yes'],
+        ]),
+    'SuccessFactors’ application: a picklist past its first page, and its own radio buttons',
+  );
+  const icims = await fillSystem('/icims/candidate', [
+    ['Country', { pick: ['United States'] }],
+    ['Are you legally authorized to work in the United States?', { pick: ['Yes'] }],
+  ]);
+  check(
+    icims.read.form.step === 'Candidate Profile' &&
+      JSON.stringify(icims.filled.map((each) => [each.ok, each.shown])) ===
+        JSON.stringify([
+          [true, 'United States'],
+          [true, 'Yes'],
+        ]),
+    'iCIMS’s Candidate Profile: its own dropdowns, one searched past its first page',
+  );
+  const taleo = await fillSystem('/taleo/personal', [['Country', { pick: ['United States'] }]]);
+  await new Promise((done) => setTimeout(done, 800));
+  const states = await inPage<Read>(taleo.address, { do: 'read' });
+  const { filled: state } = await inPage<{ filled: FieldFilled[] }>(taleo.address, {
+    do: 'fill',
+    url: taleo.address,
+    answers: [systemAt(states.form, 'State/Province', { pick: ['Colorado'] })],
+  });
+  check(
+    taleo.read.form.step === 'Personal Information' &&
+      taleo.filled[0]?.shown === 'United States' &&
+      state[0]?.shown === 'Colorado',
+    'Taleo’s step: a country, then the state its site fills a moment later',
   );
 
   const traps = `${origin}${TRAPS}`;

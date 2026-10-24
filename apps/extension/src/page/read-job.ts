@@ -107,14 +107,25 @@ export function readJobPage(
     'HR',
   ]);
 
+  /** The sites SuccessFactors' career pages are on, by its data centers' names. */
+  const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
+
   /** Each big job site's own places for the posting and its details, newest layouts first. */
   const SITES: {
     host: RegExp;
     posting: string[];
     title: string[];
+    /** Words its heading puts around a job's title, which aren't the title's. */
+    aroundTitle?: RegExp;
+    /** The job's title in the tab's title, for pages that show it nowhere else. */
+    titleInTitle?: RegExp;
+    /** The job's title in the page's words, as a banner says it, for pages with no heading for it. */
+    titleInPage?: RegExp;
     company: string[];
     /** The company in the tab's title, for a site that shows its name nowhere else as text. */
     companyInTitle?: RegExp;
+    /** The company in the site's own name, for a site that names it nowhere else. */
+    companyInHost?: RegExp;
     location: string[];
   }[] = [
     {
@@ -221,9 +232,46 @@ export function readJobPage(
         '.job-sections',
         '[itemprop="description"]',
       ],
-      title: ['.job-title'],
+      title: ['.job-title', '[data-test="topbar-job-title"]'],
       company: [],
-      location: ['.job-detail'],
+      // Its application names the company in the tab's title, page by page: "Easy apply - Robotics
+      // Engineer - Acme", then "Preliminary questions - Robotics Engineer - Acme".
+      companyInTitle: /^(?:easy apply|preliminary questions|assessment) - .+ - (.+)$/i,
+      location: ['.job-detail', '[data-test="topbar-location"]'],
+    },
+    {
+      // iCIMS's career portals, each a company's own at icims.com, as "careers-acme": its
+      // application's pages, in their frame, name the job only in the tab's title, "Candidate
+      // Profile - Robotics Engineer", and the company only in the portal's name.
+      host: /(^|\.)icims\.com$/,
+      posting: [],
+      title: [],
+      titleInTitle: /^(?:.+ - )?(?:candidate profile|basic information) - (.+)$/i,
+      company: [],
+      companyInHost: /^(?:[a-z0-9]+-)*([a-z0-9]+)\.icims\.com$/i,
+      location: [],
+    },
+    {
+      // Taleo's career sections, each at a company's own name at taleo.net: each step of its
+      // application names the job only in its banner, "Applying for: Data Analyst (Job Number:
+      // 2600123)", and the company only in the site's name.
+      host: /(^|\.)taleo\.net$/,
+      posting: [],
+      title: [],
+      titleInPage: /\bApplying for:\s*(.+?)\s*\(Job Number:/i,
+      company: [],
+      companyInHost: /^([a-z0-9]+)\.taleo\.net$/i,
+      location: [],
+    },
+    {
+      // SuccessFactors' career pages, where its applications are: its heading says the job, with
+      // its requisition's number, "Data Analyst (1042)", or "Career Opportunities: …" before it.
+      host: SUCCESSFACTORS,
+      posting: ['.joqReqDescription'],
+      title: ['#pageTitle_ h1', '#jobAppPageTitle h1', '.pagetitle h1'],
+      aroundTitle: /^career opportunities:\s*(apply for\s+)?|\s*\([\w-]{1,40}\)$/gi,
+      company: [],
+      location: [],
     },
   ];
 
@@ -499,6 +547,16 @@ export function readJobPage(
       const key = param('vjk') ?? param('jk');
       if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
     }
+    // SuccessFactors' application, once you've signed in, is at your session's address, which
+    // names neither the company nor the job: its form keeps both, which make the posting's own.
+    if (SUCCESSFACTORS.test(host)) {
+      const kept = (id: string) => (doc.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+      const company = kept('career_company');
+      const job = kept('career_job_req_id');
+      if (/^[\w-]{1,40}$/.test(company) && /^[\w-]{1,40}$/.test(job)) {
+        return `https://${url.hostname}/sfcareer/jobreqcareer?jobId=${job}&company=${company}`;
+      }
+    }
     url.search = untracked(url.search);
     // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
     const hash = url.hash.replace(/:~:.*$/s, '');
@@ -597,7 +655,12 @@ export function readJobPage(
     first(selectors ?? [], (element) => oneLine(textOf(element)));
   /** Indeed's title ends with words only screen readers hear. */
   const JOB_POST = /\s*-\s*job post\s*$/i;
-  const shownTitle = fromSite(known?.title).replace(JOB_POST, '');
+  const shownTitle =
+    fromSite(known?.title)
+      .replace(JOB_POST, '')
+      .replace(known?.aroundTitle ?? JOB_POST, '') ||
+    oneLine(known?.titleInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
+    oneLine(known?.titleInPage?.exec(oneLine(doc.body?.textContent ?? '').slice(0, 5000))?.[1]);
 
   /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
   const titleOf = (posting: Record<string, unknown>) =>
@@ -704,7 +767,10 @@ export function readJobPage(
       fromSite(known?.company) ||
       // A tab's title is short: one that isn't is read only as far as any title goes.
       oneLine(known?.companyInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
-      notBoard(meta('og:site_name'));
+      notBoard(meta('og:site_name')) ||
+      ((name) => name.charAt(0).toUpperCase() + name.slice(1))(
+        known?.companyInHost?.exec(site)?.[1] ?? '',
+      );
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';

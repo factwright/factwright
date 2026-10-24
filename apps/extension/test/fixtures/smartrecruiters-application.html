@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Easy apply - Robotics Software Intern - Saltmarsh Robotics</title>
+    <meta name="job-posting-id" content="5a1c0de4-2b8f-4e7a-9d31-0c6e2f8b7a15" />
+  </head>
+  <body>
+    <div class="topbar" data-test="topbar">
+      <div class="topbar-job-details">
+        <p data-test="topbar-job-title">Robotics Software Intern</p>
+        <p data-test="topbar-location">Denver, CO, USA</p>
+      </div>
+    </div>
+    <oc-app-root class="oc-content" ng-version="20.3.31">
+      <spl-wrapper>
+        <oc-oneclick-form-root>
+          <oc-global-warning></oc-global-warning>
+          <h1>Robotics Software Intern</h1>
+          <main>
+            <oc-oneclick-form>
+              <div>
+                <oc-easy-apply>
+                  <div data-test="easy-apply-container" class="form-section">
+                    <spl-typography-title data-test="section-title" variant="lg">Easy Apply</spl-typography-title>
+                    <spl-dropzone data-test="apply-with-resume-container" hidefilelist="" label="" browselabel=""></spl-dropzone>
+                    <p>or</p>
+                    <oc-external-providers>
+                      <button type="button" class="external-apply-button external-apply-button--indeed" aria-label="Apply With Indeed">Indeed</button>
+                    </oc-external-providers>
+                  </div>
+                </oc-easy-apply>
+                <oc-personal-information>
+                  <div data-test="personal-information" class="form-section">
+                    <spl-typography-title data-test="section-title" variant="lg">Personal information</spl-typography-title>
+                    <p class="spl-text-sm">Fields marked with * are required.</p>
+                    <div data-test="personal-info-first-name" class="spl-w-full">
+                      <oc-input formcontrolname="firstName" attrid="first-name-input" data-test="personal-info-first-name-input" autocomplete="given-name">
+                        <spl-input reserveerrormsgspacing="" type="text" required="" id="first-name-input" label="First name" autocomplete="given-name" value=""></spl-input>
+                      </oc-input>
+                    </div>
+                    <div data-test="personal-info-last-name" class="spl-w-full">
+                      <oc-input formcontrolname="lastName" attrid="last-name-input" data-test="personal-info-last-name-input" autocomplete="family-name">
+                        <spl-input reserveerrormsgspacing="" type="text" required="" id="last-name-input" label="Last name" autocomplete="family-name" value=""></spl-input>
+                      </oc-input>
+                    </div>
+                    <div data-test="personal-info-email" class="spl-w-full">
+                      <oc-input formcontrolname="email" attrid="email-input" data-test="personal-info-email-input" autocomplete="email">
+                        <spl-input reserveerrormsgspacing="" type="email" required="" id="email-input" label="Email" autocomplete="email" value=""></spl-input>
+                      </oc-input>
+                    </div>
+                    <div data-test="personal-info-email-confirm" class="spl-w-full">
+                      <oc-input formcontrolname="emailConfirmation" attrid="confirm-email-input" data-test="personal-info-email-confirm-input" autocomplete="email">
+                        <spl-input reserveerrormsgspacing="" type="email" required="" id="confirm-email-input" label="Confirm your email" autocomplete="email" value=""></spl-input>
+                      </oc-input>
+                    </div>
+                    <div data-test="personal-info-location" class="spl-w-full">
+                      <oc-location-autocomplete-wrapper>
+                        <oc-location-autocomplete>
+                          <spl-autocomplete minquerylength="3" data-test="location-autocomplete" reserveerrormsgspacing="" required="" id="spl-form-element_8" label="City" nomatcheslabel="No matches found" source="locations"></spl-autocomplete>
+                        </oc-location-autocomplete>
+                      </oc-location-autocomplete-wrapper>
+                    </div>
+                    <div data-test="personal-info-phone" class="spl-w-full">
+                      <oc-phone-number>
+                        <spl-phone-field autocomplete="tel" reserveerrormsgspacing="" required="" id="spl-form-element_3" label="Phone number" value='{"country":"US"}'></spl-phone-field>
+                      </oc-phone-number>
+                    </div>
+                  </div>
+                </oc-personal-information>
+                <oc-experience>
+                  <div data-test="experience" class="form-section">
+                    <div class="spl-flex flex-row spl-justify-between spl-items-center">
+                      <spl-typography-title data-test="section-title" variant="lg">Experience</spl-typography-title>
+                      <oc-button type="secondary" data-test="add-experience" legacyclasses="button--rounded" aria-expanded="false">
+                        <spl-button data-test="" aria-label="Add experience entry" type="secondary" stretch="no"><span>Add</span></spl-button>
+                      </oc-button>
+                    </div>
+                    <oc-validation-summary><ul data-test="validation-summary" aria-live="assertive" class="form-validation-summary"></ul></oc-validation-summary>
+                    <div data-test="entries"></div>
+                  </div>
+                </oc-experience>
+                <oc-education>
+                  <div data-test="education" class="form-section">
+                    <div class="spl-flex flex-row spl-justify-between spl-items-center">
+                      <spl-typography-title data-test="section-title" variant="lg">Education</spl-typography-title>
+                      <oc-button type="secondary" data-test="add-education" legacyclasses="button--rounded" aria-expanded="false">
+                        <spl-button data-test="" aria-label="Add education entry" type="secondary" stretch="no"><span>Add</span></spl-button>
+                      </oc-button>
+                    </div>
+                    <oc-validation-summary><ul data-test="validation-summary" aria-live="assertive" class="form-validation-summary"></ul></oc-validation-summary>
+                    <div data-test="entries"></div>
+                  </div>
+                </oc-education>
+                <oc-web>
+                  <div data-test="web" class="form-section">
+                    <spl-typography-title data-test="section-title" variant="lg">Your Profiles</spl-typography-title>
+                    <oc-input formcontrolname="linkedIn" data-test="web-profiles-linkedin">
+                      <spl-input type="text" id="linkedin-input" label="LinkedIn" value=""></spl-input>
+                    </oc-input>
+                    <oc-input formcontrolname="website" data-test="web-profiles-website">
+                      <spl-input type="text" id="website-input" label="Website" value=""></spl-input>
+                    </oc-input>
+                  </div>
+                </oc-web>
+                <oc-resume-upload>
+                  <div data-test="resume-upload-container" class="form-section">
+                    <spl-typography-title data-test="section-title" variant="lg">Resume</spl-typography-title>
+                    <spl-form-field>
+                      <spl-dropzone data-test="resume-upload" label="" browselabel="" enablefiledeletions=""></spl-dropzone>
+                    </spl-form-field>
+                  </div>
+                </oc-resume-upload>
+                <oc-hiring-manager-message>
+                  <div data-test="hiring-manager-message-container" class="form-section">
+                    <spl-typography-title data-test="section-title" variant="lg">Message to the Hiring Team</spl-typography-title>
+                    <oc-textarea formcontrolname="message" data-test="hiring-manager-message-text" rows="10">
+                      <spl-textarea id="hiring-manager-message-input" label="Let the company know about your interest working there" rows="10"></spl-textarea>
+                    </oc-textarea>
+                  </div>
+                </oc-hiring-manager-message>
+                <oc-consent></oc-consent>
+              </div>
+              <oc-nav-first-page>
+                <footer data-test="footer" class="form-section form-section--clean">
+                  <oc-button type="primary" data-test="footer-next" legacyclasses="button--rounded">
+                    <spl-button data-test="" aria-label="" type="primary" stretch="no"><span>Next</span></spl-button>
+                  </oc-button>
+                </footer>
+              </oc-nav-first-page>
+              <oc-company-policy>
+                <a data-test="privacy-policy-link" target="_blank" href="https://saltmarsh.example/privacy" aria-label="Privacy Notice, opens in new tab">Privacy Notice</a>
+              </oc-company-policy>
+            </oc-oneclick-form>
+          </main>
+          <oc-footer>powered by SmartRecruiters</oc-footer>
+        </oc-oneclick-form-root>
+      </spl-wrapper>
+    </oc-app-root>
+  </body>
+</html>

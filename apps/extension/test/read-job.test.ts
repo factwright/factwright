@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { postingKey } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import { type PageJob, readJobPage } from '../src/page/read-job.ts';
 
@@ -597,6 +600,64 @@ describe('reading a job page', () => {
     expect(readJobPage(indeed, 'https://www.indeed.com/viewjob?jk=a1b2', '').title).toBe(
       'Data Analyst',
     );
+  });
+
+  it('reads which job SmartRecruiters’ application is for, page by page, as its tab’s title says', () => {
+    const at =
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/SaltmarshRobotics/publication/5a1c0de4-2b8f-4e7a-9d31-0c6e2f8b7a15';
+    for (const [name, href] of [
+      ['smartrecruiters-application', `${at}?dcr_ci=SaltmarshRobotics`],
+      ['smartrecruiters-screening', `${at}/screening?dcr_ci=SaltmarshRobotics`],
+    ] as const) {
+      const job = readJobPage(
+        page(readFileSync(join(import.meta.dirname, 'fixtures', `${name}.html`), 'utf8')),
+        href,
+        '',
+      );
+      expect(job).toMatchObject({
+        title: 'Robotics Software Intern',
+        company: 'Saltmarsh Robotics',
+        location: 'Denver, CO, USA',
+      });
+    }
+  });
+
+  it('gives SuccessFactors’ application, at your session’s address, its posting’s own', () => {
+    const job = readJobPage(
+      page(
+        readFileSync(
+          join(import.meta.dirname, 'fixtures', 'successfactors-application.html'),
+          'utf8',
+        ),
+      ),
+      'https://career17.sapsf.com/portalcareer?_s.crb=sample',
+      '',
+    );
+    expect(job).toMatchObject({
+      url: 'https://career17.sapsf.com/sfcareer/jobreqcareer?jobId=1042&company=copperlineP',
+      pageUrl: 'https://career17.sapsf.com/portalcareer?_s.crb=sample',
+      title: 'Field Data Analyst',
+    });
+    expect(postingKey(job.url)).toBe('successfactors:copperlinep:1042');
+  });
+
+  it('reads which job iCIMS’s application is for, in its frame, from its tab’s title and its portal', () => {
+    const job = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'icims-candidate.html'), 'utf8')),
+      'https://careers-bramblecrest.icims.com/jobs/4821/robotics-software-engineer/candidate?from=login&in_iframe=1',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Robotics Software Engineer', company: 'Bramblecrest' });
+    expect(postingKey(job.url)).toBe('icims:careers-bramblecrest:4821');
+  });
+
+  it('reads which job Taleo’s application is for, from its banner and its site', () => {
+    const job = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'taleo-personal.html'), 'utf8')),
+      'https://bramblecote.taleo.net/careersection/careersection/candidateacquisition/flow.jsf',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Fleet Data Analyst', company: 'Bramblecote' });
   });
 
   it('never takes a job board’s or an applicant system’s name as the company', () => {

@@ -298,6 +298,44 @@ describe('filling a form', () => {
     expect((doc.getElementById('state') as HTMLSelectElement).value).toBe('');
   });
 
+  it('waits a moment for a list that gets its options once another is answered, as a state’s does', async () => {
+    const doc = new DOMParser().parseFromString(
+      `<form>
+        <label for="country">Country</label>
+        <select id="country"><option value="">Select…</option><option>Canada</option><option>United States</option></select>
+        <label for="region">State</label>
+        <select id="region"><option value="">Select…</option></select>
+      </form>`,
+      'text/html',
+    );
+    const region = doc.getElementById('region') as HTMLSelectElement;
+    // The page's own code asks its site for the country's states once it's picked.
+    doc.getElementById('country')?.addEventListener('change', () => {
+      setTimeout(() => {
+        for (const name of ['Colorado', 'Texas']) region.append(new Option(name, name));
+      }, 300);
+    });
+    const form = await read(doc);
+    const [country, state] = form.fields;
+    if (!country || !state) throw new Error('No fields');
+    const filled = await run(
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [
+          { ref: country.ref, key: country.key, pick: ['United States'] },
+          { ref: state.ref, key: state.key, pick: ['CO', 'Colorado'] },
+        ],
+      },
+      doc,
+    );
+    if (filled.did !== 'fill') throw new Error('It didn’t fill the form.');
+    expect(filled.filled.map((each) => [each.ok, each.shown])).toEqual([
+      [true, 'United States'],
+      [true, 'Colorado'],
+    ]);
+  });
+
   it('picks only an option with the same words, for an answer given to another form', async () => {
     const { filled } = await fillPlain((form) => ({
       do: 'fill',
@@ -705,5 +743,89 @@ describe('the boxes applicant systems make of their own', () => {
     expect(filledOf(filled)).toEqual([{ ref: asked.ref, ok: true, shown: 'Yes', why: '' }]);
     expect(submitted).toBe(0);
     document.body.innerHTML = '';
+  });
+});
+
+describe('fields inside components', () => {
+  /**
+   * A page built of components that each keep their own elements, in a shadow root the page
+   * leaves open, as a form made of web components is: each field's label and box inside its own,
+   * and the form's headings and sets around them, outside.
+   */
+  function componentsPage(): Document {
+    const doc = new DOMParser().parseFromString(
+      `<main><form>
+        <h2>Personal information</h2>
+        <x-field data-id="first" data-label="First name *"></x-field>
+        <x-field data-id="email" data-label="Email" data-type="email"></x-field>
+        <h2>Experience</h2>
+        <fieldset>
+          <legend>Are you willing to relocate?</legend>
+          <x-radio data-id="yes" data-label="Yes"></x-radio>
+          <x-radio data-id="no" data-label="No"></x-radio>
+        </fieldset>
+        <x-field data-id="summary" aria-label="Tell us about yourself" data-type="textarea"></x-field>
+      </form></main>`,
+      'text/html',
+    );
+    for (const host of doc.querySelectorAll<HTMLElement>('x-field, x-radio')) {
+      const { id = '', label = '', type = 'text' } = host.dataset;
+      const inner = host.attachShadow({ mode: 'open' });
+      if (host.tagName === 'X-RADIO') {
+        inner.innerHTML = `<input type="radio" name="relocate" id="${id}"><label for="${id}">${label}</label>`;
+      } else if (type === 'textarea') {
+        inner.innerHTML = `<textarea id="${id}"></textarea>`;
+      } else {
+        inner.innerHTML = `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="${type}"${label.endsWith('*') ? ' required' : ''}></div>`;
+      }
+    }
+    return doc;
+  }
+
+  it('reads each field inside its component, by its own label inside, and the parts around it outside', async () => {
+    const form = await read(componentsPage());
+    expect(
+      form.fields.map(
+        (field) => `${fieldKind(field)}: ${field.question} (${field.control}), in ${field.section}`,
+      ),
+    ).toEqual([
+      'first-name: First name (text), in Personal information',
+      'email: Email (text), in Personal information',
+      'relocation: Are you willing to relocate? (choice), in Experience',
+      'question: Tell us about yourself (long), in Experience',
+    ]);
+    expect(form.fields[0]?.required).toBe(true);
+    expect(form.fields[2]?.options).toEqual(['Yes', 'No']);
+  });
+
+  it('fills a field inside a component as typing would, and the page outside hears it', async () => {
+    const doc = componentsPage();
+    const form = await read(doc);
+    const [first, , relocate] = form.fields;
+    if (!first || !relocate) throw new Error('No fields');
+    const heard: string[] = [];
+    doc.querySelector('form')?.addEventListener('input', (event) => {
+      heard.push((event.target as Element).tagName);
+    });
+    const filled = await run(
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [
+          { ref: first.ref, key: first.key, text: 'Ana' },
+          { ref: relocate.ref, key: relocate.key, pick: ['Yes'] },
+        ],
+      },
+      doc,
+    );
+    if (filled.did !== 'fill') throw new Error('It didn’t fill the form.');
+    expect(filled.filled.map((each) => [each.ok, each.shown])).toEqual([
+      [true, 'Ana'],
+      [true, 'Yes'],
+    ]);
+    const box = doc.querySelector('x-field')?.shadowRoot?.querySelector('input');
+    expect(box?.value).toBe('Ana');
+    // As typing does, what goes in is heard outside the component, as the component itself.
+    expect(heard).toContain('X-FIELD');
   });
 });

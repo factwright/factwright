@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Applicant Login</title>
+  </head>
+  <body>
+    <form id="dialogTemplate-dialogForm" method="post" action="/careersection/iam/accessmanagement/login.jsf" enctype="application/x-www-form-urlencoded">
+      <span class="accessmanagement"><span class="masterbody">
+        <span class="headersection"><span class="username">Welcome. You are not signed in.</span></span>
+        <span id="dialogTemplate-dialogForm-masterbody" class="mainsection">
+          <span class="page-header"><h1 class="page-heading-header-title"><span id="dialogTemplate-dialogForm-login-pageHeaderLoginSubView-pageHeaderSubView-pageHeaderTitleText">Applicant Login</span></h1></span>
+          <span class="entity-mandatory-field">Mandatory fields are marked with an asterisk.</span>
+          <span class="squared-border-linkedin-content"><span class="subtitle">Returning user</span>
+            <table id="dialogTemplate-dialogForm:login:main-layout-table"><tbody><tr><td class="dialog-columns-linkedin">
+              <span class="dialog-section">
+                <label for="dialogTemplate-dialogForm-login-name1" class="entity-label" title="The field User Name is mandatory.">User Name<span class="hidden-audible">.&nbsp;</span><span class="hidden-audible">Required</span></label>
+                <input id="dialogTemplate-dialogForm-login-name1" type="text" name="dialogTemplate-dialogForm-login-name1" autocomplete="off" maxlength="255" onkeypress="execDefaultCmdOnEnterKeyPress(event);" />
+              </span>
+              <span class="dialog-section">
+                <label for="dialogTemplate-dialogForm-login-password" class="entity-label" title="The field Password is mandatory.">Password<span class="hidden-audible">.&nbsp;</span><span class="hidden-audible">Required</span></label>
+                <input id="dialogTemplate-dialogForm-login-password" type="password" name="dialogTemplate-dialogForm-login-password" autocomplete="off" value="" maxlength="60" onkeypress="execDefaultCmdOnEnterKeyPress(event);" />
+              </span>
+              <span class="button-group-linkedin-with-paddingbottom"><input type="button" id="dialogTemplate-dialogForm-login-defaultCmd" title="Log in to the system" onclick="cmdSubmit('dialogTemplate-dialogForm','dialogTemplate-dialogForm-login-defaultCmd','secureSubmit()', null, true);return taleo.core.event.setAndReturnFalse(event);" class="nav-btn" value="Login" /></span>
+              <a id="dialogTemplate-dialogForm-login-forgotPasswordLinkBottom" href="/careersection/iam/accessmanagement/forgotPasswordAccessCode.jsf">FORGOT YOUR PASSWORD?</a>
+            </td></tr></tbody></table>
+            <span class="subtitle">Don’t have an account?</span>
+            <table id="dialogTemplate-dialogForm:login:newusertable"><tbody><tr><td class="dialog-columns-login-buttonpanel">
+              <input type="button" id="dialogTemplate-dialogForm-login-register" title="Access the registration page" onclick="cmdSubmit('dialogTemplate-dialogForm','dialogTemplate-dialogForm-login-register',null, null, true);return taleo.core.event.setAndReturnFalse(event);" class="nav-btn" value="Create a New Account" />
+              <input type="button" id="dialogTemplate-dialogForm-login-guestapply" title="Access the Apply as Guest" onclick="cmdSubmit('dialogTemplate-dialogForm','dialogTemplate-dialogForm-login-guestapply',null, null, true);return taleo.core.event.setAndReturnFalse(event);" class="nav-btn" value="Apply as Guest" />
+            </td></tr></tbody></table>
+          </span>
+        </span>
+      </span></span>
+      <input type="hidden" id="jsfCmdId" name="jsfCmdId" />
+      <input type="hidden" id="bookmarkNameHF" name="bookmarkNameHF" value="Login" />
+    </form>
+  </body>
+</html>
