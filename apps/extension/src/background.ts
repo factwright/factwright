@@ -42,12 +42,17 @@ function menus(): void {
 
 /**
  * Pages that look like an application form, by what Chrome sees on them itself: a file to upload
- * and an email address to give, or a file to upload on an applicant system's site. Chrome checks
- * these rules, so the extension never reads a page to light its button up.
+ * and an email address to give, a file to upload on an applicant system's site, or a company's
+ * page that shows an applicant system's application form in a frame, by the frame's address, as
+ * Chrome looks only at frames of the page's own site. Chrome checks these rules, so the extension
+ * never reads a page to light its button up.
  */
 const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
   { css: ['input[type="file"]', 'input[type="email"]'] },
   { css: ['input[type="file"]', 'input[autocomplete="email"]'] },
+  { css: ['iframe[src*="greenhouse.io/embed/job_app"]'] },
+  { css: ['iframe[src*="lever.co/"][src*="/apply"]'] },
+  { css: ['iframe[src*="jobs.ashbyhq.com/"][src*="/application"]'] },
   ...[
     'greenhouse.io',
     'lever.co',

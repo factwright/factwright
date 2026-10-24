@@ -90,3 +90,25 @@ describe('the Fill button', () => {
     expect(placeButton(BUTTON, bars, WINDOW)).toBeNull();
   });
 });
+
+describe('in a frame another page scrolls, as a careers page shows a form in one', () => {
+  /** The part of a tall frame that shows: from 1200 to 2000 down it. */
+  const shown = { left: 0, top: 1200, width: 1280, height: 800 };
+
+  it('puts the Fill button in a corner of the part that shows, not of the frame', () => {
+    expect(placeButton(BUTTON, [], shown)).toEqual({
+      left: shown.width - CORNER - BUTTON.width,
+      top: shown.top + shown.height - CORNER - BUTTON.height,
+    });
+  });
+
+  it('puts a menu only where it shows whole', () => {
+    const low: Box = { left: 100, top: 1960, width: 300, height: 32 };
+    const box = at(placeMenu(MENU, low, [], shown));
+    expect(box.top).toBeGreaterThanOrEqual(shown.top + EDGE);
+    expect(box.top + box.height).toBeLessThanOrEqual(shown.top + shown.height - EDGE);
+    // A field above the part that shows has no room for one.
+    const above: Box = { left: 100, top: 300, width: 300, height: 32 };
+    expect(placeMenu(MENU, above, [], shown)).toBeNull();
+  });
+});

@@ -5,7 +5,10 @@ import type { FieldAnswer, FieldFilled, PageField, PageForm } from './page/form.
  * (src/frame.ts) and its background (src/on-job-sites.ts) say to each other. The script asks for
  * what to show, and never holds an answer but the one you pick, as it writes it. The frame shows
  * the answers, which the page can't read. The background checks each message, as each one could
- * come from a page that's misbehaving, and answers only for a site you allowed.
+ * come from a page that's misbehaving, and answers only for a site you allowed. The script runs in
+ * each frame from such a site, as a company's careers page shows an applicant system's form in
+ * one, and the background tells each frame's apart, by the frame's own number, as the browser
+ * gives it, and the frame's by the names its script gives them.
  */
 
 /** What a menu shows: an answer, and where it came from. */
@@ -34,8 +37,13 @@ export interface FieldMenu {
 
 /** What the script asks the background. */
 export type FromScript =
-  /** Whether it's on a site you allowed, as it starts. */
-  | { type: 'job-site'; do: 'hello' }
+  /**
+   * Whether it's on a site you allowed, as it starts, by its own name for the page it's on, and
+   * the sites of the pages around it, as the browser says them, where it does: Chrome's.
+   */
+  | { type: 'job-site'; do: 'hello'; doc: string; around: string[] }
+  /** The page it's on is going, as when its frame shows another. */
+  | { type: 'job-site'; do: 'bye'; doc: string }
   /** The answers for the form's fields, read without what's in them, the first time you're in one. */
   | { type: 'job-site'; do: 'form'; form: PageForm; job: { company: string; role: string } }
   /**
@@ -66,10 +74,10 @@ export type FromFrame =
   | { type: 'job-site'; do: 'save'; token: string }
   /** You closed it, with Not now, or with Escape, which puts the cursor back in its field. */
   | { type: 'job-site'; do: 'dismiss'; token: string; refocus: boolean }
-  /** You clicked the Fill button. */
-  | { type: 'job-site'; do: 'fill' }
+  /** You clicked the Fill button, which the script names by its own name for its page. */
+  | { type: 'job-site'; do: 'fill'; token: string }
   /** You hid the Fill button on this page. */
-  | { type: 'job-site'; do: 'hide-button' };
+  | { type: 'job-site'; do: 'hide-button'; token: string };
 
 /** What the background tells the script. */
 export type ToScript =
@@ -107,6 +115,9 @@ const MAX_URL = 4000;
 
 /** The longest address the script asks about a page at: no job's is longer. */
 export const MOST_URL = MAX_URL;
+
+/** The most pages around a frame the script names, by their sites: more than any page nests. */
+export const MOST_AROUND = 20;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -176,7 +187,14 @@ export function isFromScript(message: unknown): message is FromScript {
   if (!isObject(message) || message.type !== 'job-site') return false;
   switch (message.do) {
     case 'hello':
-      return true;
+      return (
+        isToken(message.doc) &&
+        Array.isArray(message.around) &&
+        message.around.length <= MOST_AROUND &&
+        message.around.every((site) => isText(site, MAX_URL))
+      );
+    case 'bye':
+      return isToken(message.doc);
     case 'form':
       return (
         isPageForm(message.form) &&
@@ -214,7 +232,7 @@ export function isFromFrame(message: unknown): message is FromFrame {
       return isToken(message.token) && isPlace(message.at);
     case 'fill':
     case 'hide-button':
-      return true;
+      return isToken(message.token);
     default:
       return false;
   }

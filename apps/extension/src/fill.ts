@@ -9,7 +9,10 @@ import {
   JOB_LIMITS,
   type OfferedFile,
   type RememberedKind,
+  US_STATES,
 } from '@factwright/core';
+import { looksLikeApplication } from './application-form.ts';
+import { framesOnAllowedSites, isAllowedPage } from './application-sites.ts';
 import { askComputer } from './computer.ts';
 
 export { looksLikeApplication } from './application-form.ts';
@@ -32,8 +35,20 @@ import {
  * it to fill, asks Factwright on this computer for an answer to each field, fetches the job's
  * resume and cover letter to upload, fills the form, and later reads the answers you sent. The
  * page's own function does the reading and filling (page/form.ts), sent into the page each time,
- * only while the browser lets the extension reach that tab.
+ * only while the browser lets the extension reach that tab. The form may be in a frame of the
+ * tab's page, as a company's careers page shows an applicant system's form, but only a frame from
+ * a job site you allowed (src/application-sites.ts): the page's own function runs there, and what
+ * it reads goes to the extension, never to the page around it.
  */
+
+/** Where a form is: a tab, and the frame in it, its top frame being 0. */
+export interface FormPlace {
+  tabId: number;
+  frameId: number;
+}
+
+/** A tab's top frame, the place a form is unless it's in a frame of a job site you allowed. */
+export const topOf = (tabId: number): FormPlace => ({ tabId, frameId: 0 });
 
 /**
  * Sites whose terms forbid filling their own application forms: LinkedIn's Easy Apply and
@@ -50,11 +65,14 @@ export function isCopyOnly(url: string): boolean {
   }
 }
 
-/** Runs the form's function in a tab, or null when the browser doesn't let it reach the tab. */
-async function inPage(tabId: number, task: FormTask): Promise<FormAnswer | null> {
+/**
+ * Runs the form's function in a tab's frame, or null when the browser doesn't let it reach the
+ * frame, or it's gone.
+ */
+async function inPage(place: FormPlace, task: FormTask): Promise<FormAnswer | null> {
   try {
     const [first] = await ext.scripting.executeScript({
-      target: { tabId },
+      target: { tabId: place.tabId, frameIds: [place.frameId] },
       func: formPage,
       args: [task],
     });
@@ -65,10 +83,41 @@ async function inPage(tabId: number, task: FormTask): Promise<FormAnswer | null>
   }
 }
 
-/** The form in a tab, or null when it can't be read. */
-export async function readForm(tabId: number): Promise<PageForm | null> {
-  const answer = await inPage(tabId, { do: 'read' });
+/** The form in a tab's frame, or null when it can't be read. */
+export async function readForm(place: FormPlace): Promise<PageForm | null> {
+  const answer = await inPage(place, { do: 'read' });
   return answer?.did === 'read' ? answer.form : null;
+}
+
+/** A form, and where it is. */
+export interface FoundForm {
+  place: FormPlace;
+  form: PageForm;
+}
+
+/**
+ * The application form in a tab, and where it is: the top page's, where it looks like one, or
+ * else the one in a frame from a job site you allowed that does, the one with most fields, or else
+ * the top page's, as it is. A frame counts only while it still shows a page on such a site, and
+ * never in a page of LinkedIn's or Indeed's. Null when nothing can be read.
+ */
+export async function findForm(tabId: number): Promise<FoundForm | null> {
+  const [top, frames] = await Promise.all([
+    readForm(topOf(tabId)),
+    framesOnAllowedSites(tabId).catch(() => []),
+  ]);
+  const atTop = top ? { place: topOf(tabId), form: top } : null;
+  if (atTop && (looksLikeApplication(atTop.form) || isCopyOnly(atTop.form.url))) return atTop;
+  const framed: FoundForm[] = [];
+  for (const { frameId } of frames) {
+    const place = { tabId, frameId };
+    const form = await readForm(place);
+    if (form && looksLikeApplication(form) && (await isAllowedPage(form.url))) {
+      framed.push({ place, form });
+    }
+  }
+  framed.sort((a, b) => b.form.fields.length - a.form.fields.length);
+  return framed[0] ?? atTop;
 }
 
 /**
@@ -76,32 +125,32 @@ export async function readForm(tabId: number): Promise<PageForm | null> {
  * has moved on to another address, or null when the tab can't be reached.
  */
 export async function fillForm(
-  tabId: number,
+  place: FormPlace,
   url: string,
   answers: FieldAnswer[],
 ): Promise<FieldFilled[] | 'elsewhere' | null> {
-  const answer = await inPage(tabId, { do: 'fill', url, answers });
+  const answer = await inPage(place, { do: 'fill', url, answers });
   if (answer?.did === 'elsewhere') return 'elsewhere';
   return answer?.did === 'fill' ? answer.filled : null;
 }
 
 /** What some of a form's fields hold now, and the page's address, or null when it can't be read. */
 export async function formValues(
-  tabId: number,
+  place: FormPlace,
   fields: FieldRef[],
 ): Promise<{ url: string; submitted: boolean; values: FieldValue[] } | null> {
-  const answer = await inPage(tabId, { do: 'values', fields });
+  const answer = await inPage(place, { do: 'values', fields });
   return answer?.did === 'values' ? answer : null;
 }
 
 /** Outlines fields in orange on the page, as left for you. */
-export async function outlineFields(tabId: number, fields: PageField[]): Promise<void> {
-  await inPage(tabId, { do: 'outline', fields: fields.map(({ ref, key }) => ({ ref, key })) });
+export async function outlineFields(place: FormPlace, fields: PageField[]): Promise<void> {
+  await inPage(place, { do: 'outline', fields: fields.map(({ ref, key }) => ({ ref, key })) });
 }
 
 /** Scrolls to a field on the page, and puts the cursor in it. */
-export async function showField(tabId: number, field: PageField): Promise<boolean> {
-  const answer = await inPage(tabId, { do: 'show', ref: field.ref, key: field.key });
+export async function showField(place: FormPlace, field: PageField): Promise<boolean> {
+  const answer = await inPage(place, { do: 'show', ref: field.ref, key: field.key });
   return answer?.did === 'show' && answer.found;
 }
 
@@ -213,6 +262,29 @@ export async function fetchFile(
   return base64;
 }
 
+/** The kinds of field that ask for a place, which a site's own list may name in full. */
+const PLACES = new Set<FieldReply['kind']>(['location', 'city', 'job-location']);
+
+/**
+ * A place's other names, as a site's own list of places may put it: "Denver, CO" is "Denver,
+ * Colorado" too. Each name stays first, with its other name after it.
+ */
+export function placeNames(picks: readonly string[]): string[] {
+  const names = picks.flatMap((pick) => {
+    const [city = '', region = '', ...rest] = pick.split(',').map((part) => part.trim());
+    const state = US_STATES[region.toUpperCase()];
+    return state && city ? [pick, [city, state, ...rest].join(', ')] : [pick];
+  });
+  return [...new Set(names)];
+}
+
+/** Whether a reply is a place, which a site's own list of places offers as you type. */
+export const isPlace = (kind: FieldReply['kind']) => PLACES.has(kind);
+
+/** The options to pick for a reply: a place's in each of its names. */
+export const picksOf = (reply: Pick<FieldReply, 'kind' | 'pick'>): string[] =>
+  isPlace(reply.kind) ? placeNames(reply.pick ?? []) : [...(reply.pick ?? [])];
+
 /** What to put in each field Factwright answered, with the files it fetched. */
 export function fillAnswers(
   form: PageForm,
@@ -227,8 +299,23 @@ export function fillAnswers(
       const file = files[reply.file];
       return file ? [{ ref, key, file: { ...file, type: 'application/pdf' } }] : [];
     }
-    if (reply.pick) return [{ ref, key, pick: reply.pick, ...(reply.exact && { exact: true }) }];
-    return reply.text ? [{ ref, key, text: reply.text }] : [];
+    if (reply.pick) {
+      return [
+        {
+          ref,
+          key,
+          pick: picksOf(reply),
+          ...(reply.exact && { exact: true }),
+          ...(isPlace(reply.kind) && { place: true }),
+        },
+      ];
+    }
+    if (!reply.text) return [];
+    // A place in a box that offers places as you type is one of its own to pick.
+    if (isPlace(reply.kind) && field.control === 'combo') {
+      return [{ ref, key, pick: placeNames([reply.text]), place: true }];
+    }
+    return [{ ref, key, text: reply.text }];
   });
 }
 
@@ -261,7 +348,7 @@ const PASSES = 3;
 
 /** A form being filled, as filling it in passes goes along. */
 export interface Passes {
-  tabId: number;
+  place: FormPlace;
   /** The form as read, which gains the fields the form shows as it's filled. */
   form: PageForm;
   /** Factwright's answers, which gain the replies for those fields. */
@@ -288,7 +375,7 @@ export interface Passes {
 export async function fillInPasses(
   passes: Passes,
 ): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> {
-  const { tabId, form, plan, shows, filled, stale } = passes;
+  const { place, form, plan, shows, filled, stale } = passes;
   const { job, files } = plan;
   const replies = plan.replies;
   const fetched: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>> = {};
@@ -309,7 +396,7 @@ export async function fillInPasses(
   for (let pass = 0; pass < PASSES; pass++) {
     const fields = form.fields.slice(from);
     const answers = fillAnswers({ ...form, fields }, replies.slice(from), fetched);
-    const done = await fillForm(tabId, form.url, answers);
+    const done = await fillForm(place, form.url, answers);
     if (stale()) return 'stale';
     if (done === null) return 'unreachable';
     if (done === 'elsewhere') return 'elsewhere';
@@ -318,7 +405,7 @@ export async function fillInPasses(
       if (field) filled.set(field.key, each);
     }
     // Fields the form showed once others were answered, filled in the next pass.
-    const again = await readForm(tabId);
+    const again = await readForm(place);
     if (stale()) return 'stale';
     if (!again || again.url.split('#')[0] !== form.url.split('#')[0]) break;
     const known = new Set(form.fields.map((field) => field.key));
@@ -334,7 +421,7 @@ export async function fillInPasses(
   }
   // What's left for you, and needed, is outlined in orange on the page.
   const left = form.fields.filter((field) => field.required && !filled.get(field.key)?.ok);
-  await outlineFields(tabId, left);
+  await outlineFields(place, left);
   return stale() ? 'stale' : true;
 }
 

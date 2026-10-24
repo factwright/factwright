@@ -1,11 +1,13 @@
 // Fills a form in a real Firefox, headless, with the built extension's own form function: sent
 // into a page served here by the extension's scripting.executeScript, as its sidebar does it, it
 // reads the form, fills it, uploads a file through Firefox's content-script sandbox, and reads
-// what's in it. It reads no field you can't see, as a page's traps for bots. Then the job
-// application sites: turned on in setup, Firefox registers the extension's script on them, which
-// puts its Fill button on the form, and Firefox, which opens its sidebar only from a click of its
-// own, has the button fill the form there, which, with no Factwright on this computer, says so.
-// Turned off, the script and its button are gone. Nothing is submitted. As e2e:firefox does, it
+// what's in it, with a place picked from Lever's own suggestions and Ashby's Yes or No pressed. It
+// reads no field you can't see, as a page's traps for bots. Then the job application sites:
+// turned on in setup, Firefox registers the extension's script on them, which puts its Fill
+// button on the form, and Firefox, which opens its sidebar only from a click of its own, has the
+// button fill the form there, which, with no Factwright on this computer, says so. A careers page
+// on another site that shows the form in a frame gets the button in the frame, and the extension
+// reads the form there. Turned off, the script and its button are gone. Nothing is submitted. As e2e:firefox does, it
 // needs Mozilla's Firefox 158 or later, which FIREFOX names, or on a Mac the one in Applications.
 // `pnpm --filter @factwright/extension e2e:firefox-fill`.
 import { execFileSync } from 'node:child_process';
@@ -25,6 +27,7 @@ import type {
   PageField,
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
+import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const FIXTURES = join(ROOT, 'test', 'fixtures');
@@ -53,23 +56,47 @@ function firefoxProgram(): string {
 /** The extension's address in this Firefox, which a pref fixes. */
 const UUID = '5f0d3a91-2c4b-4e8a-9b6f-7d1e2c3b4a50';
 
-/** The forms it fills: the plain one, and Lever's as Chromium showed it. */
-const PAGES: Record<string, string> = {
-  '/plain/apply': 'plain-application.html',
-  '/lever/apply': 'lever-application.html',
+/**
+ * The forms it fills: the plain one, and Lever's and Ashby's as Chromium showed them, with what
+ * their own code does in them.
+ */
+const PAGES: Record<string, { file: string; code?: string }> = {
+  '/plain/apply': { file: 'plain-application.html' },
+  '/lever/apply': { file: 'lever-application.html', code: LEVER_LOOKS_UP },
+  '/ashby/apply': { file: 'ashby-application.html', code: ASHBY_PRESSES },
 };
 
 /** A form with fields you can't see, and the questions of the ones you can. */
 const TRAPS = '/traps/apply';
 const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
 
+/** A company's careers page, which shows Lever's form in a frame. */
+const CAREERS = '/careers/northwind';
+
+let origin = '';
 const site = createServer((request, response) => {
-  const name = request.url === TRAPS ? 'hidden-fields.html' : PAGES[request.url ?? ''];
-  response.writeHead(name ? 200 : 404, { 'content-type': 'text/html' });
-  response.end(name ? readFileSync(join(FIXTURES, name)) : 'Not found');
+  const url = request.url ?? '';
+  const page = url === TRAPS ? { file: 'hidden-fields.html' } : PAGES[url];
+  if (url === CAREERS) {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(
+      `<!doctype html><title>Careers at Northwind Labs</title><h1>Careers at Northwind Labs</h1><iframe title="Apply for this job" src="${origin}/lever/apply" style="display:block;width:100%;height:2600px;border:0"></iframe>`,
+    );
+    return;
+  }
+  response.writeHead(page ? 200 : 404, { 'content-type': 'text/html' });
+  if (!page) {
+    response.end('Not found');
+    return;
+  }
+  const html = readFileSync(join(FIXTURES, page.file), 'utf8');
+  response.end(page.code ? withOwnCode(html, page.code) : html);
 });
 await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve));
-const origin = `http://127.0.0.1:${(site.address() as AddressInfo).port}`;
+const port = (site.address() as AddressInfo).port;
+origin = `http://127.0.0.1:${port}`;
+/** The careers page's site: this computer's other name, which the extension may not reach. */
+const careers = `http://localhost:${port}`;
 const work = mkdtempSync(join(tmpdir(), 'fw-firefox-fill-'));
 let firefox: Firefox | null = null;
 let failed = false;
@@ -186,6 +213,8 @@ try {
       ['Which shifts can you work?', { pick: ['Day'] }],
       ['Pronouns', { pick: ['She/her'] }],
       ['What best describes your gender?', { pick: ['Woman'] }],
+      ['Current location', { pick: ['Denver, CO', 'Denver, Colorado', 'Denver'], place: true }],
+      ['Are you based in a EU or equivalent timezone?', { pick: ['No'] }],
       ['Resume', { file: resume }],
       ['Resume/CV', { file: resume }],
       ['Create a password', { text: 'hunter2' }],
@@ -208,6 +237,20 @@ try {
       `${path}: each field takes what it's given, as typing would`,
     );
     check(!at('Create a password') || !took('Create a password'), `${path}: but never a password`);
+    const shown = (question: string) =>
+      filled.find((each) => each.ref === at(question)?.ref)?.shown;
+    if (at('Current location')) {
+      check(
+        shown('Current location') === 'Denver, Colorado, United States',
+        `${path}: the place is the one Lever’s location box suggests, which it takes`,
+      );
+    }
+    if (at('Are you based in a EU or equivalent timezone?')) {
+      check(
+        shown('Are you based in a EU or equivalent timezone?') === 'No',
+        `${path}: Ashby’s No is pressed, as a click does`,
+      );
+    }
     const { values } = await inPage<{ values: FieldValue[] }>(address, {
       do: 'values',
       fields: files.map(({ ref, key }) => ({ ref, key })),
@@ -314,6 +357,108 @@ try {
     true,
     'its Fill button asks for the form’s answers itself, as Firefox opens its sidebar only from its own click, and says why it can’t fill it',
   );
+  // A company's careers page on another site, which shows the form in a frame from a job site:
+  // the Fill button is in the frame, and the extension reads the form there, by the frame's
+  // number, while the page around it is one it may not read.
+  await running.send('browsingContext.navigate', {
+    context: tab,
+    url: `${careers}${CAREERS}`,
+    wait: 'complete',
+  });
+  /** A frame anywhere in a page, the one whose address says `words`. */
+  const nested = (root: string, words: string) =>
+    waitFor(`a frame at ${words}`, async () => {
+      type Node = { context: string; url: string; children?: Node[] | null };
+      const tree = await running.send<{ contexts: Node[] }>('browsingContext.getTree', { root });
+      const find = (nodes: Node[]): string | undefined => {
+        for (const node of nodes) {
+          if (node.url.includes(words)) return node.context;
+          const inside = find(node.children ?? []);
+          if (inside) return inside;
+        }
+        return undefined;
+      };
+      return find(tree.contexts[0]?.children ?? []);
+    });
+  const framedButton = await nested(tab, '/frame.html#button');
+  check(
+    true,
+    'a form in a frame of a careers page on another site gets its Fill button, in the frame',
+  );
+  const framed = await running.run(
+    setup,
+    async ([page, form]: string[]) => {
+      const api = (
+        globalThis as unknown as {
+          browser: {
+            tabs: { query(query: object): Promise<{ id: number; url?: string }[]> };
+            scripting: {
+              executeScript(injection: object): Promise<{ frameId: number; result: unknown }[]>;
+            };
+            storage: { session: { get(key: string): Promise<Record<string, unknown>> } };
+          };
+        }
+      ).browser;
+      const tabs = await api.tabs.query({});
+      // Firefox says the address only of a page the extension may reach: the careers page's isn't.
+      const found = [];
+      for (const each of tabs) {
+        const frames = await api.scripting
+          .executeScript({ target: { tabId: each.id, allFrames: true }, func: () => location.href })
+          .catch(() => []);
+        const frame = frames.find((one) => one.result === form);
+        if (frame) found.push({ tabId: each.id, url: each.url ?? '', frameId: frame.frameId });
+      }
+      const [where] = found;
+      if (!where) return null;
+      const kept = (await api.storage.session.get('jobFrames')).jobFrames as
+        | Record<string, { frameId: number }[]>
+        | undefined;
+      return { ...where, page, kept: kept?.[String(where.tabId)] ?? [] };
+    },
+    [`${careers}${CAREERS}`, `${origin}/lever/apply`],
+  );
+  if (!framed) throw new Error('No frame with the form on the careers page.');
+  check(
+    framed.url !== `${careers}${CAREERS}` &&
+      framed.kept.some((each) => each.frameId === framed.frameId),
+    'Firefox keeps the careers page’s address from the extension, which keeps the frame its script said hello from',
+  );
+  const readInFrame = await running.send<
+    | { type: 'success'; result: { value?: unknown } }
+    | { type: 'exception'; exceptionDetails: { text: string } }
+  >('script.callFunction', {
+    functionDeclaration: `async (json) => {
+      const [tabId, frameId] = JSON.parse(json);
+      const formPage = ${source};
+      const [first] = await browser.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        func: formPage,
+        args: [{ do: 'read' }],
+      });
+      return JSON.stringify(first?.result ?? null);
+    }`,
+    arguments: [{ type: 'string', value: JSON.stringify([framed.tabId, framed.frameId]) }],
+    target: { context: setup },
+    awaitPromise: true,
+    resultOwnership: 'none',
+  });
+  if (readInFrame.type === 'exception') throw new Error(readInFrame.exceptionDetails.text);
+  const framedForm = JSON.parse(String(readInFrame.result.value)) as {
+    form: { url: string; fields: PageField[] };
+  };
+  check(
+    framedForm.form.url === `${origin}/lever/apply` && framedForm.form.fields.length > 5,
+    `the extension reads the form in the frame, by its number, ${framedForm.form.fields.length} fields`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await click(framedButton, 'Fill');
+  await says(framedButton, 'couldn’t find Factwright');
+  check(
+    true,
+    'and its Fill button there fills the form in the frame, as it does on the form’s own page',
+  );
+
   await click(setup, 'Turn off');
   await says(setup, 'Off for job application sites.');
   await waitFor('the Fill button to go', async () => {

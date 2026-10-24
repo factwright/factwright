@@ -4,15 +4,20 @@ import {
   isRemembered,
   type RememberedKind,
 } from '@factwright/core';
-import { isAllowedPage } from './application-sites.ts';
+import { isCopyOnlySite } from './applicant-systems.ts';
+import { forgetFrame, isAllowedPage, keepFrame, keptFrame } from './application-sites.ts';
 import { askComputer, canReachComputer, canSendNow } from './computer.ts';
 import { ext, type Sender, type Tab } from './ext.ts';
 import {
   answerSource,
   type FillPlan,
+  type FormPlace,
   filledSummary,
   fillInPasses,
+  isPlace,
   newAnswers,
+  picksOf,
+  placeNames,
   planFill,
   readForm,
 } from './fill.ts';
@@ -32,7 +37,7 @@ import {
 } from './job-site-messages.ts';
 import type { FieldAnswer, FieldFilled, PageField, PageForm } from './page/form.ts';
 import { openPanel } from './panel-open.ts';
-import { readTab } from './read-tab.ts';
+import { readFormJob } from './read-tab.ts';
 
 /**
  * The background's side of the job sites you allowed: what each field's menu offers, from
@@ -40,7 +45,9 @@ import { readTab } from './read-tab.ts';
  * you're in one of its fields; the new answers you gave, which it offers to keep; and the Fill
  * button. The answers stay here, and in the extension's own frame, which shows them: the script in
  * the page gets only the one you pick, to put in its field. Each message is checked, and answered
- * only for a site you allowed.
+ * only for a site you allowed. The script runs in each frame of a tab from such a site, as a
+ * company's careers page shows an applicant system's form in one, so what's known of a form is
+ * kept by its tab and its frame, and the frames are kept for the panel to find their forms.
  */
 
 /** One of a menu's answers: what it shows, and what goes in the field if you pick it. */
@@ -114,13 +121,22 @@ export function menuAnswers(field: PageField, reply: FieldReply | undefined): Of
       return [
         {
           shown: { text: options.join(', '), from },
-          answer: { pick: each.pick, ...(each.exact && { exact: true }) },
+          answer: {
+            pick: picksOf({ kind: reply.kind, pick: each.pick }),
+            ...(each.exact && { exact: true }),
+            ...(isPlace(reply.kind) && { place: true }),
+          },
         },
       ];
     }
     // A choice takes only its own options.
     if (choosing(field) || !each.text?.trim()) return [];
-    return [{ shown: { text: each.text, from }, answer: { text: each.text } }];
+    // A place in a box that offers places as you type is one of its own to pick.
+    const answer =
+      isPlace(reply.kind) && field.control === 'combo'
+        ? { pick: placeNames([each.text]), place: true }
+        : { text: each.text };
+    return [{ shown: { text: each.text, from }, answer }];
   });
   // The same words twice are one answer.
   const seen = new Set<string>();
@@ -188,8 +204,16 @@ interface Menu {
   save: Saving | null;
 }
 
-/** A page on a site you allowed whose form the background answered, in one tab's top frame. */
+/** Where a script runs: a tab, a frame in it, its top frame being 0, and the page it's on. */
+interface ScriptAt extends FormPlace {
+  url: string;
+  /** The script's own name for its page, which its Fill button's frame says. */
+  doc: string;
+}
+
+/** A page on a site you allowed whose form the background answered, in one frame of a tab. */
 interface OnPage {
+  place: FormPlace;
   /** The page's address, but for what's after its #. */
   url: string;
   form: PageForm;
@@ -201,10 +225,13 @@ interface OnPage {
   offered: Set<string>;
 }
 
-const pages = new Map<number, OnPage>();
+/** A frame of a tab, as the background keeps what it knows of each. */
+const keyOf = (place: FormPlace) => `${place.tabId}:${place.frameId}`;
 
-/** The tabs the script said hello from, to tell it to stop once its site isn't allowed. */
-const scripts = new Map<number, string>();
+const pages = new Map<string, OnPage>();
+
+/** The frames the script said hello from, to tell it to stop once its site isn't allowed. */
+const scripts = new Map<string, ScriptAt>();
 
 const pageOf = (url: string) => url.split('#')[0] ?? url;
 
@@ -224,39 +251,46 @@ const menusOf = (page: OnPage): FieldMenu[] =>
     keeps: keepsAnswer(field, page.plan.replies[at]),
   }));
 
-/** Sends the script in a tab's top frame a message, and its answer, or null. */
-const tellScript = (tabId: number, message: ToScript) =>
-  ext.tabs.sendMessage(tabId, message, { frameId: 0 }).catch(() => null);
+/** Sends the script in a frame of a tab a message, and its answer, or null. */
+const tellScript = (place: FormPlace, message: ToScript) =>
+  ext.tabs.sendMessage(place.tabId, message, { frameId: place.frameId }).catch(() => null);
 
-/** The script's own tab and page, when the message is the script's, from a tab's top frame. */
-function scriptSender(sender: Sender): { tabId: number; url: string } | null {
-  if (sender.id !== ext.runtime.id || sender.tab?.id === undefined || sender.frameId !== 0) {
+/**
+ * Where the script is, when the message is the script's: its tab, its frame, the page it's on, and
+ * the address of the tab's own page, where the browser gives it.
+ */
+function scriptSender(sender: Sender): (FormPlace & { url: string; top: string }) | null {
+  const tabId = sender.tab?.id;
+  const frameId = sender.frameId;
+  if (sender.id !== ext.runtime.id || tabId === undefined || !Number.isInteger(frameId)) {
     return null;
   }
   const url = sender.url ?? '';
-  return /^https?:\/\//i.test(url) ? { tabId: sender.tab.id, url } : null;
+  if (!/^https?:\/\//i.test(url)) return null;
+  return { tabId, frameId: frameId as number, url, top: sender.tab?.url ?? '' };
 }
 
 /**
- * The frame's tab, and the page it's on, when the message is the extension's own frame's. Chrome
- * names the frame by an address of the session's own as a page loads it, but by the extension's
- * own as it runs, which `getURL('frame.html')` doesn't give, as it gives the session's.
+ * The frame's tab, when the message is the extension's own frame's. Chrome names the frame by an
+ * address of the session's own as a page loads it, but by the extension's own as it runs, which
+ * `getURL('frame.html')` doesn't give, as it gives the session's.
  */
-function frameSender(sender: Sender): { tab: Tab & { id: number }; url: string } | null {
+function frameSender(sender: Sender): { tab: Tab & { id: number } } | null {
   const tab = sender.tab;
-  if (sender.id !== ext.runtime.id || tab?.id === undefined || !tab.url) return null;
+  if (sender.id !== ext.runtime.id || tab?.id === undefined) return null;
   if (!(sender.url ?? '').startsWith(`${ext.runtime.getURL('')}frame.html#`)) return null;
-  return { tab: { ...tab, id: tab.id }, url: tab.url };
+  return { tab: { ...tab, id: tab.id } };
 }
 
 /** Asks Factwright on this computer for the form's answers, keeping those it has, by field. */
 async function answer(
-  tabId: number,
+  place: FormPlace,
   form: PageForm,
   job: { company: string; role: string },
 ): Promise<OnPage | string> {
   const url = pageOf(form.url);
-  const before = pages.get(tabId);
+  const key = keyOf(place);
+  const before = pages.get(key);
   if (before && before.url === url) {
     const replies = new Map(
       before.form.fields.map((field, at) => [field.key, before.plan.replies[at]]),
@@ -267,7 +301,7 @@ async function answer(
         replies: form.fields.map((field) => replies.get(field.key) as FieldReply),
       };
       const page = { ...before, form, plan, menu: null };
-      pages.set(tabId, page);
+      pages.set(key, page);
       return page;
     }
   }
@@ -279,6 +313,7 @@ async function answer(
     return planned.ok ? 'Factwright didn’t answer.' : planned.message;
   }
   const page: OnPage = {
+    place,
     url,
     form,
     plan: planned,
@@ -286,32 +321,54 @@ async function answer(
     saving: null,
     offered: before?.url === url ? before.offered : new Set(),
   };
-  pages.set(tabId, page);
+  pages.set(key, page);
   return page;
+}
+
+/**
+ * Whether a frame's script is in a page of LinkedIn's or Indeed's, where the extension only ever
+ * gives answers to copy: by the tab's own address, where the browser gives it, and the sites of
+ * the pages around the frame, where the browser says them.
+ */
+const inCopyOnly = (top: string, around: readonly string[]) =>
+  [top, ...around].some((url) => url !== '' && isCopyOnlySite(url));
+
+/** Forgets what the background knows of a frame's page. */
+function forgetPage(place: FormPlace): void {
+  pages.delete(keyOf(place));
+  scripts.delete(keyOf(place));
 }
 
 /** What the script asks, answered: or undefined when it isn't on a site you allowed. */
 export async function answerScript(
   message: FromScript,
-  from: { tabId: number; url: string },
+  from: FormPlace & { url: string; top: string },
 ): Promise<unknown> {
-  const { tabId, url } = from;
-  if (!(await isAllowedPage(url))) {
-    pages.delete(tabId);
-    scripts.delete(tabId);
+  const { url } = from;
+  const place = { tabId: from.tabId, frameId: from.frameId };
+  const key = keyOf(place);
+  if (message.do === 'bye') {
+    if (scripts.get(key)?.doc === message.doc) forgetPage(place);
+    await forgetFrame(place.tabId, { frameId: place.frameId, doc: message.doc });
+    return {};
+  }
+  const around = message.do === 'hello' ? message.around : [];
+  if (!(await isAllowedPage(url)) || inCopyOnly(from.top, around)) {
+    forgetPage(place);
     return message.do === 'hello' ? { allowed: false } : { stop: true };
   }
   if (message.do === 'hello') {
-    scripts.set(tabId, url);
+    scripts.set(key, { ...place, url, doc: message.doc });
+    await keepFrame(place.tabId, { frameId: place.frameId, url, doc: message.doc });
     return { allowed: true };
   }
   if (message.do === 'form') {
     // Only the form on the page the script is on.
     if (pageOf(message.form.url) !== pageOf(url)) return { menus: null };
-    const page = await answer(tabId, message.form, message.job);
+    const page = await answer(place, message.form, message.job);
     return typeof page === 'string' ? { menus: null, problem: page } : { menus: menusOf(page) };
   }
-  const page = pages.get(tabId);
+  const page = pages.get(key);
   // The background started again since, and forgot the form: the script asks for it again.
   if (!page || page.url !== pageOf(url)) return { again: true };
   if (message.do === 'closed') {
@@ -342,11 +399,25 @@ export async function answerScript(
   return { answers: answers.length, save: Boolean(save) };
 }
 
-/** The page whose menu a frame names by its token, in the frame's own tab. */
+/** The page whose menu a frame names by its token, in one of the frame's own tab's frames. */
 function menuFor(tabId: number, token: string): { page: OnPage; menu: Menu } | null {
-  const page = pages.get(tabId);
-  const menu = page?.menu;
-  return page && menu && menu.token === token ? { page, menu } : null;
+  for (const page of pages.values()) {
+    const menu = page.menu;
+    if (page.place.tabId === tabId && menu && menu.token === token) return { page, menu };
+  }
+  return null;
+}
+
+/**
+ * The script whose Fill button a frame is, by the name it gave its page, in the frame's own tab:
+ * as the background knows it, or as the browser keeps it, once the background has started again.
+ */
+async function buttonFor(tabId: number, token: string): Promise<ScriptAt | null> {
+  for (const script of scripts.values()) {
+    if (script.tabId === tabId && script.doc === token) return script;
+  }
+  const kept = await keptFrame(tabId, token);
+  return kept ? { tabId, ...kept } : null;
 }
 
 /** Has the panel fill the form in a tab, if it's open, as it does when the click opens it. */
@@ -363,41 +434,41 @@ const tellPanel = (tabId: number, at: number) =>
  */
 async function fillButton(
   tab: Tab & { id: number },
+  place: FormPlace,
   opening: Promise<boolean> | null,
 ): Promise<FilledHere> {
   const at = Date.now();
   if (opening) {
-    if (!(await opening)) return fillHere(tab);
+    if (!(await opening)) return fillHere(tab, place);
     void tellPanel(tab.id, at);
     return { did: 'panel' };
   }
   const open = await (ext.sidebarAction?.isOpen({ windowId: tab.windowId }) ?? false);
-  if (!open) return fillHere(tab);
+  if (!open) return fillHere(tab, place);
   void tellPanel(tab.id, at);
   return { did: 'panel' };
 }
 
-/** Fills the form in a tab as the panel would, without it, and says how it went. */
-async function fillHere(tab: Tab & { id: number }): Promise<FilledHere> {
+/** Fills the form in a tab's frame as the panel would, without it, and says how it went. */
+async function fillHere(tab: Tab & { id: number }, place: FormPlace): Promise<FilledHere> {
   const problem = (says: string) => ({ did: 'problem', says }) as const;
   if (!(await canReachComputer()) || !canSendNow()) {
     return problem(
       'Filling needs your OK to reach Factwright on this computer: click Factwright’s button, then Fill this application.',
     );
   }
-  const form = await readForm(tab.id);
+  const form = await readForm(place);
   if (!form) return problem('Factwright can’t read this page.');
   if (form.fields.length === 0) {
     return problem('There’s no form here. Open the application itself, then click Fill again.');
   }
-  const { page } = await readTab(tab);
-  const shows = { company: page.company, role: page.title };
+  const shows = await readFormJob(tab, place.frameId);
   const plan = await planFill(form, shows);
   if (!plan.ok || plan.did !== 'fill') {
     return problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message);
   }
   const filled = new Map<string, FieldFilled>();
-  const done = await fillInPasses({ tabId: tab.id, form, plan, shows, filled, stale: () => false });
+  const done = await fillInPasses({ place, form, plan, shows, filled, stale: () => false });
   if (done === 'elsewhere') return problem('This tab has moved on from the form.');
   if (done !== true) return problem('Factwright can’t reach this page anymore.');
   const unsaved = plan.job ? '' : ' Save the job first to upload its resume.';
@@ -407,28 +478,30 @@ async function fillHere(tab: Tab & { id: number }): Promise<FilledHere> {
   };
 }
 
-/** What the frame asks, answered, for its own tab's menu. */
+/** What the frame asks, answered, for the script in its own tab that shows it. */
 export async function answerFrame(
   message: FromFrame,
-  from: { tab: Tab & { id: number }; url: string },
+  from: { tab: Tab & { id: number } },
   opening: Promise<boolean> | null = null,
 ): Promise<unknown> {
-  const { tab, url } = from;
-  if (!(await isAllowedPage(url))) return null;
+  const { tab } = from;
   const tabId = tab.id;
-  if (message.do === 'fill') {
-    const done = await fillButton(tab, opening);
+  if (message.do === 'fill' || message.do === 'hide-button') {
+    const script = await buttonFor(tabId, message.token);
+    if (!script || !(await isAllowedPage(script.url))) return null;
+    const place = { tabId, frameId: script.frameId };
+    if (message.do === 'hide-button') {
+      await tellScript(place, { type: 'job-site', do: 'hide-button' });
+      return {};
+    }
+    const done = await fillButton(tab, place, opening);
     // Filled here, the button says how it went, in room the script makes for it.
     if (done.did !== 'panel')
-      await tellScript(tabId, { type: 'job-site', do: 'button', size: 'card' });
+      await tellScript(place, { type: 'job-site', do: 'button', size: 'card' });
     return done;
   }
-  if (message.do === 'hide-button') {
-    await tellScript(tabId, { type: 'job-site', do: 'hide-button' });
-    return {};
-  }
   const found = menuFor(tabId, message.token);
-  if (!found) return null;
+  if (!found || !(await isAllowedPage(found.page.url))) return null;
   const { page, menu } = found;
   const field = page.form.fields[menu.at] as PageField;
   if (message.do === 'shows') {
@@ -444,7 +517,7 @@ export async function answerFrame(
     const picked = menu.answers[message.at];
     if (!picked) return { ok: false };
     page.menu = null;
-    const written = (await tellScript(tabId, {
+    const written = (await tellScript(page.place, {
       type: 'job-site',
       do: 'write',
       answer: { ref: field.ref, key: field.key, ...picked.answer },
@@ -466,7 +539,7 @@ export async function answerFrame(
   // Not now, or Escape: it's not offered again on this page.
   if (menu.save) page.offered.add(menu.save.key);
   page.menu = null;
-  await tellScript(tabId, { type: 'job-site', do: 'close', refocus: message.refocus });
+  await tellScript(page.place, { type: 'job-site', do: 'close', refocus: message.refocus });
   return {};
 }
 
@@ -503,10 +576,11 @@ export function onJobSiteMessage(
   return undefined;
 }
 
-/** Forgets a tab's form once it closes. */
+/** Forgets a tab's forms, in each of its frames, once it closes. */
 export function forgetTab(tabId: number): void {
-  pages.delete(tabId);
-  scripts.delete(tabId);
+  for (const [key, page] of pages) if (page.place.tabId === tabId) pages.delete(key);
+  for (const [key, script] of scripts) if (script.tabId === tabId) scripts.delete(key);
+  void forgetFrame(tabId);
 }
 
 /**
@@ -515,9 +589,9 @@ export function forgetTab(tabId: number): void {
  * time its script asks for anything.
  */
 export async function stopWhereNotAllowed(): Promise<void> {
-  for (const [tabId, url] of scripts) {
-    if (await isAllowedPage(url)) continue;
-    forgetTab(tabId);
-    await tellScript(tabId, { type: 'job-site', do: 'stop' });
+  for (const script of [...scripts.values()]) {
+    if (await isAllowedPage(script.url)) continue;
+    forgetPage(script);
+    await tellScript(script, { type: 'job-site', do: 'stop' });
   }
 }

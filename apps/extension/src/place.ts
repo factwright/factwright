@@ -1,8 +1,9 @@
 /**
  * Where the extension's own frame goes on a job site you allowed: its menu beside the field you're
  * in, and its Fill button in a corner of the window, each only where it covers none of the page's
- * own controls, and never the field. Where nothing has room, it doesn't show: the panel has the
- * same answers, by a click on the extension's button.
+ * own controls, and never the field. In a form another site's page shows in a frame, "the window"
+ * is the part of the frame you can see, as the page around it scrolls it. Where nothing has room,
+ * it doesn't show: the panel has the same answers, by a click on the extension's button.
  */
 
 /** A box on the screen, as a page's layout gives one, from the window's top left corner. */
@@ -25,6 +26,12 @@ export interface Place {
   top: number;
 }
 
+/**
+ * Where the frame may go: the window, from its top left corner, or the part of it that shows, as
+ * a frame's that another page scrolls.
+ */
+export type Area = Size & Partial<Place>;
+
 /** The room the menu leaves between it and its field. */
 export const GAP = 6;
 
@@ -42,12 +49,17 @@ export const overlaps = (a: Box, b: Box): boolean =>
   a.top < b.top + b.height &&
   b.top < a.top + a.height;
 
-/** Whether a box is all inside the window, with room from its edges. */
-const inside = (box: Box, window: Size): boolean =>
-  box.left >= EDGE &&
-  box.top >= EDGE &&
-  box.left + box.width <= window.width - EDGE &&
-  box.top + box.height <= window.height - EDGE;
+/** Whether a box is all inside the window, or the part of it that shows, with room from its edges. */
+const inside = (box: Box, area: Area): boolean => {
+  const left = area.left ?? 0;
+  const top = area.top ?? 0;
+  return (
+    box.left >= left + EDGE &&
+    box.top >= top + EDGE &&
+    box.left + box.width <= left + area.width - EDGE &&
+    box.top + box.height <= top + area.height - EDGE
+  );
+};
 
 /** A box grown on each side, to keep a gap around it. */
 const grown = (box: Box, by: number): Box => ({
@@ -62,11 +74,11 @@ function firstFree(
   places: readonly Place[],
   size: Size,
   covered: readonly Box[],
-  window: Size,
+  area: Area,
 ): Place | null {
   for (const place of places) {
     const box = { ...place, ...size };
-    if (!inside(box, window)) continue;
+    if (!inside(box, area)) continue;
     const near = grown(box, CLEAR);
     if (covered.some((other) => other.width > 0 && other.height > 0 && overlaps(near, other))) {
       continue;
@@ -85,7 +97,7 @@ export function placeMenu(
   size: Size,
   field: Box,
   controls: readonly Box[],
-  window: Size,
+  area: Area,
 ): Place | null {
   const right = field.left + field.width;
   const bottom = field.top + field.height;
@@ -102,26 +114,28 @@ export function placeMenu(
     ],
     size,
     [field, ...controls],
-    window,
+    area,
   );
 }
 
 /**
- * Where the Fill button goes: a corner of the window, the bottom right first, that covers none of
- * the page's own controls. Null when every corner does.
+ * Where the Fill button goes: a corner of the window, or of the part of it that shows, the bottom
+ * right first, that covers none of the page's own controls. Null when every corner does.
  */
-export function placeButton(size: Size, controls: readonly Box[], window: Size): Place | null {
-  const right = window.width - CORNER - size.width;
-  const bottom = window.height - CORNER - size.height;
+export function placeButton(size: Size, controls: readonly Box[], area: Area): Place | null {
+  const left = (area.left ?? 0) + CORNER;
+  const top = (area.top ?? 0) + CORNER;
+  const right = (area.left ?? 0) + area.width - CORNER - size.width;
+  const bottom = (area.top ?? 0) + area.height - CORNER - size.height;
   return firstFree(
     [
       { left: right, top: bottom },
-      { left: CORNER, top: bottom },
-      { left: right, top: CORNER },
-      { left: CORNER, top: CORNER },
+      { left, top: bottom },
+      { left: right, top },
+      { left, top },
     ],
     size,
     controls,
-    window,
+    area,
   );
 }
