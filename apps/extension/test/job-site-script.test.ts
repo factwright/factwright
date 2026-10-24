@@ -159,7 +159,7 @@ const tell = (message: unknown, from = 'factwright') =>
 
 describe('the script on a job site you allowed', () => {
   it('puts the Fill button on a page with an application form, in a frame of the extension’s own', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     const [{ host, frame }] = frames() as [{ host: HTMLElement; frame: HTMLIFrameElement }];
     expect(frame.src).toBe('chrome-extension://factwright/frame.html#button');
@@ -168,9 +168,34 @@ describe('the script on a job site you allowed', () => {
     expect(host.shadowRoot).toBeNull();
   });
 
+  it('puts nothing on the page until it has loaded and settled a moment, as one that builds itself may be checking its own', async () => {
+    script = startScript(() => true, 200);
+    await vi.waitFor(() =>
+      expect(sentOf('form').length + sentOf('hello').length).toBeGreaterThan(0),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(frames()).toHaveLength(0);
+    expect(document.documentElement.querySelectorAll('div')).toHaveLength(0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+  });
+
+  it('puts its Fill button back when the page takes it away, or builds itself again', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    const [{ host }] = frames() as [{ host: HTMLElement; frame: HTMLIFrameElement }];
+    host.remove();
+    await vi.waitFor(() => expect(host.isConnected).toBe(true));
+    // A page whose code puts a new root in place of its own, as React does once it can't match
+    // the page its site sent.
+    const root = document.createElement('html');
+    root.append(document.createElement('head'), document.body.cloneNode(true));
+    document.replaceChild(root, document.documentElement);
+    await vi.waitFor(() => expect(host.parentElement).toBe(root));
+  });
+
   it('does nothing on a site the background doesn’t allow', async () => {
     extension.allowed = false;
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 50));
     clickIn('name');
@@ -181,7 +206,7 @@ describe('the script on a job site you allowed', () => {
 
   it('opens a menu where you click in, asking about the form without what’s in it, and fills nothing', async () => {
     input('note').value = 'My own words, which the page has';
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     clickIn('name');
     await vi.waitFor(() => expect(frames()).toHaveLength(2));
@@ -199,7 +224,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('is the same size however many answers it has, so the page can’t count them', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     clickIn('name');
     await vi.waitFor(() => expect(frames()).toHaveLength(2));
@@ -213,7 +238,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('opens where you tab to, or click a field’s label, and nowhere the page moves the cursor as you type', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     // You type in one field, and the page puts the cursor in another.
     input('note').dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
@@ -233,7 +258,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('opens nothing where the page puts the cursor itself', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     input('name').focus();
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -242,7 +267,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('takes no event the page makes as yours', async () => {
-    script = startScript(() => false);
+    script = startScript(() => false, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     clickIn('name');
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -250,7 +275,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('puts the answer you picked in its field, as the background says, and closes the menu', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     clickIn('name');
     await vi.waitFor(() => expect(frames()).toHaveLength(2));
@@ -270,7 +295,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('puts nothing in the field when the page faded the menu, or put something over it', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     clickIn('name');
     await vi.waitFor(() => expect(frames()).toHaveLength(2));
@@ -298,7 +323,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('reads what you gave a field only once you leave it, and only for one Profile keeps', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     clickIn('phone');
     await vi.waitFor(() => expect(sentOf('menu')).toHaveLength(1));
@@ -318,7 +343,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('never reads a field you only went through', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     input('email').value = 'ana@example.com';
     clickIn('email');
@@ -328,7 +353,7 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('stops when the background says so, taking its frames away', async () => {
-    script = startScript(() => true);
+    script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     await tell({ type: 'job-site', do: 'stop' });
     expect(frames()).toEqual([]);

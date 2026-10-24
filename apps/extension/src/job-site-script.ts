@@ -45,6 +45,13 @@ const CARD_MS = 15_000;
 /** How long it waits before asking Factwright for answers again, once it couldn't. */
 const AGAIN_MS = 30_000;
 
+/**
+ * How long after a page has loaded it waits before it puts anything on it. A page its own code
+ * builds, as a React one does, may still be checking the elements it has against those its site
+ * sent, and anything added meanwhile would have it build the page again, and take that away too.
+ */
+const READY_MS = 1000;
+
 /** How long after the page's look changes, as a list opening, it places the frame again. */
 const RESTYLED_MS = 100;
 
@@ -114,12 +121,15 @@ export interface Script {
 /**
  * Starts the script on the page. What counts as yours, of what happens on the page, is what the
  * browser says came from you (`isTrusted`), never what the page's own code does: a test, which
- * can't make such events, says otherwise.
+ * can't make such events, says otherwise, and may have it put its frames on the page sooner.
  */
 export function startScript(
   yourOwn: (event: Event) => boolean = (event) => event.isTrusted,
+  readyMs = READY_MS,
 ): Script {
   let stopped = false;
+  /** Whether the page has loaded, and settled a moment, so the script may put its frames on it. */
+  let ready = false;
   /** The form as last read, and each field's elements, by its place. */
   let form: PageForm | null = null;
   let elements: HTMLElement[][] = [];
@@ -220,8 +230,8 @@ export function startScript(
       closeMenu();
     }
     readAt = pageUrl();
-    if (looksLikeApplication(form) && !buttonHidden) showButton();
-    else removeButton();
+    if (!looksLikeApplication(form) || buttonHidden) removeButton();
+    else if (ready) showButton();
   }
 
   /** The field an element is one of, or inside, by its place, or -1. */
@@ -414,9 +424,13 @@ export function startScript(
   /** What the menu mustn't cover: the page's own controls, and the Fill button. */
   const forMenu = () => [...controlBoxes(), ...(button ? [boxOf(button.host)] : [])];
 
-  /** Places the open menu beside its field again, or closes it once there's no room. */
+  /** Places the open menu beside its field again, or closes it once there's no room, or it's gone. */
   function placeOpenMenu(): void {
     if (!menu) return;
+    if (!menu.host.isConnected) {
+      closeMenu();
+      return;
+    }
     const field = fieldBox(menu.at);
     const place =
       field && inView(field)
@@ -464,7 +478,7 @@ export function startScript(
   async function showMenu(at: number | null, again = false): Promise<void> {
     // After what you gave the field you left is heard, which may offer to keep it.
     await inTurn(() => Promise.resolve());
-    if (stopped) return;
+    if (stopped || !ready) return;
     const answers = at !== null ? (menus?.[at]?.answers ?? 0) : 0;
     const saveAt = pendingSave;
     const tries: Shown[] = [];
@@ -695,6 +709,8 @@ export function startScript(
 
   function placeTheButton(): void {
     if (!button) return;
+    // A page that took it away, as one that builds itself again, gets it back.
+    if (!button.host.isConnected) document.documentElement.append(button.host);
     const size = button.card ? BUTTON_CARD : BUTTON;
     const covered = [...controlBoxes(), ...(menu ? [boxOf(menu.host)] : [])];
     put(button, size, placeButton(size, covered, { width: innerWidth, height: innerHeight }));
@@ -804,6 +820,9 @@ export function startScript(
   };
   const observer = new MutationObserver((changes) => {
     const ours = (node: Node) => mine.has(node);
+    // The page took away one of its frames, as a page that tidies what it doesn't know of: it
+    // goes back, where it's still wanted.
+    if (changes.some((change) => [...change.removedNodes].some(ours))) onMove();
     const added = changes.filter(
       (change) =>
         change.type === 'childList' &&
@@ -887,15 +906,28 @@ export function startScript(
   addEventListener('scroll', onMove, { capture: true, passive: true });
   addEventListener('resize', onMove, { passive: true });
   ext.runtime.onMessage.addListener(onMessage);
-  observer.observe(document.documentElement, {
+  // The whole document, as a page may put another in place of its own root as it builds itself.
+  observer.observe(document, {
     childList: true,
     subtree: true,
     attributes: true,
     attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-expanded', 'aria-hidden'],
   });
-  void ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello' }).then((said) => {
-    if (said?.allowed) void look();
-    else stop();
+  const loaded = new Promise<void>((resolve) => {
+    if (document.readyState === 'complete') resolve();
+    else addEventListener('load', () => resolve(), { once: true });
+  });
+  void ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello' }).then(async (said) => {
+    if (!said?.allowed) {
+      stop();
+      return;
+    }
+    void look();
+    await loaded;
+    await new Promise((resolve) => setTimeout(resolve, readyMs));
+    if (stopped) return;
+    ready = true;
+    await look();
   });
   return script;
 }
