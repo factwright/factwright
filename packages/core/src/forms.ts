@@ -190,16 +190,19 @@ const AUTOCOMPLETE: Record<string, FieldKind> = {
 const NEVER =
   /\b(robots? only|if you( a)?re (a )?human|password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$|^(please )?leave this (field |box |input )?(blank|empty)$|^(choose |create |pick )?(a |your )?(user ?name|login|login name|login id|user id)$/;
 
-/** Words a single checkbox asks you to agree to something with, as "I agree to the terms" does. */
+/**
+ * Words a single checkbox asks you to agree to something with, as "I agree to the terms" does, or
+ * to declare something true, as SmartRecruiters' declarations do.
+ */
 const AGREE =
-  /\b(agree|consent|acknowledge|accept|certify|confirm|understand|terms|privacy|authori[sz]e)\b/;
+  /\b(agree|consent|acknowledge|accept|certify|confirm|understand|terms|privacy|authori[sz]e|declare)\b/;
 
 /**
  * The same asked any other way: by a choice, as "Do you acknowledge our privacy notice?" asks it,
  * or by typing your name as a signature. Agreeing is yours to do, whatever you said before.
  */
 const CONSENT =
-  /\b(i|you|do you|we) (hereby )?(agree|consent|acknowledge|certify|attest|accept the)\b|\bconsent\b|\backnowledg(e|es|ed|ement)\b|\battest(ation)?\b|\bterms (and conditions|of (use|service|employment))\b|\bprivacy (policy|notice|statement)\b|\b(applicant|candidate|recruitment) privacy\b|\bdata (processing|retention|protection)\b|\bgdpr\b|\b(e ?)?signature\b|\bsign (here|below)\b|\b(keep|retain|store) (your|my) (data|information|details|application)\b/;
+  /\b(i|you|do you|we) (hereby )?(agree|consent|acknowledge|certify|attest|accept the|declare)\b|\bconsent\b|\backnowledg(e|es|ed|ement)\b|\battest(ation)?\b|\bterms (and conditions|of (use|service|employment))\b|\bprivacy (policy|notice|statement)\b|\b(applicant|candidate|recruitment) privacy\b|\bdata (processing|retention|protection)\b|\bgdpr\b|\b(e ?)?signature\b|\bsign (here|below)\b|\b(keep|retain|store) (your|my) (data|information|details|application)\b/;
 
 /** Words that ask whether you may work somewhere. */
 const AUTHORIZED =

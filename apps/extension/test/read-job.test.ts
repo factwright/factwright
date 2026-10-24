@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type PageJob, readJobPage } from '../src/page/read-job.ts';
 
@@ -597,6 +599,26 @@ describe('reading a job page', () => {
     expect(readJobPage(indeed, 'https://www.indeed.com/viewjob?jk=a1b2', '').title).toBe(
       'Data Analyst',
     );
+  });
+
+  it('reads which job SmartRecruiters’ application is for, page by page, as its tab’s title says', () => {
+    const at =
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/SaltmarshRobotics/publication/5a1c0de4-2b8f-4e7a-9d31-0c6e2f8b7a15';
+    for (const [name, href] of [
+      ['smartrecruiters-application', `${at}?dcr_ci=SaltmarshRobotics`],
+      ['smartrecruiters-screening', `${at}/screening?dcr_ci=SaltmarshRobotics`],
+    ] as const) {
+      const job = readJobPage(
+        page(readFileSync(join(import.meta.dirname, 'fixtures', `${name}.html`), 'utf8')),
+        href,
+        '',
+      );
+      expect(job).toMatchObject({
+        title: 'Robotics Software Intern',
+        company: 'Saltmarsh Robotics',
+        location: 'Denver, CO, USA',
+      });
+    }
   });
 
   it('never takes a job board’s or an applicant system’s name as the company', () => {

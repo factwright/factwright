@@ -434,8 +434,13 @@ describe('what a field asks for', () => {
         ['Which of these do you agree to?', { control: 'choices', type: 'checkbox' }],
         ['Type your full name as your signature'],
         ['May we keep your information for future roles?', { control: 'long' }],
+        [
+          'I declare that the information in this application is true and complete.',
+          { control: 'check', type: 'checkbox' },
+        ],
+        ['Do you declare that you have read the notice above?', { control: 'choice' }],
       ]),
-    ).toEqual(Array(7).fill('consent'));
+    ).toEqual(Array(9).fill('consent'));
     // Confirming your email isn't agreeing to anything.
     expect(kinds([['Confirm email', { type: 'email' }]])).toEqual(['email']);
   });
@@ -619,9 +624,9 @@ describe('what a field asks for', () => {
   });
 
   it('leaves a user name and your name where it signs the application for you', () => {
-    expect(['Login', 'User Name', 'Choose a username'].map((each) => fieldKind(field(each)))).toEqual(
-      ['never', 'never', 'never'],
-    );
+    expect(
+      ['Login', 'User Name', 'Choose a username'].map((each) => fieldKind(field(each))),
+    ).toEqual(['never', 'never', 'never']);
     expect(fieldKind({ ...field('Full Name'), section: 'eSignature' })).toBe('consent');
     expect(fieldKind({ ...field('Full Name'), section: 'Personal Information' })).toBe('full-name');
   });

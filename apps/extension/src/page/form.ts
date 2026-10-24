@@ -75,6 +75,11 @@ export interface PageAdder {
   section: string;
   /** What it says, such as "Add Another". */
   words: string;
+  /**
+   * How many parts the form keeps already that aren't fields anymore, as SmartRecruiters lists
+   * each job you saved, by its words alone.
+   */
+  saved?: number;
 }
 
 /** What to put in a field. */
@@ -208,9 +213,12 @@ export async function formPage(
    */
   const AROUND =
     'header, nav, footer, [role="banner"], [role="navigation"], [role="search"], .userInfoMenu';
-  /** A label that only says how to add a file, not which file. */
+  /**
+   * A label that only says how to add a file, not which file, its words run together or not, as
+   * SmartRecruiters' "Choose a file" and "or drop it here" are.
+   */
   const UPLOAD_WORDS =
-    /^(attach|upload|choose( a)? files?|browse|select( a)? files?|drop( files?)?( here)?|add( a)? files?|or|enter manually)( |$)/i;
+    /^(attach|upload|choose( a)? files?|browse|select( a)? files?|drop( files?)?( here)?|add( a)? files?|or|enter manually)( |$|(?=or\b))/i;
   /** Words that only say how to answer a question of options, not what it asks. */
   const HOW_ONLY =
     /^(please )?(check|select|choose|tick|mark|pick)( only)?( one| all| any)?( of)?( the| that)?( boxes| options| following| answers?)?( below| apply| that apply)?:?$/i;
@@ -367,12 +375,22 @@ export async function formPage(
   };
 
   /**
+   * The element around one as the page shows it: the slot a component puts it in, as a list's
+   * search box shows inside the list's menu, or else the element around it.
+   */
+  const shownUp = (element: Element): Element | null =>
+    (components ? element.assignedSlot : null) ?? upOf(element);
+
+  /**
    * Whether an element is shown: not hidden, see-through, or kept from you and your screen reader,
-   * as what's around a dialog is while it's open. The browser says, where it can. In a page
-   * without layout, as in a test, what hides it is an attribute or style on it or around it.
+   * as what's around a dialog is while it's open, or a closed list's menu is. The browser says,
+   * where it can. In a page without layout, as in a test, what hides it is an attribute or style
+   * on it or around it.
    */
   const shown = (element: Element): boolean => {
-    if (closestOf(element, '[aria-hidden="true"], [inert]')) return false;
+    for (let up: Element | null = element; up; up = shownUp(up)) {
+      if (up.matches('[aria-hidden="true"], [inert]')) return false;
+    }
     if (laidOut) {
       return (element as HTMLElement).checkVisibility({
         visibilityProperty: true,
@@ -382,7 +400,7 @@ export async function formPage(
         checkOpacity: true,
       } as CheckVisibilityOptions);
     }
-    for (let up: Element | null = element; up; up = upOf(up)) {
+    for (let up: Element | null = element; up; up = shownUp(up)) {
       if (up.hasAttribute('hidden')) return false;
       const style = (up as HTMLElement).style;
       if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
@@ -743,17 +761,54 @@ export async function formPage(
   /** Node.DOCUMENT_POSITION_FOLLOWING: what compareDocumentPosition says of an element after. */
   const FOLLOWS = 4;
 
+  /** A page's headings. */
+  const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
+
+  /** What a button says: its words, or what names it, or the component it's in, as SmartRecruiters' Add. */
+  const buttonWords = (button: Element): string =>
+    textOf(button) ||
+    squash(button.getAttribute('aria-label') ?? '') ||
+    squash(hostOf(button)?.getAttribute('aria-label') ?? '');
+
+  /** Whether a button's words say it adds a part to the form, not a file. */
+  const addsPart = (words: string): boolean =>
+    ADDS.test(words) && !UPLOAD_WORDS.test(words) && words.length <= PRESSED_WORDS;
+
+  /**
+   * Whether the box around a heading that holds no field yet names a part of the form that's empty
+   * till you press its Add, as SmartRecruiters' parts for jobs and schools are: it holds a button
+   * that adds one, and in the box around it, the next field comes after another part's heading, or
+   * there's none. Such a heading names its own box, never the fields of the parts after it.
+   */
+  const emptyPart = (around: Element, box: Element): boolean => {
+    if (!everyOf('button, [role="button"]', box).some((each) => addsPart(buttonWords(each)))) {
+      return false;
+    }
+    const field = everyOf(CONTROLS, around).find((each) => comesAfter(box, each));
+    if (!field) return true;
+    const next = everyOf(HEADINGS, around).find(
+      (each) => !within(box, each) && comesAfter(box, each),
+    );
+    return next !== undefined && comesAfter(next, field);
+  };
+
   /**
    * The page's headings, in its order, each with the box it names: the nearest one around it
-   * that holds fields. A heading in a label or legend is a question's, not a part's.
+   * that holds fields, or for a part that's empty till you add to it, its own. A heading in a
+   * label or legend is a question's, not a part's.
    */
   let headings: { heading: Element; words: string; names: Element }[] | null = null;
   const headingsOf = () => {
-    headings ??= everyOf('h1, h2, h3, h4, h5, h6, [role="heading"]').flatMap((heading) => {
+    headings ??= everyOf(HEADINGS).flatMap((heading) => {
       if (closestOf(heading, `${AROUND}, label, legend`) || !shown(heading)) return [];
       const words = wordsOf(heading);
+      let own: Element | null = null;
       let names = upOf(heading);
-      while (names && !holds(names, CONTROLS)) names = upOf(names);
+      while (names && !holds(names, CONTROLS)) {
+        own = names;
+        names = upOf(names);
+      }
+      if (names && own && emptyPart(names, own)) names = own;
       return words && words.length <= MAX_SECTION && names ? [{ heading, words, names }] : [];
     });
     return headings;
@@ -774,6 +829,12 @@ export async function formPage(
 
   /** The words of the nearest heading before an element whose box holds it. */
   const headingOver = (element: Element) => headingAbove(element)?.words ?? '';
+
+  /**
+   * The entries of a list a page keeps for each job or school, as SmartRecruiters' are: one open
+   * to edit holds the fields, and one it saved, its words alone.
+   */
+  const ENTRIES = 'oc-experience-entry, oc-education-entry';
 
   /** A set of fields, which may name a part of the form, or a question. */
   const SETS = 'fieldset, [role="group"], [role="region"]';
@@ -803,7 +864,15 @@ export async function formPage(
         : within(heading.names, set)
           ? [heading.words, named]
           : [named, heading.words];
-    return [...new Set(names.filter(Boolean))].join(' › ');
+    const section = [...new Set(names.filter(Boolean))].join(' › ');
+    // An entry of a list the page keeps, saved or open to edit, as SmartRecruiters' jobs and
+    // schools are, is numbered by its place among them, as the page lists them.
+    const entry = closestOf(first, ENTRIES);
+    if (!section || !entry?.parentElement) return section;
+    const place = [...entry.parentElement.children]
+      .filter((each) => each.tagName === entry.tagName)
+      .indexOf(entry);
+    return `${section} ${place + 1}`;
   };
 
   /** What a control asks, and whether its words mark it as required. */
@@ -1440,7 +1509,7 @@ export async function formPage(
    */
   const placeOf = (options: Element[], picks: string[]): Element | undefined => {
     const each = options.map((option) => {
-      const said = plain(option.textContent ?? '');
+      const said = plain(textOf(option));
       return { option, said, words: said.split(' ') };
     });
     for (const pick of picks.map(plain).filter(Boolean)) {
@@ -1654,6 +1723,9 @@ export async function formPage(
         up,
       );
       if (fields.length > 1) break;
+      // Past the box's own label, as SmartRecruiters' keeps beside the box it shows its pick in,
+      // the words are its question.
+      if (up.querySelector('label')) break;
       const words = wordsOf(up);
       if (words) return PLACEHOLDERS.test(words) ? value : squash(`${value} ${words}`);
     }
@@ -1892,12 +1964,16 @@ export async function formPage(
         const took = () => {
           if (suggests && suggests.picked.value === '') return false;
           const shows = comboShows(box);
-          return plain(shows).includes(plain(words)) || (shows !== '' && shows !== shownBefore);
+          // A box may show only some of its option's words, as a phone's country shows its code.
+          const some = shows !== '' && ` ${plain(words)} `.includes(` ${plain(shows)} `);
+          return (
+            plain(shows).includes(plain(words)) || (shows !== '' && shows !== shownBefore) || some
+          );
         };
         // An option's own link, as SuccessFactors' lists have, is what picks it.
         press(
           option.querySelector('[data-automation-id="promptOption"]') ??
-            option.querySelector(':scope > a') ??
+            [...option.children].find((child) => child.tagName === 'A') ??
             option,
         );
         let picked = await waitFor(took, 1000);
@@ -2093,14 +2169,15 @@ export async function formPage(
       if (closestOf(button, '[aria-hidden="true"], [inert]') || !visible(button)) return [];
       // One whose own code posts the page, as Taleo's Add does, would load it anew midway.
       if (sendsPage(button)) return [];
-      // Its words, or what names it, or the component it's in, as SmartRecruiters' Add.
-      const words =
-        textOf(button) ||
-        squash(button.getAttribute('aria-label') ?? '') ||
-        squash(hostOf(button)?.getAttribute('aria-label') ?? '');
-      if (!ADDS.test(words) || UPLOAD_WORDS.test(words) || words.length > PRESSED_WORDS) return [];
+      const words = buttonWords(button);
+      if (!addsPart(words)) return [];
       const section = sectionOf([button], '');
-      return section ? [{ adder: { section: cut(section), words: cut(words) }, button }] : [];
+      if (!section) return [];
+      // The entries the page keeps in its part that it saved, with no fields left in them.
+      const part = closestOf(button, '[data-test="experience"], [data-test="education"]');
+      const saved = part ? everyOf(ENTRIES, part).filter((each) => !holds(each, CONTROLS)) : [];
+      const adder = { section: cut(section), words: cut(words) };
+      return [{ adder: saved.length > 0 ? { ...adder, saved: saved.length } : adder, button }];
     });
 
   /**

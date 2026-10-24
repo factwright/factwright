@@ -221,9 +221,12 @@ export function readJobPage(
         '.job-sections',
         '[itemprop="description"]',
       ],
-      title: ['.job-title'],
+      title: ['.job-title', '[data-test="topbar-job-title"]'],
       company: [],
-      location: ['.job-detail'],
+      // Its application names the company in the tab's title, page by page: "Easy apply - Robotics
+      // Engineer - Acme", then "Preliminary questions - Robotics Engineer - Acme".
+      companyInTitle: /^(?:easy apply|preliminary questions|assessment) - .+ - (.+)$/i,
+      location: ['.job-detail', '[data-test="topbar-location"]'],
     },
   ];
 

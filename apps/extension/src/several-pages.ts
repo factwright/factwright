@@ -205,7 +205,8 @@ export function partsOffers(
   if (!blocks) return [];
   return (['job', 'school'] as const).flatMap((part) => {
     const adder = form.adders.find((each) => adderPart(each) === part);
-    const has = partsOf(form, part);
+    // With the parts it saved, that are no fields anymore, as SmartRecruiters' jobs.
+    const has = partsOf(form, part) + (adder?.saved ?? 0);
     const want = part === 'job' ? blocks.jobs : blocks.schools;
     if (!adder || want <= has) return [];
     const more = Math.min(want - has, MOST_PARTS);
