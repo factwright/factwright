@@ -208,6 +208,17 @@ describe('a site, as the browser matches one', () => {
     expect(onSite('https://acme.example.com/admin', 'https://*.example.com/careers*')).toBe(false);
   });
 
+  it('takes * anywhere in a path, and nothing else in it as special', () => {
+    const page = 'https://a.example.com/en/careers/123/apply?step=2';
+    expect(onSite(page, 'https://a.example.com/*/careers/*/apply*')).toBe(true);
+    expect(onSite(page, 'https://a.example.com/*/apply/*/careers*')).toBe(false);
+    expect(onSite('https://a.example.com/aXb', 'https://a.example.com/a.b')).toBe(false);
+    expect(onSite('https://a.example.com/a.b', 'https://a.example.com/a.b')).toBe(true);
+    // The parts before and after a * can't share what's between them.
+    expect(onSite('https://a.example.com/ab', 'https://a.example.com/ab*b')).toBe(false);
+    expect(onSite('https://a.example.com/abb', 'https://a.example.com/ab*b')).toBe(true);
+  });
+
   it('takes nothing that isn’t an address or a pattern', () => {
     expect(onSite('not a page', LEVER)).toBe(false);
     expect(onSite('https://jobs.lever.co/', 'jobs.lever.co')).toBe(false);

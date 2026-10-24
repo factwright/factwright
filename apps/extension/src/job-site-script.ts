@@ -10,7 +10,7 @@ import {
 } from './job-site-messages.ts';
 import { type FieldAnswer, type FormAnswer, formPage, type PageForm } from './page/form.ts';
 import { readJobPage } from './page/read-job.ts';
-import { type Box, EDGE, placeButton, placeMenu, type Size } from './place.ts';
+import { type Box, EDGE, overlaps, placeButton, placeMenu, type Size } from './place.ts';
 
 /**
  * The extension's script on the job sites you allowed (src/application-sites.ts), and only there.
@@ -533,10 +533,75 @@ export function startScript(
     }
   }
 
-  /** Puts the answer you picked in its field, as typing would, and says how it went. */
+  /** Whether a computed style is one that leaves a box as it is: shown, whole, and not faded. */
+  const leavesIt = (style: CSSStyleDeclaration) =>
+    ['', 'visible'].includes(style.visibility) &&
+    (style.opacity === '' || Number(style.opacity) >= 1) &&
+    ['', 'none'].includes(style.filter) &&
+    ['', 'none'].includes(style.clipPath) &&
+    ['', 'none'].includes(style.maskImage) &&
+    ['', 'normal'].includes(style.mixBlendMode);
+
+  /**
+   * Whether the menu showed as you picked from it, as far as the page's layout says: nothing of
+   * the page fades, filters or cuts it, no dialog or note the browser puts over everything lies on
+   * it, nothing the page put after it lies on it, and the browser's own test of what's at its
+   * middle and its corners finds it there. Where it didn't, a page could have had you click it
+   * unseen, so what you picked goes nowhere.
+   */
+  function menuShowed(frame: Frame): boolean {
+    const view = document.defaultView;
+    if (!view || !frame.host.isConnected) return false;
+    if (
+      ![document.documentElement, frame.host].every((each) => leavesIt(view.getComputedStyle(each)))
+    ) {
+      return false;
+    }
+    // What the page draws after everything else in it, which could lie over the menu, unseen by
+    // the browser's test of what's where, as it lets clicks through.
+    const after = view.getComputedStyle(document.documentElement, '::after');
+    if (
+      !['', 'none', 'normal'].includes(after.content) &&
+      !['', 'static'].includes(after.position)
+    ) {
+      return false;
+    }
+    const box = boxOf(frame.host);
+    const over = (element: Element) => overlaps(boxOf(element), box);
+    let onTop: Element[] = [];
+    try {
+      onTop = [...document.querySelectorAll(':modal, :popover-open, :fullscreen')];
+    } catch {
+      // A browser without one of these has none of them open.
+    }
+    if (onTop.some(over)) return false;
+    for (let next = frame.host.nextElementSibling; next; next = next.nextElementSibling) {
+      if (mine.has(next)) continue;
+      if (over(next) || [...next.querySelectorAll('*')].some(over)) return false;
+    }
+    if (typeof document.elementFromPoint !== 'function') return true;
+    return [
+      [0.5, 0.5],
+      [0.15, 0.15],
+      [0.85, 0.15],
+      [0.15, 0.85],
+      [0.85, 0.85],
+    ].every(
+      ([x = 0, y = 0]) =>
+        document.elementFromPoint(box.left + box.width * x, box.top + box.height * y) ===
+        frame.host,
+    );
+  }
+
+  /**
+   * Puts the answer you picked in its field, as typing would, and says how it went: nothing at
+   * all where the menu didn't show as you picked from it.
+   */
   async function write(answer: FieldAnswer): Promise<Written> {
     const at = menu?.at ?? fieldOf(elements[answer.ref]?.[0] ?? document.body);
+    const showed = menu !== null && menuShowed(menu);
     closeMenu();
+    if (!showed) return { filled: null };
     writing = at;
     let filled: Written['filled'] = null;
     try {

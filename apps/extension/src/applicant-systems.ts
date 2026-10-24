@@ -114,11 +114,26 @@ export function onSite(url: string, pattern: string): boolean {
   } else if (wanted !== '*' && name !== wanted) {
     return false;
   }
-  const glob = path
-    .split('*')
-    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*');
-  return new RegExp(`^${glob}$`).test(`${page.pathname}${page.search}`);
+  return wildcard(path, `${page.pathname}${page.search}`);
+}
+
+/** Whether words are as a pattern says, with * for any words at all, and nothing else special. */
+function wildcard(pattern: string, words: string): boolean {
+  const parts = pattern.split('*');
+  const first = parts[0] ?? '';
+  const last = parts.at(-1) ?? '';
+  if (parts.length === 1) return words === pattern;
+  if (words.length < first.length + last.length) return false;
+  if (!words.startsWith(first) || !words.endsWith(last)) return false;
+  // Each part between, in its order, the first place it fits after the one before.
+  const end = words.length - last.length;
+  let at = first.length;
+  for (const part of parts.slice(1, -1)) {
+    const found = words.indexOf(part, at);
+    if (found < 0 || found + part.length > end) return false;
+    at = found + part.length;
+  }
+  return true;
 }
 
 /** Whether a page is on one of the sites patterns name, and not on a page they leave out. */

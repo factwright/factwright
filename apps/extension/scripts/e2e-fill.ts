@@ -560,7 +560,11 @@ try {
   await form.evaluate(() => {
     document.documentElement.style.filter = '';
   });
-  await press(answer);
+  // A pick the page hid goes nowhere, and its menu closes: it opens again as you click back in.
+  await form.locator('input[name="email"]').click();
+  await form.locator('input[name="name"]').click();
+  const again = await frameOn('menu', 'Ana María Ruiz');
+  await press(again.getByRole('button', { name: /Ana María Ruiz/ }));
   await waitForValue('name', 'Ana María Ruiz', 10_000);
   check(true, 'picking it, as the page shows it, puts it in the field');
 

@@ -88,8 +88,17 @@ beforeEach(() => {
     boxes.set(id, new DOMRect(40, 100 + at * 60, 200, 24));
   }
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    const placed = (this as HTMLElement).style;
+    // The script's own frames are where it put them.
+    if (placed?.getPropertyValue('position') === 'fixed') {
+      const at = (name: string) => Number.parseFloat(placed.getPropertyValue(name)) || 0;
+      return new DOMRect(at('left'), at('top'), at('width'), at('height'));
+    }
     return boxes.get(this.id) ?? new DOMRect(0, 0, 0, 0);
   });
+  // The browser's own test of what's at a place: the last thing put on the page, the menu, as
+  // nothing of the page lies over it.
+  document.elementFromPoint = () => document.documentElement.lastElementChild;
   vi.spyOn(Element.prototype, 'attachShadow').mockImplementation(function (
     this: Element,
     init: ShadowRootInit,
@@ -258,6 +267,34 @@ describe('the script on a job site you allowed', () => {
     expect(input('name').value).toBe('Ana María Ruiz');
     expect(input('email').value).toBe('');
     expect(frames()).toHaveLength(1);
+  });
+
+  it('puts nothing in the field when the page faded the menu, or put something over it', async () => {
+    script = startScript(() => true);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    clickIn('name');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    const key = (sentOf('menu')[0]?.key as string) ?? '';
+    const pick = { type: 'job-site', do: 'write', answer: { ref: 0, key, text: 'Ana María Ruiz' } };
+    document.documentElement.style.filter = 'opacity(0.3)';
+    expect(await tell(pick)).toEqual({ filled: null });
+    expect(input('name').value).toBe('');
+    document.documentElement.style.filter = '';
+    // Something the page put on top of the menu, where it was.
+    input('name').blur();
+    clickIn('name');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    const menuBox = frames()[1]?.host.getBoundingClientRect() as DOMRect;
+    const cover = document.createElement('div');
+    cover.id = 'cover';
+    boxes.set('cover', new DOMRect(menuBox.left + 10, menuBox.top + 10, 50, 20));
+    document.documentElement.append(cover);
+    const key2 = (sentOf('menu')[1]?.key as string) ?? '';
+    expect(
+      await tell({ type: 'job-site', do: 'write', answer: { ref: 0, key: key2, text: 'Ana' } }),
+    ).toEqual({ filled: null });
+    expect(input('name').value).toBe('');
+    cover.remove();
   });
 
   it('reads what you gave a field only once you leave it, and only for one Profile keeps', async () => {
