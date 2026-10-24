@@ -118,13 +118,28 @@ interface Filling {
   /** What's happening now, said above the fields. */
   status: string;
   /** The job once you've marked it applied, and the answers it offers to keep. */
-  applied: { job: AskedJob; offers: NewAnswer[]; saved: Set<string> } | null;
+  applied: Applied | null;
   /** Your Claude drafting the form's own questions, while it does. */
   drafting: Drafting | null;
   /** Through sync: how many of the form's questions it left with the job for your Claude. */
   left: number | null;
   /** Whether Factwright's menus and Fill button show on the form's site, as you allowed. */
   site: SiteChoice;
+}
+
+/** A job you marked applied, and the new answers you typed, which the panel offers to keep. */
+interface Applied {
+  job: AskedJob;
+  offers: NewAnswer[];
+  /** The fields whose answer you saved to Profile, by their keys. */
+  saved: Set<string>;
+  /**
+   * Through sync, those whose answer Factwright had given Profile another for since the form was
+   * filled, by their keys: the copy of Profile's answers yours were kept in, beside it.
+   */
+  beside: Map<string, string>;
+  /** What went wrong saving one, said below them. */
+  status: string;
 }
 
 /**
@@ -601,7 +616,11 @@ function render(state: Filling): void {
 function renderApplied(state: Filling): void {
   const applied = state.applied;
   if (!applied) return;
-  const offers = applied.offers;
+  // Through sync, Profile keeps what syncs: never your street, postal code or equal-opportunity
+  // answers, which it keeps on your computer alone.
+  const offers =
+    state.way.via === 'sync' ? applied.offers.filter((offer) => !offer.private) : applied.offers;
+  const unsynced = applied.offers.length - offers.length;
   show(
     app,
     heading('Fill this application'),
@@ -624,6 +643,7 @@ function renderApplied(state: Filling): void {
         { class: 'fields' },
         ...offers.map((offer) => {
           const saved = applied.saved.has(offer.field.key);
+          const copy = applied.beside.get(offer.field.key);
           return h(
             'li',
             { class: 'field' },
@@ -631,33 +651,59 @@ function renderApplied(state: Filling): void {
             h('div', { class: 'answer' }, offer.text),
             offer.private &&
               h('div', { class: 'meta' }, 'Kept on this computer only. Claude never sees it.'),
+            copy &&
+              h(
+                'div',
+                { class: 'meta' },
+                `Profile got another answer for this in Factwright since you filled the form. That one stays, and yours is kept beside it, in ${copy}.`,
+              ),
             h(
               'div',
               { class: 'row-actions' },
               saved
                 ? h('span', { class: 'ok' }, 'Saved')
-                : small(
-                    'Save',
-                    () => void keep(state, offer),
-                    `Save your answer to ${offer.field.question}`,
-                  ),
+                : copy
+                  ? h('span', { class: 'muted' }, 'Kept beside Profile')
+                  : small(
+                      'Save',
+                      () => void keep(state, offer),
+                      `Save your answer to ${offer.field.question}`,
+                    ),
             ),
           );
         }),
       ),
+    unsynced > 0 &&
+      h(
+        'p',
+        { class: 'small muted' },
+        'Profile keeps your street, postal code and equal-opportunity answers in Factwright on your computer alone, never in sync, so they aren’t offered here.',
+      ),
+    applied.status && h('p', { class: 'note', role: 'status' }, applied.status),
   );
 }
 
-/** Keeps one new answer in Profile, as you chose. */
+/**
+ * Keeps one new answer in Profile, as you chose. Through sync, a change Factwright made to it
+ * since the form was filled stays, and yours is kept beside it.
+ */
 async function keep(state: Filling, offer: NewAnswer): Promise<void> {
   const answer = await state.way.ask({
     ask: 'remember',
     answers: [{ kind: offer.kind, text: offer.text }],
+    // The Profile the form was filled from, as a fill through sync says it.
+    ...(state.plan.profile !== undefined && { since: state.plan.profile }),
   });
-  if (answer.ok && state.applied) {
-    state.applied.saved.add(offer.field.key);
-    render(state);
+  const applied = state.applied;
+  if (filling !== state || !applied) return;
+  if (!answer.ok || answer.did !== 'remember') {
+    applied.status = answer.ok ? 'Factwright didn’t answer. Try again.' : answer.message;
+  } else {
+    applied.status = '';
+    if (answer.copy) applied.beside.set(offer.field.key, answer.copy);
+    else applied.saved.add(offer.field.key);
   }
+  render(state);
 }
 
 /** Saves the job the form is for, as the popup would, then fills the form again with it. */
@@ -718,9 +764,11 @@ async function markApplied(state: Filling): Promise<void> {
   stopLooking();
   state.applied = {
     job: answer.job,
-    // Profile keeps new answers through Factwright on this computer alone.
-    offers: state.way.via === 'computer' ? newAnswers(state.form, state.plan.replies, values) : [],
+    // Through sync too, but for those Profile keeps on your computer alone (renderApplied).
+    offers: newAnswers(state.form, state.plan.replies, values),
     saved: new Set(),
+    beside: new Map(),
+    status: '',
   };
   render(state);
 }

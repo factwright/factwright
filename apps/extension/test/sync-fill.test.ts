@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   type AskedField,
+  type FieldKind,
   type FieldReply,
   type InboxAsk,
   NO_EQUAL_OPPORTUNITY,
@@ -902,6 +903,187 @@ describe('which job folders a fill reads', () => {
       'applications/a-pm/resume.pdf',
       'applications/a-pm-later/resume.pdf',
     ]);
+  });
+});
+
+describe('keeping a new answer in Profile through sync', () => {
+  /** The new answers you typed, as Mark as applied offers to keep them. */
+  const ANSWERS: { kind: FieldKind; text: string }[] = [
+    { kind: 'phone', text: '(303) 555-0199' },
+    { kind: 'city', text: 'Denver' },
+    { kind: 'pronouns', text: 'she/her' },
+    { kind: 'how-heard', text: 'A friend at Northwind' },
+    { kind: 'start-date', text: 'Two weeks after an offer' },
+  ];
+  /** A fill through sync, and the version of Profile it filled from. */
+  const filled = async (client: SyncClient, keys: AccountKeys) => {
+    const fill = fillFor(client, keys);
+    const plan = ok(await fill.ask(FILL));
+    if (plan.did !== 'fill' || plan.profile === undefined) throw new Error('No Profile.');
+    return { fill, since: plan.profile };
+  };
+  /** What Profile says, as the app reads it, of the answers a form asks. */
+  const profileOf = (about: AboutStore) => {
+    const { you, applications, start } = about.answers();
+    return { you, applications, start };
+  };
+
+  it('keeps each one in Profile, as the app keeps it with the extension on its computer', async () => {
+    const here = await computer();
+    expect(await answerAsk({ ask: 'remember', answers: ANSWERS }, here.deps)).toEqual({
+      ok: true,
+      did: 'remember',
+      saved: 5,
+    });
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    expect(await fill.ask({ ask: 'remember', answers: ANSWERS, since })).toEqual({
+      ok: true,
+      did: 'remember',
+      saved: 5,
+    });
+    await engine.syncOnce();
+    expect(profileOf(desktop.about)).toEqual(profileOf(here.about));
+    expect(profileOf(desktop.about)).toMatchObject({
+      you: { phone: '(303) 555-0199', email: 'ana@example.com' },
+      applications: { city: 'Denver', pronouns: 'she/her', countries: ['United States'] },
+      start: 'Two weeks after an offer',
+    });
+    // Saving the same again changes nothing in sync.
+    const versions = await client.versions(await recordId(keys, 'file:about-me/answers.json'));
+    expect(await fill.ask({ ask: 'remember', answers: ANSWERS, since })).toMatchObject({
+      saved: 5,
+    });
+    expect(await client.versions(await recordId(keys, 'file:about-me/answers.json'))).toEqual(
+      versions,
+    );
+  });
+
+  it('never keeps your street, postal code or equal-opportunity answers through sync', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    const record = await recordId(keys, 'file:about-me/answers.json');
+    const versions = await client.versions(record);
+    expect(
+      await fill.ask({
+        ask: 'remember',
+        answers: [
+          { kind: 'street', text: '77 Main St' },
+          { kind: 'postal-code', text: '80203' },
+          { kind: 'gender', text: 'Female' },
+        ],
+        since,
+      }),
+    ).toEqual({ ok: true, did: 'remember', saved: 0 });
+    expect(await client.versions(record)).toEqual(versions);
+    await engine.syncOnce();
+    expect(desktop.deps.kept.read()).toMatchObject({
+      street: '1420 Larimer St',
+      postalCode: '80202',
+    });
+  });
+
+  it('replaces an answer Profile had when the form was filled, and keeps what changed since', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    // Meanwhile, Factwright changes another answer in Profile.
+    const { you } = desktop.about.answers();
+    desktop.about.saveAnswers({ you: { ...you, email: 'ana.ruiz@example.com' } });
+    await engine.syncOnce();
+    expect(
+      await fill.ask({
+        ask: 'remember',
+        answers: [{ kind: 'phone', text: '(303) 555-0199' }],
+        since,
+      }),
+    ).toEqual({ ok: true, did: 'remember', saved: 1 });
+    await engine.syncOnce();
+    expect(desktop.about.answers().you).toMatchObject({
+      email: 'ana.ruiz@example.com',
+      phone: '(303) 555-0199',
+    });
+  });
+
+  it('keeps an answer Factwright changed since the form was filled, and yours beside it', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    const { you } = desktop.about.answers();
+    desktop.about.saveAnswers({ you: { ...you, phone: '(720) 555-0111' } });
+    await engine.syncOnce();
+    const copy = 'about-me/answers (Factwright in Chrome, Oct 23).json';
+    expect(
+      await fill.ask({
+        ask: 'remember',
+        answers: [
+          { kind: 'phone', text: '(303) 555-0199' },
+          { kind: 'city', text: 'Denver' },
+        ],
+        since,
+      }),
+    ).toEqual({ ok: true, did: 'remember', saved: 1, copy });
+    await engine.syncOnce();
+    expect(desktop.about.answers()).toMatchObject({
+      you: { phone: '(720) 555-0111' },
+      applications: { city: 'Denver' },
+    });
+    // Yours, as you'd have kept them, beside it, as sync keeps both copies of a file.
+    const beside = JSON.parse(readFileSync(join(desktop.workspace, ...copy.split('/')), 'utf8'));
+    expect(beside).toMatchObject({
+      you: { phone: '(303) 555-0199', email: 'ana@example.com' },
+      applications: { city: 'Denver' },
+    });
+    // Another clash the same day gets a copy of its own.
+    desktop.about.saveAnswers({ you: { ...you, phone: '(720) 555-0122' } });
+    await engine.syncOnce();
+    expect(
+      await fill.ask({
+        ask: 'remember',
+        answers: [{ kind: 'phone', text: '(303) 555-0199' }],
+        since,
+      }),
+    ).toMatchObject({ saved: 0, copy: 'about-me/answers (Factwright in Chrome, Oct 23 2).json' });
+  });
+
+  it('makes its change again on Profile changed in the moment before it went up', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    const push = client.push.bind(client);
+    vi.spyOn(client, 'push').mockImplementationOnce(async (changes) => {
+      const { you } = desktop.about.answers();
+      desktop.about.saveAnswers({ you: { ...you, website: 'https://anaruiz.example' } });
+      await engine.syncOnce();
+      return push(changes);
+    });
+    expect(
+      await fill.ask({
+        ask: 'remember',
+        answers: [{ kind: 'phone', text: '(303) 555-0199' }],
+        since,
+      }),
+    ).toEqual({ ok: true, did: 'remember', saved: 1 });
+    await engine.syncOnce();
+    expect(desktop.about.answers().you).toMatchObject({
+      website: 'https://anaruiz.example',
+      phone: '(303) 555-0199',
+    });
+  });
+
+  it('leaves Profile’s answers as they are when they don’t read', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    desktop.write('about-me/answers.json', '{ "you": ');
+    await engine.syncOnce();
+    expect(
+      await fill.ask({
+        ask: 'remember',
+        answers: [{ kind: 'phone', text: '(303) 555-0199' }],
+        since,
+      }),
+    ).toMatchObject({ ok: false, reason: 'failed' });
+    await engine.syncOnce();
+    expect(readFileSync(join(desktop.workspace, 'about-me', 'answers.json'), 'utf8')).toBe(
+      '{ "you": ',
+    );
   });
 });
 

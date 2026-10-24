@@ -8,6 +8,7 @@ import {
   formJob,
   type InboxAsk,
   type InboxAskAnswer,
+  isSyncedAnswer,
   type Job,
   jobPdfs,
   letterPlainText,
@@ -18,6 +19,7 @@ import {
   onFileJob,
   PROFILE_FILES,
   type ProfileForForms,
+  profileAnswer,
   profileForForms,
   type ResumeOnFile,
   readHistory,
@@ -35,6 +37,7 @@ import {
   uploadName,
   type WorkHistory,
   withFormQuestions,
+  withProfileAnswers,
   withSentAnswers,
 } from '@factwright/core';
 import { readResume } from '@factwright/engine/schema';
@@ -42,10 +45,13 @@ import {
   type AccountKeys,
   type Bytes,
   type Change,
+  conflictCopyPath,
   encodeRecord,
   type FileRecord,
   fileName,
   fromBase64Url,
+  isSyncPath,
+  openFile,
   type PushChange,
   type RowValues,
   recordId,
@@ -151,6 +157,31 @@ export function toBase64(bytes: Bytes): string {
   }
   return btoa(binary);
 }
+
+/** Profile's answers.json, as one version of it in sync has it. */
+interface Profile {
+  /** The version of its record, or 0 for none yet. */
+  version: number;
+  /** Its contents' ID, or empty for none. */
+  id: string;
+  /** What it says, or null when it doesn't read as answers. */
+  value: Record<string, unknown> | null;
+}
+
+/** Why Profile's answers were left as they are. */
+const UNREAD =
+  'Profile’s answers don’t read as they are in sync, so Factwright left them. Check Profile in Factwright on your computer.';
+
+/** Profile's answers, from its file's text, or null when they aren't an object. */
+function answersIn(text: string): Record<string, unknown> | null {
+  const value = json(text);
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** Profile's answers as the app writes their file. */
+const answersJson = (value: Record<string, unknown>) => `${JSON.stringify(value, null, 2)}\n`;
 
 /** A JSON file's value, or null when it isn't there or doesn't parse. */
 function json(text: string | null): unknown {
@@ -389,6 +420,8 @@ export class SyncFill {
       job: job ? askedJob(job) : null,
       replies: answerForm(ask.fields, onFile).map(privately),
       files,
+      // So a new answer saved later keeps what Factwright changes in Profile meanwhile.
+      profile: read.synced.files.get(PROFILE_FILES.answers)?.id ?? '',
     };
   }
 
@@ -478,36 +511,53 @@ export class SyncFill {
     return null;
   }
 
-  /**
-   * Keeps a file in the workspace through sync, as its whole contents: in place of what's there,
-   * as the app writes it. The same contents there already are left as they are.
-   */
-  private async keepFile(path: string, text: string): Promise<void> {
+  /** A file's whole contents, locked, and up on the server, where it hasn't them already. */
+  private async upload(text: string): Promise<{ id: string; size: number }> {
     const { client, keys } = this.deps;
     const contents = utf8(text);
     const sealed = await sealFile(keys, contents);
     if ((await client.missingFiles([sealed.id])).includes(sealed.id)) {
       await client.putFile(sealed.id, sealed.data);
     }
+    return { id: sealed.id, size: contents.length };
+  }
+
+  /** A change to a file's record, made from a version of it: the file, as contents uploaded. */
+  private async fileChange(
+    record: string,
+    path: string,
+    file: { id: string; size: number },
+    base: number,
+  ): Promise<PushChange> {
+    const made = this.made();
+    const body: FileRecord = {
+      kind: 'file',
+      path,
+      file: { id: file.id, size: file.size, modified: made.at },
+      ...made,
+    };
+    return {
+      record,
+      base,
+      data: await sealRecord(this.deps.keys, record, base + 1, encodeRecord(body)),
+      file: file.id,
+      deleted: false,
+    };
+  }
+
+  /**
+   * Keeps a file in the workspace through sync, as its whole contents: in place of what's there,
+   * as the app writes it. The same contents there already are left as they are.
+   */
+  private async keepFile(path: string, text: string): Promise<void> {
+    const { client, keys } = this.deps;
+    const sealed = await this.upload(text);
     const record = await recordId(keys, fileName(path));
     const [latest] = await client.versions(record);
     let base = latest?.version ?? 0;
     let same = latest && !latest.deleted && latest.file === sealed.id;
     for (let attempt = 0; attempt < TRIES && !same; attempt++) {
-      const made = this.made();
-      const body: FileRecord = {
-        kind: 'file',
-        path,
-        file: { id: sealed.id, size: contents.length, modified: made.at },
-        ...made,
-      };
-      const change: PushChange = {
-        record,
-        base,
-        data: await sealRecord(keys, record, base + 1, encodeRecord(body)),
-        file: sealed.id,
-        deleted: false,
-      };
+      const change = await this.fileChange(record, path, sealed, base);
       const [result] = (await client.push([change])).results;
       if (result?.ok) return;
       if (result?.reason === 'full') throw new SyncError('full', 'full');
@@ -610,6 +660,109 @@ export class SyncFill {
     }
   }
 
+  /** Profile's answers.json, as a version of its record has it, or null when it doesn't open. */
+  private async profileIn(change: Change): Promise<Profile | null> {
+    const none = { version: change.version, id: '', value: {} };
+    if (change.deleted) return none;
+    const record = await openChange(this.deps.keys, change);
+    if (record?.kind !== 'file') return null;
+    if (!record.file) return none;
+    const contents = await fileContents(this.deps.client, this.deps.keys, record.file);
+    return contents && { ...none, id: record.file.id, value: answersIn(decoded(contents)) };
+  }
+
+  /**
+   * Profile's answers as a form was filled from them, by the version a fill through sync said, or
+   * null when that version's gone from sync. `now` is Profile now.
+   */
+  private async profileThen(
+    since: string | undefined,
+    now: Profile,
+  ): Promise<Record<string, unknown> | null> {
+    if (since === undefined) return null;
+    if (since === now.id) return now.value;
+    if (since === '') return {};
+    const { client, keys } = this.deps;
+    const locked = await client.getFile(since);
+    const contents = locked && (await openFile(keys, since, locked));
+    return contents ? answersIn(decoded(contents)) : null;
+  }
+
+  /**
+   * New answers to keep in Profile, each one you chose to save, as the app keeps them: in
+   * about-me/answers.json, through sync. Never your street, postal code or equal-opportunity
+   * answers, which Profile keeps on the computer Factwright's on alone. Where Factwright gave one
+   * another answer since the form was filled, as `since` says, its answer stays, and the new ones
+   * are kept in a copy of the file beside it, as sync keeps both copies of a file two devices
+   * changed. Anything else Factwright changed in Profile meanwhile stays too.
+   */
+  private async remember(ask: Extract<InboxAsk, { ask: 'remember' }>): Promise<SyncAnswer> {
+    const answers = ask.answers.flatMap(({ kind, text }) => {
+      const value = text.trim();
+      return isSyncedAnswer(kind) && value && value.length <= 200 ? [{ kind, text: value }] : [];
+    });
+    if (answers.length === 0) return { ok: true, did: 'remember', saved: 0 };
+    const { client, keys } = this.deps;
+    const record = await recordId(keys, fileName(PROFILE_FILES.answers));
+    const [latest] = await client.versions(record);
+    const change = latest && (await client.version(record, latest.version));
+    let now: Profile | null = change
+      ? await this.profileIn(change)
+      : { version: 0, id: '', value: {} };
+    const then = now && (await this.profileThen(ask.since, now));
+    let clash: typeof answers = [];
+    for (let attempt = 0; attempt < TRIES && now; attempt++) {
+      const { value } = now;
+      if (!value) return failed(UNREAD);
+      // An answer Factwright gave it since the form was filled, unlike yours, stays.
+      clash = answers.filter(({ kind, text }) => {
+        const there = profileAnswer(value, kind);
+        return (
+          there !== '' && there !== text && (then === null || profileAnswer(then, kind) !== there)
+        );
+      });
+      // Only what changes Profile goes up: one it has already needs nothing.
+      const going = answers.filter(
+        (each) => !clash.includes(each) && profileAnswer(value, each.kind) !== each.text,
+      );
+      if (going.length === 0) break;
+      const file = await this.upload(answersJson(withProfileAnswers(value, going)));
+      const [result] = (
+        await client.push([await this.fileChange(record, PROFILE_FILES.answers, file, now.version)])
+      ).results;
+      if (result?.ok) break;
+      if (result?.reason === 'full') throw new SyncError('full', 'full');
+      if (result?.reason !== 'conflict') throw new Error('Sync turned the change away.');
+      // Changed meanwhile: made again on the newer version, or as new on a restored server.
+      now = result.current ? await this.profileIn(result.current) : { ...now, version: 0 };
+      if (attempt === TRIES - 1) throw new Error('Profile kept changing in sync. Try again.');
+    }
+    if (!now) return failed('Factwright couldn’t read Profile through sync. Try again.');
+    const saved = answers.length - clash.length;
+    if (clash.length === 0) return { ok: true, did: 'remember', saved };
+    const copy = await this.copyPath(PROFILE_FILES.answers);
+    await this.keepFile(copy, answersJson(withProfileAnswers(then ?? now.value ?? {}, answers)));
+    return { ok: true, did: 'remember', saved, copy };
+  }
+
+  /**
+   * Where this browser keeps its copy of a file Factwright changed meanwhile, as sync names one:
+   * such as "about-me/answers (Factwright in Chrome, Oct 24).json", free in sync.
+   */
+  private async copyPath(path: string): Promise<string> {
+    const { client, keys } = this.deps;
+    const taken = new Set<string>();
+    for (let tries = 0; tries < TRIES; tries++) {
+      const copy = conflictCopyPath(path, this.deps.device, this.now(), (candidate) =>
+        isSyncPath(candidate) ? !taken.has(candidate) : null,
+      );
+      const [latest] = await client.versions(await recordId(keys, fileName(copy)));
+      if (!latest || latest.deleted) return copy;
+      taken.add(copy);
+    }
+    throw new Error('Factwright couldn’t find a name for the copy. Try again.');
+  }
+
   /** What went wrong, in words, by what the sync client says. */
   private async problem(error: unknown): Promise<NotAsked> {
     if (!(error instanceof SyncError)) {
@@ -642,7 +795,8 @@ export class SyncFill {
       if (ask.ask === 'file') return await this.file(ask);
       if (ask.ask === 'draft') return await this.leave(ask);
       if (ask.ask === 'sent') return await this.sent(ask);
-      // Saving to Profile, and your Claude drafting at once, need Factwright on your computer.
+      if (ask.ask === 'remember') return await this.remember(ask);
+      // Your Claude drafting at once needs Factwright on your computer.
       return failed('That needs Factwright on your computer.');
     } catch (error) {
       return this.problem(error);

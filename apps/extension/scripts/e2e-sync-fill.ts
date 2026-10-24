@@ -6,14 +6,23 @@
 // holds. The equal-opportunity answer, which Factwright keeps on its computer alone, is left for
 // you. The form's new question is left with the job, which Factwright then has, for your Claude,
 // a stand-in here, whose draft, once it syncs, fills in at the next Fill. Mark as applied marks
-// the job Applied in Factwright, with what was sent. The job application sites' menus and Fill
+// the job Applied in Factwright, with what was sent, and Save keeps a new answer in Profile, but
+// never the equal-opportunity one, which never syncs. The job application sites' menus and Fill
 // button answer from sync too, and offer to keep nothing. Nothing the extension read is left in
 // its storage. Nothing is submitted, and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:sync-fill` (it needs Playwright's Chromium, as `e2e`
 // does). With `-- --shots <folder>`, it saves the panel and the filled form there as pictures.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -310,14 +319,55 @@ try {
 
   // Then you'd submit the form on the site, and Mark as applied.
   await page.locator('input[name="phone"]').fill('(720) 555-0199');
+  await page.getByLabel('Woman', { exact: true }).first().check();
   await panel.getByRole('button', { name: 'Mark as applied' }).click();
   await panel.getByText('Marked applied.').waitFor({ timeout: 30_000 });
+  const savePhone = panel.getByRole('button', { name: /^Save your answer to Phone/ });
   check(
-    (await panel.getByText('Keep for next time?').count()) === 0,
-    'through sync, it offers to keep nothing new in Profile',
+    (await panel.getByText('Keep for next time?').count()) === 1 && (await savePhone.count()) === 1,
+    'through sync, it offers to keep your new phone number in Profile',
   );
+  check(
+    (await panel.getByRole('button', { name: /^Save your answer to .*gender/i }).count()) === 0 &&
+      (await panel.getByText(/never in sync, so they aren’t offered here/).count()) === 1,
+    'but never your equal-opportunity answer, which never syncs, and it says why',
+  );
+  await savePhone.click();
+  await panel.getByText('Saved', { exact: true }).waitFor({ timeout: 30_000 });
+  await hunt.sync();
+  const profileFile = join(hunt.workspace, 'about-me', 'answers.json');
+  const answers = JSON.parse(readFileSync(profileFile, 'utf8')) as {
+    you: { phone?: string; email?: string; location?: string };
+  };
+  check(
+    answers.you.phone === '(720) 555-0199' && answers.you.email === 'ana@example.com',
+    'Factwright on the computer has the new phone number in Profile, once it syncs',
+  );
+  // Meanwhile, you change where you live in Profile, in Factwright on the computer.
+  writeFileSync(
+    profileFile,
+    `${JSON.stringify({ ...answers, you: { ...answers.you, location: 'Boulder, CO' } }, null, 2)}\n`,
+  );
+  await hunt.sync();
+  await panel.getByRole('button', { name: /^Save your answer to Current location/ }).click();
+  await panel.getByText('Kept beside Profile').waitFor({ timeout: 30_000 });
   await shoot(panel, 'sync-4-applied');
   await hunt.sync();
+  const copies = readdirSync(join(hunt.workspace, 'about-me')).filter((name) =>
+    /^answers \(Factwright in .+\)\.json$/.test(name),
+  );
+  const copy = copies[0]
+    ? (JSON.parse(readFileSync(join(hunt.workspace, 'about-me', copies[0]), 'utf8')) as {
+        you?: { location?: string };
+      })
+    : null;
+  check(
+    (JSON.parse(readFileSync(profileFile, 'utf8')) as typeof answers).you.location ===
+      'Boulder, CO' &&
+      copies.length === 1 &&
+      copy?.you?.location === 'Denver, Colorado, United States',
+    'an answer Factwright changed since the form was filled stays, and yours is kept beside it',
+  );
   const applied = hunt.jobs.job(job?.id ?? '');
   check(
     applied?.status === 'applied' && applied.appliedOn !== null,

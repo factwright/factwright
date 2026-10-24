@@ -167,8 +167,11 @@ export type InboxAsk =
   | { ask: 'file'; job: string; file: 'resume' | 'cover-letter'; version: string; part: number }
   /** What you sent, once you've applied: the answers to the form's own questions. */
   | { ask: 'sent'; job: string; url: string; answers: { question: string; text: string }[] }
-  /** New answers to keep in Profile, each one you chose to save. */
-  | { ask: 'remember'; answers: { kind: FieldKind; text: string }[] }
+  /**
+   * New answers to keep in Profile, each one you chose to save. The extension's own answers
+   * through sync take `since`, the version of Profile the form was filled from, as its fill said.
+   */
+  | { ask: 'remember'; answers: { kind: FieldKind; text: string }[]; since?: string }
   /**
    * The form's own questions that nothing on file answers, for your Claude to draft answers to
    * in Factwright, for a job you saved: each as the field asks it, never what's in it.
@@ -359,10 +362,27 @@ export type InboxAskAnswer =
       /** An answer for each field, in the ask's order. */
       replies: FieldReply[];
       files: { resume: OfferedFile | null; 'cover-letter': OfferedFile | null };
+      /**
+       * Through sync, the version of Profile's answers the replies are from, as its file's ID, or
+       * empty for none yet, so a new answer saved to Profile later keeps a change made since.
+       * Factwright on your computer sends none.
+       */
+      profile?: string;
     }
   | { ok: true; did: 'file'; part: number; parts: number; base64: string }
   | { ok: true; did: 'sent'; job: AskedJob; recorded: number }
-  | { ok: true; did: 'remember'; saved: number }
+  | {
+      ok: true;
+      did: 'remember';
+      /** How many went in Profile. */
+      saved: number;
+      /**
+       * Through sync, where Profile had another answer by then, which Factwright gave it since the
+       * form was filled: the file the new ones were kept in instead, beside Profile's, as sync
+       * keeps both copies of a file two devices changed.
+       */
+      copy?: string;
+    }
   /** Your Claude has started on the form's questions, in Factwright. */
   | { ok: true; did: 'draft' }
   | {
