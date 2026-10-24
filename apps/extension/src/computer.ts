@@ -222,8 +222,14 @@ export async function saveOnComputer(job: JobToSave): Promise<SaveResult> {
   }
 }
 
-/** What asking Factwright on this computer can't do, and why, as the panel says it. */
-export type NotAsked = Extract<InboxAskAnswer, { ok: false }> & { message: string };
+/**
+ * What asking Factwright on this computer can't do, and why, as the panel says it. `unreachable`
+ * says the ask never got to Factwright: the browser couldn't start its helper, or it didn't answer.
+ */
+export type NotAsked = Extract<InboxAskAnswer, { ok: false }> & {
+  message: string;
+  unreachable?: true;
+};
 
 /** Why an ask got no answer, in words. */
 const ASK_REASONS: Record<string, string> = {
@@ -249,6 +255,7 @@ export async function askComputer(
       ok: false,
       reason: 'failed',
       message: 'The browser doesn’t let Factwright reach Factwright on this computer.',
+      unreachable: true,
     };
   }
   if (!canSendNow()) {
@@ -256,13 +263,14 @@ export async function askComputer(
       ok: false,
       reason: 'failed',
       message: 'Close this, then click the Factwright button again.',
+      unreachable: true,
     };
   }
   let answer: unknown;
   try {
     answer = await send({ type: 'ask', request: JSON.stringify(ask) });
   } catch (error) {
-    return { ok: false, reason: 'failed', message: unreachable(error).message };
+    return { ok: false, reason: 'failed', message: unreachable(error).message, unreachable: true };
   }
   const said = (answer ?? {}) as Record<string, unknown>;
   if (said.ok === true && typeof said.did === 'string' && said.did === ask.ask) {

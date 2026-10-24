@@ -1,5 +1,5 @@
 import { boardPostingId, boardSource } from './boards.ts';
-import { slug } from './keys.ts';
+import { companyKey, slug } from './keys.ts';
 import { isJobLink, normalizeUrl } from './links.ts';
 
 /**
@@ -486,4 +486,40 @@ export function jobLikeness(a: JobIdentity, b: JobIdentity): 'posting' | 'role' 
   const fit = titleFit(readTitle(a.role), readTitle(b.role));
   const alike = fit === 'same' || (company === 'same' && fit === 'more');
   return alike && !otherPostings(postings(a), theirPostings) ? 'role' : 'company';
+}
+
+/** What identifies a job when the user or a skill names it. */
+export interface JobQuery {
+  company: string;
+  role?: string;
+  link?: string;
+}
+
+/**
+ * How a job on file matches what a skill asked about, as the app tells one job from another: by
+ * a link to the same posting, at any company; by the same role, at the same company or one whose
+ * name holds the other's; or as another job at the company.
+ */
+export type JobMatch = 'posting' | 'role' | 'company';
+
+const MATCH_ORDER: Readonly<Record<JobMatch, number>> = { posting: 0, role: 1, company: 2 };
+
+/** The jobs that match a company, or a link, best match first, with how each matches. */
+export function matchJobs<T extends JobIdentity>(
+  jobs: readonly T[],
+  query: JobQuery,
+): { job: T; match: JobMatch }[] {
+  const asked = {
+    company: query.company,
+    companyKey: companyKey(query.company),
+    role: query.role ?? '',
+    links: query.link ? [{ url: query.link }] : [],
+  };
+  return jobs
+    .flatMap((job) => {
+      const known = { ...job, companyKey: job.companyKey || companyKey(job.company) };
+      const match = jobLikeness(known, asked);
+      return match ? [{ job, match }] : [];
+    })
+    .sort((a, b) => MATCH_ORDER[a.match] - MATCH_ORDER[b.match]);
 }

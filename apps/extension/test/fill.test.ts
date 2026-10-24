@@ -1,5 +1,5 @@
 import type { FieldReply, InboxAsk } from '@factwright/core';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   askedFields,
   draftable,
@@ -13,20 +13,19 @@ import {
   planFill,
   sentAnswers,
 } from '../src/fill.ts';
+import type { FillWay } from '../src/fill-way.ts';
 import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
 import { adderPart, partsOf } from '../src/several-pages.ts';
 
 /** Factwright on this computer, as the extension asks it: what it was asked, and its answers. */
-const computer = vi.hoisted(() => ({
-  asked: [] as unknown[],
-  answers: [] as unknown[],
-}));
-vi.mock('../src/computer.ts', () => ({
-  askComputer: async (ask: unknown) => {
+const computer = { asked: [] as unknown[], answers: [] as unknown[] };
+const onComputer: FillWay = {
+  via: 'computer',
+  ask: async (ask) => {
     computer.asked.push(ask);
-    return computer.answers.shift();
+    return computer.answers.shift() as Awaited<ReturnType<FillWay['ask']>>;
   },
-}));
+};
 
 let place = 0;
 /** A field as the page function reads one, with only what a test sets. */
@@ -402,7 +401,7 @@ describe('asking Factwright how to fill a form', () => {
     computer.asked = [];
     computer.answers = [plan];
     const fields = [field('Company', { section: 'Work Experience 1' })];
-    expect(await planFill(form(fields), job)).toBe(plan);
+    expect(await planFill(form(fields), job, onComputer)).toBe(plan);
     expect((computer.asked as InboxAsk[]).map((ask) => ask.ask === 'fill' && ask.fields)).toEqual([
       [expect.objectContaining({ question: 'Company', section: 'Work Experience 1' })],
     ]);
@@ -412,7 +411,7 @@ describe('asking Factwright how to fill a form', () => {
     computer.asked = [];
     computer.answers = [{ ok: false, reason: 'bad-message', message: 'No.' }, plan];
     const fields = [field('Company', { section: 'Work Experience 1' })];
-    expect(await planFill(form(fields), job)).toBe(plan);
+    expect(await planFill(form(fields), job, onComputer)).toBe(plan);
     const [, again] = computer.asked as InboxAsk[];
     expect(again?.ask === 'fill' && again.fields[0]).not.toHaveProperty('section');
     expect(again?.ask === 'fill' && again.fields[0]?.question).toBe('Company');
@@ -422,7 +421,7 @@ describe('asking Factwright how to fill a form', () => {
     computer.asked = [];
     const closed = { ok: false, reason: 'closed', message: 'Open Factwright.' };
     computer.answers = [closed];
-    expect(await planFill(form([field('Company')]), job)).toBe(closed);
+    expect(await planFill(form([field('Company')]), job, onComputer)).toBe(closed);
     expect(computer.asked).toHaveLength(1);
   });
 });

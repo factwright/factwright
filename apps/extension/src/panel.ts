@@ -7,6 +7,7 @@ import {
   isLinkedIn,
   type LeftFor,
 } from '@factwright/core';
+import { allowSync } from './account.ts';
 import {
   allowCareersSite,
   allowJobSites,
@@ -19,7 +20,7 @@ import {
   runInFrames,
   stopJobSites,
 } from './application-sites.ts';
-import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
+import { canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
@@ -48,9 +49,12 @@ import {
   sentAnswers,
   showField,
 } from './fill.ts';
+import { type FillWay, fillWays, firstAnswer } from './fill-way.ts';
 import { isToPanel } from './job-site-messages.ts';
+import { askToSave } from './messages.ts';
 import type { FieldFilled, FieldValue, PageAdder, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readFormJob, readFormPage } from './read-tab.ts';
+import { serverName } from './server.ts';
 import { settings } from './settings.ts';
 import {
   carriedOn,
@@ -67,10 +71,11 @@ import { toSave } from './tab-job.ts';
 
 /**
  * The side panel beside the page, where filling an application form is checked. It reads the
- * form in the tab you clicked Fill on, asks Factwright on this computer for an answer to each
- * field, fills them, and lists every field with its answer and where the answer came from. What's
- * left for you is outlined in orange on the page. Once you've submitted the form on the site,
- * Mark as applied records what you sent. Factwright never submits anything.
+ * form in the tab you clicked Fill on, asks Factwright on this computer, or your job hunt through
+ * sync (src/fill-way.ts), for an answer to each field, fills them, and lists every field with its
+ * answer and where the answer came from. What's left for you is outlined in orange on the page.
+ * Once you've submitted the form on the site, Mark as applied records what you sent. Factwright
+ * never submits anything.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -104,6 +109,15 @@ interface Drafting {
 interface Filling {
   tabId: number;
   place: FormPlace;
+  /** The way its answers came: Factwright on this computer, or your job hunt through sync. */
+  way: FillWay;
+  /** Whether sync answered because Factwright on this computer wasn't there to. */
+  instead: boolean;
+  /**
+   * Through sync, whether to offer Factwright on this computer, which the browser doesn't let the
+   * extension reach yet.
+   */
+  offerComputer: boolean;
   form: PageForm;
   plan: FillPlan;
   /** The company and job title the page shows, which the job the form is for is found by. */
@@ -126,6 +140,8 @@ interface Filling {
   applied: { job: AskedJob; offers: NewAnswer[]; saved: Set<string> } | null;
   /** Your Claude drafting the form's own questions, while it does. */
   drafting: Drafting | null;
+  /** Through sync: how many of the form's questions it left with the job for your Claude. */
+  left: number | null;
   /** Whether Factwright's menus and Fill button show on the form's site, as you allowed. */
   site: SiteChoice;
   /** What the application's earlier pages gave, for one that runs over several. */
@@ -195,6 +211,7 @@ const LEFT: Record<LeftFor, string> = {
   sensitive: 'An equal-opportunity question, for you',
   new: 'A question for you',
   pick: 'Yours to pick on the page',
+  private: 'Kept on your computer alone, not in sync',
 };
 
 /** Whether two addresses are the same page, but for what's after their #. */
@@ -372,6 +389,59 @@ function jobLine(state: Filling): Child[] {
   ];
 }
 
+/** Where the answers came from, through sync: your job hunt, with Factwright closed here or not. */
+function wayLine(state: Filling): Child[] {
+  if (state.way.via !== 'sync') return [];
+  return [
+    h(
+      'p',
+      { class: 'small muted' },
+      state.instead
+        ? 'From your job hunt, through sync, as Factwright isn’t open on this computer.'
+        : 'From your job hunt, through sync.',
+    ),
+  ];
+}
+
+const questions = (count: number) => `${count} ${count === 1 ? 'question' : 'questions'}`;
+
+/**
+ * Through sync, what the panel says of the form's own questions that nothing on file answers: an
+ * offer to leave them with the job, for your Claude in Factwright to draft, or that they're left.
+ */
+function leaveLine(state: Filling): Child[] {
+  if (state.left !== null) {
+    return [
+      h(
+        'p',
+        { class: 'note', role: 'status' },
+        `Left ${questions(state.left)} with the job. In Factwright on your computer, the job’s Application questions has Draft them with your Claude. Once its drafts sync, click Fill again here.`,
+      ),
+    ];
+  }
+  const left = draftable(state.form, state.plan.replies, state.filled);
+  if (left.length === 0) return [];
+  return [
+    h(
+      'p',
+      { class: 'small' },
+      left.length === 1
+        ? 'Nothing on file answers one of the form’s questions. Leave it with the job, and your Claude can draft it in Factwright on your computer.'
+        : `Nothing on file answers ${left.length} of the form’s questions. Leave them with the job, and your Claude can draft them in Factwright on your computer.`,
+    ),
+    h(
+      'div',
+      { class: 'actions' },
+      button(
+        left.length === 1 ? 'Leave it for your Claude' : 'Leave them for your Claude',
+        () => void leave(state),
+        false,
+        state.busy,
+      ),
+    ),
+  ];
+}
+
 const answers = (count: number) => `${count} ${count === 1 ? 'answer' : 'answers'}`;
 
 /**
@@ -380,6 +450,7 @@ const answers = (count: number) => `${count} ${count === 1 ? 'answer' : 'answers
  */
 function draftLine(state: Filling): Child[] {
   if (!state.plan.job) return [];
+  if (state.way.via === 'sync') return leaveLine(state);
   if (state.drafting) {
     return [
       h(
@@ -424,6 +495,36 @@ function summary(state: Filling): string {
     return `Factwright has answers for ${answered} of ${total} fields.`;
   }
   return filledSummary(state.form, state.filled);
+}
+
+/**
+ * Asks the browser to let the extension reach Factwright on this computer, straight from the
+ * click, before anything is waited on, as Firefox wants, and once it does, fills the form again. A
+ * page Chrome opened before then can't reach Factwright's helper, so the panel opens again first.
+ */
+const askForComputer = () =>
+  void ext.permissions.request(NATIVE).then((allowed) => {
+    if (allowed) location.reload();
+  });
+
+/**
+ * Through sync, the offer of Factwright on this computer, where the browser doesn't let the
+ * extension reach it yet: it answers more of a form.
+ */
+function computerLine(state: Filling): Child[] {
+  if (!state.offerComputer) return [];
+  return [
+    h(
+      'div',
+      { class: 'card' },
+      h(
+        'p',
+        { class: 'small' },
+        'Is Factwright on this computer? Filling from it adds your street, postal code and equal-opportunity answers, and your Claude drafts new questions at once.',
+      ),
+      h('div', { class: 'actions' }, button('Use Factwright on this computer', askForComputer)),
+    ),
+  ];
 }
 
 /** The form's site, as the panel offers Factwright's menus and Fill button on it. */
@@ -562,6 +663,7 @@ function render(state: Filling): void {
     app,
     heading('Fill this application'),
     ...jobLine(state),
+    ...wayLine(state),
     state.copyOnly &&
       h(
         'p',
@@ -599,6 +701,7 @@ function render(state: Filling): void {
       { class: 'small muted' },
       'Factwright never submits a form. Check each answer, then submit it on the page yourself.',
     ),
+    ...computerLine(state),
     ...siteLine(state),
   );
 }
@@ -656,7 +759,7 @@ function renderApplied(state: Filling): void {
 
 /** Keeps one new answer in Profile, as you chose. */
 async function keep(state: Filling, offer: NewAnswer): Promise<void> {
-  const answer = await askComputer({
+  const answer = await state.way.ask({
     ask: 'remember',
     answers: [{ kind: offer.kind, text: offer.text }],
   });
@@ -677,7 +780,12 @@ async function saveFirst(state: Filling): Promise<void> {
     return;
   }
   const page = await readFormPage(tab, state.place.frameId);
-  const saved = await saveOnComputer(toSave(page));
+  // Saved the way the form's filled: to Factwright here, or through sync, as the background saves.
+  const job = toSave(page);
+  const saved =
+    state.way.via === 'computer'
+      ? await saveOnComputer(job)
+      : await askToSave((message) => ext.runtime.sendMessage(message), job);
   if (filling !== state) return;
   if (!saved.ok) {
     state.status = saved.message;
@@ -706,7 +814,7 @@ async function markApplied(state: Filling): Promise<void> {
   );
   // With what the application's earlier pages gave, for one that runs over several.
   const earlier = forApplication(state.earlier, job.id, state.form.url);
-  const answer = await askComputer({
+  const answer = await state.way.ask({
     ask: 'sent',
     job: job.id,
     url: state.form.url,
@@ -724,10 +832,14 @@ async function markApplied(state: Filling): Promise<void> {
   stopLooking();
   state.applied = {
     job: answer.job,
-    offers: joinOffers(
-      earlier.offers,
-      newAnswers(state.form, state.plan.replies, values, state.filled),
-    ),
+    // Profile keeps new answers through Factwright on this computer alone.
+    offers:
+      state.way.via === 'computer'
+        ? joinOffers(
+            earlier.offers,
+            newAnswers(state.form, state.plan.replies, values, state.filled),
+          )
+        : [],
     saved: new Set(),
   };
   render(state);
@@ -783,7 +895,7 @@ async function draft(state: Filling): Promise<void> {
   state.drafting = drafting;
   state.status = '';
   render(state);
-  const asked = await askForDrafts(state.form, job.id, fields);
+  const asked = await askForDrafts(state.form, job.id, fields, state.way);
   if (filling !== state || state.drafting !== drafting) return;
   if (!asked.ok || asked.did !== 'draft') {
     state.drafting = null;
@@ -799,6 +911,30 @@ async function draft(state: Filling): Promise<void> {
 }
 
 /**
+ * Through sync, leaves the form's own questions that nothing on file answers with the job, for
+ * your Claude in Factwright on your computer to draft, as Factwright keeps a form's questions.
+ */
+async function leave(state: Filling): Promise<void> {
+  const { job } = state.plan;
+  const fields = draftable(state.form, state.plan.replies, state.filled);
+  if (!job || fields.length === 0) return;
+  state.busy = true;
+  state.status = 'Leaving the questions with the job…';
+  render(state);
+  const asked = await askForDrafts(state.form, job.id, fields, state.way);
+  state.busy = false;
+  if (filling !== state) return;
+  if (!asked.ok || asked.did !== 'draft') {
+    state.status = asked.ok ? 'Sync didn’t answer. Try again.' : asked.message;
+    render(state);
+    return;
+  }
+  state.left = fields.length;
+  state.status = '';
+  render(state);
+}
+
+/**
  * Asks how your Claude's drafts are coming along, every few seconds, and says when it's waiting
  * on you in Factwright. Once it's done, or has taken too long, it fills in what it drafted.
  */
@@ -806,7 +942,7 @@ async function followDrafts(state: Filling, drafting: Drafting): Promise<void> {
   following = null;
   const { job } = state.plan;
   if (filling !== state || state.drafting !== drafting || !job) return;
-  const now = await draftsSoFar(job.id);
+  const now = await draftsSoFar(job.id, state.way);
   if (filling !== state || state.drafting !== drafting) return;
   const goOn = () => {
     following = setTimeout(() => void followDrafts(state, drafting), DRAFTS_EVERY_MS);
@@ -842,7 +978,7 @@ async function fillDrafts(state: Filling, drafting: Drafting): Promise<void> {
     drafting.keys.has(field.key) ? [at] : [],
   );
   const fields = places.flatMap((at) => state.form.fields[at] ?? []);
-  const planned = await planFill({ ...state.form, fields }, state.shows);
+  const planned = await planFill({ ...state.form, fields }, state.shows, state.way);
   if (filling !== state || state.drafting !== drafting) return;
   state.drafting = null;
   if (!planned.ok || planned.did !== 'fill') {
@@ -984,6 +1120,7 @@ async function fill(state: Filling, onlyEmpty = false): Promise<boolean> {
 const fillPasses = (state: Filling, onlyEmpty: boolean) =>
   fillInPasses({
     place: state.place,
+    way: state.way,
     form: state.form,
     plan: state.plan,
     shows: state.shows,
@@ -1031,19 +1168,26 @@ async function begin(how: Start = {}): Promise<void> {
     );
     return;
   }
-  const reachable = await canReachComputer();
+  const ways = await fillWays();
   if (later()) return;
-  if (!reachable) {
+  if (!Array.isArray(ways)) {
+    const { why } = ways;
     message(
-      'Filling a form needs Factwright on this computer, which the browser asks you to let Factwright reach.',
+      why === 'sync'
+        ? `The browser doesn’t let the extension reach ${serverName(ways.server)}, which it fills forms from.`
+        : 'Filling a form needs Factwright on this computer, which the browser asks you to let Factwright reach.',
       h(
         'div',
         { class: 'actions' },
         button(
           'Allow it',
           () => {
+            if (why !== 'sync') {
+              askForComputer();
+              return;
+            }
             // The browser asks only straight from a click, before anything is waited on.
-            void ext.permissions.request(NATIVE).then((allowed) => {
+            void allowSync(ways.server).then((allowed) => {
               if (allowed) void begin();
             });
           },
@@ -1089,9 +1233,21 @@ async function begin(how: Start = {}): Promise<void> {
   }
   const shows = await readFormJob(tab, place.frameId);
   if (later()) return;
-  const planned = await planFill(form, shows);
+  if (ways[0]?.via === 'sync') {
+    show(
+      app,
+      heading('Fill this application'),
+      h('p', { class: 'muted' }, 'Reading your job hunt…'),
+    );
+  }
+  const {
+    way,
+    answer: planned,
+    instead,
+  } = await firstAnswer(ways, (each) => planFill(form, shows, each));
   if (later()) return;
   const site = await siteChoice(form.url);
+  const offerComputer = way.via === 'sync' && !(await canReachComputer());
   if (later()) return;
   if (!planned.ok || planned.did !== 'fill') {
     message(
@@ -1109,6 +1265,9 @@ async function begin(how: Start = {}): Promise<void> {
   const state: Filling = {
     tabId: tab.id,
     place,
+    way,
+    instead,
+    offerComputer,
     form,
     plan: planned,
     shows,
@@ -1121,6 +1280,7 @@ async function begin(how: Start = {}): Promise<void> {
     status: '',
     applied: null,
     drafting: null,
+    left: null,
     site,
     earlier: form.step ? forApplication(earlier, planned.job?.id ?? null, form.url) : NO_EARLIER,
     next: null,
