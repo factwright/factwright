@@ -1,6 +1,6 @@
 import { type FieldKind, type FieldReply, fieldKind, fieldPart } from '@factwright/core';
 import { type FormValues, type NewAnswer, newAnswers, sentAnswers } from './fill.ts';
-import type { FieldValue, PageAdder, PageForm } from './page/form.ts';
+import type { FieldFilled, FieldValue, PageAdder, PageForm } from './page/form.ts';
 
 /**
  * An application that runs over several pages in one tab, as Workday's does, as the panel goes
@@ -24,11 +24,37 @@ export interface SentAnswer {
 export interface Earlier {
   /** The job they were for, or null when it isn't one you saved. */
   job: string | null;
+  /** The address of the page they came from last, which Workday keeps from page to page. */
+  url: string;
   sent: SentAnswer[];
   offers: NewAnswer[];
 }
 
-export const NO_EARLIER: Earlier = { job: null, sent: [], offers: [] };
+export const NO_EARLIER: Earlier = { job: null, url: '', sent: [], offers: [] };
+
+/** A page's address, as an application keeps it from page to page: without its ? or #. */
+function addressOf(url: string): string {
+  try {
+    const { origin, pathname } = new URL(url);
+    return `${origin}${pathname}`;
+  } catch {
+    return url.split(/[?#]/)[0] ?? url;
+  }
+}
+
+/**
+ * What an application's earlier pages gave, for a page of it, only when it's the same
+ * application: the same job, when both are jobs you saved, or else the same address, as Workday's
+ * keeps its own from page to page. Another job's give nothing.
+ */
+export function forApplication(earlier: Earlier, job: string | null, url: string): Earlier {
+  if (earlier === NO_EARLIER) return NO_EARLIER;
+  const same =
+    earlier.job !== null && job !== null
+      ? earlier.job === job
+      : addressOf(earlier.url) === addressOf(url);
+  return same ? earlier : NO_EARLIER;
+}
 
 /** Answers to a form's own questions, a later one in place of an earlier one to the same question. */
 export function joinSent(
@@ -52,6 +78,8 @@ export function joinOffers(
 export interface FilledPage {
   form: PageForm;
   replies: readonly FieldReply[];
+  /** How filling each field went, by its key. */
+  filled: ReadonlyMap<string, FieldFilled>;
   values: readonly FieldValue[] | null;
   /** The job it's for, or null when it isn't one you saved. */
   job: string | null;
@@ -69,8 +97,9 @@ export function carriedOn(page: FilledPage, earlier: Earlier): Earlier {
   const values = page.values ?? [];
   return {
     job: page.job ?? earlier.job,
+    url: page.form.url,
     sent: joinSent(earlier.sent, sentAnswers(page.form, page.replies, values)),
-    offers: joinOffers(earlier.offers, newAnswers(page.form, page.replies, values)),
+    offers: joinOffers(earlier.offers, newAnswers(page.form, page.replies, values, page.filled)),
   };
 }
 
@@ -86,15 +115,6 @@ export interface NextPage {
  */
 export const nextPageOf = (form: PageForm, read: FormValues | null): NextPage | null =>
   read?.step && read.step !== form.step ? { step: read.step, fields: read.fields } : null;
-
-/** A page's site, as its address's origin, or "" for one that isn't an address. */
-export function siteOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return '';
-  }
-}
 
 /** A part of a form for each job, or for each school. */
 export type Part = 'job' | 'school';

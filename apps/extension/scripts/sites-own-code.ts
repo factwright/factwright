@@ -424,6 +424,8 @@ export function workdayActs(doc: Document, pages: string): void {
     const at = STEPS.findIndex((step) => step.replace(/-/g, ' ') === now.toLowerCase());
     const step = STEPS[at + 1];
     if (!pages || !step) return;
+    // Workday saves the page to its server first, which takes a moment.
+    await new Promise((resolve) => setTimeout(resolve, 400));
     const page = new DOMParser().parseFromString(
       await (await fetch(`${pages}workday-${step}.html`)).text(),
       'text/html',

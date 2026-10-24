@@ -252,9 +252,9 @@ const menusOf = (page: OnPage): FieldMenu[] =>
     keeps: keepsAnswer(field, page.plan.replies[at]),
   }));
 
-/** Has the panel filling a tab's form look at it again, if it's open. */
-const tellPanelStep = (tabId: number) =>
-  ext.runtime.sendMessage({ type: 'panel', do: 'step', tabId } satisfies ToPanel).catch(() => {
+/** Has the panel filling a tab's form look at it now, if it's open. */
+const tellPanelLook = (tabId: number) =>
+  ext.runtime.sendMessage({ type: 'panel', do: 'look', tabId } satisfies ToPanel).catch(() => {
     // No panel's open.
   });
 
@@ -369,10 +369,10 @@ export async function answerScript(
     await keepFrame(place.tabId, { frameId: place.frameId, url, doc: message.doc });
     return { allowed: true };
   }
-  if (message.do === 'step') {
-    // The page of an application that runs over several went on to another: the panel filling
-    // the tab's form, if it's open, looks at it again, to offer to fill this one.
-    if (scripts.get(key)?.doc === message.doc) void tellPanelStep(place.tabId);
+  if (message.do === 'look') {
+    // You left a field of an application that runs over several, or it went on to another page:
+    // the panel filling the tab's form, if it's open, looks at it now.
+    if (scripts.get(key)?.doc === message.doc) void tellPanelLook(place.tabId);
     return {};
   }
   if (message.do === 'form') {

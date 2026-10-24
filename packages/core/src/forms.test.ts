@@ -304,8 +304,69 @@ describe('what a field asks for', () => {
         }),
       ),
     ).toBe('question');
+    // A name that says only which one it is after "--" says what it asks before.
+    expect(asked('Please select one of the options below:', { name: 'gender--0' })).toBe('gender');
+    expect(asked('Please select one of the options below:', { name: 'race--select' })).toBe('race');
     // Options that only happen to name one aren't enough.
     expect(asked('Which colors do you like?', { options: ['White', 'Blue'] })).toBe('question');
+  });
+
+  it('never lets options make a question that says what it asks an equal-opportunity one', () => {
+    const asked = (question: string, options: string[], section = '') =>
+      fieldKind({ ...field(question, { control: 'choice' }), options, section });
+    // Its words make it something else, whatever its options say, in any part of the form.
+    for (const section of ['', 'Voluntary Disclosures']) {
+      expect(
+        asked(
+          'Are you the spouse of a protected veteran?',
+          [
+            'Yes, I am the spouse of a protected veteran',
+            'No, I am not the spouse of a protected veteran',
+          ],
+          section,
+        ),
+      ).toBe('personal');
+      expect(
+        asked(
+          'Do you require a reasonable accommodation to take part in the hiring process?',
+          ['Yes, I have a disability and need an accommodation', 'No, I do not have a disability'],
+          section,
+        ),
+      ).toBe('personal');
+    }
+    // Options that name races, as communities, ask no one's race.
+    const served = [
+      'Black or African American communities',
+      'American Indian or Alaska Native communities',
+      'Asian communities',
+    ];
+    expect(asked('Which populations have you worked with?', served)).toBe('question');
+    expect(asked('Please select all that apply.', served)).toBe('question');
+    // A question that asks something of its own keeps it, outside a part for self-identification.
+    expect(asked('Which of these teams would you like to coach?', ['Men', 'Women', 'Mixed'])).toBe(
+      'question',
+    );
+  });
+
+  it('leaves boxes that agree to something, among several, for you to tick', () => {
+    const boxes = (question: string, options: string[]) =>
+      fieldKind({ ...field(question, { control: 'choices' }), options });
+    expect(
+      boxes('Please confirm the following:', [
+        'I certify that the information I have given is true',
+        'I agree to a background check',
+      ]),
+    ).toBe('consent');
+    expect(
+      boxes('Please select all that apply.', [
+        'Remote',
+        'I have read the Applicant Privacy Notice',
+      ]),
+    ).toBe('consent');
+    // Boxes that agree to nothing are a question of the form's own.
+    expect(boxes('Which shifts can you work?', ['Mornings', 'Evenings', 'Weekends'])).toBe(
+      'question',
+    );
   });
 
   it('keeps what it can’t tell in a part for self-identification for you, never to keep or draft', () => {
@@ -316,8 +377,10 @@ describe('what a field asks for', () => {
     ).toBe('personal');
     expect(inPart('Date Month', 'Self Identify', 'number')).toBe('personal');
     expect(inPart('Language', 'Voluntary Self-Identification of Disability')).toBe('personal');
-    // What it can tell keeps its kind there: your name, and agreeing to the terms.
-    expect(inPart('Name', 'Self Identify', 'text')).toBe('full-name');
+    // Your name there signs the form, as the disability form's "Name" beside its date does:
+    // that's yours to do, as agreeing to the terms is.
+    expect(inPart('Name', 'Self Identify', 'text')).toBe('consent');
+    expect(inPart('Name', 'My Information › Legal Name', 'text')).toBe('full-name');
     expect(
       inPart(
         'Yes, I have read and consent to the terms and conditions',
@@ -339,8 +402,11 @@ describe('what a field asks for', () => {
           { name: 'website' },
         ],
         ['Leave this field blank'],
+        ['If you are human, leave this field blank.'],
+        // A field you may leave blank isn't a trap.
+        ['Middle name (leave it blank if you have none)'],
       ]),
-    ).toEqual(['never', 'never']);
+    ).toEqual(['never', 'never', 'never', 'middle-name']);
   });
 
   it('tells working where you are from working without sponsorship', () => {

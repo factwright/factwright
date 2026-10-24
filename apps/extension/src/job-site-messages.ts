@@ -64,10 +64,11 @@ export type FromScript =
   /** The menu closed, as you clicked elsewhere. */
   | { type: 'job-site'; do: 'closed'; token: string }
   /**
-   * The page of an application that runs over several, as Workday's, went on to another, in the
-   * same tab, by its own name for the page: the panel filling it looks at it again.
+   * On a page of an application that runs over several, as Workday's, you left one of its
+   * fields, or the page went on to another in the same tab: the panel filling it looks at it now,
+   * before what you typed is gone with the page.
    */
-  | { type: 'job-site'; do: 'step'; doc: string };
+  | { type: 'job-site'; do: 'look'; doc: string };
 
 /** What the frame asks the background. */
 export type FromFrame =
@@ -105,7 +106,8 @@ export type FilledHere =
 
 /**
  * What the background tells the panel: fill the form in a tab, as the Fill button asks, or look at
- * a tab's form again, as its page of an application that runs over several changed.
+ * a tab's form now, as you left a field of an application that runs over several, or its page
+ * changed.
  */
 export type ToPanel =
   | {
@@ -115,7 +117,7 @@ export type ToPanel =
       /** When you clicked it. */
       at: number;
     }
-  | { type: 'panel'; do: 'step'; tabId: number };
+  | { type: 'panel'; do: 'look'; tabId: number };
 
 /** The most fields a form's message carries, and the longest of its words, as the form reads them. */
 const MAX_FIELDS = 300;
@@ -215,7 +217,7 @@ export function isFromScript(message: unknown): message is FromScript {
         message.around.every((site) => isText(site, MAX_URL))
       );
     case 'bye':
-    case 'step':
+    case 'look':
       return isToken(message.doc);
     case 'form':
       return (
@@ -283,7 +285,7 @@ export function isToPanel(message: unknown): message is ToPanel {
   if (!isObject(message) || message.type !== 'panel' || typeof message.tabId !== 'number') {
     return false;
   }
-  return message.do === 'step' || (message.do === 'fill' && typeof message.at === 'number');
+  return message.do === 'look' || (message.do === 'fill' && typeof message.at === 'number');
 }
 
 /** How writing a picked answer went, as the script says it. */

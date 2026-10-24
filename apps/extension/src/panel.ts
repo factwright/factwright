@@ -55,13 +55,13 @@ import { settings } from './settings.ts';
 import {
   carriedOn,
   type Earlier,
+  forApplication,
   joinOffers,
   joinSent,
   type NextPage,
   NO_EARLIER,
   nextPageOf,
   partsOffers,
-  siteOf,
 } from './several-pages.ts';
 import { toSave } from './tab-job.ts';
 
@@ -215,6 +215,7 @@ const carried = (state: Filling): Earlier =>
     {
       form: state.form,
       replies: state.plan.replies,
+      filled: state.filled,
       values: state.values,
       job: state.plan.job?.id ?? null,
       copyOnly: state.copyOnly,
@@ -263,6 +264,8 @@ const NOT_FILLED: Record<Exclude<FieldFilled['why'], ''>, string> = {
   moved: 'The form changed. Click Fill again.',
   'no-option': 'None of its options matched. Pick one on the page.',
   'not-taken': 'The page didn’t take it. Copy it in.',
+  'other-part':
+    'This part has another job or school in it, as the site filled it in. Fill it in yourself.',
 };
 
 /** Copies an answer, and says so on the button for a moment. */
@@ -388,6 +391,8 @@ function draftLine(state: Filling): Child[] {
       ),
     ];
   }
+  // A page the application went on from has no questions to draft for now.
+  if (state.next) return [];
   const left = draftable(state.form, state.plan.replies, state.filled);
   if (left.length === 0) return [];
   return [
@@ -584,7 +589,9 @@ function render(state: Filling): void {
       'div',
       { class: 'actions' },
       button('Mark as applied', () => void markApplied(state), state.moved, state.busy),
+      // Not once the application went on to another page: that one has its own offer to fill it.
       !state.copyOnly &&
+        !state.next &&
         button('Fill again', () => void begin({ earlier: state.earlier }), false, state.busy),
     ),
     h(
@@ -698,8 +705,7 @@ async function markApplied(state: Filling): Promise<void> {
     latest && samePage(latest.url, state.form.url) ? latest.values : [],
   );
   // With what the application's earlier pages gave, for one that runs over several.
-  const earlier =
-    state.earlier.job === null || state.earlier.job === job.id ? state.earlier : NO_EARLIER;
+  const earlier = forApplication(state.earlier, job.id, state.form.url);
   const answer = await askComputer({
     ask: 'sent',
     job: job.id,
@@ -718,7 +724,10 @@ async function markApplied(state: Filling): Promise<void> {
   stopLooking();
   state.applied = {
     job: answer.job,
-    offers: joinOffers(earlier.offers, newAnswers(state.form, state.plan.replies, values)),
+    offers: joinOffers(
+      earlier.offers,
+      newAnswers(state.form, state.plan.replies, values, state.filled),
+    ),
     saved: new Set(),
   };
   render(state);
@@ -887,22 +896,31 @@ const replyFor = (state: Filling) => (field: PageField) =>
   };
 
 /**
- * Reads what's in the form's own questions every few seconds while the panel shows, so it has
- * what you sent once you submit it, field by field: a field the form takes away, as a form of
- * steps does, keeps what it held. Once the tab leaves the form, as after submitting, or the page
- * says the application went in, the panel keeps what it read last. An application that runs over
- * several pages in the tab, as Workday's does, going on to another, has the panel offer to fill
- * that one. The script on the job sites you allowed says so as the page changes, for the panel to
- * look at once.
+ * Reads what's in the form's own questions as soon as it's filled, then every few seconds while
+ * the panel shows, so it has what you sent once you submit it, field by field: a field the form
+ * takes away, as a form of steps does, keeps what it held. Once the tab leaves the form, as after
+ * submitting, or the page says the application went in, the panel keeps what it read last. An
+ * application that runs over several pages in the tab, as Workday's does, going on to another,
+ * has the panel offer to fill that one. The script on the job sites you allowed has the panel look
+ * at once as you leave one of its fields, before the page can go on, and as the page changes. A
+ * look that ends after a later one keeps nothing.
  */
 function keepLooking(state: Filling): void {
   stopLooking();
   const fields = fieldsToRead(state.form, state.plan.replies);
+  let looks = 0;
+  let newest = 0;
   lookNow = () => {
     if (document.visibilityState !== 'visible' || state.moved || state.applied) return;
-    void formValues(state.place, fields).then((read) => heard(state, read));
+    const look = ++looks;
+    void formValues(state.place, fields).then((read) => {
+      if (look < newest) return;
+      newest = look;
+      heard(state, read);
+    });
   };
   looking = setInterval(lookNow, LOOK_EVERY_MS);
+  lookNow();
 }
 
 /**
@@ -1086,10 +1104,8 @@ async function begin(how: Start = {}): Promise<void> {
     );
     return;
   }
-  // An application's earlier pages, in the same tab and on the same site, for the same job.
+  // An application's earlier pages, in the same tab, for the same application.
   const earlier = how.earlier ?? (before && before.tabId === tab.id ? carried(before) : NO_EARLIER);
-  const sameSite = before !== null && siteOf(before.form.url) === siteOf(form.url);
-  const sameJob = earlier.job === null || planned.job === null || earlier.job === planned.job.id;
   const state: Filling = {
     tabId: tab.id,
     place,
@@ -1106,7 +1122,7 @@ async function begin(how: Start = {}): Promise<void> {
     applied: null,
     drafting: null,
     site,
-    earlier: form.step && sameSite && sameJob ? earlier : NO_EARLIER,
+    earlier: form.step ? forApplication(earlier, planned.job?.id ?? null, form.url) : NO_EARLIER,
     next: null,
   };
   filling = state;
@@ -1153,9 +1169,9 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 // it. A panel in another window, beside another tab, carries on with its own form.
 ext.runtime.onMessage.addListener((message, sender) => {
   if (sender.id !== ext.runtime.id || sender.tab || !isToPanel(message)) return undefined;
-  // The page of an application that runs over several changed, as the script on a job site you
-  // allowed saw: the panel filling it looks at once.
-  if (message.do === 'step') {
+  // You left a field of an application that runs over several, or its page changed, as the script
+  // on a job site you allowed saw: the panel filling it looks at once.
+  if (message.do === 'look') {
     if (filling?.tabId === message.tabId) lookNow?.();
     return undefined;
   }

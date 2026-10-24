@@ -151,6 +151,35 @@ describe('what Factwright puts in a form', () => {
     );
   });
 
+  it('says the part for a job or school each answer is in, and which name the part', () => {
+    const job = (question: string, n: number) =>
+      field(question, { section: `My Experience › Work Experience ${n}` });
+    const fields = [
+      job('Job Title', 1),
+      job('Company', 1),
+      job('Company', 2),
+      field('School or University', { section: 'Education 1' }),
+      field('Email'),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'current-title', text: 'Senior Product Manager', source: 'profile' },
+      { kind: 'current-company', text: 'Tidewater Analytics', source: 'profile' },
+      { kind: 'current-company', text: 'Fernway', source: 'profile' },
+      { kind: 'school', text: 'CU Boulder', source: 'profile' },
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+    ];
+    const workday = { ...form(fields), step: 'My Experience' };
+    expect(
+      fillAnswers(workday, replies, {}).map(({ part, names }) => [part, names ?? false]),
+    ).toEqual([
+      ['My Experience › Work Experience 1', false],
+      ['My Experience › Work Experience 1', true],
+      ['My Experience › Work Experience 2', true],
+      ['Education 1', true],
+      [undefined, false],
+    ]);
+  });
+
   it('leaves a file it couldn’t fetch for you', () => {
     const fields = [field('Resume', { ref: 0, control: 'file', type: 'file' })];
     expect(
@@ -433,12 +462,26 @@ describe('what your Claude can draft', () => {
   });
 
   it('is never a box for part of a date, as a self-identification form’s date to sign it', () => {
-    const fields = ['Date Month', 'Date Day', 'Date Year', 'What year did you start coding?'].map(
-      (question, ref) => field(question, { ref, control: 'number' }),
-    );
+    const fields = [
+      'Date Month',
+      'Date Day',
+      'Date Year',
+      'What year did you start coding?',
+      'How many hours can you work per day',
+    ].map((question, ref) => field(question, { ref, control: 'number' }));
+    // In words, a question that ends in a part of a date is a question of the form's own.
+    fields.push(field('What would you most like to learn this year', { ref: 5, control: 'long' }));
     const left = { kind: 'question', source: 'you', left: 'new' } as const;
     expect(
-      draftable(form(fields), [left, left, left, left], new Map()).map((each) => each.question),
-    ).toEqual(['What year did you start coding?']);
+      draftable(
+        form(fields),
+        fields.map(() => left),
+        new Map(),
+      ).map((each) => each.question),
+    ).toEqual([
+      'What year did you start coding?',
+      'How many hours can you work per day',
+      'What would you most like to learn this year',
+    ]);
   });
 });

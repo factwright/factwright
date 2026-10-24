@@ -487,16 +487,16 @@ describe('the script and the frame, as the background answers them', () => {
     ).toEqual({ offer: false });
   });
 
-  it('tells the panel when an application of several pages goes on to another, from its script alone', async () => {
+  it('has the panel look at an application of several pages now, from its script alone', async () => {
     await answerScript(hello, fromScript);
-    expect(await answerScript({ type: 'job-site', do: 'step', doc: DOC }, fromScript)).toEqual({});
-    expect(browser.panel).toEqual([{ type: 'panel', do: 'step', tabId: TAB }]);
+    expect(await answerScript({ type: 'job-site', do: 'look', doc: DOC }, fromScript)).toEqual({});
+    expect(browser.panel).toEqual([{ type: 'panel', do: 'look', tabId: TAB }]);
     // A name the script in that frame didn't say hello by tells it nothing.
-    await answerScript({ type: 'job-site', do: 'step', doc: TOKEN }, fromScript);
+    await answerScript({ type: 'job-site', do: 'look', doc: TOKEN }, fromScript);
     expect(browser.panel).toHaveLength(1);
     // Nor a site you didn't allow.
     browser.items.jobSites = { all: false, sites: [] };
-    expect(await answerScript({ type: 'job-site', do: 'step', doc: DOC }, fromScript)).toEqual({
+    expect(await answerScript({ type: 'job-site', do: 'look', doc: DOC }, fromScript)).toEqual({
       stop: true,
     });
     expect(browser.panel).toHaveLength(1);
@@ -624,7 +624,7 @@ describe('each message, checked', () => {
     expect(isFromScript({ ...hello, around: ['https://careers.example.com'] })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'bye', doc: DOC })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'form', form: FORM, job })).toBe(true);
-    expect(isFromScript({ type: 'job-site', do: 'step', doc: DOC })).toBe(true);
+    expect(isFromScript({ type: 'job-site', do: 'look', doc: DOC })).toBe(true);
     const workday = {
       ...FORM,
       step: 'My Experience',
@@ -632,8 +632,8 @@ describe('each message, checked', () => {
     };
     expect(isFromScript({ type: 'job-site', do: 'form', form: workday, job })).toBe(true);
     for (const bad of [
-      { type: 'job-site', do: 'step' },
-      { type: 'job-site', do: 'step', doc: 'mine' },
+      { type: 'job-site', do: 'look' },
+      { type: 'job-site', do: 'look', doc: 'mine' },
       { type: 'job-site', do: 'form', form: { ...workday, step: 7 }, job },
       { type: 'job-site', do: 'form', form: { ...workday, adders: 'all' }, job },
       { type: 'job-site', do: 'form', form: { ...workday, adders: [{ words: 'Add' }] }, job },
@@ -681,8 +681,8 @@ describe('each message, checked', () => {
     expect(isToScript({ type: 'job-site', do: 'write', answer: { key: 'k' } })).toBe(false);
     expect(isToScript({ type: 'job-site', do: 'hello' })).toBe(false);
     expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB, at: 1 })).toBe(true);
-    expect(isToPanel({ type: 'panel', do: 'step', tabId: TAB })).toBe(true);
-    expect(isToPanel({ type: 'panel', do: 'step' })).toBe(false);
+    expect(isToPanel({ type: 'panel', do: 'look', tabId: TAB })).toBe(true);
+    expect(isToPanel({ type: 'panel', do: 'look' })).toBe(false);
     expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB })).toBe(false);
   });
 });

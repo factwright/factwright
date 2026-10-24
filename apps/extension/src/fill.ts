@@ -3,6 +3,7 @@ import {
   type AskedField,
   DRAFT_QUESTIONS,
   type FieldReply,
+  fieldPart,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
@@ -219,8 +220,11 @@ export async function planFill(
   return ask(fields.map(({ section: _, ...field }) => field));
 }
 
-/** A box for one part of a date, as "Date Month" or "From Year", which only you can say. */
-const DATE_PART = /\b(day|month|year)$/i;
+/**
+ * A box for one part of a date, as "Date Month" or "From Year", which only you can say: a few
+ * words that end in the part, in a box for a number.
+ */
+const DATE_PART = /^(\S+ ){0,2}(day|month|year)$/i;
 
 /**
  * The form's own questions that nothing on file answers, which your Claude can draft: ones it
@@ -244,7 +248,7 @@ export function draftable(
         field.question.trim() !== '' &&
         field.control !== 'file' &&
         field.control !== 'check' &&
-        !DATE_PART.test(field.question.trim()) &&
+        !(field.control === 'number' && DATE_PART.test(field.question.trim())) &&
         !filled.get(field.key)?.ok
       );
     })
@@ -310,10 +314,14 @@ export const isPlace = (kind: FieldReply['kind']) => PLACES.has(kind);
 export const picksOf = (reply: Pick<FieldReply, 'kind' | 'pick'>): string[] =>
   isPlace(reply.kind) ? placeNames(reply.pick ?? []) : [...(reply.pick ?? [])];
 
+/** The kinds of field that name a part's job or school: what tells a part that holds another. */
+const NAMES_PART = new Set<FieldReply['kind']>(['current-company', 'school']);
+
 /**
  * What to put in each field Factwright answered, with the files it fetched. On a page of an
  * application that runs over several, which its site may have filled from your resume, as
- * Workday's does, or as asked (`onlyEmpty`), only in the fields that are empty.
+ * Workday's does, or as asked (`onlyEmpty`), only in the fields that are empty, and none in a part
+ * for a job or school the site filled with another one.
  */
 export function fillAnswers(
   form: PageForm,
@@ -347,7 +355,17 @@ export function fillAnswers(
     }
     return [{ ref, key, text: reply.text }];
   });
-  return onlyEmpty || form.step ? answers.map((answer) => ({ ...answer, ifEmpty: true })) : answers;
+  if (!onlyEmpty && !form.step) return answers;
+  return answers.map((answer) => {
+    const at = form.fields.findIndex((field) => field.ref === answer.ref);
+    const field = form.fields[at];
+    const part = field?.section && fieldPart(field) ? field.section : undefined;
+    return {
+      ...answer,
+      ifEmpty: true,
+      ...(part && { part, names: NAMES_PART.has(replies[at]?.kind ?? 'question') }),
+    };
+  });
 }
 
 /** The words Factwright put in a field, as the panel shows them and you can copy them. */
@@ -536,12 +554,14 @@ export interface NewAnswer {
 
 /**
  * What you typed or picked on a form that Factwright didn't have, for a field Profile answers:
- * each one offered on its own, to keep for next time, or not.
+ * each one offered on its own, to keep for next time, or not. What a site put in a field itself,
+ * as from your resume, which Factwright left as it was (`filled`), isn't yours, unless you changed it.
  */
 export function newAnswers(
   form: PageForm,
   replies: readonly FieldReply[],
   values: readonly FieldValue[],
+  filled: ReadonlyMap<string, FieldFilled> = new Map(),
 ): NewAnswer[] {
   return form.fields.flatMap((field, at) => {
     const reply = replies[at];
@@ -550,6 +570,8 @@ export function newAnswers(
     if (!text || text.length > 200) return [];
     const had = replyText(reply).trim();
     if (had && plainly(had) === plainly(text)) return [];
+    const kept = filled.get(field.key);
+    if (kept?.kept && plainly(kept.shown) === plainly(text)) return [];
     // A choice Factwright picked from its own words, as "Woman" for "Female", is what it had.
     if (reply.pick?.some((pick) => plainly(pick) === plainly(text))) return [];
     const kind = reply.kind;

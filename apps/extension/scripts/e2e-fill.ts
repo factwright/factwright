@@ -945,7 +945,10 @@ try {
   // as the script on the page tells it, and the Fill button stays on it.
   await nextPage('My Experience');
   await frameOn('button', '', 20_000, workday);
-  check(true, 'Save and Continue brings My Experience in, and the panel offers to fill it');
+  check(
+    (await workdayPanel.getByRole('button', { name: 'Fill again', exact: true }).count()) === 0,
+    'Save and Continue brings My Experience in, and the panel offers to fill it, not the page before',
+  );
   // Workday filled the first job's title from the resume, as Autofill with Resume does.
   await workday.locator('[id="workExperience-225--jobTitle"]').fill('Sr. PM');
   await fillThisPage();
@@ -990,10 +993,10 @@ try {
       (await shows('primaryQuestionnaire--b2e4d3f1c0e95f6a0b8d7c6e')) === 'No',
     'Application Questions: whether you can work here, and need sponsorship, from Profile',
   );
-  // You answer the form's own question, as you would; the panel reads it as you go.
+  // You answer the form's own question, as you would, and press Save and Continue straight
+  // after: the panel reads it as you leave its box, before the page goes on.
   const why = 'Larkspur’s grid work is what I want to build next.';
   await workday.locator('[id="primaryQuestionnaire--c3f5e4a2d1f06a7b1c9e8d7f"]').fill(why);
-  await workday.waitForTimeout(3500);
 
   await nextPage('Voluntary Disclosures');
   await fillThisPage();
@@ -1011,8 +1014,9 @@ try {
   await nextPage('Self Identify');
   await fillThisPage();
   check(
-    (await typedIn('selfIdentifiedDisabilityData--name')) === 'Ana María Ruiz',
-    'Self Identify: your name, and the rest for you',
+    (await typedIn('selfIdentifiedDisabilityData--name')) === '' &&
+      (await ticked('input[id$="-disabilityStatus"]')) === 0,
+    'Self Identify: all yours, even your name, which signs it',
   );
   await workday.getByRole('button', { name: 'Save and Continue', exact: true }).click();
   await workdayPanel
@@ -1036,7 +1040,7 @@ try {
         (each) =>
           each.question === 'Why do you want to work at Larkspur Energy?' && each.text === why,
       ),
-    'Mark as applied keeps what you sent on Application Questions, pages back',
+    'Mark as applied keeps what you sent on Application Questions, pages back, typed just before Save and Continue',
   );
   await workdayPanel.close();
   await workday.close();

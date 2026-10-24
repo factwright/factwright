@@ -1,7 +1,13 @@
 import type { FieldReply } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
-import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
-import { carriedOn, NO_EARLIER, nextPageOf, partsOffers, siteOf } from '../src/several-pages.ts';
+import type { FieldFilled, FieldValue, PageField, PageForm } from '../src/page/form.ts';
+import {
+  carriedOn,
+  forApplication,
+  NO_EARLIER,
+  nextPageOf,
+  partsOffers,
+} from '../src/several-pages.ts';
 
 let place = 0;
 /** A field as the page function reads one, with only what a test sets. */
@@ -50,6 +56,7 @@ describe('an application that runs over several pages', () => {
       {
         form: questions,
         replies,
+        filled: new Map(),
         values: valuesOf([why, phone], ['Your grid work.', '(720) 555-0199']),
         job: 'larkspur--pm',
         copyOnly: false,
@@ -57,6 +64,7 @@ describe('an application that runs over several pages', () => {
       NO_EARLIER,
     );
     expect(earlier.job).toBe('larkspur--pm');
+    expect(earlier.url).toBe(questions.url);
     expect(earlier.sent).toEqual([{ question: 'Why Larkspur?', text: 'Your grid work.' }]);
     expect(earlier.offers.map((offer) => [offer.kind, offer.text])).toEqual([
       ['phone', '(720) 555-0199'],
@@ -66,6 +74,7 @@ describe('an application that runs over several pages', () => {
       {
         form: form('Review', [why]),
         replies: [replies[0] as FieldReply],
+        filled: new Map(),
         values: valuesOf([why], ['Your grid work, and its team.']),
         job: null,
         copyOnly: false,
@@ -83,6 +92,7 @@ describe('an application that runs over several pages', () => {
     const page = {
       form: form('', [why]),
       replies: [{ kind: 'question', source: 'you', left: 'new' } as FieldReply],
+      filled: new Map(),
       values: valuesOf([why], ['Because.']),
       job: null,
       copyOnly: false,
@@ -150,10 +160,61 @@ describe('an application that runs over several pages', () => {
     expect(partsOffers(experience, { jobs: 40, schools: 0 })[0]?.more).toBe(10);
   });
 
-  it('names a page’s site by its origin', () => {
-    expect(siteOf('https://larkspur.wd5.myworkdayjobs.com/en-US/x')).toBe(
-      'https://larkspur.wd5.myworkdayjobs.com',
+  it('never offers what the site put in a field itself, which Factwright left as it was', () => {
+    const street = field('Address Line 1');
+    const postal = field('Postal Code');
+    const replies: FieldReply[] = [
+      { kind: 'street', text: '1420 Larimer St', source: 'profile' },
+      { kind: 'postal-code', text: '80202', source: 'profile' },
+    ];
+    // Workday filled the street from your resume; you changed the postal code it filled.
+    const filled = new Map<string, FieldFilled>([
+      [
+        street.key,
+        { ref: street.ref, ok: true, shown: '1420 Larimer Street', why: '', kept: true },
+      ],
+      [postal.key, { ref: postal.ref, ok: true, shown: '80203', why: '', kept: true }],
+    ]);
+    const earlier = carriedOn(
+      {
+        form: form('My Information', [street, postal]),
+        replies,
+        filled,
+        values: valuesOf([street, postal], ['1420 Larimer Street', '80205']),
+        job: 'larkspur--pm',
+        copyOnly: false,
+      },
+      NO_EARLIER,
     );
-    expect(siteOf('not an address')).toBe('');
+    expect(earlier.offers.map((offer) => [offer.kind, offer.text])).toEqual([
+      ['postal-code', '80205'],
+    ]);
+  });
+
+  it('keeps what earlier pages gave for the same application alone, never another job’s', () => {
+    const at = (path: string) =>
+      `https://larkspur.wd5.myworkdayjobs.com/en-US/LarkspurCareers/job/${path}`;
+    const here = at('Denver/PM_R1/apply/applyManually');
+    const gave = (job: string | null, url = here) => ({
+      job,
+      url,
+      sent: [{ question: 'Why Larkspur?', text: 'Your grid work.' }],
+      offers: [],
+    });
+    // The same job, both saved: wherever it is.
+    expect(
+      forApplication(gave('pm'), 'pm', at('Denver/PM_R1/apply/autofillWithResume')).sent,
+    ).toHaveLength(1);
+    expect(forApplication(gave('pm'), 'analyst', here)).toBe(NO_EARLIER);
+    // A job you saved part of the way: the same address, as Workday keeps its own from page to page.
+    expect(forApplication(gave(null), 'pm', `${here}?source=LinkedIn`).sent).toHaveLength(1);
+    // Another job at the same company in the same tab, saved or not, has its own address.
+    expect(forApplication(gave(null), 'analyst', at('Denver/Analyst_R2/apply/applyManually'))).toBe(
+      NO_EARLIER,
+    );
+    expect(forApplication(gave(null), null, at('Denver/Analyst_R2/apply/applyManually'))).toBe(
+      NO_EARLIER,
+    );
+    expect(forApplication(NO_EARLIER, 'pm', here)).toBe(NO_EARLIER);
   });
 });

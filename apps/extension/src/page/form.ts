@@ -100,6 +100,14 @@ export interface FieldAnswer {
    * from your resume, as Workday does: what's there stays as it is.
    */
   ifEmpty?: boolean;
+  /**
+   * The part of the form for a job or school it's in, by its heading, and whether it names that
+   * job or school, as a title, a company or a school's name does. A part that holds another one,
+   * as a site filled it in from your resume in its own order, keeps its empty fields empty: none
+   * of the fields that name it agrees with the answers.
+   */
+  part?: string;
+  names?: boolean;
 }
 
 /** How filling one field went: whether it took, and what it shows now. */
@@ -109,10 +117,10 @@ export interface FieldFilled {
   /** What the field holds now, as the page shows it: the text, or the option picked. */
   shown: string;
   /**
-   * Why it didn't take: the field wasn't there anymore, none of its options was the answer, or
-   * the page didn't keep what was put in it.
+   * Why it didn't take: the field wasn't there anymore, none of its options was the answer, the
+   * page didn't keep what was put in it, or its part holds another job or school (`part`).
    */
-  why: '' | 'moved' | 'no-option' | 'not-taken';
+  why: '' | 'moved' | 'no-option' | 'not-taken' | 'other-part';
   /** Whether it held an answer already, which it left as it was (`ifEmpty`). */
   kept?: boolean;
 }
@@ -1478,16 +1486,21 @@ export async function formPage(
     return undefined;
   };
 
+  /** The newest pill a list you search shows, for the pick it kept last, as Workday's does. */
+  const newestPill = (box: Element): Element | undefined => {
+    const pills = box
+      .closest('[data-automation-id="multiselectInputContainer"]')
+      ?.querySelectorAll('[data-automation-id="selectedItem"]');
+    return pills?.[pills.length - 1];
+  };
+
   /**
    * Takes back a pick a list you search kept itself, that isn't the answer, as Workday's keeps
    * the one it found on Enter: its newest pill's own button to clear it, till the list shows what
    * it did before.
    */
   const unpick = async (box: Element, had: string) => {
-    const pills = box
-      .closest('[data-automation-id="multiselectInputContainer"]')
-      ?.querySelectorAll('[data-automation-id="selectedItem"]');
-    const clear = pills?.[pills.length - 1]?.querySelector('[data-automation-id="DELETE_charm"]');
+    const clear = newestPill(box)?.querySelector('[data-automation-id="DELETE_charm"]');
     if (!clear) return;
     press(clear);
     await waitFor(() => comboShows(box as HTMLElement) === had, 1000);
@@ -1560,6 +1573,16 @@ export async function formPage(
         answer.place && !answer.exact
           ? placeOf(listOf(box, before), picks)
           : pickOf(listOf(box, before), optionWords, picks, answer.exact);
+      /** Whether a pick a list you search kept itself is the answer, as its option would be. */
+      const keptIt = (pill: Element | undefined) => {
+        if (!pill) return false;
+        if (!answer.place || answer.exact) {
+          return pickOf([pill], wordsOf, picks, answer.exact) !== undefined;
+        }
+        const said = doc.createElement('span');
+        said.textContent = wordsOf(pill);
+        return placeOf([said], picks) !== undefined;
+      };
       /**
        * Picks an option, as a person would, and says whether the box shows it then: its words, or
        * anything new, as a box for a phone's country shows only its code. A box that takes only
@@ -1627,9 +1650,8 @@ export async function formPage(
         }
         const option = await waitForList(box, find, answer.place ? PLACE_MS : LIST_MS, noneBefore);
         if (option && (await choose(option))) return done(true);
-        const now = comboShows(box);
-        if (search && now !== had) {
-          if (picks.some((each) => plain(now).includes(plain(each)))) {
+        if (search && comboShows(box) !== had) {
+          if (keptIt(newestPill(box))) {
             box.blur();
             return done(true);
           }
@@ -1795,6 +1817,18 @@ export async function formPage(
     try {
       const filled: FieldFilled[] = [];
       let now = fields;
+      // The parts for a job or school whose names hold another one, as a site filled them in from
+      // your resume in its own order: what names it holds something, and none of it agrees.
+      const agrees = new Map<string, boolean>();
+      for (const answer of task.answers) {
+        if (answer.part === undefined || !answer.names) continue;
+        const found = findField(now, answer.ref, answer.key);
+        const shows = found ? plain(shownIn(found)) : '';
+        if (!shows) continue;
+        const said = plain(answer.text ?? answer.pick?.[0] ?? '');
+        const same = said !== '' && (shows.includes(said) || said.includes(shows));
+        agrees.set(answer.part, (agrees.get(answer.part) ?? false) || same);
+      }
       for (const answer of task.answers) {
         let found = findField(now, answer.ref, answer.key);
         // A page that put a field in anew as another took its answer, as Workday's address does
@@ -1805,6 +1839,15 @@ export async function formPage(
         }
         if (!found) {
           filled.push({ ref: answer.ref, ok: false, shown: '', why: 'moved' });
+          continue;
+        }
+        if (
+          answer.ifEmpty &&
+          answer.part !== undefined &&
+          agrees.get(answer.part) === false &&
+          shownIn(found).trim() === ''
+        ) {
+          filled.push({ ref: answer.ref, ok: false, shown: '', why: 'other-part' });
           continue;
         }
         filled.push(await fill(found, answer));
