@@ -641,6 +641,16 @@ describe('reading a job page', () => {
     expect(postingKey(job.url)).toBe('successfactors:copperlinep:1042');
   });
 
+  it('reads which job iCIMS’s application is for, in its frame, from its tab’s title and its portal', () => {
+    const job = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'icims-candidate.html'), 'utf8')),
+      'https://careers-bramblecrest.icims.com/jobs/4821/robotics-software-engineer/candidate?from=login&in_iframe=1',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Robotics Software Engineer', company: 'Bramblecrest' });
+    expect(postingKey(job.url)).toBe('icims:careers-bramblecrest:4821');
+  });
+
   it('never takes a job board’s or an applicant system’s name as the company', () => {
     for (const site of ['LinkedIn', 'Indeed', 'Glassdoor', 'Lever', 'Greenhouse', 'Workday']) {
       const board = page(`<html><head><meta property="og:site_name" content="${site}"></head>

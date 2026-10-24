@@ -504,6 +504,8 @@ function dateReply(kind: FieldKind, field: FormField, date: string, said: Said):
   const question = plain(`${field.question} ${field.hint}`);
   const month = /\bmonth\b/.test(question);
   const year = /\byear\b/.test(question);
+  // A date's day, as iCIMS asks it beside the month and year, which a job's dates never say.
+  if (!month && !year && /\bday\b/.test(question)) return left(kind, 'pick');
   const reply = (words: string[]): FieldReply =>
     words.some(Boolean) ? { ...fromProfile(kind, field, ...words), ...said } : left(kind, 'unset');
   if (date === 'present') {

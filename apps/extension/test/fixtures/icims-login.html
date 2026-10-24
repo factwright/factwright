@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" class="framed no-touch">
+  <head>
+    <meta charset="utf-8" />
+    <title>Login</title>
+  </head>
+  <body class=" iCIMS_chrome iCIMS_chrome120">
+    <div class="iCIMS_MainWrapper iCIMS_LoginPage  ">
+      <div class="iCIMS_TopHeader"><a class="iCIMS_Anchor_Nav" href="/jobs/intro?in_iframe=1"><span class="iCIMS_NavigationText">Search Again</span></a></div>
+      <div id="iCIMS_ErrorMessage_login" class="iCIMS_Message iCIMS_ErrorMessage NoDisplay" tabindex="-1"></div>
+      <div class="container-fluid iCIMS_SignUpContainer">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content modal-body">
+            <div id="iCIMS_Header" tabindex="-1"><h1 class="iCIMS_Header">Enter Your Information</h1></div>
+            <form id="enterEmailForm" class="iCIMS_SignIn" method="post" accept-charset="utf-8" enctype="multipart/form-data" action="/jobs/4821/robotics-software-engineer/login?step=email&amp;in_iframe=1" onsubmit="icimsDisableSaveAndSubmitButtons('enterEmailSubmitButton', '', 'enterEmailForm');">
+              <label for="email">Email</label>
+              <input type="email" autocomplete="email" id="email" name="css_loginName" class="form-control" value="" aria-describedby="iCIMS_ErrorMessage_login" />
+              <div id="gdpr_container" style="display: block">
+                <input type="hidden" id="consentCaptureTitle" value="Privacy Policy and GDPR Policy" />
+                <div id="gdpr_legal_text" tabindex="-1">Bramblecrest Robotics uses what you send to consider you for this job. Read our <a href="https://bramblecrest.example/privacy">Privacy Notice</a>.</div>
+                <div class="checkbox gdpr_wrapper no_space">
+                  <label for="accept_gdpr"><input type="checkbox" id="accept_gdpr" name="accept_gdpr" value="1" aria-required="true" aria-describedby="icims_accept_gdpr_desc" /> I agree</label>
+                  <span id="icims_accept_gdpr_desc" class="sr-only">You must indicate that you have read and accept the Privacy/GDPR Policy before you can continue.</span>
+                </div>
+              </div>
+              <input id="enterEmailSubmitButton" type="submit" class="iCIMS_PrimaryButton gdprAnswerSubmitButton" value="Next" disabled="" />
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

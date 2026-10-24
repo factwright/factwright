@@ -23,13 +23,15 @@ export function successFactorsActs(doc: Document): void {
     sfSubmits?: number;
     sfApplies?: number;
     sfSaves?: number;
-    juic?: { fire: (...args: unknown[]) => void };
   };
   page.sfSubmits = 0;
   page.sfApplies = 0;
   page.sfSaves = 0;
-  // The page's own handlers, inline, call juic, which acts here through the listeners below.
-  page.juic = { fire: () => undefined };
+  // The page's own handlers, inline, call juic, which acts here through the listeners below: a
+  // script of the page's own sets it, where its handlers find it.
+  const stand = doc.createElement('script');
+  stand.textContent = 'window.juic = { fire: function () {} };';
+  (doc.head ?? doc.body).append(stand);
   /** How many options a list shows at a time: SuccessFactors' show a hundred. */
   const PAGE = 8;
   const LISTS: Record<string, string[]> = {

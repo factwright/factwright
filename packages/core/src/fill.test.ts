@@ -958,6 +958,16 @@ describe('a form that asks for each job and school', () => {
     expect(typed('End date')?.text).toBe('Present');
     expect(typed('Start date', { type: 'month' })?.text).toBe('2023-04');
     expect(typed('Start date', { control: 'date', type: 'date' })).toMatchObject({ left: 'pick' });
+    // Its month and year, as three boxes ask them, and its day, which no job's dates say.
+    expect(
+      ['Start Date Month', 'Start Date Day', 'Start Date Year'].map((question) =>
+        typed(question, { control: question.endsWith('Year') ? 'text' : 'choice' }),
+      ),
+    ).toEqual([
+      expect.objectContaining({ pick: expect.arrayContaining(['April']) }),
+      expect.objectContaining({ left: 'pick' }),
+      expect.objectContaining({ text: '2023' }),
+    ]);
     expect(typed('Description', { control: 'long' })?.text).toBe('Runs the data products team.');
     expect(typed('I currently work here', { control: 'check' })).toMatchObject({ left: 'pick' });
   });

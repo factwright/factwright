@@ -117,9 +117,13 @@ export function readJobPage(
     title: string[];
     /** Words its heading puts around a job's title, which aren't the title's. */
     aroundTitle?: RegExp;
+    /** The job's title in the tab's title, for pages that show it nowhere else. */
+    titleInTitle?: RegExp;
     company: string[];
     /** The company in the tab's title, for a site that shows its name nowhere else as text. */
     companyInTitle?: RegExp;
+    /** The company in the site's own name, for a site that names it nowhere else. */
+    companyInHost?: RegExp;
     location: string[];
   }[] = [
     {
@@ -232,6 +236,18 @@ export function readJobPage(
       // Engineer - Acme", then "Preliminary questions - Robotics Engineer - Acme".
       companyInTitle: /^(?:easy apply|preliminary questions|assessment) - .+ - (.+)$/i,
       location: ['.job-detail', '[data-test="topbar-location"]'],
+    },
+    {
+      // iCIMS's career portals, each a company's own at icims.com, as "careers-acme": its
+      // application's pages, in their frame, name the job only in the tab's title, "Candidate
+      // Profile - Robotics Engineer", and the company only in the portal's name.
+      host: /(^|\.)icims\.com$/,
+      posting: [],
+      title: [],
+      titleInTitle: /^(?:.+ - )?(?:candidate profile|basic information) - (.+)$/i,
+      company: [],
+      companyInHost: /^(?:[a-z0-9]+-)*([a-z0-9]+)\.icims\.com$/i,
+      location: [],
     },
     {
       // SuccessFactors' career pages, where its applications are: its heading says the job, with
@@ -625,9 +641,11 @@ export function readJobPage(
     first(selectors ?? [], (element) => oneLine(textOf(element)));
   /** Indeed's title ends with words only screen readers hear. */
   const JOB_POST = /\s*-\s*job post\s*$/i;
-  const shownTitle = fromSite(known?.title)
-    .replace(JOB_POST, '')
-    .replace(known?.aroundTitle ?? JOB_POST, '');
+  const shownTitle =
+    fromSite(known?.title)
+      .replace(JOB_POST, '')
+      .replace(known?.aroundTitle ?? JOB_POST, '') ||
+    oneLine(known?.titleInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]);
 
   /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
   const titleOf = (posting: Record<string, unknown>) =>
@@ -734,7 +752,10 @@ export function readJobPage(
       fromSite(known?.company) ||
       // A tab's title is short: one that isn't is read only as far as any title goes.
       oneLine(known?.companyInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
-      notBoard(meta('og:site_name'));
+      notBoard(meta('og:site_name')) ||
+      ((name) => name.charAt(0).toUpperCase() + name.slice(1))(
+        known?.companyInHost?.exec(site)?.[1] ?? '',
+      );
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
