@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   answerField,
   answerForm,
+  blocksOnFile,
   datedAs,
   NO_APPLICATIONS,
   NO_EQUAL_OPPORTUNITY,
@@ -664,6 +665,18 @@ describe('answering a form from what’s on file', () => {
     ).toMatchObject({ kind: 'consent', left: 'consent' });
   });
 
+  it('never ticks a box, even one that says what Profile knows, as Workday’s preferred name', () => {
+    expect(answer('I have a preferred name', { control: 'check', type: 'checkbox' })).toEqual({
+      kind: 'preferred-name',
+      source: 'you',
+      left: 'pick',
+    });
+    expect(answer('Phone', { control: 'check', type: 'checkbox' })).toMatchObject({
+      source: 'you',
+      left: 'pick',
+    });
+  });
+
   it('leaves a question nothing on file answers for you', () => {
     expect(
       answer('Tell us about a time you disagreed with your manager.', { control: 'long' }),
@@ -962,6 +975,26 @@ describe('a form that asks for each job and school', () => {
       '2018',
       '2021',
     ]);
+  });
+
+  it('says how many jobs and schools on file a form can take, one to a part', () => {
+    expect(blocksOnFile(WITH)).toEqual({ jobs: 4, schools: 2 });
+    // With no work history, the resume's: one position, and no school.
+    expect(blocksOnFile(ON_FILE)).toEqual({ jobs: 1, schools: 0 });
+    // Past what the history lists, the resume's, as each part takes the next.
+    const resume = ON_FILE.resume as ResumeOnFile;
+    const twoListed: OnFile = {
+      ...ON_FILE,
+      history: { jobs: [], schools: HISTORY.schools.slice(0, 1) },
+      resume: {
+        ...resume,
+        education: [
+          { school: 'CU Boulder', degree: 'B.S.', start: '2013', end: '2017' },
+          { school: 'Denver East High School', degree: '', start: '', end: '2013' },
+        ],
+      },
+    };
+    expect(blocksOnFile(twoListed)).toEqual({ jobs: 1, schools: 2 });
   });
 
   it('reads a resume’s dates as the work history keeps them', () => {

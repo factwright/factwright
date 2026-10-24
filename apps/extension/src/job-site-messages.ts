@@ -1,4 +1,4 @@
-import type { FieldAnswer, FieldFilled, PageField, PageForm } from './page/form.ts';
+import type { FieldAnswer, FieldFilled, PageAdder, PageField, PageForm } from './page/form.ts';
 
 /**
  * What the extension's script on a job site you allowed (src/content.ts), its own frame there
@@ -62,7 +62,12 @@ export type FromScript =
   /** You left a field Profile can keep the answer to, with what you gave it. */
   | { type: 'job-site'; do: 'left'; ref: number; key: string; value: string }
   /** The menu closed, as you clicked elsewhere. */
-  | { type: 'job-site'; do: 'closed'; token: string };
+  | { type: 'job-site'; do: 'closed'; token: string }
+  /**
+   * The page of an application that runs over several, as Workday's, went on to another, in the
+   * same tab, by its own name for the page: the panel filling it looks at it again.
+   */
+  | { type: 'job-site'; do: 'step'; doc: string };
 
 /** What the frame asks the background. */
 export type FromFrame =
@@ -98,14 +103,19 @@ export type FilledHere =
   | { did: 'filled'; says: string }
   | { did: 'problem'; says: string };
 
-/** What the background tells the panel: fill the form in a tab, as the Fill button asks. */
-export interface ToPanel {
-  type: 'panel';
-  do: 'fill';
-  tabId: number;
-  /** When you clicked it. */
-  at: number;
-}
+/**
+ * What the background tells the panel: fill the form in a tab, as the Fill button asks, or look at
+ * a tab's form again, as its page of an application that runs over several changed.
+ */
+export type ToPanel =
+  | {
+      type: 'panel';
+      do: 'fill';
+      tabId: number;
+      /** When you clicked it. */
+      at: number;
+    }
+  | { type: 'panel'; do: 'step'; tabId: number };
 
 /** The most fields a form's message carries, and the longest of its words, as the form reads them. */
 const MAX_FIELDS = 300;
@@ -168,14 +178,25 @@ function isPageField(value: unknown, at: number): value is PageField {
   );
 }
 
-/** A form as the script read it: its address, title and fields, in order, each as a field is. */
+/** A button that adds a part to a form, as the script read it. */
+const isPageAdder = (value: unknown): value is PageAdder =>
+  isObject(value) && isText(value.section) && isText(value.words);
+
+/**
+ * A form as the script read it: its address, title and fields, in order, each as a field is, the
+ * page of its application it's on, and its buttons that add a part.
+ */
 function isPageForm(value: unknown): value is PageForm {
   if (!isObject(value)) return false;
-  const { url, title, fields, submitted } = value;
+  const { url, title, fields, submitted, step, adders } = value;
   return (
     isText(url, MAX_URL) &&
     isText(title, 1000) &&
     typeof submitted === 'boolean' &&
+    isText(step) &&
+    Array.isArray(adders) &&
+    adders.length <= MAX_FIELDS &&
+    adders.every(isPageAdder) &&
     Array.isArray(fields) &&
     fields.length <= MAX_FIELDS &&
     fields.every(isPageField)
@@ -194,6 +215,7 @@ export function isFromScript(message: unknown): message is FromScript {
         message.around.every((site) => isText(site, MAX_URL))
       );
     case 'bye':
+    case 'step':
       return isToken(message.doc);
     case 'form':
       return (
@@ -256,15 +278,12 @@ export function isToScript(message: unknown): message is ToScript {
   }
 }
 
-/** Whether a message is the background's, for the panel to fill a form. */
+/** Whether a message is the background's, for the panel to fill a form, or look at it again. */
 export function isToPanel(message: unknown): message is ToPanel {
-  return (
-    isObject(message) &&
-    message.type === 'panel' &&
-    message.do === 'fill' &&
-    typeof message.tabId === 'number' &&
-    typeof message.at === 'number'
-  );
+  if (!isObject(message) || message.type !== 'panel' || typeof message.tabId !== 'number') {
+    return false;
+  }
+  return message.do === 'step' || (message.do === 'fill' && typeof message.at === 'number');
 }
 
 /** How writing a picked answer went, as the script says it. */

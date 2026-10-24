@@ -257,6 +257,92 @@ describe('what a field asks for', () => {
     ).toEqual(['personal', 'question', 'personal', 'question', 'personal']);
   });
 
+  it('takes an equal-opportunity question by its options, or Workday’s names, whatever it says', () => {
+    const asked = (
+      question: string,
+      more: { options?: string[]; name?: string; section?: string },
+    ) => fieldKind({ ...field(question, { control: 'choices', name: more.name }), ...more });
+    // Workday's Self Identify asks about a disability with boxes, as "Please check one".
+    expect(
+      asked('Please check one of the boxes below:', {
+        options: [
+          'Yes, I have a disability, or have had one in the past',
+          'No, I do not have a disability and have not had one in the past',
+          'I do not want to answer',
+        ],
+      }),
+    ).toBe('disability');
+    expect(
+      asked('Please select all that apply.', {
+        options: [
+          'American Indian or Alaska Native (United States of America)',
+          'Asian (United States of America)',
+          'Black or African American (United States of America)',
+        ],
+      }),
+    ).toBe('race');
+    expect(
+      asked('Please select one of the options below:', {
+        options: ['I AM NOT A VETERAN', 'I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN'],
+      }),
+    ).toBe('veteran');
+    // A dropdown shows no options until it's open: Workday names each one.
+    for (const [name, kind] of [
+      ['veteranStatus personalInfoUS--veteranStatus', 'veteran'],
+      ['ethnicity personalInfoUS--ethnicity', 'race'],
+      ['hispanicOrLatino personalInfoUS--hispanicOrLatino', 'hispanic'],
+      ['gender personalInfoUS--gender', 'gender'],
+    ] as const) {
+      expect(asked('Please select one of the options below:', { name })).toBe(kind);
+    }
+    // What a part of the form names first, before "--", isn't the field's own name.
+    expect(
+      fieldKind(
+        field('Date Month', {
+          control: 'number',
+          name: 'selfIdentifiedDisabilityData--dateSignedOn-dateSectionMonth-input',
+        }),
+      ),
+    ).toBe('question');
+    // Options that only happen to name one aren't enough.
+    expect(asked('Which colors do you like?', { options: ['White', 'Blue'] })).toBe('question');
+  });
+
+  it('keeps what it can’t tell in a part for self-identification for you, never to keep or draft', () => {
+    const inPart = (question: string, section: string, control: FieldControl = 'combo') =>
+      fieldKind({ ...field(question, { control }), section });
+    expect(
+      inPart('Please select one of the options below:', 'Voluntary Demographic Information'),
+    ).toBe('personal');
+    expect(inPart('Date Month', 'Self Identify', 'number')).toBe('personal');
+    expect(inPart('Language', 'Voluntary Self-Identification of Disability')).toBe('personal');
+    // What it can tell keeps its kind there: your name, and agreeing to the terms.
+    expect(inPart('Name', 'Self Identify', 'text')).toBe('full-name');
+    expect(
+      inPart(
+        'Yes, I have read and consent to the terms and conditions',
+        'Voluntary Disclosures',
+        'check',
+      ),
+    ).toBe('consent');
+    // Elsewhere, a question of the form's own.
+    expect(inPart('How much travel are you open to?', 'Application Questions', 'choice')).toBe(
+      'question',
+    );
+  });
+
+  it('never fills a box only robots would, as a page’s trap for bots', () => {
+    expect(
+      kinds([
+        [
+          'Enter website. This input is for robots only, do not enter if you’re human.',
+          { name: 'website' },
+        ],
+        ['Leave this field blank'],
+      ]),
+    ).toEqual(['never', 'never']);
+  });
+
   it('tells working where you are from working without sponsorship', () => {
     expect(
       kinds([
@@ -346,8 +432,32 @@ describe('what a field asks for', () => {
         ['Apartment, suite, etc.'],
         ['Country code', { control: 'combo' }],
         ['Address line 1'],
+        // Workday asks the kind of phone, its country's code and its extension beside the number,
+        // each with a name that says phone.
+        ['Phone Device Type', { control: 'combo', name: 'phoneNumber--phoneType' }],
+        ['Country Phone Code', { control: 'combo', name: 'phoneNumber--countryPhoneCode' }],
+        ['Phone Number', { name: 'phoneNumber--phoneNumber' }],
+        ['Phone Extension', { name: 'phoneNumber--extension' }],
+        ['Country/Region', { control: 'combo', name: 'country country--country' }],
+        [
+          'Language',
+          { control: 'combo', name: 'disabilityForm selfIdentifiedDisabilityData--disabilityForm' },
+        ],
       ]),
-    ).toEqual(['middle-name', 'street-2', 'street-2', 'phone-country', 'street']);
+    ).toEqual([
+      'middle-name',
+      'street-2',
+      'street-2',
+      'phone-country',
+      'street',
+      'question',
+      'phone-country',
+      'phone',
+      'question',
+      'country',
+      // Self Identify's language, which Workday names "disabilityForm", asks no one's disability.
+      'question',
+    ]);
   });
 
   it('knows what a part of the form for each job or school asks, by its heading or name', () => {

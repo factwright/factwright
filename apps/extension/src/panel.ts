@@ -1,6 +1,12 @@
 import 'virtual:theme.css';
 import './ui.css';
-import { type AskedJob, type FieldReply, isLinkedIn, type LeftFor } from '@factwright/core';
+import {
+  ASK_FIELDS,
+  type AskedJob,
+  type FieldReply,
+  isLinkedIn,
+  type LeftFor,
+} from '@factwright/core';
 import {
   allowCareersSite,
   allowJobSites,
@@ -17,12 +23,15 @@ import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
+  adderPart,
+  addParts,
   answerSource,
   askForDrafts,
   draftable,
   draftsSoFar,
   type FillPlan,
   type FormPlace,
+  type FormValues,
   fieldsToRead,
   fillAnswers,
   filledSummary,
@@ -35,13 +44,15 @@ import {
   type NewAnswer,
   newAnswers,
   outlineFields,
+  type Part,
+  partsOf,
   planFill,
   replyText,
   sentAnswers,
   showField,
 } from './fill.ts';
 import { isToPanel } from './job-site-messages.ts';
-import type { FieldFilled, FieldValue, PageField, PageForm } from './page/form.ts';
+import type { FieldFilled, FieldValue, PageAdder, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readFormJob, readFormPage } from './read-tab.ts';
 import { settings } from './settings.ts';
 import { toSave } from './tab-job.ts';
@@ -68,6 +79,9 @@ const DRAFTS_EVERY_MS = 3000;
 /** How long it follows your Claude's drafts: a long application's take a few minutes. */
 const DRAFTS_FOR_MS = 20 * 60 * 1000;
 
+/** The most parts it adds to a form at once, for jobs or schools on file: more take another click. */
+const MOST_PARTS = 10;
+
 /** Your Claude drafting the form's own questions in Factwright, as the panel follows it. */
 interface Drafting {
   /** The fields it's drafting, by their keys. */
@@ -77,6 +91,20 @@ interface Drafting {
   /** When it started. */
   since: number;
 }
+
+/**
+ * What an application's earlier pages gave, in a tab, as one that runs over several pages, as
+ * Workday's does, goes on to the next: the answers to their own questions, to keep with the job
+ * once you mark it applied, and the new answers you gave, to offer to keep then.
+ */
+interface Earlier {
+  /** The job they were for, or null when it isn't one you saved. */
+  job: string | null;
+  sent: { question: string; text: string }[];
+  offers: NewAnswer[];
+}
+
+const NO_EARLIER: Earlier = { job: null, sent: [], offers: [] };
 
 /**
  * A form being filled: the tab it's in, and the frame, as a company's careers page can show an
@@ -109,6 +137,13 @@ interface Filling {
   drafting: Drafting | null;
   /** Whether Factwright's menus and Fill button show on the form's site, as you allowed. */
   site: SiteChoice;
+  /** What the application's earlier pages gave, for one that runs over several. */
+  earlier: Earlier;
+  /**
+   * The page the application went on to in the tab, as you pressed its own Save and Continue, by
+   * the name its steps give it, with how many fields it has: the panel offers to fill it.
+   */
+  next: { step: string; fields: number } | null;
 }
 
 /**
@@ -122,6 +157,8 @@ type SiteChoice =
 /** The form being filled, and only it: whatever an earlier start of filling was doing stops. */
 let filling: Filling | null = null;
 let looking: ReturnType<typeof setInterval> | null = null;
+/** A look at the form now, as it's read every few seconds, while it is. */
+let lookNow: (() => void) | null = null;
 /** The next look at how your Claude's drafts are coming along. */
 let following: ReturnType<typeof setTimeout> | null = null;
 /** How many times filling has started, so an earlier start that's still going stops there. */
@@ -176,6 +213,36 @@ const samePage = (a: string, b: string) => a.split('#')[0] === b.split('#')[0];
 function merged(before: readonly FieldValue[] | null, now: readonly FieldValue[]): FieldValue[] {
   const keys = new Set(now.map((each) => each.key));
   return [...(before ?? []).filter((each) => !keys.has(each.key)), ...now];
+}
+
+/** Answers to a form's own questions, a later one in place of an earlier one to the same question. */
+function joinSent(
+  earlier: readonly { question: string; text: string }[],
+  later: readonly { question: string; text: string }[],
+): { question: string; text: string }[] {
+  const asked = new Set(later.map((each) => each.question));
+  return [...earlier.filter((each) => !asked.has(each.question)), ...later];
+}
+
+/** New answers to offer to keep, a later one in place of an earlier one of the same kind. */
+function joinOffers(earlier: readonly NewAnswer[], later: readonly NewAnswer[]): NewAnswer[] {
+  const kinds = new Set(later.map((each) => each.kind));
+  return [...earlier.filter((each) => !kinds.has(each.kind)), ...later];
+}
+
+/**
+ * What this page of an application that runs over several, and its earlier pages, gave, as you
+ * last left their fields, for the next page the panel fills in the same tab. Nothing, for a form
+ * on one page.
+ */
+function carried(state: Filling): Earlier {
+  if (!state.form.step || state.copyOnly) return NO_EARLIER;
+  const values = state.values ?? [];
+  return {
+    job: state.plan.job?.id ?? state.earlier.job,
+    sent: joinSent(state.earlier.sent, sentAnswers(state.form, state.plan.replies, values)),
+    offers: joinOffers(state.earlier.offers, newAnswers(state.form, state.plan.replies, values)),
+  };
 }
 
 /** What only a resume answers, which a field Profile can't fill is left for when none says. */
@@ -242,9 +309,12 @@ function fieldRow(state: Filling, at: number): HTMLElement {
   const reply = state.plan.replies[at];
   if (!field || !reply) return h('li', {});
   const result = state.filled.get(field.key);
-  // A choice shows the option the page picked, which may be another name for Factwright's answer.
+  // A choice shows the option the page picked, which may be another name for Factwright's answer,
+  // and a field that held an answer already, as a site may fill in from your resume, that one.
   const picked =
-    result?.ok && result.shown && (field.control === 'choice' || field.control === 'choices');
+    result?.ok &&
+    result.shown &&
+    (result.kept || field.control === 'choice' || field.control === 'choices');
   const text = picked ? result.shown : replyText(reply);
   // Orange, as the app marks what needs you: what didn't take, and what's needed and left for
   // you. A field you may leave blank, with nothing on file for it, isn't.
@@ -282,7 +352,7 @@ function fieldRow(state: Filling, at: number): HTMLElement {
         'div',
         { class: 'meta' },
         result?.ok && h('span', { class: 'ok', 'aria-label': 'Filled' }, '✓ '),
-        source(reply),
+        result?.kept ? 'It had an answer already, which Factwright left as it was' : source(reply),
       ),
       h(
         'div',
@@ -449,6 +519,78 @@ function siteLine(state: Filling): Child[] {
   ];
 }
 
+/**
+ * The offer to fill the page an application that runs over several went on to, in the same tab,
+ * as you pressed its own Save and Continue, or what to do on one with nothing to fill, as its
+ * Review is.
+ */
+function nextLine(state: Filling): Child[] {
+  const { next } = state;
+  if (!next) return [];
+  if (next.fields === 0) {
+    return [
+      h(
+        'p',
+        { class: 'note', role: 'status' },
+        `The application is on ${next.step} now, with nothing to fill. Check it, then submit it on the page yourself.`,
+      ),
+    ];
+  }
+  return [
+    h(
+      'div',
+      { class: 'card' },
+      h('p', { class: 'small', role: 'status' }, `The application is on ${next.step} now.`),
+      h(
+        'div',
+        { class: 'actions' },
+        button('Fill this page', () => void begin({ earlier: carried(state) }), true, state.busy),
+      ),
+    ),
+  ];
+}
+
+/** What a part of the form is for, as many as there are: "job" or "jobs", "school" or "schools". */
+const partWord = (count: number, part: Part) => `${part}${count === 1 ? '' : 's'}`;
+
+/**
+ * The offer to add a part to the form for each job, or school, on file that it has none for yet,
+ * as Workday's My Experience starts with one, or none: the form's own Add is pressed only when
+ * you choose this, and then the new parts are filled.
+ */
+function partsLine(state: Filling): Child[] {
+  const onFile = state.plan.blocks;
+  if (!onFile || state.copyOnly || state.next) return [];
+  return (['job', 'school'] as const).flatMap((part) => {
+    const adder = state.form.adders.find((each) => adderPart(each) === part);
+    const has = partsOf(state.form, part);
+    const want = part === 'job' ? onFile.jobs : onFile.schools;
+    if (!adder || want <= has) return [];
+    const more = Math.min(want - has, MOST_PARTS);
+    return [
+      h(
+        'div',
+        { class: 'card' },
+        h(
+          'p',
+          { class: 'small' },
+          `Factwright has ${want} ${partWord(want, part)} on file, and ${adder.section} has room for ${has === 0 ? 'none' : has} yet. Add a part for each of the others, and Factwright fills them in.`,
+        ),
+        h(
+          'div',
+          { class: 'actions' },
+          button(
+            `Add ${more} for your other ${partWord(more, part)}`,
+            () => void addMore(state, adder, more),
+            false,
+            state.busy,
+          ),
+        ),
+      ),
+    ];
+  });
+}
+
 function render(state: Filling): void {
   if (state.applied) {
     renderApplied(state);
@@ -470,7 +612,9 @@ function render(state: Filling): void {
         { class: 'note' },
         `This is for “${state.form.title}”. Go back to its tab, or click Fill on this one.`,
       ),
+    ...nextLine(state),
     h('p', { class: 'muted small', role: 'status' }, state.status || summary(state)),
+    ...partsLine(state),
     ...draftLine(state),
     h(
       'ol',
@@ -483,7 +627,8 @@ function render(state: Filling): void {
       'div',
       { class: 'actions' },
       button('Mark as applied', () => void markApplied(state), state.moved, state.busy),
-      !state.copyOnly && button('Fill again', () => void begin(), false, state.busy),
+      !state.copyOnly &&
+        button('Fill again', () => void begin({ earlier: state.earlier }), false, state.busy),
     ),
     h(
       'p',
@@ -595,11 +740,17 @@ async function markApplied(state: Filling): Promise<void> {
     state.values,
     latest && samePage(latest.url, state.form.url) ? latest.values : [],
   );
+  // With what the application's earlier pages gave, for one that runs over several.
+  const earlier =
+    state.earlier.job === null || state.earlier.job === job.id ? state.earlier : NO_EARLIER;
   const answer = await askComputer({
     ask: 'sent',
     job: job.id,
     url: state.form.url,
-    answers: sentAnswers(state.form, state.plan.replies, values),
+    answers: joinSent(earlier.sent, sentAnswers(state.form, state.plan.replies, values)).slice(
+      0,
+      ASK_FIELDS,
+    ),
   });
   if (filling !== state) return;
   if (!answer.ok || answer.did !== 'sent') {
@@ -610,15 +761,39 @@ async function markApplied(state: Filling): Promise<void> {
   stopLooking();
   state.applied = {
     job: answer.job,
-    offers: newAnswers(state.form, state.plan.replies, values),
+    offers: joinOffers(earlier.offers, newAnswers(state.form, state.plan.replies, values)),
     saved: new Set(),
   };
   render(state);
 }
 
+/**
+ * Presses the form's own button that adds a part, for each job or school on file it has no part
+ * for, as you chose, then reads the form again and fills it, leaving what's in its fields as it
+ * is.
+ */
+async function addMore(state: Filling, adder: PageAdder, times: number): Promise<void> {
+  state.busy = true;
+  state.status = `Adding to ${adder.section}…`;
+  render(state);
+  const added = await addParts(state.place, state.form.url, adder, times);
+  if (filling !== state) return;
+  state.busy = false;
+  if (typeof added !== 'number' || added === 0) {
+    state.status =
+      added === 'elsewhere'
+        ? 'This tab has moved on from the form. Go back to it, then click Fill again.'
+        : `${adder.section} didn’t add a part. Press its ${adder.words} yourself, then click Fill again.`;
+    render(state);
+    return;
+  }
+  await begin({ earlier: state.earlier, onlyEmpty: true });
+}
+
 function stopLooking(): void {
   if (looking) clearInterval(looking);
   looking = null;
+  lookNow = null;
 }
 
 function stopFollowing(): void {
@@ -758,36 +933,61 @@ const replyFor = (state: Filling) => (field: PageField) =>
  * Reads what's in the form's own questions every few seconds while the panel shows, so it has
  * what you sent once you submit it, field by field: a field the form takes away, as a form of
  * steps does, keeps what it held. Once the tab leaves the form, as after submitting, or the page
- * says the application went in, the panel keeps what it read last.
+ * says the application went in, the panel keeps what it read last. An application that runs over
+ * several pages in the tab, as Workday's does, going on to another, has the panel offer to fill
+ * that one. The script on the job sites you allowed says so as the page changes, for the panel to
+ * look at once.
  */
 function keepLooking(state: Filling): void {
   stopLooking();
   const fields = fieldsToRead(state.form, state.plan.replies);
-  looking = setInterval(() => {
+  lookNow = () => {
     if (document.visibilityState !== 'visible' || state.moved || state.applied) return;
-    void formValues(state.place, fields).then((read) => {
-      if (filling !== state || state.moved || state.applied) return;
-      if (!read || !samePage(read.url, state.form.url)) {
-        state.moved = true;
-        render(state);
-        return;
-      }
-      state.values = merged(state.values, read.values);
-      if (read.submitted && !state.form.submitted) {
-        state.moved = true;
-        render(state);
-      }
-    });
-  }, LOOK_EVERY_MS);
+    void formValues(state.place, fields).then((read) => heard(state, read));
+  };
+  looking = setInterval(lookNow, LOOK_EVERY_MS);
+}
+
+/**
+ * What the form holds now, as last read: what you sent, the page the application went on to, or
+ * that the tab moved on from the form.
+ */
+function heard(state: Filling, read: FormValues | null): void {
+  if (filling !== state || state.moved || state.applied) return;
+  // Another page of the application: the panel offers to fill it, and keeps what it last read of
+  // this one.
+  if (read?.step && read.step !== state.form.step) {
+    if (state.next?.step !== read.step || state.next.fields !== read.fields) {
+      state.next = { step: read.step, fields: read.fields };
+      render(state);
+    }
+    return;
+  }
+  // Back on the page it filled.
+  if (state.next) {
+    state.next = null;
+    render(state);
+  }
+  if (!read || !samePage(read.url, state.form.url)) {
+    state.moved = true;
+    render(state);
+    return;
+  }
+  state.values = merged(state.values, read.values);
+  if (read.submitted && !state.form.submitted) {
+    state.moved = true;
+    render(state);
+  }
 }
 
 /**
  * Fills the form with Factwright's answers, fetching the job's files to upload first, and says
- * whether it could. A form the tab has moved on from isn't filled.
+ * whether it could, or only its fields that are empty (`onlyEmpty`). A form the tab has moved on
+ * from isn't filled.
  */
-async function fill(state: Filling): Promise<boolean> {
+async function fill(state: Filling, onlyEmpty = false): Promise<boolean> {
   state.busy = true;
-  const filled = await fillPasses(state).finally(() => {
+  const filled = await fillPasses(state, onlyEmpty).finally(() => {
     state.busy = false;
   });
   if (filling !== state) return false;
@@ -805,13 +1005,14 @@ async function fill(state: Filling): Promise<boolean> {
 }
 
 /** Each pass of filling the form, then the outlines for what's left: or why it stopped. */
-const fillPasses = (state: Filling) =>
+const fillPasses = (state: Filling, onlyEmpty: boolean) =>
   fillInPasses({
     place: state.place,
     form: state.form,
     plan: state.plan,
     shows: state.shows,
     filled: state.filled,
+    onlyEmpty,
     stale: () => filling !== state,
     status: (text) => {
       state.status = text;
@@ -820,11 +1021,23 @@ const fillPasses = (state: Filling) =>
     added: () => render(state),
   });
 
+/** How filling starts, beyond reading the form in the tab that's in front. */
+interface Start {
+  /**
+   * What the application's earlier pages gave, as its next page is filled, or this one again: by
+   * default, what the panel had, for the same tab and site.
+   */
+  earlier?: Earlier;
+  /** Whether it fills only the fields that are empty, as once parts were added to the form. */
+  onlyEmpty?: boolean;
+}
+
 /**
  * Starts filling the form in the tab that's in front, from reading it to filling it. A start
  * made after it, as by Fill again, takes over: this one stops at what it's waiting on.
  */
-async function begin(): Promise<void> {
+async function begin(how: Start = {}): Promise<void> {
+  const before = filling;
   stopLooking();
   stopFollowing();
   filling = null;
@@ -915,6 +1128,10 @@ async function begin(): Promise<void> {
     );
     return;
   }
+  // An application's earlier pages, in the same tab and on the same site, for the same job.
+  const earlier = how.earlier ?? (before && before.tabId === tab.id ? carried(before) : NO_EARLIER);
+  const sameSite = before !== null && siteOf(before.form.url) === siteOf(form.url);
+  const sameJob = earlier.job === null || planned.job === null || earlier.job === planned.job.id;
   const state: Filling = {
     tabId: tab.id,
     place,
@@ -931,11 +1148,22 @@ async function begin(): Promise<void> {
     applied: null,
     drafting: null,
     site,
+    earlier: form.step && sameSite && sameJob ? earlier : NO_EARLIER,
+    next: null,
   };
   filling = state;
   render(state);
   // A form it couldn't fill isn't one you submitted: it only looks once it's filled.
-  if (state.copyOnly || (await fill(state))) keepLooking(state);
+  if (state.copyOnly || (await fill(state, how.onlyEmpty))) keepLooking(state);
+}
+
+/** A page's site, as its address's origin, or "" for one that isn't an address. */
+function siteOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -976,6 +1204,12 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
 // it. A panel in another window, beside another tab, carries on with its own form.
 ext.runtime.onMessage.addListener((message, sender) => {
   if (sender.id !== ext.runtime.id || sender.tab || !isToPanel(message)) return undefined;
+  // The page of an application that runs over several changed, as the script on a job site you
+  // allowed saw: the panel filling it looks at once.
+  if (message.do === 'step') {
+    if (filling?.tabId === message.tabId) lookNow?.();
+    return undefined;
+  }
   if (message.at <= startedAt) return undefined;
   void ext.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
     if (tab?.id === message.tabId && message.at > startedAt) void begin();

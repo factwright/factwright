@@ -368,6 +368,37 @@ describe('the script on a job site you allowed', () => {
     expect(sentOf('left')).toEqual([]);
   });
 
+  it('follows an application that runs over several pages, as Workday swaps its own in, and tells the panel', async () => {
+    const step = (n: number, name: string, fields: string) => `
+      <div data-automation-id="progressBar"><ol>
+        <li data-automation-id="progressBarActiveStep"><div>current step ${n} of 6</div><label>${name}</label></li>
+      </ol></div>
+      <main>${fields}</main>`;
+    document.body.innerHTML = step(
+      3,
+      'Application Questions',
+      '<label for="why">Why us?</label><textarea id="why"></textarea>',
+    );
+    script = startScript(() => true, 0);
+    // A page of the application, with no file or email on it: its Fill button shows.
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(sentOf('step')).toEqual([]);
+    // Workday swaps its next page in, in the same tab, as you press its Save and Continue.
+    document.body.innerHTML = step(
+      4,
+      'Voluntary Disclosures',
+      '<label for="gender">Gender</label><button id="gender" type="button" aria-haspopup="listbox">Select One</button>',
+    );
+    await vi.waitFor(() => expect(sentOf('step')).toHaveLength(1));
+    const [{ doc }] = sentOf('hello') as [{ doc: string }];
+    expect(sentOf('step')).toEqual([{ type: 'job-site', do: 'step', doc }]);
+    expect(frames()).toHaveLength(1);
+    // Its Review, with nothing to fill, has no Fill button.
+    document.body.innerHTML = step(6, 'Review', '<p>Check your application.</p>');
+    await vi.waitFor(() => expect(frames()).toHaveLength(0));
+    expect(sentOf('step')).toHaveLength(2);
+  });
+
   it('stops when the background says so, taking its frames away', async () => {
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));

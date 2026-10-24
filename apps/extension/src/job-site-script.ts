@@ -239,6 +239,11 @@ export function startScript(
     const before = form;
     form = answer.form;
     elements = seen;
+    // Another page of an application that runs over several, as Workday swaps its own in: the
+    // panel filling it, if it's open, looks at it again, to offer to fill this one.
+    if (before !== null && form.step && form.step !== before.step) {
+      void send({ type: 'job-site', do: 'step', doc });
+    }
     // Another page, or the same with other fields: the background is asked again for its answers.
     const same =
       before !== null &&

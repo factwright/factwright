@@ -2,7 +2,10 @@ import {
   ASK_FIELDS,
   type AskedField,
   DRAFT_QUESTIONS,
+  type FieldKind,
   type FieldReply,
+  fieldKind,
+  fieldPart,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
@@ -26,6 +29,7 @@ import {
   type FormAnswer,
   type FormTask,
   formPage,
+  type PageAdder,
   type PageField,
   type PageForm,
 } from './page/form.ts';
@@ -134,13 +138,71 @@ export async function fillForm(
   return answer?.did === 'fill' ? answer.filled : null;
 }
 
-/** What some of a form's fields hold now, and the page's address, or null when it can't be read. */
-export async function formValues(
-  place: FormPlace,
-  fields: FieldRef[],
-): Promise<{ url: string; submitted: boolean; values: FieldValue[] } | null> {
+/** What some of a form's fields hold now, as the page reads them. */
+export type FormValues = Extract<FormAnswer, { did: 'values' }>;
+
+/**
+ * What some of a form's fields hold now, the page's address, and the page of its application it's
+ * on, or null when it can't be read.
+ */
+export async function formValues(place: FormPlace, fields: FieldRef[]): Promise<FormValues | null> {
   const answer = await inPage(place, { do: 'values', fields });
   return answer?.did === 'values' ? answer : null;
+}
+
+/**
+ * Presses one of a form's buttons that add a part to it, as many times as you chose, and says how
+ * many parts it added: or that the tab has moved on to another address, or null when the tab
+ * can't be reached.
+ */
+export async function addParts(
+  place: FormPlace,
+  url: string,
+  adder: PageAdder,
+  times: number,
+): Promise<number | 'elsewhere' | null> {
+  const answer = await inPage(place, { do: 'add', url, adder, times });
+  if (answer?.did === 'elsewhere') return 'elsewhere';
+  return answer?.did === 'add' ? answer.added : null;
+}
+
+/** A part of a form for each job, or for each school. */
+export type Part = 'job' | 'school';
+
+/** The kinds of field a part for a job, or a school, asks once for each. */
+const ONE_EACH: Record<Part, FieldKind[]> = {
+  job: ['current-title', 'current-company'],
+  school: ['school', 'degree'],
+};
+
+/**
+ * How many parts for a job, or for a school, a form has now: as many as it asks one job's title or
+ * company, or one school's name or degree, in such a part.
+ */
+export function partsOf(form: PageForm, part: Part): number {
+  return Math.max(
+    ...ONE_EACH[part].map(
+      (kind) =>
+        form.fields.filter((field) => fieldPart(field) === part && fieldKind(field) === kind)
+          .length,
+    ),
+  );
+}
+
+/**
+ * Which part of the form a button that adds one adds to, a job's, a school's, or neither, by the
+ * part it's in itself, never one around that, as Workday's My Experience is around its Websites.
+ */
+export function adderPart(adder: PageAdder): Part | null {
+  return fieldPart({
+    question: adder.words,
+    hint: '',
+    control: 'text',
+    type: '',
+    autocomplete: '',
+    name: '',
+    section: adder.section.split(' › ').at(-1) ?? '',
+  });
 }
 
 /** Outlines fields in orange on the page, as left for you. */
@@ -199,10 +261,14 @@ export async function planFill(
   return ask(fields.map(({ section: _, ...field }) => field));
 }
 
+/** A box for one part of a date, as "Date Month" or "From Year", which only you can say. */
+const DATE_PART = /\b(day|month|year)$/i;
+
 /**
  * The form's own questions that nothing on file answers, which your Claude can draft: ones it
- * asks in words or with options, left for you and not filled. A file, a box to tick, and a
- * question your Claude said is yours to answer, with why, aren't.
+ * asks in words or with options, left for you and not filled. A file, a box to tick, a box for one
+ * part of a date, as a self-identification form's date to sign it is, and a question your Claude
+ * said is yours to answer, with why, aren't.
  */
 export function draftable(
   form: PageForm,
@@ -220,6 +286,7 @@ export function draftable(
         field.question.trim() !== '' &&
         field.control !== 'file' &&
         field.control !== 'check' &&
+        !DATE_PART.test(field.question.trim()) &&
         !filled.get(field.key)?.ok
       );
     })
@@ -285,38 +352,56 @@ export const isPlace = (kind: FieldReply['kind']) => PLACES.has(kind);
 export const picksOf = (reply: Pick<FieldReply, 'kind' | 'pick'>): string[] =>
   isPlace(reply.kind) ? placeNames(reply.pick ?? []) : [...(reply.pick ?? [])];
 
-/** What to put in each field Factwright answered, with the files it fetched. */
+/**
+ * What to put in each field Factwright answered, with the files it fetched. On a page of an
+ * application that runs over several, which its site may have filled from your resume, as
+ * Workday's does, or as asked (`onlyEmpty`), only in the fields that are empty.
+ */
 export function fillAnswers(
   form: PageForm,
   replies: readonly FieldReply[],
   files: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>>,
+  onlyEmpty = false,
 ): FieldAnswer[] {
+  const ifEmpty = onlyEmpty || form.step !== '';
   return form.fields.flatMap((field, at): FieldAnswer[] => {
     const reply = replies[at];
     if (!reply || reply.source === 'you') return [];
     const { ref, key } = field;
-    if (reply.file) {
-      const file = files[reply.file];
-      return file ? [{ ref, key, file: { ...file, type: 'application/pdf' } }] : [];
-    }
-    if (reply.pick) {
-      return [
-        {
-          ref,
-          key,
-          pick: picksOf(reply),
-          ...(reply.exact && { exact: true }),
-          ...(isPlace(reply.kind) && { place: true }),
-        },
-      ];
-    }
-    if (!reply.text) return [];
-    // A place in a box that offers places as you type is one of its own to pick.
-    if (isPlace(reply.kind) && field.control === 'combo') {
-      return [{ ref, key, pick: placeNames([reply.text]), place: true }];
-    }
-    return [{ ref, key, text: reply.text }];
+    return answerFor(field, reply, files).map((answer) => ({
+      ref,
+      key,
+      ...answer,
+      ...(ifEmpty && { ifEmpty: true }),
+    }));
   });
+}
+
+/** What to put in one field, by Factwright's reply for it, without the field's place and key. */
+function answerFor(
+  field: PageField,
+  reply: FieldReply,
+  files: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>>,
+): Omit<FieldAnswer, 'ref' | 'key'>[] {
+  if (reply.file) {
+    const file = files[reply.file];
+    return file ? [{ file: { ...file, type: 'application/pdf' } }] : [];
+  }
+  if (reply.pick) {
+    return [
+      {
+        pick: picksOf(reply),
+        ...(reply.exact && { exact: true }),
+        ...(isPlace(reply.kind) && { place: true }),
+      },
+    ];
+  }
+  if (!reply.text) return [];
+  // A place in a box that offers places as you type is one of its own to pick.
+  if (isPlace(reply.kind) && field.control === 'combo') {
+    return [{ pick: placeNames([reply.text]), place: true }];
+  }
+  return [{ text: reply.text }];
 }
 
 /** The words Factwright put in a field, as the panel shows them and you can copy them. */
@@ -359,6 +444,8 @@ export interface Passes {
   filled: Map<string, FieldFilled>;
   /** Whether a later start of filling took over, which stops this one where it is. */
   stale: () => boolean;
+  /** Whether it fills only the fields that are empty, as once parts were added to the form. */
+  onlyEmpty?: boolean;
   /** What it's doing now, to say. */
   status?: (text: string) => void;
   /** The form showed more fields, which it's answered. */
@@ -395,7 +482,12 @@ export async function fillInPasses(
   let from = 0;
   for (let pass = 0; pass < PASSES; pass++) {
     const fields = form.fields.slice(from);
-    const answers = fillAnswers({ ...form, fields }, replies.slice(from), fetched);
+    const answers = fillAnswers(
+      { ...form, fields },
+      replies.slice(from),
+      fetched,
+      passes.onlyEmpty,
+    );
     const done = await fillForm(place, form.url, answers);
     if (stale()) return 'stale';
     if (done === null) return 'unreachable';
@@ -425,13 +517,22 @@ export async function fillInPasses(
   return stale() ? 'stale' : true;
 }
 
-/** How many fields were filled, and how many are left for you, as the panel says it. */
+/**
+ * How many fields were filled, how many that held an answer already were left as they were, and
+ * how many are left for you, as the panel says it.
+ */
 export function filledSummary(form: PageForm, filled: ReadonlyMap<string, FieldFilled>): string {
   const total = form.fields.length;
-  const done = [...filled.values()].filter((each) => each.ok).length;
-  const left = total - done;
-  return left > 0
-    ? `Filled ${done} of ${total} fields. ${left} ${left === 1 ? 'is' : 'are'} left for you.`
+  const took = [...filled.values()].filter((each) => each.ok);
+  const kept = took.filter((each) => each.kept).length;
+  const done = took.length - kept;
+  const left = total - took.length;
+  const keeping = kept > 0 ? `, and left ${kept} as ${kept === 1 ? 'it was' : 'they were'}` : '';
+  if (left > 0) {
+    return `Filled ${done} of ${total} fields${keeping}. ${left} ${left === 1 ? 'is' : 'are'} left for you.`;
+  }
+  return kept > 0
+    ? `Filled ${done} of ${total} fields${keeping}. Check them, then submit it on the page.`
     : `Filled all ${total} fields. Check them, then submit it on the page.`;
 }
 
