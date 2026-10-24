@@ -72,7 +72,7 @@ const to = (
 /** A box's value, by its label's words. */
 const boxValue = (doc: Document, label: string, nth = 0) => {
   const named = [...doc.querySelectorAll('label')].filter(
-    (each) => each.textContent?.replace('*', '').trim() === label,
+    (each) => each.textContent?.replaceAll('*', '').trim() === label,
   )[nth];
   return (doc.getElementById(named?.htmlFor ?? '') as HTMLInputElement | null)?.value;
 };
