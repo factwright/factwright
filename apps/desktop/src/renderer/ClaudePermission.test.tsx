@@ -27,10 +27,11 @@ const PAGE: PermissionAsk = {
   host: 'jobs.example.com',
 };
 
-/** Waits out the moment the answers wait after a prompt shows. */
+/** Waits out the moment the answers wait after a prompt shows: half a second, or more when busy. */
 const answerable = () =>
-  vi.waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', false),
+  vi.waitFor(
+    () => expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', false),
+    { timeout: 2000 },
   );
 
 function open(ask: PermissionAsk = PAGE, result: EditResult = { ok: true }) {

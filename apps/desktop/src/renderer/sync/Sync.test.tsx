@@ -468,9 +468,9 @@ describe('choosing a server', () => {
     expect((await axe.run(container)).violations).toEqual([]);
     await user.type(field, OWN);
     await user.click(screen.getByRole('button', { name: 'Connect' }));
-    expect(
-      await screen.findByText(new RegExp(`Your browser opened ${OWN}’s sign-in page`)),
-    ).toBeTruthy();
+    // Checking the server takes 600 milliseconds first.
+    const opened = new RegExp(`Your browser opened ${OWN}’s sign-in page`);
+    expect(await screen.findByText(opened, {}, { timeout: 2000 })).toBeTruthy();
     await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(screen.getByRole('heading', { name: 'Save your recovery key' })).toBeTruthy();
     await user.click(
