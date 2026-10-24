@@ -225,6 +225,28 @@ describe('answering a form to fill', () => {
     });
   });
 
+  it('says how many jobs and schools on file it can take, for a form that adds a part for each', async () => {
+    // The job's resume lists two positions and no school, with no work history in Profile.
+    expect(
+      ((await fill([field('Job title', { section: 'Work Experience 1' })])) as Filled).blocks,
+    ).toEqual({ jobs: 2, schools: 0 });
+    deps.about.history = () => ({
+      jobs: [
+        {
+          company: 'Tidewater Analytics',
+          location: 'Denver, CO',
+          positions: ['Director of Product', 'Senior Product Manager', 'Product Manager'].map(
+            (title) => ({ title, start: '', end: '', summary: '' }),
+          ),
+        },
+      ],
+      schools: [{ school: 'CU Boulder', degree: 'B.S.', field: '', start: '', end: '2017' }],
+    });
+    expect(
+      ((await fill([field('Job title', { section: 'Work Experience 1' })])) as Filled).blocks,
+    ).toEqual({ jobs: 3, schools: 1 });
+  });
+
   it('asks where the job is when a question names no country', async () => {
     const question = field('Are you authorized to work in the country for which you applied?', {
       control: 'choice',

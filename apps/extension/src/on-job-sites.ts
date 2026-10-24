@@ -56,12 +56,13 @@ export interface Offered {
   answer: Omit<FieldAnswer, 'ref' | 'key'>;
 }
 
-/** An option's words, as compared: lowercase, with only its letters and digits. */
+/** An option's words, as compared, as the page's form function compares them. */
 const plain = (text: string) =>
   text
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
+    .replace(/['’]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 
@@ -251,6 +252,12 @@ const menusOf = (page: OnPage): FieldMenu[] =>
     keeps: keepsAnswer(field, page.plan.replies[at]),
   }));
 
+/** Has the panel filling a tab's form look at it now, if it's open. */
+const tellPanelLook = (tabId: number) =>
+  ext.runtime.sendMessage({ type: 'panel', do: 'look', tabId } satisfies ToPanel).catch(() => {
+    // No panel's open.
+  });
+
 /** Sends the script in a frame of a tab a message, and its answer, or null. */
 const tellScript = (place: FormPlace, message: ToScript) =>
   ext.tabs.sendMessage(place.tabId, message, { frameId: place.frameId }).catch(() => null);
@@ -361,6 +368,12 @@ export async function answerScript(
     scripts.set(key, { ...place, url, doc: message.doc });
     await keepFrame(place.tabId, { frameId: place.frameId, url, doc: message.doc });
     return { allowed: true };
+  }
+  if (message.do === 'look') {
+    // You left a field of an application that runs over several, or it went on to another page:
+    // the panel filling the tab's form, if it's open, looks at it now.
+    if (scripts.get(key)?.doc === message.doc) void tellPanelLook(place.tabId);
+    return {};
   }
   if (message.do === 'form') {
     // Only the form on the page the script is on.

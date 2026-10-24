@@ -119,6 +119,10 @@ export function readFormFeed(answer: unknown): FormQuestion[] | null {
       if (!field || !question) return [];
       const control = CONTROLS[text(field.type)] ?? 'text';
       const hint = hintOf(text(asked.description));
+      const options = (Array.isArray(field.values) ? field.values : [])
+        .map((value) => cut(squash(decodeEntities(text(isObject(value) ? value.label : '')))))
+        .filter(Boolean)
+        .slice(0, FORM_LIMITS.options);
       const kind = fieldKind({
         question,
         hint,
@@ -126,12 +130,9 @@ export function readFormFeed(answer: unknown): FormQuestion[] | null {
         type: '',
         autocomplete: '',
         name: text(field.name),
+        options,
       });
       if (kind !== 'question' || control === 'file') return [];
-      const options = (Array.isArray(field.values) ? field.values : [])
-        .map((value) => cut(squash(decodeEntities(text(isObject(value) ? value.label : '')))))
-        .filter(Boolean)
-        .slice(0, FORM_LIMITS.options);
       const choosing = control === 'choice' || control === 'choices';
       if (choosing && options.length < 2) return [];
       return [
