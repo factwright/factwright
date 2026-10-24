@@ -897,6 +897,27 @@ describe('a form that asks for each job and school', () => {
     expect(replies[0]).toMatchObject({ source: 'profile', from: 'From your work history' });
   });
 
+  it('fills a part the form numbers itself with that job, as the ones before it are on the form', () => {
+    // SmartRecruiters lists the jobs you saved, and shows one part to fill: its third.
+    const editor = [
+      field('Title', { section: 'Experience 3' }),
+      field('Company', { section: 'Experience 3' }),
+    ];
+    const said = answerForm(editor, WITH).map((reply) => reply.text);
+    expect(said).toEqual(['Product Manager', 'Tidewater Analytics']);
+    // Numbered from the first, the form's numbers and its order agree.
+    const numbered = [1, 2].flatMap((n) => [
+      field('Title', { section: `Work Experience ${n}` }),
+      field('Company', { section: `Work Experience ${n}` }),
+    ]);
+    expect(answerForm(numbered, WITH).map((reply) => reply.text)).toEqual([
+      'Director of Product',
+      'Tidewater Analytics',
+      'Senior Product Manager',
+      'Tidewater Analytics',
+    ]);
+  });
+
   it('asks for the job you hold now when a form asks once, apart from the part for each job', () => {
     expect(answerField(field('Current company'), WITH).text).toBe('Tidewater Analytics');
     expect(answerField(field('Current job title'), WITH).text).toBe('Director of Product');

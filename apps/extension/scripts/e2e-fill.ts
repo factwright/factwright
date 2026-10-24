@@ -47,6 +47,7 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { type AboutYou, applyChanges, NO_ANSWERS } from '../../desktop/src/shared/about.ts';
 import { PRIVATE_FILE } from '../../desktop/src/shared/private.ts';
+import type { ServedFlow } from './served-flow.ts';
 import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -95,8 +96,11 @@ const WORKDAY_STEPS = [
   'review',
 ];
 
-/** A site on this computer: the application forms, and "Not found" for anything else. */
-async function site() {
+/**
+ * A site on this computer: the application forms, the applications whose pages load anew
+ * (`flows`), and "Not found" for anything else.
+ */
+async function site(flows: readonly ServedFlow[] = []) {
   const lever = readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8');
   const pages: Record<string, Buffer> = {
     [FORM_PATH]: Buffer.from(withOwnCode(lever, LEVER_LOOKS_UP)),
@@ -115,7 +119,10 @@ async function site() {
     ),
   };
   let requests = 0;
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
+    for (const flow of flows) {
+      if (await flow.serve(request, response)) return;
+    }
     const page = pages[request.url ?? ''];
     if (page) {
       response.writeHead(200, { 'content-type': 'text/html' });

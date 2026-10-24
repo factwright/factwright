@@ -182,13 +182,45 @@ describe('the job application sites', () => {
     expect(sites.length).toBeGreaterThan(15);
     expect(new Set(sites).size).toBe(sites.length);
     for (const site of sites) {
-      // Never every site, any scheme, or a path: a site, as the browser's permissions name one.
-      expect(site).toMatch(/^https:\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/\*$/);
+      // Never every site, or any scheme: a site, as the browser's permissions name one, or its
+      // career pages alone, by their path, as SuccessFactors keeps its customers' HR sites beside
+      // them.
+      expect(site).toMatch(
+        /^https:\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/(\*|career\*|portalcareer\*|sfcareer\/\*)$/,
+      );
     }
     expect(sites).not.toContain('<all_urls>');
     expect(sites).not.toContain('https://*/*');
-    for (const name of ['Greenhouse', 'Lever', 'Ashby', 'Workday', 'iCIMS', 'SmartRecruiters']) {
+    for (const name of [
+      'Greenhouse',
+      'Lever',
+      'Ashby',
+      'Workday',
+      'iCIMS',
+      'SmartRecruiters',
+      'Taleo',
+      'SuccessFactors',
+    ]) {
       expect(APPLICANT_SYSTEMS.map((system) => system.name)).toContain(name);
+    }
+  });
+
+  it('cover SuccessFactors’ career pages, and never its customers’ own HR pages beside them', () => {
+    for (const page of [
+      'https://career4.successfactors.com/career?company=acmeP&career_ns=job_listing&career_job_req_id=1000',
+      'https://career17.sapsf.com/portalcareer?_s.crb=abc',
+      'https://career5.successfactors.eu/sfcareer/jobreqcareer?jobId=1000&company=acmeP',
+      'https://career-sa20.hr.cloud.sap/careers?company=acmeP&career_job_req_id=1000',
+      'https://career15.sapsf.cn/careers?company=acmeP',
+    ]) {
+      expect(onAnySite(page, jobSites(false))).toBe(true);
+    }
+    for (const page of [
+      'https://performancemanager4.successfactors.com/sf/home',
+      'https://hcm-us20.hr.cloud.sap/xi/ui/pages/empfile',
+      'https://acme.jobs.hr.cloud.sap/job/Denver-Analyst/1400000123/',
+    ]) {
+      expect(onAnySite(page, jobSites(false))).toBe(false);
     }
   });
 

@@ -66,6 +66,72 @@ describe('postingKey', () => {
     ).toEqual([null, null, null]);
   });
 
+  it('reads an iCIMS posting’s number, the same on its application, at the company’s own site', () => {
+    expect(
+      [
+        'https://careers-acme.icims.com/jobs/1234/product-manager/job',
+        'https://careers-acme.icims.com/jobs/1234/product-manager/job?mobile=false&width=1140&in_iframe=1',
+        'https://careers-acme.icims.com/jobs/1234/product-manager/candidate?from=login',
+        'https://careers-acme.icims.com/jobs/1234/login',
+      ].map(postingKey),
+    ).toEqual(Array(4).fill('icims:careers-acme:1234'));
+    // Another company's site, or another of its own, is another posting.
+    expect(postingKey('https://careers-globex.icims.com/jobs/1234/engineer/job')).toBe(
+      'icims:careers-globex:1234',
+    );
+    expect(
+      [
+        'https://careers-acme.icims.com/jobs/search?ss=1',
+        'https://careers-acme.icims.com/jobs/intro',
+        'https://www.icims.com/jobs/1234/',
+      ].map(postingKey),
+    ).toEqual([null, null, null]);
+  });
+
+  it('reads a Taleo posting’s number, the same on its application, at the company’s own site', () => {
+    expect(
+      [
+        'https://acme.taleo.net/careersection/2/jobdetail.ftl?job=2600123&lang=en',
+        'https://acme.taleo.net/careersection/ext/jobapply.ftl?job=2600123&lang=en&src=CWS-1',
+        'https://ACME.taleo.net/careersection/2/jobdetail.ftl?job=2600123',
+      ].map(postingKey),
+    ).toEqual(Array(3).fill('taleo:acme:2600123'));
+    // A company's own site for its Taleo career section, and Taleo Business Edition's.
+    expect(
+      postingKey('https://talentacquisition.acme.example/careersection/ca/jobapply.ftl?job=A1B2'),
+    ).toBe('taleo:talentacquisition.acme.example:a1b2');
+    expect(
+      [
+        'https://phf.tbe.taleo.net/phf01/ats/careers/v2/viewRequisition?org=ACME&cws=1&rid=4321',
+        'https://phf.tbe.taleo.net/phf01/ats/careers/v2/applyRequisition?org=acme&cws=1&rid=4321',
+      ].map(postingKey),
+    ).toEqual(Array(2).fill('taleo:acme:4321'));
+    expect(
+      [
+        'https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en',
+        'https://acme.taleo.net/careersection/careersection/candidateacquisition/flow.jsf',
+      ].map(postingKey),
+    ).toEqual([null, null]);
+  });
+
+  it('reads a SuccessFactors requisition, the same on its posting and its application', () => {
+    expect(
+      [
+        'https://career4.successfactors.com/career?company=acmeP&career_ns=job_listing&career_job_req_id=1000',
+        'https://career17.sapsf.com/careers?company=acmeP&career_ns=job_application&career_job_req_id=1000&lang=en_US',
+        'https://career5.successfactors.eu/sfcareer/jobreqcareer?jobId=1000&company=acmeP',
+        'https://career-sa20.hr.cloud.sap/careers?company=acmeP&career_job_req_id=1000',
+      ].map(postingKey),
+    ).toEqual(Array(4).fill('successfactors:acmep:1000'));
+    // A signed-in application page names neither, and a company's own career site has its own IDs.
+    expect(
+      [
+        'https://career17.sapsf.com/portalcareer?_s.crb=abc',
+        'https://jobs.acme.example/job/Denver-Analyst/1400000123/',
+      ].map(postingKey),
+    ).toEqual([null, null]);
+  });
+
   it('gives none for a whole board, or a site it doesn’t know', () => {
     expect(
       [

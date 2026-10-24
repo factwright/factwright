@@ -239,9 +239,10 @@ export function startScript(
     const before = form;
     form = answer.form;
     elements = seen;
-    // Another page of an application that runs over several, as Workday swaps its own in: the
-    // panel filling it, if it's open, looks at it now, to offer to fill this one.
-    if (before !== null && form.step && form.step !== before.step) {
+    // Another page of an application that runs over several, as Workday swaps its own in, or one
+    // loaded anew, as Taleo's next page is: the panel filling it, if it's open, looks at it now, to
+    // offer to fill this one.
+    if (form.step && form.step !== before?.step) {
       void send({ type: 'job-site', do: 'look', doc });
     }
     // Another page, or the same with other fields: the background is asked again for its answers.
@@ -738,7 +739,8 @@ export function startScript(
     if (target === element || element.contains(target)) return true;
     let up: Element | null = element;
     for (let level = 0; level < AROUND && up; level++) {
-      up = up.parentElement;
+      // A box around it, or the component it's inside, where the page leaves that open.
+      up = up.parentElement ?? (up.getRootNode() as Partial<ShadowRoot>).host ?? null;
       if (up === target) return true;
     }
     const label = (target instanceof Element ? target : target.parentElement)?.closest('label');
@@ -762,9 +764,19 @@ export function startScript(
     await showMenu(at);
   }
 
+  /**
+   * The element the cursor's in, inside a component that keeps its own elements too, where the
+   * page leaves that open, as the page names the component instead.
+   */
+  const focused = (): Element | null => {
+    let now = document.activeElement;
+    while (now?.shadowRoot?.activeElement) now = now.shadowRoot.activeElement;
+    return now;
+  };
+
   /** Whether the cursor is in one of the form's fields. */
   const inAField = () => {
-    const now = document.activeElement;
+    const now = focused();
     return now !== null && fieldOf(now) >= 0;
   };
 
@@ -842,18 +854,25 @@ export function startScript(
 
   // --- Listening ------------------------------------------------------------------------------
 
+  /**
+   * The element an event happened at: its target, or inside a component that keeps its own
+   * elements, where the page leaves that open, the element inside it, as the page hears it as the
+   * component itself.
+   */
+  const targetOf = (event: Event): EventTarget | null => event.composedPath?.()[0] ?? event.target;
+
   const onPointer = (event: Event) => {
     if (!yourOwn(event)) return;
-    lastPointer = { at: Date.now(), target: event.composedPath?.()[0] ?? event.target };
+    lastPointer = { at: Date.now(), target: targetOf(event) };
   };
   const onFocusIn = (event: FocusEvent) => {
-    const target = event.target;
+    const target = targetOf(event);
     if (!(target instanceof Element) || mine.has(target) || target === ownFocus) return;
     if (!yours(target) || (writing !== null && fieldOf(target) === writing)) return;
     void arrived(target);
   };
   const onFocusOut = (event: FocusEvent) => {
-    const target = event.target;
+    const target = targetOf(event);
     if (!(target instanceof Element) || mine.has(target)) return;
     // On a page of an application that runs over several, the panel filling it reads what you
     // gave the field now, before the page can go on, as when you press its Save and Continue.
@@ -862,14 +881,15 @@ export function startScript(
     // Into the menu, it stays open; into another field, that field's menu follows; anywhere
     // else, it closes, unless it offers to keep what you gave the field you left.
     setTimeout(() => {
-      if (!menu || document.activeElement === menu.host || inAField()) return;
+      if (!menu || focused() === menu.host || inAField()) return;
       if (pendingSave !== null && pendingSave === menu.at) return;
       closeMenu();
     }, 0);
   };
   const onTyped = (event: Event) => {
-    if (!yourOwn(event) || !(event.target instanceof Element)) return;
-    const field = form?.fields[fieldOf(event.target)];
+    const target = targetOf(event);
+    if (!yourOwn(event) || !(target instanceof Element)) return;
+    const field = form?.fields[fieldOf(target)];
     if (field) typed.add(field.key);
   };
   const onKey = (event: KeyboardEvent) => {
@@ -882,7 +902,7 @@ export function startScript(
     }
     // Down from a box of words goes into the menu, as it does in a browser's own suggestions. A
     // number's or a date's box, or one that offers its own choices, keeps the key for itself.
-    const target = event.target;
+    const target = targetOf(event);
     if (
       event.key === 'ArrowDown' &&
       target instanceof HTMLInputElement &&

@@ -8,7 +8,10 @@
 /** An applicant system, by the sites its application forms are on. */
 export interface ApplicantSystem {
   name: string;
-  /** Its forms' sites, as the browser's permissions name sites. */
+  /**
+   * Its forms' sites, as the browser's permissions name sites: a site, or only its pages under a
+   * path, which the script alone keeps to, as the browser asks for the whole site.
+   */
   sites: string[];
   /** Its own pages on those sites that aren't anyone's application, such as its home page. */
   not?: string[];
@@ -19,8 +22,10 @@ export interface ApplicantSystem {
  * and forms are on, never its own home page. Those that give each company a site under one name,
  * as Workday, iCIMS and Taleo do, take in the whole name: iCIMS and Taleo keep more there than job
  * pages, such as their customers' own sign-ins, which the script then runs on too, but for iCIMS's
- * home page. There, as anywhere it runs, it shows its Fill button only on a page with an
- * application form, and a menu only in a field you go to that Factwright has an answer for.
+ * home page. SuccessFactors keeps its customers' own HR sites under the same names as their career
+ * sites, so the script runs on its career pages alone. There, as anywhere it runs, it shows its
+ * Fill button only on a page with an application form, and a menu only in a field you go to that
+ * Factwright has an answer for.
  */
 export const APPLICANT_SYSTEMS: readonly ApplicantSystem[] = [
   {
@@ -47,6 +52,21 @@ export const APPLICANT_SYSTEMS: readonly ApplicantSystem[] = [
   { name: 'Workable', sites: ['https://apply.workable.com/*'] },
   { name: 'Jobvite', sites: ['https://jobs.jobvite.com/*'] },
   { name: 'Taleo', sites: ['https://*.taleo.net/*'] },
+  {
+    // Its data centers' names hold its customers' own HR sites too, where the script never runs:
+    // only their career pages are its application sites, by their paths.
+    name: 'SuccessFactors',
+    sites: [
+      'successfactors.com',
+      'successfactors.eu',
+      'sapsf.com',
+      'sapsf.eu',
+      'sapsf.cn',
+      'hr.cloud.sap',
+    ].flatMap((host) =>
+      ['/career*', '/portalcareer*', '/sfcareer/*'].map((path) => `https://*.${host}${path}`),
+    ),
+  },
   { name: 'JazzHR', sites: ['https://*.applytojob.com/*'] },
   { name: 'Rippling', sites: ['https://ats.rippling.com/*'] },
   { name: 'Paylocity', sites: ['https://recruiting.paylocity.com/*'] },

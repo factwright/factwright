@@ -6,6 +6,7 @@ import {
   forApplication,
   NO_EARLIER,
   nextPageOf,
+  onSamePage,
   partsOffers,
 } from '../src/several-pages.ts';
 
@@ -121,6 +122,21 @@ describe('an application that runs over several pages', () => {
     // A page that isn't one of several, as after Submit, is for the panel's other checks.
     expect(nextPageOf(page, read('', 0))).toBeNull();
     expect(nextPageOf(page, null)).toBeNull();
+  });
+
+  it('knows the page it filled again, loaded anew at another address, by its step on the same site', () => {
+    const url = 'https://larkspur.taleo.net/careersection/application.jss?type=1&lang=en&portal=8';
+    const page = form('Work Experience', [field('Employer')], { url });
+    const read = (at: string, step: string) => ({ url: at, step });
+    expect(onSamePage(page, read(`${url}#top`, 'Work Experience'))).toBe(true);
+    // An application that loads each page anew, as Taleo's, may give one another address each time.
+    expect(onSamePage(page, read(`${url}&csrftoken=abc`, 'Work Experience'))).toBe(true);
+    expect(onSamePage(page, read(`${url}&csrftoken=abc`, 'Education'))).toBe(false);
+    expect(onSamePage(page, read('https://larkspur.example/apply', 'Work Experience'))).toBe(false);
+    // A form on one page is the same only at its own address.
+    const one = form('', [field('Email')], { url: 'https://jobs.lever.co/northwind/1/apply' });
+    expect(onSamePage(one, read('https://jobs.lever.co/northwind/1/apply#form', ''))).toBe(true);
+    expect(onSamePage(one, read('https://jobs.lever.co/northwind/1/thanks', ''))).toBe(false);
   });
 
   it('offers to add a part for each job and school on file the form has none for, with its own Add', () => {

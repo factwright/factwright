@@ -575,6 +575,66 @@ describe('what a field asks for', () => {
     expect(inPart('Location', 'Previous Harbor & Pine Employment')).toBe('location');
   });
 
+  it('knows the parts for jobs and schools as iCIMS, Taleo, SuccessFactors and SmartRecruiters name them', () => {
+    const inPart = (question: string, section: string, more: { control?: FieldControl } = {}) =>
+      fieldKind({ ...field(question, more), section });
+    // SuccessFactors' rows, its own words.
+    expect(
+      ['Company Name', 'Job Title', 'Date Begin', 'End Date', 'Location'].map((question) =>
+        inPart(question, 'Outside Work Experience'),
+      ),
+    ).toEqual(['current-company', 'current-title', 'job-start', 'job-end', 'job-location']);
+    expect(
+      ['School', 'Degree', 'Major', 'Date Begin', 'End Date'].map((question) =>
+        inPart(question, 'Formal Education'),
+      ),
+    ).toEqual(['school', 'degree', 'discipline', 'edu-start', 'graduation']);
+    // Taleo's: a job's title is its "Job Function", and a school's field its "Program".
+    expect(
+      ['Employer', 'Job Function', 'Responsibility'].map((question) =>
+        inPart(question, 'Work Experience 1'),
+      ),
+    ).toEqual(['current-company', 'current-title', 'job-summary']);
+    expect(inPart('Current Employer', 'Work Experience 1', { control: 'check' })).toBe(
+      'job-current',
+    );
+    expect(inPart('Program', 'Education 1')).toBe('discipline');
+    // iCIMS's, numbered as "(1)", where a job's country and state are where it was, not your home.
+    expect(
+      ['Employer', 'Start Date Month', 'Country', 'State', 'Postal Code', 'City'].map((question) =>
+        inPart(question, 'Work Experience › Professional Experience (1)'),
+      ),
+    ).toEqual(['current-company', 'job-start', 'question', 'question', 'question', 'job-location']);
+    expect(inPart('School', 'College Education (1)')).toBe('school');
+    expect(inPart('Company', 'Current Employment')).toBe('current-company');
+    // SmartRecruiters' editor for each job and school.
+    expect(
+      ['Title', 'Company', 'Office location', 'From', 'To'].map((question) =>
+        inPart(question, 'Experience 2'),
+      ),
+    ).toEqual(['current-title', 'current-company', 'job-location', 'job-start', 'job-end']);
+    expect(inPart('School location', 'Education 1')).toBe('edu-location');
+    // Your own address, outside those parts, is yours.
+    expect(inPart('Country', 'Addresses (1)')).toBe('country');
+  });
+
+  it('leaves a user name and your name where it signs the application for you', () => {
+    expect(['Login', 'User Name', 'Choose a username'].map((each) => fieldKind(field(each)))).toEqual(
+      ['never', 'never', 'never'],
+    );
+    expect(fieldKind({ ...field('Full Name'), section: 'eSignature' })).toBe('consent');
+    expect(fieldKind({ ...field('Full Name'), section: 'Personal Information' })).toBe('full-name');
+  });
+
+  it('takes a box to add a file in a part for your resume as your resume', () => {
+    const file = (question: string, section: string) =>
+      fieldKind({ ...field(question, { control: 'file' }), section });
+    expect(file('', 'Resume')).toBe('resume');
+    expect(file('', 'Easy Apply › Resume/CV')).toBe('resume');
+    expect(file('', 'Portfolio')).toBe('question');
+    expect(file('Cover letter', 'Resume')).toBe('cover-letter');
+  });
+
   it('never takes a reference’s or an emergency contact’s name and phone for yours', () => {
     const inPart = (question: string, section: string, more: { type?: string } = {}) =>
       fieldKind({ ...field(question, more), section });

@@ -118,9 +118,11 @@ export interface FieldFilled {
   shown: string;
   /**
    * Why it didn't take: the field wasn't there anymore, none of its options was the answer, the
-   * page didn't keep what was put in it, or its part holds another job or school (`part`).
+   * page didn't keep what was put in it, its part holds another job or school (`part`), or the
+   * page's own code sends the page away as it changes, as Taleo's do some lists and iCIMS's its
+   * resume box, which would stop filling midway, so it's left for you (`reloads`).
    */
-  why: '' | 'moved' | 'no-option' | 'not-taken' | 'other-part';
+  why: '' | 'moved' | 'no-option' | 'not-taken' | 'other-part' | 'reloads';
   /** Whether it held an answer already, which it left as it was (`ifEmpty`). */
   kept?: boolean;
 }
@@ -200,20 +202,27 @@ export async function formPage(
   const MAX_VALUE = 10_000;
   /** Inputs that are buttons, or kept from you, which are never fields. */
   const NOT_FIELDS = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'search']);
-  /** The page's own parts around its content, where a site's search and sign-up boxes are. */
-  const AROUND = 'header, nav, footer, [role="banner"], [role="navigation"], [role="search"]';
+  /**
+   * The page's own parts around its content, where a site's search and sign-up boxes are, and
+   * its menus for your account and language, as SuccessFactors' beside its form.
+   */
+  const AROUND =
+    'header, nav, footer, [role="banner"], [role="navigation"], [role="search"], .userInfoMenu';
   /** A label that only says how to add a file, not which file. */
   const UPLOAD_WORDS =
     /^(attach|upload|choose( a)? files?|browse|select( a)? files?|drop( files?)?( here)?|add( a)? files?|or|enter manually)( |$)/i;
   /** Words that only say how to answer a question of options, not what it asks. */
   const HOW_ONLY =
     /^(please )?(check|select|choose|tick|mark|pick)( only)?( one| all| any)?( of)?( the| that)?( boxes| options| following| answers?)?( below| apply| that apply)?:?$/i;
-  /** Words a box shows before you type, which say nothing of what it asks. */
+  /**
+   * Words a box shows before you type, or a list before you pick, which say nothing of what it
+   * asks, nor what's in it, as "— Make a Selection —" and SuccessFactors' "No Selection".
+   */
   const PLACEHOLDERS =
-    /^(type here|select|choose|start typing|please select|search|enter|write here)\b|\.\.\.$|…$|^[-–—]+$/i;
+    /^[-–—\s]*(type here|select|choose|start typing|please select|please choose|search|enter|write here|make a selection|no selection|type to search)\b|\.\.\.$|…$|^[-–—]+$/i;
   /** What a page says once an application went in. */
   const SUBMITTED =
-    /thank(s| you) for (applying|your application|submitting)|application (has been |was )?(submitted|received|sent)|we(’|')?ve received your application|we have received your application|you(’|')?ve (successfully )?applied|your application is (in|complete)/i;
+    /thank(s| you) for (applying|your application|submitting)|application (has been |was )?(submitted|received|sent)|we(’|')?ve received your application|we have received your application|you(’|')?ve (successfully )?applied|your application is (in|complete)|\bview my submissions\b/i;
   /** Orange, as the app marks what needs you. */
   const ORANGE = '#e8590c';
   /**
@@ -234,13 +243,136 @@ export async function formPage(
     typeof (doc.documentElement as HTMLElement & { checkVisibility?: unknown }).checkVisibility ===
     'function';
 
+  // A page can be built of components that keep their own elements, each in a part of the page of
+  // its own, a shadow root, as SmartRecruiters' newer form's fields are. What's inside one the
+  // page leaves open counts as the page's, where the component is, so a field inside one is read
+  // as a field, by the words around it inside and out. A page with none is read as it always was.
+
+  /** The component whose insides an element is in, or null for the page's own. */
+  const hostOf = (node: Node): Element | null => {
+    const root = node.getRootNode();
+    return root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
+  };
+
+  /** Whether the page has a component it leaves open, with anything inside. */
+  const components = (() => {
+    const walker = doc.createTreeWalker(doc, 1);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if ((node as Element).shadowRoot) return true;
+    }
+    return false;
+  })();
+
+  /** The element around one: its parent, or for the top of a component's insides, the component. */
+  const upOf = (element: Element): Element | null => element.parentElement ?? hostOf(element);
+
+  /** The nearest element around one that matches, itself first, inside components and out. */
+  const closestOf = (element: Element, selector: string): Element | null => {
+    for (let at: Element | null = element; at; at = hostOf(at)) {
+      const found = at.closest(selector);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  /** The nearest element around one that matches, not itself, inside components and out. */
+  const aroundOf = (element: Element, selector: string): Element | null => {
+    const up = upOf(element);
+    return up ? closestOf(up, selector) : null;
+  };
+
+  /** Whether an element is, or is inside, another, inside components and out. */
+  const within = (box: Element, element: Element): boolean => {
+    if (!components) return box.contains(element);
+    for (let at: Element | null = element; at; at = upOf(at)) {
+      if (at === box) return true;
+    }
+    return false;
+  };
+
+  /**
+   * The element with an ID, in the same part of the page as an element, or else in the parts
+   * around it, as a component may name its list, which the component around it keeps.
+   */
+  const byId = (element: Node, id: string): Element | null => {
+    for (let at: Node | null = element; at; at = hostOf(at)) {
+      const root = at.getRootNode() as Document | ShadowRoot;
+      const found =
+        typeof root.getElementById === 'function'
+          ? root.getElementById(id)
+          : doc.getElementById(id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  /**
+   * The elements an element shows inside it, as the page lays them out: a component's insides,
+   * with what the page put in it where its slots are, or else its own children.
+   */
+  const shownElements = (element: ParentNode): Element[] => {
+    const inside = (element as Element).shadowRoot;
+    if (inside) return [...inside.children];
+    if ((element as Element).tagName === 'SLOT') {
+      const slotted = (element as HTMLSlotElement).assignedElements({ flatten: true });
+      if (slotted.length > 0) return slotted;
+    }
+    return [...element.children];
+  };
+
+  /**
+   * The elements that match, in the page or in an element, inside the components in it that the
+   * page leaves open too, in the order the page shows them: a component's insides where it is,
+   * with what's put in its slots where they are.
+   */
+  const everyOf = <T extends Element = Element>(selector: string, from: ParentNode = doc): T[] => {
+    if (!components) return [...from.querySelectorAll<T>(selector)];
+    const found: T[] = [];
+    const walk = (parent: ParentNode) => {
+      for (const each of shownElements(parent)) {
+        if (each.matches(selector)) found.push(each as T);
+        walk(each);
+      }
+    };
+    walk(from);
+    return found;
+  };
+
+  /** Whether an element holds one that matches, inside components and out. */
+  const holds = (box: Element, selector: string): boolean =>
+    box.querySelector(selector) !== null || (components && everyOf(selector, box).length > 0);
+
+  /** An element, and each component it's inside, the nearest first. */
+  const hostsOf = (element: Element): Element[] => {
+    const all = [element];
+    for (let host = hostOf(element); host; host = hostOf(host)) all.push(host);
+    return all;
+  };
+
+  /**
+   * Whether an element comes after another in the page, inside components and out: as they are,
+   * in the same part of the page, or else as the components they're inside are, where those are in
+   * the same part. Inside a component is after the component itself.
+   */
+  const comesAfter = (before: Element, element: Element): boolean => {
+    const theirs = hostsOf(element);
+    for (const one of hostsOf(before)) {
+      const root = one.getRootNode();
+      const two = theirs.find((each) => each.getRootNode() === root);
+      if (!two) continue;
+      if (one === two) return one === before;
+      return Boolean(one.compareDocumentPosition(two) & FOLLOWS);
+    }
+    return false;
+  };
+
   /**
    * Whether an element is shown: not hidden, see-through, or kept from you and your screen reader,
    * as what's around a dialog is while it's open. The browser says, where it can. In a page
    * without layout, as in a test, what hides it is an attribute or style on it or around it.
    */
   const shown = (element: Element): boolean => {
-    if (element.closest('[aria-hidden="true"], [inert]')) return false;
+    if (closestOf(element, '[aria-hidden="true"], [inert]')) return false;
     if (laidOut) {
       return (element as HTMLElement).checkVisibility({
         visibilityProperty: true,
@@ -250,7 +382,7 @@ export async function formPage(
         checkOpacity: true,
       } as CheckVisibilityOptions);
     }
-    for (let up: Element | null = element; up; up = up.parentElement) {
+    for (let up: Element | null = element; up; up = upOf(up)) {
       if (up.hasAttribute('hidden')) return false;
       const style = (up as HTMLElement).style;
       if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
@@ -288,7 +420,7 @@ export async function formPage(
     const own = view.getComputedStyle(element);
     if (clipsAll(own)) return false;
     let placed = own.position;
-    for (let up = element.parentElement; up && up !== doc.body; up = up.parentElement) {
+    for (let up = upOf(element); up && up !== doc.body; up = upOf(up)) {
       if (placed === 'fixed') break;
       const style = view.getComputedStyle(up);
       if (placed === 'absolute' && style.position === 'static') continue;
@@ -316,10 +448,31 @@ export async function formPage(
   /** Whether you can see an element: shown, with room on the page. */
   const visible = (element: Element): boolean => shown(element) && hasRoom(element);
 
-  /** An element's words, without the controls, options and scripts inside it. */
+  /**
+   * What shows inside an element: its children, or for a component, its insides, with what the
+   * page put in it where its slots are.
+   */
+  const shownChildren = (element: Element): Node[] => {
+    if (components && element.shadowRoot) return [...element.shadowRoot.childNodes];
+    if (components && element.tagName === 'SLOT') {
+      const slotted = (element as HTMLSlotElement).assignedNodes({ flatten: true });
+      if (slotted.length > 0) return slotted;
+    }
+    return [...element.childNodes];
+  };
+
+  /**
+   * An element's words, without the controls, options, tooltips and scripts inside it. A heading's
+   * words are its button's too, as a section that opens and closes names itself with one, as
+   * SuccessFactors' do, and so are a button's own.
+   */
   const wordsOf = (element: Element | null): string => {
     if (!element) return '';
     let text = '';
+    const buttons = element.matches('h1, h2, h3, h4, h5, h6, [role="heading"], button');
+    const skips = buttons
+      ? /^(INPUT|SELECT|TEXTAREA|OPTION|SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG)$/
+      : /^(INPUT|SELECT|TEXTAREA|OPTION|SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|BUTTON)$/;
     const walk = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent ?? '';
@@ -328,17 +481,17 @@ export async function formPage(
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const each = node as Element;
       const tag = each.tagName;
-      if (/^(INPUT|SELECT|TEXTAREA|OPTION|SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|BUTTON)$/.test(tag)) {
+      if (skips.test(tag)) return;
+      if (each !== element && each.matches('[role="listbox"], [role="option"], [role="tooltip"]')) {
         return;
       }
-      if (each !== element && each.matches('[role="listbox"], [role="option"]')) return;
       // Words the page hides, such as a status it shows only after an upload, aren't the label's.
       if (each !== element && each.hasAttribute('hidden')) return;
       if (each !== element && typeof (each as HTMLElement).checkVisibility === 'function') {
         if (!(each as HTMLElement).checkVisibility()) return;
       }
       if (/^(P|DIV|LI|BR|H[1-6]|LABEL|LEGEND)$/.test(tag)) text += ' ';
-      for (const child of each.childNodes) walk(child);
+      for (const child of shownChildren(each)) walk(child);
       if (/^(P|DIV|LI|H[1-6]|LABEL|LEGEND)$/.test(tag)) text += ' ';
     };
     walk(element);
@@ -346,12 +499,22 @@ export async function formPage(
   };
 
   /**
-   * A question without what only marks it as required: "Email *" is "Email". A label that runs on
-   * after its mark, as "Resume/CV ✱ Attach resume/CV" does, ends at the mark.
+   * The words an element shows: its own text, or what a component shows through its slots, as
+   * SmartRecruiters' options show theirs, whose own text is none.
+   */
+  const textOf = (element: Element): string =>
+    squash(element.textContent ?? '') || (components ? wordsOf(element) : '');
+
+  /**
+   * A question without what only marks it as required: "Email *" is "Email", and "*First Name:",
+   * as SuccessFactors puts its mark first, "First Name:". A label that runs on after its mark, as
+   * "Resume/CV ✱ Attach resume/CV" does, ends at the mark.
    */
   const cleanQuestion = (text: string) => {
     // A page's words are cut short first, so no label, however long, can slow what follows.
-    const words = squash(text).slice(0, MAX_TEXT * 2);
+    const words = squash(text)
+      .slice(0, MAX_TEXT * 2)
+      .replace(/^[*✱]+\s*/, '');
     const [before = ''] = words.split(/\s*[*✱]+(?:\s|$)/);
     return (before.trim() || words)
       .replace(/\s*[*✱]+\s*$/, '')
@@ -360,22 +523,82 @@ export async function formPage(
       .trim();
   };
 
-  /** Whether the words around a field mark it as one you must answer. */
+  /** Whether the words around a field mark it as one you must answer, before or after. */
   const marksRequired = (text: string) =>
-    /[*✱]\s*$|\(required\)\s*$/i.test(squash(text).slice(-MAX_TEXT));
+    /^\s*[*✱]|[*✱]\s*$|\(required\)\s*$/i.test(squash(text).slice(-MAX_TEXT));
 
   /** Elements named in an attribute such as aria-labelledby, by their IDs. */
   const named = (element: Element, attribute: string): Element[] =>
     (element.getAttribute(attribute) ?? '')
       .split(/\s+/)
       .filter(Boolean)
-      .map((id) => doc.getElementById(id))
+      .map((id) => byId(element, id))
       .filter((each): each is HTMLElement => each !== null && each !== element);
 
   /** Whether a control is a button that opens a list to pick from, as Workday's dropdowns are. */
   const opensList = (control: Element): boolean =>
     control.getAttribute('aria-haspopup') === 'listbox' &&
     control.matches('button, [role="button"]');
+
+  /**
+   * Whether a control is a box a page made of its own that shows the option picked and opens a
+   * list, as iCIMS's dropdowns are a link beside the list they keep hidden: a combobox that isn't
+   * a box to type in.
+   */
+  const pickBox = (control: Element): boolean =>
+    control.getAttribute('role') === 'combobox' &&
+    !/^(INPUT|SELECT|TEXTAREA)$/.test(control.tagName);
+
+  /**
+   * Whether an element is a radio button a page made of its own, with no input of its own, as
+   * SmartRecruiters' components and SuccessFactors' radios are: one with that role.
+   */
+  const ownRadio = (element: Element): boolean =>
+    element.getAttribute('role') === 'radio' && element.tagName !== 'INPUT';
+
+  /** Whether a box to tick, or a radio button, is ticked, as an input says, or a page's own. */
+  const ticked = (element: Element): boolean =>
+    (element as HTMLInputElement).checked === true ||
+    element.getAttribute('aria-checked') === 'true';
+
+  /**
+   * The nearest element around one that matches, as the page shows it: through the slot a
+   * component puts it in, as SmartRecruiters' radio buttons show inside their group's set.
+   */
+  const shownAround = (element: Element, selector: string): Element | null => {
+    for (let at = element.assignedSlot ?? upOf(element); at; at = at.assignedSlot ?? upOf(at)) {
+      if (at.matches(selector)) return at;
+    }
+    return null;
+  };
+
+  /**
+   * Whether a control's own code sends the page away as it changes, as some of Taleo's lists post
+   * the page, and iCIMS's resume box sends the form to read the resume into it: a field filling
+   * would stop midway at, so it's left for you.
+   */
+  const sendsPage = (control: Element): boolean =>
+    /\b(cmdSubmit|submit|__doPostBack|icims_setFileFieldValue)\s*\(/.test(
+      `${control.getAttribute('onchange') ?? ''} ${control.getAttribute('onclick') ?? ''}`,
+    );
+
+  /**
+   * Words that say a box takes a whole date, its day too, as "MM/DD/YYYY", "dd.MM.yyyy" or
+   * "YYYY-MM-DD" do: three parts, a day, a month and a year.
+   */
+  const WHOLE_DATE =
+    /^(?=.*\b(d{1,2}|t{1,2})\b)(?=.*\bm{1,2}\b)(?=.*\b(y{2,4}|j{2,4}|a{2,4})\b)[dmytja]+([./\- ][dmytja]+){2}$/i;
+
+  /**
+   * Whether a box of words takes a whole date, as its placeholder says, or the component it's in,
+   * as SuccessFactors' calendars say "MM/DD/YYYY": a day, which a job's dates never have.
+   */
+  const takesDay = (control: Element): boolean =>
+    (components ? hostsOf(control) : [control]).some((each) =>
+      ['placeholder', 'format-pattern'].some((name) =>
+        WHOLE_DATE.test(squash(each.getAttribute(name) ?? '')),
+      ),
+    );
 
   /**
    * Whether a box is one of Workday's lists you search, which looks up what's typed once you press
@@ -389,8 +612,8 @@ export async function formPage(
 
   /**
    * What a button that opens a list says it asks, without the option it shows and "Required",
-   * which Workday's dropdowns add to their names: "Country/Region United States of America
-   * Required" asks "Country/Region", and " Select One Required" nothing.
+   * which Workday's dropdowns add to their names, as iCIMS's do theirs: "Country/Region United
+   * States of America Required" asks "Country/Region", and " Select One Required" nothing.
    */
   const askedBy = (button: Element): string => {
     const showing = squash(button.textContent ?? '');
@@ -399,17 +622,24 @@ export async function formPage(
     return words.trim();
   };
 
-  /** The labels that name a control: those for its ID, and the one it's inside. */
+  /**
+   * The labels that name a control: those for its ID, and the one it's inside, or for a control
+   * inside a component, those for the component's.
+   */
   const labelsOf = (control: Element): HTMLLabelElement[] => {
     const found: HTMLLabelElement[] = [];
-    const id = control.getAttribute('id');
-    if (id) {
-      for (const label of doc.querySelectorAll('label[for]')) {
+    for (const each of components ? hostsOf(control) : [control]) {
+      const id = each.getAttribute('id');
+      if (!id) continue;
+      const root = each.getRootNode() as Document | ShadowRoot;
+      for (const label of root.querySelectorAll('label[for]')) {
         if (label.getAttribute('for') === id) found.push(label as HTMLLabelElement);
       }
     }
-    const around = control.closest('label');
-    if (around && !found.includes(around)) found.push(around);
+    const around = closestOf(control, 'label');
+    if (around && !found.includes(around as HTMLLabelElement)) {
+      found.push(around as HTMLLabelElement);
+    }
     return found;
   };
 
@@ -454,13 +684,12 @@ export async function formPage(
       for (let before = up.previousElementSibling; before; before = before.previousElementSibling) {
         if (!shown(before)) continue;
         if (before.matches('input, select, textarea')) return '';
-        const holds = before.querySelector('input:not([type="hidden"]), select, textarea');
-        if (holds) return '';
+        if (holds(before, 'input:not([type="hidden"]), select, textarea')) return '';
         const words = wordsOf(before);
         // A button's own label, such as "Attach", says how, not what: the question is further up.
         if (words && !UPLOAD_WORDS.test(words)) return words.length > MAX_TEXT ? '' : words;
       }
-      up = up.parentElement;
+      up = upOf(up);
     }
     return '';
   };
@@ -483,11 +712,7 @@ export async function formPage(
    * another, as Workday's are, whose legend asks the question.
    */
   const legendOf = (control: Element): string => {
-    for (
-      let set = control.closest('fieldset');
-      set;
-      set = set.parentElement?.closest('fieldset') ?? null
-    ) {
+    for (let set = closestOf(control, 'fieldset'); set; set = aroundOf(set, 'fieldset')) {
       const legend = [...set.children].find((child) => child.tagName === 'LEGEND');
       if (legend) return wordsOf(legend);
     }
@@ -502,11 +727,8 @@ export async function formPage(
   const datePartOf = (control: Element): string => {
     const legend = legendOf(control);
     if (legend) return legend;
-    for (
-      let set = control.closest('fieldset, [role="group"]');
-      set;
-      set = set.parentElement?.closest('fieldset, [role="group"]') ?? null
-    ) {
+    const SET = 'fieldset, [role="group"]';
+    for (let set = closestOf(control, SET); set; set = aroundOf(set, SET)) {
       const words = groupWords(set);
       if (words) return words;
     }
@@ -527,15 +749,13 @@ export async function formPage(
    */
   let headings: { heading: Element; words: string; names: Element }[] | null = null;
   const headingsOf = () => {
-    headings ??= [...doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')].flatMap(
-      (heading) => {
-        if (heading.closest(`${AROUND}, label, legend`) || !shown(heading)) return [];
-        const words = wordsOf(heading);
-        let names = heading.parentElement;
-        while (names && !names.querySelector(CONTROLS)) names = names.parentElement;
-        return words && words.length <= MAX_SECTION && names ? [{ heading, words, names }] : [];
-      },
-    );
+    headings ??= everyOf('h1, h2, h3, h4, h5, h6, [role="heading"]').flatMap((heading) => {
+      if (closestOf(heading, `${AROUND}, label, legend`) || !shown(heading)) return [];
+      const words = wordsOf(heading);
+      let names = upOf(heading);
+      while (names && !holds(names, CONTROLS)) names = upOf(names);
+      return words && words.length <= MAX_SECTION && names ? [{ heading, words, names }] : [];
+    });
     return headings;
   };
 
@@ -546,8 +766,8 @@ export async function formPage(
   const headingAbove = (element: Element, question = '') => {
     let heading: { words: string; names: Element } | null = null;
     for (const each of headingsOf()) {
-      if (!(each.heading.compareDocumentPosition(element) & FOLLOWS)) break;
-      if (each.names.contains(element) && each.words !== question) heading = each;
+      if (!comesAfter(each.heading, element)) break;
+      if (within(each.names, element) && each.words !== question) heading = each;
     }
     return heading;
   };
@@ -569,12 +789,10 @@ export async function formPage(
     const [first] = members;
     if (!first) return '';
     const heading = headingAbove(first, question);
-    let set = first.parentElement?.closest(SETS) ?? null;
+    let set = aroundOf(first, SETS);
     let named = '';
-    for (; set; set = set.parentElement?.closest(SETS) ?? null) {
-      const others = [...set.querySelectorAll<HTMLElement>(CONTROLS)].filter(
-        (each) => !members.includes(each),
-      );
+    for (; set; set = aroundOf(set, SETS)) {
+      const others = everyOf<HTMLElement>(CONTROLS, set).filter((each) => !members.includes(each));
       named = others.length >= 3 ? groupWords(set) : '';
       if (named && named.length <= MAX_SECTION) break;
       named = '';
@@ -582,7 +800,7 @@ export async function formPage(
     const names =
       !heading || !set
         ? [heading?.words ?? '', named]
-        : heading.names.contains(set)
+        : within(heading.names, set)
           ? [heading.words, named]
           : [named, heading.words];
     return [...new Set(names.filter(Boolean))].join(' › ');
@@ -602,19 +820,29 @@ export async function formPage(
     if (take(byIds) && !UPLOAD_WORDS.test(byIds))
       return { question: cleanQuestion(byIds), raw: byIds };
     for (const label of labelsOf(control)) {
-      const words = label.contains(control)
+      const words = within(label, control)
         ? wordsBefore(label, control) || wordsOf(label)
         : wordsOf(label);
       if (take(words) && !UPLOAD_WORDS.test(words))
         return { question: cleanQuestion(words), raw: words };
     }
-    const aria = opensList(control) ? askedBy(control) : (control.getAttribute('aria-label') ?? '');
+    const aria =
+      opensList(control) || pickBox(control)
+        ? askedBy(control)
+        : (control.getAttribute('aria-label') ?? '');
     if (take(aria) && !UPLOAD_WORDS.test(aria)) return { question: cleanQuestion(aria), raw: aria };
+    // A component may name what its field asks itself.
+    for (const host of components ? hostsOf(control).slice(1) : []) {
+      const said = host.getAttribute('aria-label') ?? '';
+      if (take(said) && !UPLOAD_WORDS.test(said)) {
+        return { question: cleanQuestion(said), raw: said };
+      }
+    }
     // A file field's own label often only says how to add one: the question is the group's.
-    const group = groupWords(control.closest('[role="group"], [role="radiogroup"], fieldset'));
+    const group = groupWords(closestOf(control, '[role="group"], [role="radiogroup"], fieldset'));
     if (take(group) && !UPLOAD_WORDS.test(group))
       return { question: cleanQuestion(group), raw: group };
-    const above = wordsAbove(control.closest('label') ?? control);
+    const above = wordsAbove(closestOf(control, 'label') ?? control);
     if (take(above) && !UPLOAD_WORDS.test(above))
       return { question: cleanQuestion(above), raw: above };
     const placeholder = control.getAttribute('placeholder') ?? '';
@@ -641,10 +869,10 @@ export async function formPage(
     if (described) return cut(described);
     // Words between a field's label and the field, as a form puts what it's for under its label.
     const [label] = labelsOf(control);
-    if (label && !label.contains(control)) {
+    if (label && !within(label, control)) {
       let between = '';
       for (let next = label.nextElementSibling; next; next = next.nextElementSibling) {
-        if (next.contains(control) || next.matches('input, select, textarea')) break;
+        if (within(next, control) || next.matches('input, select, textarea')) break;
         if (shown(next)) between += ` ${wordsOf(next)}`;
       }
       const words = squash(between);
@@ -673,10 +901,18 @@ export async function formPage(
       const words = wordsOf(label);
       if (words) return cut(words);
     }
-    const aria = control.getAttribute('aria-label') ?? control.getAttribute('value') ?? '';
-    if (aria && aria !== 'on') return cut(squash(aria));
-    const next = control.nextSibling?.textContent ?? '';
-    return cut(squash(next));
+    // What names it, as a component's box names itself by its label's ID, or its own words.
+    const labelled = squash(named(control, 'aria-labelledby').map(wordsOf).join(' '));
+    if (labelled) return cut(labelled);
+    const own = squash(control.getAttribute('aria-label') ?? control.getAttribute('label') ?? '');
+    if (own) return cut(own);
+    // A page's own radio button says its words itself, inside it.
+    if (ownRadio(control)) return cut(wordsOf(control));
+    // The words beside it, then its value, which may be a code, as iCIMS's forms' radios have.
+    const next = squash(control.nextSibling?.textContent ?? '');
+    if (next) return cut(next);
+    const value = control.getAttribute('value') ?? '';
+    return value && value !== 'on' ? cut(squash(value)) : '';
   };
 
   /** A select's options, as it shows them, without one that only says to pick. */
@@ -693,19 +929,17 @@ export async function formPage(
 
   /** The fields a box around a control holds besides it, but for those kept from you. */
   const holdsOther = (box: Element, control: Element) =>
-    [
-      ...box.querySelectorAll(
-        'input:not([type="hidden"]):not([aria-hidden="true"]), select, textarea',
-      ),
-    ].some((each) => each !== control);
+    everyOf('input:not([type="hidden"]):not([aria-hidden="true"]), select, textarea', box).some(
+      (each) => each !== control,
+    );
 
   /** The boxes around a control that hold no other field, the nearest first, a few at most. */
   const ownBoxes = (control: Element): Element[] => {
     const boxes: Element[] = [];
     for (
-      let up = control.parentElement, level = 0;
+      let up = upOf(control), level = 0;
       up && up !== doc.body && level < 6 && !holdsOther(up, control);
-      up = up.parentElement, level++
+      up = upOf(up), level++
     ) {
       boxes.push(up);
     }
@@ -753,11 +987,11 @@ export async function formPage(
    * list you search, nor one the page is still closing, as Workday's lingers a moment.
    */
   const openedBy = (control: Element, before?: ReadonlySet<Element>): Element[] => {
-    const open = [...doc.querySelectorAll('[role="listbox"]')].filter(
+    const open = everyOf('[role="listbox"]').filter(
       (list) =>
-        !list.contains(control) &&
+        !within(list, control) &&
         !list.matches('[data-automation-id="selectedItemList"]') &&
-        !list.closest('[visibility="closing"], [visibility="close"]') &&
+        !closestOf(list, '[visibility="closing"], [visibility="close"]') &&
         shown(list),
     );
     if (before) return open.filter((list) => !before.has(list));
@@ -775,14 +1009,18 @@ export async function formPage(
       ...named(control, 'aria-controls'),
       ...named(control, 'aria-owns'),
       // Not the list of picks beside a list you search, as Workday's, which are no options.
-      ...ownBoxes(control).flatMap((box) => [
-        ...box.querySelectorAll('[role="listbox"]:not([data-automation-id="selectedItemList"])'),
-      ]),
+      ...ownBoxes(control).flatMap((box) =>
+        everyOf('[role="listbox"]:not([data-automation-id="selectedItemList"])', box),
+      ),
       ...(opensList(control) ? openedBy(control, before) : []),
       ...(searches(control) ? foundIn(control) : []),
+      // A box a page made of its own keeps its list in the box after it, as iCIMS's does.
+      ...(pickBox(control) && control.nextElementSibling
+        ? everyOf('[role="listbox"]', control.nextElementSibling)
+        : []),
     ];
     for (const list of lists) {
-      const options = [...list.querySelectorAll('[role="option"]')].filter(shown);
+      const options = everyOf('[role="option"]', list).filter(shown);
       if (options.length > 0) return options;
     }
     const suggests = suggestionsOf(control);
@@ -790,6 +1028,18 @@ export async function formPage(
     return [...suggests.results.children].filter(
       (each) => shown(each) && squash(each.textContent ?? '') !== '',
     );
+  };
+
+  /**
+   * The box that searches the list a box a page made of its own opens, as iCIMS's keeps one in
+   * the box after it, with its list.
+   */
+  const searchBoxOf = (control: Element): HTMLInputElement | null => {
+    for (const holder of [control.nextElementSibling, ...named(control, 'aria-controls')]) {
+      const found = holder?.querySelector<HTMLInputElement>('input:not([type="hidden"])');
+      if (found) return found;
+    }
+    return null;
   };
 
   /**
@@ -806,7 +1056,8 @@ export async function formPage(
 
   /** The box a box that offers choices shows as, around its own input, which may be see-through. */
   const comboBox = (control: Element): Element | null =>
-    control.closest(
+    closestOf(
+      control,
       '[class*="control"], [class*="select"], [class*="combobox"], [class*="dropdown"]',
     );
 
@@ -848,7 +1099,8 @@ export async function formPage(
    * What marks the step an application that runs over several pages is on: Workday's progress
    * bar's, or any marked as the current step.
    */
-  const STEP_NOW = '[data-automation-id="progressBarActiveStep"], [aria-current="step"]';
+  const STEP_NOW =
+    '[data-automation-id="progressBarActiveStep"], [aria-current="step"], li.iCIMS_Steps_Current, .datatrain-focus .datatrain-wagon';
   /** Words that say a button adds a part to a form, as "Add", "Add Another" and "+ Add another job". */
   const ADDS = /^\+?\s*add\b(?!\s+(to|a file|file|files|attachment)\b)/i;
   /** The most parts it adds to a form at once, and how long it waits for each to show. */
@@ -862,10 +1114,10 @@ export async function formPage(
    */
   const pressedSets = (): HTMLElement[][] => {
     const sets = new Map<Element, HTMLElement[]>();
-    for (const button of doc.querySelectorAll<HTMLElement>('button[aria-pressed]')) {
+    for (const button of everyOf<HTMLElement>('button[aria-pressed]')) {
       const parent = button.parentElement;
-      if (!parent || button.closest(AROUND) || (button as HTMLButtonElement).disabled) continue;
-      if (button.closest('[aria-hidden="true"], [inert]') || !visible(button)) continue;
+      if (!parent || closestOf(button, AROUND) || (button as HTMLButtonElement).disabled) continue;
+      if (closestOf(button, '[aria-hidden="true"], [inert]') || !visible(button)) continue;
       const words = squash(button.textContent ?? '');
       if (!words || words.length > PRESSED_WORDS) continue;
       sets.set(parent, [...(sets.get(parent) ?? []), button]);
@@ -878,11 +1130,11 @@ export async function formPage(
     const type = (control.getAttribute('type') ?? '').toLowerCase();
     if (control instanceof HTMLInputElement && NOT_FIELDS.has(type)) return false;
     if ((control as HTMLInputElement).disabled) return false;
-    if (control.closest(AROUND)) return false;
+    if (closestOf(control, AROUND)) return false;
     // A captcha's box, and a box only a page's own code fills, such as a picker's hidden one.
     if (
       /captcha/i.test(control.getAttribute('name') ?? '') ||
-      control.closest('[class*="captcha"]')
+      closestOf(control, '[class*="captcha"]')
     ) {
       return false;
     }
@@ -894,7 +1146,7 @@ export async function formPage(
       !control.getAttribute('name') &&
       !control.getAttribute('aria-label') &&
       !control.getAttribute('aria-labelledby') &&
-      !control.closest('label') &&
+      !closestOf(control, 'label') &&
       !ownBoxes(control).some(
         (box) => box.hasAttribute('aria-labelledby') || box.hasAttribute('aria-label'),
       );
@@ -911,13 +1163,29 @@ export async function formPage(
     ) {
       return false;
     }
+    // So is the list a page keeps hidden beside its own box that shows the pick, as iCIMS's
+    // dropdowns keep theirs, and the box that searches that box's list, in the box after it.
+    const after = control.nextElementSibling;
+    if (control.tagName === 'SELECT' && after !== null && pickBox(after)) return false;
+    for (let up = control.parentElement, level = 0; up && level < 4; up = up.parentElement) {
+      const list = up.previousElementSibling;
+      if (list !== null && pickBox(list)) return false;
+      level += 1;
+    }
+    // A box that reads your resume to fill the form in for you, as SmartRecruiters' Easy Apply
+    // does, is the site's own way to apply: Factwright fills the form itself.
+    if (closestOf(control, '[data-test="apply-with-resume-container"]')) return false;
     // Kept from you, as what's around a dialog is while it's open, it's never a field.
-    if (control.closest('[aria-hidden="true"], [inert]')) return false;
+    if (closestOf(control, '[aria-hidden="true"], [inert]')) return false;
     // A file field, a radio button or a checkbox is often hidden behind the page's own button or
     // box, and its label is what you see. A box that offers choices may be see-through, inside
     // the box it shows as.
     if (type === 'file' || type === 'radio' || type === 'checkbox') {
       return visible(control) || labelsOf(control).some(visible);
+    }
+    // A radio button a page made of its own shows as itself, or its label does.
+    if (ownRadio(control)) {
+      return visible(control) || named(control, 'aria-labelledby').some(visible);
     }
     if (control.getAttribute('role') === 'combobox' && !visible(control)) {
       const box = comboBox(control);
@@ -931,18 +1199,14 @@ export async function formPage(
     const pressed = pressedSets();
     const pressedFirst = new Map(pressed.map((set) => [set[0] as HTMLElement, set]));
     const holders = pressed.map((set) => set[0]?.parentElement as Element);
-    const controls = [
-      ...doc.querySelectorAll<HTMLElement>(
-        'input, select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"], button[aria-haspopup="listbox"], [role="button"][aria-haspopup="listbox"]',
-      ),
-    ]
-      .filter((control) => !holders.some((holder) => holder.contains(control)))
+    const controls = everyOf<HTMLElement>(
+      'input, select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"], button[aria-haspopup="listbox"], [role="button"][aria-haspopup="listbox"], [role="radio"]:not(input)',
+    )
+      .filter((control) => !holders.some((holder) => within(holder, control)))
       .filter(isField);
     // Each set of buttons that stays pressed goes in the page's order, by its first.
     for (const first of pressedFirst.keys()) {
-      const after = controls.findIndex(
-        (control) => first.compareDocumentPosition(control) & FOLLOWS,
-      );
+      const after = controls.findIndex((control) => comesAfter(first, control));
       controls.splice(after < 0 ? controls.length : after, 0, first);
     }
     /**
@@ -955,8 +1219,15 @@ export async function formPage(
       const type = (control.getAttribute('type') ?? '').toLowerCase();
       const name = control.getAttribute('name');
       if ((type === 'radio' || type === 'checkbox') && name) return `${type}:${name}`;
-      const set = type === 'checkbox' ? control.closest(BOX_SETS) : null;
-      const inside = set ? [...set.querySelectorAll(CONTROLS)] : [];
+      // A page's own radio buttons are one question by the set they show in.
+      if (ownRadio(control)) {
+        const set = shownAround(control, '[role="radiogroup"]') ?? control.parentElement;
+        if (!set) return '';
+        if (!sets.has(set)) sets.set(set, sets.size);
+        return `radio:set:${sets.get(set)}`;
+      }
+      const set = type === 'checkbox' ? closestOf(control, BOX_SETS) : null;
+      const inside = set ? everyOf(CONTROLS, set) : [];
       if (!set || inside.length < 2 || !inside.every((each) => each.matches(OPTIONS))) return '';
       if (!sets.has(set)) sets.set(set, sets.size);
       return `checkbox:set:${sets.get(set)}`;
@@ -985,7 +1256,7 @@ export async function formPage(
         // The hidden field beside them, as the page keeps the answer in, names the question.
         const kept = holder.querySelector('input[name]')?.getAttribute('name') ?? '';
         const raw =
-          groupWords(control.closest('[role="radiogroup"], [role="group"]')) ||
+          groupWords(closestOf(control, '[role="radiogroup"], [role="group"]')) ||
           groupWords(holder) ||
           wordsAbove(holder);
         const own = cut(squash(`${kept} ${holder.getAttribute('id') ?? ''}`));
@@ -1011,16 +1282,20 @@ export async function formPage(
         });
         continue;
       }
-      if (group && (type === 'radio' || group.length > 1)) {
+      const radio = type === 'radio' || ownRadio(control);
+      if (group && (radio || group.length > 1)) {
         members = group;
         for (const each of group) done.add(each);
-        // The group's question is above its options: a legend, a group's label, or the words before it.
-        const role = control.closest('[role="radiogroup"], [role="group"]');
-        let common: Element | null = control.parentElement;
-        while (common && !group.every((each) => common?.contains(each)))
-          common = common.parentElement;
+        // The group's question is above its options: a legend, a group's label, or the words before
+        // it. A page's own radio buttons show in their set through a component's slot.
+        const role = ownRadio(control)
+          ? shownAround(control, '[role="radiogroup"]')
+          : closestOf(control, '[role="radiogroup"], [role="group"]');
+        let common: Element | null = upOf(control);
+        while (common && !group.every((each) => common !== null && within(common, each)))
+          common = upOf(common);
         // The words before the first option, inside the group's own box, or else above the box.
-        const first = control.closest('label') ?? control;
+        const first = closestOf(control, 'label') ?? control;
         const raw =
           legendOf(control) ||
           groupWords(role) ||
@@ -1032,12 +1307,15 @@ export async function formPage(
         field = {
           question: cut(cleanQuestion(how || raw)),
           hint: how ? cut(cleanQuestion(raw)) : '',
-          control: type === 'radio' ? 'choice' : 'choices',
+          control: radio ? 'choice' : 'choices',
           type: type.slice(0, 40),
           autocomplete: '',
           name: cut(squash(`${name} ${id}`)),
           options: group.slice(0, MAX_FIELDS).map(optionWords),
-          required: group.some((each) => (each as HTMLInputElement).required) || marksRequired(raw),
+          required:
+            group.some((each) => (each as HTMLInputElement).required) ||
+            role?.getAttribute('aria-required') === 'true' ||
+            marksRequired(raw),
           limit: null,
         };
       } else {
@@ -1071,7 +1349,7 @@ export async function formPage(
                       ? 'file'
                       : type === 'number' || role === 'spinbutton'
                         ? 'number'
-                        : type === 'date'
+                        : type === 'date' || takesDay(control)
                           ? 'date'
                           : 'text';
         const hint = hintOf(control, question);
@@ -1095,7 +1373,7 @@ export async function formPage(
           required:
             (control as HTMLInputElement).required ||
             control.getAttribute('aria-required') === 'true' ||
-            control.closest('[role="group"][aria-required="true"]') !== null ||
+            closestOf(control, '[role="group"][aria-required="true"]') !== null ||
             marksRequired(raw),
           limit: limitOf(control, `${raw} ${hint}`),
         };
@@ -1188,6 +1466,13 @@ export async function formPage(
   /** A place's city, as it starts: "Denver" of "Denver, CO". */
   const cityOf = (place: string) => (place.split(',')[0] ?? '').trim();
 
+  /**
+   * How a key, and what it types, go up through the page, as a keyboard's do: from inside a
+   * component too, which a change, as the browser makes it, doesn't leave.
+   */
+  const KEYED = { bubbles: true, cancelable: true, composed: true } as const;
+  const TYPED = { bubbles: true, composed: true } as const;
+
   /** Puts text in a box as typing would, so the page's own code keeps it. */
   const typeInto = (box: HTMLInputElement | HTMLTextAreaElement, text: string, leave = true) => {
     const proto =
@@ -1198,7 +1483,7 @@ export async function formPage(
     const set = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     if (set) set.call(box, text);
     else box.value = text;
-    box.dispatchEvent(new Event('input', { bubbles: true }));
+    box.dispatchEvent(new Event('input', TYPED));
     box.dispatchEvent(new Event('change', { bubbles: true }));
     if (leave) box.blur();
   };
@@ -1216,6 +1501,7 @@ export async function formPage(
     const like = {
       bubbles: true,
       cancelable: true,
+      composed: true,
       button: 0,
       pointerType: 'mouse',
       isPrimary: true,
@@ -1256,14 +1542,12 @@ export async function formPage(
   const typeToFind = (box: HTMLInputElement, text: string) => {
     box.focus({ preventScroll: true });
     const key = text.slice(-1);
-    box.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    box.dispatchEvent(new KeyboardEvent('keydown', { key, ...KEYED }));
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     if (set) set.call(box, text);
     else box.value = text;
-    box.dispatchEvent(
-      new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }),
-    );
-    box.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }));
+    box.dispatchEvent(new InputEvent('input', { ...TYPED, inputType: 'insertText', data: text }));
+    box.dispatchEvent(new KeyboardEvent('keyup', { key, ...KEYED }));
   };
 
   /**
@@ -1279,19 +1563,19 @@ export async function formPage(
       else box.value = value;
     };
     const key = (kind: string, name: string) => {
-      const event = new KeyboardEvent(kind, { key: name, bubbles: true, cancelable: true });
+      const event = new KeyboardEvent(kind, { key: name, ...KEYED });
       box.dispatchEvent(event);
       return !event.defaultPrevented;
     };
     if (box.value && key('keydown', 'Backspace')) {
       put('');
-      box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContent' }));
+      box.dispatchEvent(new InputEvent('input', { ...TYPED, inputType: 'deleteContent' }));
     }
     for (const each of text) {
       if (key('keydown', each)) {
         put(`${box.value}${each}`);
         box.dispatchEvent(
-          new InputEvent('input', { bubbles: true, inputType: 'insertText', data: each }),
+          new InputEvent('input', { ...TYPED, inputType: 'insertText', data: each }),
         );
       }
       key('keyup', each);
@@ -1341,10 +1625,10 @@ export async function formPage(
    */
   const comboShows = (control: HTMLElement): string => {
     // A button that opens a list shows the option picked as its own words, or words that only
-    // say to pick, as Workday's "Select One".
-    if (opensList(control)) {
+    // say to pick, as Workday's "Select One", and so does a box a page made of its own, as iCIMS's.
+    if (opensList(control) || pickBox(control)) {
       const words = squash(
-        [...control.childNodes]
+        shownChildren(control)
           .map((node) =>
             node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '') : wordsOf(node as Element),
           )
@@ -1363,10 +1647,11 @@ export async function formPage(
     const value = (control as HTMLInputElement).value ?? '';
     // A box that takes one of its own suggestions shows the one picked in itself.
     if (suggestionsOf(control)) return value;
-    let up = control.parentElement;
-    for (let level = 0; level < 4 && up && up !== doc.body; level++, up = up.parentElement) {
-      const fields = up.querySelectorAll(
+    let up = upOf(control);
+    for (let level = 0; level < 4 && up && up !== doc.body; level++, up = upOf(up)) {
+      const fields = everyOf(
         'input:not([type="hidden"]):not([aria-hidden="true"]), select, textarea',
+        up,
       );
       if (fields.length > 1) break;
       const words = wordsOf(up);
@@ -1402,18 +1687,21 @@ export async function formPage(
     }
     if (field.control === 'choice' || field.control === 'choices') {
       if (control instanceof HTMLSelectElement) {
-        // An option with no value, such as "Select…", is none picked.
+        // An option with no value, or that only says to pick, as "Select…" or iCIMS's "Please
+        // select a country", is none picked.
         return [...control.selectedOptions]
-          .filter((option) => option.value !== '')
+          .filter((option) => option.value !== '' && !PLACEHOLDERS.test(squash(option.text)))
           .map((option) => squash(option.text))
           .join(', ');
       }
+      // A radio button that only says none is picked, as SuccessFactors' "No Selection", isn't one.
       return found.controls
-        .filter((each) => (each as HTMLInputElement).checked)
+        .filter(ticked)
         .map(optionWords)
+        .filter((words) => !PLACEHOLDERS.test(words))
         .join(', ');
     }
-    if (field.control === 'check') return (control as HTMLInputElement).checked ? 'Checked' : '';
+    if (field.control === 'check') return ticked(control) ? 'Checked' : '';
     if (field.control === 'file') {
       // With the files the page took already, as Workday lists each one it uploaded beside it.
       const uploaded = new Set(
@@ -1519,13 +1807,16 @@ export async function formPage(
     if (!control || field.type === 'password') return done(false, 'not-taken');
     // A field that holds an answer already, as a site may fill in from your resume, stays as it is.
     if (answer.ifEmpty && shownIn(found).trim() !== '') return { ...done(true), kept: true };
+    // A field whose own code sends the page away as it changes is left for you, as filling would
+    // stop there, and the page might throw away what went in before it.
+    if (controls.some(sendsPage)) return done(false, 'reloads');
     if (answer.file && field.control === 'file') {
       const bytes = Uint8Array.from(atob(answer.file.base64), (char) => char.charCodeAt(0));
       const files = new DataTransfer();
       files.items.add(new File([bytes], answer.file.name, { type: answer.file.type }));
       const input = control as HTMLInputElement;
       input.files = files.files;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('input', TYPED));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       return done((input.files?.length ?? 0) === 1);
     }
@@ -1539,32 +1830,37 @@ export async function formPage(
     }
     if (field.control === 'choice' || field.control === 'choices') {
       if (control instanceof HTMLSelectElement) {
-        const option = pickOf([...control.options], (each) => each.text, picks, answer.exact);
+        const find = () => pickOf([...control.options], (each) => each.text, picks, answer.exact);
+        // A list with no options of its own yet may be getting them from the page's site, as a
+        // state's does once the country is picked: it gets a moment to.
+        const option =
+          find() ?? (control.options.length <= 1 ? await waitFor(find, LIST_MS) : undefined);
         if (!option) return done(false, 'no-option');
         option.selected = true;
-        control.dispatchEvent(new Event('input', { bubbles: true }));
+        control.dispatchEvent(new Event('input', TYPED));
         control.dispatchEvent(new Event('change', { bubbles: true }));
         return done(option.selected);
       }
       if (field.control === 'choice') {
         const option = pickOf(controls, optionWords, picks, answer.exact);
         if (!option) return done(false, 'no-option');
-        if (!(option as HTMLInputElement).checked) press(option);
-        return done((option as HTMLInputElement).checked);
+        if (!ticked(option)) press(option);
+        // A page's own radio button may take a moment to say it's picked.
+        return done(ticked(option) || Boolean(await waitFor(() => ticked(option), 1000)));
       }
       let any = false;
       for (const pick of picks) {
         const option = pickOf(controls, optionWords, [pick], answer.exact);
         if (!option) continue;
-        if (!(option as HTMLInputElement).checked) press(option);
-        any = any || (option as HTMLInputElement).checked;
+        if (!ticked(option)) press(option);
+        any = any || ticked(option);
       }
       return done(any, 'no-option');
     }
     if (field.control === 'check') return done(false, 'not-taken');
     if (field.control === 'combo') {
       const box = control as HTMLInputElement;
-      const optionWords = (each: Element) => each.textContent ?? '';
+      const optionWords = (each: Element) => textOf(each);
       const suggests = suggestionsOf(box);
       const search = searches(box);
       /** The lists on the page before a button that opens one was pressed, to tell its own. */
@@ -1591,14 +1887,19 @@ export async function formPage(
        * button.
        */
       const choose = async (option: Element) => {
-        const words = squash(option.textContent ?? '');
+        const words = textOf(option);
         const shownBefore = comboShows(box);
         const took = () => {
           if (suggests && suggests.picked.value === '') return false;
           const shows = comboShows(box);
           return plain(shows).includes(plain(words)) || (shows !== '' && shows !== shownBefore);
         };
-        press(option.querySelector('[data-automation-id="promptOption"]') ?? option);
+        // An option's own link, as SuccessFactors' lists have, is what picks it.
+        press(
+          option.querySelector('[data-automation-id="promptOption"]') ??
+            option.querySelector(':scope > a') ??
+            option,
+        );
         let picked = await waitFor(took, 1000);
         const radio = option.querySelector('input[type="radio"], input[type="checkbox"]');
         if (!picked && radio) {
@@ -1610,13 +1911,13 @@ export async function formPage(
       };
       const pressEscape = () =>
         box.dispatchEvent(
-          new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+          new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', ...KEYED }),
         );
       // Opened with a press, as a person would: its list shows at once when it's the page's own.
       // A box that only suggests as you type has nothing to show till then. A button's list may
       // take a moment, as Workday's asks its site for the options.
       if (!suggests) {
-        before = opensList(box) ? new Set(doc.querySelectorAll('[role="listbox"]')) : undefined;
+        before = opensList(box) ? new Set(everyOf('[role="listbox"]')) : undefined;
         press(box);
         const listed = await waitFor(find, opensList(box) ? LIST_MS : 800);
         if (listed && (await choose(listed))) return done(true);
@@ -1631,11 +1932,14 @@ export async function formPage(
         : picks;
       const had = comboShows(box);
       for (const pick of typed.filter(Boolean).slice(0, 3)) {
-        if (!(box instanceof HTMLInputElement) || !visible(box)) continue;
+        if (box instanceof HTMLInputElement && !visible(box)) continue;
         if (search) pressEscape();
         else if (!suggests && box.getAttribute('aria-expanded') !== 'true') press(box);
+        // A box a page made of its own, as iCIMS's, is searched in its list's own box.
+        const typing = box instanceof HTMLInputElement ? box : searchBoxOf(box);
+        if (!typing || !visible(typing)) continue;
         const noneBefore = listSays(box, NONE);
-        typeToFind(box, pick);
+        typeToFind(typing, pick);
         if (search) {
           box.dispatchEvent(
             new KeyboardEvent('keydown', {
@@ -1643,8 +1947,7 @@ export async function formPage(
               code: 'Enter',
               keyCode: 13,
               which: 13,
-              bubbles: true,
-              cancelable: true,
+              ...KEYED,
             }),
           );
         }
@@ -1676,7 +1979,7 @@ export async function formPage(
     if (control.isContentEditable) {
       control.focus({ preventScroll: true });
       control.textContent = text;
-      control.dispatchEvent(new Event('input', { bubbles: true }));
+      control.dispatchEvent(new Event('input', TYPED));
       control.blur();
       return done(squash(control.textContent ?? '') === squash(text));
     }
@@ -1705,10 +2008,14 @@ export async function formPage(
     const target = found.pressed
       ? (first.parentElement ?? first)
       : found.controls.length > 1
-        ? (found.controls[0]?.closest('fieldset, [role="radiogroup"], [role="group"], ul, ol') ??
+        ? ((found.controls[0] &&
+            closestOf(
+              found.controls[0],
+              'fieldset, [role="radiogroup"], [role="group"], ul, ol',
+            )) ??
           first)
         : found.field.control === 'combo'
-          ? (first.closest('[class*="control"]') ?? first)
+          ? (closestOf(first, '[class*="control"]') ?? first)
           : first;
     const element = target as HTMLElement;
     element.style.outline = `2px solid ${ORANGE}`;
@@ -1727,17 +2034,41 @@ export async function formPage(
   };
 
   /**
+   * The page of an application that marks no step, as some applicant systems' say it otherwise:
+   * Taleo's by the page's name, which its title and a field it keeps for bookmarks give, as its
+   * progress bar may be hidden; SuccessFactors' application, one page by the form's own name, so
+   * what it filled in from your profile stays; and SmartRecruiters' newer form, its first page by
+   * its title, "Easy apply", and the next by its heading, "Preliminary questions". "" elsewhere.
+   */
+  const ownStep = (): string => {
+    if (
+      doc.querySelector(
+        '[id^="et-ef-content-ftf"], [id^="editTemplateMultipart-editForm-content-ftf"]',
+      )
+    ) {
+      const kept = doc.getElementById('bookmarkNameHF') as HTMLInputElement | null;
+      return squash(kept?.value || doc.title);
+    }
+    const form = doc.querySelector('#rcmJobApplicationCtr[aria-label]');
+    if (form) return squash(form.getAttribute('aria-label') ?? '');
+    const screening = doc.querySelector('oc-screening-questions');
+    if (screening) return wordsOf(screening.querySelector('h2'));
+    if (doc.querySelector('oc-oneclick-form')) return squash(doc.title.split(' - ')[0] ?? '');
+    return '';
+  };
+
+  /**
    * The step an application that runs over several pages in one tab is on, as its progress bar
    * marks it, as Workday's does, by the name it gives it, such as "My Experience", without what
    * only counts it, as "current step 2 of 7". A narrow window may hide the bar, which still says.
    * "" for a form on one page.
    */
   const stepOf = (): string => {
-    const marked = [...doc.querySelectorAll(STEP_NOW)];
+    const marked = everyOf(STEP_NOW);
     const now = marked.find(shown) ?? marked[0];
-    if (!now) return '';
-    const said = squash(now.textContent ?? '');
-    const counted = /^(?:you are on |current )?(step \d+ of \d+)[\s:.,-]*/i.exec(said);
+    const said = now ? squash(now.textContent ?? '') : ownStep();
+    if (!said) return '';
+    const counted = /^(?:you are on |current )?(step \d+ (?:out )?of \d+)[\s:.,-]*/i.exec(said);
     const words = said
       .slice(counted?.[0].length ?? 0)
       .replace(/\s*\(?(current|current step|completed|in progress)\)?$/i, '');
@@ -1754,14 +2085,19 @@ export async function formPage(
    * pressing it, the page can't submit the form.
    */
   const addersOf = (): { adder: PageAdder; button: HTMLElement }[] =>
-    [...doc.querySelectorAll<HTMLElement>('button, [role="button"]')].flatMap((button) => {
+    everyOf<HTMLElement>('button, [role="button"]').flatMap((button) => {
       const madeToSubmit = /^(submit|image)$/i.test(button.getAttribute('type') ?? '');
-      if (button.closest(AROUND) || madeToSubmit || (button as HTMLButtonElement).disabled) {
+      if (closestOf(button, AROUND) || madeToSubmit || (button as HTMLButtonElement).disabled) {
         return [];
       }
-      if (button.closest('[aria-hidden="true"], [inert]') || !visible(button)) return [];
+      if (closestOf(button, '[aria-hidden="true"], [inert]') || !visible(button)) return [];
+      // One whose own code posts the page, as Taleo's Add does, would load it anew midway.
+      if (sendsPage(button)) return [];
+      // Its words, or what names it, or the component it's in, as SmartRecruiters' Add.
       const words =
-        squash(button.textContent ?? '') || squash(button.getAttribute('aria-label') ?? '');
+        textOf(button) ||
+        squash(button.getAttribute('aria-label') ?? '') ||
+        squash(hostOf(button)?.getAttribute('aria-label') ?? '');
       if (!ADDS.test(words) || UPLOAD_WORDS.test(words) || words.length > PRESSED_WORDS) return [];
       const section = sectionOf([button], '');
       return section ? [{ adder: { section: cut(section), words: cut(words) }, button }] : [];
@@ -1779,9 +2115,9 @@ export async function formPage(
       const same = addersOf().filter(({ adder }) => adder.section === asked.section);
       const found = same.find(({ adder }) => adder.words === asked.words) ?? same[0];
       if (!found) break;
-      const before = doc.querySelectorAll(CONTROLS).length;
+      const before = everyOf(CONTROLS).length;
       press(found.button, true);
-      const grew = await waitFor(() => doc.querySelectorAll(CONTROLS).length > before, ADD_MS);
+      const grew = await waitFor(() => everyOf(CONTROLS).length > before, ADD_MS);
       if (!grew) break;
       added += 1;
     }

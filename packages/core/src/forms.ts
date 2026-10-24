@@ -188,7 +188,7 @@ const AUTOCOMPLETE: Record<string, FieldKind> = {
  * India's postal codes are called, is a postal code.
  */
 const NEVER =
-  /\b(robots? only|if you( a)?re (a )?human|password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$|^(please )?leave this (field |box |input )?(blank|empty)$/;
+  /\b(robots? only|if you( a)?re (a )?human|password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$|^(please )?leave this (field |box |input )?(blank|empty)$|^(choose |create |pick )?(a |your )?(user ?name|login|login name|login id|user id)$/;
 
 /** Words a single checkbox asks you to agree to something with, as "I agree to the terms" does. */
 const AGREE =
@@ -539,13 +539,16 @@ const ownNames = (name: string) =>
       .join(' '),
   );
 
-/** The part of a form that asks for each job you held, by its heading, such as "Employment 2". */
+/**
+ * The part of a form that asks for each job you held, by its heading, such as "Employment 2", or
+ * SuccessFactors' "Outside Work Experience" and iCIMS's "Current Employment".
+ */
 const JOB_PART =
-  /^(your |my )?(employment|employment history|employment information|work experience|work history|professional experience|experience|previous employment|job history)( \d{1,2})?( optional)?$/;
+  /^(your |my )?(employment|employment history|employment information|current employment|((outside|previous|prior|past|relevant) )?work experience|work history|professional experience|experience|previous employment|job history)( \d{1,2})?( optional)?$/;
 
-/** The part that asks for each school, by its heading. */
+/** The part that asks for each school, by its heading, as SuccessFactors' "Formal Education". */
 const SCHOOL_PART =
-  /^(your |my )?(education|education history|educational background|academic background|academic history|schools?|degrees?)( \d{1,2})?( optional)?$/;
+  /^(your |my )?((formal|college|higher) )?(education|education history|educational background|academic background|academic history|schools?|degrees?)( \d{1,2})?( optional)?$/;
 
 /** A part that asks about someone else, by its heading: a reference, or who to call in an emergency. */
 const OTHER_PART =
@@ -561,25 +564,31 @@ const JOB_FIELDS: [FieldKind, RegExp][] = [
     'current-company',
     /^(company|company name|employer|employer name|organi[sz]ation|organi[sz]ation name)$/,
   ],
-  ['current-title', /^(title|job title|position|position title|role|job role)$/],
-  ['job-start', /^(start|from)\b|\bstart (date|month|year)\b|\bdate (started|from)\b/],
-  ['job-end', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate (ended|to)\b/],
-  ['job-location', /^(location|city|job location|work location)$/],
+  ['current-title', /^(title|job title|position|position title|role|job role|job function)$/],
+  [
+    'job-start',
+    /^(start|from|begin)\b|\b(start|begin) (date|month|year)\b|\bdate (started|from|begin)\b/,
+  ],
+  ['job-end', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate (ended|to|end)\b/],
+  ['job-location', /^(location|city|job location|work location|office location)$/],
   [
     'job-summary',
-    /^(description|role description|job description|responsibilities|duties|summary|what did you do)$/,
+    /^(description|role description|job description|responsibility|responsibilities|duties|summary|what did you do)$/,
   ],
 ];
 
 /** What each field in a part for schools asks. */
 const SCHOOL_FIELDS: [FieldKind, RegExp][] = [
   ['school', /\b(school|university|college|institution)( name)?$/],
-  ['discipline', /\b(field of study|major|discipline|area of study|concentration)\b/],
+  [
+    'discipline',
+    /\b(field of study|major|discipline|area of study|concentration|branch of study)\b|^program(me)?$/,
+  ],
   ['degree', /^(degree|degree type|degree level|qualification)$/],
-  ['edu-start', /^(start|from)\b|\bstart (date|month|year)\b/],
-  ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bgraduat/],
+  ['edu-start', /^(start|from|begin)\b|\b(start|begin) (date|month|year)\b|\bdate begin\b/],
+  ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate end\b|\bgraduat/],
   ['gpa', /\bgpa\b|\bgrade point average\b/],
-  ['edu-location', /^(location|city)$/],
+  ['edu-location', /^(location|city|school location|institution location)$/],
 ];
 
 /**
@@ -626,6 +635,27 @@ type FieldToTell = Omit<FormField, 'options' | 'required' | 'limit'> & {
 /** The kinds that ask your name. */
 const YOUR_NAME = new Set<FieldKind>(['full-name', 'first-name', 'last-name']);
 
+/** A part of a form where your name signs it, as Taleo's eSignature: "eSignature", "Signature". */
+const SIGNING_PART = /\b(e ?signatures?|signatures?)\b/;
+
+/** Whether a field is in a part of the form where your name signs it. */
+const inSigningPart = (field: Pick<FormField, 'section'>) =>
+  (field.section ?? '')
+    .split(' › ')
+    .map(plain)
+    .some((part) => SIGNING_PART.test(part));
+
+/** The kinds that ask where you live. */
+const WHERE_YOU_LIVE = new Set<FieldKind>([
+  'street',
+  'street-2',
+  'city',
+  'region',
+  'postal-code',
+  'country',
+  'location',
+]);
+
 /**
  * What a field asks for, by its type, the browser's words for it, its question, its options and
  * its name. A field it can't tell is a question of the form's own, or, in a part of the form for
@@ -638,7 +668,11 @@ const YOUR_NAME = new Set<FieldKind>(['full-name', 'first-name', 'last-name']);
  */
 export function fieldKind(field: FieldToTell): FieldKind {
   const kind = kindAsked(field);
-  return YOUR_NAME.has(kind) && inSelfIdPart(field) ? 'consent' : kind;
+  // Your name where it signs the form, a self-identification form or an application's eSignature.
+  if (YOUR_NAME.has(kind) && (inSelfIdPart(field) || inSigningPart(field))) return 'consent';
+  // Where a job or a school was, in its part, as iCIMS asks a job's country, is never your home.
+  if (WHERE_YOU_LIVE.has(kind) && fieldPart(field)) return 'question';
+  return kind;
 }
 
 /** What a field asks for, as fieldKind says, before your name signs anything. */
@@ -652,9 +686,12 @@ function kindAsked(field: FieldToTell): FieldKind {
   if (NEVER.test(question)) return 'never';
   if (field.control === 'file') {
     if (/\b(cover|motivation(al)?) letter\b/.test(said)) return 'cover-letter';
+    // A box that only says how to add a file is the part's it's in, as SmartRecruiters' Resume.
+    const part = plain((field.section ?? '').split(' › ').at(-1) ?? '');
     if (
       /\b(resume|cv|curriculum vitae)\b/.test(said) ||
-      /\b(resume|cv)\b/.test(plain(field.name))
+      /\b(resume|cv)\b/.test(plain(field.name)) ||
+      (question === '' && /^(resume|cv|resume cv|cv resume)$/.test(part))
     ) {
       return 'resume';
     }
